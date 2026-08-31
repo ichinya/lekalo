@@ -1,0 +1,1333 @@
+{
+  "contractId": "dev.lekalo.authority-matrix",
+  "version": "1.3.0",
+  "status": "accepted",
+  "predecessor": {
+    "contractId": "dev.lekalo.authority-matrix",
+    "version": "1.2.0",
+    "digest": "sha256:3446ce25ce33397f8c49426144a4c4dbf8c8ea23e4c759ceca70557606ffeda2"
+  },
+  "compatibility": {
+    "checkerProfile": "closed-exact",
+    "extensionsAllowed": false,
+    "semanticallyIdenticalCopiesAllowed": false,
+    "changeType": "additive-registry-with-explicit-readers"
+  },
+  "registryPolicy": {
+    "closure": "closed-exact",
+    "runtimeExtensionsAllowed": false,
+    "localAliasesAllowed": false,
+    "unknownKinds": "reject",
+    "successorAdmission": "reviewed-exact-triple-only",
+    "kindRequiredFields": [
+      "id",
+      "canonicalOwner",
+      "classification",
+      "allowedPaths",
+      "allowedReaders",
+      "allowedWriters"
+    ],
+    "forbiddenKindFields": [
+      "dataSensitivity",
+      "exportDisposition"
+    ]
+  },
+  "successorProcedure": {
+    "newVersionRequired": true,
+    "exactDigestRequired": true,
+    "predecessorExactRefRequired": true,
+    "compatibilityMetadataRequired": true,
+    "migrationMetadataRequired": true,
+    "silentMutationAllowed": false,
+    "acceptanceManifest": "contracts/authority-contracts.manifest.json",
+    "migrationDocument": "docs/authority-contract-migration-1.2-to-1.3.md"
+  },
+  "migration": {
+    "compatibility": "additive-registry",
+    "operationSemantics": "preserved",
+    "stableKindIdsPreserved": true,
+    "removedKindIds": [],
+    "addedKindIds": [
+      "authority.contract",
+      "authority.contract-manifest",
+      "privacy.policy",
+      "privacy.export-schema",
+      "diagnostics.raw-tool-output",
+      "context.capsule",
+      "trace.manifest",
+      "ai.prompt",
+      "ai.response",
+      "ai.tool-transcript",
+      "metrics.evaluation-evidence",
+      "fixture",
+      "repository.identity",
+      "native.symbol-identity",
+      "native.source-map",
+      "consumer.model",
+      "consumer.target-bindings",
+      "export.artifact",
+      "export.decision",
+      "redaction.artifact",
+      "redaction.decision",
+      "aggregate.artifact",
+      "aggregate.decision"
+    ],
+    "changedKindIds": [
+      "openspec.requirement",
+      "openspec.change-intent",
+      "openspec.delta-spec",
+      "openspec.expected-behavior",
+      "ai-factory.execution-plan",
+      "ai-factory.task-state",
+      "ai-factory.runtime-state",
+      "ai-factory.agent-lifecycle",
+      "ai-factory.provider-evidence-envelope",
+      "lekalo.semantic-model",
+      "lekalo.stable-symbol",
+      "lekalo.effect",
+      "lekalo.scenario",
+      "lekalo.target-binding",
+      "lekalo.observed-model-draft",
+      "lekalo.cache",
+      "lekalo.generated-intermediate",
+      "hlv.validation-result",
+      "hlv.traceability-result",
+      "hlv.gate-diagnostic",
+      "hlv.project-contract",
+      "source-native.source-code",
+      "source-native.native-test",
+      "generated.summary",
+      "generated.rule",
+      "generated.code"
+    ],
+    "changedFieldsByExistingKind": [
+      "allowedReaders"
+    ],
+    "existingKindReaderSemantics": "all-declared-actors-equivalent-to-1.2.0-unrestricted-read",
+    "staleReferenceBehavior": "reject",
+    "consumerAction": "replace-exact-1.2.0-ref-with-exact-1.3.0-ref"
+  },
+  "pathSyntax": "project-relative-posix",
+  "pathComparison": "case-insensitive-fail-closed",
+  "pathSafety": {
+    "trailingDotOrSpacePerSegment": "reject",
+    "alternateDataStreamColon": "reject",
+    "dosDeviceName": "reject",
+    "shortNameLikeTildeNumber": "reject",
+    "physicalContainment": "adapter-must-resolve-and-verify"
+  },
+  "owners": [
+    {
+      "id": "openspec",
+      "question": "what-and-why"
+    },
+    {
+      "id": "ai-factory",
+      "question": "how-work-is-executed"
+    },
+    {
+      "id": "lekalo",
+      "question": "semantic-application-model"
+    },
+    {
+      "id": "hlv",
+      "question": "validation-and-traceability-result"
+    },
+    {
+      "id": "source-native",
+      "question": "what-exists-and-runs"
+    }
+  ],
+  "actors": [
+    "openspec",
+    "ai-factory",
+    "lekalo",
+    "hlv",
+    "source-native",
+    "aifhub-adapter"
+  ],
+  "classifications": [
+    "canonical",
+    "derived",
+    "cached",
+    "runtime-only",
+    "direct-evidence"
+  ],
+  "artifactKinds": [
+    {
+      "id": "openspec.requirement",
+      "canonicalOwner": "openspec",
+      "classification": "canonical",
+      "allowedPaths": [
+        "openspec/specs/**",
+        "openspec/changes/**"
+      ],
+      "allowedWriters": [
+        "openspec"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "openspec.change-intent",
+      "canonicalOwner": "openspec",
+      "classification": "canonical",
+      "allowedPaths": [
+        "openspec/changes/**"
+      ],
+      "allowedWriters": [
+        "openspec"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "openspec.delta-spec",
+      "canonicalOwner": "openspec",
+      "classification": "canonical",
+      "allowedPaths": [
+        "openspec/changes/**"
+      ],
+      "allowedWriters": [
+        "openspec"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "openspec.expected-behavior",
+      "canonicalOwner": "openspec",
+      "classification": "canonical",
+      "allowedPaths": [
+        "openspec/specs/**",
+        "openspec/changes/**"
+      ],
+      "allowedWriters": [
+        "openspec"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "ai-factory.execution-plan",
+      "canonicalOwner": "ai-factory",
+      "classification": "canonical",
+      "allowedPaths": [
+        ".ai-factory/plans/**"
+      ],
+      "allowedWriters": [
+        "ai-factory"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "ai-factory.task-state",
+      "canonicalOwner": "ai-factory",
+      "classification": "canonical",
+      "allowedPaths": [
+        ".ai-factory/plans/**"
+      ],
+      "allowedWriters": [
+        "ai-factory"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "ai-factory.runtime-state",
+      "canonicalOwner": "ai-factory",
+      "classification": "runtime-only",
+      "allowedPaths": [
+        ".ai-factory/state/**"
+      ],
+      "allowedWriters": [
+        "ai-factory"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "ai-factory.agent-lifecycle",
+      "canonicalOwner": "ai-factory",
+      "classification": "runtime-only",
+      "allowedPaths": [
+        ".ai-factory/state/**"
+      ],
+      "allowedWriters": [
+        "ai-factory"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "ai-factory.provider-evidence-envelope",
+      "canonicalOwner": "ai-factory",
+      "classification": "derived",
+      "allowedPaths": [
+        ".ai-factory/qa/**"
+      ],
+      "allowedWriters": [
+        "ai-factory",
+        "aifhub-adapter"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "lekalo.semantic-model",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": [
+        "lekalo/**"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "lekalo.stable-symbol",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": [
+        "lekalo/**"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "lekalo.effect",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": [
+        "lekalo/**"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "lekalo.scenario",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": [
+        "lekalo/**"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "lekalo.target-binding",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": [
+        "lekalo/**"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "lekalo.observed-model-draft",
+      "canonicalOwner": "lekalo",
+      "classification": "derived",
+      "allowedPaths": [
+        ".lekalo/import/**"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "lekalo.cache",
+      "canonicalOwner": "lekalo",
+      "classification": "cached",
+      "allowedPaths": [
+        ".lekalo/cache/**"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "lekalo.generated-intermediate",
+      "canonicalOwner": "lekalo",
+      "classification": "derived",
+      "allowedPaths": [
+        ".lekalo/generated/**"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "hlv.validation-result",
+      "canonicalOwner": "hlv",
+      "classification": "canonical",
+      "allowedPaths": [
+        ".hlv/evidence/**"
+      ],
+      "allowedWriters": [
+        "hlv"
+      ],
+      "substitutesRequirements": false,
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "hlv.traceability-result",
+      "canonicalOwner": "hlv",
+      "classification": "canonical",
+      "allowedPaths": [
+        ".hlv/trace/**",
+        ".hlv/evidence/**"
+      ],
+      "allowedWriters": [
+        "hlv"
+      ],
+      "substitutesRequirements": false,
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "hlv.gate-diagnostic",
+      "canonicalOwner": "hlv",
+      "classification": "canonical",
+      "allowedPaths": [
+        ".hlv/evidence/**"
+      ],
+      "allowedWriters": [
+        "hlv"
+      ],
+      "substitutesRequirements": false,
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "hlv.project-contract",
+      "canonicalOwner": "hlv",
+      "classification": "canonical",
+      "allowedPaths": [
+        "project.yaml",
+        ".hlv/project.yaml",
+        ".hlv/contracts/**"
+      ],
+      "allowedWriters": [
+        "hlv"
+      ],
+      "substitutesRequirements": false,
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "source-native.source-code",
+      "canonicalOwner": "source-native",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        "**"
+      ],
+      "allowedWriters": [
+        "source-native"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "source-native.native-test",
+      "canonicalOwner": "source-native",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        "**"
+      ],
+      "allowedWriters": [
+        "source-native"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "generated.summary",
+      "canonicalOwner": "ai-factory",
+      "classification": "derived",
+      "allowedPaths": [
+        ".ai-factory/qa/**"
+      ],
+      "allowedWriters": [
+        "ai-factory",
+        "aifhub-adapter"
+      ],
+      "silentCanonicalPromotion": false,
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "generated.rule",
+      "canonicalOwner": "ai-factory",
+      "classification": "derived",
+      "allowedPaths": [
+        ".ai-factory/rules/generated/**"
+      ],
+      "allowedWriters": [
+        "ai-factory"
+      ],
+      "silentCanonicalPromotion": false,
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "generated.code",
+      "canonicalOwner": "source-native",
+      "classification": "derived",
+      "allowedPaths": [
+        "**"
+      ],
+      "allowedWriters": [
+        "lekalo",
+        "source-native"
+      ],
+      "silentCanonicalPromotion": false,
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "authority.contract",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": [
+        "contracts/authority-matrix.v1.json",
+        "contracts/authority-matrix.v*.json"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "authority.contract-manifest",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": [
+        "contracts/authority-contracts.manifest.json",
+        "contracts/authority-matrix.v*.sha256"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "privacy.policy",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": [
+        "contracts/privacy-policy.v*.json",
+        "contracts/privacy-policy.v*.sha256"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "privacy.export-schema",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": [
+        "contracts/privacy-export.schema.v*.json"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "diagnostics.raw-tool-output",
+      "canonicalOwner": "ai-factory",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        ".ai-factory/evidence/raw/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "ai-factory",
+        "hlv",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "context.capsule",
+      "canonicalOwner": "ai-factory",
+      "classification": "runtime-only",
+      "allowedPaths": [
+        ".ai-factory/context/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "ai-factory",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "trace.manifest",
+      "canonicalOwner": "ai-factory",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        ".ai-factory/traces/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "ai-factory",
+        "hlv",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "ai.prompt",
+      "canonicalOwner": "ai-factory",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        ".ai-factory/runs/**/prompts/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "ai-factory",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "ai.response",
+      "canonicalOwner": "ai-factory",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        ".ai-factory/runs/**/responses/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "ai-factory",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "ai.tool-transcript",
+      "canonicalOwner": "ai-factory",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        ".ai-factory/runs/**/tools/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "ai-factory",
+        "aifhub-adapter"
+      ]
+    },
+    {
+      "id": "metrics.evaluation-evidence",
+      "canonicalOwner": "hlv",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        ".hlv/evidence/metrics/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "hlv",
+        "ai-factory",
+        "aifhub-adapter"
+      ],
+      "substitutesRequirements": false
+    },
+    {
+      "id": "fixture",
+      "canonicalOwner": "source-native",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        "tests/fixtures/**",
+        "fixtures/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "source-native"
+      ]
+    },
+    {
+      "id": "repository.identity",
+      "canonicalOwner": "source-native",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        ".source-native/repository/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "source-native"
+      ]
+    },
+    {
+      "id": "native.symbol-identity",
+      "canonicalOwner": "source-native",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        ".source-native/symbols/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "source-native",
+        "lekalo"
+      ]
+    },
+    {
+      "id": "native.source-map",
+      "canonicalOwner": "source-native",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        "**/*.map"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "source-native",
+        "lekalo"
+      ]
+    },
+    {
+      "id": "consumer.model",
+      "canonicalOwner": "lekalo",
+      "classification": "derived",
+      "allowedPaths": [
+        ".lekalo/consumer/model/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "consumer.target-bindings",
+      "canonicalOwner": "lekalo",
+      "classification": "derived",
+      "allowedPaths": [
+        ".lekalo/consumer/bindings/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "export.artifact",
+      "canonicalOwner": "lekalo",
+      "classification": "derived",
+      "allowedPaths": [
+        ".lekalo/privacy/exports/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "export.decision",
+      "canonicalOwner": "lekalo",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        ".lekalo/privacy/decisions/export/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "redaction.artifact",
+      "canonicalOwner": "lekalo",
+      "classification": "derived",
+      "allowedPaths": [
+        ".lekalo/privacy/redacted/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "redaction.decision",
+      "canonicalOwner": "lekalo",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        ".lekalo/privacy/decisions/redaction/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "aggregate.artifact",
+      "canonicalOwner": "lekalo",
+      "classification": "derived",
+      "allowedPaths": [
+        ".lekalo/privacy/aggregates/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "aggregate.decision",
+      "canonicalOwner": "lekalo",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        ".lekalo/privacy/decisions/aggregate/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    }
+  ],
+  "pathBoundaries": [
+    {
+      "pattern": "openspec/specs/**",
+      "owner": "openspec"
+    },
+    {
+      "pattern": "openspec/changes/**",
+      "owner": "openspec"
+    },
+    {
+      "pattern": ".ai-factory/plans/**",
+      "owner": "ai-factory"
+    },
+    {
+      "pattern": ".ai-factory/state/**",
+      "owner": "ai-factory"
+    },
+    {
+      "pattern": ".ai-factory/qa/**",
+      "owner": "ai-factory"
+    },
+    {
+      "pattern": ".ai-factory/rules/generated/**",
+      "owner": "ai-factory"
+    },
+    {
+      "pattern": "lekalo/**",
+      "owner": "lekalo"
+    },
+    {
+      "pattern": ".lekalo/**",
+      "owner": "lekalo"
+    },
+    {
+      "pattern": ".hlv/**",
+      "owner": "hlv"
+    },
+    {
+      "pattern": "contracts/authority-matrix.v*.json",
+      "owner": "lekalo"
+    },
+    {
+      "pattern": "contracts/authority-matrix.v*.sha256",
+      "owner": "lekalo"
+    },
+    {
+      "pattern": "contracts/authority-contracts.manifest.json",
+      "owner": "lekalo"
+    },
+    {
+      "pattern": "contracts/privacy-policy.v*.json",
+      "owner": "lekalo"
+    },
+    {
+      "pattern": "contracts/privacy-policy.v*.sha256",
+      "owner": "lekalo"
+    },
+    {
+      "pattern": "contracts/privacy-export.schema.v*.json",
+      "owner": "lekalo"
+    },
+    {
+      "pattern": ".ai-factory/evidence/**",
+      "owner": "ai-factory"
+    },
+    {
+      "pattern": ".ai-factory/context/**",
+      "owner": "ai-factory"
+    },
+    {
+      "pattern": ".ai-factory/traces/**",
+      "owner": "ai-factory"
+    },
+    {
+      "pattern": ".ai-factory/runs/**",
+      "owner": "ai-factory"
+    },
+    {
+      "pattern": ".source-native/**",
+      "owner": "source-native"
+    },
+    {
+      "pattern": "tests/fixtures/**",
+      "owner": "source-native"
+    },
+    {
+      "pattern": "fixtures/**",
+      "owner": "source-native"
+    }
+  ],
+  "conditionalPathBoundaries": [
+    {
+      "pattern": "project.yaml",
+      "owner": "hlv",
+      "artifactKind": "hlv.project-contract",
+      "requiredContext": "hlvLayoutConfirmed",
+      "requiredValue": true
+    }
+  ],
+  "syncPolicy": {
+    "defaultDirection": "canonical-to-derived",
+    "allowedSourceClassifications": [
+      "canonical",
+      "direct-evidence"
+    ],
+    "allowedTargetClassifications": [
+      "derived",
+      "cached",
+      "runtime-only"
+    ],
+    "automaticBidirectional": false,
+    "crossOwnerCanonicalWrites": false,
+    "reconciliationWritesCanonical": false,
+    "requiredReconciliationReports": [
+      "loss",
+      "conflict",
+      "provenance"
+    ],
+    "requiredReconciliationApprovals": [
+      "each-canonical-owner"
+    ]
+  },
+  "generatedPromotionPolicy": {
+    "mode": "explicit-adoption",
+    "requiredEvidence": [
+      "explicitAdoption",
+      "reviewed",
+      "provenance"
+    ],
+    "silentPromotion": false
+  },
+  "brownfieldAdoptionPolicy": {
+    "action": "adopt",
+    "sourceKind": "lekalo.observed-model-draft",
+    "targetKind": "lekalo.semantic-model",
+    "actor": "lekalo",
+    "requiredEvidence": [
+      "explicitAdoption",
+      "reviewed",
+      "provenance"
+    ],
+    "genericSync": false
+  },
+  "operationProtocol": {
+    "discriminator": "action",
+    "actions": [
+      "read",
+      "write",
+      "sync",
+      "claim",
+      "promote",
+      "adopt"
+    ],
+    "evidenceProvenanceFields": [
+      "sourceRevision",
+      "sourceDigest",
+      "recordedBy"
+    ],
+    "strictObjects": true,
+    "unknownFields": "reject",
+    "malformedExitCode": 1,
+    "policyDeniedExitCode": 3
+  },
+  "claimPolicy": {
+    "mode": "reference-only",
+    "requiredSubstitute": false,
+    "substitutionAllowed": false,
+    "promotionAction": "promote",
+    "adoptionAction": "adopt"
+  },
+  "traceability": {
+    "chain": [
+      "openspec.requirement",
+      "lekalo.stable-symbol",
+      "lekalo.target-binding",
+      "lekalo.scenario-or-source-native.native-test",
+      "hlv.gate-diagnostic"
+    ],
+    "requiredEvidenceMetadata": [
+      "toolVersion",
+      "protocolVersion",
+      "changeId",
+      "revision",
+      "timestamp",
+      "provenance"
+    ],
+    "missingLinkState": "unresolved",
+    "contradictionAction": "block-dependent-operation"
+  },
+  "conflictPolicy": {
+    "defaultAction": "block-and-report",
+    "lastWriterWins": false,
+    "precedenceByQuestion": {
+      "what-and-why": "openspec",
+      "how-work-is-executed": "ai-factory",
+      "semantic-application-model": "lekalo",
+      "validation-and-traceability-result": "hlv",
+      "what-exists-and-runs": "source-native"
+    }
+  },
+  "projectRules": {
+    "greenfield": {
+      "initialization": "explicit-user-action",
+      "providerAutoInstall": false
+    },
+    "brownfield": {
+      "discoveryWrites": false,
+      "observedModelClassification": "derived",
+      "canonicalAdoption": "explicit-reviewed-action"
+    },
+    "absentLayerTransfersAuthority": false
+  }
+}

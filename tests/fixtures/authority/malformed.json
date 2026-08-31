@@ -1,0 +1,147 @@
+[
+  {
+    "id": "root-array",
+    "input": [],
+    "expectedCode": "operation.root-object-required"
+  },
+  {
+    "id": "root-scalar",
+    "input": "not-an-operation",
+    "expectedCode": "operation.root-object-required"
+  },
+  {
+    "id": "wrong-object",
+    "input": { "contractId": "dev.lekalo.authority-matrix" },
+    "expectedCode": "operation.action-required"
+  },
+  {
+    "id": "unknown-action",
+    "input": { "action": "mirror", "actor": "lekalo" },
+    "expectedCode": "operation.action-enum"
+  },
+  {
+    "id": "wrong-actor-type",
+    "input": {
+      "action": "read",
+      "actor": 7,
+      "source": { "artifactKind": "openspec.requirement", "path": "openspec/specs/orders/spec.md" }
+    },
+    "expectedCode": "operation.actor-enum"
+  },
+  {
+    "id": "missing-write-target",
+    "input": { "action": "write", "actor": "lekalo" },
+    "expectedCode": "operation.target-required"
+  },
+  {
+    "id": "ref-is-array",
+    "input": { "action": "read", "actor": "lekalo", "source": [] },
+    "expectedCode": "source.object-required"
+  },
+  {
+    "id": "ref-has-extra-field",
+    "input": {
+      "action": "read",
+      "actor": "lekalo",
+      "source": {
+        "artifactKind": "openspec.requirement",
+        "path": "openspec/specs/orders/spec.md",
+        "revision": "abc"
+      }
+    },
+    "expectedCode": "source.revision-unexpected"
+  },
+  {
+    "id": "claim-substitute-string",
+    "input": {
+      "action": "claim",
+      "actor": "aifhub-adapter",
+      "substitute": "true",
+      "source": { "artifactKind": "hlv.validation-result", "path": ".hlv/evidence/orders.json" },
+      "target": { "artifactKind": "openspec.requirement", "path": "openspec/specs/orders/spec.md" }
+    },
+    "expectedCode": "operation.substitute-boolean"
+  },
+  {
+    "id": "one-way-sync-has-bidirectional-field",
+    "input": {
+      "action": "sync",
+      "actor": "aifhub-adapter",
+      "direction": "one-way",
+      "automatic": false,
+      "source": { "artifactKind": "hlv.validation-result", "path": ".hlv/evidence/orders.json" },
+      "target": {
+        "artifactKind": "ai-factory.provider-evidence-envelope",
+        "path": ".ai-factory/qa/orders/providers/hlv.json"
+      }
+    },
+    "expectedCode": "operation.automatic-unexpected"
+  },
+  {
+    "id": "bidirectional-missing-reports",
+    "input": {
+      "action": "sync",
+      "actor": "aifhub-adapter",
+      "direction": "bidirectional",
+      "automatic": false,
+      "writesCanonical": false,
+      "source": { "artifactKind": "openspec.requirement", "path": "openspec/specs/orders/spec.md" },
+      "target": { "artifactKind": "lekalo.semantic-model", "path": "lekalo/model/application.json" }
+    },
+    "expectedCode": "operation.reports-required"
+  },
+  {
+    "id": "report-boolean-is-string",
+    "input": {
+      "action": "sync",
+      "actor": "aifhub-adapter",
+      "direction": "bidirectional",
+      "automatic": false,
+      "writesCanonical": false,
+      "source": { "artifactKind": "openspec.requirement", "path": "openspec/specs/orders/spec.md" },
+      "target": { "artifactKind": "lekalo.semantic-model", "path": "lekalo/model/application.json" },
+      "reports": { "loss": "false", "conflict": true, "provenance": true }
+    },
+    "expectedCode": "reports.loss-boolean"
+  },
+  {
+    "id": "evidence-provenance-is-number",
+    "input": {
+      "action": "promote",
+      "actor": "source-native",
+      "source": { "artifactKind": "generated.code", "path": "src/generated/order.ts" },
+      "target": { "artifactKind": "source-native.source-code", "path": "src/generated/order.ts" },
+      "evidence": { "explicitAdoption": true, "reviewed": true, "provenance": 1 }
+    },
+    "expectedCode": "provenance.object-required"
+  },
+  {
+    "id": "hlv-context-boolean-is-string",
+    "input": {
+      "action": "write",
+      "actor": "hlv",
+      "target": { "artifactKind": "hlv.project-contract", "path": "project.yaml" },
+      "context": { "hlvLayoutConfirmed": "true" }
+    },
+    "expectedCode": "context.hlvLayoutConfirmed-boolean"
+  },
+  {
+    "id": "provenance-digest-is-not-sha256",
+    "input": {
+      "action": "adopt",
+      "actor": "lekalo",
+      "source": { "artifactKind": "lekalo.observed-model-draft", "path": ".lekalo/import/application.json" },
+      "target": { "artifactKind": "lekalo.semantic-model", "path": "lekalo/model/application.json" },
+      "evidence": {
+        "explicitAdoption": true,
+        "reviewed": true,
+        "provenance": {
+          "sourceRevision": "brownfield-import-v1",
+          "sourceDigest": "not-a-digest",
+          "recordedBy": "lekalo-owner-review"
+        }
+      }
+    },
+    "expectedCode": "provenance.sourceDigest-sha256"
+  }
+]

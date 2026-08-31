@@ -1,0 +1,333 @@
+{
+  "contractId": "dev.lekalo.authority-matrix",
+  "version": "1.2.0",
+  "status": "accepted",
+  "compatibility": {
+    "checkerProfile": "closed-exact",
+    "extensionsAllowed": false,
+    "semanticallyIdenticalCopiesAllowed": true
+  },
+  "pathSyntax": "project-relative-posix",
+  "pathComparison": "case-insensitive-fail-closed",
+  "pathSafety": {
+    "trailingDotOrSpacePerSegment": "reject",
+    "alternateDataStreamColon": "reject",
+    "dosDeviceName": "reject",
+    "shortNameLikeTildeNumber": "reject",
+    "physicalContainment": "adapter-must-resolve-and-verify"
+  },
+  "owners": [
+    { "id": "openspec", "question": "what-and-why" },
+    { "id": "ai-factory", "question": "how-work-is-executed" },
+    { "id": "lekalo", "question": "semantic-application-model" },
+    { "id": "hlv", "question": "validation-and-traceability-result" },
+    { "id": "source-native", "question": "what-exists-and-runs" }
+  ],
+  "actors": [
+    "openspec",
+    "ai-factory",
+    "lekalo",
+    "hlv",
+    "source-native",
+    "aifhub-adapter"
+  ],
+  "classifications": [
+    "canonical",
+    "derived",
+    "cached",
+    "runtime-only",
+    "direct-evidence"
+  ],
+  "artifactKinds": [
+    {
+      "id": "openspec.requirement",
+      "canonicalOwner": "openspec",
+      "classification": "canonical",
+      "allowedPaths": ["openspec/specs/**", "openspec/changes/**"],
+      "allowedWriters": ["openspec"]
+    },
+    {
+      "id": "openspec.change-intent",
+      "canonicalOwner": "openspec",
+      "classification": "canonical",
+      "allowedPaths": ["openspec/changes/**"],
+      "allowedWriters": ["openspec"]
+    },
+    {
+      "id": "openspec.delta-spec",
+      "canonicalOwner": "openspec",
+      "classification": "canonical",
+      "allowedPaths": ["openspec/changes/**"],
+      "allowedWriters": ["openspec"]
+    },
+    {
+      "id": "openspec.expected-behavior",
+      "canonicalOwner": "openspec",
+      "classification": "canonical",
+      "allowedPaths": ["openspec/specs/**", "openspec/changes/**"],
+      "allowedWriters": ["openspec"]
+    },
+    {
+      "id": "ai-factory.execution-plan",
+      "canonicalOwner": "ai-factory",
+      "classification": "canonical",
+      "allowedPaths": [".ai-factory/plans/**"],
+      "allowedWriters": ["ai-factory"]
+    },
+    {
+      "id": "ai-factory.task-state",
+      "canonicalOwner": "ai-factory",
+      "classification": "canonical",
+      "allowedPaths": [".ai-factory/plans/**"],
+      "allowedWriters": ["ai-factory"]
+    },
+    {
+      "id": "ai-factory.runtime-state",
+      "canonicalOwner": "ai-factory",
+      "classification": "runtime-only",
+      "allowedPaths": [".ai-factory/state/**"],
+      "allowedWriters": ["ai-factory"]
+    },
+    {
+      "id": "ai-factory.agent-lifecycle",
+      "canonicalOwner": "ai-factory",
+      "classification": "runtime-only",
+      "allowedPaths": [".ai-factory/state/**"],
+      "allowedWriters": ["ai-factory"]
+    },
+    {
+      "id": "ai-factory.provider-evidence-envelope",
+      "canonicalOwner": "ai-factory",
+      "classification": "derived",
+      "allowedPaths": [".ai-factory/qa/**"],
+      "allowedWriters": ["ai-factory", "aifhub-adapter"]
+    },
+    {
+      "id": "lekalo.semantic-model",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": ["lekalo/**"],
+      "allowedWriters": ["lekalo"]
+    },
+    {
+      "id": "lekalo.stable-symbol",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": ["lekalo/**"],
+      "allowedWriters": ["lekalo"]
+    },
+    {
+      "id": "lekalo.effect",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": ["lekalo/**"],
+      "allowedWriters": ["lekalo"]
+    },
+    {
+      "id": "lekalo.scenario",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": ["lekalo/**"],
+      "allowedWriters": ["lekalo"]
+    },
+    {
+      "id": "lekalo.target-binding",
+      "canonicalOwner": "lekalo",
+      "classification": "canonical",
+      "allowedPaths": ["lekalo/**"],
+      "allowedWriters": ["lekalo"]
+    },
+    {
+      "id": "lekalo.observed-model-draft",
+      "canonicalOwner": "lekalo",
+      "classification": "derived",
+      "allowedPaths": [".lekalo/import/**"],
+      "allowedWriters": ["lekalo"]
+    },
+    {
+      "id": "lekalo.cache",
+      "canonicalOwner": "lekalo",
+      "classification": "cached",
+      "allowedPaths": [".lekalo/cache/**"],
+      "allowedWriters": ["lekalo"]
+    },
+    {
+      "id": "lekalo.generated-intermediate",
+      "canonicalOwner": "lekalo",
+      "classification": "derived",
+      "allowedPaths": [".lekalo/generated/**"],
+      "allowedWriters": ["lekalo"]
+    },
+    {
+      "id": "hlv.validation-result",
+      "canonicalOwner": "hlv",
+      "classification": "canonical",
+      "allowedPaths": [".hlv/evidence/**"],
+      "allowedWriters": ["hlv"],
+      "substitutesRequirements": false
+    },
+    {
+      "id": "hlv.traceability-result",
+      "canonicalOwner": "hlv",
+      "classification": "canonical",
+      "allowedPaths": [".hlv/trace/**", ".hlv/evidence/**"],
+      "allowedWriters": ["hlv"],
+      "substitutesRequirements": false
+    },
+    {
+      "id": "hlv.gate-diagnostic",
+      "canonicalOwner": "hlv",
+      "classification": "canonical",
+      "allowedPaths": [".hlv/evidence/**"],
+      "allowedWriters": ["hlv"],
+      "substitutesRequirements": false
+    },
+    {
+      "id": "hlv.project-contract",
+      "canonicalOwner": "hlv",
+      "classification": "canonical",
+      "allowedPaths": ["project.yaml", ".hlv/project.yaml", ".hlv/contracts/**"],
+      "allowedWriters": ["hlv"],
+      "substitutesRequirements": false
+    },
+    {
+      "id": "source-native.source-code",
+      "canonicalOwner": "source-native",
+      "classification": "direct-evidence",
+      "allowedPaths": ["**"],
+      "allowedWriters": ["source-native"]
+    },
+    {
+      "id": "source-native.native-test",
+      "canonicalOwner": "source-native",
+      "classification": "direct-evidence",
+      "allowedPaths": ["**"],
+      "allowedWriters": ["source-native"]
+    },
+    {
+      "id": "generated.summary",
+      "canonicalOwner": "ai-factory",
+      "classification": "derived",
+      "allowedPaths": [".ai-factory/qa/**"],
+      "allowedWriters": ["ai-factory", "aifhub-adapter"],
+      "silentCanonicalPromotion": false
+    },
+    {
+      "id": "generated.rule",
+      "canonicalOwner": "ai-factory",
+      "classification": "derived",
+      "allowedPaths": [".ai-factory/rules/generated/**"],
+      "allowedWriters": ["ai-factory"],
+      "silentCanonicalPromotion": false
+    },
+    {
+      "id": "generated.code",
+      "canonicalOwner": "source-native",
+      "classification": "derived",
+      "allowedPaths": ["**"],
+      "allowedWriters": ["lekalo", "source-native"],
+      "silentCanonicalPromotion": false
+    }
+  ],
+  "pathBoundaries": [
+    { "pattern": "openspec/specs/**", "owner": "openspec" },
+    { "pattern": "openspec/changes/**", "owner": "openspec" },
+    { "pattern": ".ai-factory/plans/**", "owner": "ai-factory" },
+    { "pattern": ".ai-factory/state/**", "owner": "ai-factory" },
+    { "pattern": ".ai-factory/qa/**", "owner": "ai-factory" },
+    { "pattern": ".ai-factory/rules/generated/**", "owner": "ai-factory" },
+    { "pattern": "lekalo/**", "owner": "lekalo" },
+    { "pattern": ".lekalo/**", "owner": "lekalo" },
+    { "pattern": ".hlv/**", "owner": "hlv" }
+  ],
+  "conditionalPathBoundaries": [
+    {
+      "pattern": "project.yaml",
+      "owner": "hlv",
+      "artifactKind": "hlv.project-contract",
+      "requiredContext": "hlvLayoutConfirmed",
+      "requiredValue": true
+    }
+  ],
+  "syncPolicy": {
+    "defaultDirection": "canonical-to-derived",
+    "allowedSourceClassifications": ["canonical", "direct-evidence"],
+    "allowedTargetClassifications": ["derived", "cached", "runtime-only"],
+    "automaticBidirectional": false,
+    "crossOwnerCanonicalWrites": false,
+    "reconciliationWritesCanonical": false,
+    "requiredReconciliationReports": ["loss", "conflict", "provenance"],
+    "requiredReconciliationApprovals": ["each-canonical-owner"]
+  },
+  "generatedPromotionPolicy": {
+    "mode": "explicit-adoption",
+    "requiredEvidence": ["explicitAdoption", "reviewed", "provenance"],
+    "silentPromotion": false
+  },
+  "brownfieldAdoptionPolicy": {
+    "action": "adopt",
+    "sourceKind": "lekalo.observed-model-draft",
+    "targetKind": "lekalo.semantic-model",
+    "actor": "lekalo",
+    "requiredEvidence": ["explicitAdoption", "reviewed", "provenance"],
+    "genericSync": false
+  },
+  "operationProtocol": {
+    "discriminator": "action",
+    "actions": ["read", "write", "sync", "claim", "promote", "adopt"],
+    "evidenceProvenanceFields": ["sourceRevision", "sourceDigest", "recordedBy"],
+    "strictObjects": true,
+    "unknownFields": "reject",
+    "malformedExitCode": 1,
+    "policyDeniedExitCode": 3
+  },
+  "claimPolicy": {
+    "mode": "reference-only",
+    "requiredSubstitute": false,
+    "substitutionAllowed": false,
+    "promotionAction": "promote",
+    "adoptionAction": "adopt"
+  },
+  "traceability": {
+    "chain": [
+      "openspec.requirement",
+      "lekalo.stable-symbol",
+      "lekalo.target-binding",
+      "lekalo.scenario-or-source-native.native-test",
+      "hlv.gate-diagnostic"
+    ],
+    "requiredEvidenceMetadata": [
+      "toolVersion",
+      "protocolVersion",
+      "changeId",
+      "revision",
+      "timestamp",
+      "provenance"
+    ],
+    "missingLinkState": "unresolved",
+    "contradictionAction": "block-dependent-operation"
+  },
+  "conflictPolicy": {
+    "defaultAction": "block-and-report",
+    "lastWriterWins": false,
+    "precedenceByQuestion": {
+      "what-and-why": "openspec",
+      "how-work-is-executed": "ai-factory",
+      "semantic-application-model": "lekalo",
+      "validation-and-traceability-result": "hlv",
+      "what-exists-and-runs": "source-native"
+    }
+  },
+  "projectRules": {
+    "greenfield": {
+      "initialization": "explicit-user-action",
+      "providerAutoInstall": false
+    },
+    "brownfield": {
+      "discoveryWrites": false,
+      "observedModelClassification": "derived",
+      "canonicalAdoption": "explicit-reviewed-action"
+    },
+    "absentLayerTransfersAuthority": false
+  }
+}

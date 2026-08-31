@@ -1,0 +1,423 @@
+[
+  {
+    "id": "lekalo-model-inside-openspec-change",
+    "operation": {
+      "action": "write",
+      "actor": "lekalo",
+      "target": {
+        "artifactKind": "lekalo.semantic-model",
+        "path": "openspec/changes/add-orders/lekalo/model.json"
+      }
+    },
+    "expected": { "allowed": false, "code": "target.path-not-allowed" }
+  },
+  {
+    "id": "hlv-edits-openspec-requirement",
+    "operation": {
+      "action": "write",
+      "actor": "hlv",
+      "target": {
+        "artifactKind": "openspec.requirement",
+        "path": "openspec/changes/add-orders/specs/orders/spec.md"
+      }
+    },
+    "expected": { "allowed": false, "code": "write.actor-not-allowed" }
+  },
+  {
+    "id": "ai-factory-edits-lekalo-model",
+    "operation": {
+      "action": "write",
+      "actor": "ai-factory",
+      "target": {
+        "artifactKind": "lekalo.semantic-model",
+        "path": "lekalo/model/application.json"
+      }
+    },
+    "expected": { "allowed": false, "code": "write.actor-not-allowed" }
+  },
+  {
+    "id": "automatic-bidirectional-sync",
+    "operation": {
+      "action": "sync",
+      "actor": "aifhub-adapter",
+      "direction": "bidirectional",
+      "automatic": true,
+      "writesCanonical": true,
+      "source": {
+        "artifactKind": "openspec.requirement",
+        "path": "openspec/changes/add-orders/specs/orders/spec.md"
+      },
+      "target": {
+        "artifactKind": "lekalo.semantic-model",
+        "path": "lekalo/model/application.json"
+      },
+      "reports": {
+        "loss": true,
+        "conflict": true,
+        "provenance": true
+      }
+    },
+    "expected": { "allowed": false, "code": "sync.bidirectional-automatic-forbidden" }
+  },
+  {
+    "id": "bidirectional-sync-without-reports",
+    "operation": {
+      "action": "sync",
+      "actor": "aifhub-adapter",
+      "direction": "bidirectional",
+      "automatic": false,
+      "writesCanonical": false,
+      "source": {
+        "artifactKind": "openspec.requirement",
+        "path": "openspec/changes/add-orders/specs/orders/spec.md"
+      },
+      "target": {
+        "artifactKind": "lekalo.semantic-model",
+        "path": "lekalo/model/application.json"
+      },
+      "reports": {
+        "loss": false,
+        "conflict": false,
+        "provenance": true
+      }
+    },
+    "expected": { "allowed": false, "code": "sync.reports-required" }
+  },
+  {
+    "id": "bidirectional-reconciliation-writes-canonical",
+    "operation": {
+      "action": "sync",
+      "actor": "aifhub-adapter",
+      "direction": "bidirectional",
+      "automatic": false,
+      "writesCanonical": true,
+      "source": {
+        "artifactKind": "openspec.requirement",
+        "path": "openspec/changes/add-orders/specs/orders/spec.md"
+      },
+      "target": {
+        "artifactKind": "lekalo.semantic-model",
+        "path": "lekalo/model/application.json"
+      },
+      "reports": {
+        "loss": true,
+        "conflict": true,
+        "provenance": true
+      }
+    },
+    "expected": { "allowed": false, "code": "sync.reconciliation-canonical-write-forbidden" }
+  },
+  {
+    "id": "hlv-evidence-substitutes-requirement",
+    "operation": {
+      "action": "claim",
+      "actor": "aifhub-adapter",
+      "substitute": true,
+      "source": {
+        "artifactKind": "hlv.validation-result",
+        "path": ".hlv/evidence/add-orders/check.json"
+      },
+      "target": {
+        "artifactKind": "openspec.requirement",
+        "path": "openspec/changes/add-orders/specs/orders/spec.md"
+      }
+    },
+    "expected": { "allowed": false, "code": "claim.substitution-forbidden" }
+  },
+  {
+    "id": "generated-code-silently-becomes-source",
+    "operation": {
+      "action": "sync",
+      "actor": "source-native",
+      "direction": "one-way",
+      "source": {
+        "artifactKind": "generated.code",
+        "path": "src/generated/order.ts"
+      },
+      "target": {
+        "artifactKind": "source-native.source-code",
+        "path": "src/generated/order.ts"
+      }
+    },
+    "expected": { "allowed": false, "code": "generated.explicit-adoption-required" }
+  },
+  {
+    "id": "path-traversal-cannot-escape-lekalo-boundary",
+    "operation": {
+      "action": "write",
+      "actor": "lekalo",
+      "target": {
+        "artifactKind": "lekalo.semantic-model",
+        "path": "lekalo/../openspec/changes/add-orders/model.json"
+      }
+    },
+    "expected": { "allowed": false, "code": "target.path-invalid" }
+  },
+  {
+    "id": "source-label-cannot-bypass-openspec-boundary",
+    "operation": {
+      "action": "write",
+      "actor": "source-native",
+      "target": {
+        "artifactKind": "source-native.source-code",
+        "path": "OpenSpec/changes/add-orders/implementation.ts"
+      }
+    },
+    "expected": { "allowed": false, "code": "target.boundary-owner-mismatch" }
+  },
+  {
+    "id": "brownfield-draft-cannot-generic-sync-to-canonical-model",
+    "operation": {
+      "action": "sync",
+      "actor": "lekalo",
+      "direction": "one-way",
+      "source": {
+        "artifactKind": "lekalo.observed-model-draft",
+        "path": ".lekalo/import/application.json"
+      },
+      "target": {
+        "artifactKind": "lekalo.semantic-model",
+        "path": "lekalo/model/application.json"
+      }
+    },
+    "expected": { "allowed": false, "code": "adoption.explicit-action-required" }
+  },
+  {
+    "id": "claim-cannot-substitute-generated-code-for-source",
+    "operation": {
+      "action": "claim",
+      "actor": "source-native",
+      "substitute": true,
+      "source": {
+        "artifactKind": "generated.code",
+        "path": "src/generated/order.ts"
+      },
+      "target": {
+        "artifactKind": "source-native.source-code",
+        "path": "src/generated/order.ts"
+      }
+    },
+    "expected": { "allowed": false, "code": "claim.substitution-forbidden" }
+  },
+  {
+    "id": "claim-cannot-substitute-brownfield-draft-for-model",
+    "operation": {
+      "action": "claim",
+      "actor": "lekalo",
+      "substitute": true,
+      "source": {
+        "artifactKind": "lekalo.observed-model-draft",
+        "path": ".lekalo/import/application.json"
+      },
+      "target": {
+        "artifactKind": "lekalo.semantic-model",
+        "path": "lekalo/model/application.json"
+      }
+    },
+    "expected": { "allowed": false, "code": "claim.substitution-forbidden" }
+  },
+  {
+    "id": "claim-cannot-substitute-generated-rule-for-plan",
+    "operation": {
+      "action": "claim",
+      "actor": "ai-factory",
+      "substitute": true,
+      "source": {
+        "artifactKind": "generated.rule",
+        "path": ".ai-factory/rules/generated/plan.md"
+      },
+      "target": {
+        "artifactKind": "ai-factory.execution-plan",
+        "path": ".ai-factory/plans/plan.md"
+      }
+    },
+    "expected": { "allowed": false, "code": "claim.substitution-forbidden" }
+  },
+  {
+    "id": "generated-rule-cannot-generic-sync-to-execution-plan",
+    "operation": {
+      "action": "sync",
+      "actor": "ai-factory",
+      "direction": "one-way",
+      "source": {
+        "artifactKind": "generated.rule",
+        "path": ".ai-factory/rules/generated/plan.md"
+      },
+      "target": {
+        "artifactKind": "ai-factory.execution-plan",
+        "path": ".ai-factory/plans/plan.md"
+      }
+    },
+    "expected": { "allowed": false, "code": "sync.noncanonical-to-authoritative-forbidden" }
+  },
+  {
+    "id": "lekalo-cache-cannot-generic-sync-to-canonical-model",
+    "operation": {
+      "action": "sync",
+      "actor": "lekalo",
+      "direction": "one-way",
+      "source": {
+        "artifactKind": "lekalo.cache",
+        "path": ".lekalo/cache/application.json"
+      },
+      "target": {
+        "artifactKind": "lekalo.semantic-model",
+        "path": "lekalo/model/application.json"
+      }
+    },
+    "expected": { "allowed": false, "code": "sync.noncanonical-to-authoritative-forbidden" }
+  },
+  {
+    "id": "runtime-state-cannot-generic-sync-to-execution-plan",
+    "operation": {
+      "action": "sync",
+      "actor": "ai-factory",
+      "direction": "one-way",
+      "source": {
+        "artifactKind": "ai-factory.runtime-state",
+        "path": ".ai-factory/state/add-orders/status.json"
+      },
+      "target": {
+        "artifactKind": "ai-factory.execution-plan",
+        "path": ".ai-factory/plans/add-orders/plan.md"
+      }
+    },
+    "expected": { "allowed": false, "code": "sync.noncanonical-to-authoritative-forbidden" }
+  },
+  {
+    "id": "openspec-trailing-dot-alias-rejected-mixed-case",
+    "operation": {
+      "action": "write",
+      "actor": "source-native",
+      "target": {
+        "artifactKind": "source-native.source-code",
+        "path": "OpenSpec./changes/add-orders/implementation.ts"
+      }
+    },
+    "expected": { "allowed": false, "code": "target.path-invalid" }
+  },
+  {
+    "id": "ai-factory-trailing-space-alias-rejected-mixed-case",
+    "operation": {
+      "action": "write",
+      "actor": "source-native",
+      "target": {
+        "artifactKind": "source-native.source-code",
+        "path": ".AI-FACTORY /plans/plan.md"
+      }
+    },
+    "expected": { "allowed": false, "code": "target.path-invalid" }
+  },
+  {
+    "id": "lekalo-trailing-dot-alias-rejected-mixed-case",
+    "operation": {
+      "action": "write",
+      "actor": "source-native",
+      "target": {
+        "artifactKind": "source-native.source-code",
+        "path": "Lekalo./model/application.json"
+      }
+    },
+    "expected": { "allowed": false, "code": "target.path-invalid" }
+  },
+  {
+    "id": "hlv-trailing-space-alias-rejected-mixed-case",
+    "operation": {
+      "action": "write",
+      "actor": "source-native",
+      "target": {
+        "artifactKind": "source-native.source-code",
+        "path": ".HLV /evidence/check.json"
+      }
+    },
+    "expected": { "allowed": false, "code": "target.path-invalid" }
+  },
+  {
+    "id": "ntfs-ads-colon-rejected",
+    "operation": {
+      "action": "write",
+      "actor": "source-native",
+      "target": {
+        "artifactKind": "source-native.source-code",
+        "path": "openspec/changes/spec.md:payload"
+      }
+    },
+    "expected": { "allowed": false, "code": "target.path-invalid" }
+  },
+  {
+    "id": "dos-device-name-rejected",
+    "operation": {
+      "action": "write",
+      "actor": "ai-factory",
+      "target": {
+        "artifactKind": "ai-factory.execution-plan",
+        "path": ".ai-factory/plans/CON.md"
+      }
+    },
+    "expected": { "allowed": false, "code": "target.path-invalid" }
+  },
+  {
+    "id": "short-name-like-segment-rejected",
+    "operation": {
+      "action": "write",
+      "actor": "source-native",
+      "target": {
+        "artifactKind": "source-native.source-code",
+        "path": "OPENS~1/changes/add-orders/implementation.ts"
+      }
+    },
+    "expected": { "allowed": false, "code": "target.path-invalid" }
+  },
+  {
+    "id": "unconfirmed-hlv-root-project-contract-rejected",
+    "operation": {
+      "action": "write",
+      "actor": "hlv",
+      "target": {
+        "artifactKind": "hlv.project-contract",
+        "path": "project.yaml"
+      },
+      "context": {
+        "hlvLayoutConfirmed": false
+      }
+    },
+    "expected": { "allowed": false, "code": "target.conditional-boundary-unconfirmed" }
+  },
+  {
+    "id": "hlv-root-project-contract-without-discovery-context-rejected",
+    "operation": {
+      "action": "write",
+      "actor": "hlv",
+      "target": {
+        "artifactKind": "hlv.project-contract",
+        "path": "project.yaml"
+      }
+    },
+    "expected": { "allowed": false, "code": "target.conditional-boundary-unconfirmed" }
+  },
+  {
+    "id": "brownfield-adoption-requires-positive-review",
+    "operation": {
+      "action": "adopt",
+      "actor": "lekalo",
+      "source": {
+        "artifactKind": "lekalo.observed-model-draft",
+        "path": ".lekalo/import/application.json"
+      },
+      "target": {
+        "artifactKind": "lekalo.semantic-model",
+        "path": "lekalo/model/application.json"
+      },
+      "evidence": {
+        "explicitAdoption": true,
+        "reviewed": false,
+        "provenance": {
+          "sourceRevision": "brownfield-import-v1",
+          "sourceDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "recordedBy": "lekalo-owner-review"
+        }
+      }
+    },
+    "expected": { "allowed": false, "code": "adopt.evidence-required" }
+  }
+]
