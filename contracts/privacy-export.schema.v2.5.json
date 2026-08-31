@@ -1,0 +1,1457 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/privacy-export.schema.v2.5.json",
+  "schemaId": "dev.lekalo.privacy-export-input-schema",
+  "version": "2.5.0",
+  "title": "Lekalo ExportDecisionInput",
+  "description": "Strict, closed, metadata-only input for accepted privacy policy 1.0.6; shape and authorization-subject projection are unchanged from 2.4.0, with refreshed exact policy and decision refs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decisionContractRef",
+    "authorityRef",
+    "policyRef",
+    "authorizingEvidenceContractRef",
+    "authorizationSubjectProfileRef",
+    "artifactKind",
+    "artifactRef",
+    "operation",
+    "source",
+    "destination",
+    "audience",
+    "dataSensitivity",
+    "exportDisposition",
+    "provenance",
+    "resourcePath",
+    "conflictResolution",
+    "constraints",
+    "broadeningGrant"
+  ],
+  "properties": {
+    "decisionContractRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-export-decision"
+        },
+        "version": {
+          "const": "1.5.0"
+        }
+      }
+    },
+    "authorityRef": {
+      "$ref": "#/$defs/authorityRef"
+    },
+    "policyRef": {
+      "$ref": "#/$defs/policyRef"
+    },
+    "artifactKind": {
+      "type": "string",
+      "minLength": 1
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "local-use",
+            "repository-store",
+            "derive",
+            "transfer",
+            "publish"
+          ]
+        },
+        "version": {
+          "const": "1.0.0"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repositoryRole",
+        "repositoryRef"
+      ],
+      "properties": {
+        "repositoryRole": {
+          "$ref": "#/$defs/repositoryRole"
+        },
+        "repositoryRef": {
+          "$ref": "#/$defs/repositoryRef"
+        }
+      }
+    },
+    "destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repositoryRole",
+        "repositoryRef",
+        "trustBoundary",
+        "repositoryRelation",
+        "tenantRelation"
+      ],
+      "properties": {
+        "repositoryRole": {
+          "$ref": "#/$defs/repositoryRole"
+        },
+        "trustBoundary": {
+          "enum": [
+            "same-local-workspace",
+            "same-repository",
+            "same-tenant",
+            "cross-repository",
+            "cross-tenant",
+            "public"
+          ]
+        },
+        "repositoryRelation": {
+          "enum": [
+            "not-applicable",
+            "same-origin",
+            "different-repository"
+          ]
+        },
+        "tenantRelation": {
+          "enum": [
+            "same-tenant",
+            "cross-tenant",
+            "not-applicable"
+          ]
+        },
+        "repositoryRef": {
+          "$ref": "#/$defs/repositoryRef"
+        }
+      }
+    },
+    "audience": {
+      "enum": [
+        "operator-only",
+        "repository-collaborators",
+        "tenant-members",
+        "named-external",
+        "public"
+      ]
+    },
+    "dataSensitivity": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "public",
+          "internal",
+          "confidential",
+          "personal-pii",
+          "credential-secret",
+          "financial",
+          "health-special-category",
+          "tenant-scoped",
+          "retention-limited"
+        ]
+      }
+    },
+    "exportDisposition": {
+      "enum": [
+        "local-private",
+        "consumer-repository-only",
+        "shareable-with-redaction",
+        "public-aggregate",
+        "public-fixture",
+        "forbidden-to-export"
+      ]
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "resourcePath": {
+      "$ref": "#/$defs/pathRepresentation"
+    },
+    "valueState": {
+      "$ref": "#/$defs/valueState"
+    },
+    "conflictResolution": {
+      "$ref": "#/$defs/conflictResolution"
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/constraint"
+      },
+      "uniqueItems": true
+    },
+    "broadeningGrant": {
+      "type": "null"
+    },
+    "derivedArtifact": {
+      "$ref": "#/$defs/derivedArtifact"
+    },
+    "authorizingEvidenceContractRef": {
+      "$ref": "#/$defs/authorizingEvidenceContractRef"
+    },
+    "authorizationSubjectProfileRef": {
+      "$ref": "#/$defs/authorizationSubjectProfileRef"
+    },
+    "artifactRef": {
+      "$ref": "#/$defs/artifactRef"
+    }
+  },
+  "$defs": {
+    "authorityRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.authority-matrix"
+        },
+        "version": {
+          "const": "1.3.1"
+        },
+        "digest": {
+          "const": "sha256:5c96ed68fe27956512b6de37e0fa23d223e4430d391b6a5869b12d2a8cb522d3"
+        }
+      }
+    },
+    "policyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "policyId": {
+          "const": "dev.lekalo.privacy-export-policy"
+        },
+        "version": {
+          "const": "1.0.6"
+        },
+        "digest": {
+          "const": "sha256:99a813a89efbdf336340390c9589a4f05d0dbbc8805748708b455a3d7a329ca7"
+        }
+      }
+    },
+    "repositoryRole": {
+      "enum": [
+        "local-workspace",
+        "consumer-repository",
+        "lekalo-repository",
+        "openspec-repository",
+        "ai-factory-repository",
+        "hlv-repository",
+        "source-native-repository",
+        "external-repository",
+        "public-channel"
+      ]
+    },
+    "auditRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "evidenceDigest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "evidenceDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "repositoryRole",
+        "repositoryRef",
+        "synthetic",
+        "derived",
+        "classificationRef",
+        "publicFixturePermissionRef",
+        "publicFixtureLicenseRef",
+        "publicFixtureConsentRef",
+        "consumerAclPermissionRef",
+        "consumerRepositoryConsentRef",
+        "exportTransferConsentRef"
+      ],
+      "properties": {
+        "origin": {
+          "enum": [
+            "synthetic",
+            "consumer-repository",
+            "lekalo-repository",
+            "tool-runtime",
+            "derived",
+            "external"
+          ]
+        },
+        "repositoryRole": {
+          "$ref": "#/$defs/repositoryRole"
+        },
+        "synthetic": {
+          "type": "boolean"
+        },
+        "derived": {
+          "type": "boolean"
+        },
+        "classificationRef": {
+          "$ref": "#/$defs/classificationRef"
+        },
+        "repositoryRef": {
+          "$ref": "#/$defs/repositoryRef"
+        },
+        "publicFixturePermissionRef": {
+          "$ref": "#/$defs/nullablePublicFixturePermissionEvidence"
+        },
+        "publicFixtureLicenseRef": {
+          "$ref": "#/$defs/nullablePublicFixtureLicenseEvidence"
+        },
+        "publicFixtureConsentRef": {
+          "$ref": "#/$defs/nullablePublicFixtureConsentEvidence"
+        },
+        "consumerAclPermissionRef": {
+          "$ref": "#/$defs/nullableConsumerAclPermissionEvidence"
+        },
+        "consumerRepositoryConsentRef": {
+          "$ref": "#/$defs/nullableConsumerRepositoryConsentEvidence"
+        },
+        "exportTransferConsentRef": {
+          "$ref": "#/$defs/nullableExportTransferConsentEvidence"
+        }
+      }
+    },
+    "pathRepresentation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "valueState": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": [
+                "number",
+                "string",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "conflictResolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "decisionRef"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "none",
+            "resolved-allow",
+            "resolved-deny",
+            "unresolved"
+          ]
+        },
+        "decisionRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/conflictResolutionEvidence"
+            }
+          ]
+        }
+      }
+    },
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "constraintRef",
+        "allowedOperations",
+        "allowedTrustBoundaries",
+        "allowedAudiences"
+      ],
+      "properties": {
+        "scope": {
+          "enum": [
+            "project",
+            "profile",
+            "operation"
+          ]
+        },
+        "constraintRef": {
+          "$ref": "#/$defs/auditRef"
+        },
+        "allowedOperations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "local-use",
+              "repository-store",
+              "derive",
+              "transfer",
+              "publish"
+            ]
+          }
+        },
+        "allowedTrustBoundaries": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "same-local-workspace",
+              "same-repository",
+              "same-tenant",
+              "cross-repository",
+              "cross-tenant",
+              "public"
+            ]
+          }
+        },
+        "allowedAudiences": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "operator-only",
+              "repository-collaborators",
+              "tenant-members",
+              "named-external",
+              "public"
+            ]
+          }
+        }
+      }
+    },
+    "sourceArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceRef",
+        "artifactKind",
+        "authorityRef",
+        "policyRef",
+        "classificationRef",
+        "dataSensitivity",
+        "exportDisposition"
+      ],
+      "properties": {
+        "sourceRef": {
+          "$ref": "#/$defs/sourceRef"
+        },
+        "artifactKind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorityRef": {
+          "$ref": "#/$defs/authorityRef"
+        },
+        "policyRef": {
+          "$ref": "#/$defs/policyRef"
+        },
+        "classificationRef": {
+          "$ref": "#/$defs/classificationRef"
+        },
+        "dataSensitivity": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "personal-pii",
+              "credential-secret",
+              "financial",
+              "health-special-category",
+              "tenant-scoped",
+              "retention-limited"
+            ]
+          }
+        },
+        "exportDisposition": {
+          "enum": [
+            "local-private",
+            "consumer-repository-only",
+            "shareable-with-redaction",
+            "public-aggregate",
+            "public-fixture",
+            "forbidden-to-export"
+          ]
+        }
+      }
+    },
+    "appliedTransform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transformId",
+        "version",
+        "evidenceDigest"
+      ],
+      "properties": {
+        "transformId": {
+          "enum": [
+            "redact-content",
+            "redact-secrets",
+            "redact-pii",
+            "aggregate-no-source-rows",
+            "replace-repository-identity",
+            "normalize-project-relative-paths"
+          ]
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "evidenceDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "declassificationDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyRef",
+        "decisionRef",
+        "version",
+        "outcome",
+        "removedSensitivities"
+      ],
+      "properties": {
+        "policyRef": {
+          "$ref": "#/$defs/policyRef"
+        },
+        "decisionRef": {
+          "$ref": "#/$defs/declassificationEvidence"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "outcome": {
+          "enum": [
+            "approved",
+            "rejected"
+          ]
+        },
+        "removedSensitivities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "personal-pii",
+              "credential-secret",
+              "financial",
+              "health-special-category",
+              "tenant-scoped",
+              "retention-limited"
+            ]
+          }
+        }
+      }
+    },
+    "aggregationDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyRef",
+        "decisionRef",
+        "version",
+        "outcome",
+        "removesSourceRows",
+        "removesSourceIdentities"
+      ],
+      "properties": {
+        "policyRef": {
+          "$ref": "#/$defs/policyRef"
+        },
+        "decisionRef": {
+          "$ref": "#/$defs/aggregationEvidence"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "outcome": {
+          "enum": [
+            "approved",
+            "rejected"
+          ]
+        },
+        "removesSourceRows": {
+          "const": true
+        },
+        "removesSourceIdentities": {
+          "const": true
+        }
+      }
+    },
+    "derivedArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceArtifacts",
+        "appliedTransforms",
+        "declassificationDecision",
+        "aggregationDecision",
+        "containsSourceRows",
+        "containsSourceIdentities",
+        "reevaluated"
+      ],
+      "properties": {
+        "sourceArtifacts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sourceArtifact"
+          }
+        },
+        "appliedTransforms": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/appliedTransform"
+          }
+        },
+        "declassificationDecision": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/declassificationDecision"
+            }
+          ]
+        },
+        "aggregationDecision": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/aggregationDecision"
+            }
+          ]
+        },
+        "containsSourceRows": {
+          "type": "boolean"
+        },
+        "containsSourceIdentities": {
+          "type": "boolean"
+        },
+        "reevaluated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "repositoryRef": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^repo-sha256:[0-9a-f]{64}$"
+        }
+      ]
+    },
+    "sourceRef": {
+      "type": "string",
+      "pattern": "^source-sha256:[0-9a-f]{64}$"
+    },
+    "classificationRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "decisionId",
+        "evidenceDigest"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-classification-decision"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "digest": {
+          "const": "sha256:58626d1889990bf6120874fcd194c9fc68f2d81f05af1f3b8f7d04336fb3aa9e"
+        },
+        "decisionId": {
+          "type": "string",
+          "pattern": "^classification-sha256:[0-9a-f]{64}$"
+        },
+        "evidenceDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "authorizingEvidenceContractRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "1.1.0"
+        },
+        "digest": {
+          "const": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
+        }
+      }
+    },
+    "artifactRef": {
+      "type": "string",
+      "pattern": "^artifact-sha256:[0-9a-f]{64}$"
+    },
+    "authorizationSubjectProfileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "profileId": {
+          "const": "dev.lekalo.privacy-authorization-subject-profile"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "digest": {
+          "const": "sha256:825546e4a4df4551e122c2cd548ae81c1fa2063d0bd8f256d728bffc089676a1"
+        }
+      }
+    },
+    "authorizingEvidenceBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subjectProfileRef",
+        "subjectDigest"
+      ],
+      "properties": {
+        "subjectProfileRef": {
+          "$ref": "#/$defs/authorizationSubjectProfileRef"
+        },
+        "subjectDigest": {
+          "type": "string",
+          "pattern": "^subject-sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "publicFixturePermissionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "1.1.0"
+        },
+        "digest": {
+          "const": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
+        },
+        "evidenceKind": {
+          "const": "public-fixture-permission"
+        },
+        "purpose": {
+          "const": "authorize-public-fixture-permission"
+        },
+        "outcome": {
+          "enum": [
+            "granted",
+            "denied"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/authorizingEvidenceBinding"
+        }
+      }
+    },
+    "publicFixtureLicenseEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "1.1.0"
+        },
+        "digest": {
+          "const": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
+        },
+        "evidenceKind": {
+          "const": "public-fixture-license"
+        },
+        "purpose": {
+          "const": "authorize-public-fixture-license"
+        },
+        "outcome": {
+          "enum": [
+            "licensed",
+            "unlicensed"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/authorizingEvidenceBinding"
+        }
+      }
+    },
+    "publicFixtureConsentEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "1.1.0"
+        },
+        "digest": {
+          "const": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
+        },
+        "evidenceKind": {
+          "const": "public-fixture-consent"
+        },
+        "purpose": {
+          "const": "authorize-public-fixture-consent"
+        },
+        "outcome": {
+          "enum": [
+            "granted",
+            "denied"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/authorizingEvidenceBinding"
+        }
+      }
+    },
+    "consumerAclPermissionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "1.1.0"
+        },
+        "digest": {
+          "const": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
+        },
+        "evidenceKind": {
+          "const": "consumer-acl-permission"
+        },
+        "purpose": {
+          "const": "authorize-consumer-repository-acl"
+        },
+        "outcome": {
+          "enum": [
+            "granted",
+            "denied"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/authorizingEvidenceBinding"
+        }
+      }
+    },
+    "consumerRepositoryConsentEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "1.1.0"
+        },
+        "digest": {
+          "const": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
+        },
+        "evidenceKind": {
+          "const": "consumer-repository-consent"
+        },
+        "purpose": {
+          "const": "authorize-consumer-repository-consent"
+        },
+        "outcome": {
+          "enum": [
+            "granted",
+            "denied"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/authorizingEvidenceBinding"
+        }
+      }
+    },
+    "conflictResolutionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "1.1.0"
+        },
+        "digest": {
+          "const": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
+        },
+        "evidenceKind": {
+          "const": "conflict-resolution-decision"
+        },
+        "purpose": {
+          "const": "resolve-export-conflict"
+        },
+        "outcome": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/authorizingEvidenceBinding"
+        }
+      }
+    },
+    "declassificationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "1.1.0"
+        },
+        "digest": {
+          "const": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
+        },
+        "evidenceKind": {
+          "const": "declassification-decision"
+        },
+        "purpose": {
+          "const": "authorize-declassification"
+        },
+        "outcome": {
+          "enum": [
+            "approved",
+            "rejected"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/authorizingEvidenceBinding"
+        }
+      }
+    },
+    "aggregationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "1.1.0"
+        },
+        "digest": {
+          "const": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
+        },
+        "evidenceKind": {
+          "const": "aggregation-decision"
+        },
+        "purpose": {
+          "const": "authorize-public-aggregation"
+        },
+        "outcome": {
+          "enum": [
+            "approved",
+            "rejected"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/authorizingEvidenceBinding"
+        }
+      }
+    },
+    "nullablePublicFixturePermissionEvidence": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/publicFixturePermissionEvidence"
+        }
+      ]
+    },
+    "nullablePublicFixtureLicenseEvidence": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/publicFixtureLicenseEvidence"
+        }
+      ]
+    },
+    "nullablePublicFixtureConsentEvidence": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/publicFixtureConsentEvidence"
+        }
+      ]
+    },
+    "nullableConsumerAclPermissionEvidence": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/consumerAclPermissionEvidence"
+        }
+      ]
+    },
+    "nullableConsumerRepositoryConsentEvidence": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/consumerRepositoryConsentEvidence"
+        }
+      ]
+    },
+    "exportTransferConsentEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "1.1.0"
+        },
+        "digest": {
+          "const": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
+        },
+        "evidenceKind": {
+          "const": "export-transfer-consent"
+        },
+        "purpose": {
+          "const": "authorize-export-transfer-or-storage"
+        },
+        "outcome": {
+          "enum": [
+            "granted",
+            "denied"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/authorizingEvidenceBinding"
+        }
+      }
+    },
+    "nullableExportTransferConsentEvidence": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/exportTransferConsentEvidence"
+        }
+      ]
+    }
+  },
+  "lifecycle": {
+    "status": "accepted",
+    "accepted": true,
+    "predecessor": {
+      "schemaId": "dev.lekalo.privacy-export-input-schema",
+      "version": "2.4.0",
+      "rawDigest": "sha256:7de4fbccbedbd9221211a2eb82484b3c55d8c0fb8998c095078e11c4de9c6ef0",
+      "status": "yanked-with-policy-1.0.5"
+    },
+    "compatibility": "exact-policy-and-decision-ref-successor-with-unchanged-shape-and-subject-projection",
+    "silentMutationAllowed": false
+  }
+}

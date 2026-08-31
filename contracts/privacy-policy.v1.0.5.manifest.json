@@ -1,0 +1,258 @@
+{
+  "manifestId": "dev.lekalo.privacy-contract-manifest",
+  "formatVersion": "1.4.0",
+  "status": "accepted",
+  "accepted": true,
+  "digestAlgorithm": "sha256",
+  "semanticDigestInput": "canonical-policy-projection-with-policyRef.digest-omitted",
+  "fileDigestInput": "exact-file-bytes",
+  "selfReferential": false,
+  "authorityRef": {
+    "contractId": "dev.lekalo.authority-matrix",
+    "version": "1.3.1",
+    "digest": "sha256:5c96ed68fe27956512b6de37e0fa23d223e4430d391b6a5869b12d2a8cb522d3"
+  },
+  "rejectedUnacceptedWip": [
+    {
+      "policyRef": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.0",
+        "digest": "sha256:88d3f46cee74f51d391edded1e26aa948dc3ef84d03d3229311ea7de87ba2d74"
+      },
+      "status": "rejected-unaccepted-wip"
+    }
+  ],
+  "yankedCandidates": [
+    {
+      "policyRef": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.1",
+        "digest": "sha256:f8faab0908fb1bc2da8c173969921000d6424a1f900ab0b04f2b57fa058d0ffb"
+      },
+      "status": "rejected-after-corrective-review",
+      "accepted": false,
+      "policyPath": "contracts/privacy-policy.v1.json",
+      "policyFileDigest": "sha256:462df7a5c92b676deda7d315e9304695f3563295ffa41775246341fb99970622",
+      "manifestPath": "contracts/privacy-policy.v1.manifest.json",
+      "manifestFileDigest": "sha256:f74df7390b44c56489ead001e146c4cde43f7c2d44e2b0163c5c6d1dba43eeed",
+      "inputSchema": {
+        "schemaId": "dev.lekalo.privacy-export-input-schema",
+        "version": "2.0.0",
+        "path": "contracts/privacy-export.schema.v1.json",
+        "rawDigest": "sha256:ba8239dac1ffc203993bb4564e9f9a6dfa16b2b92cab9e7952aefeb74a4e0e4c"
+      },
+      "outputSchema": {
+        "schemaId": "dev.lekalo.privacy-export-output-schema",
+        "version": "1.0.0",
+        "path": "contracts/privacy-export.schema.v1.output.json",
+        "rawDigest": "sha256:43b9c5e1ed6a4847c53a13223376a959c999c21b1c9f2de71ab20b33b8f4f2f1"
+      },
+      "decisionContractRef": {
+        "contractId": "dev.lekalo.privacy-export-decision",
+        "version": "1.0.0"
+      }
+    },
+    {
+      "policyRef": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.2",
+        "digest": "sha256:207117a6a064c2341d95087b208b8dbc7f0953be08eb8c59b5da7eb905e25be1"
+      },
+      "status": "yanked-after-third-independent-review",
+      "accepted": false,
+      "policyPath": "contracts/privacy-policy.v1.0.2.json",
+      "policyFileDigest": "sha256:de8f7495087d8b2890ed00efddc448f99563f32c68e753b43dc73646ab7e5719",
+      "policySidecar": "contracts/privacy-policy.v1.0.2.sha256",
+      "manifestPath": "contracts/privacy-policy.v1.0.2.manifest.json",
+      "manifestFileDigest": "sha256:5739d80bde351b85c6ba8b7eedff1ef25f562c6649a7a1364027d4a308b4d530",
+      "manifestSidecar": "contracts/privacy-policy.v1.0.2.manifest.sha256",
+      "classificationContractRef": {
+        "contractId": "dev.lekalo.privacy-classification-decision",
+        "version": "1.0.0",
+        "digest": "sha256:58626d1889990bf6120874fcd194c9fc68f2d81f05af1f3b8f7d04336fb3aa9e",
+        "path": "contracts/privacy-policy.v1.0.2.classification.json",
+        "sidecar": "contracts/privacy-policy.v1.0.2.classification.sha256"
+      },
+      "inputSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-export-input-schema",
+        "version": "2.1.0",
+        "digest": "sha256:7f1eb0baa64e9197dc78f433b325f7eb584f47b37416cbb0e0970306aefc631c",
+        "path": "contracts/privacy-export.schema.v2.json"
+      },
+      "outputSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-export-output-schema",
+        "version": "1.1.0",
+        "digest": "sha256:c6accaff73dd29592103eefe3a1494ea3111e7a35ee7eafaae0ecb7ab2c7cc7b",
+        "path": "contracts/privacy-export.schema.v2.output.json"
+      },
+      "classificationSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-classification-decision-schema",
+        "version": "1.0.0",
+        "digest": "sha256:b996f62f23eb3341518ba3c4d917757814d27200c2ab410f2c127b4f161d50cb",
+        "path": "contracts/privacy-export.schema.v2.classification.json"
+      },
+      "decisionContractRef": {
+        "contractId": "dev.lekalo.privacy-export-decision",
+        "version": "1.1.0"
+      }
+    },
+    {
+      "policyRef": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.3",
+        "digest": "sha256:868ced73748caa4ad80a74df0e5d6ad8d3c5463a6593caa4ead09d872160280f"
+      },
+      "status": "yanked-after-fourth-independent-review",
+      "accepted": false,
+      "policyPath": "contracts/privacy-policy.v1.0.3.json",
+      "policyFileDigest": "sha256:9179ced3d5d9c07f2fb9ed5bb7c40c5c5c1e072bb65eb077229fb040c55cac1c",
+      "policySidecar": "contracts/privacy-policy.v1.0.3.sha256",
+      "manifestPath": "contracts/privacy-policy.v1.0.3.manifest.json",
+      "manifestFileDigest": "sha256:fe58cfc9fe3323b5fdb0d9be9f1610c50681e376e7fe9529812f117e80b5f112",
+      "manifestSidecar": "contracts/privacy-policy.v1.0.3.manifest.sha256",
+      "classificationContractRef": {
+        "contractId": "dev.lekalo.privacy-classification-decision",
+        "version": "1.0.0",
+        "digest": "sha256:58626d1889990bf6120874fcd194c9fc68f2d81f05af1f3b8f7d04336fb3aa9e",
+        "path": "contracts/privacy-policy.v1.0.2.classification.json",
+        "sidecar": "contracts/privacy-policy.v1.0.2.classification.sha256"
+      },
+      "inputSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-export-input-schema",
+        "version": "2.2.0",
+        "digest": "sha256:61a8aed3294a19a3e416903e08a1a85c32f6d5f1bfd3ef433a128b670b8d0432",
+        "path": "contracts/privacy-export.schema.v2.2.json"
+      },
+      "outputSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-export-output-schema",
+        "version": "1.2.0",
+        "digest": "sha256:163343801477c4b3515493a7a85fa53a0f5e40ee02e532b00d37afe5bf817492",
+        "path": "contracts/privacy-export.schema.v2.2.output.json"
+      },
+      "classificationSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-classification-decision-schema",
+        "version": "1.0.0",
+        "digest": "sha256:b996f62f23eb3341518ba3c4d917757814d27200c2ab410f2c127b4f161d50cb",
+        "path": "contracts/privacy-export.schema.v2.classification.json"
+      },
+      "decisionContractRef": {
+        "contractId": "dev.lekalo.privacy-export-decision",
+        "version": "1.2.0"
+      }
+    },
+    {
+      "policyRef": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.4",
+        "digest": "sha256:259cf596fcdc38423fa45d1df0937e85591569621c481197f3940f894bbc4ce5"
+      },
+      "status": "yanked-after-exact-1.0.4-review",
+      "accepted": false,
+      "policyPath": "contracts/privacy-policy.v1.0.4.json",
+      "policyFileDigest": "sha256:76702466ddd1d54f1c542e73b63995de7dcc81861bc641914e4bf862623bbed1",
+      "policySidecar": "contracts/privacy-policy.v1.0.4.sha256",
+      "manifestPath": "contracts/privacy-policy.v1.0.4.manifest.json",
+      "manifestFileDigest": "sha256:82ad6a16080dbe7fe8555d6726312f7123a6e0682d50d4ed30d0ce95d4fdc026",
+      "manifestSidecar": "contracts/privacy-policy.v1.0.4.manifest.sha256",
+      "classificationContractRef": {
+        "contractId": "dev.lekalo.privacy-classification-decision",
+        "version": "1.0.0",
+        "digest": "sha256:58626d1889990bf6120874fcd194c9fc68f2d81f05af1f3b8f7d04336fb3aa9e",
+        "path": "contracts/privacy-policy.v1.0.2.classification.json",
+        "sidecar": "contracts/privacy-policy.v1.0.2.classification.sha256"
+      },
+      "authorizingEvidenceContractRef": {
+        "contractId": "dev.lekalo.privacy-authorizing-evidence",
+        "version": "1.0.0",
+        "digest": "sha256:5fc226843be9913327586ec02603eddec5dc7ea8dfdc066dc6bfb132c09187b6",
+        "path": "contracts/privacy-authorizing-evidence.v1.0.0.json",
+        "sidecar": "contracts/privacy-authorizing-evidence.v1.0.0.sha256"
+      },
+      "inputSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-export-input-schema",
+        "version": "2.3.0",
+        "digest": "sha256:8466cf55b6494e318c3daf5006ddc2d3a0e4f4a79b2bfa805ce1fe651b0f6b06",
+        "path": "contracts/privacy-export.schema.v2.3.json"
+      },
+      "outputSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-export-output-schema",
+        "version": "1.3.0",
+        "digest": "sha256:8518695095fb41eba7baf45ca948e48f59e8afb179f1c6a98ea3fa5906f10085",
+        "path": "contracts/privacy-export.schema.v2.3.output.json"
+      },
+      "decisionContractRef": {
+        "contractId": "dev.lekalo.privacy-export-decision",
+        "version": "1.3.0"
+      }
+    }
+  ],
+  "acceptedContracts": [
+    {
+      "policyRef": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.5",
+        "digest": "sha256:bebd0631c2b978cd2a8264877525f5047354781e26cfe60cbc3b9d9f2aefa87a"
+      },
+      "status": "accepted",
+      "accepted": true,
+      "policyPath": "contracts/privacy-policy.v1.0.5.json",
+      "policyFileDigest": "sha256:59052a176eb61d6a4dd7676f0f73938404a69d37825f83bcc3566f6f9330e9e3",
+      "policySidecar": "contracts/privacy-policy.v1.0.5.sha256",
+      "classificationContractRef": {
+        "contractId": "dev.lekalo.privacy-classification-decision",
+        "version": "1.0.0",
+        "digest": "sha256:58626d1889990bf6120874fcd194c9fc68f2d81f05af1f3b8f7d04336fb3aa9e",
+        "path": "contracts/privacy-policy.v1.0.2.classification.json",
+        "sidecar": "contracts/privacy-policy.v1.0.2.classification.sha256"
+      },
+      "authorizingEvidenceContractRef": {
+        "contractId": "dev.lekalo.privacy-authorizing-evidence",
+        "version": "1.1.0",
+        "digest": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4",
+        "path": "contracts/privacy-authorizing-evidence.v1.1.0.json",
+        "sidecar": "contracts/privacy-authorizing-evidence.v1.1.0.sha256"
+      },
+      "authorizationSubjectProfileRef": {
+        "profileId": "dev.lekalo.privacy-authorization-subject-profile",
+        "version": "1.0.0",
+        "digest": "sha256:825546e4a4df4551e122c2cd548ae81c1fa2063d0bd8f256d728bffc089676a1",
+        "path": "contracts/privacy-authorization-subject-profile.v1.0.0.json",
+        "sidecar": "contracts/privacy-authorization-subject-profile.v1.0.0.sha256"
+      },
+      "inputSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-export-input-schema",
+        "version": "2.4.0",
+        "digest": "sha256:7de4fbccbedbd9221211a2eb82484b3c55d8c0fb8998c095078e11c4de9c6ef0",
+        "path": "contracts/privacy-export.schema.v2.4.json"
+      },
+      "outputSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-export-output-schema",
+        "version": "1.4.0",
+        "digest": "sha256:373c2ee3e706cb6fe2637576ff8bca33c89677bc0a007645b73e61b239a2c238",
+        "path": "contracts/privacy-export.schema.v2.4.output.json"
+      },
+      "classificationSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-classification-decision-schema",
+        "version": "1.0.0",
+        "digest": "sha256:b996f62f23eb3341518ba3c4d917757814d27200c2ab410f2c127b4f161d50cb",
+        "path": "contracts/privacy-export.schema.v2.classification.json"
+      },
+      "decisionContractRef": {
+        "contractId": "dev.lekalo.privacy-export-decision",
+        "version": "1.4.0"
+      },
+      "predecessorPolicyRef": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.4",
+        "digest": "sha256:259cf596fcdc38423fa45d1df0937e85591569621c481197f3940f894bbc4ce5"
+      },
+      "currentProductRelease": "0.0.1",
+      "targetProductReleaseAfterIssueAcceptance": "0.0.2"
+    }
+  ],
+  "currentAcceptedRef": {
+    "policyId": "dev.lekalo.privacy-export-policy",
+    "version": "1.0.5",
+    "digest": "sha256:bebd0631c2b978cd2a8264877525f5047354781e26cfe60cbc3b9d9f2aefa87a"
+  }
+}

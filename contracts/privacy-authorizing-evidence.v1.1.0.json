@@ -1,0 +1,148 @@
+{
+  "contractId": "dev.lekalo.privacy-authorizing-evidence",
+  "version": "1.1.0",
+  "status": "accepted",
+  "accepted": true,
+  "digestAlgorithm": "sha256",
+  "identityDigestInput": "exact-file-bytes",
+  "selfReferential": false,
+  "authorizationSubjectProfileRef": {
+    "profileId": "dev.lekalo.privacy-authorization-subject-profile",
+    "version": "1.0.0",
+    "digest": "sha256:825546e4a4df4551e122c2cd548ae81c1fa2063d0bd8f256d728bffc089676a1"
+  },
+  "vocabularies": {
+    "verificationState": [
+      "verified",
+      "unverified"
+    ],
+    "freshnessState": [
+      "current",
+      "stale",
+      "expired"
+    ],
+    "outcome": [
+      "granted",
+      "denied",
+      "licensed",
+      "unlicensed",
+      "allow",
+      "deny",
+      "approved",
+      "rejected"
+    ]
+  },
+  "registry": [
+    {
+      "authorizingField": "provenance.publicFixturePermissionRef",
+      "evidenceKind": "public-fixture-permission",
+      "purpose": "authorize-public-fixture-permission",
+      "expectedOutcome": "granted",
+      "allowedOutcomes": ["granted", "denied"]
+    },
+    {
+      "authorizingField": "provenance.publicFixtureLicenseRef",
+      "evidenceKind": "public-fixture-license",
+      "purpose": "authorize-public-fixture-license",
+      "expectedOutcome": "licensed",
+      "allowedOutcomes": ["licensed", "unlicensed"]
+    },
+    {
+      "authorizingField": "provenance.publicFixtureConsentRef",
+      "evidenceKind": "public-fixture-consent",
+      "purpose": "authorize-public-fixture-consent",
+      "expectedOutcome": "granted",
+      "allowedOutcomes": ["granted", "denied"]
+    },
+    {
+      "authorizingField": "provenance.consumerAclPermissionRef",
+      "evidenceKind": "consumer-acl-permission",
+      "purpose": "authorize-consumer-repository-acl",
+      "expectedOutcome": "granted",
+      "allowedOutcomes": ["granted", "denied"]
+    },
+    {
+      "authorizingField": "provenance.consumerRepositoryConsentRef",
+      "evidenceKind": "consumer-repository-consent",
+      "purpose": "authorize-consumer-repository-consent",
+      "expectedOutcome": "granted",
+      "allowedOutcomes": ["granted", "denied"]
+    },
+    {
+      "authorizingField": "provenance.exportTransferConsentRef",
+      "evidenceKind": "export-transfer-consent",
+      "purpose": "authorize-export-transfer-or-storage",
+      "expectedOutcome": "granted",
+      "allowedOutcomes": ["granted", "denied"]
+    },
+    {
+      "authorizingField": "conflictResolution.decisionRef",
+      "evidenceKind": "conflict-resolution-decision",
+      "purpose": "resolve-export-conflict",
+      "expectedOutcome": "state-dependent-allow-or-deny",
+      "allowedOutcomes": ["allow", "deny"]
+    },
+    {
+      "authorizingField": "derivedArtifact.declassificationDecision.decisionRef",
+      "evidenceKind": "declassification-decision",
+      "purpose": "authorize-declassification",
+      "expectedOutcome": "approved",
+      "allowedOutcomes": ["approved", "rejected"]
+    },
+    {
+      "authorizingField": "derivedArtifact.aggregationDecision.decisionRef",
+      "evidenceKind": "aggregation-decision",
+      "purpose": "authorize-public-aggregation",
+      "expectedOutcome": "approved",
+      "allowedOutcomes": ["approved", "rejected"]
+    }
+  ],
+  "evidenceIdentityFormat": "evidence-sha256:<64-lowercase-hex>",
+  "bindingContract": {
+    "requiredFields": [
+      "subjectProfileRef",
+      "subjectDigest"
+    ],
+    "subjectProfileRef": {
+      "profileId": "dev.lekalo.privacy-authorization-subject-profile",
+      "version": "1.0.0",
+      "digest": "sha256:825546e4a4df4551e122c2cd548ae81c1fa2063d0bd8f256d728bffc089676a1"
+    },
+    "subjectDigestFormat": "subject-sha256:<64-lowercase-hex>",
+    "coverage": "complete-current-export-decision-input-projection",
+    "bindingMismatch": "deny"
+  },
+  "trustedVerificationBoundary": {
+    "ownedByIssues": [
+      119,
+      89
+    ],
+    "actors": [
+      "runtime-envelope",
+      "integration-adapter"
+    ],
+    "requirements": [
+      "mint-opaque-evidence-id",
+      "compute-exact-current-authorization-subject-profile",
+      "bind-declared-subject-digest",
+      "verify-authoritative-source",
+      "verify-current-freshness"
+    ],
+    "callerDeclarationProvesAuthenticity": false,
+    "missingStaleUnverifiedOrExpired": "fail-closed-before-transfer-or-publication"
+  },
+  "lifecycle": {
+    "status": "accepted",
+    "accepted": true,
+    "currentProductRelease": "0.0.1",
+    "targetProductReleaseAfterIssueAcceptance": "0.0.2",
+    "predecessor": {
+      "contractId": "dev.lekalo.privacy-authorizing-evidence",
+      "version": "1.0.0",
+      "digest": "sha256:5fc226843be9913327586ec02603eddec5dc7ea8dfdc066dc6bfb132c09187b6",
+      "status": "yanked-after-exact-1.0.4-review",
+      "custodyPath": "contracts/privacy-authorizing-evidence.v1.0.0.json"
+    },
+    "silentMutationAllowed": false
+  }
+}

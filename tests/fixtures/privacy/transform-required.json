@@ -1,0 +1,106 @@
+[
+  {
+    "id": "shareable-publication-requires-new-derived-output",
+    "decision": {
+      "decisionContractRef": {
+        "contractId": "dev.lekalo.privacy-export-decision",
+"version": "1.5.0"
+      },
+      "authorityRef": {
+        "contractId": "dev.lekalo.authority-matrix",
+        "version": "1.3.1",
+        "digest": "sha256:5c96ed68fe27956512b6de37e0fa23d223e4430d391b6a5869b12d2a8cb522d3"
+      },
+      "policyRef": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.6",
+"digest": "sha256:99a813a89efbdf336340390c9589a4f05d0dbbc8805748708b455a3d7a329ca7"
+      },
+      "artifactKind": "generated.summary",
+      "operation": {
+        "id": "publish",
+        "version": "1.0.0"
+      },
+      "source": {
+        "repositoryRole": "consumer-repository",
+        "repositoryRef": "repo-sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "destination": {
+        "repositoryRole": "public-channel",
+        "trustBoundary": "public",
+        "repositoryRelation": "not-applicable",
+        "tenantRelation": "not-applicable",
+        "repositoryRef": null
+      },
+      "audience": "public",
+      "dataSensitivity": [
+        "public"
+      ],
+      "exportDisposition": "shareable-with-redaction",
+      "provenance": {
+        "origin": "consumer-repository",
+        "repositoryRole": "consumer-repository",
+        "synthetic": false,
+        "derived": false,
+        "classificationRef": {
+          "contractId": "dev.lekalo.privacy-classification-decision",
+          "version": "1.0.0",
+          "digest": "sha256:58626d1889990bf6120874fcd194c9fc68f2d81f05af1f3b8f7d04336fb3aa9e",
+          "decisionId": "classification-sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "evidenceDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+        },
+        "repositoryRef": "repo-sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "publicFixturePermissionRef": null,
+        "publicFixtureLicenseRef": null,
+        "publicFixtureConsentRef": null,
+        "consumerAclPermissionRef": null,
+        "consumerRepositoryConsentRef": null,
+        "exportTransferConsentRef": {
+          "contractId": "dev.lekalo.privacy-authorizing-evidence",
+          "version": "1.1.0",
+          "digest": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4",
+          "evidenceKind": "export-transfer-consent",
+          "purpose": "authorize-export-transfer-or-storage",
+          "outcome": "granted",
+          "evidenceId": "evidence-sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "verificationState": "verified",
+          "freshnessState": "current",
+          "binding": {
+            "subjectProfileRef": {
+              "profileId": "dev.lekalo.privacy-authorization-subject-profile",
+              "version": "1.0.0",
+              "digest": "sha256:825546e4a4df4551e122c2cd548ae81c1fa2063d0bd8f256d728bffc089676a1"
+            },
+            "subjectDigest": "subject-sha256:96cf0aa81541d75775f65d1238874f2ee1a0c8b7762db1edb78fc1ca33e04324"
+          }
+        }
+      },
+      "resourcePath": {
+        "state": "known",
+        "value": "reports/summary.json"
+      },
+      "conflictResolution": {
+        "state": "none",
+        "decisionRef": null
+      },
+      "constraints": [],
+      "broadeningGrant": null,
+      "authorizingEvidenceContractRef": {
+        "contractId": "dev.lekalo.privacy-authorizing-evidence",
+        "version": "1.1.0",
+"digest": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
+      },
+      "authorizationSubjectProfileRef": {
+        "profileId": "dev.lekalo.privacy-authorization-subject-profile",
+        "version": "1.0.0",
+        "digest": "sha256:825546e4a4df4551e122c2cd548ae81c1fa2063d0bd8f256d728bffc089676a1"
+      },
+      "artifactRef": "artifact-sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    "expected": {
+      "decision": "transform-required",
+      "reasonCode": "disposition.transform-required",
+      "exitCode": 3
+    }
+  }
+]

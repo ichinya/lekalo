@@ -1,0 +1,211 @@
+{
+  "profileId": "dev.lekalo.privacy-authorization-subject-profile",
+  "version": "1.0.0",
+  "status": "accepted",
+  "accepted": true,
+  "digestAlgorithm": "sha256",
+  "identityDigestInput": "exact-file-bytes",
+  "subjectDigestFormat": "subject-sha256:<64-lowercase-hex>",
+  "selfReferential": false,
+  "canonicalization": {
+    "objectKeys": "recursive-unicode-code-point-lexicographic",
+    "jsonPrimitives": "json-stringify-after-strict-json-parse",
+    "numbers": "ecmascript-json-number-serialization",
+    "strings": "exact-unicode-after-input-shape-and-path-validation",
+    "booleansAndNull": "exact-json-primitives",
+    "arraysDefault": "order-preserved",
+    "duplicateSetMembers": "malformed-before-projection"
+  },
+  "projection": {
+    "coverageMode": "complete-well-formed-export-decision-input-before-closed-exclusions",
+    "includedRootPropertiesInvariant": "exactly-equals-current-input-schema-properties",
+    "unknownInputProperties": "malformed-before-projection",
+    "excludedPaths": [
+      "provenance.publicFixturePermissionRef",
+      "provenance.publicFixtureLicenseRef",
+      "provenance.publicFixtureConsentRef",
+      "provenance.consumerAclPermissionRef",
+      "provenance.consumerRepositoryConsentRef",
+      "provenance.exportTransferConsentRef",
+      "conflictResolution.decisionRef",
+      "derivedArtifact.declassificationDecision.decisionRef",
+      "derivedArtifact.aggregationDecision.decisionRef",
+      "constraints[].constraintRef"
+    ],
+    "excludedPathClasses": {
+      "authorizingEvidenceObjects": "excluded-to-avoid-circular-subject-identity",
+      "nonSemanticTraceMetadata": "excluded-because-it-can-only-identify-a-narrowing-declaration-and-is-never-read-for-decision-semantics"
+    },
+    "setCanonicalizationRules": [
+      {
+        "path": "dataSensitivity",
+        "strategy": "unicode-code-point-lexicographic"
+      },
+      {
+        "path": "derivedArtifact.sourceArtifacts[].dataSensitivity",
+        "strategy": "unicode-code-point-lexicographic"
+      },
+      {
+        "path": "derivedArtifact.declassificationDecision.removedSensitivities",
+        "strategy": "unicode-code-point-lexicographic"
+      },
+      {
+        "path": "constraints[].allowedOperations",
+        "strategy": "unicode-code-point-lexicographic"
+      },
+      {
+        "path": "constraints[].allowedTrustBoundaries",
+        "strategy": "unicode-code-point-lexicographic"
+      },
+      {
+        "path": "constraints[].allowedAudiences",
+        "strategy": "unicode-code-point-lexicographic"
+      },
+      {
+        "path": "derivedArtifact.sourceArtifacts",
+        "strategy": "object-key-then-canonical",
+        "key": "sourceRef"
+      },
+      {
+        "path": "derivedArtifact.appliedTransforms",
+        "strategy": "object-key-then-canonical",
+        "key": "transformId"
+      },
+      {
+        "path": "constraints",
+        "strategy": "canonical-json-lexicographic"
+      }
+    ],
+    "completenessInvariants": [
+      "clone-the-entire-strict-input-before-exclusions",
+      "root-property-inventory-equals-input-schema-properties",
+      "excluded-path-list-is-closed-exact",
+      "every-nonexcluded-schema-field-is-subject-semantic-by-construction",
+      "checker-and-tests-consume-this-exact-profile",
+      "projection-profile-change-requires-new-profile-version"
+    ]
+  },
+  "inputSchemaRootProperties": [
+    "decisionContractRef",
+    "authorityRef",
+    "policyRef",
+    "authorizingEvidenceContractRef",
+    "authorizationSubjectProfileRef",
+    "artifactKind",
+    "artifactRef",
+    "operation",
+    "source",
+    "destination",
+    "audience",
+    "dataSensitivity",
+    "exportDisposition",
+    "provenance",
+    "resourcePath",
+    "valueState",
+    "conflictResolution",
+    "constraints",
+    "broadeningGrant",
+    "derivedArtifact"
+  ],
+  "decisionSemanticInventory": [
+    { "id": "decision-ref", "path": "decisionContractRef" },
+    { "id": "authority-ref", "path": "authorityRef" },
+    { "id": "policy-ref", "path": "policyRef" },
+    { "id": "evidence-contract-ref", "path": "authorizingEvidenceContractRef" },
+    { "id": "subject-profile-ref", "path": "authorizationSubjectProfileRef" },
+    { "id": "artifact-kind", "path": "artifactKind" },
+    { "id": "artifact-ref", "path": "artifactRef" },
+    { "id": "operation-id", "path": "operation.id" },
+    { "id": "operation-version", "path": "operation.version" },
+    { "id": "source-role", "path": "source.repositoryRole" },
+    { "id": "source-repository-ref", "path": "source.repositoryRef" },
+    { "id": "destination-role", "path": "destination.repositoryRole" },
+    { "id": "destination-repository-ref", "path": "destination.repositoryRef" },
+    { "id": "destination-trust-boundary", "path": "destination.trustBoundary" },
+    { "id": "destination-repository-relation", "path": "destination.repositoryRelation" },
+    { "id": "destination-tenant-relation", "path": "destination.tenantRelation" },
+    { "id": "audience", "path": "audience" },
+    { "id": "main-sensitivity", "path": "dataSensitivity[]" },
+    { "id": "export-disposition", "path": "exportDisposition" },
+    { "id": "provenance-origin", "path": "provenance.origin" },
+    { "id": "provenance-role", "path": "provenance.repositoryRole" },
+    { "id": "provenance-repository-ref", "path": "provenance.repositoryRef" },
+    { "id": "provenance-synthetic", "path": "provenance.synthetic" },
+    { "id": "provenance-derived", "path": "provenance.derived" },
+    { "id": "classification-contract-id", "path": "provenance.classificationRef.contractId" },
+    { "id": "classification-version", "path": "provenance.classificationRef.version" },
+    { "id": "classification-contract-digest", "path": "provenance.classificationRef.digest" },
+    { "id": "classification-decision-id", "path": "provenance.classificationRef.decisionId" },
+    { "id": "classification-evidence-digest", "path": "provenance.classificationRef.evidenceDigest" },
+    { "id": "resource-path-state", "path": "resourcePath.state" },
+    { "id": "resource-path-value", "path": "resourcePath.value" },
+    { "id": "value-state", "path": "valueState.state" },
+    { "id": "value-value", "path": "valueState.value" },
+    { "id": "conflict-state", "path": "conflictResolution.state" },
+    { "id": "constraint-scope", "path": "constraints[].scope" },
+    { "id": "constraint-operations", "path": "constraints[].allowedOperations[]" },
+    { "id": "constraint-boundaries", "path": "constraints[].allowedTrustBoundaries[]" },
+    { "id": "constraint-audiences", "path": "constraints[].allowedAudiences[]" },
+    { "id": "constraint-set", "path": "constraints[]" },
+    { "id": "broadening-grant", "path": "broadeningGrant" },
+    { "id": "source-set", "path": "derivedArtifact.sourceArtifacts[]" },
+    { "id": "source-ref", "path": "derivedArtifact.sourceArtifacts[].sourceRef" },
+    { "id": "source-kind", "path": "derivedArtifact.sourceArtifacts[].artifactKind" },
+    { "id": "source-authority-ref", "path": "derivedArtifact.sourceArtifacts[].authorityRef" },
+    { "id": "source-policy-ref", "path": "derivedArtifact.sourceArtifacts[].policyRef" },
+    { "id": "source-classification-contract-id", "path": "derivedArtifact.sourceArtifacts[].classificationRef.contractId" },
+    { "id": "source-classification-version", "path": "derivedArtifact.sourceArtifacts[].classificationRef.version" },
+    { "id": "source-classification-contract-digest", "path": "derivedArtifact.sourceArtifacts[].classificationRef.digest" },
+    { "id": "source-classification-decision-id", "path": "derivedArtifact.sourceArtifacts[].classificationRef.decisionId" },
+    { "id": "source-classification-evidence-digest", "path": "derivedArtifact.sourceArtifacts[].classificationRef.evidenceDigest" },
+    { "id": "source-sensitivity", "path": "derivedArtifact.sourceArtifacts[].dataSensitivity[]" },
+    { "id": "source-disposition", "path": "derivedArtifact.sourceArtifacts[].exportDisposition" },
+    { "id": "transform-set", "path": "derivedArtifact.appliedTransforms[]" },
+    { "id": "transform-id", "path": "derivedArtifact.appliedTransforms[].transformId" },
+    { "id": "transform-version", "path": "derivedArtifact.appliedTransforms[].version" },
+    { "id": "transform-evidence-digest", "path": "derivedArtifact.appliedTransforms[].evidenceDigest" },
+    { "id": "declassification-policy-ref", "path": "derivedArtifact.declassificationDecision.policyRef" },
+    { "id": "declassification-version", "path": "derivedArtifact.declassificationDecision.version" },
+    { "id": "declassification-outcome", "path": "derivedArtifact.declassificationDecision.outcome" },
+    { "id": "removed-sensitivity", "path": "derivedArtifact.declassificationDecision.removedSensitivities[]" },
+    { "id": "aggregation-policy-ref", "path": "derivedArtifact.aggregationDecision.policyRef" },
+    { "id": "aggregation-version", "path": "derivedArtifact.aggregationDecision.version" },
+    { "id": "aggregation-outcome", "path": "derivedArtifact.aggregationDecision.outcome" },
+    { "id": "aggregation-removes-rows", "path": "derivedArtifact.aggregationDecision.removesSourceRows" },
+    { "id": "aggregation-removes-identities", "path": "derivedArtifact.aggregationDecision.removesSourceIdentities" },
+    { "id": "derived-contains-source-rows", "path": "derivedArtifact.containsSourceRows" },
+    { "id": "derived-contains-source-identities", "path": "derivedArtifact.containsSourceIdentities" },
+    { "id": "derived-reevaluated", "path": "derivedArtifact.reevaluated" }
+  ],
+  "nonSemanticEquivalenceInventory": [
+    { "id": "object-key-order", "rule": "recursive-object-key-order-is-ignored" },
+    { "id": "main-label-order", "path": "dataSensitivity[]" },
+    { "id": "source-label-order", "path": "derivedArtifact.sourceArtifacts[].dataSensitivity[]" },
+    { "id": "removed-label-order", "path": "derivedArtifact.declassificationDecision.removedSensitivities[]" },
+    { "id": "source-order", "path": "derivedArtifact.sourceArtifacts[]" },
+    { "id": "transform-order", "path": "derivedArtifact.appliedTransforms[]" },
+    { "id": "constraint-order", "path": "constraints[]" },
+    { "id": "constraint-member-order", "path": "constraints[].allowed*[]" },
+    { "id": "constraint-trace-ref", "path": "constraints[].constraintRef" },
+    { "id": "authorizing-evidence-objects", "pathsFrom": "projection.excludedPaths" }
+  ],
+  "trustedComputationBoundary": {
+    "ownedByIssues": [119, 89],
+    "requirements": [
+      "strictly-validate-and-normalize-input",
+      "compute-exact-current-subject-profile",
+      "mint-and-bind-authorizing-evidence-to-subject-digest",
+      "verify-authoritative-source-and-freshness"
+    ],
+    "callerDeclaredDigestProvesAuthenticity": false,
+    "policy120VerifiesDeclaredDigestOnly": true
+  },
+  "lifecycle": {
+    "status": "accepted",
+    "accepted": true,
+    "currentProductRelease": "0.0.1",
+    "targetProductReleaseAfterIssueAcceptance": "0.0.2",
+    "predecessor": null,
+    "silentMutationAllowed": false
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "manifestId": "dev.lekalo.privacy-contract-manifest",
+  "formatVersion": "1.0.0",
+  "digestAlgorithm": "sha256",
+  "semanticDigestInput": "canonical-policy-projection-with-policyRef.digest-omitted",
+  "fileDigestInput": "exact-file-bytes",
+  "selfReferential": false,
+  "authorityRef": {
+    "contractId": "dev.lekalo.authority-matrix",
+    "version": "1.3.1",
+    "digest": "sha256:5c96ed68fe27956512b6de37e0fa23d223e4430d391b6a5869b12d2a8cb522d3"
+  },
+  "rejectedCandidates": [
+    {
+      "policyRef": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.0",
+        "digest": "sha256:88d3f46cee74f51d391edded1e26aa948dc3ef84d03d3229311ea7de87ba2d74"
+      },
+      "status": "rejected-unaccepted-wip",
+      "reason": "superseded-after-live-contract-and-cold-review-blockers"
+    }
+  ],
+  "candidateContracts": [
+    {
+      "policyRef": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.1",
+        "digest": "sha256:f8faab0908fb1bc2da8c173969921000d6424a1f900ab0b04f2b57fa058d0ffb"
+      },
+      "status": "candidate-successor",
+      "accepted": false,
+      "policyPath": "contracts/privacy-policy.v1.json",
+      "policyFileDigest": "sha256:462df7a5c92b676deda7d315e9304695f3563295ffa41775246341fb99970622",
+      "policySidecar": "contracts/privacy-policy.v1.sha256",
+      "inputSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-export-input-schema",
+        "version": "2.0.0",
+        "digest": "sha256:ba8239dac1ffc203993bb4564e9f9a6dfa16b2b92cab9e7952aefeb74a4e0e4c",
+        "path": "contracts/privacy-export.schema.v1.json"
+      },
+      "outputSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-export-output-schema",
+        "version": "1.0.0",
+        "digest": "sha256:43b9c5e1ed6a4847c53a13223376a959c999c21b1c9f2de71ab20b33b8f4f2f1",
+        "path": "contracts/privacy-export.schema.v1.output.json"
+      },
+      "decisionContractRef": {
+        "contractId": "dev.lekalo.privacy-export-decision",
+        "version": "1.0.0"
+      },
+      "predecessor": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.0",
+        "digest": "sha256:88d3f46cee74f51d391edded1e26aa948dc3ef84d03d3229311ea7de87ba2d74",
+        "status": "rejected-unaccepted-wip"
+      },
+      "currentProductRelease": "0.0.1",
+      "targetProductReleaseAfterAcceptance": "0.0.2"
+    }
+  ],
+  "currentCandidateRef": {
+    "policyId": "dev.lekalo.privacy-export-policy",
+    "version": "1.0.1",
+    "digest": "sha256:f8faab0908fb1bc2da8c173969921000d6424a1f900ab0b04f2b57fa058d0ffb"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "contractId": "dev.lekalo.privacy-classification-decision",
+  "version": "1.0.0",
+  "status": "accepted",
+  "purpose": "Exact classification custody retained by artifacts and derived source sets.",
+  "identity": {
+    "decisionIdFormat": "classification-sha256:<64 lowercase hex>",
+    "sourceRefFormat": "source-sha256:<64 lowercase hex>",
+    "evidenceDigestFormat": "sha256:<64 lowercase hex>",
+    "repositoryRefFormat": "repo-sha256:<64 lowercase hex>"
+  },
+  "rules": {
+    "contractRefExact": true,
+    "decisionIdOpaque": true,
+    "privateRepositoryIdentityAllowed": false,
+    "sourceRefOpaque": true,
+    "oneClassificationPerSourceRef": true,
+    "exactDuplicateSourceEntry": "malformed",
+    "conflictingSourceEntry": "deny",
+    "sourceSetOrder": "permutation-invariant"
+  }
+}

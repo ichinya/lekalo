@@ -1,0 +1,139 @@
+{
+  "contractId": "dev.lekalo.privacy-authorizing-evidence",
+  "version": "1.0.0",
+  "status": "accepted",
+  "accepted": true,
+  "digestAlgorithm": "sha256",
+  "identityDigestInput": "exact-file-bytes",
+  "selfReferential": false,
+  "vocabularies": {
+    "verificationState": [
+      "verified",
+      "unverified"
+    ],
+    "freshnessState": [
+      "current",
+      "stale",
+      "expired"
+    ],
+    "outcome": [
+      "granted",
+      "denied",
+      "licensed",
+      "unlicensed",
+      "allow",
+      "deny",
+      "approved",
+      "rejected"
+    ]
+  },
+  "registry": [
+    {
+      "authorizingField": "provenance.publicFixturePermissionRef",
+      "evidenceKind": "public-fixture-permission",
+      "purpose": "authorize-public-fixture-permission",
+      "expectedOutcome": "granted",
+      "allowedOutcomes": ["granted", "denied"]
+    },
+    {
+      "authorizingField": "provenance.publicFixtureLicenseRef",
+      "evidenceKind": "public-fixture-license",
+      "purpose": "authorize-public-fixture-license",
+      "expectedOutcome": "licensed",
+      "allowedOutcomes": ["licensed", "unlicensed"]
+    },
+    {
+      "authorizingField": "provenance.publicFixtureConsentRef",
+      "evidenceKind": "public-fixture-consent",
+      "purpose": "authorize-public-fixture-consent",
+      "expectedOutcome": "granted",
+      "allowedOutcomes": ["granted", "denied"]
+    },
+    {
+      "authorizingField": "provenance.consumerAclPermissionRef",
+      "evidenceKind": "consumer-acl-permission",
+      "purpose": "authorize-consumer-repository-acl",
+      "expectedOutcome": "granted",
+      "allowedOutcomes": ["granted", "denied"]
+    },
+    {
+      "authorizingField": "provenance.consumerRepositoryConsentRef",
+      "evidenceKind": "consumer-repository-consent",
+      "purpose": "authorize-consumer-repository-consent",
+      "expectedOutcome": "granted",
+      "allowedOutcomes": ["granted", "denied"]
+    },
+    {
+      "authorizingField": "provenance.exportTransferConsentRef",
+      "evidenceKind": "export-transfer-consent",
+      "purpose": "authorize-export-transfer-or-storage",
+      "expectedOutcome": "granted",
+      "allowedOutcomes": ["granted", "denied"]
+    },
+    {
+      "authorizingField": "conflictResolution.decisionRef",
+      "evidenceKind": "conflict-resolution-decision",
+      "purpose": "resolve-export-conflict",
+      "expectedOutcome": "state-dependent-allow-or-deny",
+      "allowedOutcomes": ["allow", "deny"]
+    },
+    {
+      "authorizingField": "derivedArtifact.declassificationDecision.decisionRef",
+      "evidenceKind": "declassification-decision",
+      "purpose": "authorize-declassification",
+      "expectedOutcome": "approved",
+      "allowedOutcomes": ["approved", "rejected"]
+    },
+    {
+      "authorizingField": "derivedArtifact.aggregationDecision.decisionRef",
+      "evidenceKind": "aggregation-decision",
+      "purpose": "authorize-public-aggregation",
+      "expectedOutcome": "approved",
+      "allowedOutcomes": ["approved", "rejected"]
+    }
+  ],
+  "evidenceIdentityFormat": "evidence-sha256:<64-lowercase-hex>",
+  "bindingContract": {
+    "artifactRefFormat": "artifact-sha256:<64-lowercase-hex>",
+    "sourceRefFormat": "source-sha256:<64-lowercase-hex>",
+    "requiredContext": [
+      "artifactRef",
+      "artifactKind",
+      "operation",
+      "authorityRef",
+      "policyRef",
+      "source",
+      "destination",
+      "audience",
+      "sourceRefs"
+    ],
+    "sourceRefsOrder": "canonical-sorted",
+    "bindingMismatch": "deny"
+  },
+  "trustedVerificationBoundary": {
+    "ownedByIssues": [
+      119,
+      89
+    ],
+    "actors": [
+      "runtime-envelope",
+      "integration-adapter"
+    ],
+    "requirements": [
+      "mint-opaque-evidence-id",
+      "bind-declared-decision-context",
+      "verify-authoritative-source",
+      "verify-current-freshness"
+    ],
+    "callerDeclarationProvesAuthenticity": false,
+    "missingStaleUnverifiedOrExpired": "fail-closed-before-transfer-or-publication"
+  },
+  "lifecycle": {
+    "status": "accepted",
+    "accepted": true,
+    "currentProductRelease": "0.0.1",
+    "targetProductReleaseAfterIssueAcceptance": "0.0.2",
+    "predecessor": null,
+    "silentMutationAllowed": false
+  }
+}

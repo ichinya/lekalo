@@ -34,3 +34,30 @@ node scripts/check-authority.mjs --operation path/to/operation.json
 Supplying a custom contract path also requires the exact accepted
 `--authority-ref contractId@version@sha256:<digest>`; a path or recomputed
 digest alone is never authoritative.
+
+## Privacy and export policy
+
+The fail-closed privacy/export baseline accepted for issue #120:
+
+```text
+dev.lekalo.privacy-export-policy@1.0.6@sha256:99a813a89efbdf336340390c9589a4f05d0dbbc8805748708b455a3d7a329ca7
+```
+
+- [Privacy and export policy](docs/privacy.md)
+- [ADR-0002: exact-custody privacy decision contract](docs/adr/0002-privacy-export-policy.md)
+- Accepted policy: `contracts/privacy-policy.v1.0.6.json` with its manifest and sidecars
+- Frozen history: `1.0.0` rejected-unaccepted WIP; `1.0.1`–`1.0.5` yanked candidates, preserved byte-for-byte
+- Migration notes: `docs/privacy-policy-migration-*.md` for every step of the ladder
+
+Validate one export decision or run the full protocol suites:
+
+```sh
+node scripts/check-privacy.mjs --decision path/to/decision.json
+node scripts/test-privacy-contracts.mjs
+node scripts/test-privacy-cli.mjs
+```
+
+Exit protocol: `0` allow, `3` well-formed deny or transform-required, `1`
+malformed or custody failure. The checker trusts only the hard-pinned
+accepted manifest bytes; a recomputed digest never authorizes changed
+semantics.

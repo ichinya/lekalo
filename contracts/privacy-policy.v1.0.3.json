@@ -1,0 +1,1059 @@
+{
+  "policyRef": {
+    "policyId": "dev.lekalo.privacy-export-policy",
+    "version": "1.0.3",
+    "digest": "sha256:868ced73748caa4ad80a74df0e5d6ad8d3c5463a6593caa4ead09d872160280f"
+  },
+  "lifecycle": {
+    "status": "accepted",
+    "accepted": true,
+    "currentProductRelease": "0.0.1",
+    "targetProductReleaseAfterAcceptance": "0.0.2",
+    "predecessor": {
+      "policyId": "dev.lekalo.privacy-export-policy",
+      "version": "1.0.2",
+      "digest": "sha256:207117a6a064c2341d95087b208b8dbc7f0953be08eb8c59b5da7eb905e25be1",
+      "status": "yanked-after-third-independent-review",
+      "custodyPath": "contracts/privacy-policy.v1.0.2.json"
+    },
+    "history": [
+      {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.0",
+        "digest": "sha256:88d3f46cee74f51d391edded1e26aa948dc3ef84d03d3229311ea7de87ba2d74",
+        "status": "rejected-unaccepted-wip"
+      },
+      {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.1",
+        "digest": "sha256:f8faab0908fb1bc2da8c173969921000d6424a1f900ab0b04f2b57fa058d0ffb",
+        "status": "rejected-after-corrective-review",
+        "rawDigest": "sha256:462df7a5c92b676deda7d315e9304695f3563295ffa41775246341fb99970622",
+        "manifestDigest": "sha256:f74df7390b44c56489ead001e146c4cde43f7c2d44e2b0163c5c6d1dba43eeed"
+      },
+      {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "1.0.2",
+        "digest": "sha256:207117a6a064c2341d95087b208b8dbc7f0953be08eb8c59b5da7eb905e25be1",
+        "status": "yanked-after-third-independent-review",
+        "rawDigest": "sha256:de8f7495087d8b2890ed00efddc448f99563f32c68e753b43dc73646ab7e5719",
+        "manifestDigest": "sha256:5739d80bde351b85c6ba8b7eedff1ef25f562c6649a7a1364027d4a308b4d530"
+      }
+    ],
+    "compatibility": "corrective-breaking-successor-over-frozen-accepted-1.0.2",
+    "silentMutationAllowed": false
+  },
+  "identityDigest": {
+    "algorithm": "sha256",
+    "canonicalization": "recursive-object-keys-lexicographic-arrays-preserved-json-primitives",
+    "projection": "complete-policy-with-policyRef.digest-omitted",
+    "selfReferential": false
+  },
+  "authorityRef": {
+    "contractId": "dev.lekalo.authority-matrix",
+    "version": "1.3.1",
+    "digest": "sha256:5c96ed68fe27956512b6de37e0fa23d223e4430d391b6a5869b12d2a8cb522d3"
+  },
+  "contractVersions": {
+    "decisionContract": "1.2.0",
+    "inputSchema": "2.2.0",
+    "outputSchema": "1.2.0",
+    "operationVocabulary": "1.0.0",
+    "sensitivityVocabulary": "1.0.0",
+    "dispositionVocabulary": "1.0.0",
+    "repositoryRoleVocabulary": "1.0.0",
+    "destinationVocabulary": "1.0.0",
+    "audienceVocabulary": "1.0.0",
+    "transformVocabulary": "1.0.0",
+    "classificationDecisionContract": "1.0.0",
+    "classificationSchema": "1.0.0",
+    "repositoryIdentityVocabulary": "1.0.0"
+  },
+  "vocabularies": {
+    "dataSensitivity": [
+      "public",
+      "internal",
+      "confidential",
+      "personal-pii",
+      "credential-secret",
+      "financial",
+      "health-special-category",
+      "tenant-scoped",
+      "retention-limited"
+    ],
+    "exportDisposition": [
+      "local-private",
+      "consumer-repository-only",
+      "shareable-with-redaction",
+      "public-aggregate",
+      "public-fixture",
+      "forbidden-to-export"
+    ],
+    "operation": [
+      "local-use",
+      "repository-store",
+      "derive",
+      "transfer",
+      "publish"
+    ],
+    "repositoryRole": [
+      "local-workspace",
+      "consumer-repository",
+      "lekalo-repository",
+      "openspec-repository",
+      "ai-factory-repository",
+      "hlv-repository",
+      "source-native-repository",
+      "external-repository",
+      "public-channel"
+    ],
+    "trustBoundary": [
+      "same-local-workspace",
+      "same-repository",
+      "same-tenant",
+      "cross-repository",
+      "cross-tenant",
+      "public"
+    ],
+    "repositoryRelation": [
+      "not-applicable",
+      "same-origin",
+      "different-repository"
+    ],
+    "tenantRelation": [
+      "same-tenant",
+      "cross-tenant",
+      "not-applicable"
+    ],
+    "audience": [
+      "operator-only",
+      "repository-collaborators",
+      "tenant-members",
+      "named-external",
+      "public"
+    ],
+    "valueState": [
+      "known",
+      "unknown",
+      "withheld",
+      "unsupported"
+    ],
+    "conflictState": [
+      "none",
+      "resolved-allow",
+      "resolved-deny",
+      "unresolved"
+    ],
+    "constraintScope": [
+      "project",
+      "profile",
+      "operation"
+    ],
+    "transform": [
+      "redact-content",
+      "redact-secrets",
+      "redact-pii",
+      "aggregate-no-source-rows",
+      "replace-repository-identity",
+      "normalize-project-relative-paths"
+    ]
+  },
+  "artifactDefaults": [
+    {
+      "artifactKind": "openspec.requirement",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "openspec.change-intent",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "openspec.delta-spec",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "openspec.expected-behavior",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "ai-factory.execution-plan",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "ai-factory.task-state",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "ai-factory.runtime-state",
+      "exportDisposition": "local-private"
+    },
+    {
+      "artifactKind": "ai-factory.agent-lifecycle",
+      "exportDisposition": "local-private"
+    },
+    {
+      "artifactKind": "ai-factory.provider-evidence-envelope",
+      "exportDisposition": "shareable-with-redaction"
+    },
+    {
+      "artifactKind": "lekalo.semantic-model",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "lekalo.stable-symbol",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "lekalo.effect",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "lekalo.scenario",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "lekalo.target-binding",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "lekalo.observed-model-draft",
+      "exportDisposition": "local-private"
+    },
+    {
+      "artifactKind": "lekalo.cache",
+      "exportDisposition": "local-private"
+    },
+    {
+      "artifactKind": "lekalo.generated-intermediate",
+      "exportDisposition": "local-private"
+    },
+    {
+      "artifactKind": "hlv.validation-result",
+      "exportDisposition": "shareable-with-redaction"
+    },
+    {
+      "artifactKind": "hlv.traceability-result",
+      "exportDisposition": "shareable-with-redaction"
+    },
+    {
+      "artifactKind": "hlv.gate-diagnostic",
+      "exportDisposition": "shareable-with-redaction"
+    },
+    {
+      "artifactKind": "hlv.project-contract",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "source-native.source-code",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "source-native.native-test",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "generated.summary",
+      "exportDisposition": "shareable-with-redaction"
+    },
+    {
+      "artifactKind": "generated.rule",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "generated.code",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "authority.contract",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "authority.contract-manifest",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "privacy.policy",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "privacy.export-schema",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "diagnostics.raw-tool-output",
+      "exportDisposition": "forbidden-to-export"
+    },
+    {
+      "artifactKind": "context.capsule",
+      "exportDisposition": "local-private"
+    },
+    {
+      "artifactKind": "trace.manifest",
+      "exportDisposition": "shareable-with-redaction"
+    },
+    {
+      "artifactKind": "ai.prompt",
+      "exportDisposition": "forbidden-to-export"
+    },
+    {
+      "artifactKind": "ai.response",
+      "exportDisposition": "forbidden-to-export"
+    },
+    {
+      "artifactKind": "ai.tool-transcript",
+      "exportDisposition": "forbidden-to-export"
+    },
+    {
+      "artifactKind": "metrics.evaluation-evidence",
+      "exportDisposition": "shareable-with-redaction"
+    },
+    {
+      "artifactKind": "fixture",
+      "exportDisposition": "public-fixture"
+    },
+    {
+      "artifactKind": "repository.identity",
+      "exportDisposition": "forbidden-to-export"
+    },
+    {
+      "artifactKind": "native.symbol-identity",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "native.source-map",
+      "exportDisposition": "forbidden-to-export"
+    },
+    {
+      "artifactKind": "consumer.model",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "consumer.target-bindings",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "export.artifact",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "export.decision",
+      "exportDisposition": "local-private"
+    },
+    {
+      "artifactKind": "redaction.artifact",
+      "exportDisposition": "consumer-repository-only"
+    },
+    {
+      "artifactKind": "redaction.decision",
+      "exportDisposition": "local-private"
+    },
+    {
+      "artifactKind": "aggregate.artifact",
+      "exportDisposition": "public-aggregate"
+    },
+    {
+      "artifactKind": "aggregate.decision",
+      "exportDisposition": "local-private"
+    }
+  ],
+  "operationProfiles": [
+    {
+      "operation": "local-use",
+      "allowedTrustBoundaries": [
+        "same-local-workspace"
+      ],
+      "sourceTransfer": false
+    },
+    {
+      "operation": "repository-store",
+      "allowedTrustBoundaries": [
+        "same-repository"
+      ],
+      "sourceTransfer": true
+    },
+    {
+      "operation": "derive",
+      "allowedTrustBoundaries": [
+        "same-local-workspace"
+      ],
+      "sourceTransfer": false
+    },
+    {
+      "operation": "transfer",
+      "allowedTrustBoundaries": [
+        "same-tenant",
+        "cross-repository",
+        "cross-tenant"
+      ],
+      "sourceTransfer": true
+    },
+    {
+      "operation": "publish",
+      "allowedTrustBoundaries": [
+        "public"
+      ],
+      "sourceTransfer": true
+    }
+  ],
+  "destinationProfiles": [
+    {
+      "trustBoundary": "same-local-workspace",
+      "repositoryRoles": [
+        "local-workspace"
+      ],
+      "repositoryRelations": [
+        "not-applicable"
+      ],
+      "tenantRelations": [
+        "same-tenant"
+      ],
+      "audiences": [
+        "operator-only"
+      ]
+    },
+    {
+      "trustBoundary": "same-repository",
+      "repositoryRoles": [
+        "consumer-repository",
+        "lekalo-repository",
+        "openspec-repository",
+        "ai-factory-repository",
+        "hlv-repository",
+        "source-native-repository"
+      ],
+      "repositoryRelations": [
+        "same-origin"
+      ],
+      "tenantRelations": [
+        "same-tenant"
+      ],
+      "audiences": [
+        "operator-only",
+        "repository-collaborators"
+      ]
+    },
+    {
+      "trustBoundary": "same-tenant",
+      "repositoryRoles": [
+        "external-repository"
+      ],
+      "repositoryRelations": [
+        "different-repository"
+      ],
+      "tenantRelations": [
+        "same-tenant"
+      ],
+      "audiences": [
+        "tenant-members"
+      ]
+    },
+    {
+      "trustBoundary": "cross-repository",
+      "repositoryRoles": [
+        "external-repository"
+      ],
+      "repositoryRelations": [
+        "different-repository"
+      ],
+      "tenantRelations": [
+        "same-tenant"
+      ],
+      "audiences": [
+        "named-external"
+      ]
+    },
+    {
+      "trustBoundary": "cross-tenant",
+      "repositoryRoles": [
+        "external-repository"
+      ],
+      "repositoryRelations": [
+        "different-repository"
+      ],
+      "tenantRelations": [
+        "cross-tenant"
+      ],
+      "audiences": [
+        "named-external"
+      ]
+    },
+    {
+      "trustBoundary": "public",
+      "repositoryRoles": [
+        "public-channel"
+      ],
+      "repositoryRelations": [
+        "not-applicable"
+      ],
+      "tenantRelations": [
+        "not-applicable"
+      ],
+      "audiences": [
+        "public"
+      ]
+    }
+  ],
+  "sensitivityRules": [
+    {
+      "label": "public",
+      "allowedOperations": [
+        "local-use",
+        "repository-store",
+        "derive",
+        "transfer",
+        "publish"
+      ],
+      "allowedTrustBoundaries": [
+        "same-local-workspace",
+        "same-repository",
+        "same-tenant",
+        "cross-repository",
+        "cross-tenant",
+        "public"
+      ],
+      "allowedAudiences": [
+        "operator-only",
+        "repository-collaborators",
+        "tenant-members",
+        "named-external",
+        "public"
+      ],
+      "allowedRepositoryRelations": [
+        "not-applicable",
+        "same-origin",
+        "different-repository"
+      ],
+      "allowedTenantRelations": [
+        "same-tenant",
+        "cross-tenant",
+        "not-applicable"
+      ]
+    },
+    {
+      "label": "internal",
+      "allowedOperations": [
+        "local-use",
+        "repository-store",
+        "derive",
+        "transfer"
+      ],
+      "allowedTrustBoundaries": [
+        "same-local-workspace",
+        "same-repository",
+        "same-tenant"
+      ],
+      "allowedAudiences": [
+        "operator-only",
+        "repository-collaborators",
+        "tenant-members"
+      ],
+      "allowedRepositoryRelations": [
+        "not-applicable",
+        "same-origin",
+        "different-repository"
+      ],
+      "allowedTenantRelations": [
+        "same-tenant"
+      ]
+    },
+    {
+      "label": "confidential",
+      "allowedOperations": [
+        "local-use",
+        "repository-store",
+        "derive"
+      ],
+      "allowedTrustBoundaries": [
+        "same-local-workspace",
+        "same-repository"
+      ],
+      "allowedAudiences": [
+        "operator-only",
+        "repository-collaborators"
+      ],
+      "allowedRepositoryRelations": [
+        "not-applicable",
+        "same-origin"
+      ],
+      "allowedTenantRelations": [
+        "same-tenant"
+      ]
+    },
+    {
+      "label": "personal-pii",
+      "allowedOperations": [
+        "local-use",
+        "repository-store",
+        "derive",
+        "transfer"
+      ],
+      "allowedTrustBoundaries": [
+        "same-local-workspace",
+        "same-repository",
+        "same-tenant"
+      ],
+      "allowedAudiences": [
+        "operator-only",
+        "repository-collaborators",
+        "tenant-members"
+      ],
+      "allowedRepositoryRelations": [
+        "not-applicable",
+        "same-origin",
+        "different-repository"
+      ],
+      "allowedTenantRelations": [
+        "same-tenant"
+      ]
+    },
+    {
+      "label": "credential-secret",
+      "allowedOperations": [
+        "local-use",
+        "repository-store",
+        "derive"
+      ],
+      "allowedTrustBoundaries": [
+        "same-local-workspace",
+        "same-repository"
+      ],
+      "allowedAudiences": [
+        "operator-only",
+        "repository-collaborators"
+      ],
+      "allowedRepositoryRelations": [
+        "not-applicable",
+        "same-origin"
+      ],
+      "allowedTenantRelations": [
+        "same-tenant"
+      ]
+    },
+    {
+      "label": "financial",
+      "allowedOperations": [
+        "local-use",
+        "repository-store",
+        "derive",
+        "transfer"
+      ],
+      "allowedTrustBoundaries": [
+        "same-local-workspace",
+        "same-repository",
+        "same-tenant"
+      ],
+      "allowedAudiences": [
+        "operator-only",
+        "repository-collaborators",
+        "tenant-members"
+      ],
+      "allowedRepositoryRelations": [
+        "not-applicable",
+        "same-origin",
+        "different-repository"
+      ],
+      "allowedTenantRelations": [
+        "same-tenant"
+      ]
+    },
+    {
+      "label": "health-special-category",
+      "allowedOperations": [
+        "local-use",
+        "repository-store",
+        "derive",
+        "transfer"
+      ],
+      "allowedTrustBoundaries": [
+        "same-local-workspace",
+        "same-repository",
+        "same-tenant"
+      ],
+      "allowedAudiences": [
+        "operator-only",
+        "repository-collaborators",
+        "tenant-members"
+      ],
+      "allowedRepositoryRelations": [
+        "not-applicable",
+        "same-origin",
+        "different-repository"
+      ],
+      "allowedTenantRelations": [
+        "same-tenant"
+      ]
+    },
+    {
+      "label": "tenant-scoped",
+      "allowedOperations": [
+        "local-use",
+        "repository-store",
+        "derive",
+        "transfer"
+      ],
+      "allowedTrustBoundaries": [
+        "same-local-workspace",
+        "same-repository",
+        "same-tenant",
+        "cross-repository"
+      ],
+      "allowedAudiences": [
+        "operator-only",
+        "repository-collaborators",
+        "tenant-members",
+        "named-external"
+      ],
+      "allowedRepositoryRelations": [
+        "not-applicable",
+        "same-origin",
+        "different-repository"
+      ],
+      "allowedTenantRelations": [
+        "same-tenant"
+      ]
+    },
+    {
+      "label": "retention-limited",
+      "allowedOperations": [
+        "local-use",
+        "repository-store",
+        "derive",
+        "transfer"
+      ],
+      "allowedTrustBoundaries": [
+        "same-local-workspace",
+        "same-repository",
+        "same-tenant"
+      ],
+      "allowedAudiences": [
+        "operator-only",
+        "repository-collaborators",
+        "tenant-members"
+      ],
+      "allowedRepositoryRelations": [
+        "not-applicable",
+        "same-origin",
+        "different-repository"
+      ],
+      "allowedTenantRelations": [
+        "same-tenant"
+      ]
+    }
+  ],
+  "dispositionRules": [
+    {
+      "disposition": "local-private",
+      "allowOperations": [
+        "local-use",
+        "derive"
+      ],
+      "transformOperations": [],
+      "sourceTransferAllowed": false,
+      "requirements": [
+        "same-local-workspace",
+        "excluded-from-repository-tracking"
+      ]
+    },
+    {
+      "disposition": "consumer-repository-only",
+      "allowOperations": [
+        "local-use",
+        "repository-store",
+        "derive"
+      ],
+      "transformOperations": [],
+      "sourceTransferAllowed": true,
+      "requirements": [
+        "originating-consumer-repository-for-all-operations",
+        "coherent-non-null-repository-ref",
+        "same-origin-acl-for-repository-store",
+        "same-tenant"
+      ]
+    },
+    {
+      "disposition": "shareable-with-redaction",
+      "allowOperations": [
+        "local-use",
+        "repository-store"
+      ],
+      "transformOperations": [
+        "derive",
+        "transfer",
+        "publish"
+      ],
+      "sourceTransferAllowed": false,
+      "requirements": [
+        "new-derived-artifact",
+        "source-transfer-forbidden",
+        "reevaluate-derived-output"
+      ]
+    },
+    {
+      "disposition": "public-aggregate",
+      "allowOperations": [
+        "local-use",
+        "repository-store",
+        "derive",
+        "transfer",
+        "publish"
+      ],
+      "transformOperations": [],
+      "sourceTransferAllowed": true,
+      "requirements": [
+        "derived-aggregate",
+        "no-source-rows",
+        "no-source-identities",
+        "exact-aggregation-decision",
+        "reevaluated"
+      ]
+    },
+    {
+      "disposition": "public-fixture",
+      "allowOperations": [
+        "local-use",
+        "repository-store",
+        "derive",
+        "transfer",
+        "publish"
+      ],
+      "transformOperations": [],
+      "sourceTransferAllowed": true,
+      "requirements": [
+        "exclusive-synthetic-origin-or-all-versioned-permission-license-consent",
+        "all-source-transfer-operations-covered"
+      ]
+    },
+    {
+      "disposition": "forbidden-to-export",
+      "allowOperations": [
+        "local-use"
+      ],
+      "transformOperations": [],
+      "sourceTransferAllowed": false,
+      "requirements": [
+        "no-repository-network-or-trust-boundary-transfer"
+      ]
+    }
+  ],
+  "precedence": [
+    "contract-custody-before-decision",
+    "strict-input-shape-before-policy",
+    "exact-authority-and-policy-refs",
+    "registered-kind-and-exact-default",
+    "missing-unknown-withheld-unsupported-deny",
+    "unresolved-or-resolved-deny-conflict-deny",
+    "forbidden-to-export-dominates-transfer",
+    "destination-operation-profile-must-match",
+    "repository-identity-and-origin-coherence",
+    "all-sensitivity-rule-intersection",
+    "local-constraints-intersect-and-never-broaden",
+    "consent-and-provenance-requirements",
+    "path-and-identity-requirements",
+    "derived-source-custody-and-declassification",
+    "classification-source-set-custody",
+    "disposition-branch",
+    "default-deny"
+  ],
+  "provenancePolicy": {
+    "strict": true,
+    "repositoryIdentity": "stable-role-alias-only",
+    "transferConsentRequired": true,
+    "publicFixture": "synthetic-or-all-versioned-permission-license-consent",
+    "derivedOwnProvenanceRequired": true,
+    "exactClassificationContractRefRequired": true,
+    "originBooleanCoherenceRequired": true,
+    "originModes": {
+      "derived": {
+        "origin": "derived",
+        "derived": true,
+        "synthetic": false
+      },
+      "synthetic": {
+        "origin": "synthetic",
+        "derived": false,
+        "synthetic": true
+      },
+      "ordinary": {
+        "origins": [
+          "consumer-repository",
+          "lekalo-repository",
+          "tool-runtime",
+          "external"
+        ],
+        "derived": false,
+        "synthetic": false
+      },
+      "conflicts": "deny-before-disposition-evaluation"
+    },
+    "publicFixtureEvidenceOperations": [
+      "repository-store",
+      "transfer",
+      "publish"
+    ],
+    "publicFixtureNonSyntheticEvidence": [
+      "permissionRef",
+      "licenseRef",
+      "consentRef"
+    ],
+    "consumerRepositoryOnlyAllOperationsRequireOriginatingConsumerContext": true
+  },
+  "derivedArtifactPolicy": {
+    "sourceKindsMustExistInAuthorityRegistry": true,
+    "sourceAuthorityRefMustMatch": true,
+    "sourcePolicyRefMustMatch": true,
+    "sourceDispositionMustEqualPolicyDefault": true,
+    "sourceClassificationRefRequired": true,
+    "mixedOrConflictingSourceRefs": "deny",
+    "appliedTransformsRequired": true,
+    "removedSensitivityRequiresExactDeclassificationDecision": true,
+    "publicAggregateRequiresExactAggregationDecision": true,
+    "publicAggregateSourceRowsAllowed": false,
+    "publicAggregateSourceIdentitiesAllowed": false,
+    "sourceMutationAllowed": false,
+    "derivedOutputMustBeReevaluated": true,
+    "sourceRefRequired": true,
+    "sourceRefFormat": "source-sha256:<64-lowercase-hex>",
+    "sourceClassificationContractRefMustMatch": true,
+    "duplicateSourceRef": "malformed",
+    "conflictingSourceRef": "deny",
+    "sourceSetOrder": "permutation-invariant"
+  },
+  "pathPolicy": {
+    "representation": "normalized-project-relative-posix-or-withheld",
+    "rejectAbsolute": true,
+    "rejectDrive": true,
+    "rejectUnc": true,
+    "rejectHome": true,
+    "rejectUri": true,
+    "rejectDotTraversal": true,
+    "rejectBackslash": true,
+    "rejectEncodedPathSyntax": true,
+    "rejectControlCharacters": true,
+    "rejectEmptyDotOrNonNfcSegments": true,
+    "rejectTrailingDotOrSpace": true,
+    "rejectNtfsAlternateStream": true,
+    "rejectDosDeviceName": true,
+    "rejectShortNameLikeTildeNumber": true,
+    "physicalContainment": "downstream-adapter-must-resolve-and-verify"
+  },
+  "constraintPolicy": {
+    "baselineCombination": "set-intersection",
+    "projectProfileOperationMayOnlyNarrow": true,
+    "localVocabularyOverridesAllowed": false,
+    "reviewedBroadeningGrants": []
+  },
+  "consumptionSeam": [
+    {
+      "issue": 87,
+      "owns": "semantic-projections-and-data-flow-propagation",
+      "obligation": "carry-exact-fields-and-refs-without-vocabulary-overrides"
+    },
+    {
+      "issue": 119,
+      "owns": "runtime-envelopes-evaluator-invocation-redaction-and-leak-enforcement",
+      "obligation": "use-exact-input-output-contract-reason-codes-and-fail-closed"
+    },
+    {
+      "issue": 121,
+      "owns": "local-history-retention-and-measurement-records",
+      "obligation": "store-exact-refs-and-distinct-value-state-semantics"
+    },
+    {
+      "issue": 102,
+      "owns": "public-aggregate-publication",
+      "obligation": "accept-only-reevaluated-public-aggregate-derived-artifacts-with-exact-refs"
+    }
+  ],
+  "outputContract": {
+    "decisions": [
+      "allow",
+      "deny",
+      "transform-required"
+    ],
+    "transformRequiredTransfersSource": false,
+    "derivedOutputReevaluationRequired": true,
+    "stableReasonCodesRequired": true,
+    "effectiveExactRefsRequired": true
+  },
+  "protocol": {
+    "allowedExitCode": 0,
+    "malformedExitCode": 1,
+    "deniedOrTransformRequiredExitCode": 3,
+    "strictObjects": true,
+    "unknownFields": "reject",
+    "pureEvaluator": true,
+    "filesystemAccessDuringEvaluation": false,
+    "networkAccessDuringEvaluation": false,
+    "privateRepositoryAccess": false,
+    "schemaRuntimeWellFormednessParity": true,
+    "duplicateSetElements": "malformed"
+  },
+  "evidenceBoundary": {
+    "fixtures": "synthetic-only",
+    "payloadInspection": false,
+    "semanticPropagation": false,
+    "scannerOrRedactionRuntime": false,
+    "historyPersistence": false,
+    "publicAggregatePublication": false,
+    "physicalPathContainment": false,
+    "repositoryTokenPhysicalBinding": false
+  },
+  "classificationContractRef": {
+    "contractId": "dev.lekalo.privacy-classification-decision",
+    "version": "1.0.0",
+    "digest": "sha256:58626d1889990bf6120874fcd194c9fc68f2d81f05af1f3b8f7d04336fb3aa9e"
+  },
+  "repositoryIdentityPolicy": {
+    "repositoryRefFormat": "repo-sha256:<64-lowercase-hex>",
+    "privateRepositoryIdentityAllowed": false,
+    "sourceProvenanceRefMustMatch": true,
+    "sameRepositoryRequiresSameNonNullRefAndRole": true,
+    "sameOriginRequiresSameRepository": true,
+    "differentRepositoryRequiresDifferentNonNullRefs": true,
+    "localWorkspaceRepositoryRef": null,
+    "publicChannelRepositoryRef": null,
+    "contradictoryContext": "deny",
+    "declaredTokenCoherenceOnly": true,
+    "callerFabricatedEqualityProvesPhysicalIdentity": false,
+    "bindingAttestationInDecisionInput": false,
+    "trustedBinding": {
+      "ownedByIssues": [
+        119,
+        89
+      ],
+      "actors": [
+        "runtime-envelope",
+        "integration-adapter"
+      ],
+      "source": "physically-resolved-repository-context",
+      "requirements": [
+        "mint",
+        "bind",
+        "verify-freshness"
+      ],
+      "missingStaleOrUnverified": "fail-closed-before-evaluator-invocation-or-decision-acceptance",
+      "physicalChecks": [
+        "root-containment",
+        "symlink",
+        "junction",
+        "reparse-point",
+        "real-8.3-alias",
+        "toctou"
+      ]
+    }
+  },
+  "setLikeCollections": {
+    "duplicateHandling": "malformed",
+    "exactDuplicateCollections": [
+      "dataSensitivity",
+      "constraints",
+      "constraint.allowedOperations",
+      "constraint.allowedTrustBoundaries",
+      "constraint.allowedAudiences",
+      "derivedArtifact.sourceArtifacts",
+      "derivedArtifact.appliedTransforms",
+      "derivedArtifact.declassificationDecision.removedSensitivities"
+    ],
+    "conflictingIdentityHandling": "semantic-deny-after-shape-acceptance"
+  }
+}
