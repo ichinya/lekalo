@@ -1,0 +1,1 @@
+{schema: "lekalo.module/1", id: "catalog", imports: ["ghost"]}

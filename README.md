@@ -61,3 +61,30 @@ Exit protocol: `0` allow, `3` well-formed deny or transform-required, `1`
 malformed or custody failure. The checker trusts only the hard-pinned
 accepted manifest bytes; a recomputed digest never authorizes changed
 semantics.
+
+## Canonical project structure
+
+The portable layout of a user repository — canonical model homes, target
+configuration, lockfile location, generated cache and reports — is fixed by
+[the structure contract](docs/canonical-structure.md) and
+[ADR-0003](docs/adr/0003-canonical-structure-and-path-safety.md). It is
+neutral to the Node.js, PHP and Rust targets, aligns every `.lekalo/**` home
+with accepted authority contract `1.3.1`, and defines root discovery, physical
+link containment and the canonical/runtime ownership split. Model/import and
+lockfile contents remain owned by their downstream issues.
+
+Check the conformance fixtures, validate one project, discover a project
+root, or probe a single project-relative path:
+
+```sh
+node scripts/check-structure.mjs
+node scripts/check-structure.mjs --project relative/path/to/project
+node scripts/check-structure.mjs --find-root --from relative/path/to/dir
+node scripts/check-structure.mjs --validate-path lekalo/modules/shop
+node scripts/test-structure-contracts.mjs
+```
+
+The exit protocol is `0` valid, `1` malformed/usage, `3` well-formed but
+denied; JSON envelopes are deterministic. `--project`, `--from` and
+`LEKALO_PROJECT` accept only safe invocation-relative selectors and never
+replace the physical `lekalo/project.yaml` marker.
