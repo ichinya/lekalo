@@ -1,7 +1,8 @@
 # ADR-0004: Lekalo Model v0.1
 
-Status: accepted model contract for issue #5 (pending owner review/closure);
-does not advance the product release.
+Status: corrected candidate decision for issue #5; pending a fresh independent
+PASS and publication. The accepted product release remains v0.1.1; v0.1.2 does
+not exist.
 
 Date: 2026-08-31
 
@@ -16,7 +17,7 @@ be equally usable from TypeScript, PHP and Go targets.
 
 ## Decision
 
-Adopt [`contracts/model.schema.v0.1.0.json`](../../contracts/model.schema.v0.1.0.json)
+The proposed contract is [`contracts/model.schema.v0.1.0.json`](../../contracts/model.schema.v0.1.0.json)
 (`$id https://lekalo.dev/schemas/model/0.1.0/schema.json`, `schema_version`
 const `0.1.0`) with [`scripts/check-model.mjs`](../../scripts/check-model.mjs) as the reference validator,
 `tests/fixtures/model/valid-planner` as the example model and twelve
@@ -57,9 +58,13 @@ invalid fixtures. The closed decisions:
 9. **Scope exclusions held.** No loops, recursion, expression language, UI
    layout or workflow orchestration; a future foreign implementation
    contract will carry complex logic.
-10. **Input loss fails closed.** Only an absent optional kind file (`ENOENT`)
-    may be skipped. Other read or directory-enumeration failures are
-    `model.scan-failed`, and discovered modules require `module.yaml`.
+10. **Structure and input loss fail closed.** Before any model read, the
+    checker reuses ADR-0003's exported structure validator. Structure invalids
+    map deterministically to `model.structure-invalid`/exit `1`; structure
+    denials retain the stronger denied verdict as
+    `model.structure-denied`/exit `3`, followed by the original ordered
+    `structure.*` reasons. After that gate, only an absent optional kind file
+    (`ENOENT`) may be skipped; other read failures are `model.scan-failed`.
     JSON Schema `minLength`/`maxLength` parity is defined over Unicode code
     points rather than JavaScript UTF-16 code units.
 

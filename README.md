@@ -105,5 +105,7 @@ node scripts/check-model.mjs --project tests/fixtures/model/valid-planner
 node scripts/test-model-contracts.mjs
 ```
 
-Model validation uses exit `0` for valid and exit `1` for usage, shape or
-semantic invalidity, with stable `model.*` reasons on stderr.
+Model validation uses exit `0` for valid and exit `1` for usage, structure/shape
+or semantic invalidity, with stable leading `model.*` reasons on stderr. The
+checker runs the #4 structure validator before any model read and preserves a
+physical-policy denial as exit `3` with deterministic JSON on stdout.

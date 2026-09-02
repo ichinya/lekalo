@@ -1,7 +1,8 @@
 # Lekalo Model v0.1
 
-Status: candidate contract for issue #5; pending independent review and owner
-acceptance. This contract does not advance the product release.
+Status: corrected candidate contract for issue #5; pending a fresh independent
+PASS and publication. The accepted product release remains v0.1.1; v0.1.2 does
+not exist.
 
 The model is language-neutral and uses the same semantic vocabulary for
 TypeScript, PHP and Go targets. It contains no target-language class, package,
@@ -100,6 +101,10 @@ acyclic; direct and mutual recursion fail with `model.type-recursion`.
 | `scenario` | `summary` | `covers` |
 | `target-binding` | `target` | — |
 
+Any other `kind` value, including prototype-like strings such as
+`constructor`, `toString` and `__proto__`, is classified as `model.constraint`
+before kind-specific dispatch.
+
 The model has no arbitrary expression language. Policy decisions are the
 closed values `allow` and `deny`; effects are `create`, `update` or `delete`;
 endpoint methods are transport-neutral HTTP verbs.
@@ -117,11 +122,19 @@ project semantics that JSON Schema cannot resolve by itself:
 - entity identity membership (`identity` must name declared fields);
 - target-binding resolution against `lekalo/targets/*.yaml`.
 
-Only `ENOENT` means that an optional kind document is absent. A present file or
-directory that cannot be read fails closed as `model.scan-failed`; each
-discovered module still requires its `module.yaml` from the #4 structure
-contract. JSON Schema string limits are counted in Unicode code points, not
-UTF-16 code units.
+Before reading any model document, the checker calls the exported #4 structure
+validator on the selected project. A malformed structure is mapped to exit `1`,
+stderr and `reasonCodes: ["model.structure-invalid", <structure reasons...>]`.
+A physical-policy denial is preserved as exit `3`, stdout and
+`reasonCodes: ["model.structure-denied", <structure reasons...>]`; it is never
+downgraded to model invalidity. Structure reason order is preserved, and only
+logical project-relative paths may appear in either envelope.
+
+After that precondition, only `ENOENT` means that an optional kind document is
+absent. A present canonical file that cannot be read fails closed as
+`model.scan-failed`; the structure validator separately requires every
+discovered module's `module.yaml`. JSON Schema string limits are counted in
+Unicode code points, not UTF-16 code units.
 
 Enum entries are objects, so JSON Schema `uniqueItems` cannot express
 uniqueness of the nested `value` property when descriptions differ. Duplicate
@@ -172,6 +185,8 @@ node scripts/check-model.mjs --project tests/fixtures/model/valid-planner
 node scripts/test-model-contracts.mjs
 ```
 
-Exit `0` means valid. Exit `1` means usage, malformed shape or semantic
-invalidity and writes a stable `model.*` reason to stderr. The Model layer has
-no policy-denied exit class.
+Exit `0` means valid. Exit `1` means usage, malformed structure or model shape,
+or semantic invalidity and writes a stable leading `model.*` reason to stderr.
+Exit `3` preserves a well-formed #4 physical-policy denial and writes its
+deterministic JSON envelope to stdout. Model semantics do not introduce an
+independent policy-denied class.

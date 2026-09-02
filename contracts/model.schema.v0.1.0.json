@@ -325,19 +325,19 @@
     "projectDocument": {
       "allOf": [
         { "$ref": "#/$defs/modelDocument" },
-        { "properties": { "definitions": { "minItems": 1, "maxItems": 1, "items": { "$ref": "#/$defs/projectDefinition" } } } }
+        { "type": "object", "properties": { "definitions": { "type": "array", "minItems": 1, "maxItems": 1, "items": { "$ref": "#/$defs/projectDefinition" } } } }
       ]
     },
     "moduleDocument": {
       "allOf": [
         { "$ref": "#/$defs/modelDocument" },
-        { "properties": { "definitions": { "minItems": 1, "maxItems": 1, "items": { "$ref": "#/$defs/moduleDefinition" } } } }
+        { "type": "object", "properties": { "definitions": { "type": "array", "minItems": 1, "maxItems": 1, "items": { "$ref": "#/$defs/moduleDefinition" } } } }
       ]
     },
     "entitiesDocument": {
       "allOf": [
         { "$ref": "#/$defs/modelDocument" },
-        { "properties": { "definitions": { "items": { "oneOf": [
+        { "type": "object", "properties": { "definitions": { "type": "array", "items": { "oneOf": [
           { "$ref": "#/$defs/scalarDefinition" },
           { "$ref": "#/$defs/enumDefinition" },
           { "$ref": "#/$defs/valueObjectDefinition" },
@@ -348,7 +348,7 @@
     "commandsDocument": {
       "allOf": [
         { "$ref": "#/$defs/modelDocument" },
-        { "properties": { "definitions": { "items": { "oneOf": [
+        { "type": "object", "properties": { "definitions": { "type": "array", "items": { "oneOf": [
           { "$ref": "#/$defs/commandDefinition" },
           { "$ref": "#/$defs/effectDefinition" }
         ] } } } }
@@ -357,31 +357,31 @@
     "queriesDocument": {
       "allOf": [
         { "$ref": "#/$defs/modelDocument" },
-        { "properties": { "definitions": { "items": { "$ref": "#/$defs/queryDefinition" } } } }
+        { "type": "object", "properties": { "definitions": { "type": "array", "items": { "$ref": "#/$defs/queryDefinition" } } } }
       ]
     },
     "policiesDocument": {
       "allOf": [
         { "$ref": "#/$defs/modelDocument" },
-        { "properties": { "definitions": { "items": { "$ref": "#/$defs/policyDefinition" } } } }
+        { "type": "object", "properties": { "definitions": { "type": "array", "items": { "$ref": "#/$defs/policyDefinition" } } } }
       ]
     },
     "eventsDocument": {
       "allOf": [
         { "$ref": "#/$defs/modelDocument" },
-        { "properties": { "definitions": { "items": { "$ref": "#/$defs/eventDefinition" } } } }
+        { "type": "object", "properties": { "definitions": { "type": "array", "items": { "$ref": "#/$defs/eventDefinition" } } } }
       ]
     },
     "scenariosDocument": {
       "allOf": [
         { "$ref": "#/$defs/modelDocument" },
-        { "properties": { "definitions": { "items": { "$ref": "#/$defs/scenarioDefinition" } } } }
+        { "type": "object", "properties": { "definitions": { "type": "array", "items": { "$ref": "#/$defs/scenarioDefinition" } } } }
       ]
     },
     "bindingsDocument": {
       "allOf": [
         { "$ref": "#/$defs/modelDocument" },
-        { "properties": { "definitions": { "items": { "oneOf": [
+        { "type": "object", "properties": { "definitions": { "type": "array", "items": { "oneOf": [
           { "$ref": "#/$defs/endpointDefinition" },
           { "$ref": "#/$defs/targetBindingDefinition" }
         ] } } } }

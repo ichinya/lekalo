@@ -2,8 +2,9 @@
 
 // Reference validator for Lekalo Model v0.1 (issue #5).
 // Contract: contracts/model.schema.v0.1.0.json and docs/model.md.
-// Exit protocol: 0 valid, 1 invalid/usage. There is no policy-denied class
-// in Model v0.1; every model failure is a well-classified invalid verdict.
+// Exit protocol: 0 valid, 1 invalid/usage, 3 when the accepted structure
+// contract denies physical input. Model validation never downgrades that
+// stronger structure verdict.
 //
 // This validator implements the closed shapes of the published schema
 // (type/required/properties/additionalProperties/const/enum/pattern/
@@ -18,12 +19,13 @@
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateProject } from "./check-structure.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixturesDir = join(root, "tests", "fixtures", "model");
 
 const SCHEMA_VERSION = "0.1.0";
-const KINDS = ["project", "module", "scalar", "enum", "value-object", "entity", "command", "query", "policy", "event", "effect", "endpoint", "scenario", "target-binding"];
+const KINDS = new Set(["project", "module", "scalar", "enum", "value-object", "entity", "command", "query", "policy", "event", "effect", "endpoint", "scenario", "target-binding"]);
 const FILE_KINDS = {
   "project.yaml": ["project"],
   "module.yaml": ["module"],
@@ -47,6 +49,38 @@ const EFFECT_OPERATIONS = ["create", "update", "delete"];
 const ENDPOINT_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const POLICY_DECISIONS = ["allow", "deny"];
 const MAX_TYPE_DEPTH = 4;
+const KIND_REQUIRED_FIELDS = new Map([
+  ["project", []],
+  ["module", []],
+  ["scalar", ["base"]],
+  ["enum", ["values"]],
+  ["value-object", ["fields"]],
+  ["entity", ["fields", "identity"]],
+  ["command", []],
+  ["query", ["reads"]],
+  ["policy", ["applies_to", "decision"]],
+  ["event", []],
+  ["effect", ["operation", "entity"]],
+  ["endpoint", ["invokes", "method", "path"]],
+  ["scenario", ["summary"]],
+  ["target-binding", ["target"]]
+]);
+const KIND_SPECIFIC_FIELDS = new Map([
+  ["project", []],
+  ["module", ["imports"]],
+  ["scalar", ["base"]],
+  ["enum", ["values"]],
+  ["value-object", ["fields"]],
+  ["entity", ["fields", "identity"]],
+  ["command", ["input", "effects"]],
+  ["query", ["reads", "returns"]],
+  ["policy", ["applies_to", "decision"]],
+  ["event", ["payload"]],
+  ["effect", ["operation", "entity", "emits"]],
+  ["endpoint", ["invokes", "method", "path"]],
+  ["scenario", ["summary", "covers"]],
+  ["target-binding", ["target"]]
+]);
 
 function invalid(reasonCodes) {
   return { outcome: "invalid", reasonCodes };
@@ -58,6 +92,15 @@ function isObject(value) {
 
 function stringLength(value) {
   return [...value].length;
+}
+
+function reasonValue(value) {
+  if (typeof value === "string") return value;
+  if (value === null) return "null";
+  if (["number", "boolean"].includes(typeof value)) return String(value);
+  if (Array.isArray(value)) return "array";
+  if (typeof value === "object") return "object";
+  return typeof value;
 }
 
 function isNonEmptyString(value, max = 2000) {
@@ -92,7 +135,7 @@ function checkClosedObject(definition, allowed, where) {
 
 function checkEnum(value, allowed, where) {
   if (!allowed.includes(value)) {
-    return invalid(["model.constraint", where, `value:${String(value)}`]);
+    return invalid(["model.constraint", where, `value:${reasonValue(value)}`]);
   }
   return null;
 }
@@ -170,23 +213,7 @@ function checkIdList(list, where, minItems = 1) {
 }
 
 function kindRequiredFields(kind) {
-  const required = {
-    project: [],
-    module: [],
-    scalar: ["base"],
-    enum: ["values"],
-    "value-object": ["fields"],
-    entity: ["fields", "identity"],
-    command: [],
-    query: ["reads"],
-    policy: ["applies_to", "decision"],
-    event: [],
-    effect: ["operation", "entity"],
-    endpoint: ["invokes", "method", "path"],
-    scenario: ["summary"],
-    "target-binding": ["target"]
-  };
-  return required[kind] ?? [];
+  return KIND_REQUIRED_FIELDS.get(kind) ?? [];
 }
 
 function checkDefinition(definition, where, allowedKinds) {
@@ -198,12 +225,12 @@ function checkDefinition(definition, where, allowedKinds) {
       return invalid(["model.field-missing", where, `field:${key}`]);
     }
   }
+  if (!KINDS.has(definition.kind)) {
+    return invalid(["model.constraint", where, `kind:${reasonValue(definition.kind)}`]);
+  }
   const failure = checkClosedObject(definition, new Set([...COMMON_FIELDS, ...kindSpecificFields(definition.kind)]), where);
   if (failure) {
     return failure;
-  }
-  if (!KINDS.includes(definition.kind)) {
-    return invalid(["model.constraint", where, `kind:${String(definition.kind)}`]);
   }
   if (!allowedKinds.includes(definition.kind)) {
     return invalid(["model.kind-not-allowed-in-file", where, `kind:${definition.kind}`]);
@@ -254,23 +281,7 @@ function checkDefinition(definition, where, allowedKinds) {
 }
 
 function kindSpecificFields(kind) {
-  const fields = {
-    project: [],
-    module: ["imports"],
-    scalar: ["base"],
-    enum: ["values"],
-    "value-object": ["fields"],
-    entity: ["fields", "identity"],
-    command: ["input", "effects"],
-    query: ["reads", "returns"],
-    policy: ["applies_to", "decision"],
-    event: ["payload"],
-    effect: ["operation", "entity", "emits"],
-    endpoint: ["invokes", "method", "path"],
-    scenario: ["summary", "covers"],
-    "target-binding": ["target"]
-  };
-  return fields[kind] ?? [];
+  return KIND_SPECIFIC_FIELDS.get(kind) ?? [];
 }
 
 function checkKindSpecificFields(definition, where) {
@@ -449,7 +460,7 @@ function checkDocumentShape(document, where, allowedKinds) {
     return failure;
   }
   if (document.schema_version !== SCHEMA_VERSION) {
-    return invalid(["model.schema-version", where, `value:${String(document.schema_version)}`]);
+    return invalid(["model.schema-version", where, `value:${reasonValue(document.schema_version)}`]);
   }
   if (!Array.isArray(document.definitions) || document.definitions.length < 1) {
     return invalid(["model.shape", where, "definitions"]);
@@ -744,6 +755,11 @@ async function loadProject(projectRoot) {
 }
 
 export async function validateModel(projectRoot) {
+  const structure = await validateProject(projectRoot);
+  if (structure.outcome !== "valid") {
+    const modelReason = structure.outcome === "denied" ? "model.structure-denied" : "model.structure-invalid";
+    return { outcome: structure.outcome, reasonCodes: [modelReason, ...structure.reasonCodes] };
+  }
   const loaded = await loadProject(projectRoot);
   if (loaded.error) {
     return loaded.error;
@@ -838,7 +854,12 @@ export async function main(argv) {
       process.stdout.write(JSON.stringify(result.report, null, 2) + "\n");
       return 0;
     }
-    process.stderr.write(JSON.stringify({ status: "invalid", reasonCodes: result.reasonCodes }, null, 2) + "\n");
+    const envelope = JSON.stringify({ status: result.outcome, reasonCodes: result.reasonCodes }, null, 2) + "\n";
+    if (result.outcome === "denied") {
+      process.stdout.write(envelope);
+      return 3;
+    }
+    process.stderr.write(envelope);
     return 1;
   }
   const conformance = await runFixtureConformance();
