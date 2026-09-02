@@ -1,0 +1,1 @@
+{"schema_version":"0.1.0","definitions":[{"id":"planner.thing","kind":"entity","version":1,"fields":[{"name":"id","type":{"ref":"planner.text"},"required":true}],"identity":["id"]}]}

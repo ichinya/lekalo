@@ -1,0 +1,1 @@
+{"schema_version":"0.1.0","definitions":[{"id":"planner.focus_owner_only","kind":"policy","version":1,"description":"Only the task owner may focus it","applies_to":["planner.focus_task"],"decision":"allow"},{"id":"planner.deny_bulk_focus","kind":"policy","version":1,"description":"Bulk focus is out of scope","applies_to":["planner.focus_task"],"decision":"deny"}]}
