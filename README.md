@@ -88,3 +88,22 @@ The exit protocol is `0` valid, `1` malformed/usage, `3` well-formed but
 denied; JSON envelopes are deterministic. `--project`, `--from` and
 `LEKALO_PROJECT` accept only safe invocation-relative selectors and never
 replace the physical `lekalo/project.yaml` marker.
+
+## Lekalo Model v0.1
+
+The minimal language-neutral semantic model for issue #5 is defined by the
+[Model contract](docs/model.md), [ADR-0004](docs/adr/0004-model-v0.1.md) and
+the versioned schema `contracts/model.schema.v0.1.0.json`. The planner fixture
+exercises all fourteen definition kinds. Cross-reference resolution is a
+separate semantic pass; block-YAML parsing and imports remain issue #7 scope.
+
+Run the dependency-free checker and its independent schema/semantic suite:
+
+```sh
+node scripts/check-model.mjs
+node scripts/check-model.mjs --project tests/fixtures/model/valid-planner
+node scripts/test-model-contracts.mjs
+```
+
+Model validation uses exit `0` for valid and exit `1` for usage, shape or
+semantic invalidity, with stable `model.*` reasons on stderr.

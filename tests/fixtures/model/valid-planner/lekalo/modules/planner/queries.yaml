@@ -1,0 +1,4 @@
+{"schema_version":"0.1.0","definitions":[
+{"id":"planner.list_tasks","kind":"query","version":1,"description":"List tasks by state","derived_from":["PLANNER-REQ-002"],"reads":["planner.task"],"returns":{"list":{"ref":"planner.task"}}},
+{"id":"planner.count_focused","kind":"query","version":1,"description":"Count focused tasks","reads":["planner.task"],"returns":{"ref":"planner.task_state"}}
+]}

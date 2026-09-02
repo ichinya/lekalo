@@ -1,0 +1,4 @@
+{"schema_version":"0.1.0","definitions":[
+{"id":"planner.endpoint_focus_task","kind":"endpoint","version":1,"description":"HTTP entry point for focusing a task","invokes":"planner.focus_task","method":"POST","path":"/tasks/focus"},
+{"id":"planner.binding_node","kind":"target-binding","version":1,"description":"Bind the planner module to the TypeScript target","target":"node-typescript"}
+]}

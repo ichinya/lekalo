@@ -1,0 +1,1 @@
+{"schema_version":"0.1.0","definitions":[{"id":"planner.text","kind":"scalar","version":1,"base":"string","foo":1}]}

@@ -1,0 +1,1 @@
+{"schema_version":"0.1.0","definitions":[{"id":"planner.focus_one_task","kind":"scenario","version":1,"description":"Owner focuses one task end to end","summary":"Given one backlog task, the owner focuses it and the task becomes focused.","derived_from":["PLANNER-REQ-001"],"covers":["planner.focus_task","planner.effect_task_created"]}]}

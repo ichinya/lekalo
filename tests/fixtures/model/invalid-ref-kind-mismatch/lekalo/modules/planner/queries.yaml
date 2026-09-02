@@ -1,0 +1,1 @@
+{"schema_version":"0.1.0","definitions":[{"id":"planner.get_text","kind":"query","version":1,"reads":["planner.text"]}]}
