@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "definitions": [
+    {
+      "id": "planner.bad-name",
+      "kind": "scalar",
+      "version": 1,
+      "base": "string"
+    }
+  ]
+}

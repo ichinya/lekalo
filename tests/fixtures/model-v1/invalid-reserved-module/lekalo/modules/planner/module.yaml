@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "definitions": [
+    {
+      "id": "dev",
+      "kind": "module",
+      "version": 1
+    }
+  ]
+}

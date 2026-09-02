@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "definitions": [
+    {
+      "id": "planner.old",
+      "kind": "scalar",
+      "version": 1,
+      "base": "string"
+    },
+    {
+      "id": "planner.new",
+      "kind": "scalar",
+      "version": 2,
+      "base": "string",
+      "renamed_from": [
+        "planner.old"
+      ]
+    }
+  ]
+}

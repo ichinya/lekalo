@@ -1,0 +1,1176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/schemas/model/1.0.0/schema.json",
+  "title": "Lekalo Model v1.0",
+  "description": "Language-neutral semantic application model with stable semantic IDs. This major successor preserves every non-ID Model 0.1.0 shape while adding exact project, module and symbol ID classes plus symbol-only rename history and a closed project ID registry.",
+  "type": "object",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/projectDocument"
+    },
+    {
+      "$ref": "#/$defs/moduleDocument"
+    },
+    {
+      "$ref": "#/$defs/entitiesDocument"
+    },
+    {
+      "$ref": "#/$defs/commandsDocument"
+    },
+    {
+      "$ref": "#/$defs/queriesDocument"
+    },
+    {
+      "$ref": "#/$defs/policiesDocument"
+    },
+    {
+      "$ref": "#/$defs/eventsDocument"
+    },
+    {
+      "$ref": "#/$defs/scenariosDocument"
+    },
+    {
+      "$ref": "#/$defs/bindingsDocument"
+    }
+  ],
+  "$defs": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "segmentId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+      "minLength": 1,
+      "maxLength": 63
+    },
+    "projectId": {
+      "description": "Immutable one-segment project semantic ID; tool-reserved IDs are excluded.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/segmentId"
+        },
+        {
+          "not": {
+            "enum": [
+              "lekalo",
+              "dev"
+            ]
+          }
+        }
+      ]
+    },
+    "moduleId": {
+      "description": "Immutable one-segment module semantic ID, independent of its physical directory; tool-reserved IDs are excluded.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/segmentId"
+        },
+        {
+          "not": {
+            "enum": [
+              "lekalo",
+              "dev"
+            ]
+          }
+        }
+      ]
+    },
+    "symbolId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}\\.[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$",
+      "minLength": 3,
+      "maxLength": 191
+    },
+    "renamedFrom": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/symbolId"
+      },
+      "description": "Direct historical semantic IDs of this live symbol. These IDs are traceability metadata only and must match direct incoming rename_history edges."
+    },
+    "renameHistoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "definition_version"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/symbolId"
+        },
+        "to": {
+          "$ref": "#/$defs/symbolId"
+        },
+        "definition_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "same_identity": {
+          "const": true,
+          "description": "Required on every edge when two or more historical IDs converge on the same target; asserts one identity rather than a semantic merge."
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    },
+    "tombstoneEntry": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "reason",
+            "replaced_by",
+            "since"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "reason": {
+              "const": "replaced"
+            },
+            "replaced_by": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "since": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "reason",
+            "since"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "reason": {
+              "const": "deleted"
+            },
+            "since": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      ]
+    },
+    "idRegistry": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "rename_history": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/renameHistoryEntry"
+          }
+        },
+        "tombstones": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/tombstoneEntry"
+          }
+        }
+      }
+    },
+    "moduleName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+    },
+    "targetName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+    },
+    "requirementId": {
+      "type": "string",
+      "pattern": "^[A-Z0-9][A-Z0-9._-]{0,127}$"
+    },
+    "fieldName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "commonFields": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "project",
+            "module",
+            "scalar",
+            "enum",
+            "value-object",
+            "entity",
+            "command",
+            "query",
+            "policy",
+            "event",
+            "effect",
+            "endpoint",
+            "scenario",
+            "target-binding"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "derived_from": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        },
+        "visibility": {
+          "enum": [
+            "module",
+            "project"
+          ]
+        },
+        "portability": {
+          "enum": [
+            "portable",
+            "target-specific"
+          ]
+        }
+      }
+    },
+    "typeExpressionLeaf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/symbolId"
+        }
+      }
+    },
+    "typeExpressionLevel4": {
+      "$ref": "#/$defs/typeExpressionLeaf"
+    },
+    "typeExpressionLevel3": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/typeExpressionLeaf"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "list"
+          ],
+          "properties": {
+            "list": {
+              "$ref": "#/$defs/typeExpressionLevel4"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "optional"
+          ],
+          "properties": {
+            "optional": {
+              "$ref": "#/$defs/typeExpressionLevel4"
+            }
+          }
+        }
+      ]
+    },
+    "typeExpressionLevel2": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/typeExpressionLeaf"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "list"
+          ],
+          "properties": {
+            "list": {
+              "$ref": "#/$defs/typeExpressionLevel3"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "optional"
+          ],
+          "properties": {
+            "optional": {
+              "$ref": "#/$defs/typeExpressionLevel3"
+            }
+          }
+        }
+      ]
+    },
+    "typeExpression": {
+      "description": "A type reference: a scalar/enum/value-object/entity id, optionally wrapped in list/optional. Exactly one wrapper per level; nesting deeper than four levels is invalid.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/typeExpressionLeaf"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "list"
+          ],
+          "properties": {
+            "list": {
+              "$ref": "#/$defs/typeExpressionLevel2"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "optional"
+          ],
+          "properties": {
+            "optional": {
+              "$ref": "#/$defs/typeExpressionLevel2"
+            }
+          }
+        }
+      ]
+    },
+    "fieldDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "type": {
+          "$ref": "#/$defs/typeExpression"
+        },
+        "required": {
+          "const": true
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    },
+    "projectDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/projectId"
+            },
+            "kind": {
+              "const": "project"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "id_registry": {
+              "$ref": "#/$defs/idRegistry"
+            }
+          }
+        }
+      ]
+    },
+    "moduleDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/moduleId"
+            },
+            "kind": {
+              "const": "module"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "imports": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/moduleId"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "scalarDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "base"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "kind": {
+              "const": "scalar"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "base": {
+              "enum": [
+                "string",
+                "number",
+                "boolean",
+                "date",
+                "datetime",
+                "uuid",
+                "uri"
+              ]
+            },
+            "renamed_from": {
+              "$ref": "#/$defs/renamedFrom"
+            }
+          }
+        }
+      ]
+    },
+    "enumDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "values"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "kind": {
+              "const": "enum"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "values": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                }
+              }
+            },
+            "renamed_from": {
+              "$ref": "#/$defs/renamedFrom"
+            }
+          }
+        }
+      ]
+    },
+    "valueObjectDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "fields"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "kind": {
+              "const": "value-object"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "fields": {
+              "$ref": "#/$defs/fieldList"
+            },
+            "renamed_from": {
+              "$ref": "#/$defs/renamedFrom"
+            }
+          }
+        }
+      ]
+    },
+    "entityDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "fields",
+            "identity"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "kind": {
+              "const": "entity"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "fields": {
+              "$ref": "#/$defs/fieldList"
+            },
+            "identity": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/fieldName"
+              }
+            },
+            "renamed_from": {
+              "$ref": "#/$defs/renamedFrom"
+            }
+          }
+        }
+      ]
+    },
+    "commandDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "kind": {
+              "const": "command"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "input": {
+              "$ref": "#/$defs/fieldList"
+            },
+            "effects": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/symbolId"
+              }
+            },
+            "renamed_from": {
+              "$ref": "#/$defs/renamedFrom"
+            }
+          }
+        }
+      ]
+    },
+    "queryDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reads"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "kind": {
+              "const": "query"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "reads": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/symbolId"
+              }
+            },
+            "returns": {
+              "$ref": "#/$defs/typeExpression"
+            },
+            "renamed_from": {
+              "$ref": "#/$defs/renamedFrom"
+            }
+          }
+        }
+      ]
+    },
+    "policyDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "applies_to",
+            "decision"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "kind": {
+              "const": "policy"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "applies_to": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/symbolId"
+              }
+            },
+            "decision": {
+              "enum": [
+                "allow",
+                "deny"
+              ]
+            },
+            "renamed_from": {
+              "$ref": "#/$defs/renamedFrom"
+            }
+          }
+        }
+      ]
+    },
+    "eventDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "kind": {
+              "const": "event"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "payload": {
+              "$ref": "#/$defs/fieldList"
+            },
+            "renamed_from": {
+              "$ref": "#/$defs/renamedFrom"
+            }
+          }
+        }
+      ]
+    },
+    "effectDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "entity"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "kind": {
+              "const": "effect"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "operation": {
+              "enum": [
+                "create",
+                "update",
+                "delete"
+              ]
+            },
+            "entity": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "emits": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/symbolId"
+              }
+            },
+            "renamed_from": {
+              "$ref": "#/$defs/renamedFrom"
+            }
+          }
+        }
+      ]
+    },
+    "endpointDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "invokes",
+            "method",
+            "path"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "kind": {
+              "const": "endpoint"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "invokes": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "method": {
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ]
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^(/[a-z0-9:_{}-]+)+$",
+              "maxLength": 512
+            },
+            "renamed_from": {
+              "$ref": "#/$defs/renamedFrom"
+            }
+          }
+        }
+      ]
+    },
+    "scenarioDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "summary"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "kind": {
+              "const": "scenario"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "summary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "covers": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/symbolId"
+              }
+            },
+            "renamed_from": {
+              "$ref": "#/$defs/renamedFrom"
+            }
+          }
+        }
+      ]
+    },
+    "targetBindingDefinition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/commonFields"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "kind": {
+              "const": "target-binding"
+            },
+            "version": true,
+            "description": true,
+            "derived_from": true,
+            "visibility": true,
+            "portability": true,
+            "target": {
+              "$ref": "#/$defs/targetName"
+            },
+            "renamed_from": {
+              "$ref": "#/$defs/renamedFrom"
+            }
+          }
+        }
+      ]
+    },
+    "fieldList": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/fieldDefinition"
+      }
+    },
+    "modelDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "definitions"
+      ],
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/schemaVersion"
+        },
+        "definitions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "projectDocument": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/modelDocument"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "definitions": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "$ref": "#/$defs/projectDefinition"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "moduleDocument": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/modelDocument"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "definitions": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "$ref": "#/$defs/moduleDefinition"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "entitiesDocument": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/modelDocument"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "definitions": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/scalarDefinition"
+                  },
+                  {
+                    "$ref": "#/$defs/enumDefinition"
+                  },
+                  {
+                    "$ref": "#/$defs/valueObjectDefinition"
+                  },
+                  {
+                    "$ref": "#/$defs/entityDefinition"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "commandsDocument": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/modelDocument"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "definitions": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/commandDefinition"
+                  },
+                  {
+                    "$ref": "#/$defs/effectDefinition"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "queriesDocument": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/modelDocument"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "definitions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/queryDefinition"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "policiesDocument": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/modelDocument"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "definitions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/policyDefinition"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "eventsDocument": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/modelDocument"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "definitions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/eventDefinition"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "scenariosDocument": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/modelDocument"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "definitions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/scenarioDefinition"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "bindingsDocument": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/modelDocument"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "definitions": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/endpointDefinition"
+                  },
+                  {
+                    "$ref": "#/$defs/targetBindingDefinition"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

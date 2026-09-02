@@ -89,24 +89,38 @@ denied; JSON envelopes are deterministic. `--project`, `--from` and
 `LEKALO_PROJECT` accept only safe invocation-relative selectors and never
 replace the physical `lekalo/project.yaml` marker.
 
-## Lekalo Model v0.1
+## Lekalo Model contracts and semantic IDs
 
-The minimal language-neutral semantic model for issue #5 is defined by the
-[Model contract](docs/model.md), [ADR-0004](docs/adr/0004-model-v0.1.md) and
-the versioned schema `contracts/model.schema.v0.1.0.json`. The planner fixture
-exercises all fourteen definition kinds. Cross-reference resolution is a
-separate semantic pass; block-YAML parsing and imports remain issue #7 scope.
+The published language-neutral Model 0.1.0 contract for issue #5 remains at
+[Model 0.1](docs/model.md), [ADR-0004](docs/adr/0004-model-v0.1.md), and
+`contracts/model.schema.v0.1.0.json`. Its stable-ID successor is
+[Model 1.0](docs/model-1.0.md), governed by the closed
+[semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
+and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract
+versions are independent of product releases; issue #6 is the prospective
+product 0.1.4 candidate because issue #3 published product 0.1.3.
+
+The checker recognizes only the two exact schema versions, and all documents
+in one project must agree. Model 1.0 makes project/module IDs one-segment and immutable,
+supports two- or three-segment symbol IDs, decouples module identity from its
+directory, and adds symbol-only rename history plus permanent tombstones.
+Historical IDs are traceability only and never resolve live references.
 
 Run the dependency-free checker and its independent schema/semantic suite:
 
 ```sh
 node scripts/check-model.mjs
 node scripts/check-model.mjs --project tests/fixtures/model/valid-planner
+node scripts/check-model.mjs --project tests/fixtures/model-v1/valid-planner
+node scripts/check-model.mjs --check-id planner.event.focus_changed
 node scripts/test-model-contracts.mjs
+# Release gate: exact Ajv 8.17.1 is provisioned outside this checkout (CI does the same on Node 18 and 24) and exposed through NODE_PATH.
+node scripts/test-model-ajv.mjs
 ```
 
 Model validation uses exit `0` for valid and exit `1` for usage, structure/shape
-or semantic invalidity, with stable leading `model.*` reasons on stderr. The
+or semantic invalidity, with stable leading `model.*` or `semantic-id.*`
+reasons on stderr. The
 checker runs the #4 structure validator before any model read and preserves a
 physical-policy denial as exit `3` with deterministic JSON on stdout.
 

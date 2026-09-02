@@ -230,8 +230,8 @@ mod tests {
     fn every_result_variant_has_an_exact_json_snapshot() {
         let cases = [
             (
-                DomainResult::version("0.1.3"),
-                "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.3\"\n}",
+                DomainResult::version("0.1.4"),
+                "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.4\"\n}",
             ),
             (
                 DomainResult::usage_error(),
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn every_result_variant_has_an_exact_human_projection() {
         let cases = [
-            (DomainResult::version("0.1.3"), "lekalo 0.1.3"),
+            (DomainResult::version("0.1.4"), "lekalo 0.1.4"),
             (DomainResult::usage_error(), "invalid: cli.usage"),
             (
                 DomainResult::denied(vec![ReasonCode::new("policy.denied")]),

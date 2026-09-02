@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "definitions": [
+    {
+      "id": "planner.find_task",
+      "kind": "query",
+      "version": 1,
+      "reads": [
+        "planner.old_task"
+      ]
+    }
+  ]
+}

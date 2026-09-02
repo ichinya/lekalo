@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0.0",
+  "definitions": [
+    {
+      "id": "planner.zed",
+      "kind": "scalar",
+      "version": 1,
+      "base": "string"
+    },
+    {
+      "id": "planner.alpha",
+      "kind": "scalar",
+      "version": 1,
+      "base": "string"
+    },
+    {
+      "id": "planner.middle",
+      "kind": "scalar",
+      "version": 1,
+      "base": "string"
+    }
+  ]
+}

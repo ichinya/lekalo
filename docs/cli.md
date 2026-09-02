@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.3. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.4. The product
 version is independent of every contract or model schema version.
 
 The core crate owns `Request`, `Status`, `DomainResult`, reason codes, and the
@@ -26,6 +26,10 @@ syntax reaches the named capability and returns `unsupported`. `SYMBOL` is an
 opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic ID
 rules, project discovery, model loading, validation, graph/IR construction,
 and real inspect, impact, or context behavior belong to later issues.
+When those capabilities are implemented they are bound by
+dev.lekalo.semantic-ids@0.1.0 to use the validated semantic ID verbatim as
+their canonical key; the machine contract closes that consumer list, and this
+foundation implements none of its members.
 
 `--json` is global and may appear before or after a subcommand. Both
 `lekalo --json --version` and `lekalo --version --json` select JSON output.
@@ -83,13 +87,13 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.3"
+  "version": "0.1.4"
 }
 ```
 
 The corresponding human lines are `invalid: cli.usage`,
 `unsupported: core.capability-unavailable CAPABILITY`, and
-`lekalo 0.1.3`. Human and JSON renderers consume the same `DomainResult`.
+`lekalo 0.1.4`. Human and JSON renderers consume the same `DomainResult`.
 
 ## Development checks
 
@@ -103,4 +107,7 @@ cargo test --workspace --locked
 
 CI also checks the exact Rust 1.80.0 toolchain, builds and tests on Linux,
 Windows, and macOS, and runs every accepted Node contract checker and suite on
-Node.js 18 and 24.
+Node.js 18 and 24. On both Node majors the contracts job additionally
+provisions exact Ajv 8.17.1 under the runner temp directory, outside the
+checkout, exposes it to scripts/test-model-ajv.mjs alone through NODE_PATH,
+and fails the job on any install, version, or gate failure.

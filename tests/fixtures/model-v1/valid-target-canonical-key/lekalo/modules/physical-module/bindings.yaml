@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "definitions": [
+    {
+      "id": "planner.target_binding.node",
+      "kind": "target-binding",
+      "version": 1,
+      "target": "node-typescript"
+    }
+  ]
+}

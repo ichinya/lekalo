@@ -1,0 +1,198 @@
+{
+  "contractId": "dev.lekalo.semantic-ids",
+  "version": "0.1.0",
+  "status": "implementation-candidate",
+  "closed": true,
+  "releaseBinding": {
+    "productCandidate": "0.1.4",
+    "modelSchemaSuccessor": "1.0.0",
+    "versionsIndependent": true
+  },
+  "segment": {
+    "pattern": "^[a-z][a-z0-9_]{0,62}$",
+    "encoding": "ASCII",
+    "minBytes": 1,
+    "maxBytes": 63,
+    "normalization": "none",
+    "caseFolding": "forbidden",
+    "wordSeparator": "_",
+    "forbiddenExamples": [
+      "Upper",
+      "hy-phen",
+      "white space",
+      "unicode_é",
+      ""
+    ]
+  },
+  "idClasses": {
+    "projectId": {
+      "segments": [
+        1,
+        1
+      ],
+      "immutable": true,
+      "reserved": [
+        "lekalo",
+        "dev"
+      ]
+    },
+    "moduleId": {
+      "segments": [
+        1,
+        1
+      ],
+      "immutable": true,
+      "independentOfPhysicalDirectory": true,
+      "uniqueWithinProject": true,
+      "reserved": [
+        "lekalo",
+        "dev"
+      ]
+    },
+    "symbolId": {
+      "segments": [
+        2,
+        3
+      ],
+      "minLength": 3,
+      "maxLength": 191,
+      "shape": "<module>.<name> or <module>.<kind-namespace>.<name>",
+      "qualifierIsDeclaredModuleId": true,
+      "globallyUniqueWithinProject": true
+    }
+  },
+  "kindNamespaces": {
+    "optional": true,
+    "exactKindTokenRequiredWhenPresent": true,
+    "kindToTokenTransform": "replace '-' with '_'",
+    "tokens": [
+      "scalar",
+      "enum",
+      "value_object",
+      "entity",
+      "command",
+      "query",
+      "policy",
+      "event",
+      "effect",
+      "endpoint",
+      "scenario",
+      "target_binding"
+    ],
+    "fuzzyEquivalence": false
+  },
+  "canonicalOrdering": {
+    "encoding": "UTF-8",
+    "comparisonUnit": "unsigned-byte",
+    "direction": "ascending",
+    "completeDottedId": true,
+    "sourceOrderRequired": false,
+    "localeComparison": false
+  },
+  "identityHistory": {
+    "scope": "symbol-only",
+    "projectAndModuleIdsImmutable": true,
+    "renamedFromField": "renamed_from",
+    "renamedFromMeaning": "direct incoming historical IDs of the same live symbol",
+    "historicalIdsResolveAsLiveReferences": false
+  },
+  "renameGraph": {
+    "registryPath": "project.id_registry.rename_history",
+    "functional": true,
+    "acyclic": true,
+    "sourceMayBeLive": false,
+    "sourceMayBeTombstoned": false,
+    "target": "later rename source or live symbol",
+    "chainTermination": "exactly one live symbol",
+    "directIncomingMustEqualRenamedFrom": true,
+    "versionField": "definition_version",
+    "versionRule": "strictly increases along a chain and never exceeds the terminal live symbol version",
+    "convergence": {
+      "permitted": true,
+      "meaning": "same identity only",
+      "assertionField": "same_identity",
+      "assertionValue": true,
+      "requiredOnEveryConvergingEdge": true,
+      "semanticMergeUsesTombstone": true
+    }
+  },
+  "tombstones": {
+    "registryPath": "project.id_registry.tombstones",
+    "reasons": [
+      "deleted",
+      "replaced"
+    ],
+    "unique": true,
+    "disjointFromLiveAndRenameGraph": true,
+    "permanentNonReuse": true,
+    "deletedAllowsReplacedBy": false,
+    "replacedRequiresLiveReplacedBy": true,
+    "sinceIsProjectDefinitionVersion": true,
+    "sinceMustNotExceedProjectVersion": true
+  },
+  "targetCanonicalKey": {
+    "source": "symbol.id",
+    "verbatim": true,
+    "transformation": "none",
+    "caseFolding": false,
+    "truncation": false,
+    "translation": false,
+    "adapterMayInventCanonicalId": false,
+    "canonicalKeyConsumers": {
+      "closed": true,
+      "binding": "every consumer uses the validated semantic symbol ID verbatim as its canonical key and must not invent, derive, case-fold, truncate, translate, or substitute one",
+      "entries": [
+        { "name": "context.capsule", "kind": "artifact", "status": "deferred" },
+        { "name": "generated-artifacts", "kind": "artifact", "status": "deferred" },
+        { "name": "impact", "kind": "command", "status": "deferred" },
+        { "name": "inspect", "kind": "command", "status": "deferred" },
+        { "name": "target-adapters", "kind": "adapter", "status": "deferred" },
+        { "name": "trace.manifest", "kind": "manifest", "status": "deferred" }
+      ],
+      "implementedSurfaces": [
+        { "name": "model-checker", "surface": "scripts/check-model.mjs validation report and --check-id", "status": "implemented", "emits": "verbatim canonical key" }
+      ]
+    }
+  },
+  "migration": {
+    "automaticChangeAllowed": "schema_version only, and only when every existing ID already satisfies this contract",
+    "ownerAuthoredChangeRequiredForNonconformingIds": true,
+    "autoCaseFold": false,
+    "autoTruncate": false,
+    "autoTranslateHyphens": false
+  },
+  "diagnostics": {
+    "precedence": [
+      "structure containment",
+      "document parse and closed shape",
+      "exact and uniform schema version",
+      "ID grammar, class, and reserved IDs",
+      "module and live-symbol uniqueness",
+      "module qualification and kind namespace",
+      "rename and tombstone registry",
+      "live-only reference resolution",
+      "named-type recursion"
+    ],
+    "semanticIdCodes": [
+      "semantic-id.grammar",
+      "semantic-id.id-class",
+      "semantic-id.reserved",
+      "semantic-id.module-duplicate",
+      "semantic-id.kind-namespace",
+      "semantic-id.alias-ambiguous",
+      "semantic-id.alias-convergence-unasserted",
+      "semantic-id.rename-source-live",
+      "semantic-id.rename-target-missing",
+      "semantic-id.rename-cycle",
+      "semantic-id.rename-metadata-mismatch",
+      "semantic-id.rename-version",
+      "semantic-id.registry-overlap",
+      "semantic-id.registry-project-version",
+      "semantic-id.tombstone-duplicate",
+      "semantic-id.tombstone-reuse",
+      "semantic-id.tombstone-target-missing",
+      "semantic-id.tombstone-replaced-by-forbidden",
+      "semantic-id.tombstone-version"
+    ]
+  }
+}

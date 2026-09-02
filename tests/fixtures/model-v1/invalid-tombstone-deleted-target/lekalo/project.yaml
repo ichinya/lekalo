@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "definitions": [
+    {
+      "id": "planner",
+      "kind": "project",
+      "version": 2,
+      "id_registry": {
+        "tombstones": [
+          {
+            "id": "planner.old",
+            "reason": "deleted",
+            "replaced_by": "planner.text",
+            "since": 2
+          }
+        ]
+      }
+    }
+  ]
+}

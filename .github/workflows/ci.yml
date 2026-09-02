@@ -21,6 +21,17 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           package-manager-cache: false
+      - name: Provision exact Ajv 8.17.1 outside the checkout
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1
+          test "$(node -p "require('$RUNNER_TEMP/lekalo-ajv-8.17.1/node_modules/ajv/package.json').version")" = "8.17.1"
+      - name: Run pinned Ajv schema release gate
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-model-ajv.mjs
       - name: Run contract checkers and suites
         run: |
           node scripts/check-authority.mjs

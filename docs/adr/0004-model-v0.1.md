@@ -1,6 +1,6 @@
 # ADR-0004: Lekalo Model v0.1
 
-Status: issue #5 is accepted and published as product 0.1.2 at exact commit `b2ace5e893ffd62c80250099792d2e33a0aff3a7`, with immutable annotated tag `v0.1.2`; issue #3 remains only the prospective 0.1.3 candidate until fresh independent PASS, publication, remote verification and closure evidence. Product versions remain independent from Model, schema, semantic-ID, IR and other contract versions.
+Status: issue #3 is accepted and published as product 0.1.3 at exact commit `9c35c8f61a87e89ed15471e7f12012946916e8d5`, with immutable annotated tag `v0.1.3`; issue #6 is only the prospective product 0.1.4 candidate until fresh independent PASS, publication, remote verification and closure evidence. Product versions remain independent from Model, schema, semantic-ID, IR and other contract versions.
 
 Date: 2026-08-31
 

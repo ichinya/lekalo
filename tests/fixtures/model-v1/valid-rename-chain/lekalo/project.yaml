@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "definitions": [
+    {
+      "id": "planner",
+      "kind": "project",
+      "version": 3,
+      "id_registry": {
+        "rename_history": [
+          {
+            "from": "planner.legacy_text",
+            "to": "planner.former_text",
+            "definition_version": 2
+          },
+          {
+            "from": "planner.former_text",
+            "to": "planner.text",
+            "definition_version": 3
+          }
+        ]
+      }
+    }
+  ]
+}

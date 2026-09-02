@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "definitions": [
+    {
+      "id": "planner",
+      "kind": "project",
+      "version": 2
+    }
+  ]
+}

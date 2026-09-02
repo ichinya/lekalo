@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "definitions": [
+    {
+      "id": "other.text",
+      "kind": "scalar",
+      "version": 1,
+      "base": "string"
+    }
+  ]
+}

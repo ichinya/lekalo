@@ -1,0 +1,6 @@
+{
+  "from": "0.1.0",
+  "to": "1.0.0",
+  "automaticChange": "schema_version-only",
+  "changedDocumentCount": 4
+}

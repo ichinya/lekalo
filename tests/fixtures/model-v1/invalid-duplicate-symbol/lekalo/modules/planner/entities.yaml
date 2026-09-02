@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0.0",
+  "definitions": [
+    {
+      "id": "planner.text",
+      "kind": "scalar",
+      "version": 1,
+      "base": "string"
+    },
+    {
+      "id": "planner.text",
+      "kind": "scalar",
+      "version": 1,
+      "base": "string"
+    }
+  ]
+}

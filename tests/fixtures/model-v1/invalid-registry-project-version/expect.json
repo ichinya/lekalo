@@ -1,0 +1,6 @@
+{
+  "outcome": "invalid",
+  "reasonCodes": [
+    "semantic-id.registry-project-version"
+  ]
+}

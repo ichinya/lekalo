@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0.0",
+  "definitions": [
+    {
+      "id": "planner.text",
+      "kind": "scalar",
+      "version": 2,
+      "base": "string",
+      "renamed_from": [
+        "planner.old_text",
+        "planner.legacy_text"
+      ]
+    }
+  ]
+}
