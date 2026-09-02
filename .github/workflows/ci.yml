@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    name: Contracts (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18.x, 24.x]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          package-manager-cache: false
+      - name: Run contract checkers and suites
+        run: |
+          node scripts/check-authority.mjs
+          node scripts/test-authority-contracts.mjs
+          node scripts/test-authority-cli.mjs
+          node scripts/test-authority-boundaries.mjs
+          node scripts/check-privacy.mjs
+          node scripts/test-privacy-contracts.mjs
+          node scripts/test-privacy-cli.mjs
+          node scripts/test-privacy-coherence.mjs
+          node scripts/test-privacy-decisions.mjs
+          node scripts/test-privacy-output-schema.mjs
+          node scripts/test-privacy-schema-parity.mjs
+          node scripts/test-privacy-review-regressions.mjs
+          node scripts/test-privacy-authorizing-evidence.mjs
+          node scripts/test-privacy-authorization-subject.mjs
+          node scripts/check-structure.mjs
+          node scripts/test-structure-contracts.mjs
+          node scripts/check-model.mjs
+          node scripts/test-model-contracts.mjs
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  msrv:
+    name: Rust 1.80.0 MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.80.0
+      - run: cargo check --workspace --all-targets --locked
+
+  build-test:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --workspace --locked
+      - run: cargo test --workspace --locked

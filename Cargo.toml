@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "crates/lekalo-cli",
+    "crates/lekalo-core",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.3"
+edition = "2021"
+rust-version = "1.80.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ichinya/lekalo"
+publish = false
+
+[workspace.dependencies]
+# Cargo.lock also keeps clap_lex at 1.0.0; 1.1.0 requires Rust 1.85.
+clap = { version = "~4.5.61", features = ["derive"] }
+lekalo-core = { path = "crates/lekalo-core" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

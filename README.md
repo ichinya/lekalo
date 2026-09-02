@@ -109,3 +109,14 @@ Model validation uses exit `0` for valid and exit `1` for usage, structure/shape
 or semantic invalidity, with stable leading `model.*` reasons on stderr. The
 checker runs the #4 structure validator before any model read and preserves a
 physical-policy denial as exit `3` with deterministic JSON on stdout.
+
+## Rust CLI foundation
+
+The two-crate Rust workspace provides the target-neutral core result model and
+the `lekalo` CLI foundation. See the [CLI contract](docs/cli.md) for commands,
+stable output envelopes, exit codes, and the exact Rust 1.80.0 MSRV.
+
+```sh
+cargo build --workspace --locked
+cargo run --locked -p lekalo-cli -- --version
+```
