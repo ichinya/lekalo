@@ -13,6 +13,8 @@ serde.workspace = true
 serde_json.workspace = true
 saphyr-parser.workspace = true
 unicode-normalization.workspace = true
+semver = "1.0.28"
+sha2 = "0.10.9"
 
 [dev-dependencies]
 serde_json.workspace = true

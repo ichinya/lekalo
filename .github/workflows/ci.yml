@@ -52,6 +52,7 @@ jobs:
           node scripts/test-structure-contracts.mjs
           node scripts/check-model.mjs
           node scripts/test-model-contracts.mjs
+          node scripts/test-versioning-contracts.mjs
 
   fmt:
     name: Rustfmt

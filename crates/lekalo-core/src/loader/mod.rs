@@ -29,8 +29,8 @@ use canonical::Canonical;
 pub use error::LoadStatus;
 use error::{bounded_import_echo, finalize_diagnostics, Diagnostic};
 use frontends::{Node, Span};
-use project_docs::{decode, Document};
-pub use project_docs::{DocKind, ModelVersion};
+use project_docs::decode;
+pub use project_docs::{DocKind, Document, ModelVersion};
 use source::{check_document_limit, check_total_limit, LineIndex, Source, MAX_DOCUMENT_BYTES};
 
 /// Root selection for one load: explicit `--project`/`LEKALO_PROJECT`, or
@@ -87,7 +87,7 @@ pub struct LoadOutput {
 }
 
 impl LoadOutput {
-    fn failure(status: LoadStatus, diagnostics: Vec<Diagnostic>) -> Self {
+    pub(crate) fn failure(status: LoadStatus, diagnostics: Vec<Diagnostic>) -> Self {
         let status = if diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "loader.path-escape")
@@ -180,9 +180,86 @@ pub struct NormalizedModel {
     pub definitions: Vec<NormalizedDefinition>,
 }
 
+/// One loaded source document plus its exact original bytes.
+pub(crate) struct LoadedDocument {
+    pub document: Document,
+    pub bytes: Vec<u8>,
+}
+
+/// The normalized aggregate plus the pinned inputs the migration planner
+/// reuses: the validated root, its filesystem capability, and every loaded
+/// document with the exact bytes it was loaded from.
+pub(crate) struct ProjectLoad {
+    pub model: NormalizedModel,
+    pub root: PathBuf,
+    pub documents: Vec<LoadedDocument>,
+}
+
+/// Decode one in-memory document exactly as phase 3b/4/5 would: encoding
+/// gate, strict spanned parse, document shape, and version extraction.
+pub(crate) fn decode_document_bytes(
+    path: &str,
+    kind: DocKind,
+    bytes: &[u8],
+) -> Result<Document, Vec<Diagnostic>> {
+    let text = Source::validate_encoding(path, bytes).map_err(|diagnostic| vec![diagnostic])?;
+    let index = LineIndex::new(&text);
+    let parsed = match frontends::parse_document(&text, &index) {
+        Ok(parsed) => parsed,
+        Err(mut errors) => {
+            for diagnostic in errors.iter_mut() {
+                if diagnostic.path.is_none() {
+                    diagnostic.path = Some(path.to_owned());
+                }
+            }
+            return Err(errors);
+        }
+    };
+    decode(path, kind, &parsed)
+}
+
 /// Run phases 1-8 to completion and return the normalized aggregate, or the
 /// terminal failure. No rendering happens here; `run` owns the envelope.
 pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, LoadOutput> {
+    load_with_snapshot(selection).map(|loaded| loaded.model)
+}
+
+/// Phase 1 only: resolve the selection to an absolute project root
+/// without reading model documents. The migration service uses this to
+/// recover a crashed transaction before the loader's fail-closed gate.
+pub(crate) fn root_for_selection(selection: &LoadSelection) -> Result<PathBuf, LoadOutput> {
+    let failure =
+        |status, diagnostics: Vec<Diagnostic>| Err(LoadOutput::failure(status, diagnostics));
+    match &selection.project {
+        Some(selector) => {
+            if let Some(code) = crate::project_fs::selection_violation(selector) {
+                return failure(LoadStatus::Invalid, vec![Diagnostic::new(code)]);
+            }
+            crate::project_fs::Fs::check_selection(selector, "structure.project-not-directory")
+                .map_err(structure_failure)
+        }
+        None => {
+            let cwd = std::env::current_dir().map_err(|_| {
+                LoadOutput::failure(
+                    LoadStatus::Invalid,
+                    vec![Diagnostic::new("structure.root-unreadable")],
+                )
+            })?;
+            match crate::project_fs::Fs::find_root(&cwd) {
+                Ok(Some(path)) => Ok(path),
+                Ok(None) => failure(
+                    LoadStatus::Invalid,
+                    vec![Diagnostic::new("structure.root-not-found")],
+                ),
+                Err(outcome) => Err(structure_failure(outcome)),
+            }
+        }
+    }
+}
+
+/// `normalize_model` plus the pinned snapshot the issue #9 migration
+/// planner consumes; the read path is byte-identical.
+pub(crate) fn load_with_snapshot(selection: &LoadSelection) -> Result<ProjectLoad, LoadOutput> {
     let failure =
         |status, diagnostics: Vec<Diagnostic>| Err(LoadOutput::failure(status, diagnostics));
 
@@ -222,6 +299,14 @@ pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, Loa
             }
         }
     };
+    load_validated_root(root)
+}
+
+/// Load an already-selected absolute root through phases 2-8 (the migration
+/// post-apply verification reuses the exact read path this way).
+pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, LoadOutput> {
+    let failure =
+        |status, diagnostics: Vec<Diagnostic>| Err(LoadOutput::failure(status, diagnostics));
 
     // Phase 2: accepted #4 structure validation.
     let validation = crate::project_fs::Fs::validate_project(&root);
@@ -248,6 +333,12 @@ pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, Loa
             )
         }
     };
+
+    // Phase 2b (issue #9): fail closed while a migration journal or runtime
+    // migration lock exists; readers never observe a half-migrated project.
+    if let Some(code) = crate::versioning::migration_recovery_code(&fs) {
+        return failure(LoadStatus::Invalid, vec![Diagnostic::new(code)]);
+    }
 
     // Phase 3: capability-safe enumeration and reads.
     let mut sources: Vec<(String, DocKind)> =
@@ -407,6 +498,49 @@ pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, Loa
     }
     let model_version = ModelVersion::parse_exact(distinct[0]).expect("gated exact literal");
 
+    // Phase 6b (issue #9): the shared support-policy gate. Deprecated stays
+    // loadable; unregistered and retired versions fail closed with exit 5
+    // before any canonicalization or write. One check serves load, IR, and
+    // migrate alike; there is no second IR-only gate.
+    if let Some(failure) = crate::versioning::gate_loaded_model_version(model_version) {
+        return Err(failure);
+    }
+
+    // Pin the loaded documents with their exact bytes for the issue #9
+    // migration planner before the aggregate consumes them.
+    let snapshot: Vec<LoadedDocument> = parsed_documents
+        .iter()
+        .map(|(document, _)| LoadedDocument {
+            document: document.clone(),
+            bytes: read_sources
+                .iter()
+                .find(|source| source.logical_path == document.path)
+                .map(|source| source.bytes.clone())
+                .unwrap_or_default(),
+        })
+        .collect();
+    let model = build_normalized_model(
+        model_version,
+        parsed_documents
+            .into_iter()
+            .map(|(document, _)| document)
+            .collect(),
+    )?;
+    Ok(ProjectLoad {
+        model,
+        root,
+        documents: snapshot,
+    })
+}
+
+/// Phases 7-8 over already-gated documents: collisions, imports, graph,
+/// normalization, and the typed aggregate.
+pub(crate) fn build_normalized_model(
+    model_version: ModelVersion,
+    parsed_documents: Vec<Document>,
+) -> Result<NormalizedModel, LoadOutput> {
+    let failure =
+        |status, diagnostics: Vec<Diagnostic>| Err(LoadOutput::failure(status, diagnostics));
     // Phase 7: version-dispatched decoding: collisions, imports, graph.
     let mut collision_diagnostics: Vec<Diagnostic> = Vec::new();
     let mut project_document: Option<Document> = None;
@@ -414,7 +548,7 @@ pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, Loa
     let mut module_documents: Vec<Document> = Vec::new();
     let mut symbol_documents: Vec<Document> = Vec::new();
 
-    for (document, _) in &parsed_documents {
+    for document in &parsed_documents {
         match document.kind {
             DocKind::Project => {
                 if project_document.replace(document.clone()).is_some() {

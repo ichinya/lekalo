@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.6. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.7. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -18,13 +18,16 @@ with filesystem access and it never writes.
 ```text
 lekalo --version
 lekalo load [--project DIR] [--spans] [--ir]
+lekalo migrate --to model/TARGET [--dry-run] [--project DIR]
+lekalo migrate --rollback PLAN_ID [--project DIR]
+lekalo compatibility
 lekalo validate
 lekalo inspect SYMBOL
 lekalo impact SYMBOL
 lekalo context SYMBOL --budget TOKENS
 ```
 
-`--version` and `load` are implemented. The remaining three subcommands are
+`--version`, `load`, `migrate`, and `compatibility` are implemented. The remaining three subcommands are
 recognized stubs: valid syntax reaches the named capability and returns
 `unsupported`. `SYMBOL` is an opaque string at this layer, and `TOKENS` is an
 unsigned integer. Semantic ID rules, validation, graph construction, and
@@ -54,6 +57,23 @@ bytes in place of the preserved model; `--spans` then appends the IR source
 map. IR decode failures are `invalid` (exit 1, stderr) with the closed
 `ir.*` reason codes. See [ir.md](ir.md) for the normative IR contract and
 the fixture suite under `tests/fixtures/ir/`.
+
+### `lekalo migrate` and `lekalo compatibility`
+
+`migrate` moves a project to a registered Model contract version
+(`--to model/<canonical-version>` or a declared alias such as
+`model/v1`) or rolls back one recorded migration (`--rollback`).
+`--dry-run` prints the plan, semantic diff, and declared losses without
+writing. Apply and rollback are journaled, verified transactions with
+immutable backups under `.lekalo/cache/migrations/`; readers fail closed
+while a journal exists. See [versioning.md](versioning.md) for the
+normative support policy, the 0.1.0 to 1.0.0 preconditions, and the
+recovery contract. Unsupported contract versions exit 5 with the shared
+`versioning.unsupported-version` reason.
+
+`compatibility` prints the embedded registry projection (families in
+fixed order `model`, `ir`, `protocol`); it performs no project or
+adapter discovery.
 
 ## Exit and stream contract
 
@@ -112,13 +132,13 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.6"
+  "version": "0.1.7"
 }
 ```
 
 The corresponding human lines are `invalid: cli.usage`,
 `unsupported: core.capability-unavailable CAPABILITY`, and
-`lekalo 0.1.6`. Human and JSON renderers consume the same `DomainResult`.
+`lekalo 0.1.7`. Human and JSON renderers consume the same `DomainResult`.
 
 ## Development checks
 

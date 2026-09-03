@@ -12,6 +12,8 @@ Rust workspace and provider implementations are introduced.
 - Reviewed corrective successor: `contracts/authority-matrix.v1.3.1.json`
 - Rejected/yanked candidate preserved for custody: `contracts/authority-matrix.v1.3.0.json`
 - Immutable historical baseline: `contracts/authority-matrix.v1.2.0.json`
+- [Contract versioning, support policy, and migrations](docs/versioning.md)
+- [ADR-0008: versioning and migrations for Model, IR, and protocol](docs/adr/0008-versioning-and-migrations.md)
 
 Validate the contract and its allowed/forbidden/malformed fixtures, then verify
 the documented CLI exit-code protocol with Node.js, without installing
@@ -117,9 +119,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract
-versions are independent of product releases; issue #7 is the accepted
-0.1.5 candidate and issue #8 carries prospective product 0.1.6
-(issues #3/#6/#7 published products 0.1.3/0.1.4/0.1.5).
+versions are independent of product releases; issue #9 carries prospective
+product 0.1.7 (issues #3/#6/#7/#8 published products 0.1.3/0.1.4/0.1.5/0.1.6,
+the last at `5580b83`).
 
 The checker recognizes only the two exact schema versions, and all documents
 in one project must agree. Model 1.0 makes project/module IDs one-segment and immutable,

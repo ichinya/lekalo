@@ -1,0 +1,18 @@
+{
+  "schema_version": "0.1.0",
+  "definitions": [
+    {
+      "id": "planner.list_tasks",
+      "kind": "query",
+      "version": 1,
+      "reads": [
+        "planner.task"
+      ],
+      "returns": {
+        "list": {
+          "ref": "planner.task"
+        }
+      }
+    }
+  ]
+}

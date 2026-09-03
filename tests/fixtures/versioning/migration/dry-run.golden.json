@@ -1,0 +1,56 @@
+{
+  "status": "valid",
+  "operation": "migrate",
+  "mode": "dry-run",
+  "planId": "53c849ce32e319a6b11957896108237a47191e61a3f94cb19da4c104d2d601bf",
+  "family": "model",
+  "from": "0.1.0",
+  "to": "1.0.0",
+  "chain": [
+    "model-0.1.0-to-1.0.0@1"
+  ],
+  "changed": true,
+  "files": [
+    {
+      "path": "lekalo/modules/planner/entities.yaml",
+      "beforeSha256": "55fd5606751957d724d1c7ca54af4e87e30c0d6857afd9c4733f461c3c39ae02",
+      "afterSha256": "dfc804368675e090aad1860d251e0b1150b966bc91361bb7758df37576e62090",
+      "beforeBytes": 426,
+      "afterBytes": 426
+    },
+    {
+      "path": "lekalo/modules/planner/module.yaml",
+      "beforeSha256": "896f4ccd17be2c2744e6b104076604438a34427f2688074c80321e030c9d303f",
+      "afterSha256": "1276adff153951b0cbfc5328311d01a2f0ce98e48e55e1a2a3aa4f90e7f1193c",
+      "beforeBytes": 134,
+      "afterBytes": 134
+    },
+    {
+      "path": "lekalo/modules/planner/queries.yaml",
+      "beforeSha256": "1a14c954263b26a5c537c11c394dfe324e24c55f27ac1d059c16002a20f9a88a",
+      "afterSha256": "ab09c0981ab7b30e21e06ac0dad9fa5972a55dbc958a705a60a355dfe8d95273",
+      "beforeBytes": 281,
+      "afterBytes": 281
+    },
+    {
+      "path": "lekalo/project.yaml",
+      "beforeSha256": "a581fa9f938e3f10c5d0299411a64f12a18602c7ec9e40cee27578ab05a4bc6c",
+      "afterSha256": "3656f825a3bcda05a575a68e2f68a5e6006408e64e4a3d5238d0782d02795bc8",
+      "beforeBytes": 135,
+      "afterBytes": 135
+    }
+  ],
+  "semanticDiff": {
+    "added": [],
+    "removed": [],
+    "changed": [],
+    "affectedModuleIds": [],
+    "contractVersionChange": {
+      "from": "0.1.0",
+      "to": "1.0.0"
+    }
+  },
+  "loss": [],
+  "transaction": "planned",
+  "backup": null
+}

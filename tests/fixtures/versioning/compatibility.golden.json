@@ -1,0 +1,62 @@
+{
+  "status": "valid",
+  "registryVersion": "1.0.0",
+  "families": [
+    {
+      "family": "model",
+      "current": "1.0.0",
+      "min": "0.1.0",
+      "max": "1.0.0",
+      "aliases": [
+        {
+          "alias": "v1",
+          "version": "1.0.0"
+        }
+      ],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "state": "deprecated",
+          "classification": "additive"
+        },
+        {
+          "version": "1.0.0",
+          "state": "supported",
+          "classification": "breaking"
+        }
+      ],
+      "migrations": [
+        {
+          "id": "model-0.1.0-to-1.0.0@1",
+          "from": "0.1.0",
+          "to": "1.0.0",
+          "classification": "breaking"
+        }
+      ]
+    },
+    {
+      "family": "ir",
+      "current": "0.1.0",
+      "min": "0.1.0",
+      "max": "0.1.0",
+      "aliases": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "state": "supported",
+          "classification": "additive"
+        }
+      ],
+      "migrations": []
+    },
+    {
+      "family": "protocol",
+      "current": null,
+      "min": null,
+      "max": null,
+      "aliases": [],
+      "versions": [],
+      "migrations": []
+    }
+  ]
+}

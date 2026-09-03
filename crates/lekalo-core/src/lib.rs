@@ -4,6 +4,7 @@ pub mod ir;
 pub mod loader;
 pub mod project_fs;
 pub mod result;
+pub mod versioning;
 
 pub use result::{Capability, DomainResult, ReasonCode, Status, CAPABILITY_UNAVAILABLE, CLI_USAGE};
 

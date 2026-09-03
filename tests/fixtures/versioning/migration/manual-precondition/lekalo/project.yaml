@@ -1,0 +1,5 @@
+schema_version: "0.1.0"
+definitions:
+  - id: shop
+    kind: project
+    version: 1
