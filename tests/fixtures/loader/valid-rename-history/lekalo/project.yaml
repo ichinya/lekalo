@@ -1,0 +1,10 @@
+schema_version: "1.0.0"
+definitions:
+  - id: hist
+    kind: project
+    version: 2
+    id_registry:
+      rename_history:
+        - from: hist.legacy_name
+          to: hist.modern_name
+          definition_version: 2

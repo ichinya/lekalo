@@ -1,0 +1,5 @@
+schema_version: "1.0.0"
+definitions:
+  - id: &anchor core
+    kind: project
+    version: 1

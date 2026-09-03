@@ -1,0 +1,9 @@
+schema_version: "1.0.0"
+definitions:
+  - id: gamma.tool
+    kind: value-object
+    version: 1
+    fields:
+      - name: part
+        type: beta.gadget?
+        required: true

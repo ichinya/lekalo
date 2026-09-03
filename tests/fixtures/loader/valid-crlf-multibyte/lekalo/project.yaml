@@ -1,0 +1,6 @@
+schema_version: "1.0.0"
+definitions:
+  - id: plan
+    kind: project
+    version: 1
+    description: Café planning — résumé

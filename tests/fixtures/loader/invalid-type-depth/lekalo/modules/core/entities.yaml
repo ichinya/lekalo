@@ -1,0 +1,15 @@
+schema_version: "1.0.0"
+definitions:
+  - id: core.deep
+    kind: scalar
+    version: 1
+    base: string
+  - id: core.thing
+    kind: entity
+    version: 1
+    fields:
+      - name: deep
+        type: list<list<list<core.deep?>>>
+        required: true
+    identity:
+      - deep

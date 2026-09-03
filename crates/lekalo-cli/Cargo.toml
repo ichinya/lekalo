@@ -12,6 +12,9 @@ publish.workspace = true
 name = "lekalo"
 path = "src/main.rs"
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [dependencies]
 clap.workspace = true
 lekalo-core.workspace = true

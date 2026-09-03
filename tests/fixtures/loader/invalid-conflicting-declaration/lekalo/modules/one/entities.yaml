@@ -1,0 +1,6 @@
+schema_version: "1.0.0"
+definitions:
+  - id: one.shared
+    kind: scalar
+    version: 1
+    base: string

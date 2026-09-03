@@ -1,0 +1,5 @@
+schema_version: "1.0.0"
+definitions:
+  - id: solo
+    kind: project
+    version: 1

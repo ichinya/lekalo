@@ -2,38 +2,50 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.4. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.5. The product
 version is independent of every contract or model schema version.
 
-The core crate owns `Request`, `Status`, `DomainResult`, reason codes, and the
-exit mapping. It depends only on Serde. The CLI crate owns syntax and
-presentation through clap and serde_json. Neither crate reads the filesystem,
-loads a model, builds IR, invokes a target, or contacts a provider in this
-foundation.
+The core crate owns the result contracts plus the issue #7 loader
+(YAML/JSON frontends, imports, normalization, canonical output). The CLI crate
+owns syntax and presentation through clap and serde_json. The foundation stubs
+neither read the filesystem nor build IR, invoke a target, or contact a
+provider; the loader is the one capability with filesystem access and it never
+writes.
 
 ## Commands
 
 ```text
 lekalo --version
+lekalo load [--project DIR] [--spans]
 lekalo validate
 lekalo inspect SYMBOL
 lekalo impact SYMBOL
 lekalo context SYMBOL --budget TOKENS
 ```
 
-`--version` is implemented. The four subcommands are recognized stubs: valid
-syntax reaches the named capability and returns `unsupported`. `SYMBOL` is an
-opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic ID
-rules, project discovery, model loading, validation, graph/IR construction,
-and real inspect, impact, or context behavior belong to later issues.
+`--version` and `load` are implemented. The remaining three subcommands are
+recognized stubs: valid syntax reaches the named capability and returns
+`unsupported`. `SYMBOL` is an opaque string at this layer, and `TOKENS` is an
+unsigned integer. Semantic ID rules, validation, graph/IR construction, and
+real inspect, impact, or context behavior belong to later issues.
 When those capabilities are implemented they are bound by
 dev.lekalo.semantic-ids@0.1.0 to use the validated semantic ID verbatim as
-their canonical key; the machine contract closes that consumer list, and this
-foundation implements none of its members.
+their canonical key; the implemented loader already consumes those IDs
+verbatim when it normalizes references.
 
 `--json` is global and may appear before or after a subcommand. Both
 `lekalo --json --version` and `lekalo --version --json` select JSON output.
 Root and per-command help remain clap help text rather than a domain failure.
+
+### `lekalo load`
+
+`load` parses the fixed `.yaml` homes of a validated project with strict
+spanned JSON/YAML frontends, resolves module-ID imports (direct visibility
+only, cycles and duplicates rejected), normalizes compact type sugar and
+short references, and prints one deterministic canonical model. See
+[loader.md](loader.md) for the normative contract, reason codes, and the
+hermetic fixture suite under `tests/fixtures/loader/`. `--spans` adds the
+sorted `sourceMap` sibling; it never alters the model bytes.
 
 ## Exit and stream contract
 
@@ -41,12 +53,17 @@ Root and per-command help remain clap help text rather than a domain failure.
 | ---: | --- | --- | --- |
 | 0 | `valid` | stdout | Successful output, help, or version |
 | 1 | `invalid` | stderr | Malformed command-line syntax or usage |
-| 3 | `denied` | stdout | Reserved for a well-formed policy denial |
+| 3 | `denied` | stdout | Well-formed physical/policy denial (loader, structure) |
 | 4 | `unsupported` | stdout | Recognized capability unavailable in this build |
+| 5 | `unsupported-version` | stderr | Model contract version outside the exact 0.1.0/1.0.0 set |
 
-Exit 3 is reserved and is not emitted by the issue #3 stubs. Exit 5 is neither
-defined nor emitted here; support for incompatible contract versions belongs
-to the versioning work.
+The stubs emit only 0/1/4. The loader emits 0/1/3/5 as specified in
+[loader.md](loader.md).
+
+Loader failures are pretty-printed with two-space indentation and carry
+structured reasons: `{"code", "path"?, "span"?, "data"?}` where `path` is a
+logical project-relative POSIX path and spans point into the original
+document bytes. Success stays one compact line.
 
 clap parsing always uses its non-terminating parse path. Syntax failures are
 mapped to exit 1, so clap's default exit 2 is never exposed. The stable failure
@@ -87,13 +104,13 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.4"
+  "version": "0.1.5"
 }
 ```
 
 The corresponding human lines are `invalid: cli.usage`,
 `unsupported: core.capability-unavailable CAPABILITY`, and
-`lekalo 0.1.4`. Human and JSON renderers consume the same `DomainResult`.
+`lekalo 0.1.5`. Human and JSON renderers consume the same `DomainResult`.
 
 ## Development checks
 

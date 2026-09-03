@@ -1,0 +1,10 @@
+schema_version: "1.0.0"
+definitions:
+  - id: core.thing
+    kind: scalar
+    version: 1
+    base: string
+  - id: core.thing
+    kind: scalar
+    version: 1
+    base: text

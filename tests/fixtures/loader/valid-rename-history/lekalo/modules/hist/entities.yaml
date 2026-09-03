@@ -1,0 +1,8 @@
+schema_version: "1.0.0"
+definitions:
+  - id: hist.modern_name
+    kind: scalar
+    version: 2
+    base: string
+    renamed_from:
+      - hist.legacy_name

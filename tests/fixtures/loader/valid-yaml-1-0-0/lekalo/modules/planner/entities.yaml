@@ -1,0 +1,18 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.task_id
+    kind: scalar
+    version: 1
+    base: uuid
+  - id: planner.task
+    kind: entity
+    version: 1
+    fields:
+      - name: id
+        type: task_id
+        required: true
+      - name: window
+        type: list<task_id?>
+        required: true
+    identity:
+      - id

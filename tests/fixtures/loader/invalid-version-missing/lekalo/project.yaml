@@ -1,0 +1,4 @@
+definitions:
+  - id: core
+    kind: project
+    version: 1

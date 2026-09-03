@@ -1,0 +1,11 @@
+schema_version: "1.0.0"
+definitions:
+  - id: core.thing
+    kind: entity
+    version: 1
+    fields:
+      - name: broken
+        type: list< core.thing
+        required: true
+    identity:
+      - broken

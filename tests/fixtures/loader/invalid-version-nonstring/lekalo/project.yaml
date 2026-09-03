@@ -1,0 +1,5 @@
+schema_version: 2024
+definitions:
+  - id: core
+    kind: project
+    version: 1

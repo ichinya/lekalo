@@ -89,6 +89,17 @@ denied; JSON envelopes are deterministic. `--project`, `--from` and
 `LEKALO_PROJECT` accept only safe invocation-relative selectors and never
 replace the physical `lekalo/project.yaml` marker.
 
+## Loader: YAML/JSON, imports, canonical model
+
+Issue #7 implements `lekalo load`: strict spanned JSON/YAML frontends,
+module-ID imports with direct visibility and cycle detection, compact type
+normalization, and one deterministic canonical model. The loader consumes
+the #4 structure rules, rejects symlinks/junctions/reparse points, never
+writes, and emits the typed exit protocol (0 valid, 1 invalid, 3 denied,
+5 unsupported-version). See [docs/loader.md](docs/loader.md),
+[ADR-0006](docs/adr/0006-loader.md), and the hermetic fixtures under
+`tests/fixtures/loader/`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -97,8 +108,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract
-versions are independent of product releases; issue #6 is the prospective
-product 0.1.4 candidate because issue #3 published product 0.1.3.
+versions are independent of product releases; issue #6 is the accepted
+0.1.4 contract candidate and issue #7 carries prospective product 0.1.5
+(issue #3 published product 0.1.3).
 
 The checker recognizes only the two exact schema versions, and all documents
 in one project must agree. Model 1.0 makes project/module IDs one-segment and immutable,

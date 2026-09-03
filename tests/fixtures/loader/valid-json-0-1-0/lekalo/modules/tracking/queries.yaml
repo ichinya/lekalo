@@ -1,0 +1,1 @@
+{"schema_version":"0.1.0","definitions":[{"id":"tracking.recent_items","kind":"query","version":1,"reads":["work-items.item_id"]}]}

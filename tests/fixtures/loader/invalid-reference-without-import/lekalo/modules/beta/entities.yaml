@@ -1,0 +1,11 @@
+schema_version: "1.0.0"
+definitions:
+  - id: beta.gadget
+    kind: entity
+    version: 1
+    fields:
+      - name: base
+        type: alpha.widget
+        required: true
+    identity:
+      - base

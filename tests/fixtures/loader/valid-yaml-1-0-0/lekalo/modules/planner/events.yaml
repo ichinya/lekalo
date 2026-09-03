@@ -1,0 +1,9 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.event.focus_changed
+    kind: event
+    version: 1
+    payload:
+      - name: id
+        type: planner.task_id
+        required: true

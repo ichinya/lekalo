@@ -1,0 +1,2 @@
+base: &value x
+schema_version: *value

@@ -1,0 +1,7 @@
+schema_version: "1.0.0"
+definitions:
+  - id: core
+    kind: module
+    version: 1
+    imports:
+      - ghost

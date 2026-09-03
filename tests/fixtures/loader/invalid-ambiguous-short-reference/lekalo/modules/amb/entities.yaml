@@ -1,0 +1,19 @@
+schema_version: "1.0.0"
+definitions:
+  - id: amb.label
+    kind: scalar
+    version: 1
+    base: string
+  - id: amb.event.label
+    kind: scalar
+    version: 1
+    base: string
+  - id: amb.holder
+    kind: entity
+    version: 1
+    fields:
+      - name: pick
+        type: label
+        required: true
+    identity:
+      - pick

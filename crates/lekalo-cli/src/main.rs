@@ -1,4 +1,5 @@
 use clap::{error::ErrorKind, ColorChoice, Parser, Subcommand};
+use lekalo_core::loader::LoadSelection;
 use lekalo_core::{DomainResult, Request};
 use std::ffi::OsStr;
 use std::io::{self, Write};
@@ -29,6 +30,15 @@ struct Cli {
 enum Commands {
     /// Validate a Lekalo project (recognized; implementation follows in a later issue).
     Validate,
+    /// Load YAML/JSON sources, resolve imports, and emit the canonical model.
+    Load {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Emit the sourceMap alongside the canonical model (JSON only).
+        #[arg(long)]
+        spans: bool,
+    },
     /// Inspect one semantic symbol (recognized; implementation follows in a later issue).
     Inspect { symbol: String },
     /// Report the impact of one semantic symbol (recognized; implementation follows later).
@@ -39,17 +49,6 @@ enum Commands {
         #[arg(long, value_name = "TOKENS")]
         budget: u64,
     },
-}
-
-impl From<Commands> for Request {
-    fn from(command: Commands) -> Self {
-        match command {
-            Commands::Validate => Self::Validate,
-            Commands::Inspect { symbol } => Self::Inspect { symbol },
-            Commands::Impact { symbol } => Self::Impact { symbol },
-            Commands::Context { symbol, budget } => Self::Context { symbol, budget },
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -65,10 +64,27 @@ fn main() -> ExitCode {
         .any(|argument| argument == OsStr::new("--json"));
 
     match Cli::try_parse() {
-        Ok(cli) => {
-            let request = Request::from(cli.command);
-            emit(request.dispatch(), cli.json, OutputStream::Stdout)
-        }
+        Ok(cli) => match cli.command {
+            Commands::Load { project, spans } => run_load(project, spans, cli.json),
+            Commands::Validate => {
+                emit(Request::Validate.dispatch(), cli.json, OutputStream::Stdout)
+            }
+            Commands::Inspect { symbol } => emit(
+                Request::Inspect { symbol }.dispatch(),
+                cli.json,
+                OutputStream::Stdout,
+            ),
+            Commands::Impact { symbol } => emit(
+                Request::Impact { symbol }.dispatch(),
+                cli.json,
+                OutputStream::Stdout,
+            ),
+            Commands::Context { symbol, budget } => emit(
+                Request::Context { symbol, budget }.dispatch(),
+                cli.json,
+                OutputStream::Stdout,
+            ),
+        },
         Err(error) => match error.kind() {
             ErrorKind::DisplayHelp => {
                 if error.print().is_ok() {
@@ -88,6 +104,34 @@ fn main() -> ExitCode {
                 OutputStream::Stderr,
             ),
         },
+    }
+}
+
+/// Resolve the selection (explicit `--project` beats `LEKALO_PROJECT`) and
+/// run the loader; render the typed outcome to its protocol stream.
+fn run_load(project: Option<String>, spans: bool, json: bool) -> ExitCode {
+    let selection = LoadSelection {
+        project: project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    let outcome = lekalo_core::loader::run(&selection, spans);
+    let exit_code = outcome.status.exit_code();
+    let stream = if outcome.status.writes_stderr() {
+        OutputStream::Stderr
+    } else {
+        OutputStream::Stdout
+    };
+    let mut handle: Box<dyn Write> = match stream {
+        OutputStream::Stdout => Box::new(io::stdout().lock()),
+        OutputStream::Stderr => Box::new(io::stderr().lock()),
+    };
+    let rendered = if json { outcome.json } else { outcome.human };
+    let write = handle
+        .write_all(rendered.as_bytes())
+        .and_then(|()| handle.write_all(b"\n"));
+    if write.is_ok() {
+        ExitCode::from(exit_code)
+    } else {
+        ExitCode::from(OUTPUT_FAILURE)
     }
 }
 

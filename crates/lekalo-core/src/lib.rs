@@ -1,5 +1,7 @@
 //! Target-neutral request and result contracts for Lekalo.
 
+pub mod loader;
+pub mod project_fs;
 pub mod result;
 
 pub use result::{Capability, DomainResult, ReasonCode, Status, CAPABILITY_UNAVAILABLE, CLI_USAGE};

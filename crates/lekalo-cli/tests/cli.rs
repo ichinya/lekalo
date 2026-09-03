@@ -268,18 +268,34 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
         assert_eq!(package["rust_version"], "1.80.0");
     }
 
+    // Normal (non-dev, non-build) dependencies of lekalo-core; the
+    // cfg-gated rustix entry carries a target and is excluded here.
     let core = packages
         .iter()
         .find(|package| package["name"] == "lekalo-core")
         .expect("core package");
-    let core_normal_dependencies = core["dependencies"]
+    let mut core_normal_dependencies = core["dependencies"]
         .as_array()
         .expect("core dependencies")
         .iter()
-        .filter(|dependency| dependency["kind"].is_null())
-        .map(|dependency| dependency["name"].as_str().expect("dependency name"))
+        .filter(|dependency| dependency["kind"].is_null() && dependency["target"].is_null())
+        .map(|dependency| dependency["name"].as_str().expect("dep name").to_owned())
         .collect::<Vec<_>>();
-    assert_eq!(core_normal_dependencies, ["serde"]);
+    core_normal_dependencies.sort();
+    assert_eq!(
+        core_normal_dependencies,
+        [
+            "saphyr-parser",
+            "serde",
+            "serde_json",
+            "unicode-normalization"
+        ]
+    );
+    assert!(core["dependencies"]
+        .as_array()
+        .expect("core dependencies")
+        .iter()
+        .any(|dependency| dependency["name"] == "rustix"));
     assert!(!core["dependencies"]
         .as_array()
         .expect("core dependencies")
@@ -315,14 +331,14 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
 
     let root_manifest =
         std::fs::read_to_string(workspace.join("Cargo.toml")).expect("read workspace Cargo.toml");
-    assert_eq!(root_manifest.matches("version = \"0.1.4\"").count(), 1);
+    assert_eq!(root_manifest.matches("version = \"0.1.5\"").count(), 1);
     for member in [
         "crates/lekalo-core/Cargo.toml",
         "crates/lekalo-cli/Cargo.toml",
     ] {
         let manifest =
             std::fs::read_to_string(workspace.join(member)).expect("read member manifest");
-        assert!(!manifest.contains("0.1.4"));
+        assert!(!manifest.contains("0.1.5"));
         assert!(manifest.contains("version.workspace = true"));
     }
 }

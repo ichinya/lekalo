@@ -1,0 +1,11 @@
+schema_version: "1.0.0"
+definitions:
+  - id: core.thing
+    kind: entity
+    version: 1
+    fields:
+      - name: ghost_ref
+        type: no_such_thing
+        required: true
+    identity:
+      - ghost_ref

@@ -1,0 +1,12 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.focus_task
+    kind: command
+    version: 1
+    input:
+      - name: id
+        type:
+          ref: task_id
+        required: true
+    effects:
+      - planner.apply_focus
