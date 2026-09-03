@@ -1,0 +1,7 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.touch
+    kind: effect
+    version: 1
+    operation: upsert
+    entity: "planner.task"

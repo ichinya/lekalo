@@ -1,5 +1,6 @@
 //! Target-neutral request and result contracts for Lekalo.
 
+pub mod ir;
 pub mod loader;
 pub mod project_fs;
 pub mod result;

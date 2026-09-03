@@ -1,0 +1,1 @@
+{"schema_version":"1.0.0","definitions":[{"id":"planner.task_focused","kind":"event","version":1,"description":"A task became focused","payload":[{"name":"task_id","type":{"ref":"planner.task_id"},"required":true},{"name":"focused_at","type":{"ref":"planner.due_date"}}]}]}

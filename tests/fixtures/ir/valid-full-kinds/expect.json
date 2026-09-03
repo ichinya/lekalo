@@ -1,0 +1,5 @@
+{
+  "status": "valid",
+  "irGolden": "ir.golden.json",
+  "spansGolden": "ir.spans.golden.json"
+}

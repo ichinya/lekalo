@@ -1,0 +1,8 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.scan
+    kind: query
+    version: 1
+    reads:
+      - "planner.task"
+      - "planner.task"

@@ -35,9 +35,13 @@ enum Commands {
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
-        /// Emit the sourceMap alongside the canonical model (JSON only).
+        /// Emit the sourceMap alongside the canonical model or IR (JSON only).
         #[arg(long)]
         spans: bool,
+        /// Compile the loaded model into the typed, deterministic Lekalo IR
+        /// and emit its canonical bytes instead of the preserved model.
+        #[arg(long)]
+        ir: bool,
     },
     /// Inspect one semantic symbol (recognized; implementation follows in a later issue).
     Inspect { symbol: String },
@@ -65,7 +69,7 @@ fn main() -> ExitCode {
 
     match Cli::try_parse() {
         Ok(cli) => match cli.command {
-            Commands::Load { project, spans } => run_load(project, spans, cli.json),
+            Commands::Load { project, spans, ir } => run_load(project, spans, ir, cli.json),
             Commands::Validate => {
                 emit(Request::Validate.dispatch(), cli.json, OutputStream::Stdout)
             }
@@ -109,11 +113,20 @@ fn main() -> ExitCode {
 
 /// Resolve the selection (explicit `--project` beats `LEKALO_PROJECT`) and
 /// run the loader; render the typed outcome to its protocol stream.
-fn run_load(project: Option<String>, spans: bool, json: bool) -> ExitCode {
+fn run_load(project: Option<String>, spans: bool, ir: bool, json: bool) -> ExitCode {
     let selection = LoadSelection {
         project: project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
     };
-    let outcome = lekalo_core::loader::run(&selection, spans);
+    let outcome = match ir {
+        false => lekalo_core::loader::run(&selection, spans),
+        true => match lekalo_core::loader::normalize_model(&selection) {
+            Err(outcome) => outcome,
+            Ok(model) => match lekalo_core::ir::compile(&model) {
+                Err(failure) => failure.load_output(),
+                Ok(compilation) => render_ir_success(&model, &compilation, spans),
+            },
+        },
+    };
     let exit_code = outcome.status.exit_code();
     let stream = if outcome.status.writes_stderr() {
         OutputStream::Stderr
@@ -132,6 +145,36 @@ fn run_load(project: Option<String>, spans: bool, json: bool) -> ExitCode {
         ExitCode::from(exit_code)
     } else {
         ExitCode::from(OUTPUT_FAILURE)
+    }
+}
+/// Render the typed IR success envelope: the fixed key order `status`,
+/// `modelVersion`, `ir`, and the sorted IR sourceMap when `--spans` was
+/// requested. The IR object itself is the canonical IR bytes.
+fn render_ir_success(
+    model: &lekalo_core::loader::NormalizedModel,
+    compilation: &lekalo_core::ir::Compilation,
+    spans: bool,
+) -> lekalo_core::loader::LoadOutput {
+    let mut json = String::from("{\"status\":\"valid\",\"modelVersion\":");
+    json.push_str(
+        &serde_json::to_string(model.model_version.as_str()).expect("version serializes"),
+    );
+    json.push_str(",\"ir\":");
+    json.push_str(&compilation.project.to_canonical_json());
+    if spans {
+        json.push_str(",\"sourceMap\":");
+        json.push_str(&compilation.source_map.to_json());
+    }
+    json.push('}');
+    lekalo_core::loader::LoadOutput {
+        status: lekalo_core::loader::LoadStatus::Valid,
+        human: format!(
+            "compiled ir {}: {} modules, {} definitions",
+            lekalo_core::ir::IDENTITY,
+            model.modules.len(),
+            model.definitions.len()
+        ),
+        json,
     }
 }
 

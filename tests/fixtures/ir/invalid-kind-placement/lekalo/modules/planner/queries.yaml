@@ -1,0 +1,11 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.task
+    kind: entity
+    version: 1
+    fields:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+    identity:
+      - task_id

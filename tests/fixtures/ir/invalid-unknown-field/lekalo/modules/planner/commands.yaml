@@ -1,0 +1,9 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.load
+    kind: command
+    version: 1
+    input:
+      - name: task_id
+        type: "planner.task_id"
+        required: true

@@ -1,0 +1,5 @@
+{"schema_version":"1.0.0","definitions":[
+{"id":"notify.user_id","kind":"scalar","version":1,"description":"Notification user identifier","base":"uuid"},
+{"id":"notify.channel","kind":"scalar","version":1,"description":"Delivery channel name","base":"string"},
+{"id":"notify.user","kind":"entity","version":1,"description":"A notification recipient","fields":[{"name":"user_id","type":{"ref":"notify.user_id"},"required":true},{"name":"channel","type":{"ref":"notify.channel"},"required":true}],"identity":["user_id"]}
+]}

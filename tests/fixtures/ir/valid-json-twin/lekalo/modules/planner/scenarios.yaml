@@ -1,0 +1,1 @@
+{"schema_version":"1.0.0","definitions":[{"id":"planner.focus_flow","kind":"scenario","version":1,"description":"Focus flow","summary":"Focusing a task emits the focused event.","covers":["planner.focus_task","planner.task_focused"]}]}

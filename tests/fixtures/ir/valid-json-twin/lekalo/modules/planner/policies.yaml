@@ -1,0 +1,1 @@
+{"schema_version":"1.0.0","definitions":[{"id":"planner.deny_bulk_focus","kind":"policy","version":1,"description":"Bulk focus is out of scope","applies_to":["planner.focus_task"],"decision":"deny"}]}

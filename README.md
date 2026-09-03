@@ -100,6 +100,15 @@ writes, and emits the typed exit protocol (0 valid, 1 invalid, 3 denied,
 [ADR-0006](docs/adr/0006-loader.md), and the hermetic fixtures under
 `tests/fixtures/loader/`.
 
+Issue #8 compiles the loaded model into the typed, deterministic,
+target-neutral Lekalo IR (`dev.lekalo.ir@0.1.0`): `lekalo load --ir`
+prints canonical IR bytes with an optional occurrence-safe source map, and
+the `lekalo-core::ir` library surface exposes the closed typed read model
+(exhaustive definition/effect enums, resolved references, closed extension
+policy) for Rust consumers without the CLI. See
+[docs/ir.md](docs/ir.md), [ADR-0007](docs/adr/0007-ir.md), and the
+fixtures with golden canonical bytes under `tests/fixtures/ir/`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -108,9 +117,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract
-versions are independent of product releases; issue #6 is the accepted
-0.1.4 contract candidate and issue #7 carries prospective product 0.1.5
-(issue #3 published product 0.1.3).
+versions are independent of product releases; issue #7 is the accepted
+0.1.5 candidate and issue #8 carries prospective product 0.1.6
+(issues #3/#6/#7 published products 0.1.3/0.1.4/0.1.5).
 
 The checker recognizes only the two exact schema versions, and all documents
 in one project must agree. Model 1.0 makes project/module IDs one-segment and immutable,

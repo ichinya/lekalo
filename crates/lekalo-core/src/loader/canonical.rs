@@ -91,7 +91,7 @@ impl Canonical {
 
 /// JSON string escaping: RFC 8259 mandatory escapes; all other Unicode
 /// scalars are emitted verbatim as UTF-8.
-fn write_json_string(text: &str, out: &mut String) {
+pub(crate) fn write_json_string(text: &str, out: &mut String) {
     out.push('"');
     for character in text.chars() {
         match character {

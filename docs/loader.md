@@ -1,11 +1,12 @@
 # Loader: YAML/JSON, imports, canonical normalization
 
-Status: implemented for issue #7 on product candidate 0.1.5. The loader
-consumes the closed #4 structure, #5 Model shapes, and #6 semantic-ID
-contracts; it never rewrites them. IR (#8) and migration (#9) are out of
-scope. The decision record is [ADR-0006](adr/0006-loader.md). If this prose
-and the implementation disagree, consumers stop; prose cannot broaden the
-code.
+Status: implemented for issue #7 on product candidate 0.1.5 and unchanged
+by issue #8. The loader consumes the closed #4 structure, #5 Model shapes,
+and #6 semantic-ID contracts; it never rewrites them. Migration (#9) is out
+of scope; the issue #8 IR consumes the loader's normalized aggregate
+(`normalize_model`) without changing this contract. The decision record is
+[ADR-0006](adr/0006-loader.md). If this prose and the implementation
+disagree, consumers stop; prose cannot broaden the code.
 
 ## Purpose and boundary
 

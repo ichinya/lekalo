@@ -26,9 +26,11 @@ pub mod source;
 use std::path::PathBuf;
 
 use canonical::Canonical;
-use error::{bounded_import_echo, finalize_diagnostics, Diagnostic, LoadStatus};
-use frontends::Node;
-use project_docs::{decode, DocKind, Document, ModelVersion};
+pub use error::LoadStatus;
+use error::{bounded_import_echo, finalize_diagnostics, Diagnostic};
+use frontends::{Node, Span};
+use project_docs::{decode, Document};
+pub use project_docs::{DocKind, ModelVersion};
 use source::{check_document_limit, check_total_limit, LineIndex, Source, MAX_DOCUMENT_BYTES};
 
 /// Root selection for one load: explicit `--project`/`LEKALO_PROJECT`, or
@@ -115,7 +117,7 @@ impl LoadOutput {
 
 /// Serialize the failure envelope with pretty indentation (matching the
 /// accepted checker envelopes); success stays one compact line.
-fn failure_envelope(status: LoadStatus, diagnostics: &[Diagnostic]) -> String {
+pub(crate) fn failure_envelope(status: LoadStatus, diagnostics: &[Diagnostic]) -> String {
     let mut out = String::from("{\n  \"status\": \"");
     out.push_str(status.as_str());
     out.push_str("\",\n  \"reasonCodes\": [");
@@ -139,7 +141,50 @@ fn failure_envelope(status: LoadStatus, diagnostics: &[Diagnostic]) -> String {
 /// process working directory; the loader never writes and never reads
 /// `.lekalo/**` as model input.
 pub fn run(selection: &LoadSelection, spans_requested: bool) -> LoadOutput {
-    let failure = |status, diagnostics: Vec<Diagnostic>| LoadOutput::failure(status, diagnostics);
+    match normalize_model(selection) {
+        Ok(model) => render_load_output(&model, spans_requested),
+        Err(outcome) => outcome,
+    }
+}
+
+/// One normalized definition with the identity, provenance, and source
+/// crumbs the loader recorded while normalizing its reference surfaces.
+#[derive(Clone, Debug)]
+pub struct NormalizedDefinition {
+    /// Fully qualified semantic ID (project or module ID, or symbol ID).
+    pub id: String,
+    /// Logical project-relative POSIX path of the declaring document.
+    pub path: String,
+    /// The normalized, spanned definition node.
+    pub node: Node,
+    /// Span of the definition mapping itself.
+    pub span: Span,
+    /// `(pointer suffix relative to this definition, span)` crumbs recorded
+    /// during normalization, in walk order.
+    pub crumbs: Vec<(String, Span)>,
+}
+
+/// The normalized aggregate of one successful load (phases 1-8): the exact
+/// model version plus every definition in canonical output order with its
+/// spans and reference crumbs.
+///
+/// This is the typed seam issue #8 builds on; `run` renders it into the
+/// CLI envelope, and the IR compiler consumes it without re-parsing source.
+#[derive(Clone, Debug)]
+pub struct NormalizedModel {
+    pub model_version: ModelVersion,
+    pub project: Option<NormalizedDefinition>,
+    /// Modules in canonical (semantic-ID byte) order.
+    pub modules: Vec<NormalizedDefinition>,
+    /// Symbol definitions in canonical (semantic-ID byte) order.
+    pub definitions: Vec<NormalizedDefinition>,
+}
+
+/// Run phases 1-8 to completion and return the normalized aggregate, or the
+/// terminal failure. No rendering happens here; `run` owns the envelope.
+pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, LoadOutput> {
+    let failure =
+        |status, diagnostics: Vec<Diagnostic>| Err(LoadOutput::failure(status, diagnostics));
 
     // Phase 1: selection/discovery.
     let root: PathBuf = match &selection.project {
@@ -152,7 +197,7 @@ pub fn run(selection: &LoadSelection, spans_requested: bool) -> LoadOutput {
                 "structure.project-not-directory",
             ) {
                 Ok(path) => path,
-                Err(outcome) => return structure_failure(outcome),
+                Err(outcome) => return Err(structure_failure(outcome)),
             }
         }
         None => {
@@ -173,7 +218,7 @@ pub fn run(selection: &LoadSelection, spans_requested: bool) -> LoadOutput {
                         vec![Diagnostic::new("structure.root-not-found")],
                     )
                 }
-                Err(outcome) => return structure_failure(outcome),
+                Err(outcome) => return Err(structure_failure(outcome)),
             }
         }
     };
@@ -183,10 +228,14 @@ pub fn run(selection: &LoadSelection, spans_requested: bool) -> LoadOutput {
     let report = match validation {
         crate::project_fs::StructureOutcome::Valid(report) => report,
         crate::project_fs::StructureOutcome::Invalid(reasons) => {
-            return structure_failure(crate::project_fs::StructureOutcome::Invalid(reasons))
+            return Err(structure_failure(
+                crate::project_fs::StructureOutcome::Invalid(reasons),
+            ))
         }
         crate::project_fs::StructureOutcome::Denied(reasons) => {
-            return structure_failure(crate::project_fs::StructureOutcome::Denied(reasons))
+            return Err(structure_failure(
+                crate::project_fs::StructureOutcome::Denied(reasons),
+            ))
         }
     };
 
@@ -569,24 +618,11 @@ pub fn run(selection: &LoadSelection, spans_requested: bool) -> LoadOutput {
     let symbol_index =
         normalize::SymbolIndex::build(symbols_by_module, declared_modules, import_lists);
 
-    let mut source_map: Vec<SourceMapEntry> = Vec::new();
-    if spans_requested {
-        // Project definition entry.
-        if let Some(project) = &project_document {
-            source_map.push(SourceMapEntry {
-                path: project.path.clone(),
-                semantic_id: Some(project.definitions[0].id.clone()),
-                pointer: "/project".to_owned(),
-                start: Position::of(project.definitions[0].span.start),
-                end: Position::of(project.definitions[0].span.end),
-            });
-        }
-    }
-
-    let mut normalized_modules: Vec<(String, Node)> = Vec::new();
-    for (module_index, (module_id, document)) in modules.iter_mut().enumerate() {
-        let mut node = document.definitions[0].node.clone();
-        let mut context = normalize::NormalizeContext::new(&symbol_index, module_id);
+    let mut normalized_modules: Vec<NormalizedDefinition> = Vec::new();
+    for (_, document) in modules.iter() {
+        let definition = &document.definitions[0];
+        let mut node = definition.node.clone();
+        let mut context = normalize::NormalizeContext::new(&symbol_index, &definition.id);
         normalize::normalize_definition(&mut node, &mut context);
         normalize::sort_imports(&mut node);
         if !context.diagnostics.is_empty() {
@@ -603,28 +639,16 @@ pub fn run(selection: &LoadSelection, spans_requested: bool) -> LoadOutput {
                 .collect();
             return failure(LoadStatus::Invalid, diagnostics);
         }
-        if spans_requested {
-            source_map.push(SourceMapEntry {
-                path: document.path.clone(),
-                semantic_id: Some(document.definitions[0].id.clone()),
-                pointer: format!("/modules/{module_index}"),
-                start: Position::of(document.definitions[0].span.start),
-                end: Position::of(document.definitions[0].span.end),
-            });
-            for (suffix, span) in &context.source_entries {
-                source_map.push(SourceMapEntry {
-                    path: document.path.clone(),
-                    semantic_id: None,
-                    pointer: format!("/modules/{module_index}/{suffix}"),
-                    start: Position::of(span.start),
-                    end: Position::of(span.end),
-                });
-            }
-        }
-        normalized_modules.push((module_id.clone(), node));
+        normalized_modules.push(NormalizedDefinition {
+            id: definition.id.clone(),
+            path: document.path.clone(),
+            node,
+            span: definition.span,
+            crumbs: context.source_entries,
+        });
     }
 
-    let mut normalized_definitions: Vec<(String, Document, Node)> = Vec::new();
+    let mut normalized_definitions: Vec<NormalizedDefinition> = Vec::new();
     for document in &symbol_documents {
         for definition in &document.definitions {
             let mut node = definition.node.clone();
@@ -645,55 +669,111 @@ pub fn run(selection: &LoadSelection, spans_requested: bool) -> LoadOutput {
                     .collect();
                 return failure(LoadStatus::Invalid, diagnostics);
             }
-            normalized_definitions.push((definition.id.clone(), document.clone(), node));
+            normalized_definitions.push(NormalizedDefinition {
+                id: definition.id.clone(),
+                path: document.path.clone(),
+                node,
+                span: definition.span,
+                crumbs: context.source_entries,
+            });
         }
     }
-    normalized_definitions.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
+    normalized_definitions.sort_by(|left, right| left.id.as_bytes().cmp(right.id.as_bytes()));
 
-    if spans_requested {
-        for (position, (id, document, definition)) in normalized_definitions.iter().enumerate() {
-            source_map.push(SourceMapEntry {
+    Ok(NormalizedModel {
+        model_version,
+        project: project_document.map(|document| {
+            let definition = &document.definitions[0];
+            NormalizedDefinition {
+                id: definition.id.clone(),
                 path: document.path.clone(),
-                semantic_id: Some(id.clone()),
+                node: definition.node.clone(),
+                span: definition.span,
+                // The project definition carries no normalized reference
+                // surfaces, so normalization recorded no crumbs.
+                crumbs: Vec::new(),
+            }
+        }),
+        modules: normalized_modules,
+        definitions: normalized_definitions,
+    })
+}
+
+/// Render the terminal CLI envelope from one normalized aggregate (phase 9):
+/// canonical model bytes, the optional sorted source map, and the success
+/// line. Byte-identical to the pre-#8 rendering.
+fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> LoadOutput {
+    let model_version = model.model_version;
+    let mut source_map: Vec<SourceMapEntry> = Vec::new();
+    if spans_requested {
+        if let Some(project) = &model.project {
+            source_map.push(SourceMapEntry {
+                path: project.path.clone(),
+                semantic_id: Some(project.id.clone()),
+                pointer: "/project".to_owned(),
+                start: Position::of(project.span.start),
+                end: Position::of(project.span.end),
+            });
+        }
+        for (module_index, module) in model.modules.iter().enumerate() {
+            source_map.push(SourceMapEntry {
+                path: module.path.clone(),
+                semantic_id: Some(module.id.clone()),
+                pointer: format!("/modules/{module_index}"),
+                start: Position::of(module.span.start),
+                end: Position::of(module.span.end),
+            });
+            for (suffix, span) in &module.crumbs {
+                source_map.push(SourceMapEntry {
+                    path: module.path.clone(),
+                    semantic_id: None,
+                    pointer: format!("/modules/{module_index}/{suffix}"),
+                    start: Position::of(span.start),
+                    end: Position::of(span.end),
+                });
+            }
+        }
+        for (position, definition) in model.definitions.iter().enumerate() {
+            source_map.push(SourceMapEntry {
+                path: definition.path.clone(),
+                semantic_id: Some(definition.id.clone()),
                 pointer: format!("/definitions/{position}"),
                 start: Position::of(definition.span.start),
                 end: Position::of(definition.span.end),
             });
         }
-        // Type/reference crumb entries point into sorted output positions;
-        // they were recorded per-definition during normalization.
-        // (Crumbs for symbols were attached above via context.source_entries
-        // only for modules; symbols record during the same walk below.)
     }
 
-    // Phase 9: canonical aggregate.
-    let project_canonical = project_document
+    let project_canonical = model
+        .project
         .as_ref()
-        .map(|document| Canonical::from_node(&document.definitions[0].node));
-    let modules_canonical: Vec<Canonical> = normalized_modules
+        .map(|project| Canonical::from_node(&project.node));
+    let modules_canonical: Vec<Canonical> = model
+        .modules
         .iter()
-        .map(|(_, node)| Canonical::from_node(node))
+        .map(|module| Canonical::from_node(&module.node))
         .collect();
-    let definitions_canonical: Vec<Canonical> = normalized_definitions
+    let definitions_canonical: Vec<Canonical> = model
+        .definitions
         .iter()
-        .map(|(_, _, node)| Canonical::from_node(node))
+        .map(|definition| Canonical::from_node(&definition.node))
         .collect();
 
-    let mut model = String::new();
-    model.push_str("{\"definitions\":");
-    Canonical::Seq(definitions_canonical).write_json(&mut model);
-    model.push_str(",\"modules\":");
-    Canonical::Seq(modules_canonical).write_json(&mut model);
+    let mut canonical = String::new();
+    canonical.push_str("{\"definitions\":");
+    Canonical::Seq(definitions_canonical).write_json(&mut canonical);
+    canonical.push_str(",\"modules\":");
+    Canonical::Seq(modules_canonical).write_json(&mut canonical);
     if let Some(project) = &project_canonical {
-        model.push_str(",\"project\":");
-        project.write_json(&mut model);
+        canonical.push_str(",\"project\":");
+        project.write_json(&mut canonical);
     }
-    model.push('}');
+    canonical.push('}');
 
     let mut json = String::from("{\"status\":\"valid\",\"modelVersion\":");
     json.push_str(&Canonical::Str(model_version.as_str().to_owned()).to_json());
     json.push_str(",\"model\":");
-    json.push_str(&model);
+    json.push_str(&canonical);
     if spans_requested {
         source_map.sort_by(|left, right| {
             (left.path.clone(), left.pointer.clone(), left.start.byte).cmp(&(
@@ -710,8 +790,8 @@ pub fn run(selection: &LoadSelection, spans_requested: bool) -> LoadOutput {
     let human = format!(
         "loaded model {}: {} modules, {} definitions",
         model_version.as_str(),
-        normalized_modules.len(),
-        normalized_definitions.len()
+        model.modules.len(),
+        model.definitions.len()
     );
 
     LoadOutput {
