@@ -1,0 +1,6 @@
+{
+  "outcome": "invalid",
+  "reasonCodes": [
+    "semantic.effect-emits-unresolved"
+  ]
+}

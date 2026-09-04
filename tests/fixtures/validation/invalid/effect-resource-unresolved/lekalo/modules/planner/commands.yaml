@@ -1,0 +1,34 @@
+{
+  "schema_version": "0.1.0",
+  "definitions": [
+    {
+      "id": "planner.effect_create",
+      "kind": "effect",
+      "version": 1,
+      "description": "Create effect",
+      "operation": "create",
+      "entity": "planner.ghost",
+      "emits": [
+        "planner.task_created"
+      ]
+    },
+    {
+      "id": "planner.create_task",
+      "kind": "command",
+      "version": 1,
+      "description": "Create task",
+      "input": [
+        {
+          "name": "title",
+          "type": {
+            "ref": "planner.text"
+          },
+          "required": true
+        }
+      ],
+      "effects": [
+        "planner.effect_create"
+      ]
+    }
+  ]
+}

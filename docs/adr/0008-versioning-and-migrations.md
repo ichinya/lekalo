@@ -13,7 +13,8 @@ support policy, or how a project moves between Model versions. Issue #9
 owns that surface without revising any published #3–#8 behavior.
 
 Issue #9 published product 0.1.7 at `f0b3784`; issue #10 published
-product 0.1.8 at `8ddbbf0`; issue #11 carries prospective product 0.1.9.
+product 0.1.8 at `8ddbbf0`; issue #11 carried prospective product 0.1.9;
+issue #12 now carries prospective product 0.1.10.
 Issue #8 published product 0.1.6 at `5580b83`. Product versions, Model schema versions, the IR
 contract version, and the protocol version are independent by design.
 

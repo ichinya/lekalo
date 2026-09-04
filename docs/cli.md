@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.9. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.10. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -24,7 +24,7 @@ lekalo update --apply sha256:PLAN_ID [--offline] [--project DIR]
 lekalo migrate --to model/TARGET [--dry-run] [--project DIR]
 lekalo migrate --rollback PLAN_ID [--project DIR]
 lekalo compatibility
-lekalo validate
+lekalo validate [--project DIR] [--module MODULE] [--strict]
 lekalo inspect SYMBOL
 lekalo impact SYMBOL
 lekalo context SYMBOL --budget TOKENS
@@ -61,6 +61,22 @@ bytes in place of the preserved model; `--spans` then appends the IR source
 map. IR decode failures are `invalid` (exit 1, stderr) with the closed
 `ir.*` reason codes. See [ir.md](ir.md) for the normative IR contract and
 the fixture suite under `tests/fixtures/ir/`.
+
+### `lekalo validate`
+
+`validate` runs the issue #12 semantic validator over the compiled typed
+IR: load, IR compile, then the phase-ordered semantic rules
+(`lekalo validate` accepts `--project DIR`, `--module MODULE`, and
+`--strict`). Loader, IR, and versioning failures pass through untouched;
+semantic invalidity is `invalid` (exit 1, stderr) and a valid project is
+`valid` (exit 0, stdout) carrying only warning/info diagnostics. The wire
+envelope embeds the fixed-order `validation` object (profile, profile
+version, pinned diagnostic registry release, optional module scope, enabled
+rule count, severity counts). Rules, severities, and the two built-in
+profiles are governed by [validation.md](validation.md) and
+[ADR-0011](adr/0011-semantic-validation.md); `--strict` selects the strict
+built-in profile, and `--module` scopes the report to one module while
+keeping every error anywhere in the project.
 
 ### `lekalo lock` and `lekalo update`
 
@@ -191,14 +207,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.9"
+  "version": "0.1.10"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.9`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.1.10`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Development checks
@@ -215,5 +231,7 @@ CI also checks the exact Rust 1.80.0 toolchain, builds and tests on Linux,
 Windows, and macOS, and runs every accepted Node contract checker and suite on
 Node.js 18 and 24. On both Node majors the contracts job additionally
 provisions exact Ajv 8.17.1 under the runner temp directory, outside the
-checkout, exposes it to scripts/test-model-ajv.mjs alone through NODE_PATH,
+checkout, exposes it to scripts/test-model-ajv.mjs, scripts/test-lockfile-ajv.mjs,
+scripts/test-diagnostic-contracts.mjs, and
+scripts/test-validation-contracts.mjs through NODE_PATH,
 and fails the job on any install, version, or gate failure.

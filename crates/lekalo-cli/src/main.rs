@@ -38,8 +38,19 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Validate a Lekalo project (recognized; implementation follows in a later issue).
-    Validate,
+    /// Validate the semantic layer of a Lekalo project over the typed IR.
+    Validate {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Report module-owned diagnostics plus mandatory cross-module
+        /// errors; the whole project is still validated.
+        #[arg(long, value_name = "MODULE")]
+        module: Option<String>,
+        /// Select the strict built-in validation profile.
+        #[arg(long)]
+        strict: bool,
+    },
     /// Load YAML/JSON sources, resolve imports, and emit the canonical model.
     Load {
         /// Project root selector, relative to the invocation directory.
@@ -144,8 +155,12 @@ fn main() -> ExitCode {
             } => run_update(project, dry_run, apply),
             Commands::Load { project, spans, ir } => run_load(project, spans, ir),
             Commands::Migrate { migrate } => run_migrate(migrate),
+            Commands::Validate {
+                project,
+                module,
+                strict,
+            } => run_validate(project, module, strict),
             Commands::Compatibility => run_compatibility(),
-            Commands::Validate => lekalo_core::Request::Validate.dispatch(),
             Commands::Inspect { symbol } => lekalo_core::Request::Inspect { symbol }.dispatch(),
             Commands::Impact { symbol } => lekalo_core::Request::Impact { symbol }.dispatch(),
             Commands::Context { symbol, budget } => {
@@ -217,6 +232,68 @@ fn run_load(project: Option<String>, spans: bool, ir: bool) -> DomainResult {
             },
         },
     }
+}
+
+/// Run `lekalo validate`: load, compile to the typed IR, and run the
+/// semantic rules under the selected built-in profile. Loader, IR, and
+/// versioning failures pass through untouched; semantic invalidity maps to
+/// the invalid envelope (exit 1) and valid outcomes carry only
+/// warning/info diagnostics (exit 0).
+fn run_validate(project: Option<String>, module: Option<String>, strict: bool) -> DomainResult {
+    let selection = LoadSelection {
+        project: project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    let model = match lekalo_core::loader::normalize_model(&selection) {
+        Err(result) => return result,
+        Ok(model) => model,
+    };
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Err(failure) => return failure.into_result(),
+        Ok(compilation) => compilation,
+    };
+    let profile = match if strict {
+        lekalo_core::validator::ValidationProfile::embedded_strict()
+    } else {
+        lekalo_core::validator::ValidationProfile::embedded_default()
+    } {
+        Ok(profile) => profile,
+        // The embedded profile is a developer-owned contract; a parse
+        // failure fails closed like the registry invariant.
+        Err(_) => return DomainResult::invalid(registry_invariant_failure()),
+    };
+    let outcome = match &module {
+        Some(scope) => lekalo_core::validator::validate_scoped(&compilation, profile, scope),
+        None => lekalo_core::validator::validate(&compilation, profile),
+    };
+    match outcome {
+        Err(set) => DomainResult::invalid(set),
+        Ok(report) => {
+            let (json, human) = render_validate_success(&model, &report);
+            let diagnostics = report.diagnostics().as_slice().to_vec();
+            DomainResult::validation(json, human, diagnostics)
+        }
+    }
+}
+
+/// The fail-closed set for an unusable embedded contract (developer fault).
+fn registry_invariant_failure() -> lekalo_core::diagnostics::DiagnosticSet {
+    lekalo_core::validator::registry_invariant_failure()
+}
+
+/// Render the validation success payload: the fixed key order `status`,
+/// `modelVersion`, `validation`. The validation object is the report wire.
+fn render_validate_success(
+    model: &lekalo_core::loader::NormalizedModel,
+    report: &lekalo_core::validator::ValidationReport,
+) -> (String, String) {
+    let mut json = String::from("{\"status\":\"valid\",\"modelVersion\":");
+    json.push_str(
+        &serde_json::to_string(model.model_version.as_str()).expect("version serializes"),
+    );
+    json.push_str(",\"validation\":");
+    json.push_str(&report.to_json());
+    json.push('}');
+    (json, report.to_human())
 }
 
 /// Parse the `--to` selector: exactly `model/<version-or-alias>`.

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/validation-profile.schema.v1.0.0.json",
+  "title": "Lekalo validation profile",
+  "description": "Closed contract of one selectable semantic-validation profile (issue #12). The profile version is independent of the product release, the Model/IR/protocol contract versions, and the diagnostic schema version; it pins the diagnostic registry release whose rule ids and severities it may select.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "profile_id",
+    "version",
+    "diagnostic_registry_version",
+    "scope",
+    "rules"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/validation-profile/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.validation-profile@1.0.0"
+    },
+    "profile_id": {
+      "$ref": "#/$defs/profileId"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "diagnostic_registry_version": {
+      "const": "1.1.0"
+    },
+    "scope": {
+      "enum": ["project"]
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ruleEntry"
+      }
+    }
+  },
+  "$defs": {
+    "profileId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}$",
+      "maxLength": 63
+    },
+    "ruleEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "enabled"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "severity_override": {
+          "enum": ["info", "warning"]
+        }
+      }
+    }
+  }
+}

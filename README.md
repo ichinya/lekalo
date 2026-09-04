@@ -137,7 +137,20 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.0.0.json`.
+`contracts/diagnostic-registry.v1.1.0.json` (issue #12 extended it with the
+`semantic.*`/`validate.*` families as a minor increment).
+
+## Semantic validation
+
+Issue #12 implements `lekalo validate` over the typed IR: phase-ordered
+pure rules with stable `semantic.*` ids and `LEK-SEM-NNN` codes, exact
+source spans from the #8 source map, selectable built-in severity profiles
+(`--strict`), module-scoped reporting (`--module`) that never hides
+mandatory cross-module errors, and byte-identical deterministic output on
+the 0/1 exit classes. The registry successor, closed profile contract, and
+recorded owner decisions live in [docs/validation.md](docs/validation.md)
+and [ADR-0011](docs/adr/0011-semantic-validation.md); the hermetic fixture
+matrix is under `tests/fixtures/validation/`.
 
 ## Lekalo Model contracts and semantic IDs
 
@@ -147,8 +160,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #11 carries prospective product
-0.1.9 (issue #10 published product 0.1.8 at `8ddbbf0`; issues #8/#9
+independent of product releases; issue #12 carries prospective product
+0.1.10 (issue #11 published product 0.1.9 at `5b885bf`; issue #10
+published product 0.1.8 at `8ddbbf0`; issues #8/#9
 published products 0.1.6/0.1.7, the latter at `f0b3784`).
 
 The checker recognizes only the two exact schema versions, and all documents

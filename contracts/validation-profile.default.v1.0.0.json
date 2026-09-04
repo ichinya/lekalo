@@ -1,0 +1,103 @@
+{
+  "schema_version": "lekalo/validation-profile/v1.0.0",
+  "identity": "dev.lekalo.validation-profile@1.0.0",
+  "profile_id": "default",
+  "version": "1.0.0",
+  "diagnostic_registry_version": "1.1.0",
+  "scope": "project",
+  "rules": [
+    {
+      "id": "semantic.command-effect-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.command-effect-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.effect-emits-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.effect-emits-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.effect-resource-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.effect-resource-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.endpoint-operation-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.endpoint-operation-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.entity-identity-field-missing",
+      "enabled": true
+    },
+    {
+      "id": "semantic.policy-operation-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.policy-operation-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.portable-target-reference",
+      "enabled": true,
+      "severity_override": "info"
+    },
+    {
+      "id": "semantic.public-output-private-type",
+      "enabled": true
+    },
+    {
+      "id": "semantic.query-read-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.query-read-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.scenario-operation-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.type-recursion",
+      "enabled": true
+    },
+    {
+      "id": "semantic.type-ref-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.type-ref-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.visibility-boundary-violation",
+      "enabled": true
+    },
+    {
+      "id": "validate.module-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "validate.profile-invalid",
+      "enabled": true
+    },
+    {
+      "id": "validate.span-unavailable",
+      "enabled": true
+    }
+  ]
+}

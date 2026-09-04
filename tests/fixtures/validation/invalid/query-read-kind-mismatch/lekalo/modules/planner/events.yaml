@@ -1,0 +1,20 @@
+{
+  "schema_version": "0.1.0",
+  "definitions": [
+    {
+      "id": "planner.task_created",
+      "kind": "event",
+      "version": 1,
+      "description": "Created event",
+      "payload": [
+        {
+          "name": "task_id",
+          "type": {
+            "ref": "planner.task_id"
+          },
+          "required": true
+        }
+      ]
+    }
+  ]
+}

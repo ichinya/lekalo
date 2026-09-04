@@ -1,0 +1,17 @@
+{
+  "schema_version": "0.1.0",
+  "definitions": [
+    {
+      "id": "planner.get_task",
+      "kind": "query",
+      "version": 1,
+      "description": "Get task",
+      "reads": [
+        "planner.create_task"
+      ],
+      "returns": {
+        "ref": "planner.task"
+      }
+    }
+  ]
+}

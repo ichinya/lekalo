@@ -1,10 +1,10 @@
 {
   "status": "unsupported",
-  "capability": "validate",
+  "capability": "inspect",
   "diagnostics": [
     {
       "schema_version": "lekalo/diagnostic/v1.0.0",
-      "registry_version": "1.0.0",
+      "registry_version": "1.1.0",
       "id": "core.capability-unavailable",
       "code": "LEK-DIAG-001",
       "severity": "info",

@@ -1,0 +1,6 @@
+{
+  "outcome": "invalid",
+  "reasonCodes": [
+    "semantic.command-effect-kind-mismatch"
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "schema_version": "lekalo/diagnostic-registry/v1.0.0",
-  "identity": "dev.lekalo.diagnostic-registry@1.0.0",
-  "registry_version": "1.0.0",
+  "identity": "dev.lekalo.diagnostic-registry@1.1.0",
+  "registry_version": "1.1.0",
   "closed": true,
   "entries": [
     {
@@ -1041,6 +1041,515 @@
       "lifecycle": "active"
     },
     {
+      "id": "semantic.command-effect-kind-mismatch",
+      "code": "LEK-SEM-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.command-effect-kind-mismatch",
+      "default_message": "A command effect references a definition that is not an effect.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.command-effect-unresolved",
+      "code": "LEK-SEM-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.command-effect-unresolved",
+      "default_message": "A command effect references an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.effect-emits-kind-mismatch",
+      "code": "LEK-SEM-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.effect-emits-kind-mismatch",
+      "default_message": "An effect emits reference points at a definition that is not an event.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.effect-emits-unresolved",
+      "code": "LEK-SEM-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.effect-emits-unresolved",
+      "default_message": "An effect emits reference points at an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.effect-resource-kind-mismatch",
+      "code": "LEK-SEM-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.effect-resource-kind-mismatch",
+      "default_message": "An effect entity reference points at a definition that is not an entity.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.effect-resource-unresolved",
+      "code": "LEK-SEM-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.effect-resource-unresolved",
+      "default_message": "An effect entity reference points at an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.endpoint-operation-kind-mismatch",
+      "code": "LEK-SEM-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.endpoint-operation-kind-mismatch",
+      "default_message": "An endpoint invokes a definition that is neither a command nor a query.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.endpoint-operation-unresolved",
+      "code": "LEK-SEM-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.endpoint-operation-unresolved",
+      "default_message": "An endpoint invokes an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.entity-identity-field-missing",
+      "code": "LEK-SEM-009",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.entity-identity-field-missing",
+      "default_message": "An entity identity names a field the entity does not declare.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "field",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.policy-operation-kind-mismatch",
+      "code": "LEK-SEM-010",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.policy-operation-kind-mismatch",
+      "default_message": "A policy applies to a definition that is not a command, query, or effect.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.policy-operation-unresolved",
+      "code": "LEK-SEM-011",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.policy-operation-unresolved",
+      "default_message": "A policy applies to an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.portable-target-reference",
+      "code": "LEK-SEM-012",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "semantic.portable-target-reference",
+      "default_message": "A portable definition directly references a target-specific definition.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.public-output-private-type",
+      "code": "LEK-SEM-013",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.public-output-private-type",
+      "default_message": "A project-visible query returns a module-private named type.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.query-read-kind-mismatch",
+      "code": "LEK-SEM-014",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.query-read-kind-mismatch",
+      "default_message": "A query reads a definition that is not an entity.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.query-read-unresolved",
+      "code": "LEK-SEM-015",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.query-read-unresolved",
+      "default_message": "A query reads an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.scenario-operation-unresolved",
+      "code": "LEK-SEM-016",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.scenario-operation-unresolved",
+      "default_message": "A scenario covers an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.type-recursion",
+      "code": "LEK-SEM-017",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.type-recursion",
+      "default_message": "A required named-type reference cycle makes the type infinite.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.type-ref-kind-mismatch",
+      "code": "LEK-SEM-018",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.type-ref-kind-mismatch",
+      "default_message": "A type reference points at a definition that is not a named type.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.type-ref-unresolved",
+      "code": "LEK-SEM-019",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.type-ref-unresolved",
+      "default_message": "A type reference points at an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.visibility-boundary-violation",
+      "code": "LEK-SEM-020",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.visibility-boundary-violation",
+      "default_message": "A definition references a module-private symbol of another module.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "structure.canonical-unexpected-entry",
       "code": "LEK-STR-001",
       "category": "model",
@@ -1549,6 +2058,66 @@
       "default_message": "Project path policy refusal.",
       "location_requirement": "none",
       "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "validate.module-unresolved",
+      "code": "LEK-VAL-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "validate.module-unresolved",
+      "default_message": "The module scope selector names no module in the project.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "module",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "validate.profile-invalid",
+      "code": "LEK-VAL-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "validate.profile-invalid",
+      "default_message": "The validation profile violates its closed contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "validate.span-unavailable",
+      "code": "LEK-VAL-003",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "validate.span-unavailable",
+      "default_message": "A source-derived semantic diagnostic lacks its required source span.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
       "allowed_fix_ids": [],
       "lifecycle": "active"
     },

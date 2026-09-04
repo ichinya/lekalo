@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1.0",
+  "definitions": [
+    {
+      "id": "planner.get_log",
+      "kind": "query",
+      "version": 1,
+      "description": "Read audit log",
+      "reads": [
+        "audit.log"
+      ]
+    }
+  ]
+}

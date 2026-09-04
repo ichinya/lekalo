@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.1.0",
+  "definitions": [
+    {
+      "id": "planner.allow_create",
+      "kind": "policy",
+      "version": 1,
+      "description": "Allow create",
+      "applies_to": [
+        "planner.ghost"
+      ],
+      "decision": "allow"
+    }
+  ]
+}

@@ -3,7 +3,8 @@
 Date: 2026-09-04
 Status: accepted for issue #11
 
-Custody: this issue carries the **prospective product candidate 0.1.9** in
+Custody: issue #12 now carries the **prospective product candidate 0.1.10**
+in every accepted path; this issue carried prospective product 0.1.9 in
 every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 `Cargo.lock`, the `--version` behavior and its pinning tests, `README.md`,
 `docs/cli.md`); issue #10 published product 0.1.8 (annotated tag on

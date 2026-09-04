@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1.0",
+  "definitions": [
+    {
+      "id": "planner",
+      "kind": "module",
+      "version": 1,
+      "description": "Planner",
+      "imports": [
+        "audit"
+      ]
+    }
+  ]
+}

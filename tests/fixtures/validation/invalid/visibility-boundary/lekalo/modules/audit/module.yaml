@@ -1,0 +1,11 @@
+{
+  "schema_version": "0.1.0",
+  "definitions": [
+    {
+      "id": "audit",
+      "kind": "module",
+      "version": 1,
+      "description": "Audit"
+    }
+  ]
+}

@@ -34,7 +34,7 @@ use lekalo_core::versioning::{ContractVersion, VersionRegistry};
 const GOLDEN: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:6055a0e08493d69fa81e70a49e9d61d8fccfc02c968775aa748d4e95007cbb92";
+    "sha256:71462bb6468b995b2104d70a608f3661922f96d4329e46e27010b08a0976dd1d";
 const MULTI: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/multi-adapter.lock.json");
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/lockfile/project";
@@ -263,7 +263,7 @@ fn golden_contract_only_lock_parses_and_matches_its_independent_digest() {
     let lock = Lockfile::parse_canonical(GOLDEN).expect("golden lock parses");
     assert_eq!(lock.digest().as_str(), GOLDEN_DIGEST);
     assert_eq!(lock.resolver_version().as_str(), RESOLVER_VERSION);
-    assert_eq!(lock.core_version().as_str(), "0.1.9");
+    assert_eq!(lock.core_version().as_str(), "0.1.10");
     assert_eq!(lock.target_protocol(), None);
     // Round-trip: canonical bytes are byte-identical to the committed file.
     assert_eq!(lock.canonical_bytes().as_ref(), GOLDEN);
@@ -333,17 +333,17 @@ fn wire_refusals_carry_the_closed_reason_codes() {
         ),
         (
             "v-prefixed version",
-            tampered("\"version\":\"0.1.9\"", "\"version\":\"v0.1.9\""),
+            tampered("\"version\":\"0.1.10\"", "\"version\":\"v0.1.9\""),
             "lock.schema-invalid",
         ),
         (
             "build metadata version",
-            tampered("\"version\":\"0.1.9\"", "\"version\":\"0.1.9+meta\""),
+            tampered("\"version\":\"0.1.10\"", "\"version\":\"0.1.9+meta\""),
             "lock.schema-invalid",
         ),
         (
             "range version",
-            tampered("\"version\":\"0.1.9\"", "\"version\":\"^0.1\""),
+            tampered("\"version\":\"0.1.10\"", "\"version\":\"^0.1\""),
             "lock.schema-invalid",
         ),
         (

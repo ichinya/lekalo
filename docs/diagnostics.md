@@ -2,13 +2,13 @@
 
 Issue #11 defines the stable, machine-readable diagnostic contract: one
 closed wire item (`lekalo/diagnostic/v1.0.0`), one embedded rule registry
-(`dev.lekalo.diagnostic-registry@1.0.0`, registry version `1.0.0`), a typed
+(`dev.lekalo.diagnostic-registry@1.1.0`, registry version `1.1.0` — issue #12 added the `semantic.*` and `validate.*` families as a wire-shape-preserving minor increment), a typed
 Rust API, deterministic normalization, and the human and JSON projections
 through the shared `DomainResult` envelope. The contracts are published as
 
 - [`contracts/diagnostic.schema.v1.0.0.json`](../contracts/diagnostic.schema.v1.0.0.json) — one diagnostic item,
 - [`contracts/diagnostic-registry.schema.v1.0.0.json`](../contracts/diagnostic-registry.schema.v1.0.0.json) — the registry schema,
-- [`contracts/diagnostic-registry.v1.0.0.json`](../contracts/diagnostic-registry.v1.0.0.json) — the registry instance.
+- [`contracts/diagnostic-registry.v1.1.0.json`](../contracts/diagnostic-registry.v1.1.0.json) — the registry instance.
 
 Versions are independent of the product release, the Model/IR/protocol
 contract versions, the lock wire, and the resolver algorithm version.

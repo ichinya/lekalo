@@ -6,6 +6,7 @@ pub mod loader;
 pub mod lockfile;
 pub mod project_fs;
 pub mod result;
+pub mod validator;
 pub mod versioning;
 
 pub use result::{Capability, DomainResult, ReasonCode, Status, CAPABILITY_UNAVAILABLE, CLI_USAGE};

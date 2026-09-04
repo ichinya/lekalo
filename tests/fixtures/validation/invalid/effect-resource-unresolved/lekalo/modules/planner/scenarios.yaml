@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.1.0",
+  "definitions": [
+    {
+      "id": "planner.scenario_create",
+      "kind": "scenario",
+      "version": 1,
+      "description": "Create scenario",
+      "summary": "Create one task.",
+      "covers": [
+        "planner.create_task"
+      ]
+    }
+  ]
+}

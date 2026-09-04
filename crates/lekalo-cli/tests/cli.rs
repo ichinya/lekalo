@@ -29,7 +29,7 @@ fn diagnostic_item_json(
     message: &str,
 ) -> String {
     format!(
-        "{{\n      \"schema_version\": \"lekalo/diagnostic/v1.0.0\",\n      \"registry_version\": \"1.0.0\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
+        "{{\n      \"schema_version\": \"lekalo/diagnostic/v1.0.0\",\n      \"registry_version\": \"1.1.0\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
     )
 }
 
@@ -107,7 +107,6 @@ fn plain_and_json_version_outputs_are_exact_in_both_flag_orders() {
 #[test]
 fn every_stub_is_exact_in_human_and_both_json_flag_orders() {
     let cases = [
-        ("validate", vec!["validate"]),
         ("inspect", vec!["inspect", "planner.task"]),
         ("impact", vec!["impact", "planner.task"]),
         (
@@ -368,14 +367,14 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
 
     let root_manifest =
         std::fs::read_to_string(workspace.join("Cargo.toml")).expect("read workspace Cargo.toml");
-    assert_eq!(root_manifest.matches("version = \"0.1.9\"").count(), 1);
+    assert_eq!(root_manifest.matches("version = \"0.1.10\"").count(), 1);
     for member in [
         "crates/lekalo-core/Cargo.toml",
         "crates/lekalo-cli/Cargo.toml",
     ] {
         let manifest =
             std::fs::read_to_string(workspace.join(member)).expect("read member manifest");
-        assert!(!manifest.contains("0.1.9"));
+        assert!(!manifest.contains("0.1.10"));
         assert!(manifest.contains("version.workspace = true"));
     }
 }
