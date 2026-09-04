@@ -1,0 +1,40 @@
+{
+  "status": "invalid",
+  "diagnostics": [
+    {
+      "schema_version": "lekalo/diagnostic/v1.0.0",
+      "registry_version": "1.0.0",
+      "id": "loader.duplicate-definition",
+      "code": "LEK-LOAD-004",
+      "severity": "error",
+      "category": "model",
+      "message_id": "loader.duplicate-definition",
+      "message": "The same definition id is declared twice.",
+      "source": {
+        "path": "lekalo/modules/core/entities.yaml",
+        "range": {
+          "start": {
+            "byte": 113,
+            "line": 7,
+            "column": 9
+          },
+          "end": {
+            "byte": 123,
+            "line": 7,
+            "column": 19
+          }
+        }
+      },
+      "data": {
+        "id": "core.thing"
+      },
+      "related_locations": [],
+      "causes": [],
+      "fixes": [],
+      "metadata": {}
+    }
+  ],
+  "reasonCodes": [
+    "loader.duplicate-definition"
+  ]
+}

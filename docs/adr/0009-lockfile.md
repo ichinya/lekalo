@@ -3,10 +3,12 @@
 Date: 2026-09-04
 Status: accepted for issue #10
 
-Custody: this issue carries the **prospective product candidate 0.1.8** in
+Custody: this issue carried the prospective product candidate 0.1.8 in
 every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 `Cargo.lock`, the `--version` behavior and its pinning tests, `README.md`,
-`docs/cli.md`); issue #9 published product 0.1.7 at `f0b3784`. The lock
+`docs/cli.md`); the candidate was published as product 0.1.8 (annotated
+tag on `8ddbbf0`). Issue #9 published product 0.1.7 at `f0b3784`; issue
+#11 now carries prospective product 0.1.9. The lock
 schema version (`lekalo/lock/v1.0.0`, identity `dev.lekalo.lock@1.0.0`), the
 resolver algorithm version (1.0.0), and every contract version remain
 independent of the product release by design.
@@ -55,8 +57,9 @@ read-only preflight seam downstream commands call.
    stubs were added.
 8. **Release boundary.** The lock schema, resolver, and component versions
    are independent of the product release. The product version only moves
-   through the established custody process; this issue carries prospective
-   0.1.8 without tagging, publishing, or touching release automation (#104).
+   through the established custody process; this issue carried prospective
+   0.1.8 without tagging, publishing, or touching release automation
+   (#104).
 
 ## Decision highlights
 

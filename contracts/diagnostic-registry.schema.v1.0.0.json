@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.diagnostic-registry@1.0.0",
+  "title": "Lekalo diagnostic registry schema v1",
+  "description": "Closed wire schema for the diagnostic rule registry. The registry maps every emitted core rule id to its immutable code, category, default severity, allowed statuses, message, location requirement, closed data fields, and lifecycle. The registry version is independent of the diagnostic schema version, the product release, and the Model/IR/protocol contract versions.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/diagnostic-registry/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.diagnostic-registry@1.0.0"
+    },
+    "registry_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "closed": {
+      "const": true
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "required": ["schema_version", "identity", "registry_version", "closed", "entries"],
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "$defs": {
+    "ruleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+      "maxLength": 128
+    },
+    "diagnosticCode": {
+      "type": "string",
+      "pattern": "^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$"
+    },
+    "entry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ruleId"
+        },
+        "code": {
+          "$ref": "#/$defs/diagnosticCode"
+        },
+        "category": {
+          "enum": ["model", "semantic", "compatibility", "adapter", "infrastructure", "security"]
+        },
+        "default_severity": {
+          "enum": ["info", "warning", "error"]
+        },
+        "allowed_statuses": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "valid",
+              "invalid",
+              "denied",
+              "unsupported",
+              "unavailable",
+              "unsupported-version"
+            ]
+          }
+        },
+        "message_id": {
+          "$ref": "#/$defs/ruleId"
+        },
+        "default_message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "location_requirement": {
+          "enum": ["none", "path", "span"]
+        },
+        "data_fields": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+              },
+              "type": {
+                "enum": ["token", "count", "flag", "list", "records", "record"]
+              }
+            },
+            "required": ["name", "type"],
+            "additionalProperties": false
+          }
+        },
+        "allowed_fix_ids": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ruleId"
+          }
+        },
+        "lifecycle": {
+          "enum": ["active", "reserved", "retired"]
+        },
+        "replacement": {
+          "$ref": "#/$defs/ruleId"
+        }
+      },
+      "required": [
+        "id",
+        "code",
+        "category",
+        "default_severity",
+        "allowed_statuses",
+        "message_id",
+        "default_message",
+        "location_requirement",
+        "data_fields",
+        "allowed_fix_ids",
+        "lifecycle"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -16,6 +16,8 @@ Rust workspace and provider implementations are introduced.
 - [ADR-0008: versioning and migrations for Model, IR, and protocol](docs/adr/0008-versioning-and-migrations.md)
 - [The committed `lekalo.lock`: reproducible resolution](docs/lockfile.md)
 - [ADR-0009: the committed lekalo.lock and reproducible resolution](docs/adr/0009-lockfile.md)
+- [The stable machine-readable diagnostic contract](docs/diagnostics.md)
+- [ADR-0010: the stable machine-readable diagnostic contract](docs/adr/0010-diagnostics.md)
 
 Validate the contract and its allowed/forbidden/malformed fixtures, then verify
 the documented CLI exit-code protocol with Node.js, without installing
@@ -125,6 +127,18 @@ paths or credentials. See [docs/lockfile.md](docs/lockfile.md),
 [ADR-0009](docs/adr/0009-lockfile.md), and the hermetic fixtures under
 `tests/fixtures/lockfile/`.
 
+## Stable machine-readable diagnostics
+
+Issue #11 freezes the diagnostic wire: every failure carries closed wire
+diagnostics (`lekalo/diagnostic/v1.0.0`) with immutable `LEK-SUBSYSTEM-NNN`
+codes, registered category/severity/message/data semantics, deterministic
+sorting and dedup, and derived `reasonCodes`; human and JSON renderers are
+projections of the same `DomainResult`. Exit classes stay status-owned
+(0/1/3/4/5) and severity never computes an exit. See
+[docs/diagnostics.md](docs/diagnostics.md),
+[ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
+`contracts/diagnostic-registry.v1.0.0.json`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -133,9 +147,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #10 carries prospective product
-0.1.8 (issues #8/#9 published products 0.1.6/0.1.7, the latter at
-`f0b3784`).
+independent of product releases; issue #11 carries prospective product
+0.1.9 (issue #10 published product 0.1.8 at `8ddbbf0`; issues #8/#9
+published products 0.1.6/0.1.7, the latter at `f0b3784`).
 
 The checker recognizes only the two exact schema versions, and all documents
 in one project must agree. Model 1.0 makes project/module IDs one-segment and immutable,

@@ -16,6 +16,7 @@
 //! See `docs/loader.md` for the normative details.
 
 pub mod canonical;
+pub mod diagnostic;
 pub mod error;
 pub mod frontends;
 pub mod imports;
@@ -25,9 +26,9 @@ pub mod source;
 
 use std::path::PathBuf;
 
+use crate::result::{DomainResult, Status};
 use canonical::Canonical;
-pub use error::LoadStatus;
-use error::{bounded_import_echo, finalize_diagnostics, Diagnostic};
+use error::{bounded_import_echo, Diagnostic};
 use frontends::{Node, Span};
 use project_docs::decode;
 pub use project_docs::{DocKind, Document, ModelVersion};
@@ -78,70 +79,10 @@ impl Position {
     }
 }
 
-/// The terminal result of one load: exact JSON envelope bytes, the stable
-/// human line, and the exit class.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LoadOutput {
-    pub status: LoadStatus,
-    pub json: String,
-    pub human: String,
-}
-
-impl LoadOutput {
-    pub(crate) fn failure(status: LoadStatus, diagnostics: Vec<Diagnostic>) -> Self {
-        let status = if diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == "loader.path-escape")
-            && status == LoadStatus::Invalid
-        {
-            // A path policy denial inside a failing phase outranks generic
-            // invalidity: exit 3 stdout, matching the #4 protocol.
-            LoadStatus::Denied
-        } else {
-            status
-        };
-        let finalized = finalize_diagnostics(diagnostics);
-        let envelope = failure_envelope(status, &finalized);
-        let codes = finalized
-            .iter()
-            .map(|diagnostic| diagnostic.code.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let human = format!("{}: {}", status.as_str(), codes);
-        Self {
-            status,
-            json: envelope,
-            human,
-        }
-    }
-}
-
-/// Serialize the failure envelope with pretty indentation (matching the
-/// accepted checker envelopes); success stays one compact line.
-pub(crate) fn failure_envelope(status: LoadStatus, diagnostics: &[Diagnostic]) -> String {
-    let mut out = String::from("{\n  \"status\": \"");
-    out.push_str(status.as_str());
-    out.push_str("\",\n  \"reasonCodes\": [");
-    if diagnostics.is_empty() {
-        out.push_str("]\n}");
-        return out;
-    }
-    out.push('\n');
-    for diagnostic in diagnostics {
-        out.push_str("    ");
-        out.push_str(&serde_json::to_string(diagnostic).expect("diagnostic serializes"));
-        out.push_str(",\n");
-    }
-    // Trim the trailing comma of the last entry.
-    out.truncate(out.len() - 2);
-    out.push_str("\n  ]\n}\n");
-    out
-}
-
 /// Run one load to completion. All input selection is relative to the
 /// process working directory; the loader never writes and never reads
 /// `.lekalo/**` as model input.
-pub fn run(selection: &LoadSelection, spans_requested: bool) -> LoadOutput {
+pub fn run(selection: &LoadSelection, spans_requested: bool) -> DomainResult {
     match normalize_model(selection) {
         Ok(model) => render_load_output(&model, spans_requested),
         Err(outcome) => outcome,
@@ -221,35 +162,35 @@ pub(crate) fn decode_document_bytes(
 
 /// Run phases 1-8 to completion and return the normalized aggregate, or the
 /// terminal failure. No rendering happens here; `run` owns the envelope.
-pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, LoadOutput> {
+pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, DomainResult> {
     load_with_snapshot(selection).map(|loaded| loaded.model)
 }
 
 /// Phase 1 only: resolve the selection to an absolute project root
 /// without reading model documents. The migration service uses this to
 /// recover a crashed transaction before the loader's fail-closed gate.
-pub(crate) fn root_for_selection(selection: &LoadSelection) -> Result<PathBuf, LoadOutput> {
+pub(crate) fn root_for_selection(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
     let failure =
-        |status, diagnostics: Vec<Diagnostic>| Err(LoadOutput::failure(status, diagnostics));
+        |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
     match &selection.project {
         Some(selector) => {
             if let Some(code) = crate::project_fs::selection_violation(selector) {
-                return failure(LoadStatus::Invalid, vec![Diagnostic::new(code)]);
+                return failure(Status::Invalid, vec![Diagnostic::new(code)]);
             }
             crate::project_fs::Fs::check_selection(selector, "structure.project-not-directory")
                 .map_err(structure_failure)
         }
         None => {
             let cwd = std::env::current_dir().map_err(|_| {
-                LoadOutput::failure(
-                    LoadStatus::Invalid,
+                diagnostic::failure(
+                    Status::Invalid,
                     vec![Diagnostic::new("structure.root-unreadable")],
                 )
             })?;
             match crate::project_fs::Fs::find_root(&cwd) {
                 Ok(Some(path)) => Ok(path),
                 Ok(None) => failure(
-                    LoadStatus::Invalid,
+                    Status::Invalid,
                     vec![Diagnostic::new("structure.root-not-found")],
                 ),
                 Err(outcome) => Err(structure_failure(outcome)),
@@ -260,15 +201,15 @@ pub(crate) fn root_for_selection(selection: &LoadSelection) -> Result<PathBuf, L
 
 /// `normalize_model` plus the pinned snapshot the issue #9 migration
 /// planner consumes; the read path is byte-identical.
-pub(crate) fn load_with_snapshot(selection: &LoadSelection) -> Result<ProjectLoad, LoadOutput> {
+pub(crate) fn load_with_snapshot(selection: &LoadSelection) -> Result<ProjectLoad, DomainResult> {
     let failure =
-        |status, diagnostics: Vec<Diagnostic>| Err(LoadOutput::failure(status, diagnostics));
+        |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
 
     // Phase 1: selection/discovery.
     let root: PathBuf = match &selection.project {
         Some(selector) => {
             if let Some(code) = crate::project_fs::selection_violation(selector) {
-                return failure(LoadStatus::Invalid, vec![Diagnostic::new(code)]);
+                return failure(Status::Invalid, vec![Diagnostic::new(code)]);
             }
             match crate::project_fs::Fs::check_selection(
                 selector,
@@ -283,7 +224,7 @@ pub(crate) fn load_with_snapshot(selection: &LoadSelection) -> Result<ProjectLoa
                 Ok(cwd) => cwd,
                 Err(_) => {
                     return failure(
-                        LoadStatus::Invalid,
+                        Status::Invalid,
                         vec![Diagnostic::new("structure.root-unreadable")],
                     )
                 }
@@ -292,7 +233,7 @@ pub(crate) fn load_with_snapshot(selection: &LoadSelection) -> Result<ProjectLoa
                 Ok(Some(path)) => path,
                 Ok(None) => {
                     return failure(
-                        LoadStatus::Invalid,
+                        Status::Invalid,
                         vec![Diagnostic::new("structure.root-not-found")],
                     )
                 }
@@ -305,9 +246,9 @@ pub(crate) fn load_with_snapshot(selection: &LoadSelection) -> Result<ProjectLoa
 
 /// Load an already-selected absolute root through phases 2-8 (the migration
 /// post-apply verification reuses the exact read path this way).
-pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, LoadOutput> {
+pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainResult> {
     let failure =
-        |status, diagnostics: Vec<Diagnostic>| Err(LoadOutput::failure(status, diagnostics));
+        |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
 
     // Phase 2: accepted #4 structure validation.
     let validation = crate::project_fs::Fs::validate_project(&root);
@@ -329,7 +270,7 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, LoadOutp
         Ok(fs) => fs,
         Err(_) => {
             return failure(
-                LoadStatus::Invalid,
+                Status::Invalid,
                 vec![Diagnostic::new("structure.root-unreadable")],
             )
         }
@@ -338,7 +279,7 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, LoadOutp
     // Phase 2b (issue #9): fail closed while a migration journal or runtime
     // migration lock exists; readers never observe a half-migrated project.
     if let Some(code) = crate::versioning::migration_recovery_code(&fs) {
-        return failure(LoadStatus::Invalid, vec![Diagnostic::new(code)]);
+        return failure(Status::Invalid, vec![Diagnostic::new(code)]);
     }
 
     // Phase 3: capability-safe enumeration and reads.
@@ -412,7 +353,7 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, LoadOutp
         }
     }
     if !diagnostics.is_empty() {
-        return failure(LoadStatus::Invalid, diagnostics);
+        return failure(Status::Invalid, diagnostics);
     }
 
     // Phase 3b: encoding gate, then Phase 4: parsing.
@@ -450,7 +391,7 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, LoadOutp
         }
     }
     if !parse_diagnostics.is_empty() {
-        return failure(LoadStatus::Invalid, parse_diagnostics);
+        return failure(Status::Invalid, parse_diagnostics);
     }
 
     // Phase 5/6: version gate across all documents.
@@ -465,7 +406,7 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, LoadOutp
     if !unsupported.is_empty() {
         unsupported.sort();
         return failure(
-            LoadStatus::UnsupportedVersion,
+            Status::UnsupportedVersion,
             vec![Diagnostic::new("versioning.unsupported-version").with_data(
                 serde_json::json!({
                     "documents": unsupported
@@ -486,7 +427,7 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, LoadOutp
         let mut sorted = versions;
         sorted.sort();
         return failure(
-            LoadStatus::Invalid,
+            Status::Invalid,
             vec![Diagnostic::new("versioning.mixed-versions").with_data(
                 serde_json::json!({
                     "documents": sorted
@@ -539,9 +480,9 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, LoadOutp
 pub(crate) fn build_normalized_model(
     model_version: ModelVersion,
     parsed_documents: Vec<Document>,
-) -> Result<NormalizedModel, LoadOutput> {
+) -> Result<NormalizedModel, DomainResult> {
     let failure =
-        |status, diagnostics: Vec<Diagnostic>| Err(LoadOutput::failure(status, diagnostics));
+        |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
     // Phase 7: version-dispatched decoding: collisions, imports, graph.
     let mut collision_diagnostics: Vec<Diagnostic> = Vec::new();
     let mut project_document: Option<Document> = None;
@@ -706,17 +647,17 @@ pub(crate) fn build_normalized_model(
     }
     collision_diagnostics.extend(imports::duplicate_module_ids(&module_vertices));
     if !collision_diagnostics.is_empty() {
-        return failure(LoadStatus::Invalid, collision_diagnostics);
+        return failure(Status::Invalid, collision_diagnostics);
     }
 
     // Import graph: missing imports, then cycles.
     let missing = imports::missing_imports(&module_vertices);
     if !missing.is_empty() {
-        return failure(LoadStatus::Invalid, missing);
+        return failure(Status::Invalid, missing);
     }
     let cycles = imports::import_cycles(&module_vertices);
     if !cycles.is_empty() {
-        return failure(LoadStatus::Invalid, cycles);
+        return failure(Status::Invalid, cycles);
     }
 
     // Phase 8: normalization over the output-ordered model.
@@ -772,7 +713,7 @@ pub(crate) fn build_normalized_model(
                     }
                 })
                 .collect();
-            return failure(LoadStatus::Invalid, diagnostics);
+            return failure(Status::Invalid, diagnostics);
         }
         normalized_modules.push(NormalizedDefinition {
             id: definition.id.clone(),
@@ -802,7 +743,7 @@ pub(crate) fn build_normalized_model(
                         }
                     })
                     .collect();
-                return failure(LoadStatus::Invalid, diagnostics);
+                return failure(Status::Invalid, diagnostics);
             }
             normalized_definitions.push(NormalizedDefinition {
                 id: definition.id.clone(),
@@ -837,7 +778,7 @@ pub(crate) fn build_normalized_model(
 /// Render the terminal CLI envelope from one normalized aggregate (phase 9):
 /// canonical model bytes, the optional sorted source map, and the success
 /// line. Byte-identical to the pre-#8 rendering.
-fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> LoadOutput {
+fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> DomainResult {
     let model_version = model.model_version;
     let mut source_map: Vec<SourceMapEntry> = Vec::new();
     if spans_requested {
@@ -929,14 +870,10 @@ fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> LoadOut
         model.definitions.len()
     );
 
-    LoadOutput {
-        status: LoadStatus::Valid,
-        json,
-        human,
-    }
+    DomainResult::model(json, human)
 }
 
-fn structure_failure(outcome: crate::project_fs::StructureOutcome) -> LoadOutput {
+fn structure_failure(outcome: crate::project_fs::StructureOutcome) -> DomainResult {
     match outcome {
         crate::project_fs::StructureOutcome::Invalid(reasons) => {
             let diagnostics = reasons
@@ -949,7 +886,7 @@ fn structure_failure(outcome: crate::project_fs::StructureOutcome) -> LoadOutput
                     diagnostic
                 })
                 .collect();
-            LoadOutput::failure(LoadStatus::Invalid, diagnostics)
+            diagnostic::failure(Status::Invalid, diagnostics)
         }
         crate::project_fs::StructureOutcome::Denied(reasons) => {
             let diagnostics = reasons
@@ -962,7 +899,7 @@ fn structure_failure(outcome: crate::project_fs::StructureOutcome) -> LoadOutput
                     diagnostic
                 })
                 .collect();
-            LoadOutput::failure(LoadStatus::Denied, diagnostics)
+            diagnostic::failure(Status::Denied, diagnostics)
         }
         crate::project_fs::StructureOutcome::Valid(_) => unreachable!("valid has no failure"),
     }

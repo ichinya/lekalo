@@ -1,5 +1,6 @@
 //! Target-neutral request and result contracts for Lekalo.
 
+pub mod diagnostics;
 pub mod ir;
 pub mod loader;
 pub mod lockfile;
@@ -75,7 +76,7 @@ mod tests {
             assert_eq!(result.capability(), Some(capability));
             assert_eq!(
                 result.reason_codes(),
-                &[ReasonCode::capability_unavailable()]
+                vec![ReasonCode::new(CAPABILITY_UNAVAILABLE)]
             );
         }
     }

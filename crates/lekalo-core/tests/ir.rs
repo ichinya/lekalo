@@ -39,7 +39,7 @@ fn compile_fixture(name: &str) -> CompiledProject {
     };
     let model = match normalize_model(&selection) {
         Ok(model) => model,
-        Err(outcome) => panic!("{name}: load failed: {}", outcome.json),
+        Err(outcome) => panic!("{name}: load failed: {}", outcome.to_json_string()),
     };
     match compile(&model) {
         Ok(compilation) => compilation.project,
@@ -125,7 +125,7 @@ fn every_definition_field_and_reference_has_a_source_entry() {
     };
     let model = match normalize_model(&selection) {
         Ok(model) => model,
-        Err(outcome) => panic!("load failed: {}", outcome.json),
+        Err(outcome) => panic!("load failed: {}", outcome.to_json_string()),
     };
     let compilation = match compile(&model) {
         Ok(compilation) => compilation,

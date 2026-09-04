@@ -7,9 +7,9 @@
 //! paths, and timestamps never appear in a diagnostic.
 
 use crate::loader::error::{
-    bounded_import_echo, finalize_diagnostics, Diagnostic, LoadStatus, MAX_PHASE_DIAGNOSTICS,
+    bounded_import_echo, finalize_diagnostics, Diagnostic, MAX_PHASE_DIAGNOSTICS,
 };
-use crate::loader::{failure_envelope, LoadOutput};
+use crate::result::DomainResult;
 
 /// A key was present that the closed schema for this node does not accept.
 pub const UNKNOWN_FIELD: &str = "ir.unknown-field";
@@ -45,20 +45,10 @@ impl IrFailure {
         diagnostics.len() >= MAX_PHASE_DIAGNOSTICS
     }
 
-    /// The CLI `load` outcome for an IR failure: `invalid`, exit 1, stderr,
-    /// with the same pretty envelope the loader uses.
-    pub fn load_output(&self) -> LoadOutput {
-        let codes = self
-            .diagnostics
-            .iter()
-            .map(|diagnostic| diagnostic.code.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        LoadOutput {
-            status: LoadStatus::Invalid,
-            json: failure_envelope(LoadStatus::Invalid, &self.diagnostics),
-            human: format!("{}: {}", LoadStatus::Invalid.as_str(), codes),
-        }
+    /// The terminal envelope for an IR failure: `invalid`, exit 1, stderr,
+    /// projected through the #11 diagnostic wire.
+    pub fn into_result(self) -> DomainResult {
+        crate::loader::diagnostic::failure(crate::result::Status::Invalid, self.diagnostics)
     }
 }
 
@@ -72,27 +62,43 @@ pub(crate) fn bounded_field_echo(field: &str) -> std::borrow::Cow<'_, str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::loader::error::{Span, SpanPos};
 
     #[test]
     fn failure_envelope_matches_loader_shape_and_binds_to_exit_one() {
+        let span = Span {
+            start: SpanPos {
+                byte: 4,
+                line: 2,
+                column: 3,
+            },
+            end: SpanPos {
+                byte: 20,
+                line: 2,
+                column: 19,
+            },
+        };
         let failure = IrFailure::new(vec![
             Diagnostic::new(VALUE_INVALID)
                 .with_path("lekalo/modules/planner/entities.yaml")
+                .with_span(span)
                 .with_data(serde_json::json!({ "detail": "version-integer", "field": "version" })),
             Diagnostic::new(UNKNOWN_FIELD)
                 .with_data(serde_json::json!({ "field": bounded_field_echo("mystery") })),
         ]);
-        let output = failure.load_output();
-        assert_eq!(output.status, LoadStatus::Invalid);
-        assert_eq!(output.status.exit_code(), 1);
-        assert!(output.status.writes_stderr());
-        assert!(output
-            .json
-            .starts_with("{\n  \"status\": \"invalid\",\n  \"reasonCodes\": ["));
-        assert!(output.json.contains("\"code\":\"ir.unknown-field\""));
-        assert!(output.json.contains("\"code\":\"ir.value-invalid\""));
-        assert!(output.json.ends_with("]\n}\n"));
-        assert_eq!(output.human, "invalid: ir.unknown-field, ir.value-invalid");
+        let output = failure.into_result();
+        assert_eq!(output.status(), crate::result::Status::Invalid);
+        assert_eq!(output.exit_code(), 1);
+        assert!(output.writes_stderr());
+        let json = output.to_json_string();
+        assert!(json.starts_with("{\n  \"status\": \"invalid\",\n  \"diagnostics\": ["));
+        assert!(json.contains("\"id\": \"ir.unknown-field\""));
+        assert!(json.contains("\"id\": \"ir.value-invalid\""));
+        assert_eq!(
+            output.to_human_string("lekalo"),
+            "invalid error [LEK-IR-005] ir.unknown-field: A key is not accepted by the closed schema.\n\
+             invalid error [LEK-IR-006] ir.value-invalid lekalo/modules/planner/entities.yaml:2:3: A value violates its grammar or rule."
+        );
     }
 
     #[test]

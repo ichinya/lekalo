@@ -37,7 +37,7 @@ use super::ModelTarget;
 /// versioning-specific refusal fired.
 pub enum PlanFailure {
     /// The loader's terminal envelope (structure, encoding, versions).
-    Loader(crate::loader::LoadOutput),
+    Loader(crate::result::DomainResult),
     /// A versioning refusal.
     Versioning(VersioningFailure),
 }
@@ -51,24 +51,18 @@ impl From<VersioningFailure> for PlanFailure {
 impl fmt::Debug for PlanFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Loader(outcome) => write!(formatter, "Loader({})", outcome.status.as_str()),
+            Self::Loader(outcome) => write!(formatter, "Loader({})", outcome.status().as_str()),
             Self::Versioning(failure) => write!(formatter, "Versioning({})", failure.reason_code()),
         }
     }
 }
 
 impl PlanFailure {
-    /// Render onto the protocol streams deterministically.
-    pub fn outcome(&self) -> MigrationOutcome {
+    /// Render the terminal envelope for this failure.
+    pub fn outcome(&self) -> crate::result::DomainResult {
         match self {
-            Self::Loader(outcome) => MigrationOutcome {
-                status: outcome.status.as_str().to_owned(),
-                exit_code: outcome.status.exit_code(),
-                writes_stderr: outcome.status.writes_stderr(),
-                json: format!("{}\n", outcome.json.trim_end_matches('\n')),
-                human: format!("{}\n", outcome.human),
-            },
-            Self::Versioning(failure) => MigrationOutcome::failure(failure),
+            Self::Loader(outcome) => outcome.clone(),
+            Self::Versioning(failure) => failure.into(),
         }
     }
 }
@@ -209,57 +203,6 @@ impl VersioningFailure {
                 path,
                 detail: detail.as_str(),
             },
-        }
-    }
-}
-
-/// The terminal result of one migrate operation: exact JSON envelope
-/// bytes, the stable human line, and the exit class.
-pub struct MigrationOutcome {
-    /// The stable status spelling (`valid`, `invalid`,
-    /// `unsupported-version`, or a loader status).
-    pub status: String,
-    /// The exit code (0, 1, 3, or 5).
-    pub exit_code: u8,
-    /// Whether the payload belongs on stderr.
-    pub writes_stderr: bool,
-    /// The exact JSON envelope (pretty, two-space, one trailing LF).
-    pub json: String,
-    /// The single stable human line (with trailing LF).
-    pub human: String,
-}
-
-impl MigrationOutcome {
-    /// Render a failure deterministically on stderr.
-    pub fn failure(failure: &VersioningFailure) -> Self {
-        let json = format!(
-            "{{\n  \"status\": \"{}\",\n  \"reasonCodes\": [\n    \"{}\"\n  ]\n}}\n",
-            failure.status(),
-            failure.reason_code()
-        );
-        let human = format!("{}: {}\n", failure.status(), failure.reason_code());
-        Self {
-            status: failure.status().to_owned(),
-            exit_code: failure.exit_code(),
-            writes_stderr: true,
-            json,
-            human,
-        }
-    }
-
-    /// Render any closed success value (a receipt or the compatibility
-    /// report) on stdout as pretty two-space JSON plus one LF.
-    pub fn success<T: Serialize>(value: &T, human: String) -> Self {
-        let json = format!(
-            "{}\n",
-            serde_json::to_string_pretty(value).unwrap_or_default()
-        );
-        Self {
-            status: "valid".to_owned(),
-            exit_code: 0,
-            writes_stderr: false,
-            json,
-            human,
         }
     }
 }

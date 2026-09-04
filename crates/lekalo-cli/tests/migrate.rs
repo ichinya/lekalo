@@ -124,21 +124,53 @@ fn assert_invalid_everywhere(args: &[&str], code: &str, exit: i32) {
         "plain stdout: {:?}",
         stdout_text(&plain)
     );
-    assert_eq!(stderr_text(&plain), format!("invalid: {code}\n"));
+    let human = stderr_text(&plain);
+    assert!(
+        human.starts_with("invalid error [LEK-") && human.contains(&format!("] {code}:")),
+        "human names the rule: {human}"
+    );
 
     let mut before = vec!["--json"];
     before.extend_from_slice(args);
     let json_before = lekalo(&before);
     assert_exit(&json_before, exit);
     assert!(json_before.stdout.is_empty());
-    assert_eq!(stderr_text(&json_before), invalid_envelope(code));
+    assert_invalid_envelope(&stderr_text(&json_before), code);
 
     let mut after = args.to_vec();
     after.push("--json");
     let json_after = lekalo(&after);
     assert_exit(&json_after, exit);
     assert!(json_after.stdout.is_empty());
-    assert_eq!(stderr_text(&json_after), invalid_envelope(code));
+    assert_eq!(
+        stderr_text(&json_before),
+        stderr_text(&json_after),
+        "bytes are deterministic"
+    );
+}
+
+/// The failure envelope carries the authoritative wire diagnostic and the
+/// derived reason code.
+fn assert_invalid_envelope(envelope: &str, code: &str) {
+    let parsed: Value = serde_json::from_str(envelope).expect("envelope parses");
+    assert_eq!(parsed["status"].as_str(), Some("invalid"));
+    let diagnostics = parsed["diagnostics"].as_array().expect("diagnostics");
+    assert_eq!(diagnostics.len(), 1, "one diagnostic");
+    assert_eq!(diagnostics[0]["id"].as_str(), Some(code));
+    assert_eq!(
+        diagnostics[0]["schema_version"].as_str(),
+        Some("lekalo/diagnostic/v1.0.0")
+    );
+    assert!(diagnostics[0]["message"].as_str().is_some());
+    assert_eq!(
+        parsed["reasonCodes"]
+            .as_array()
+            .expect("reasonCodes")
+            .iter()
+            .map(|code| code.as_str().expect("code string").to_owned())
+            .collect::<Vec<_>>(),
+        vec![code]
+    );
 }
 
 /// The exact unsupported-version failure in both renderings.
@@ -146,9 +178,11 @@ fn assert_unsupported_everywhere(args: &[&str]) {
     let plain = lekalo(args);
     assert_exit(&plain, 5);
     assert!(plain.stdout.is_empty());
-    assert_eq!(
-        stderr_text(&plain),
-        "unsupported-version: versioning.unsupported-version\n"
+    let human = stderr_text(&plain);
+    assert!(
+        human.starts_with("unsupported-version error [LEK-VER-")
+            && human.contains("versioning.unsupported-version"),
+        "human names the rule: {human}"
     );
 
     let mut before = vec!["--json"];
@@ -156,20 +190,16 @@ fn assert_unsupported_everywhere(args: &[&str]) {
     let json_before = lekalo(&before);
     assert_exit(&json_before, 5);
     assert!(json_before.stdout.is_empty());
+    let parsed: Value = serde_json::from_str(&stderr_text(&json_before)).expect("envelope parses");
+    assert_eq!(parsed["status"].as_str(), Some("unsupported-version"));
     assert_eq!(
-        stderr_text(&json_before),
-        unsupported_envelope("versioning.unsupported-version")
+        parsed["diagnostics"][0]["id"].as_str(),
+        Some("versioning.unsupported-version")
     );
-}
-
-fn invalid_envelope(code: &str) -> String {
-    format!("{{\n  \"status\": \"invalid\",\n  \"reasonCodes\": [\n    \"{code}\"\n  ]\n}}\n")
-}
-
-fn unsupported_envelope(code: &str) -> String {
-    format!(
-        "{{\n  \"status\": \"unsupported-version\",\n  \"reasonCodes\": [\n    \"{code}\"\n  ]\n}}\n"
-    )
+    assert_eq!(
+        parsed["reasonCodes"],
+        serde_json::json!(["versioning.unsupported-version"])
+    );
 }
 
 #[test]
@@ -680,4 +710,74 @@ fn crashed_migration_fails_closed_then_recovers_on_next_migrate() {
         .exists());
     let load = lekalo(&["load", "--project", &sandbox.selector]);
     assert_exit(&load, 0);
+}
+
+/// B2 regression: a hostile all-digits alias far beyond every legitimate
+/// bound resolves to the registered unsupported-version rule on the
+/// accepted envelope, and the attacker-controlled `data.version` echo is
+/// bounded and control-clean in both projections — the exit-5 envelope can
+/// never scale with the input. (30,000 digits: the largest hostile payload
+/// every CI OS can pass as one argv element; the exact 100,000-digit
+/// review repro is pinned at library level in lekalo-core.)
+#[test]
+fn hostile_long_alias_echo_is_bounded_and_control_clean() {
+    let sandbox = Sandbox::from_fixture("golden-0.1.0");
+    let selector = format!("model/v{}", "9".repeat(30_000));
+
+    let output = lekalo(&["migrate", "--project", &sandbox.selector, "--to", &selector]);
+    assert_exit(&output, 5);
+    assert!(output.stdout.is_empty(), "human failure rides stderr");
+    let human = stderr_text(&output);
+    assert!(
+        human.starts_with("unsupported-version error [LEK-VER-")
+            && human.contains("versioning.unsupported-version"),
+        "human names the rule: {human}"
+    );
+
+    let output = lekalo(&[
+        "--json",
+        "migrate",
+        "--project",
+        &sandbox.selector,
+        "--to",
+        &selector,
+    ]);
+    assert_exit(&output, 5);
+    assert!(output.stdout.is_empty(), "json failure rides stderr");
+    let envelope = stderr_text(&output);
+    assert!(
+        envelope.len() <= 2048,
+        "envelope is bounded, got {} bytes",
+        envelope.len()
+    );
+    let parsed: Value = serde_json::from_str(&envelope).expect("envelope parses");
+    assert_eq!(parsed["status"].as_str(), Some("unsupported-version"));
+    assert_eq!(
+        parsed["diagnostics"][0]["id"].as_str(),
+        Some("versioning.unsupported-version")
+    );
+    let version = parsed["diagnostics"][0]["data"]["version"]
+        .as_str()
+        .expect("version echoed");
+    assert!(
+        version.len() <= 256,
+        "version token is bounded, got {} bytes",
+        version.len()
+    );
+    assert_no_control_strings(&parsed);
+    assert!(!sandbox.has_runtime_state(), "no runtime state is created");
+}
+
+/// Every string in a parsed envelope is free of control characters: the
+/// bounded-token invariant collapses them before any wire item is built.
+fn assert_no_control_strings(value: &Value) {
+    match value {
+        Value::String(text) => assert!(
+            !text.chars().any(char::is_control),
+            "control character reached the wire: {text:?}"
+        ),
+        Value::Array(items) => items.iter().for_each(assert_no_control_strings),
+        Value::Object(map) => map.values().for_each(assert_no_control_strings),
+        _ => {}
+    }
 }

@@ -1,0 +1,373 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.diagnostic@1.0.0",
+  "title": "Lekalo diagnostic item v1",
+  "description": "Closed wire schema for one stable machine-readable Lekalo diagnostic. The discriminator schema_version is lekalo/diagnostic/v1.0.0 and is independent of the product release, the Model/IR/protocol contract versions, the lock wire, and the diagnostic registry version. Every object is closed; unknown fields fail validation.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/diagnostic/v1.0.0"
+    },
+    "registry_version": {
+      "$ref": "#/$defs/registryVersion"
+    },
+    "id": {
+      "$ref": "#/$defs/ruleId"
+    },
+    "code": {
+      "$ref": "#/$defs/diagnosticCode"
+    },
+    "severity": {
+      "enum": ["info", "warning", "error"]
+    },
+    "category": {
+      "enum": ["model", "semantic", "compatibility", "adapter", "infrastructure", "security"]
+    },
+    "message_id": {
+      "$ref": "#/$defs/ruleId"
+    },
+    "message": {
+      "$ref": "#/$defs/boundedText"
+    },
+    "symbol": {
+      "$ref": "#/$defs/symbolId"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "data": {
+      "$ref": "#/$defs/dataObject"
+    },
+    "related_locations": {
+      "$ref": "#/$defs/relatedLocations"
+    },
+    "causes": {
+      "$ref": "#/$defs/causes"
+    },
+    "fixes": {
+      "$ref": "#/$defs/fixes"
+    },
+    "metadata": {
+      "$ref": "#/$defs/providerMetadata"
+    }
+  },
+  "required": [
+    "schema_version",
+    "registry_version",
+    "id",
+    "code",
+    "severity",
+    "category",
+    "message_id",
+    "message",
+    "data",
+    "related_locations",
+    "causes",
+    "fixes",
+    "metadata"
+  ],
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "$defs": {
+    "ruleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+      "maxLength": 128
+    },
+    "diagnosticCode": {
+      "type": "string",
+      "pattern": "^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$"
+    },
+    "registryVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "symbolId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,2}$",
+      "maxLength": 256
+    },
+    "boundedText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "logicalPath": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9._-]+)*$",
+      "maxLength": 1024,
+      "not": {
+        "pattern": "(^|/)\\.\\.?(/|$)"
+      }
+    },
+    "position": {
+      "type": "object",
+      "properties": {
+        "byte": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": ["byte", "line", "column"],
+      "additionalProperties": false
+    },
+    "range": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/position"
+        },
+        "end": {
+          "$ref": "#/$defs/position"
+        }
+      },
+      "required": ["start", "end"],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/logicalPath"
+        },
+        "range": {
+          "$ref": "#/$defs/range"
+        }
+      },
+      "additionalProperties": false,
+      "minProperties": 1
+    },
+    "dataObject": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/dataValue"
+      }
+    },
+    "dataValue": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "maxProperties": 16,
+                "propertyNames": {
+                  "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          }
+        },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "maxProperties": 16,
+            "propertyNames": {
+              "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/logicalPath"
+        },
+        "range": {
+          "$ref": "#/$defs/range"
+        }
+      },
+      "required": ["path"],
+      "additionalProperties": false
+    },
+    "relatedLocations": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "properties": {
+          "relation": {
+            "$ref": "#/$defs/ruleId"
+          },
+          "message_id": {
+            "$ref": "#/$defs/ruleId"
+          },
+          "location": {
+            "$ref": "#/$defs/location"
+          }
+        },
+        "required": ["relation", "message_id", "location"],
+        "additionalProperties": false
+      }
+    },
+    "causes": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/ruleId"
+          },
+          "code": {
+            "$ref": "#/$defs/diagnosticCode"
+          },
+          "message_id": {
+            "$ref": "#/$defs/ruleId"
+          },
+          "message": {
+            "$ref": "#/$defs/boundedText"
+          },
+          "data": {
+            "$ref": "#/$defs/dataObject"
+          },
+          "provider": {
+            "$ref": "#/$defs/providerMetadata"
+          }
+        },
+        "required": ["id", "code", "message_id", "message", "data"],
+        "additionalProperties": false
+      }
+    },
+    "fixes": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "properties": {
+          "fix_id": {
+            "$ref": "#/$defs/ruleId"
+          },
+          "applicability": {
+            "enum": ["safe", "unsafe", "breaking"]
+          },
+          "message": {
+            "$ref": "#/$defs/boundedText"
+          },
+          "data": {
+            "$ref": "#/$defs/dataObject"
+          },
+          "target": {
+            "$ref": "#/$defs/location"
+          }
+        },
+        "required": ["fix_id", "applicability", "message"],
+        "additionalProperties": false
+      }
+    },
+    "providerMetadata": {
+      "type": "object",
+      "maxProperties": 8,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+:[0-9]+\\.[0-9]+\\.[0-9]+$",
+        "maxLength": 128
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "original_code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[\\x21-\\x7E]+$"
+          }
+        },
+        "required": ["original_code"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

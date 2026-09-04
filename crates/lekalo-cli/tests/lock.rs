@@ -7,7 +7,7 @@ use std::process::{Command, Output};
 
 const GOLDEN: &str = include_str!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:12427804a273f3a3b5d9d258f3b811b9d1b7c48f3cf1c032d25274f0917aaf7e";
+    "sha256:6055a0e08493d69fa81e70a49e9d61d8fccfc02c968775aa748d4e95007cbb92";
 const REFERENCE_PROJECT: &str = "tests/fixtures/lockfile/project";
 
 fn lekalo_in(dir: &Path, args: &[&str]) -> Output {
@@ -194,7 +194,82 @@ fn flag_exclusivity_and_unknown_flags_map_to_cli_usage() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         stderr(&output),
-        "{\n  \"status\": \"invalid\",\n  \"reasonCodes\": [\n    \"cli.usage\"\n  ]\n}\n"
+        std::fs::read_to_string(workspace_path(
+            "tests/fixtures/diagnostics/usage-envelope.json"
+        ))
+        .expect("usage envelope fixture")
     );
     std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+/// One hostile `schema_version` discriminator: a ~400-character token
+/// carrying a JSON-escaped control character — the exact shape a tampered
+/// lock can carry, previously bounded only by the 1 MiB file cap.
+fn hostile_lock_bytes() -> Vec<u8> {
+    let token = format!("lekalo/lock/v9.0.0\\u0001{}", "A".repeat(375));
+    format!("{{\"schema_version\":\"{token}\"}}\n").into_bytes()
+}
+
+/// B2 regression: the attacker-controlled `data.found` echo of
+/// `lock.unsupported-schema-version` passes the bounded-token invariant in
+/// both projections — capped at 256 bytes, control-clean, and unable to
+/// scale the exit-5 envelope however hostile the lock discriminator is.
+#[test]
+fn hostile_lock_schema_version_echo_is_bounded_and_control_clean() {
+    let dir = project_dir("hostile-schema-version");
+    std::fs::write(dir.join("lekalo.lock"), hostile_lock_bytes()).expect("hostile lock");
+
+    let output = lekalo_in(&dir, &["lock"]);
+    assert_eq!(output.status.code(), Some(5), "{output:?}");
+    assert!(output.stdout.is_empty(), "human failure rides stderr");
+    assert!(stderr(&output).contains("lock.unsupported-schema-version"));
+
+    let output = lekalo_in(&dir, &["--json", "lock"]);
+    assert_eq!(output.status.code(), Some(5), "{output:?}");
+    assert!(output.stdout.is_empty(), "json failure rides stderr");
+    let envelope = stderr(&output);
+    assert!(
+        envelope.len() <= 2048,
+        "envelope is bounded, got {} bytes",
+        envelope.len()
+    );
+    let document: serde_json::Value = serde_json::from_str(&envelope).expect("envelope parses");
+    assert_eq!(document["status"], "unsupported-version");
+    assert_eq!(
+        document["diagnostics"][0]["id"],
+        "lock.unsupported-schema-version"
+    );
+    let found = document["diagnostics"][0]["data"]["found"]
+        .as_str()
+        .expect("found echoed");
+    assert!(
+        found.len() <= 256,
+        "found token is bounded, got {} bytes",
+        found.len()
+    );
+    assert!(
+        !found.chars().any(char::is_control),
+        "control character reached the wire: {found:?}"
+    );
+    assert_no_control_strings(&document);
+    assert_eq!(
+        std::fs::read(dir.join("lekalo.lock")).expect("lock still present"),
+        hostile_lock_bytes(),
+        "the hostile lock is never rewritten"
+    );
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+/// Every string in a parsed envelope is free of control characters: the
+/// bounded-token invariant collapses them before any wire item is built.
+fn assert_no_control_strings(value: &serde_json::Value) {
+    match value {
+        serde_json::Value::String(text) => assert!(
+            !text.chars().any(char::is_control),
+            "control character reached the wire: {text:?}"
+        ),
+        serde_json::Value::Array(items) => items.iter().for_each(assert_no_control_strings),
+        serde_json::Value::Object(map) => map.values().for_each(assert_no_control_strings),
+        _ => {}
+    }
 }

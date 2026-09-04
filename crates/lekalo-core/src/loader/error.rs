@@ -160,68 +160,9 @@ pub(crate) fn finalize_diagnostics(mut diagnostics: Vec<Diagnostic>) -> Vec<Diag
     diagnostics
 }
 
-/// The terminal status of one load attempt.
-///
-/// `Valid`, `Invalid`, and `Denied` reuse the accepted exit classes
-/// (0/1/3); `UnsupportedVersion` reserves the brief's exit 5.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LoadStatus {
-    Valid,
-    Invalid,
-    Denied,
-    UnsupportedVersion,
-}
-
-impl LoadStatus {
-    pub const fn exit_code(self) -> u8 {
-        match self {
-            Self::Valid => 0,
-            Self::Invalid => 1,
-            Self::Denied => 3,
-            Self::UnsupportedVersion => 5,
-        }
-    }
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Valid => "valid",
-            Self::Invalid => "invalid",
-            Self::Denied => "denied",
-            Self::UnsupportedVersion => "unsupported-version",
-        }
-    }
-
-    /// Failures of this status are written to stderr.
-    pub const fn writes_stderr(self) -> bool {
-        matches!(self, Self::Invalid | Self::UnsupportedVersion)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn status_exit_mapping_is_exhaustive() {
-        let cases = [
-            (LoadStatus::Valid, 0),
-            (LoadStatus::Invalid, 1),
-            (LoadStatus::Denied, 3),
-            (LoadStatus::UnsupportedVersion, 5),
-        ];
-        for (status, exit_code) in cases {
-            assert_eq!(status.exit_code(), exit_code);
-            assert_eq!(
-                status.as_str(),
-                match status {
-                    LoadStatus::Valid => "valid",
-                    LoadStatus::Invalid => "invalid",
-                    LoadStatus::Denied => "denied",
-                    LoadStatus::UnsupportedVersion => "unsupported-version",
-                }
-            );
-        }
-    }
 
     #[test]
     fn diagnostics_sort_by_path_byte_code_data_and_respect_the_bound() {

@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.8. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.9. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -119,13 +119,38 @@ does not echo raw arguments or include localized parser detail.
 JSON is UTF-8, pretty-printed with two-space indentation, and followed by
 exactly one LF. Fields are emitted in the order shown. Output contains no ANSI
 escapes, timestamps, absolute paths, current-directory values, or raw argv.
-`reasonCodes` is always an array of strings.
+
+Since issue #11 the diagnostics array is authoritative and `reasonCodes` is
+derived from it: the unique diagnostic ids in normalized order. Every
+diagnostic is one closed wire item (`lekalo/diagnostic/v1.0.0`, registry
+version `1.0.0`) whose code, category, severity, message, and data fields are
+resolved from the embedded rule registry; see
+[Diagnostics](diagnostics.md) and
+[ADR-0010](adr/0010-diagnostics.md). Severity and category never compute the
+exit; `DomainResult` alone owns status, stream, and exit.
 
 Malformed syntax:
 
 ```json
 {
   "status": "invalid",
+  "diagnostics": [
+    {
+      "schema_version": "lekalo/diagnostic/v1.0.0",
+      "registry_version": "1.0.0",
+      "id": "cli.usage",
+      "code": "LEK-CLI-001",
+      "severity": "error",
+      "category": "infrastructure",
+      "message_id": "cli.usage",
+      "message": "Malformed command-line syntax.",
+      "data": {},
+      "related_locations": [],
+      "causes": [],
+      "fixes": [],
+      "metadata": {}
+    }
+  ],
   "reasonCodes": [
     "cli.usage"
   ]
@@ -138,6 +163,23 @@ Recognized unavailable capability (using `inspect` as the example):
 {
   "status": "unsupported",
   "capability": "inspect",
+  "diagnostics": [
+    {
+      "schema_version": "lekalo/diagnostic/v1.0.0",
+      "registry_version": "1.0.0",
+      "id": "core.capability-unavailable",
+      "code": "LEK-DIAG-001",
+      "severity": "info",
+      "category": "infrastructure",
+      "message_id": "core.capability-unavailable",
+      "message": "The requested capability is not implemented yet.",
+      "data": {},
+      "related_locations": [],
+      "causes": [],
+      "fixes": [],
+      "metadata": {}
+    }
+  ],
   "reasonCodes": [
     "core.capability-unavailable"
   ]
@@ -149,13 +191,15 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.8"
+  "version": "0.1.9"
 }
 ```
 
-The corresponding human lines are `invalid: cli.usage`,
-`unsupported: core.capability-unavailable CAPABILITY`, and
-`lekalo 0.1.8`. Human and JSON renderers consume the same `DomainResult`.
+The corresponding human lines are
+`invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
+`unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
+capability is not implemented yet.`, and `lekalo 0.1.9`. Human and JSON
+renderers consume the same `DomainResult`.
 
 ## Development checks
 

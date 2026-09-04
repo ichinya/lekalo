@@ -38,8 +38,8 @@ pub(crate) const STAGE: &str = "lekalo.lock.lekalo-new";
 /// Why the embedded registry was refused is a developer fault; surface the
 /// accepted `versioning.registry-invalid` envelope verbatim.
 fn registry_failure() -> LockFailure {
-    LockFailure::Loader(crate::loader::LoadOutput::failure(
-        crate::loader::LoadStatus::Invalid,
+    LockFailure::Loader(crate::loader::diagnostic::failure(
+        crate::result::Status::Invalid,
         vec![crate::loader::error::Diagnostic::new(
             crate::versioning::reasons::REGISTRY_INVALID,
         )],

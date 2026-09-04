@@ -272,7 +272,7 @@ pub enum LockRequirement {
 use LockRequirement as Requirement;
 
 /// The verdict of one verification run.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LockVerdict {
     /// The lock matches the request, contracts, and inventory.
     Satisfied {

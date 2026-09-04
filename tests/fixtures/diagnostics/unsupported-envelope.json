@@ -1,0 +1,24 @@
+{
+  "status": "unsupported",
+  "capability": "validate",
+  "diagnostics": [
+    {
+      "schema_version": "lekalo/diagnostic/v1.0.0",
+      "registry_version": "1.0.0",
+      "id": "core.capability-unavailable",
+      "code": "LEK-DIAG-001",
+      "severity": "info",
+      "category": "infrastructure",
+      "message_id": "core.capability-unavailable",
+      "message": "The requested capability is not implemented yet.",
+      "data": {},
+      "related_locations": [],
+      "causes": [],
+      "fixes": [],
+      "metadata": {}
+    }
+  ],
+  "reasonCodes": [
+    "core.capability-unavailable"
+  ]
+}

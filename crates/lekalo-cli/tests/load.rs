@@ -110,13 +110,13 @@ fn check_fixture(name: &str) {
         "{name}: status"
     );
     if let Some(code) = expect["code"].as_str() {
-        let first = envelope["reasonCodes"][0]["code"]
+        let first = envelope["diagnostics"][0]["id"]
             .as_str()
             .unwrap_or_default();
         assert_eq!(first, code, "{name}: first reason code");
     }
     if let Some(span) = expect["span"].as_object() {
-        let actual = &envelope["reasonCodes"][0]["span"];
+        let actual = &envelope["diagnostics"][0]["source"]["range"];
         assert_eq!(
             actual["start"]["byte"], span["start"]["byte"],
             "{name}: span byte"
@@ -244,7 +244,10 @@ fn human_output_is_one_stable_line_per_status() {
     assert_exit(&invalid, 1);
     let rendered = stderr_text(&invalid);
     let line = rendered.trim_end();
-    assert!(line.starts_with("invalid: "), "{line}");
+    assert!(
+        line.starts_with("invalid error [LEK-LOAD-") && line.contains("] loader.json-parse"),
+        "{line}"
+    );
     assert_eq!(line.lines().count(), 1);
 
     let denied = run_load(
@@ -253,7 +256,11 @@ fn human_output_is_one_stable_line_per_status() {
         None,
     );
     assert_exit(&denied, 3);
-    assert!(stdout_text(&denied).starts_with("denied: "));
+    assert!(
+        stdout_text(&denied).starts_with("denied error [LEK-LOAD-"),
+        "denied human names the rule: {}",
+        stdout_text(&denied)
+    );
 
     let unsupported = run_load(
         &format!("{FIXTURE_ROOT}/invalid-version-unsupported"),
@@ -261,7 +268,11 @@ fn human_output_is_one_stable_line_per_status() {
         None,
     );
     assert_exit(&unsupported, 5);
-    assert!(stderr_text(&unsupported).starts_with("unsupported-version: "));
+    assert!(
+        stderr_text(&unsupported).starts_with("unsupported-version error [LEK-VER-"),
+        "unsupported-version human names the rule: {}",
+        stderr_text(&unsupported)
+    );
 }
 
 #[test]
@@ -474,11 +485,11 @@ fn hostile_megabyte_import_token_yields_bounded_deterministic_stderr() {
         serde_json::from_str(stderr_text(&output).trim()).expect("envelope parses");
     assert_eq!(envelope["status"].as_str(), Some("invalid"));
     assert_eq!(
-        envelope["reasonCodes"][0]["code"].as_str(),
+        envelope["diagnostics"][0]["id"].as_str(),
         Some("loader.import-invalid")
     );
     // The echo is exactly the 64-scalar prefix plus the elision marker.
-    let echoed = envelope["reasonCodes"][0]["data"]["import"]
+    let echoed = envelope["diagnostics"][0]["data"]["import"]
         .as_str()
         .expect("echoed import");
     let mut expected = "z".repeat(64);
@@ -497,7 +508,11 @@ fn hostile_megabyte_import_token_yields_bounded_deterministic_stderr() {
     // Human mode keeps the one stable status line.
     let human = run_load("proj", &[], Some(temp.path()));
     assert_exit(&human, 1);
-    assert_eq!(stderr_text(&human), "invalid: loader.import-invalid\n");
+    assert!(
+        stderr_text(&human).starts_with("invalid error [LEK-LOAD-"),
+        "human names the loader rule: {}",
+        stderr_text(&human)
+    );
 }
 
 #[test]
@@ -521,7 +536,7 @@ fn short_import_tokens_stay_verbatim_and_useful_in_error_envelopes() {
             stdout_text(&output)
         };
         let envelope: Value = serde_json::from_str(envelope_text.trim()).expect("envelope parses");
-        let echoed = envelope["reasonCodes"][0]["data"]["import"]
+        let echoed = envelope["diagnostics"][0]["data"]["import"]
             .as_str()
             .unwrap_or_else(|| panic!("{name}: data.import missing"));
         assert_eq!(echoed, *token, "{name}: token must stay verbatim");

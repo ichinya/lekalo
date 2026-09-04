@@ -1,17 +1,16 @@
-//! Issue #3/#7/#8/#9 CLI: clap syntax and presentation. The core owns
-//! every decision; this binary selects, renders, and maps exits.
+//! Issue #3/#7/#8/#9/#10/#11 CLI: clap syntax and presentation. The core
+//! owns every decision; this binary selects, renders, and maps exits. Since
+//! #11 both renderers project the exact same `DomainResult`.
 
 use clap::{error::ErrorKind, Args, ColorChoice, Parser, Subcommand};
 use lekalo_core::loader::LoadSelection;
 use lekalo_core::lockfile::plan::LockService;
 use lekalo_core::lockfile::resolution::CandidateSet;
-use lekalo_core::lockfile::{LockOutcome, LockReceipt, LockRequirement, UpdateReceipt};
+use lekalo_core::lockfile::{LockFailure, LockReceipt, LockRequirement, UpdateReceipt};
 use lekalo_core::versioning::compatibility::CompatibilityReport;
-use lekalo_core::versioning::{
-    MigrationOutcome, MigrationReceipt, MigrationService, ModelTarget, TargetMalformation,
-    VersionRegistry, VersioningFailure,
-};
-use lekalo_core::{DomainResult, Request};
+use lekalo_core::versioning::migration::{MigrationReceipt, MigrationService, VersioningFailure};
+use lekalo_core::versioning::{ModelTarget, TargetMalformation, VersionRegistry};
+use lekalo_core::DomainResult;
 use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::process::ExitCode;
@@ -124,109 +123,99 @@ struct MigrateArgs {
     rollback: Option<String>,
 }
 
-#[derive(Clone, Copy)]
-enum OutputStream {
-    Stdout,
-    Stderr,
-}
-
 fn main() -> ExitCode {
     let json_requested = std::env::args_os()
         .skip(1)
         .take_while(|argument| argument != OsStr::new("--"))
         .any(|argument| argument == OsStr::new("--json"));
 
-    match Cli::try_parse() {
+    let result = match Cli::try_parse() {
         Ok(cli) => match cli.command {
             Commands::Lock {
                 project,
                 check,
                 offline: _,
-            } => run_lock(project, check, cli.json),
+            } => run_lock(project, check),
             Commands::Update {
                 project,
                 dry_run,
                 apply,
                 offline: _,
-            } => run_update(project, dry_run, apply, cli.json),
-            Commands::Load { project, spans, ir } => run_load(project, spans, ir, cli.json),
-            Commands::Migrate { migrate } => run_migrate(migrate, cli.json),
-            Commands::Compatibility => run_compatibility(cli.json),
-            Commands::Validate => {
-                emit(Request::Validate.dispatch(), cli.json, OutputStream::Stdout)
+            } => run_update(project, dry_run, apply),
+            Commands::Load { project, spans, ir } => run_load(project, spans, ir),
+            Commands::Migrate { migrate } => run_migrate(migrate),
+            Commands::Compatibility => run_compatibility(),
+            Commands::Validate => lekalo_core::Request::Validate.dispatch(),
+            Commands::Inspect { symbol } => lekalo_core::Request::Inspect { symbol }.dispatch(),
+            Commands::Impact { symbol } => lekalo_core::Request::Impact { symbol }.dispatch(),
+            Commands::Context { symbol, budget } => {
+                lekalo_core::Request::Context { symbol, budget }.dispatch()
             }
-            Commands::Inspect { symbol } => emit(
-                Request::Inspect { symbol }.dispatch(),
-                cli.json,
-                OutputStream::Stdout,
-            ),
-            Commands::Impact { symbol } => emit(
-                Request::Impact { symbol }.dispatch(),
-                cli.json,
-                OutputStream::Stdout,
-            ),
-            Commands::Context { symbol, budget } => emit(
-                Request::Context { symbol, budget }.dispatch(),
-                cli.json,
-                OutputStream::Stdout,
-            ),
         },
         Err(error) => match error.kind() {
             ErrorKind::DisplayHelp => {
-                if error.print().is_ok() {
+                let ok = error.print().is_ok();
+                return if ok {
                     ExitCode::SUCCESS
                 } else {
                     ExitCode::from(OUTPUT_FAILURE)
-                }
+                };
             }
-            ErrorKind::DisplayVersion => emit(
-                DomainResult::version(VERSION),
-                json_requested,
-                OutputStream::Stdout,
-            ),
-            _ => emit(
-                DomainResult::usage_error(),
-                json_requested,
-                OutputStream::Stderr,
-            ),
+            ErrorKind::DisplayVersion => DomainResult::version(VERSION),
+            _ => DomainResult::usage_error(),
         },
+    };
+    emit(result, json_requested)
+}
+
+/// Emit one domain result on its protocol stream: failures of the invalid
+/// and unsupported-version classes render on stderr, everything else on
+/// stdout. Human and JSON are projections of the same object.
+fn emit(result: DomainResult, json: bool) -> ExitCode {
+    let exit_code = result.exit_code();
+    let rendered = if json {
+        result.to_json_string()
+    } else {
+        result.to_human_string(PROGRAM_NAME)
+    };
+    let write_result = if result.writes_stderr() {
+        let mut handle = io::stderr().lock();
+        handle
+            .write_all(rendered.as_bytes())
+            .and_then(|()| handle.write_all(b"\n"))
+            .and_then(|()| handle.flush())
+    } else {
+        let mut handle = io::stdout().lock();
+        handle
+            .write_all(rendered.as_bytes())
+            .and_then(|()| handle.write_all(b"\n"))
+            .and_then(|()| handle.flush())
+    };
+    if write_result.is_ok() {
+        ExitCode::from(exit_code)
+    } else {
+        ExitCode::from(OUTPUT_FAILURE)
     }
 }
 
 /// Resolve the selection (explicit `--project` beats `LEKALO_PROJECT`) and
-/// run the loader; render the typed outcome to its protocol stream.
-fn run_load(project: Option<String>, spans: bool, ir: bool, json: bool) -> ExitCode {
+/// run the loader; the loader returns the terminal domain result.
+fn run_load(project: Option<String>, spans: bool, ir: bool) -> DomainResult {
     let selection = LoadSelection {
         project: project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
     };
-    let outcome = match ir {
+    match ir {
         false => lekalo_core::loader::run(&selection, spans),
         true => match lekalo_core::loader::normalize_model(&selection) {
-            Err(outcome) => outcome,
+            Err(result) => result,
             Ok(model) => match lekalo_core::ir::compile(&model) {
-                Err(failure) => failure.load_output(),
-                Ok(compilation) => render_ir_success(&model, &compilation, spans),
+                Err(failure) => failure.into_result(),
+                Ok(compilation) => {
+                    let (json, human) = render_ir_success(&model, &compilation, spans);
+                    DomainResult::ir(json, human)
+                }
             },
         },
-    };
-    let exit_code = outcome.status.exit_code();
-    let stream = if outcome.status.writes_stderr() {
-        OutputStream::Stderr
-    } else {
-        OutputStream::Stdout
-    };
-    let mut handle: Box<dyn Write> = match stream {
-        OutputStream::Stdout => Box::new(io::stdout().lock()),
-        OutputStream::Stderr => Box::new(io::stderr().lock()),
-    };
-    let rendered = if json { outcome.json } else { outcome.human };
-    let write = handle
-        .write_all(rendered.as_bytes())
-        .and_then(|()| handle.write_all(b"\n"));
-    if write.is_ok() {
-        ExitCode::from(exit_code)
-    } else {
-        ExitCode::from(OUTPUT_FAILURE)
     }
 }
 
@@ -240,57 +229,59 @@ fn parse_model_selector(selector: &str) -> Result<ModelTarget, VersioningFailure
     ModelTarget::parse(rest).map_err(VersioningFailure::from_target_error)
 }
 
+/// The selection every project-rooted command resolves.
+fn selection_for(project: &Option<String>) -> LoadSelection {
+    LoadSelection {
+        project: project
+            .clone()
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    }
+}
+
 /// Run `lekalo lock`: create a missing lock, or check an existing one and
 /// never update it. `--check` is the headless CI gate.
-fn run_lock(project: Option<String>, check: bool, json: bool) -> ExitCode {
-    let selection = LoadSelection {
-        project: project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
-    };
-    let outcome = match LockService::lock(
+fn run_lock(project: Option<String>, check: bool) -> DomainResult {
+    let selection = selection_for(&project);
+    match LockService::lock(
         &selection,
         CandidateSet::empty(),
         LockRequirement::Optional,
         !check,
     ) {
-        Ok(receipt) => LockOutcome::success(&receipt, lock_human(&receipt)),
-        Err(failure) => LockOutcome::failure(&failure),
-    };
-    emit_lock_outcome(outcome, json)
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            lock_human(&receipt),
+        ),
+        Err(failure) => DomainResult::from(&failure),
+    }
 }
 
 /// Run `lekalo update`: `--dry-run` previews the plan, `--apply PLAN_ID`
 /// applies that exact plan; a mutating update without a bound preview is
 /// refused.
-fn run_update(
-    project: Option<String>,
-    dry_run: bool,
-    apply: Option<String>,
-    json: bool,
-) -> ExitCode {
+fn run_update(project: Option<String>, dry_run: bool, apply: Option<String>) -> DomainResult {
     if dry_run && apply.is_some() {
-        return emit(DomainResult::usage_error(), json, OutputStream::Stderr);
+        return DomainResult::usage_error();
     }
     if !dry_run && apply.is_none() {
         // A mutating update without a bound preview never ships by accident.
-        return emit_lock_outcome(
-            LockOutcome::failure(&lekalo_core::lockfile::LockFailure::PreviewRequired),
-            json,
-        );
+        return DomainResult::from(&LockFailure::PreviewRequired);
     }
     if let Some(plan_id) = &apply {
         if well_formed_plan_id(plan_id).is_none() {
-            return emit(DomainResult::usage_error(), json, OutputStream::Stderr);
+            return DomainResult::usage_error();
         }
     }
-    let selection = LoadSelection {
-        project: project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
-    };
-    let outcome = match LockService::plan(&selection, CandidateSet::empty()) {
-        Err(failure) => LockOutcome::failure(&failure),
+    let selection = selection_for(&project);
+    match LockService::plan(&selection, CandidateSet::empty()) {
+        Err(failure) => DomainResult::from(&failure),
         Ok(prepared) => {
             if dry_run {
                 let receipt = LockService::preview(&prepared);
-                LockOutcome::success(&receipt, diff_human("preview", &receipt))
+                DomainResult::receipt(
+                    serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                    diff_human("preview", &receipt),
+                )
             } else {
                 let plan_id = apply.as_deref().expect("exclusivity checked above");
                 match LockService::apply(prepared, plan_id) {
@@ -300,14 +291,16 @@ fn run_update(
                         } else {
                             "unchanged"
                         };
-                        LockOutcome::success(&receipt, diff_human(verb, &receipt))
+                        DomainResult::receipt(
+                            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                            diff_human(verb, &receipt),
+                        )
                     }
-                    Err(failure) => LockOutcome::failure(&failure),
+                    Err(failure) => DomainResult::from(&failure),
                 }
             }
         }
-    };
-    emit_lock_outcome(outcome, json)
+    }
 }
 
 /// Accept only the exact `sha256:<64 lowercase hex>` plan spelling.
@@ -336,7 +329,7 @@ fn lock_human(receipt: &LockReceipt) -> String {
         "checked"
     };
     format!(
-        "lock {} {} resolver {} ({})\n",
+        "lock {} {} resolver {} ({})",
         verb,
         receipt.lock_digest,
         receipt.resolver_version,
@@ -350,33 +343,13 @@ fn diff_human(verb: &str, receipt: &UpdateReceipt) -> String {
     let removed = receipt.changes.iter().filter(|c| c.to.is_none()).count();
     let changed = receipt.changes.len() - added - removed;
     format!(
-        "update {} {} plan {} (+{} ~{} -{})\n",
+        "update {} {} plan {} (+{} ~{} -{})",
         verb, receipt.after_digest, receipt.plan_id, added, changed, removed
     )
 }
 
-/// Print one lock outcome on its protocol stream.
-fn emit_lock_outcome(outcome: LockOutcome, json: bool) -> ExitCode {
-    let stream = if outcome.writes_stderr {
-        OutputStream::Stderr
-    } else {
-        OutputStream::Stdout
-    };
-    let mut handle: Box<dyn Write> = match stream {
-        OutputStream::Stdout => Box::new(io::stdout().lock()),
-        OutputStream::Stderr => Box::new(io::stderr().lock()),
-    };
-    let rendered = if json { &outcome.json } else { &outcome.human };
-    let write = handle.write_all(rendered.as_bytes());
-    if write.is_ok() {
-        ExitCode::from(outcome.exit_code)
-    } else {
-        ExitCode::from(OUTPUT_FAILURE)
-    }
-}
-
 /// Run one migrate operation (dry-run, apply, or rollback).
-fn run_migrate(args: MigrateArgs, json: bool) -> ExitCode {
+fn run_migrate(args: MigrateArgs) -> DomainResult {
     // Argument exclusivity: exactly one of --to / --rollback; --dry-run
     // only alongside --to.
     if (args.to.is_some() && args.rollback.is_some())
@@ -384,54 +357,51 @@ fn run_migrate(args: MigrateArgs, json: bool) -> ExitCode {
         || (args.dry_run && args.to.is_none())
         || (args.rollback.is_some() && args.dry_run)
     {
-        return emit_outcome(
-            &MigrationOutcome::failure(&VersioningFailure::InvalidVersion(
-                TargetMalformation::Malformed,
-            )),
-            json,
-        );
+        return VersioningFailure::InvalidVersion(TargetMalformation::Malformed).into();
     }
-    let selection = LoadSelection {
-        project: args
-            .project
-            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
-    };
-    let outcome = if let Some(plan_id) = args.rollback {
+    let selection = selection_for(&args.project);
+    if let Some(plan_id) = args.rollback {
         match MigrationService::rollback(&selection, &plan_id) {
-            Ok(receipt) => MigrationOutcome::success(&receipt, rollback_human(&receipt)),
-            Err(failure) => failure.outcome(),
+            Ok(receipt) => DomainResult::receipt(
+                serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                rollback_human(&receipt),
+            ),
+            Err(failure) => DomainResult::from(&failure),
         }
     } else {
         let Some(selector) = args.to else {
             unreachable!("exclusivity checked above");
         };
         match parse_model_selector(&selector) {
-            Err(failure) => MigrationOutcome::failure(&failure),
+            Err(failure) => DomainResult::from(&failure),
             Ok(target) => match MigrationService::plan(&selection, target) {
-                Err(plan_failure) => plan_failure.outcome(),
+                Err(plan_failure) => DomainResult::from(&plan_failure),
                 Ok(prepared) => {
                     if args.dry_run {
                         let receipt = MigrationService::dry_run_receipt(&prepared);
-                        MigrationOutcome::success(&receipt, dry_run_human(&receipt))
+                        DomainResult::receipt(
+                            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                            dry_run_human(&receipt),
+                        )
                     } else {
                         match MigrationService::apply(prepared) {
-                            Ok(receipt) => {
-                                MigrationOutcome::success(&receipt, apply_human(&receipt))
-                            }
-                            Err(failure) => MigrationOutcome::failure(&failure),
+                            Ok(receipt) => DomainResult::receipt(
+                                serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                                apply_human(&receipt),
+                            ),
+                            Err(failure) => DomainResult::from(&failure),
                         }
                     }
                 }
             },
         }
-    };
-    emit_outcome(&outcome, json)
+    }
 }
 
 /// The stable human summary of a dry-run receipt.
 fn dry_run_human(receipt: &MigrationReceipt) -> String {
     format!(
-        "migration plan model {} -> {}: {} documents (plan {})\n",
+        "migration plan model {} -> {}: {} documents (plan {})",
         receipt.from,
         receipt.to,
         receipt.files.len(),
@@ -443,53 +413,34 @@ fn dry_run_human(receipt: &MigrationReceipt) -> String {
 fn apply_human(receipt: &MigrationReceipt) -> String {
     if receipt.changed {
         format!(
-            "migrated model {} -> {} (plan {})\n",
+            "migrated model {} -> {} (plan {})",
             receipt.from, receipt.to, receipt.plan_id
         )
     } else {
-        format!("model already {} (plan {})\n", receipt.to, receipt.plan_id)
+        format!("model already {} (plan {})", receipt.to, receipt.plan_id)
     }
 }
 
 /// The stable human summary of a rollback receipt.
 fn rollback_human(receipt: &MigrationReceipt) -> String {
     format!(
-        "rolled back to model {} (plan {})\n",
+        "rolled back to model {} (plan {})",
         receipt.to, receipt.plan_id
     )
 }
 
-/// Print one migrate outcome on its protocol stream.
-fn emit_outcome(outcome: &MigrationOutcome, json: bool) -> ExitCode {
-    let stream = if outcome.writes_stderr {
-        OutputStream::Stderr
-    } else {
-        OutputStream::Stdout
-    };
-    let rendered = if json { &outcome.json } else { &outcome.human };
-    let mut handle: Box<dyn Write> = match stream {
-        OutputStream::Stdout => Box::new(io::stdout().lock()),
-        OutputStream::Stderr => Box::new(io::stderr().lock()),
-    };
-    let write = handle.write_all(rendered.as_bytes());
-    if write.is_ok() {
-        ExitCode::from(outcome.exit_code)
-    } else {
-        ExitCode::from(OUTPUT_FAILURE)
-    }
-}
-
 /// Print the embedded registry projection.
-fn run_compatibility(json: bool) -> ExitCode {
-    let outcome = match VersionRegistry::embedded() {
+fn run_compatibility() -> DomainResult {
+    match VersionRegistry::embedded() {
         Ok(registry) => {
             let report = CompatibilityReport::from_registry(registry);
-            let human = compatibility_human(&report);
-            MigrationOutcome::success(&report, human)
+            DomainResult::receipt(
+                serde_json::to_string_pretty(&report).expect("receipt serializes"),
+                compatibility_human(&report),
+            )
         }
-        Err(_) => MigrationOutcome::failure(&VersioningFailure::RegistryInvalid),
-    };
-    emit_outcome(&outcome, json)
+        Err(_) => DomainResult::from(&VersioningFailure::RegistryInvalid),
+    }
 }
 
 /// The stable one-line compatibility summary.
@@ -502,7 +453,7 @@ fn compatibility_human(report: &CompatibilityReport) -> String {
         None => "protocol unpublished".to_owned(),
     };
     format!(
-        "compatibility: model current {} ({}..{}), ir current {}, {}\n",
+        "compatibility: model current {} ({}..{}), ir current {}, {}",
         model.current.as_deref().unwrap_or("none"),
         model.min.as_deref().unwrap_or("none"),
         model.max.as_deref().unwrap_or("none"),
@@ -511,14 +462,14 @@ fn compatibility_human(report: &CompatibilityReport) -> String {
     )
 }
 
-/// Render the typed IR success envelope: the fixed key order `status`,
+/// Render the typed IR success payload: the fixed key order `status`,
 /// `modelVersion`, `ir`, and the sorted IR sourceMap when `--spans` was
 /// requested. The IR object itself is the canonical IR bytes.
 fn render_ir_success(
     model: &lekalo_core::loader::NormalizedModel,
     compilation: &lekalo_core::ir::Compilation,
     spans: bool,
-) -> lekalo_core::loader::LoadOutput {
+) -> (String, String) {
     let mut json = String::from("{\"status\":\"valid\",\"modelVersion\":");
     json.push_str(
         &serde_json::to_string(model.model_version.as_str()).expect("version serializes"),
@@ -530,45 +481,11 @@ fn render_ir_success(
         json.push_str(&compilation.source_map.to_json());
     }
     json.push('}');
-    lekalo_core::loader::LoadOutput {
-        status: lekalo_core::loader::LoadStatus::Valid,
-        human: format!(
-            "compiled ir {}: {} modules, {} definitions",
-            lekalo_core::ir::IDENTITY,
-            model.modules.len(),
-            model.definitions.len()
-        ),
-        json,
-    }
-}
-
-fn emit(result: DomainResult, json: bool, stream: OutputStream) -> ExitCode {
-    let exit_code = result.exit_code();
-    let write_result = match stream {
-        OutputStream::Stdout => {
-            let stdout = io::stdout();
-            render(&mut stdout.lock(), &result, json)
-        }
-        OutputStream::Stderr => {
-            let stderr = io::stderr();
-            render(&mut stderr.lock(), &result, json)
-        }
-    };
-
-    if write_result.is_ok() {
-        ExitCode::from(exit_code)
-    } else {
-        ExitCode::from(OUTPUT_FAILURE)
-    }
-}
-
-fn render(writer: &mut impl Write, result: &DomainResult, json: bool) -> io::Result<()> {
-    let rendered = if json {
-        serde_json::to_string_pretty(result).map_err(io::Error::other)?
-    } else {
-        result.human_line(PROGRAM_NAME)
-    };
-
-    writer.write_all(rendered.as_bytes())?;
-    writer.write_all(b"\n")
+    let human = format!(
+        "compiled ir {}: {} modules, {} definitions",
+        lekalo_core::ir::IDENTITY,
+        model.modules.len(),
+        model.definitions.len()
+    );
+    (json, human)
 }

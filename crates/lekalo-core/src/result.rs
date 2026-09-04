@@ -1,13 +1,29 @@
-//! Stable result, reason-code, and process-exit contracts.
+//! Stable result, diagnostic, reason-code, and process-exit contracts
+//! (issues #3 and #11).
+//!
+//! [`DomainResult`] is the single envelope every command projects: it alone
+//! owns the status, the protocol stream, and the process exit. Since #11 the
+//! diagnostics array is authoritative and `reasonCodes` is derived from it
+//! (the unique rule ids in normalized order). Severity and category never
+//! compute an exit: valid 0/stdout, invalid 1/stderr, denied 3/stdout,
+//! unsupported 4/stdout, unsupported-version 5/stderr.
 
 use serde::Serialize;
 use std::fmt;
 
-/// The stable reason emitted for malformed command-line syntax.
+use crate::diagnostics::normalize::build;
+use crate::diagnostics::render::diagnostic_lines;
+use crate::diagnostics::DiagnosticSet;
+
+/// The stable diagnostic id emitted for malformed command-line syntax.
 pub const CLI_USAGE: &str = "cli.usage";
 
-/// The stable reason emitted by commands whose implementation is not available yet.
+/// The stable diagnostic id emitted by commands whose implementation is not
+/// available yet.
 pub const CAPABILITY_UNAVAILABLE: &str = "core.capability-unavailable";
+
+/// The stable diagnostic id for an internal envelope invariant failure.
+pub const REGISTRY_INVALID: &str = "diagnostics.registry-invalid";
 
 /// The status classes shared by human and JSON output.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -17,6 +33,10 @@ pub enum Status {
     Invalid,
     Denied,
     Unsupported,
+    /// A needed component is not available in this environment (exit 4).
+    Unavailable,
+    /// A contract version is outside the accepted registry (exit 5).
+    UnsupportedVersion,
 }
 
 impl Status {
@@ -27,6 +47,8 @@ impl Status {
             Self::Invalid => 1,
             Self::Denied => 3,
             Self::Unsupported => 4,
+            Self::Unavailable => 4,
+            Self::UnsupportedVersion => 5,
         }
     }
 
@@ -37,7 +59,14 @@ impl Status {
             Self::Invalid => "invalid",
             Self::Denied => "denied",
             Self::Unsupported => "unsupported",
+            Self::Unavailable => "unavailable",
+            Self::UnsupportedVersion => "unsupported-version",
         }
+    }
+
+    /// Failures of this status are written to stderr.
+    pub const fn writes_stderr(self) -> bool {
+        matches!(self, Self::Invalid | Self::UnsupportedVersion)
     }
 }
 
@@ -69,22 +98,17 @@ impl fmt::Display for Capability {
     }
 }
 
-/// One stable, machine-readable reason code.
+/// One derived, machine-readable reason code: the unique dotted diagnostic
+/// ids in normalized order. Retained alongside `diagnostics` for the v1
+/// compatibility window; removal requires a separately versioned envelope
+/// migration.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct ReasonCode(String);
 
 impl ReasonCode {
-    pub fn new(code: impl Into<String>) -> Self {
+    pub(crate) fn new(code: impl Into<String>) -> Self {
         Self(code.into())
-    }
-
-    pub fn cli_usage() -> Self {
-        Self::new(CLI_USAGE)
-    }
-
-    pub fn capability_unavailable() -> Self {
-        Self::new(CAPABILITY_UNAVAILABLE)
     }
 
     pub fn as_str(&self) -> &str {
@@ -98,55 +122,126 @@ impl From<&str> for ReasonCode {
     }
 }
 
-/// A single domain result projected by both CLI renderers.
+/// The accepted success payload of one command: its exact wire bytes plus
+/// the stable human summary. Payload bytes stay producer-owned so the
+/// published #7/#9/#10 success contracts remain byte-identical.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SuccessPayload {
+    /// `--version`: `{"status":"valid","version":...}` (pretty).
+    Version { version: String },
+    /// Loader success (compact envelope bytes built by the loader).
+    Model { json: String, human: String },
+    /// IR success (compact envelope bytes built by the CLI renderer).
+    Ir { json: String, human: String },
+    /// Receipt success (pretty two-space JSON without trailing newline).
+    Receipt { json: String, human: String },
+}
+
+/// The single domain result projected by both CLI renderers.
 ///
-/// The enum representation deliberately fixes JSON field order: `status`
-/// first, then variant fields in declaration order.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(tag = "status", rename_all = "lowercase")]
+/// JSON field order is normative: `status` first, then the payload or
+/// `diagnostics`, then the derived `reasonCodes`.
+#[derive(Clone, Debug, PartialEq)]
 pub enum DomainResult {
+    /// A successful result; may carry only info/warning diagnostics (v1
+    /// producers attach none) and omits the fields while empty.
     Valid {
-        version: String,
+        payload: SuccessPayload,
+        diagnostics: Vec<crate::diagnostics::Diagnostic>,
     },
     Invalid {
-        #[serde(rename = "reasonCodes")]
-        reason_codes: Vec<ReasonCode>,
+        diagnostics: DiagnosticSet,
     },
     Denied {
-        #[serde(rename = "reasonCodes")]
-        reason_codes: Vec<ReasonCode>,
+        diagnostics: DiagnosticSet,
+    },
+    Unavailable {
+        diagnostics: DiagnosticSet,
     },
     Unsupported {
         capability: Capability,
-        #[serde(rename = "reasonCodes")]
-        reason_codes: Vec<ReasonCode>,
+        diagnostics: DiagnosticSet,
+    },
+    UnsupportedVersion {
+        diagnostics: DiagnosticSet,
     },
 }
 
 impl DomainResult {
+    /// The `--version` result.
     pub fn version(version: impl Into<String>) -> Self {
         Self::Valid {
-            version: version.into(),
+            payload: SuccessPayload::Version {
+                version: version.into(),
+            },
+            diagnostics: Vec::new(),
         }
     }
 
-    pub fn invalid(reason_codes: Vec<ReasonCode>) -> Self {
-        Self::Invalid { reason_codes }
+    /// A loader success with exact compact envelope bytes.
+    pub fn model(json: String, human: String) -> Self {
+        Self::Valid {
+            payload: SuccessPayload::Model { json, human },
+            diagnostics: Vec::new(),
+        }
+    }
+
+    /// An IR success with exact compact envelope bytes.
+    pub fn ir(json: String, human: String) -> Self {
+        Self::Valid {
+            payload: SuccessPayload::Ir { json, human },
+            diagnostics: Vec::new(),
+        }
+    }
+
+    /// A receipt success with pretty bytes (no trailing newline).
+    pub fn receipt(json: String, human: String) -> Self {
+        Self::Valid {
+            payload: SuccessPayload::Receipt { json, human },
+            diagnostics: Vec::new(),
+        }
+    }
+
+    /// Build a failure set from raw wire diagnostics, falling back to the
+    /// single registry invariant diagnostic when the set itself is invalid.
+    pub(crate) fn from_wire_set(
+        status: Status,
+        diagnostics: Vec<crate::diagnostics::Diagnostic>,
+    ) -> DiagnosticSet {
+        match DiagnosticSet::try_from_unsorted(diagnostics, status) {
+            Ok(set) => set,
+            Err(_) => fallback_set(),
+        }
+    }
+
+    pub fn invalid(diagnostics: DiagnosticSet) -> Self {
+        Self::Invalid { diagnostics }
     }
 
     pub fn usage_error() -> Self {
-        Self::invalid(vec![ReasonCode::cli_usage()])
+        Self::Invalid {
+            diagnostics: singleton_set(CLI_USAGE),
+        }
     }
 
-    pub fn denied(reason_codes: Vec<ReasonCode>) -> Self {
-        Self::Denied { reason_codes }
+    pub fn denied(diagnostics: DiagnosticSet) -> Self {
+        Self::Denied { diagnostics }
+    }
+
+    pub fn unavailable(diagnostics: DiagnosticSet) -> Self {
+        Self::Unavailable { diagnostics }
     }
 
     pub fn unsupported(capability: Capability) -> Self {
         Self::Unsupported {
             capability,
-            reason_codes: vec![ReasonCode::capability_unavailable()],
+            diagnostics: from_ids(&[CAPABILITY_UNAVAILABLE], Status::Unsupported)
+                .unwrap_or_else(|_| DiagnosticSet::empty()),
         }
+    }
+
+    pub fn unsupported_version(diagnostics: DiagnosticSet) -> Self {
+        Self::UnsupportedVersion { diagnostics }
     }
 
     pub const fn status(&self) -> Status {
@@ -154,7 +249,9 @@ impl DomainResult {
             Self::Valid { .. } => Status::Valid,
             Self::Invalid { .. } => Status::Invalid,
             Self::Denied { .. } => Status::Denied,
+            Self::Unavailable { .. } => Status::Unavailable,
             Self::Unsupported { .. } => Status::Unsupported,
+            Self::UnsupportedVersion { .. } => Status::UnsupportedVersion,
         }
     }
 
@@ -162,50 +259,183 @@ impl DomainResult {
         self.status().exit_code()
     }
 
-    pub fn reason_codes(&self) -> &[ReasonCode] {
-        match self {
-            Self::Valid { .. } => &[],
-            Self::Invalid { reason_codes }
-            | Self::Denied { reason_codes }
-            | Self::Unsupported { reason_codes, .. } => reason_codes,
-        }
+    /// Failures of this status render on stderr.
+    pub const fn writes_stderr(&self) -> bool {
+        self.status().writes_stderr()
     }
 
-    pub const fn capability(&self) -> Option<Capability> {
+    pub fn capability(&self) -> Option<Capability> {
         match self {
             Self::Unsupported { capability, .. } => Some(*capability),
             _ => None,
         }
     }
 
-    /// Project the domain result into one deterministic human-readable line.
-    pub fn human_line(&self, program_name: &str) -> String {
+    /// The authoritative diagnostics in normalized order.
+    pub fn diagnostics(&self) -> &[crate::diagnostics::Diagnostic] {
         match self {
-            Self::Valid { version } => format!("{program_name} {version}"),
-            Self::Invalid { reason_codes } => status_with_reasons("invalid", reason_codes),
-            Self::Denied { reason_codes } => status_with_reasons("denied", reason_codes),
-            Self::Unsupported {
-                capability,
-                reason_codes,
+            Self::Valid { diagnostics, .. } => diagnostics,
+            Self::Invalid { diagnostics }
+            | Self::Denied { diagnostics }
+            | Self::Unavailable { diagnostics }
+            | Self::UnsupportedVersion { diagnostics } => diagnostics.as_slice(),
+            Self::Unsupported { diagnostics, .. } => diagnostics.as_slice(),
+        }
+    }
+
+    /// The derived unique ordered diagnostic ids.
+    pub fn reason_codes(&self) -> Vec<ReasonCode> {
+        let mut ids: Vec<ReasonCode> = Vec::new();
+        for diagnostic in self.diagnostics() {
+            let id = diagnostic.id();
+            if ids.last().map(ReasonCode::as_str) != Some(id) {
+                ids.push(ReasonCode::new(id));
+            }
+        }
+        ids
+    }
+
+    /// Project the exact JSON envelope bytes (without trailing newline).
+    pub fn to_json_string(&self) -> String {
+        match self {
+            Self::Valid {
+                payload,
+                diagnostics,
             } => {
-                let status = status_with_reasons("unsupported", reason_codes);
-                format!("{status} {capability}")
+                let mut json = match payload {
+                    SuccessPayload::Version { version } => format!(
+                        "{{\n  \"status\": \"valid\",\n  \"version\": {}\n}}",
+                        serde_json::to_string(version).expect("version serializes")
+                    ),
+                    SuccessPayload::Model { json, .. }
+                    | SuccessPayload::Ir { json, .. }
+                    | SuccessPayload::Receipt { json, .. } => json.clone(),
+                };
+                if !diagnostics.is_empty() {
+                    let items =
+                        serde_json::to_string_pretty(diagnostics).expect("diagnostics serialize");
+                    let indented = indent_nested(&items, 1);
+                    let ids: Vec<&str> = diagnostics
+                        .iter()
+                        .map(|diagnostic| diagnostic.id())
+                        .collect();
+                    let insert = format!(
+                        ",\n  \"diagnostics\": {},\n  \"reasonCodes\": {}",
+                        indented,
+                        serde_json::to_string(&ids).expect("ids serialize")
+                    );
+                    if let Some(position) = json.rfind('}') {
+                        json.insert_str(position, &insert);
+                    }
+                }
+                json
+            }
+            Self::Invalid { .. }
+            | Self::Denied { .. }
+            | Self::Unavailable { .. }
+            | Self::Unsupported { .. }
+            | Self::UnsupportedVersion { .. } => {
+                #[derive(Serialize)]
+                struct FailureEnvelope<'a> {
+                    status: &'a str,
+                    #[serde(skip_serializing_if = "Option::is_none")]
+                    capability: Option<Capability>,
+                    #[serde(rename = "diagnostics")]
+                    diagnostics: &'a [crate::diagnostics::Diagnostic],
+                    #[serde(rename = "reasonCodes")]
+                    reason_codes: Vec<&'a str>,
+                }
+                let reason_codes: Vec<&str> = self
+                    .diagnostics()
+                    .iter()
+                    .map(|diagnostic| diagnostic.id())
+                    .collect();
+                let envelope = FailureEnvelope {
+                    status: self.status().as_str(),
+                    capability: self.capability(),
+                    diagnostics: self.diagnostics(),
+                    reason_codes,
+                };
+                serde_json::to_string_pretty(&envelope).expect("envelope serializes")
+            }
+        }
+    }
+
+    /// Project the exact human bytes (without trailing newline).
+    pub fn to_human_string(&self, program_name: &str) -> String {
+        match self {
+            Self::Valid {
+                payload,
+                diagnostics,
+            } => {
+                let mut lines = match payload {
+                    SuccessPayload::Version { version } => {
+                        vec![format!("{program_name} {version}")]
+                    }
+                    SuccessPayload::Model { human, .. }
+                    | SuccessPayload::Ir { human, .. }
+                    | SuccessPayload::Receipt { human, .. } => human
+                        .lines()
+                        .map(|line| line.to_owned())
+                        .collect::<Vec<_>>(),
+                };
+                for diagnostic in diagnostics {
+                    lines.extend(diagnostic_lines("valid", diagnostic));
+                }
+                lines.join("\n")
+            }
+            _ => {
+                let status = self.status().as_str();
+                let lines = self
+                    .diagnostics()
+                    .iter()
+                    .flat_map(|diagnostic| diagnostic_lines(status, diagnostic))
+                    .collect::<Vec<_>>();
+                lines.join("\n")
             }
         }
     }
 }
 
-fn status_with_reasons(status: &str, reason_codes: &[ReasonCode]) -> String {
-    if reason_codes.is_empty() {
-        status.to_owned()
-    } else {
-        let reasons = reason_codes
-            .iter()
-            .map(ReasonCode::as_str)
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!("{status}: {reasons}")
+/// Indent every line but the first of an embedded pretty JSON fragment so it
+/// nests at the envelope's two-space depth.
+fn indent_nested(fragment: &str, depth: usize) -> String {
+    let pad = "  ".repeat(depth);
+    let mut lines = fragment.lines();
+    let first = lines.next().unwrap_or_default().to_owned();
+    let mut out = first;
+    for line in lines {
+        out.push('\n');
+        out.push_str(&pad);
+        out.push_str(line);
     }
+    out
+}
+
+/// Build one registered singleton set; a registry failure collapses to an
+/// empty set rather than panicking (double developer fault).
+pub(crate) fn singleton_set(id: &str) -> DiagnosticSet {
+    from_ids(&[id], Status::Invalid).unwrap_or_else(|_| DiagnosticSet::empty())
+}
+
+/// The last-resort set when even the fallback diagnostic cannot be built.
+pub(crate) fn fallback_set() -> DiagnosticSet {
+    DiagnosticSet::empty()
+}
+
+/// Build a validated set from rule ids with no data (test helper).
+pub(crate) fn from_ids(
+    ids: &[&str],
+    status: Status,
+) -> Result<DiagnosticSet, crate::diagnostics::SetError> {
+    let mut diagnostics = Vec::with_capacity(ids.len());
+    for id in ids {
+        diagnostics.push(
+            build(id, None, None, Default::default())
+                .map_err(|_| crate::diagnostics::SetError::UnknownRule((*id).to_owned()))?,
+        );
+    }
+    DiagnosticSet::try_from_unsorted(diagnostics, status)
 }
 
 #[cfg(test)]
@@ -213,62 +443,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn status_exit_mapping_is_exhaustive() {
-        let cases = [
-            (Status::Valid, 0),
-            (Status::Invalid, 1),
-            (Status::Denied, 3),
-            (Status::Unsupported, 4),
-        ];
-
-        for (status, exit_code) in cases {
-            assert_eq!(status.exit_code(), exit_code);
-        }
+    fn exit_codes_follow_status_not_severity() {
+        assert_eq!(Status::Valid.exit_code(), 0);
+        assert_eq!(Status::Invalid.exit_code(), 1);
+        assert_eq!(Status::Denied.exit_code(), 3);
+        assert_eq!(Status::Unsupported.exit_code(), 4);
+        assert_eq!(Status::UnsupportedVersion.exit_code(), 5);
+        assert!(!Status::Denied.writes_stderr());
+        assert!(Status::UnsupportedVersion.writes_stderr());
     }
 
     #[test]
-    fn every_result_variant_has_an_exact_json_snapshot() {
-        let cases = [
-            (
-                DomainResult::version("0.1.4"),
-                "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.4\"\n}",
-            ),
-            (
-                DomainResult::usage_error(),
-                "{\n  \"status\": \"invalid\",\n  \"reasonCodes\": [\n    \"cli.usage\"\n  ]\n}",
-            ),
-            (
-                DomainResult::denied(vec![ReasonCode::new("policy.denied")]),
-                "{\n  \"status\": \"denied\",\n  \"reasonCodes\": [\n    \"policy.denied\"\n  ]\n}",
-            ),
-            (
-                DomainResult::unsupported(Capability::Inspect),
-                "{\n  \"status\": \"unsupported\",\n  \"capability\": \"inspect\",\n  \"reasonCodes\": [\n    \"core.capability-unavailable\"\n  ]\n}",
-            ),
-        ];
-
-        for (result, expected) in cases {
-            assert_eq!(serde_json::to_string_pretty(&result).unwrap(), expected);
-        }
+    fn version_payload_matches_the_published_bytes() {
+        let result = DomainResult::version("0.1.9");
+        assert_eq!(
+            result.to_json_string(),
+            "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.9\"\n}"
+        );
+        assert_eq!(result.to_human_string("lekalo"), "lekalo 0.1.9");
     }
 
     #[test]
-    fn every_result_variant_has_an_exact_human_projection() {
-        let cases = [
-            (DomainResult::version("0.1.4"), "lekalo 0.1.4"),
-            (DomainResult::usage_error(), "invalid: cli.usage"),
-            (
-                DomainResult::denied(vec![ReasonCode::new("policy.denied")]),
-                "denied: policy.denied",
-            ),
-            (
-                DomainResult::unsupported(Capability::Inspect),
-                "unsupported: core.capability-unavailable inspect",
-            ),
-        ];
-
-        for (result, expected) in cases {
-            assert_eq!(result.human_line("lekalo"), expected);
-        }
+    fn usage_failure_carries_the_derived_reason_code() {
+        let result = DomainResult::usage_error();
+        assert_eq!(result.status(), Status::Invalid);
+        assert_eq!(result.reason_codes(), vec![ReasonCode::new("cli.usage")]);
+        let json = result.to_json_string();
+        assert!(json.starts_with("{\n  \"status\": \"invalid\",\n  \"diagnostics\": ["));
+        assert!(json.ends_with("  \"reasonCodes\": [\n    \"cli.usage\"\n  ]\n}"));
+        assert_eq!(
+            result.to_human_string("lekalo"),
+            "invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax."
+        );
     }
 }

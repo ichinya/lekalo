@@ -1,0 +1,1 @@
+invalid error [LEK-LOAD-004] loader.duplicate-definition lekalo/modules/core/entities.yaml:7:9: The same definition id is declared twice.

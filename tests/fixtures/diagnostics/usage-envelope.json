@@ -1,0 +1,23 @@
+{
+  "status": "invalid",
+  "diagnostics": [
+    {
+      "schema_version": "lekalo/diagnostic/v1.0.0",
+      "registry_version": "1.0.0",
+      "id": "cli.usage",
+      "code": "LEK-CLI-001",
+      "severity": "error",
+      "category": "infrastructure",
+      "message_id": "cli.usage",
+      "message": "Malformed command-line syntax.",
+      "data": {},
+      "related_locations": [],
+      "causes": [],
+      "fixes": [],
+      "metadata": {}
+    }
+  ],
+  "reasonCodes": [
+    "cli.usage"
+  ]
+}

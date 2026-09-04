@@ -24,6 +24,7 @@
 //! migrated Model source.
 
 pub mod compatibility;
+pub mod diagnostic;
 pub mod family;
 pub mod graph;
 pub mod migration;
@@ -34,16 +35,16 @@ pub mod version;
 
 mod model_v0_1_0_to_v1_0_0;
 
-use crate::loader::error::Diagnostic;
-use crate::loader::{LoadOutput, LoadStatus, ModelVersion};
+use crate::loader::ModelVersion;
 use crate::project_fs::Fs;
+use crate::result::DomainResult;
 
 pub use compatibility::{
     AdapterCompatibilityManifest, CompatibilityPreflight, CompatibilityVerdict,
 };
 pub use migration::{
-    MigrationOutcome, MigrationReceipt, MigrationService, MigrationTransactionState, PlanFailure,
-    PreparedMigration, VersioningFailure,
+    MigrationReceipt, MigrationService, MigrationTransactionState, PlanFailure, PreparedMigration,
+    VersioningFailure,
 };
 pub use plan::{SemanticDiff, VersionChange};
 pub use registry::{
@@ -82,15 +83,17 @@ pub mod reasons {
 /// The shared support gate behind load phase 6b: `Some` when the loaded
 /// Model version must fail closed (retired or unregistered), `None` when it
 /// is supported or deprecated (still fully usable).
-pub(crate) fn gate_loaded_model_version(version: ModelVersion) -> Option<LoadOutput> {
+pub(crate) fn gate_loaded_model_version(version: ModelVersion) -> Option<DomainResult> {
     let registry = match VersionRegistry::embedded() {
         Ok(registry) => registry,
         Err(_) => {
             // A broken embedded registry is a developer fault, surfaced
             // honestly instead of silently loading without policy.
-            return Some(LoadOutput::failure(
-                LoadStatus::Invalid,
-                vec![Diagnostic::new(reasons::REGISTRY_INVALID)],
+            return Some(crate::loader::diagnostic::failure(
+                crate::result::Status::Invalid,
+                vec![crate::loader::error::Diagnostic::new(
+                    crate::versioning::reasons::REGISTRY_INVALID,
+                )],
             ));
         }
     };
@@ -103,9 +106,12 @@ pub(crate) fn gate_loaded_model_version(version: ModelVersion) -> Option<LoadOut
         if let Some(replacement) = &unsupported.replacement {
             data["replacement"] = serde_json::json!(replacement);
         }
-        LoadOutput::failure(
-            LoadStatus::UnsupportedVersion,
-            vec![Diagnostic::new(reasons::UNSUPPORTED_VERSION).with_data(data)],
+        crate::loader::diagnostic::failure(
+            crate::result::Status::UnsupportedVersion,
+            vec![crate::loader::error::Diagnostic::new(
+                crate::versioning::reasons::UNSUPPORTED_VERSION,
+            )
+            .with_data(data)],
         )
     })
 }

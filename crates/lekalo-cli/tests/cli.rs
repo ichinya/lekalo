@@ -19,14 +19,52 @@ fn version_json() -> String {
     format!("{{\n  \"status\": \"valid\",\n  \"version\": \"{VERSION}\"\n}}\n")
 }
 
-fn usage_json() -> &'static str {
-    "{\n  \"status\": \"invalid\",\n  \"reasonCodes\": [\n    \"cli.usage\"\n  ]\n}\n"
+/// The exact wire item of one registered data-less diagnostic, pretty at
+/// the envelope's four-space depth.
+fn diagnostic_item_json(
+    id: &str,
+    code: &str,
+    severity: &str,
+    category: &str,
+    message: &str,
+) -> String {
+    format!(
+        "{{\n      \"schema_version\": \"lekalo/diagnostic/v1.0.0\",\n      \"registry_version\": \"1.0.0\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
+    )
+}
+
+fn usage_json() -> String {
+    format!(
+        "{{\n  \"status\": \"invalid\",\n  \"diagnostics\": [\n    {}\n  ],\n  \"reasonCodes\": [\n    \"cli.usage\"\n  ]\n}}\n",
+        diagnostic_item_json(
+            "cli.usage",
+            "LEK-CLI-001",
+            "error",
+            "infrastructure",
+            "Malformed command-line syntax."
+        )
+    )
 }
 
 fn unsupported_json(capability: &str) -> String {
     format!(
-        "{{\n  \"status\": \"unsupported\",\n  \"capability\": \"{capability}\",\n  \"reasonCodes\": [\n    \"core.capability-unavailable\"\n  ]\n}}\n"
+        "{{\n  \"status\": \"unsupported\",\n  \"capability\": \"{capability}\",\n  \"diagnostics\": [\n    {}\n  ],\n  \"reasonCodes\": [\n    \"core.capability-unavailable\"\n  ]\n}}\n",
+        diagnostic_item_json(
+            "core.capability-unavailable",
+            "LEK-DIAG-001",
+            "info",
+            "infrastructure",
+            "The requested capability is not implemented yet."
+        )
     )
+}
+
+fn usage_human() -> &'static str {
+    "invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.\n"
+}
+
+fn unsupported_human() -> &'static str {
+    "unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested capability is not implemented yet.\n"
 }
 
 fn assert_json_document(bytes: &[u8]) {
@@ -81,10 +119,7 @@ fn every_stub_is_exact_in_human_and_both_json_flag_orders() {
     for (capability, args) in cases {
         let human = lekalo(&args);
         assert_exit(&human, 4);
-        assert_eq!(
-            human.stdout,
-            format!("unsupported: core.capability-unavailable {capability}\n").as_bytes()
-        );
+        assert_eq!(human.stdout, unsupported_human().as_bytes());
         assert!(human.stderr.is_empty());
 
         let mut json_before = vec!["--json"];
@@ -138,17 +173,14 @@ fn malformed_invocations_are_stable_usage_errors_and_never_exit_two() {
     let no_arguments = lekalo(&[]);
     assert_exit(&no_arguments, 1);
     assert!(no_arguments.stdout.is_empty());
-    assert_eq!(no_arguments.stderr, b"invalid: cli.usage\n");
+    assert_eq!(no_arguments.stderr, usage_human().as_bytes());
 }
 
 #[test]
 fn escaped_json_literals_do_not_select_json_output() {
     let inspect = lekalo(&["inspect", "--", "--json"]);
     assert_exit(&inspect, 4);
-    assert_eq!(
-        inspect.stdout,
-        b"unsupported: core.capability-unavailable inspect\n"
-    );
+    assert_eq!(inspect.stdout, unsupported_human().as_bytes());
     assert!(inspect.stderr.is_empty());
     assert_no_escaped_argument_leak(&inspect);
 
@@ -159,7 +191,7 @@ fn escaped_json_literals_do_not_select_json_output() {
         let output = lekalo(args);
         assert_exit(&output, 1);
         assert!(output.stdout.is_empty());
-        assert_eq!(output.stderr, b"invalid: cli.usage\n");
+        assert_eq!(output.stderr, usage_human().as_bytes());
         assert_no_escaped_argument_leak(&output);
     }
 
@@ -336,14 +368,14 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
 
     let root_manifest =
         std::fs::read_to_string(workspace.join("Cargo.toml")).expect("read workspace Cargo.toml");
-    assert_eq!(root_manifest.matches("version = \"0.1.8\"").count(), 1);
+    assert_eq!(root_manifest.matches("version = \"0.1.9\"").count(), 1);
     for member in [
         "crates/lekalo-core/Cargo.toml",
         "crates/lekalo-cli/Cargo.toml",
     ] {
         let manifest =
             std::fs::read_to_string(workspace.join(member)).expect("read member manifest");
-        assert!(!manifest.contains("0.1.8"));
+        assert!(!manifest.contains("0.1.9"));
         assert!(manifest.contains("version.workspace = true"));
     }
 }

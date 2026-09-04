@@ -23,6 +23,7 @@
 //! contract versions are independent of it by design.
 
 pub mod canonical;
+pub mod diagnostic;
 pub mod parse;
 pub mod plan;
 pub mod resolution;
@@ -42,7 +43,7 @@ pub use types::{
 };
 
 /// The prospective product version this workspace carries (custody rule of
-/// issue #10: 0.1.8 in every accepted path).
+/// issue #10, carried forward by issue #11: 0.1.9 in every accepted path).
 pub const PRODUCT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Stable `#10` reason codes. The list is closed until issue #11 widens the
@@ -97,11 +98,11 @@ pub mod reasons {
 /// The status, exit class, and stream are fixed per variant; nothing here
 /// echoes raw operating-system messages, absolute paths, timestamps, or
 /// environment data.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LockFailure {
     /// The accepted loader refused the project; its terminal envelope is
     /// preserved verbatim (structure, encoding, version gates, recovery).
-    Loader(crate::loader::LoadOutput),
+    Loader(crate::result::DomainResult),
     /// The lock file does not exist but is required (`exit 1`).
     Missing,
     /// The lock file is not a valid v1 wire document (`exit 1`).
@@ -250,7 +251,7 @@ impl LockFailure {
     /// The exit class on the accepted 0/1/3/4/5 envelope.
     pub fn exit_code(&self) -> u8 {
         match self {
-            Self::Loader(outcome) => outcome.status.exit_code(),
+            Self::Loader(outcome) => outcome.exit_code(),
             Self::PathDenied
             | Self::Structure { denied: true, .. }
             | Self::PrivateData { .. }
@@ -271,7 +272,7 @@ impl LockFailure {
     /// The stable status spelling for the envelope.
     pub fn status(&self) -> &'static str {
         match self {
-            Self::Loader(outcome) => outcome.status.as_str(),
+            Self::Loader(outcome) => outcome.status().as_str(),
             Self::PathDenied
             | Self::Structure { denied: true, .. }
             | Self::PrivateData { .. }
@@ -292,7 +293,7 @@ impl LockFailure {
     /// Whether the failure payload belongs on stderr.
     pub fn writes_stderr(&self) -> bool {
         match self {
-            Self::Loader(outcome) => outcome.status.writes_stderr(),
+            Self::Loader(outcome) => outcome.writes_stderr(),
             Self::PathDenied
             | Self::Structure { .. }
             | Self::PrivateData { .. }
@@ -302,85 +303,6 @@ impl LockFailure {
             | Self::PlatformUnavailable { .. }
             | Self::ProviderUnavailable => false,
             _ => true,
-        }
-    }
-}
-
-/// The terminal result of one lock or update operation: exact JSON envelope
-/// bytes, the stable human line, and the exit class.
-pub struct LockOutcome {
-    /// The stable status spelling (`valid`, `invalid`, `denied`,
-    /// `unavailable`, `unsupported-version`, or a loader status).
-    pub status: String,
-    /// The exit code on the accepted 0/1/3/4/5 envelope.
-    pub exit_code: u8,
-    /// Whether the payload belongs on stderr.
-    pub writes_stderr: bool,
-    /// The exact JSON envelope (pretty, two-space, one trailing LF).
-    pub json: String,
-    /// The single stable human line (with trailing LF).
-    pub human: String,
-}
-
-impl LockOutcome {
-    /// Render a failure deterministically.
-    pub fn failure(failure: &LockFailure) -> Self {
-        if let LockFailure::Loader(outcome) = failure {
-            return Self {
-                status: outcome.status.as_str().to_owned(),
-                exit_code: outcome.status.exit_code(),
-                writes_stderr: outcome.status.writes_stderr(),
-                json: format!("{}\n", outcome.json.trim_end_matches('\n')),
-                human: format!("{}\n", outcome.human),
-            };
-        }
-        let mut envelope = format!(
-            "{{\n  \"status\": \"{}\",\n  \"reasonCodes\": [\n    \"{}\"\n  ]\n}}",
-            failure.status(),
-            failure
-                .reason_code()
-                .expect("fixed-code failures always carry a reason")
-        );
-        let mut human = format!(
-            "{}: {}",
-            failure.status(),
-            failure
-                .reason_code()
-                .expect("fixed-code failures always carry a reason")
-        );
-        if let LockFailure::Structure {
-            code,
-            denied: false,
-        } = failure
-        {
-            envelope = format!(
-                "{{\n  \"status\": \"invalid\",\n  \"reasonCodes\": [\n    \"{code}\"\n  ]\n}}"
-            );
-            human = format!("invalid: {code}");
-        }
-        envelope.push('\n');
-        human.push('\n');
-        Self {
-            status: failure.status().to_owned(),
-            exit_code: failure.exit_code(),
-            writes_stderr: failure.writes_stderr(),
-            json: envelope,
-            human,
-        }
-    }
-
-    /// Render any closed success value on stdout.
-    pub fn success<T: Serialize>(value: &T, human: String) -> Self {
-        let json = format!(
-            "{}\n",
-            serde_json::to_string_pretty(value).unwrap_or_default()
-        );
-        Self {
-            status: "valid".to_owned(),
-            exit_code: 0,
-            writes_stderr: false,
-            json,
-            human,
         }
     }
 }

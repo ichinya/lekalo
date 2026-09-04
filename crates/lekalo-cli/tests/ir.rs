@@ -106,8 +106,25 @@ fn every_ir_fixture_matches_its_expectation() {
                 .as_array()
                 .expect("reasonCodes array")
                 .iter()
-                .map(|code| code["code"].as_str().expect("code string").to_owned())
+                .map(|code| code.as_str().expect("code string").to_owned())
                 .collect();
+            let diagnostic_ids: Vec<String> = parsed["diagnostics"]
+                .as_array()
+                .expect("diagnostics array")
+                .iter()
+                .map(|diagnostic| diagnostic["id"].as_str().expect("diagnostic id").to_owned())
+                .collect();
+            assert_eq!(
+                diagnostic_ids, actual,
+                "{name}: reasonCodes derive from diagnostics"
+            );
+            assert_eq!(
+                parsed["diagnostics"][0]["schema_version"]
+                    .as_str()
+                    .map(|value| value.starts_with("lekalo/diagnostic/")),
+                Some(true),
+                "{name}: wire discriminator"
+            );
             let mut expected_codes: Vec<String> = codes
                 .iter()
                 .map(|code| code.as_str().expect("code string").to_owned())
@@ -274,7 +291,7 @@ fn ir_failures_bind_to_the_invalid_exit_and_stderr_stream() {
         );
         let human = stderr_text(&output).trim().to_owned();
         assert!(
-            human.starts_with("invalid: ir."),
+            human.starts_with("invalid error [LEK-IR-"),
             "{name}: human line names ir codes: {human}"
         );
     }
@@ -304,5 +321,8 @@ fn human_failures_list_sorted_ir_codes_on_one_line() {
     let output = run_load(&format!("{FIXTURE_ROOT}/invalid-unknown-field"), &["--ir"]);
     assert_eq!(output.status.code(), Some(1));
     let human = stderr_text(&output).trim().to_owned();
-    assert_eq!(human, "invalid: ir.unknown-field");
+    assert_eq!(
+        human,
+        "invalid error [LEK-IR-005] ir.unknown-field lekalo/modules/planner/entities.yaml:6:5: A key is not accepted by the closed schema."
+    );
 }
