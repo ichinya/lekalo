@@ -80,6 +80,7 @@ impl Position {
 
 /// The terminal result of one load: exact JSON envelope bytes, the stable
 /// human line, and the exit class.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoadOutput {
     pub status: LoadStatus,
     pub json: String,

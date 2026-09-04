@@ -1,0 +1,10 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.count_focused
+    kind: query
+    version: 1
+    description: "Count focused tasks"
+    reads:
+      - "planner.task"
+    returns:
+      ref: "planner.task_state"

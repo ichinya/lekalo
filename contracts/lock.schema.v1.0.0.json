@@ -1,0 +1,373 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.lock@1.0.0",
+  "title": "Lekalo lock file (lekalo.lock) v1",
+  "description": "Closed wire schema for the committed, deterministic lekalo.lock. The discriminator schema_version is lekalo/lock/v1.0.0 and is independent of the product release, the Model/IR/protocol contract versions, and the resolver algorithm version. Every version is one exact canonical SemVer spelling without build metadata; every digest is sha256:<64 lowercase hex> over its declared domain only; every array is sorted by the documented key; no field carries an absolute path, URL, credential, or host data. This schema is the wire envelope; the Rust implementation in crates/lekalo-core/src/lockfile is normative for cross-field invariants.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "resolver",
+    "core",
+    "contracts",
+    "adapters",
+    "generators",
+    "profiles",
+    "capabilities"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/lock/v1.0.0"
+    },
+    "resolver": {
+      "$ref": "#/$defs/resolver"
+    },
+    "core": {
+      "$ref": "#/$defs/core"
+    },
+    "contracts": {
+      "$ref": "#/$defs/contracts"
+    },
+    "adapters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/adapter"
+      }
+    },
+    "generators": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/generator"
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/profile"
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/capability"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "contracts": {
+            "type": "object",
+            "properties": {
+              "target_protocol": {
+                "type": "null"
+              }
+            },
+            "required": ["target_protocol"]
+          }
+        },
+        "required": ["contracts"]
+      },
+      "then": {
+        "properties": {
+          "adapters": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "generators": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "capabilities": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,127}$"
+    },
+    "capability_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(\\.[a-z0-9_][a-z0-9_-]*)*$",
+      "description": "Closed capability identifier: lowercase dotted segments, no leading, trailing, or doubled dots. The Rust grammar is normative."
+    },
+    "platform": {
+      "type": "string",
+      "pattern": "^(any|[a-z0-9_]+(?:-[a-z0-9_]+)+)$"
+    },
+    "contract_pin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "digest"],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "component_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        }
+      }
+    },
+    "resolver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "request_digest", "catalogs"],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/version",
+          "description": "The independent resolver algorithm version, not a product or contract version."
+        },
+        "request_digest": {
+          "$ref": "#/$defs/digest",
+          "description": "SHA-256 of the canonical typed, path-free resolution request; excludes available-candidate order."
+        },
+        "catalogs": {
+          "type": "array",
+          "description": "Sorted immutable candidate-catalog snapshot identities; never URLs or credentials.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "digest"],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "core": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/version",
+          "description": "The exact Lekalo product/CLI version that produced the lock; no cross-OS core binary digest exists in v1 (release provenance is issue #104)."
+        }
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registry", "model", "ir", "target_protocol"],
+      "properties": {
+        "registry": {
+          "$ref": "#/$defs/contract_pin"
+        },
+        "model": {
+          "$ref": "#/$defs/contract_pin"
+        },
+        "ir": {
+          "$ref": "#/$defs/contract_pin"
+        },
+        "target_protocol": {
+          "description": "null while the target protocol is unpublished; after publication a {version, digest} pin over the exact protocol schema/bundle bytes.",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/contract_pin"
+            }
+          ]
+        }
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest",
+        "source",
+        "compatibility_digest",
+        "artifacts"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest",
+          "description": "SHA-256 of the immutable platform-neutral adapter package/manifest root."
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "digest"],
+          "properties": {
+            "kind": {
+              "enum": ["builtin", "catalog", "project"]
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "description": "A non-secret stable logical coordinate; for kind project a #4-safe project-relative POSIX path. The Rust grammar is normative and refuses private/absolute shapes."
+            },
+            "digest": {
+              "$ref": "#/$defs/digest"
+            }
+          }
+        },
+        "compatibility_digest": {
+          "$ref": "#/$defs/digest",
+          "description": "SHA-256 of the exact #9 adapter compatibility manifest bytes."
+        },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Sorted, unique by platform; digest over exact executable/bundle bytes.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["platform", "digest"],
+            "properties": {
+              "platform": {
+                "$ref": "#/$defs/platform"
+              },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "digest", "adapter"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest",
+          "description": "SHA-256 over the canonical implementation descriptor/bundle inside the adapter package."
+        },
+        "adapter": {
+          "$ref": "#/$defs/component_ref"
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "source_digest",
+        "digest",
+        "adapters",
+        "generators"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "version": {
+          "$ref": "#/$defs/version",
+          "description": "Exact SemVer required; an unversioned local profile fails closed with lock.profile-unversioned and never receives a fabricated 0.0.0."
+        },
+        "source_digest": {
+          "$ref": "#/$defs/digest",
+          "description": "SHA-256 of the canonical declared profile input."
+        },
+        "digest": {
+          "$ref": "#/$defs/digest",
+          "description": "SHA-256 of the fully resolved, inheritance-applied, path-free profile snapshot."
+        },
+        "adapters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/component_ref"
+          }
+        },
+        "generators": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/component_ref"
+          }
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "profile", "id", "version", "support", "provider"],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/platform"
+        },
+        "profile": {
+          "$ref": "#/$defs/id"
+        },
+        "id": {
+          "$ref": "#/$defs/capability_id"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "support": {
+          "enum": ["full", "partial", "unsupported", "unknown"]
+        },
+        "provider": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "version"],
+          "properties": {
+            "kind": {
+              "enum": ["adapter", "generator"]
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "version": {
+              "$ref": "#/$defs/version"
+            }
+          }
+        }
+      }
+    }
+  }
+}

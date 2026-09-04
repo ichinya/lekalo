@@ -3,6 +3,9 @@
 
 use clap::{error::ErrorKind, Args, ColorChoice, Parser, Subcommand};
 use lekalo_core::loader::LoadSelection;
+use lekalo_core::lockfile::plan::LockService;
+use lekalo_core::lockfile::resolution::CandidateSet;
+use lekalo_core::lockfile::{LockOutcome, LockReceipt, LockRequirement, UpdateReceipt};
 use lekalo_core::versioning::compatibility::CompatibilityReport;
 use lekalo_core::versioning::{
     MigrationOutcome, MigrationReceipt, MigrationService, ModelTarget, TargetMalformation,
@@ -69,6 +72,33 @@ enum Commands {
         #[arg(long, value_name = "TOKENS")]
         budget: u64,
     },
+    /// Create the committed project lock, or check an existing one.
+    Lock {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Headless CI gate: refuse a missing lock instead of creating it.
+        #[arg(long)]
+        check: bool,
+        /// Forbid any non-local candidate supply at the provider seam.
+        #[arg(long)]
+        offline: bool,
+    },
+    /// Preview a deterministic lock update, or apply one exact plan.
+    Update {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Compute and print the plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the plan with this exact identity (`sha256:<64 hex>`).
+        #[arg(long, value_name = "PLAN_ID")]
+        apply: Option<String>,
+        /// Forbid any non-local candidate supply at the provider seam.
+        #[arg(long)]
+        offline: bool,
+    },
 }
 
 /// The `migrate` arguments.
@@ -108,6 +138,17 @@ fn main() -> ExitCode {
 
     match Cli::try_parse() {
         Ok(cli) => match cli.command {
+            Commands::Lock {
+                project,
+                check,
+                offline: _,
+            } => run_lock(project, check, cli.json),
+            Commands::Update {
+                project,
+                dry_run,
+                apply,
+                offline: _,
+            } => run_update(project, dry_run, apply, cli.json),
             Commands::Load { project, spans, ir } => run_load(project, spans, ir, cli.json),
             Commands::Migrate { migrate } => run_migrate(migrate, cli.json),
             Commands::Compatibility => run_compatibility(cli.json),
@@ -197,6 +238,141 @@ fn parse_model_selector(selector: &str) -> Result<ModelTarget, VersioningFailure
             TargetMalformation::Malformed,
         ))?;
     ModelTarget::parse(rest).map_err(VersioningFailure::from_target_error)
+}
+
+/// Run `lekalo lock`: create a missing lock, or check an existing one and
+/// never update it. `--check` is the headless CI gate.
+fn run_lock(project: Option<String>, check: bool, json: bool) -> ExitCode {
+    let selection = LoadSelection {
+        project: project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    let outcome = match LockService::lock(
+        &selection,
+        CandidateSet::empty(),
+        LockRequirement::Optional,
+        !check,
+    ) {
+        Ok(receipt) => LockOutcome::success(&receipt, lock_human(&receipt)),
+        Err(failure) => LockOutcome::failure(&failure),
+    };
+    emit_lock_outcome(outcome, json)
+}
+
+/// Run `lekalo update`: `--dry-run` previews the plan, `--apply PLAN_ID`
+/// applies that exact plan; a mutating update without a bound preview is
+/// refused.
+fn run_update(
+    project: Option<String>,
+    dry_run: bool,
+    apply: Option<String>,
+    json: bool,
+) -> ExitCode {
+    if dry_run && apply.is_some() {
+        return emit(DomainResult::usage_error(), json, OutputStream::Stderr);
+    }
+    if !dry_run && apply.is_none() {
+        // A mutating update without a bound preview never ships by accident.
+        return emit_lock_outcome(
+            LockOutcome::failure(&lekalo_core::lockfile::LockFailure::PreviewRequired),
+            json,
+        );
+    }
+    if let Some(plan_id) = &apply {
+        if well_formed_plan_id(plan_id).is_none() {
+            return emit(DomainResult::usage_error(), json, OutputStream::Stderr);
+        }
+    }
+    let selection = LoadSelection {
+        project: project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    let outcome = match LockService::plan(&selection, CandidateSet::empty()) {
+        Err(failure) => LockOutcome::failure(&failure),
+        Ok(prepared) => {
+            if dry_run {
+                let receipt = LockService::preview(&prepared);
+                LockOutcome::success(&receipt, diff_human("preview", &receipt))
+            } else {
+                let plan_id = apply.as_deref().expect("exclusivity checked above");
+                match LockService::apply(prepared, plan_id) {
+                    Ok(receipt) => {
+                        let verb = if receipt.changed {
+                            "applied"
+                        } else {
+                            "unchanged"
+                        };
+                        LockOutcome::success(&receipt, diff_human(verb, &receipt))
+                    }
+                    Err(failure) => LockOutcome::failure(&failure),
+                }
+            }
+        }
+    };
+    emit_lock_outcome(outcome, json)
+}
+
+/// Accept only the exact `sha256:<64 lowercase hex>` plan spelling.
+fn well_formed_plan_id(text: &str) -> Option<()> {
+    let hex = text.strip_prefix("sha256:")?;
+    let valid = hex.len() == 64
+        && hex
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase());
+    valid.then_some(())
+}
+
+/// The stable component-count projection.
+fn counts_suffix(counts: lekalo_core::lockfile::ComponentCounts) -> String {
+    format!(
+        "adapters {}, generators {}, profiles {}, capabilities {}",
+        counts.adapters, counts.generators, counts.profiles, counts.capabilities
+    )
+}
+
+/// The stable human summary of a lock create/check.
+fn lock_human(receipt: &LockReceipt) -> String {
+    let verb = if receipt.mode == "create" {
+        "created"
+    } else {
+        "checked"
+    };
+    format!(
+        "lock {} {} resolver {} ({})\n",
+        verb,
+        receipt.lock_digest,
+        receipt.resolver_version,
+        counts_suffix(receipt.counts)
+    )
+}
+
+/// The stable human summary of an update preview or apply.
+fn diff_human(verb: &str, receipt: &UpdateReceipt) -> String {
+    let added = receipt.changes.iter().filter(|c| c.from.is_none()).count();
+    let removed = receipt.changes.iter().filter(|c| c.to.is_none()).count();
+    let changed = receipt.changes.len() - added - removed;
+    format!(
+        "update {} {} plan {} (+{} ~{} -{})\n",
+        verb, receipt.after_digest, receipt.plan_id, added, changed, removed
+    )
+}
+
+/// Print one lock outcome on its protocol stream.
+fn emit_lock_outcome(outcome: LockOutcome, json: bool) -> ExitCode {
+    let stream = if outcome.writes_stderr {
+        OutputStream::Stderr
+    } else {
+        OutputStream::Stdout
+    };
+    let mut handle: Box<dyn Write> = match stream {
+        OutputStream::Stdout => Box::new(io::stdout().lock()),
+        OutputStream::Stderr => Box::new(io::stderr().lock()),
+    };
+    let rendered = if json { &outcome.json } else { &outcome.human };
+    let write = handle.write_all(rendered.as_bytes());
+    if write.is_ok() {
+        ExitCode::from(outcome.exit_code)
+    } else {
+        ExitCode::from(OUTPUT_FAILURE)
+    }
 }
 
 /// Run one migrate operation (dry-run, apply, or rollback).

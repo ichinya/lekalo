@@ -14,11 +14,12 @@ Rust workspace and provider implementations are introduced.
 - Immutable historical baseline: `contracts/authority-matrix.v1.2.0.json`
 - [Contract versioning, support policy, and migrations](docs/versioning.md)
 - [ADR-0008: versioning and migrations for Model, IR, and protocol](docs/adr/0008-versioning-and-migrations.md)
+- [The committed `lekalo.lock`: reproducible resolution](docs/lockfile.md)
+- [ADR-0009: the committed lekalo.lock and reproducible resolution](docs/adr/0009-lockfile.md)
 
 Validate the contract and its allowed/forbidden/malformed fixtures, then verify
 the documented CLI exit-code protocol with Node.js, without installing
 dependencies:
-
 ```sh
 node scripts/check-authority.mjs
 node scripts/check-authority.mjs --contract-version 1.2.0
@@ -111,6 +112,19 @@ policy) for Rust consumers without the CLI. See
 [docs/ir.md](docs/ir.md), [ADR-0007](docs/adr/0007-ir.md), and the
 fixtures with golden canonical bytes under `tests/fixtures/ir/`.
 
+## Reproducibility: the committed `lekalo.lock`
+
+Issue #10 makes resolution reproducible: `lekalo lock` freezes the exact
+product, contract, adapter, generator, profile, and capability identities
+into one canonical JSON file, `lekalo lock --check` is the headless CI
+gate, and `lekalo update --dry-run` / `--apply` preview and apply explicit
+plans under a byte-level compare-and-swap. Digest mismatches (exit 3) are
+classified separately from validation (exit 1), unavailability (exit 4),
+and unsupported versions (exit 5), and the wire never carries absolute
+paths or credentials. See [docs/lockfile.md](docs/lockfile.md),
+[ADR-0009](docs/adr/0009-lockfile.md), and the hermetic fixtures under
+`tests/fixtures/lockfile/`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -118,10 +132,10 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 `contracts/model.schema.v0.1.0.json`. Its stable-ID successor is
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
-and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract
-versions are independent of product releases; issue #9 carries prospective
-product 0.1.7 (issues #3/#6/#7/#8 published products 0.1.3/0.1.4/0.1.5/0.1.6,
-the last at `5580b83`).
+and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
+independent of product releases; issue #10 carries prospective product
+0.1.8 (issues #8/#9 published products 0.1.6/0.1.7, the latter at
+`f0b3784`).
 
 The checker recognizes only the two exact schema versions, and all documents
 in one project must agree. Model 1.0 makes project/module IDs one-segment and immutable,

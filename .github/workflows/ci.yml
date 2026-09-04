@@ -32,6 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-model-ajv.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-lockfile-ajv.mjs
       - name: Run contract checkers and suites
         run: |
           node scripts/check-authority.mjs
@@ -53,7 +54,7 @@ jobs:
           node scripts/check-model.mjs
           node scripts/test-model-contracts.mjs
           node scripts/test-versioning-contracts.mjs
-
+          node scripts/test-lockfile-contracts.mjs
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

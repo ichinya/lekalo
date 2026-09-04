@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.7. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.8. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -18,6 +18,9 @@ with filesystem access and it never writes.
 ```text
 lekalo --version
 lekalo load [--project DIR] [--spans] [--ir]
+lekalo lock [--check] [--offline] [--project DIR]
+lekalo update --dry-run [--offline] [--project DIR]
+lekalo update --apply sha256:PLAN_ID [--offline] [--project DIR]
 lekalo migrate --to model/TARGET [--dry-run] [--project DIR]
 lekalo migrate --rollback PLAN_ID [--project DIR]
 lekalo compatibility
@@ -27,7 +30,8 @@ lekalo impact SYMBOL
 lekalo context SYMBOL --budget TOKENS
 ```
 
-`--version`, `load`, `migrate`, and `compatibility` are implemented. The remaining three subcommands are
+`--version`, `load`, `lock`, `update`, `migrate`, and `compatibility` are
+implemented. The remaining three subcommands are
 recognized stubs: valid syntax reaches the named capability and returns
 `unsupported`. `SYMBOL` is an opaque string at this layer, and `TOKENS` is an
 unsigned integer. Semantic ID rules, validation, graph construction, and
@@ -58,6 +62,19 @@ map. IR decode failures are `invalid` (exit 1, stderr) with the closed
 `ir.*` reason codes. See [ir.md](ir.md) for the normative IR contract and
 the fixture suite under `tests/fixtures/ir/`.
 
+### `lekalo lock` and `lekalo update`
+
+`lock` creates the committed `lekalo.lock` for a validated project, or
+checks an existing one and never updates it; `lock --check` is the headless
+CI gate that refuses a missing lock. `update --dry-run` prints the
+deterministic plan (`planId`, sorted add/remove/change entries) without
+writing anything; `update --apply sha256:PLAN_ID` applies exactly that plan
+under a byte-level compare-and-swap. Digest mismatches are integrity
+denials (exit 3), distinct from validation failures (exit 1), unavailability
+(exit 4), and unsupported versions (exit 5). See [lockfile.md](lockfile.md)
+for the normative wire, digest domains, resolution order, and the
+transaction contract, and [ADR-0009](adr/0009-lockfile.md) for the recorded
+owner decisions.
 ### `lekalo migrate` and `lekalo compatibility`
 
 `migrate` moves a project to a registered Model contract version
@@ -132,13 +149,13 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.7"
+  "version": "0.1.8"
 }
 ```
 
 The corresponding human lines are `invalid: cli.usage`,
 `unsupported: core.capability-unavailable CAPABILITY`, and
-`lekalo 0.1.7`. Human and JSON renderers consume the same `DomainResult`.
+`lekalo 0.1.8`. Human and JSON renderers consume the same `DomainResult`.
 
 ## Development checks
 
