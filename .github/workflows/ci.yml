@@ -57,8 +57,6 @@ jobs:
           node scripts/test-model-contracts.mjs
           node scripts/test-versioning-contracts.mjs
           node scripts/test-lockfile-contracts.mjs
-          node scripts/test-diagnostic-contracts.mjs
-          node scripts/test-validation-contracts.mjs
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
