@@ -1,0 +1,41 @@
+schema_version: "1.0.0"
+definitions:
+  - id: rest.text
+    kind: scalar
+    version: 1
+    description: "Free text"
+    base: string
+  - id: rest.count
+    kind: scalar
+    version: 1
+    description: "Counted quantity"
+    base: number
+  - id: rest.state
+    kind: enum
+    version: 1
+    description: "Item lifecycle"
+    values:
+      - value: draft
+  - id: rest.item
+    kind: entity
+    version: 1
+    description: "Catalog item"
+    fields:
+      - name: title
+        type: "rest.text"
+        required: true
+      - name: quantity
+        type: "rest.count"
+        required: true
+    identity:
+      - title
+  - id: rest.archive
+    kind: entity
+    version: 1
+    description: "Archive log"
+    fields:
+      - name: note
+        type: "rest.text"
+        required: true
+    identity:
+      - note

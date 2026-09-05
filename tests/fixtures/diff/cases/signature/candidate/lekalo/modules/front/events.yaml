@@ -1,0 +1,13 @@
+schema_version: "1.0.0"
+definitions:
+  - id: shop.item_created
+    kind: event
+    version: 1
+    description: "An item was created"
+    payload:
+      - name: item_id
+        type: "shop.item_id"
+        required: true
+      - name: actor
+        type: "shop.text"
+        required: true

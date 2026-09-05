@@ -1,0 +1,56 @@
+schema_version: "1.0.0"
+definitions:
+  - id: shop.item_id
+    kind: scalar
+    version: 1
+    description: "Item identifier"
+    base: uuid
+    visibility: project
+  - id: shop.status
+    kind: enum
+    version: 1
+    description: "Item lifecycle (replacement)"
+    values:
+      - value: draft
+      - value: live
+  - id: shop.label
+    kind: scalar
+    version: 1
+    base: string
+    renamed_from:
+      - "shop.text"
+  - id: shop.money
+    kind: scalar
+    version: 1
+    base: number
+  - id: shop.item
+    kind: entity
+    version: 1
+    description: "Catalog item"
+    fields:
+      - name: title
+        type: "shop.label"
+        required: true
+      - name: price
+        type: "shop.money"
+        required: true
+      - name: discount
+        type: "shop.money?"
+    identity:
+      - title
+  - id: shop.legacy
+    kind: scalar
+    version: 1
+    base: string
+  - id: shop.sku3
+    kind: scalar
+    version: 1
+    base: string
+    renamed_from:
+      - "shop.sku2"
+  - id: shop.new_note
+    kind: scalar
+    version: 1
+    base: string
+    renamed_from:
+      - "shop.old_note"

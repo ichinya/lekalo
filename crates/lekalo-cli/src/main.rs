@@ -195,6 +195,24 @@ enum Commands {
         #[arg(long)]
         offline: bool,
     },
+    /// Compare two accepted project selections semantically.
+    Diff {
+        /// The base selector, or the base when `--base` names the base.
+        #[arg(value_name = "OLD")]
+        first: String,
+        /// The candidate selector when `--base` names the base.
+        #[arg(value_name = "NEW")]
+        second: Option<String>,
+        /// The base project selector (`--base OLD NEW`).
+        #[arg(long, value_name = "DIR")]
+        base: Option<String>,
+        /// Comma-separated built-in compatibility profiles.
+        #[arg(long, value_name = "PROFILES")]
+        profiles: Option<String>,
+        /// The output format; only the closed canonical JSON exists.
+        #[arg(long, value_name = "FORMAT", default_value = "json")]
+        format: DiffFormat,
+    },
     /// Project the deterministic dependency graph of semantic symbols.
     Graph {
         #[command(subcommand)]
@@ -284,6 +302,13 @@ enum CacheCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
+}
+
+/// The closed diff output format vocabulary.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum DiffFormat {
+    /// Canonical compact JSON (the only v1 format).
+    Json,
 }
 
 /// The `effects` subcommands: a thin handoff to the core effect engine.
@@ -440,6 +465,13 @@ fn main() -> ExitCode {
                 spans,
                 project,
             } => run_context(symbol, changed, budget, spans, &project),
+            Commands::Diff {
+                first,
+                second,
+                base,
+                profiles,
+                format: DiffFormat::Json,
+            } => run_diff(first, second, base, profiles),
             Commands::Graph { command } => run_graph(command, cli.no_cache),
             Commands::Effects { command } => run_effects(command, cli.no_cache),
             Commands::Trace { command } => run_trace(command),
@@ -514,6 +546,102 @@ fn run_load(project: Option<String>, spans: bool, ir: bool, no_cache: bool) -> D
             }
         },
     }
+}
+
+/// Run `lekalo diff`: load and compile two accepted project selections,
+/// hand both typed IR values to the core semantic diff, and project the
+/// result. Load and IR failures pass through untouched in selector
+/// order; the diff itself never reads Git, YAML text, adapters, or the
+/// filesystem beyond the accepted #7 selection.
+fn run_diff(
+    first: String,
+    second: Option<String>,
+    base: Option<String>,
+    profiles: Option<String>,
+) -> DomainResult {
+    // Exactly one base and one candidate: either two positionals or
+    // `--base OLD` plus one positional. Over- or under-specification is
+    // the stable usage failure, never a guessed selector.
+    let (base_selector, candidate_selector) = match (&second, &base) {
+        (Some(second), None) => (first.clone(), second.clone()),
+        (None, Some(base)) => (base.clone(), first.clone()),
+        _ => return DomainResult::usage_error(),
+    };
+    let request = match profiles {
+        None => lekalo_core::diff::DiffRequest::new(),
+        Some(terms) => {
+            let parsed = match lekalo_core::diff::parse_profile_terms(&terms) {
+                Ok(parsed) => parsed,
+                Err(set) => return DomainResult::invalid(set),
+            };
+            let mut request = lekalo_core::diff::DiffRequest::new();
+            for profile in parsed {
+                request = request.with_profile(profile);
+            }
+            request
+        }
+    };
+    let base_selection = LoadSelection {
+        project: Some(base_selector),
+    };
+    let base_compilation = match compile_selection(&base_selection) {
+        Ok(compilation) => compilation,
+        Err(result) => return result,
+    };
+    let candidate_selection = LoadSelection {
+        project: Some(candidate_selector),
+    };
+    let candidate_compilation = match compile_selection(&candidate_selection) {
+        Ok(compilation) => compilation,
+        Err(result) => return result,
+    };
+    let outcome = lekalo_core::diff::compare(
+        &base_compilation.project,
+        &candidate_compilation.project,
+        &request,
+    );
+    let result = match outcome {
+        Err(set) => return DomainResult::invalid(set),
+        Ok(result) => result,
+    };
+    let payload = match result.to_canonical_json() {
+        Ok(bytes) => bytes,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let mut human = vec![result.to_human()];
+    for profile in result.profiles() {
+        human.push(format!(
+            "  profile {} : {}",
+            profile.profile_id().key(),
+            profile.verdict().key()
+        ));
+    }
+    for change in result.changes() {
+        human.push(format!(
+            "  {} {} ({})",
+            change.kind().key(),
+            change.subject(),
+            change.reasons().join(", ")
+        ));
+    }
+    DomainResult::diff(
+        format!("{{\"status\":\"valid\",\"diff\":{payload}}}"),
+        human.join("\n"),
+        Vec::new(),
+    )
+}
+
+/// Load and compile one selection; a loader or IR failure becomes the
+/// terminal domain result.
+fn compile_selection(
+    selection: &LoadSelection,
+) -> Result<lekalo_core::ir::Compilation, DomainResult> {
+    let model = lekalo_core::loader::normalize_model(selection)?;
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Err(failure) => return Err(failure.into_result()),
+        Ok(compilation) => compilation,
+    };
+    Ok(compilation)
 }
 
 /// Run `lekalo validate`: load, compile to the typed IR, and run the

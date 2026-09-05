@@ -142,6 +142,9 @@ pub enum SuccessPayload {
     /// Impact success (compact envelope bytes built by the CLI renderer);
     /// may carry the non-blocking impact diagnostics.
     Impact { json: String, human: String },
+    /// Semantic-diff success (compact envelope bytes built by the CLI
+    /// renderer); may carry the non-blocking diff diagnostics.
+    Diff { json: String, human: String },
     /// Receipt success (pretty two-space JSON without trailing newline).
     Receipt { json: String, human: String },
 }
@@ -245,6 +248,19 @@ impl DomainResult {
     ) -> Self {
         Self::Valid {
             payload: SuccessPayload::Impact { json, human },
+            diagnostics,
+        }
+    }
+
+    /// A semantic-diff success with exact compact envelope bytes and the
+    /// non-blocking diff diagnostics (warning/info only).
+    pub fn diff(
+        json: String,
+        human: String,
+        diagnostics: Vec<crate::diagnostics::Diagnostic>,
+    ) -> Self {
+        Self::Valid {
+            payload: SuccessPayload::Diff { json, human },
             diagnostics,
         }
     }
@@ -359,6 +375,7 @@ impl DomainResult {
                     | SuccessPayload::Validation { json, .. }
                     | SuccessPayload::Graph { json, .. }
                     | SuccessPayload::Impact { json, .. }
+                    | SuccessPayload::Diff { json, .. }
                     | SuccessPayload::Receipt { json, .. } => json.clone(),
                 };
                 if !diagnostics.is_empty() {
@@ -427,6 +444,7 @@ impl DomainResult {
                     | SuccessPayload::Validation { human, .. }
                     | SuccessPayload::Graph { human, .. }
                     | SuccessPayload::Impact { human, .. }
+                    | SuccessPayload::Diff { human, .. }
                     | SuccessPayload::Receipt { human, .. } => human
                         .lines()
                         .map(|line| line.to_owned())
@@ -508,12 +526,12 @@ mod tests {
 
     #[test]
     fn version_payload_matches_the_published_bytes() {
-        let result = DomainResult::version("0.1.25");
+        let result = DomainResult::version("0.1.26");
         assert_eq!(
             result.to_json_string(),
-            "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.25\"\n}"
+            "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.26\"\n}"
         );
-        assert_eq!(result.to_human_string("lekalo"), "lekalo 0.1.25");
+        assert_eq!(result.to_human_string("lekalo"), "lekalo 0.1.26");
     }
 
     #[test]

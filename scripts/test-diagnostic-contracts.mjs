@@ -39,7 +39,7 @@ const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf
 
 const itemSchema = read("contracts/diagnostic.schema.v1.0.0.json");
 const registrySchema = read("contracts/diagnostic-registry.schema.v1.0.0.json");
-const registry = read("contracts/diagnostic-registry.v1.4.0.json");
+const registry = read("contracts/diagnostic-registry.v1.5.0.json");
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateItem = ajv.compile(itemSchema);

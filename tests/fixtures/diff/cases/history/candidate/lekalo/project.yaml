@@ -1,0 +1,41 @@
+schema_version: "1.0.0"
+definitions:
+  - id: shop
+    kind: project
+    version: 1
+    description: "Shop example"
+    derived_from:
+      - "SHOP-REQ-001"
+    id_registry:
+      rename_history:
+        - from: "shop.legacy_txt"
+          to: "shop.legacy_text"
+          definition_version: 1
+          same_identity: true
+        - from: "shop.text"
+          to: "shop.label"
+          definition_version: 1
+          same_identity: true
+        - from: "shop.item_state"
+          to: "shop.status"
+          definition_version: 1
+          same_identity: true
+        - from: "shop.sku"
+          to: "shop.sku2"
+          definition_version: 1
+          same_identity: true
+        - from: "shop.sku2"
+          to: "shop.sku3"
+          definition_version: 1
+          same_identity: true
+      tombstones:
+        - id: "shop.legacy"
+          reason: "deleted"
+          since: 1
+        - id: "shop.item_state"
+          reason: "replaced"
+          replaced_by: "shop.status"
+          since: 1
+        - id: "shop.create_flow"
+          reason: "deleted"
+          since: 2

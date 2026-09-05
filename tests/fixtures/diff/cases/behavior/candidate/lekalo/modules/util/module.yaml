@@ -1,0 +1,6 @@
+schema_version: "1.0.0"
+definitions:
+  - id: util
+    kind: module
+    version: 1
+    description: "Utility module"

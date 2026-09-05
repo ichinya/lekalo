@@ -1,0 +1,10 @@
+schema_version: "1.0.0"
+definitions:
+  - id: shop.get_item
+    kind: query
+    version: 1
+    description: "Read one item"
+    reads:
+      - "shop.item"
+    returns:
+      ref: "shop.item"

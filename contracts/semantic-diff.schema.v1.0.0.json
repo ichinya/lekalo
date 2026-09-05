@@ -1,0 +1,666 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/semantic-diff.schema.v1.0.0.json",
+  "title": "Lekalo semantic diff",
+  "description": "Closed contract of one read-only semantic comparison of two accepted, normalized, immutable CompiledProject values (issue #18). The comparison never reads YAML text, line diffs, physical paths, source bytes, Git state, or clocks: it compares typed canonical projections by stable semantic IDs and member keys, classifies compatibility per explicit built-in profile, and reports direct reasons, affected-symbol seeds, non-executable migration hints, and namespaced adapter contributions that never mutate the core facts. No raw source, physical path, host, locale, timestamp, runtime value, or adapter transcript may appear.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "comparisonId",
+    "equal",
+    "complete",
+    "completeReason",
+    "base",
+    "candidate",
+    "classification",
+    "changes",
+    "reasons",
+    "affectedSeeds",
+    "profiles",
+    "adapters",
+    "migrationHints",
+    "metadata"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/semantic-diff/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.semantic-diff@1.0.0"
+    },
+    "comparisonId": {
+      "$ref": "#/$defs/sha256"
+    },
+    "equal": {
+      "type": "boolean"
+    },
+    "complete": {
+      "type": "boolean"
+    },
+    "completeReason": {
+      "anyOf": [
+        {
+          "enum": [
+            "diff.subject-limit",
+            "diff.change-limit",
+            "diff.seed-limit",
+            "diff.export-limit",
+            "diff.input-invalid",
+            "diff.history-invalid"
+          ]
+        },
+        {
+          "const": null
+        }
+      ]
+    },
+    "base": {
+      "$ref": "#/$defs/projectRef"
+    },
+    "candidate": {
+      "$ref": "#/$defs/projectRef"
+    },
+    "classification": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/compatibilityClass"
+      },
+      "maxItems": 8
+    },
+    "changes": {
+      "type": "array",
+      "maxItems": 250000,
+      "items": {
+        "$ref": "#/$defs/changeRecord"
+      }
+    },
+    "reasons": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/reasonId"
+      }
+    },
+    "affectedSeeds": {
+      "type": "array",
+      "maxItems": 50000,
+      "items": {
+        "$ref": "#/$defs/affectedSeed"
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/profileDecision"
+      }
+    },
+    "adapters": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/adapterContribution"
+      }
+    },
+    "migrationHints": {
+      "type": "array",
+      "maxItems": 50000,
+      "items": {
+        "$ref": "#/$defs/migrationHint"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapterCount",
+        "changeCount",
+        "hintCount",
+        "profileCount",
+        "reasonCount",
+        "seedCount"
+      ],
+      "properties": {
+        "adapterCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "changeCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250000
+        },
+        "hintCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50000
+        },
+        "profileCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "reasonCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "seedCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50000
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "projectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "irDigest",
+        "irIdentity",
+        "modelVersion",
+        "semanticDigest"
+      ],
+      "properties": {
+        "irDigest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "irIdentity": {
+          "const": "dev.lekalo.ir@0.1.0"
+        },
+        "modelVersion": {
+          "enum": [
+            "0.1.0",
+            "1.0.0"
+          ]
+        },
+        "semanticDigest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "compatibilityClass": {
+      "enum": [
+        "unknown",
+        "data-loss-risk",
+        "storage-migration-required",
+        "wire-breaking",
+        "source-breaking",
+        "behavioral",
+        "target-specific",
+        "additive"
+      ]
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "typedSummary": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 512
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "maxProperties": 16,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/semanticId"
+            },
+            "renamedFrom": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/semanticId"
+              }
+            },
+            "replacedBy": {
+              "$ref": "#/$defs/semanticId"
+            },
+            "since": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "const": null
+        }
+      ]
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "id",
+        "member"
+      ],
+      "properties": {
+        "family": {
+          "enum": [
+            "project",
+            "module",
+            "scalar",
+            "enum",
+            "value-object",
+            "entity",
+            "command",
+            "query",
+            "policy",
+            "event",
+            "effect",
+            "endpoint",
+            "scenario",
+            "target-binding"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "member": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            {
+              "const": null
+            }
+          ]
+        }
+      }
+    },
+    "changeKind": {
+      "enum": [
+        "symbol.added",
+        "symbol.removed",
+        "symbol.renamed",
+        "symbol.replaced",
+        "symbol.tombstoned",
+        "symbol.kind-changed",
+        "symbol.visibility-changed",
+        "symbol.portability-changed",
+        "symbol.version-changed",
+        "symbol.derived-from-changed",
+        "module.imports-changed",
+        "field.added",
+        "field.removed",
+        "field.type-changed",
+        "field.nullability-changed",
+        "field.presence-changed",
+        "type.shape-changed",
+        "type.member-added",
+        "type.member-removed",
+        "signature.input-added",
+        "signature.input-removed",
+        "signature.input-type-changed",
+        "signature.input-presence-changed",
+        "signature.output-changed",
+        "signature.reads-changed",
+        "signature.effects-changed",
+        "invariant.identity-changed",
+        "policy.decision-changed",
+        "policy.scope-changed",
+        "effect.operation-changed",
+        "effect.entity-changed",
+        "effect.emits-changed",
+        "endpoint.method-changed",
+        "endpoint.path-changed",
+        "endpoint.invokes-changed",
+        "scenario.summary-changed",
+        "scenario.covers-changed",
+        "binding.target-changed"
+      ]
+    },
+    "side": {
+      "enum": [
+        "base",
+        "candidate",
+        "both"
+      ]
+    },
+    "changeId": {
+      "$ref": "#/$defs/sha256"
+    },
+    "reasonId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "changeRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "after",
+        "before",
+        "changeId",
+        "kind",
+        "reasons",
+        "side",
+        "subject"
+      ],
+      "properties": {
+        "after": {
+          "$ref": "#/$defs/typedSummary"
+        },
+        "before": {
+          "$ref": "#/$defs/typedSummary"
+        },
+        "changeId": {
+          "$ref": "#/$defs/changeId"
+        },
+        "kind": {
+          "$ref": "#/$defs/changeKind"
+        },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/reasonId"
+          }
+        },
+        "side": {
+          "$ref": "#/$defs/side"
+        },
+        "subject": {
+          "$ref": "#/$defs/subject"
+        }
+      }
+    },
+    "affectedSeed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changeIds",
+        "origin",
+        "side",
+        "subject"
+      ],
+      "properties": {
+        "changeIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/changeId"
+          }
+        },
+        "origin": {
+          "const": "direct-diff"
+        },
+        "side": {
+          "$ref": "#/$defs/side"
+        },
+        "subject": {
+          "$ref": "#/$defs/subject"
+        }
+      }
+    },
+    "profileOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changeId",
+        "classes",
+        "reasons"
+      ],
+      "properties": {
+        "changeId": {
+          "$ref": "#/$defs/changeId"
+        },
+        "classes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/compatibilityClass"
+          }
+        },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/reasonId"
+          }
+        }
+      }
+    },
+    "profileDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "blockedOn",
+        "classes",
+        "outcomes",
+        "policyDigest",
+        "policyRevision",
+        "profileId",
+        "profileVersion",
+        "verdict"
+      ],
+      "properties": {
+        "blockedOn": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "changeIds",
+                "reason"
+              ],
+              "properties": {
+                "changeIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4096,
+                  "items": {
+                    "$ref": "#/$defs/changeId"
+                  }
+                },
+                "reason": {
+                  "$ref": "#/$defs/reasonId"
+                }
+              }
+            },
+            {
+              "const": null
+            }
+          ]
+        },
+        "classes": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/compatibilityClass"
+          }
+        },
+        "outcomes": {
+          "type": "array",
+          "maxItems": 250000,
+          "items": {
+            "$ref": "#/$defs/profileOutcome"
+          }
+        },
+        "policyDigest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "policyRevision": {
+          "const": "diff-policy/v1"
+        },
+        "profileId": {
+          "$ref": "#/$defs/profileId"
+        },
+        "profileVersion": {
+          "const": "lekalo/diff-profile/v1.0.0"
+        },
+        "verdict": {
+          "enum": [
+            "compatible",
+            "breaking",
+            "blocked",
+            "degraded"
+          ]
+        }
+      }
+    },
+    "adapterContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapterId",
+        "adapterVersion",
+        "contributionDigest",
+        "effects",
+        "evidenceDigest",
+        "evidenceRevision",
+        "inputIrDigest",
+        "namespace",
+        "profileRef",
+        "protocolRef",
+        "seeds",
+        "states",
+        "targetId",
+        "trust"
+      ],
+      "properties": {
+        "adapterId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "adapterVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "contributionDigest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "effects": {
+          "type": "array",
+          "maxItems": 250000,
+          "items": {
+            "$ref": "#/$defs/profileOutcome"
+          }
+        },
+        "evidenceDigest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "evidenceRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "inputIrDigest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$",
+          "maxLength": 128
+        },
+        "profileRef": {
+          "$ref": "#/$defs/profileId"
+        },
+        "protocolRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "seeds": {
+          "type": "array",
+          "maxItems": 50000,
+          "items": {
+            "$ref": "#/$defs/affectedSeed"
+          }
+        },
+        "states": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/reasonId"
+          }
+        },
+        "targetId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "trust": {
+          "enum": [
+            "verified",
+            "stale",
+            "unknown",
+            "conflicting",
+            "unsupported",
+            "rejected"
+          ]
+        }
+      }
+    },
+    "migrationHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changeId",
+        "detail",
+        "hint"
+      ],
+      "properties": {
+        "changeId": {
+          "$ref": "#/$defs/changeId"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "hint": {
+          "enum": [
+            "replacement-available",
+            "storage-review",
+            "storage-plan-required",
+            "wire-review"
+          ]
+        }
+      }
+    },
+    "profileId": {
+      "enum": [
+        "source-consumer",
+        "wire-consumer",
+        "storage-consumer",
+        "target-consumer",
+        "advisory"
+      ]
+    }
+  }
+}

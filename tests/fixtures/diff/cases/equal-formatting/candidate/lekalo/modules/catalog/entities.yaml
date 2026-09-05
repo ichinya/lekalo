@@ -1,0 +1,39 @@
+schema_version: "1.0.0"
+# reordered definitions, unquoted types, comments; same semantics
+definitions:
+  - id: shop.text
+    kind: scalar
+    version: 1
+    base: string
+  - id: shop.money
+    kind: scalar
+    version: 1
+    base: number
+  - id: shop.item
+    kind: entity
+    version: 1
+    description: "Catalog item"
+    identity:
+      - title
+    fields:
+      - name: discount
+        type: "shop.money?"
+      - name: price
+        type: "shop.money"
+        required: true
+      - name: title
+        type: "shop.text"
+        required: true
+  - id: shop.item_state
+    kind: enum
+    version: 1
+    description: "Item lifecycle"
+    values:
+      - value: live
+      - value: draft
+  - id: shop.item_id
+    kind: scalar
+    version: 1
+    base: uuid
+    visibility: project
+    description: "Item identifier"

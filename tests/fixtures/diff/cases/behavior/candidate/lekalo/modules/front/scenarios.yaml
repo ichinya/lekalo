@@ -1,0 +1,10 @@
+schema_version: "1.0.0"
+definitions:
+  - id: shop.create_flow
+    kind: scenario
+    version: 1
+    description: "Create flow"
+    summary: "Creating an item emits exactly one created event."
+    covers:
+      - "shop.create_item"
+      - "shop.item_created"

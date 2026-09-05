@@ -159,7 +159,7 @@ mod tests {
         let report = ValidationReport {
             profile_id: "default".to_owned(),
             profile_version: "1.0.0".to_owned(),
-            registry_version: "1.2.0".to_owned(),
+            registry_version: crate::diagnostics::version::REGISTRY_VERSION.to_owned(),
             module_scope: Some("planner".to_owned()),
             rules_enabled: 25,
             diagnostics: DiagnosticSet::empty(),
@@ -173,7 +173,7 @@ mod tests {
             report.to_json(),
             concat!(
                 "{\"profile\":\"default\",\"profileVersion\":\"1.0.0\",",
-                "\"registryVersion\":\"1.2.0\",\"moduleScope\":\"planner\",",
+                "\"registryVersion\":\"1.5.0\",\"moduleScope\":\"planner\",",
                 "\"rulesEnabled\":25,\"counts\":{\"error\":0,\"warning\":1,\"info\":2}}"
             )
         );

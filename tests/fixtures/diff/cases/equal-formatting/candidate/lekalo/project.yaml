@@ -1,0 +1,19 @@
+# candidate: reordered keys, single quotes, blank-line churn; same semantics
+schema_version: "1.0.0"
+definitions:
+  - derived_from:
+      - 'SHOP-REQ-001'
+    id: shop
+    kind: project
+    version: 1
+    description: 'Shop example'
+    id_registry:
+      tombstones:
+        - since: 1
+          reason: 'deleted'
+          id: 'shop.legacy'
+      rename_history:
+        - same_identity: true
+          definition_version: 1
+          to: 'shop.legacy_text'
+          from: 'shop.legacy_txt'

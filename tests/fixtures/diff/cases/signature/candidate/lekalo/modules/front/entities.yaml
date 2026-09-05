@@ -1,0 +1,48 @@
+schema_version: "1.0.0"
+definitions:
+  - id: shop.item_id
+    kind: scalar
+    version: 1
+    description: "Item identifier"
+    base: uuid
+    visibility: project
+  - id: shop.item_state
+    kind: enum
+    version: 1
+    description: "Item lifecycle"
+    values:
+      - value: draft
+      - value: live
+  - id: shop.text
+    kind: scalar
+    version: 1
+    base: string
+  - id: shop.money
+    kind: scalar
+    version: 1
+    base: number
+  - id: shop.item
+    kind: entity
+    version: 1
+    description: "Catalog item"
+    fields:
+      - name: title
+        type: "shop.text"
+        required: true
+      - name: price
+        type: "shop.money"
+        required: true
+      - name: discount
+        type: "shop.money?"
+    identity:
+      - title
+  - id: shop.audit
+    kind: entity
+    version: 1
+    description: "Audit trail"
+    fields:
+      - name: at
+        type: "shop.text"
+        required: true
+    identity:
+      - at

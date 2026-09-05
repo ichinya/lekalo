@@ -1,0 +1,8 @@
+schema_version: "1.0.0"
+definitions:
+  - id: rest
+    kind: project
+    version: 1
+    description: "Taxonomy coverage example"
+    derived_from:
+      - "REST-REQ-001"

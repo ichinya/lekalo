@@ -1,0 +1,8 @@
+schema_version: "1.0.0"
+definitions:
+  - id: shop
+    kind: module
+    version: 1
+    description: "Front module"
+    imports:
+      - util

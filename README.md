@@ -223,10 +223,11 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.3.0.json` (issue #12 extended it with the
+`contracts/diagnostic-registry.v1.5.0.json` (issue #12 extended it with the
 `semantic.*`/`validate.*` families and issue #13 added the `graph.*`
 family, each as a minor increment; issue #15 added the `inspect.*` family
-the same way).
+the same way; issue #16 added the `impact.*` family and issue #18 adds the
+`diff.*` family, each as a wire-shape-preserving minor increment).
 
 ## Generated-artifact ownership and drift detection
 
@@ -265,8 +266,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #17 carries prospective product
-0.1.25 (issue #16 published product 0.1.24 (annotated tag `v0.1.24` on
+independent of product releases; issue #18 carries prospective product
+0.1.26 (issue #17 published product 0.1.25 (annotated tag `v0.1.25` on
+`e627fe5`); issue #16 published product 0.1.24 (annotated tag `v0.1.24` on
 `b4109e5`); issue #20 published product 0.1.23 (annotated tag `v0.1.23` on
 `15be55a`); issue #21 published product 0.1.22 at `2dab70e`; issue #15
 published product 0.1.21 at `9ab5b07`; issue #23

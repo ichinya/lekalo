@@ -1,0 +1,23 @@
+schema_version: "1.0.0"
+definitions:
+  - id: shop.create_item
+    kind: command
+    version: 1
+    description: "Create one item"
+    input:
+      - name: title
+        type: "shop.item_id"
+        required: true
+      - name: code
+        type: "shop.text"
+        required: true
+    effects:
+      - "shop.persist_item"
+  - id: shop.persist_item
+    kind: effect
+    version: 1
+    description: "Persist the item"
+    operation: update
+    entity: "shop.item"
+    emits:
+      - "shop.item_created"

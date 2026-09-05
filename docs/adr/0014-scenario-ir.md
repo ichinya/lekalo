@@ -9,8 +9,9 @@ on `31468e9`); issue #15 published product 0.1.21 (annotated tag
 `v0.1.21` on `9ab5b07`); issue #21 published product 0.1.22 (annotated
 tag `v0.1.22` on `2dab70e`); issue #20 published product 0.1.23
 (annotated tag `v0.1.23` on `15be55a`); issue #16 published product 0.1.24
-(annotated tag `v0.1.24` on `b4109e5`); issue #17 now carries the
-**prospective product candidate 0.1.25** in every accepted path (workspace
+(annotated tag `v0.1.24` on `b4109e5`); issue #17 published product 0.1.25
+(annotated tag `v0.1.25` on `e627fe5`); issue #18 now carries the
+**prospective product candidate 0.1.26** in every accepted path (workspace
 `Cargo.toml`, both `lekalo` packages in
 `Cargo.lock`, the `--version` behavior and its pinning tests, the
 regenerated committed lock golden and its digests, `README.md`,

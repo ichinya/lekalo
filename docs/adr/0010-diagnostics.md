@@ -3,8 +3,9 @@
 Date: 2026-09-04
 Status: accepted for issue #11
 
-Custody: issue #17 now carries the **prospective product candidate 0.1.25**
-in every accepted path (issue #16 published product 0.1.24 (annotated
+Custody: issue #18 now carries the **prospective product candidate 0.1.26**
+in every accepted path (issue #17 published product 0.1.25 (annotated tag
+`v0.1.25` on `e627fe5`); issue #16 published product 0.1.24 (annotated
 tag `v0.1.24` on `b4109e5`); issue #20 published product 0.1.23 (annotated tag
 `v0.1.23` on `15be55a`); issue #21 published product 0.1.22 (annotated tag
 `v0.1.22` on `2dab70e`); issue #23 published product 0.1.20 (annotated tag

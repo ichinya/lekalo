@@ -1,0 +1,41 @@
+schema_version: "1.0.0"
+definitions:
+  - id: rest.create
+    kind: command
+    version: 1
+    description: "Create one item"
+    input:
+      - name: title
+        type: "rest.text"
+        required: true
+      - name: note
+        type: "rest.text"
+    effects:
+      - "rest.persist"
+      - "rest.audit"
+  - id: rest.update
+    kind: command
+    version: 1
+    description: "Update one item"
+    input:
+      - name: title
+        type: "rest.text"
+        required: true
+    effects:
+      - "rest.persist"
+  - id: rest.persist
+    kind: effect
+    version: 1
+    description: "Persist the item"
+    operation: create
+    entity: "rest.archive"
+    emits:
+      - "rest.item_archived"
+  - id: rest.audit
+    kind: effect
+    version: 1
+    description: "Audit the change"
+    operation: update
+    entity: "rest.archive"
+    emits:
+      - "rest.item_archived"

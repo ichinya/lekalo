@@ -1,0 +1,18 @@
+schema_version: "1.0.0"
+definitions:
+  - id: rest.item_created
+    kind: event
+    version: 1
+    description: "An item was created"
+    payload:
+      - name: item_id
+        type: "rest.text"
+        required: true
+  - id: rest.item_archived
+    kind: event
+    version: 1
+    description: "An item was archived"
+    payload:
+      - name: item_id
+        type: "rest.text"
+        required: true

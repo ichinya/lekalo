@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.25. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.26. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -216,14 +216,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.25"
+  "version": "0.1.26"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.25`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.1.26`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -292,6 +292,45 @@ The change set of `conflicts --changed` is a typed handoff in the command
 line; the tool never parses Git or infers changed symbols. The contract,
 guarantees, and limits are documented in [docs/effect-graph.md](effect-graph.md)
 and [ADR-0013](adr/0013-effect-graph.md).
+
+## Diff
+
+```sh
+lekalo diff old/ new/ --profile source-consumer,wire-consumer
+lekalo diff --base old/ new/
+lekalo diff --format json --project old/ new/
+```
+
+`diff` compares two accepted, normalized project selections by meaning,
+never by lines: both sides load through the accepted selection policy,
+compile to the typed IR, and are projected into canonical semantic
+projections keyed by stable semantic IDs and member keys. The answer is
+one closed wire document with the equality verdict, the ordered change
+records, direct reason codes, the affected-seed set, per-profile
+decisions, and non-executable migration hints. Renames resolve only
+through a declared `renamed_from` claim plus a matching same-identity
+history edge (multi-hop chains within the recorded bound); replacements
+and deletions resolve through their tombstones; a claim without its
+registry edge classifies as conflicting, never as a guessed alias. Old
+IDs are never silently reusable.
+
+Exactly one base and one candidate are required: two positionals, or
+`--base OLD` plus one positional. `--profiles` (repeatable terms,
+comma-separated) selects among the five closed built-in profiles
+(`source-consumer`, `wire-consumer`, `storage-consumer`,
+`target-consumer`, `advisory`); without it only the profile-independent
+facts are reported. `--format json` is the only v1 format and renders
+the canonical bytes; the envelope adds exactly one trailing newline.
+The diff verdict never computes an exit: a successful comparison is
+exit `0`, invalid inputs are exit `1` with the registered `diff.*`
+diagnostics. The command never parses Git (the `--base` selector is a
+project directory; Git change detection belongs to #16), loads adapters,
+or writes.
+
+Success envelopes wrap the payload as `{"status":"valid","diff":{...}}`.
+The contract, taxonomy, profiles, limits, and guarantees are documented
+in [docs/semantic-diff.md](semantic-diff.md) and
+[ADR-0019](adr/0019-semantic-diff.md).
 
 ## Context
 
@@ -474,5 +513,6 @@ scripts/test-graph-contracts.mjs,
 scripts/test-effect-graph-contracts.mjs,
 scripts/test-artifact-manifest-contracts.mjs,
 scripts/test-cache-contracts.mjs,
-and scripts/test-context-contracts.mjs through NODE_PATH,
+scripts/test-context-contracts.mjs,
+and scripts/test-semantic-diff-contracts.mjs through NODE_PATH,
 and fails the job on any install, version, or gate failure.

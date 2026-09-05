@@ -1,0 +1,15 @@
+schema_version: "1.0.0"
+definitions:
+  - id: shop.binding_node
+    kind: target-binding
+    version: 1
+    portability: target-specific
+    description: "Node binding"
+    target: deno-typescript
+  - id: shop.api_create
+    kind: endpoint
+    version: 1
+    description: "HTTP create entry"
+    invokes: "shop.create_item"
+    method: PUT
+    path: "/v2/items"

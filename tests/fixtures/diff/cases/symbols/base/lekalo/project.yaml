@@ -1,0 +1,18 @@
+schema_version: "1.0.0"
+definitions:
+  - id: shop
+    kind: project
+    version: 1
+    description: "Shop example"
+    derived_from:
+      - "SHOP-REQ-001"
+    id_registry:
+      rename_history:
+        - from: "shop.legacy_txt"
+          to: "shop.legacy_text"
+          definition_version: 1
+          same_identity: true
+      tombstones:
+        - id: "shop.legacy"
+          reason: "deleted"
+          since: 1

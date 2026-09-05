@@ -1,0 +1,6 @@
+schema_version: "1.0.0"
+definitions:
+  - id: rest
+    kind: module
+    version: 1
+    description: "Rest module"
