@@ -24,6 +24,27 @@ fn binary() -> &'static str {
     env!("CARGO_BIN_EXE_lekalo")
 }
 
+/// Resolve a fixture path to its canonical on-disk spelling.
+///
+/// GitHub's Windows runners export `%TEMP%` spelled with the 8.3 alias of
+/// the profile directory (`C:\Users\RUNNER~1\AppData\Local\Temp`), and the
+/// selection policy denies alias spellings (`structure.selection-alias`)
+/// before any document classification is reached. Temp-backed fixtures
+/// must therefore chdir into the resolved spelling; `canonicalize` returns
+/// it under a `\\?\` verbatim prefix that is stripped back to the plain
+/// drive form so the child sees ordinary path components.
+fn alias_free_path(path: &Path) -> PathBuf {
+    let canonical = path.canonicalize().expect("fixture path must exist");
+    #[cfg(windows)]
+    match canonical.to_string_lossy().strip_prefix(r"\\?\") {
+        // `\\?\C:\...` -> `C:\...`; UNC (`\\?\UNC\...`) stays verbatim.
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => canonical,
+    }
+    #[cfg(not(windows))]
+    canonical
+}
+
 /// Run `lekalo load` with a relative selector from `cwd` (default: the
 /// workspace root). Absolute selectors are grammar violations and are never
 /// exercised through this helper.
@@ -33,8 +54,9 @@ fn run_load(selector: &str, extra_args: &[&str], cwd: Option<&Path>) -> Output {
     for argument in extra_args {
         command.arg(argument);
     }
+    let cwd = cwd.map(alias_free_path);
     command
-        .current_dir(cwd.unwrap_or(&workspace_root()))
+        .current_dir(cwd.as_deref().unwrap_or(&workspace_root()))
         .env_remove("LEKALO_PROJECT");
     command.output().expect("run lekalo load")
 }

@@ -13,9 +13,27 @@ const REFERENCE_PROJECT: &str = "tests/fixtures/lockfile/project";
 fn lekalo_in(dir: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_lekalo"))
         .args(args)
-        .current_dir(dir)
+        .current_dir(alias_free_path(dir))
         .output()
         .expect("run the real lekalo binary")
+}
+
+/// GitHub's Windows runners export `%TEMP%` spelled with the 8.3 alias of
+/// the profile directory (`C:\Users\RUNNER~1\AppData\Local\Temp`), and the
+/// selection policy denies alias spellings (`structure.selection-alias`)
+/// before any command logic runs. Chdir the child into the resolved,
+/// alias-free spelling; `canonicalize` returns it under a `\\?\` verbatim
+/// prefix that is stripped back to the plain drive form.
+fn alias_free_path(path: &Path) -> PathBuf {
+    let canonical = path.canonicalize().expect("fixture path must exist");
+    #[cfg(windows)]
+    match canonical.to_string_lossy().strip_prefix(r"\\?\") {
+        // `\\?\C:\...` -> `C:\...`; UNC (`\\?\UNC\...`) stays verbatim.
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => canonical,
+    }
+    #[cfg(not(windows))]
+    canonical
 }
 
 fn stdout(output: &Output) -> String {
