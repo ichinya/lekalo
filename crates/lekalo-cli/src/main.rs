@@ -114,6 +114,49 @@ enum Commands {
         #[command(subcommand)]
         command: GraphCommands,
     },
+    /// Project the declared and detected effect graph of operations.
+    Effects {
+        #[command(subcommand)]
+        command: EffectsCommands,
+    },
+}
+
+/// The `effects` subcommands: a thin handoff to the core effect engine.
+#[derive(Debug, Subcommand)]
+enum EffectsCommands {
+    /// Show one operation's declared and detected effects.
+    Show {
+        /// The semantic id of the operation (or `operation:id`).
+        operation: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Report which operations write (or read with `--readers`) one
+    /// resource or exact field.
+    Writers {
+        /// The resource: an entity semantic id, an exact `entity.field`,
+        /// or a typed `kind:id` resource reference.
+        resource: String,
+        /// Answer the reverse-readers view instead of the writers view.
+        #[arg(long)]
+        readers: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Classify parallel-change conflicts for one explicit change set.
+    ///
+    /// The changed operations are supplied here as a typed handoff; this
+    /// command never parses Git or infers changed symbols (#16 owns that).
+    Conflicts {
+        /// Comma-separated changed operation ids.
+        #[arg(long, value_name = "OPERATIONS")]
+        changed: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
 }
 
 /// The `graph` subcommands: a thin handoff to the core graph engine.
@@ -225,6 +268,7 @@ fn main() -> ExitCode {
                 lekalo_core::Request::Context { symbol, budget }.dispatch()
             }
             Commands::Graph { command } => run_graph(command),
+            Commands::Effects { command } => run_effects(command),
         },
         Err(error) => match error.kind() {
             ErrorKind::DisplayHelp => {
@@ -624,6 +668,272 @@ fn render_ir_success(
         model.definitions.len()
     );
     (json, human)
+}
+
+/// Run one `effects` subcommand: load and compile the project, hand the
+/// IR to the core effect engine, and project the result. Every effect
+/// decision — projection, evidence attachment, comparison, conflicts,
+/// limits, diagnostics — lives in the core; this binary only selects,
+/// renders, and maps exits.
+fn run_effects(command: EffectsCommands) -> DomainResult {
+    match command {
+        EffectsCommands::Show { operation, project } => with_effects(&project, |project, graph| {
+            effects_show(project, graph, &operation)
+        }),
+        EffectsCommands::Writers {
+            resource,
+            readers,
+            project,
+        } => with_effects(&project, |project, graph| {
+            effects_writers(project, graph, &resource, readers)
+        }),
+        EffectsCommands::Conflicts { changed, project } => {
+            with_effects(&project, |project, graph| {
+                effects_conflicts(project, graph, &changed)
+            })
+        }
+    }
+}
+
+/// Load and compile the selected project, build the effect graph, and run
+/// `step`. Load, IR, and effect failures pass through untouched in that
+/// order.
+fn with_effects(
+    project: &Option<String>,
+    step: impl FnOnce(
+        &lekalo_core::ir::CompiledProject,
+        &lekalo_core::effects::EffectGraph,
+    ) -> DomainResult,
+) -> DomainResult {
+    let selection = LoadSelection {
+        project: project
+            .clone()
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    let model = match lekalo_core::loader::normalize_model(&selection) {
+        Err(result) => return result,
+        Ok(model) => model,
+    };
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Err(failure) => return failure.into_result(),
+        Ok(compilation) => compilation,
+    };
+    let graph = match lekalo_core::effects::build(&compilation.project) {
+        Err(set) => return DomainResult::invalid(set),
+        Ok(graph) => graph,
+    };
+    step(&compilation.project, &graph)
+}
+
+/// Resolve the `effects writers` selector: a typed `kind:id` resource,
+/// an entity semantic id, or an exact `entity.field` scope. A selector
+/// that names no known definition is an explicit `graph.unknown-node`
+/// failure; a known resource with no matching effects is an empty
+/// success.
+fn effects_selector(
+    project: &lekalo_core::ir::CompiledProject,
+    selector: &str,
+) -> Result<lekalo_core::effects::SubjectSelector, DomainResult> {
+    use lekalo_core::effects::{
+        FieldName as EffectField, ResourceId, ResourceKind, SubjectSelector,
+    };
+    let unknown = || DomainResult::invalid(lekalo_core::effects::unknown_subject_set(selector));
+    if let Some((kind_key, id)) = selector.split_once(':') {
+        let Some(kind) = ResourceKind::from_key(kind_key) else {
+            return Err(unknown());
+        };
+        let Some(resource) = ResourceId::new(kind, id) else {
+            return Err(unknown());
+        };
+        return Ok(SubjectSelector::entity(resource));
+    }
+    let known_entity = |semantic: &str| {
+        project.definitions.iter().any(|definition| {
+            definition.kind() == lekalo_core::ir::DefinitionKind::Entity
+                && definition.id().as_str() == semantic
+        })
+    };
+    if known_entity(selector) {
+        let resource = ResourceId::new(ResourceKind::Canonical, selector).expect("checked id");
+        return Ok(SubjectSelector::entity(resource));
+    }
+    if let Some((entity, field)) = selector.rsplit_once('.') {
+        if known_entity(entity) {
+            if let (Some(resource), Some(field)) = (
+                ResourceId::new(ResourceKind::Canonical, entity),
+                EffectField::new(field),
+            ) {
+                return Ok(SubjectSelector::exact_field(resource, field));
+            }
+        }
+    }
+    Err(unknown())
+}
+
+/// `lekalo effects show OPERATION`: the operation's declared and
+/// detected edges; an unknown operation is an explicit
+/// `graph.unknown-node` failure, never an empty success.
+fn effects_show(
+    project: &lekalo_core::ir::CompiledProject,
+    graph: &lekalo_core::effects::EffectGraph,
+    operation: &str,
+) -> DomainResult {
+    let Some(operation) = operation_id(operation) else {
+        return DomainResult::invalid(lekalo_core::effects::unknown_subject_set(operation));
+    };
+    if !graph.knows_operation(&operation)
+        && !project_defines_operation(project, operation.semantic_id())
+    {
+        return DomainResult::invalid(lekalo_core::effects::unknown_subject_set(
+            operation.as_str(),
+        ));
+    }
+    let payload = match lekalo_core::effects::canonical::show_payload_bytes(graph, &operation) {
+        Ok(payload) => payload,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let edges = graph.operation_edges(&operation);
+    let mut human = vec![format!(
+        "effects {} : {} edges",
+        operation.as_str(),
+        edges.len()
+    )];
+    for edge in &edges {
+        human.push(effect_line("effect", edge));
+    }
+    effects_envelope(payload, human.join("\n"))
+}
+
+/// `lekalo effects writers RESOURCE [--readers]`: the reverse view over
+/// one subject selector.
+fn effects_writers(
+    project: &lekalo_core::ir::CompiledProject,
+    graph: &lekalo_core::effects::EffectGraph,
+    resource: &str,
+    readers: bool,
+) -> DomainResult {
+    let selector = match effects_selector(project, resource) {
+        Ok(selector) => selector,
+        Err(result) => return result,
+    };
+    let payload =
+        match lekalo_core::effects::canonical::writers_payload_bytes(graph, &selector, readers) {
+            Ok(payload) => payload,
+            Err(set) => return DomainResult::invalid(set),
+        };
+    let edges = if readers {
+        graph.readers(&selector)
+    } else {
+        graph.writers(&selector)
+    };
+    let edges = match edges {
+        Ok(edges) => edges,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let view = if readers { "readers" } else { "writers" };
+    let mut human = vec![format!(
+        "{} of {} : {} operations",
+        view,
+        selector.subject().resource(),
+        edges.len()
+    )];
+    for edge in &edges {
+        human.push(effect_line(view, edge));
+    }
+    effects_envelope(payload, human.join("\n"))
+}
+
+/// `lekalo effects conflicts --changed OPS`: classify the explicit
+/// change set against the whole graph; never infers changed symbols.
+fn effects_conflicts(
+    _project: &lekalo_core::ir::CompiledProject,
+    graph: &lekalo_core::effects::EffectGraph,
+    changed: &str,
+) -> DomainResult {
+    let mut operations = Vec::new();
+    for name in changed.split(',') {
+        let name = name.trim();
+        if name.is_empty() {
+            return DomainResult::usage_error();
+        }
+        match operation_id(name) {
+            Some(operation) => operations.push(operation),
+            None => return DomainResult::invalid(lekalo_core::effects::unknown_subject_set(name)),
+        }
+    }
+    let change_set = match lekalo_core::effects::ChangeSet::new(operations) {
+        Ok(change_set) => change_set,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let report = match graph.conflicts(&change_set) {
+        Ok(report) => report,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let payload = match lekalo_core::effects::canonical::conflicts_payload_bytes(&report) {
+        Ok(payload) => payload,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let mut human = vec![format!(
+        "conflicts for {} changed operations : {} conflicts{}",
+        change_set.changed().len(),
+        report.items().len(),
+        if report.complete() { "" } else { " (bounded)" }
+    )];
+    for item in report.items() {
+        human.push(format!(
+            "  {} {} x {} on {}",
+            item.classification().key(),
+            item.left(),
+            item.right(),
+            item.subject()
+        ));
+    }
+    effects_envelope(payload, human.join("\n"))
+}
+
+/// Parse one bare semantic id or `operation:id` wire form.
+fn operation_id(text: &str) -> Option<lekalo_core::effects::OperationId> {
+    if text.contains(':') {
+        lekalo_core::effects::OperationId::from_qualified(text)
+    } else {
+        lekalo_core::effects::OperationId::from_semantic(text)
+    }
+}
+
+/// Whether the project defines one operation symbol.
+fn project_defines_operation(project: &lekalo_core::ir::CompiledProject, semantic: &str) -> bool {
+    project.definitions.iter().any(|definition| {
+        matches!(
+            definition,
+            lekalo_core::ir::Definition::Command(_) | lekalo_core::ir::Definition::Query(_)
+        ) && definition.id().as_str() == semantic
+    })
+}
+
+/// The accepted effects success envelope: the fixed key order `status`,
+/// `effects`. Human and JSON are projections of the same result.
+fn effects_envelope(payload: String, human: String) -> DomainResult {
+    DomainResult::graph(
+        format!("{{\"status\":\"valid\",\"effects\":{}}}", payload),
+        human,
+        Vec::new(),
+    )
+}
+
+/// One stable human effect line: `kind operation -> resource[.field] (confidence)`.
+fn effect_line(label: &str, edge: &lekalo_core::effects::EffectEdge) -> String {
+    let key = edge.key();
+    let subject = match key.subject().field() {
+        Some(field) => format!("{}#{}", key.subject().resource(), field),
+        None => key.subject().resource().to_string(),
+    };
+    format!(
+        "  {label} {} {} -> {} ({})",
+        key.kind(),
+        key.operation(),
+        subject,
+        edge.confidence().as_str()
+    )
 }
 
 /// Run one `graph` subcommand: load and compile the project, hand the IR

@@ -2,7 +2,7 @@
 
 Issue #11 defines the stable, machine-readable diagnostic contract: one
 closed wire item (`lekalo/diagnostic/v1.0.0`), one embedded rule registry
-(`dev.lekalo.diagnostic-registry@1.2.0`, registry version `1.2.0` — issue #12 added the `semantic.*`/`validate.*` families and issue #13 added the `graph.*` family, each as a wire-shape-preserving minor increment), a typed
+(`dev.lekalo.diagnostic-registry@1.2.0`, registry version `1.2.0` — issue #12 added the `semantic.*`/`validate.*` families and issue #13 added the `graph.*` family, each as a wire-shape-preserving minor increment; issue #14's effect graph reuses the `graph.*` infrastructure rules with bounded tokens and keeps its comparison states as result data, so the registry file is unchanged), a typed
 Rust API, deterministic normalization, and the human and JSON projections
 through the shared `DomainResult` envelope. The contracts are published as
 

@@ -3,11 +3,12 @@
 Date: 2026-09-05
 Status: accepted for issue #13
 
-Custody: this issue carries the **prospective product candidate 0.1.11** in
-every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
-`Cargo.lock`, the `--version` behavior and its pinning tests, `README.md`,
-`docs/cli.md`); issue #12 published product 0.1.10 (annotated tag
-`v0.1.10` on `fdfbcb5`, followed by the CI-parity fix `47b2ec8`). The graph
+Custody: this issue published product 0.1.11 (annotated tag `v0.1.11` on
+`007c01d`); issue #14 now carries the **prospective product candidate
+0.1.12** in every accepted path (workspace `Cargo.toml`, both `lekalo`
+packages in `Cargo.lock`, the `--version` behavior and its pinning tests,
+`README.md`, `docs/cli.md`); issue #12 published product 0.1.10 (annotated
+tag `v0.1.10` on `fdfbcb5`, followed by the CI-parity fix `47b2ec8`). The graph
 contract version (`lekalo/graph/v1.0.0`, identity `dev.lekalo.graph@1.0.0`)
 and the diagnostic registry increment (`1.1.0` → `1.2.0`) are independent of
 the product release, of the Model/IR/protocol contract versions, and of the
@@ -148,8 +149,9 @@ is an explicit `graph.path-not-found` failure — never an empty success.
 - #15/#16/#17 consume exact node lookup, reverse/transitive closures, and
   bounded `GraphSlice`s with explicit completeness and truncation reasons —
   without source rescans.
-- #14 extends the registry with typed effect relations instead of forking a
-  second graph; #23 turns scenario `covers` references into `verifies` when
+- #14 builds its typed effect model beside this graph — an independent
+  contract reusing these identities, indexes, and traversal APIs instead of
+  overloading generic relations; #23 turns scenario `covers` references into `verifies` when
   native evidence exists; #83 providers contribute `extracted` edges only
   through typed bounded envelopes.
 - #20 may key caches by the canonical graph digest plus the exact graph, IR,

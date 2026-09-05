@@ -1,0 +1,334 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/effect-graph.schema.v1.0.0.json",
+  "title": "Lekalo effect graph",
+  "description": "Closed contract of one deterministic effect graph over semantic operations (issue #14). The effect contract version is independent of the product release, of the Model/IR/graph/protocol contract versions, and of the diagnostic registry version. A canonical effect payload carries the project identity, the contract identity, the exact source Model version, the declared and detected effect edges, and metadata. Declared effects are projected from the accepted canonical IR; detected effects enter only as typed evidence records. No physical root, raw source, timestamp, runtime value, host, locale, target implementation body, or adapter transcript may appear.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "modelVersion",
+    "metadata",
+    "effects"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/effects/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.effects@1.0.0"
+    },
+    "modelVersion": {
+      "enum": ["0.1.0", "1.0.0"]
+    },
+    "project": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "declaredCount",
+        "detectedCount",
+        "effectCount",
+        "envelopeCount",
+        "operationCount"
+      ],
+      "properties": {
+        "declaredCount": {
+          "$ref": "#/$defs/count"
+        },
+        "detectedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "effectCount": {
+          "$ref": "#/$defs/count"
+        },
+        "envelopeCount": {
+          "$ref": "#/$defs/count"
+        },
+        "operationCount": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "effects": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/effect"
+      }
+    }
+  },
+  "$defs": {
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "resourceKind": {
+      "enum": [
+        "canonical",
+        "target-resource",
+        "external-service",
+        "cache",
+        "event",
+        "job",
+        "output",
+        "audit"
+      ]
+    },
+    "effectKind": {
+      "enum": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "write-field",
+        "emit-event",
+        "enqueue-job",
+        "external-call",
+        "cache-read",
+        "cache-write",
+        "cache-invalidate",
+        "publish-output",
+        "audit-log",
+        "transaction-boundary"
+      ]
+    },
+    "writeAction": {
+      "enum": ["set", "clear", "append", "replace", "merge"]
+    },
+    "confidence": {
+      "enum": ["canonical", "verified", "extracted", "inferred", "unknown"]
+    },
+    "trustState": {
+      "enum": [
+        "verified",
+        "current",
+        "extracted",
+        "inferred",
+        "stale",
+        "unknown",
+        "rejected"
+      ]
+    },
+    "operationId": {
+      "type": "string",
+      "pattern": "^operation:[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "effectOrigin": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^effect:[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        {
+          "type": "string",
+          "pattern": "^#[0-9]+$"
+        }
+      ]
+    },
+    "namespacedId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/resourceKind"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        }
+      }
+    },
+    "canonicalIrProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "irDigest", "role", "occurrence", "symbol"],
+      "properties": {
+        "type": {
+          "const": "canonical-ir"
+        },
+        "irDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "role": {
+          "enum": ["query-reads", "command-effect", "effect-emits"]
+        },
+        "occurrence": {
+          "$ref": "#/$defs/ordinal"
+        },
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        }
+      }
+    },
+    "evidenceProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "adapterId",
+        "targetId",
+        "protocolVersion",
+        "evidenceDigest",
+        "trust"
+      ],
+      "properties": {
+        "type": {
+          "const": "evidence"
+        },
+        "adapterId": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "targetId": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "evidenceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "trust": {
+          "$ref": "#/$defs/trustState"
+        }
+      }
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "ordinal": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "kind",
+        "action",
+        "resource",
+        "field",
+        "effect",
+        "occurrence",
+        "provenance",
+        "confidence",
+        "transactionGroup",
+        "sensitivity"
+      ],
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/operationId"
+        },
+        "kind": {
+          "$ref": "#/$defs/effectKind"
+        },
+        "action": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/writeAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resource": {
+          "$ref": "#/$defs/resource"
+        },
+        "field": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9_-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effect": {
+          "$ref": "#/$defs/effectOrigin"
+        },
+        "occurrence": {
+          "$ref": "#/$defs/ordinal"
+        },
+        "provenance": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/canonicalIrProvenance"
+            },
+            {
+              "$ref": "#/$defs/evidenceProvenance"
+            }
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "transactionGroup": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sensitivity": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["contract", "state"],
+              "properties": {
+                "contract": {
+                  "type": "string",
+                  "minLength": 5,
+                  "maxLength": 128,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*@[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "state": {
+                  "enum": ["classified", "unclassified"]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

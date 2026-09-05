@@ -1,0 +1,58 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.create_task
+    kind: effect
+    version: 1
+    description: "Creates the focused task"
+    operation: create
+    entity: "planner.task"
+    emits:
+      - "planner.task_focused"
+  - id: planner.edit_task
+    kind: effect
+    version: 1
+    description: "Edits task fields"
+    operation: update
+    entity: "planner.task"
+  - id: planner.archive_task
+    kind: effect
+    version: 1
+    description: "Archives a task"
+    operation: delete
+    entity: "planner.task"
+    emits:
+      - "planner.task_archived"
+  - id: planner.focus_task
+    kind: command
+    version: 1
+    description: "Focus one task"
+    derived_from:
+      - "PLANNER-REQ-001"
+    input:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+    effects:
+      - "planner.create_task"
+  - id: planner.edit_task_cmd
+    kind: command
+    version: 1
+    description: "Edit task fields"
+    input:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: title
+        type: "planner.text"
+    effects:
+      - "planner.edit_task"
+  - id: planner.archive_task_cmd
+    kind: command
+    version: 1
+    description: "Archive one task"
+    input:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+    effects:
+      - "planner.archive_task"

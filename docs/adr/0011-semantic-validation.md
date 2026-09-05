@@ -3,7 +3,7 @@
 Date: 2026-09-04
 Status: accepted for issue #12
 
-Custody: issue #13 now carries the **prospective product candidate 0.1.11**
+Custody: issue #14 now carries the **prospective product candidate 0.1.12**
 in every accepted path; this issue published product 0.1.10 (annotated
 tag `v0.1.10` on `fdfbcb5`, followed by the CI-parity fix `47b2ec8`),
 with the same accepted custody paths as every issue since #3. The validation-profile contract version

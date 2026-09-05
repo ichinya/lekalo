@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.11. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.12. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -211,14 +211,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.11"
+  "version": "0.1.12"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.11`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.1.12`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -254,6 +254,39 @@ the `spans` sidecar (declaration path and range per node, resolved through
 the #8 source map) without touching the semantic bytes. The contract,
 guarantees, and limits are documented in [docs/graph.md](graph.md) and
 [ADR-0012](adr/0012-dependency-graph.md).
+
+## Effects
+
+Issue #14 projects the deterministic effect graph of operations through
+three thin subcommands. The core owns every decision (declared
+projection, evidence attachment, comparison, conflicts, limits); the
+binary only selects, renders, and maps exits onto the accepted 0/1
+envelope. Successes exit 0 on stdout; unknown operations or selectors
+(`graph.unknown-node`, `LEK-GRAPH-007`), bound exhaustion
+(`graph.traversal-limit`), and fatal input (`graph.input-invalid`) exit 1
+on stderr.
+
+```sh
+lekalo effects show planner.focus_task
+# effects operation:planner.focus_task : 2 edges
+#   effect create operation:planner.focus_task -> canonical:planner.task (canonical)
+#   effect emit-event operation:planner.focus_task -> canonical:planner.task_focused (canonical)
+
+lekalo effects writers planner.task                   # reverse writers of an entity
+lekalo effects writers planner.task --readers         # reverse readers instead
+lekalo effects writers planner.task.title             # exact field scope
+lekalo effects writers cache:vendor.app.key           # typed adapter resource
+
+lekalo effects conflicts --changed planner.edit_task_cmd,planner.archive_task_cmd
+# conflicts for 2 changed operations : N conflicts
+#   delete-overlap planner.archive_task_cmd x planner.edit_task_cmd on canonical:planner.task
+```
+
+Success envelopes wrap the payload as `{"status":"valid","effects":{...}}`.
+The change set of `conflicts --changed` is a typed handoff in the command
+line; the tool never parses Git or infers changed symbols. The contract,
+guarantees, and limits are documented in [docs/effect-graph.md](effect-graph.md)
+and [ADR-0013](adr/0013-effect-graph.md).
 
 ## Development checks
 

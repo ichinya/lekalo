@@ -142,6 +142,23 @@ in the core; the contract, guarantees, and limits live in
 and `contracts/graph.schema.v1.0.0.json`; hermetic fixtures are under
 `tests/fixtures/graph/`.
 
+## Effect graph of reads, writes, and external calls
+
+Issue #14 projects the deterministic effect graph beside the dependency
+graph: the declared reads, CRUD, and event emissions of the typed IR plus
+typed detected effects from evidence envelopes — never detection from
+source and never inference from names. Closed P0 kinds, entity/field
+scope, declared-versus-detected comparison with explainable states,
+reverse readers/writers, conservative parallel-change conflict
+classification over explicit change sets, bounded summaries, and
+byte-identical canonical export. The thin
+`lekalo effects show | writers | conflicts` handoff keeps every decision
+in the core; the contract, guarantees, and limits live in
+[docs/effect-graph.md](docs/effect-graph.md),
+[ADR-0013](docs/adr/0013-effect-graph.md), and
+`contracts/effect-graph.schema.v1.0.0.json`; hermetic fixtures are under
+`tests/fixtures/effects/`.
+
 ## Stable machine-readable diagnostics
 
 Issue #11 freezes the diagnostic wire: every failure carries closed wire
@@ -176,8 +193,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #13 carries prospective product
-0.1.11 (issue #12 published product 0.1.10 at `fdfbcb5`; issue #11
+independent of product releases; issue #14 carries prospective product
+0.1.12 (issue #13 published product 0.1.11 at `007c01d`; issue #12
+published product 0.1.10 at `fdfbcb5`; issue #11
 published product 0.1.9 at `5b885bf`; issue #10
 published product 0.1.8 at `8ddbbf0`; issues #8/#9
 published products 0.1.6/0.1.7, the latter at `f0b3784`).

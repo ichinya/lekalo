@@ -1,0 +1,60 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.task_id
+    kind: scalar
+    version: 1
+    description: "Stable task identifier"
+    base: uuid
+    visibility: project
+  - id: planner.text
+    kind: scalar
+    version: 1
+    description: "Human-readable text"
+    base: string
+  - id: planner.due_date
+    kind: scalar
+    version: 1
+    description: "Calendar due date"
+    base: date
+  - id: planner.task_state
+    kind: enum
+    version: 1
+    description: "Task lifecycle state"
+    values:
+      - value: backlog
+        description: "Not started"
+      - value: focused
+        description: "Currently focused"
+      - value: done
+        description: "Completed"
+  - id: planner.due_window
+    kind: value-object
+    version: 1
+    description: "Inclusive due window"
+    fields:
+      - name: from
+        type: "planner.due_date"
+        required: true
+      - name: to
+        type: "planner.due_date"
+        required: true
+  - id: planner.task
+    kind: entity
+    version: 1
+    description: "A focusable task"
+    fields:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: title
+        type: "planner.text"
+        required: true
+      - name: state
+        type: "planner.task_state"
+        required: true
+      - name: due
+        type: "planner.due_date?"
+      - name: window
+        type: "list<planner.due_window>"
+    identity:
+      - task_id

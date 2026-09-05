@@ -1,6 +1,7 @@
 //! Target-neutral request and result contracts for Lekalo.
 
 pub mod diagnostics;
+pub mod effects;
 pub mod graph;
 pub mod ir;
 pub mod loader;
