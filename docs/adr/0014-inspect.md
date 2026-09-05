@@ -3,10 +3,12 @@
 Date: 2026-09-05
 Status: accepted for issue #15
 
-Custody: this issue carries the **prospective product candidate 0.1.21** in
-every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
-`Cargo.lock` including the regenerated committed golden lock and its
-digest, the `--version` behavior and its pinning tests, `README.md`,
+Custody: this issue published product 0.1.21 (annotated tag `v0.1.21` on
+`9ab5b07`); issue #21 now carries the **prospective product candidate
+0.1.22** in every accepted path (workspace `Cargo.toml`, both `lekalo`
+packages in `Cargo.lock` including the regenerated committed golden
+lock and its digest, the `--version` behavior and its pinning tests,
+`README.md`,
 `docs/cli.md`); issue #23 published product 0.1.20 (annotated tag
 `v0.1.20` on `eef1863`); issue #22 published product 0.1.19 (annotated
 tag `v0.1.19` on `31468e9`); issue #14 published product 0.1.12

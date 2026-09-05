@@ -3,10 +3,11 @@
 Date: 2026-09-04
 Status: accepted for issue #12
 
-Custody: issue #15 now carries the **prospective product candidate 0.1.21**
+Custody: issue #21 now carries the **prospective product candidate 0.1.22**
 in every accepted path; issue #23 published product 0.1.20 (annotated tag
 `v0.1.20` on `eef1863`); issue #22 published product 0.1.19 (annotated
-tag `v0.1.19` on `31468e9`); issue #14 published product 0.1.12
+tag `v0.1.19` on `31468e9`); issue #15 published product 0.1.21 (annotated
+tag `v0.1.21` on `9ab5b07`); issue #14 published product 0.1.12
 (annotated tag `v0.1.12` on `81666da`); this issue published product
 0.1.10 (annotated
 tag `v0.1.10` on `fdfbcb5`, followed by the CI-parity fix `47b2ec8`),

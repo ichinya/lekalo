@@ -3,6 +3,7 @@
 //! #11 both renderers project the exact same `DomainResult`.
 
 use clap::{error::ErrorKind, Args, ColorChoice, Parser, Subcommand};
+use lekalo_core::artifacts::{ArtifactFailure, CheckReceipt, GenerateService};
 use lekalo_core::loader::LoadSelection;
 use lekalo_core::lockfile::plan::LockService;
 use lekalo_core::lockfile::resolution::CandidateSet;
@@ -134,6 +135,28 @@ enum Commands {
     Trace {
         #[command(subcommand)]
         command: TraceCommands,
+    },
+    /// Check generated-artifact ownership and drift, or plan and apply a
+    /// confirmed clean of orphaned generated files.
+    Generate {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Read-only drift check: verify the ownership manifest against
+        /// the exact lock, inputs, adapters, and bytes; writes nothing.
+        #[arg(long)]
+        check: bool,
+        /// Plan (with --dry-run) or apply (with --confirm) the
+        /// deterministic clean of orphaned generated files.
+        #[arg(long)]
+        clean: bool,
+        /// Compute the clean plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the clean plan with this exact identity
+        /// (`sha256:<64 lowercase hex>`).
+        #[arg(long, value_name = "PLAN_ID")]
+        confirm: Option<String>,
     },
 }
 
@@ -317,6 +340,13 @@ fn main() -> ExitCode {
             Commands::Graph { command } => run_graph(command),
             Commands::Effects { command } => run_effects(command),
             Commands::Trace { command } => run_trace(command),
+            Commands::Generate {
+                project,
+                check,
+                clean,
+                dry_run,
+                confirm,
+            } => run_generate(project, check, clean, dry_run, confirm),
         },
         Err(error) => match error.kind() {
             ErrorKind::DisplayHelp => {
@@ -1467,4 +1497,92 @@ fn matched_kind_label(selection: &lekalo_core::trace::QuerySelection) -> &'stati
         lekalo_core::trace::QuerySelection::DiagnosticsFor(_) => "diagnostic",
         lekalo_core::trace::QuerySelection::Gaps => "gap",
     }
+}
+
+/// Run `lekalo generate`: `--check` is the read-only drift gate,
+/// `--clean --dry-run` previews the deterministic clean plan, and
+/// `--clean --confirm sha256:<planId>` applies exactly that plan.
+fn run_generate(
+    project: Option<String>,
+    check: bool,
+    clean: bool,
+    dry_run: bool,
+    confirm: Option<String>,
+) -> DomainResult {
+    // Exactly one mode; the clean modifiers belong to --clean only; a
+    // mutating clean needs a bound preview identity, never a bare run.
+    if check == clean || (!clean && (dry_run || confirm.is_some())) {
+        return DomainResult::usage_error();
+    }
+    if clean {
+        if dry_run == confirm.is_some() {
+            if dry_run {
+                return DomainResult::usage_error();
+            }
+            // A mutating clean without a bound preview never ships by accident.
+            return DomainResult::from(&ArtifactFailure::PreviewRequired);
+        }
+        if let Some(plan_id) = &confirm {
+            if well_formed_plan_id(plan_id).is_none() {
+                return DomainResult::usage_error();
+            }
+        }
+    }
+    let selection = selection_for(&project);
+    if check {
+        match GenerateService::check(&selection) {
+            Ok(receipt) => DomainResult::receipt(
+                serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                check_human(&receipt),
+            ),
+            Err(failure) => DomainResult::from(&failure),
+        }
+    } else if dry_run {
+        match GenerateService::clean_plan(&selection) {
+            Ok(receipt) => DomainResult::receipt(
+                serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                clean_human("preview", &receipt.plan_id, receipt.count),
+            ),
+            Err(failure) => DomainResult::from(&failure),
+        }
+    } else {
+        let plan_id = confirm.as_deref().expect("exclusivity checked above");
+        match GenerateService::clean_apply(&selection, plan_id) {
+            Ok(receipt) => {
+                let verb = if receipt.changed {
+                    "applied"
+                } else {
+                    "unchanged"
+                };
+                DomainResult::receipt(
+                    serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                    clean_human(verb, &receipt.plan_id, receipt.deleted),
+                )
+            }
+            Err(failure) => DomainResult::from(&failure),
+        }
+    }
+}
+
+/// The stable human summary of a drift check.
+fn check_human(receipt: &CheckReceipt) -> String {
+    format!(
+        "generate check {} manifest {} lock {} (artifacts {}, clean {}, \
+         stale {}, manual-drift {}, missing {}, orphan {}, reported {})",
+        receipt.verdict,
+        receipt.manifest_digest.as_deref().unwrap_or("none"),
+        receipt.lock_digest,
+        receipt.counts.artifacts,
+        receipt.counts.clean,
+        receipt.counts.stale,
+        receipt.counts.manual_drift,
+        receipt.counts.missing,
+        receipt.counts.orphan,
+        receipt.counts.reported,
+    )
+}
+
+/// The stable human summary of a clean preview or apply.
+fn clean_human(verb: &str, plan_id: &str, count: usize) -> String {
+    format!("generate {verb} plan {} (-{count})", plan_id)
 }

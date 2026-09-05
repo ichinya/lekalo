@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.21. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.22. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -29,18 +29,21 @@ lekalo graph show SYMBOL [--project DIR]
 lekalo graph callers SYMBOL [--transitive] [--project DIR]
 lekalo graph path FROM TO [--project DIR]
 lekalo graph export [--format json] [--spans] [--project DIR]
+lekalo generate --check [--project DIR]
+lekalo generate --clean --dry-run [--project DIR]
+lekalo generate --clean --confirm sha256:PLAN_ID [--project DIR]
 lekalo inspect SYMBOL [--include SECTIONS] [--project DIR]
 lekalo impact SYMBOL
 lekalo context SYMBOL --budget TOKENS
 ```
 
 `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
-`validate`, `graph`, `effects`, and `inspect` are implemented. The two
-remaining subcommands are recognized stubs: valid syntax reaches the named
-capability and returns `unsupported`. `SYMBOL` is an opaque string at this
-layer, and `TOKENS` is an unsigned integer. Semantic ID rules, validation,
-graph construction, and real impact or context behavior belong to later
-issues.
+`validate`, `graph`, `effects`, `generate`, and `inspect` are implemented.
+The two remaining subcommands are recognized stubs: valid syntax reaches the
+named capability and returns `unsupported`. `SYMBOL` is an opaque string at
+this layer, and `TOKENS` is an unsigned integer. Semantic ID rules,
+validation, graph construction, and real impact or context behavior belong
+to later issues.
 When those capabilities are implemented they are bound by
 dev.lekalo.semantic-ids@0.1.0 to use the validated semantic ID verbatim as
 their canonical key; the implemented loader already consumes those IDs
@@ -212,14 +215,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.21"
+  "version": "0.1.22"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.21`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.1.22`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -354,6 +357,40 @@ completeness, diagnostics. The contract, guarantees, and limits are
 documented in [docs/inspect.md](inspect.md) and
 [ADR-0014](adr/0014-inspect.md).
 
+## Generate
+
+`lekalo generate --check` verifies the derived ownership manifest at
+`.lekalo/generated/manifests/ownership.json` against the exact lock
+revision, the current Model/IR inputs, the locked adapter identity, the
+exact artifact bytes, and the declared managed root. It is strictly
+read-only and never spawns adapters. A clean or report-only check exits
+0; generated drift, staleness, or absence and any orphan exit 1 on
+stderr; integrity and path-policy refusals exit 3; a future manifest
+discriminator exits 5.
+
+```sh
+lekalo generate --check
+valid generate check clean manifest sha256:9d1f... lock sha256:2c40... \
+  (artifacts 1, clean 1, stale 0, manual-drift 0, missing 0, orphan 0, reported 0)
+```
+
+`--clean --dry-run` prints the deterministic clean plan (orphan paths,
+content digests, sizes) and its `planId` without touching a byte.
+`--clean --confirm sha256:PLAN_ID` applies exactly that plan after full
+revalidation, deleting only unchanged orphans inside
+`.lekalo/generated/`; any change between preview and apply yields
+`lock.source-changed` with zero deletes. A mutating clean without a
+bound plan identity is refused with `lock.preview-required`. The
+contract, verdict table, and clean rules are documented in
+[docs/artifact-manifest.md](artifact-manifest.md) and
+[ADR-0015](adr/0015-artifact-ownership-manifest.md).
+
+```sh
+lekalo generate --clean --dry-run
+lekalo generate --clean --confirm sha256:973d6dd3ef84df5e286622a796e542f9dac20974047f21ec0a1a095501949734
+generate applied plan sha256:973d... (-1)
+```
+
 ## Development checks
 
 ```sh
@@ -369,6 +406,9 @@ Windows, and macOS, and runs every accepted Node contract checker and suite on
 Node.js 18 and 24. On both Node majors the contracts job additionally
 provisions exact Ajv 8.17.1 under the runner temp directory, outside the
 checkout, exposes it to scripts/test-model-ajv.mjs, scripts/test-lockfile-ajv.mjs,
-scripts/test-diagnostic-contracts.mjs, and
-scripts/test-validation-contracts.mjs through NODE_PATH,
+scripts/test-diagnostic-contracts.mjs,
+scripts/test-validation-contracts.mjs,
+scripts/test-graph-contracts.mjs,
+scripts/test-effect-graph-contracts.mjs,
+and scripts/test-artifact-manifest-contracts.mjs through NODE_PATH,
 and fails the job on any install, version, or gate failure.

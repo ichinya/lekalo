@@ -1,0 +1,21 @@
+schema_version: "1.0.0"
+definitions:
+  - id: notify.notify_user
+    kind: command
+    version: 1
+    description: "Notify one recipient about a planner task"
+    input:
+      - name: user_id
+        type: "notify.user_id"
+        required: true
+      - name: task
+        type: "planner.task"
+        required: true
+    effects:
+      - "notify.send_push"
+  - id: notify.send_push
+    kind: effect
+    version: 1
+    description: "Delivers the push notification"
+    operation: update
+    entity: "notify.user"

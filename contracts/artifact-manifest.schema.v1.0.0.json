@@ -1,0 +1,328 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.artifact-manifest@1.0.0",
+  "title": "Lekalo generated-artifact ownership manifest v1",
+  "description": "Closed wire schema for the derived ownership manifest of generated artifacts at .lekalo/generated/manifests/ownership.json. The discriminator schema_version is lekalo/artifact-manifest/v1.0.0 and is independent of the product release, of the Model/IR/lock/protocol/adapter/profile contract versions, and of the diagnostic registry. The manifest is Lekalo-owned runtime-derived data under the accepted authority kind lekalo.generated-intermediate: it is never a canonical model file, lockfile, cache database, report bundle, or release attestation, and it is never the sole copy of a semantic decision. Every version is one exact canonical SemVer spelling without build metadata; every digest is sha256:<64 lowercase hex> over its declared domain only; the content digest of one artifact is SHA-256 over that file's exact observed bytes (canonicalization exact-file-bytes: newline, encoding, and whitespace changes are drift, never normalized away); manifest_digest is SHA-256 over the canonical payload bytes of this document with the manifest_digest property removed and without the final LF, so the document can never carry its own digest. Canonical form is compact UTF-8 JSON without BOM or comments, object keys in unsigned UTF-8 byte order, artifacts sorted by (semantic_owner, path, artifact_kind) bytes, source_maps sorted by the same artifact key bytes with entries sorted by (start, end, semantic_id) bytes, and exactly one trailing LF in the file. Every array sort is part of the closed format. No field carries an absolute path, native path, URL, credential, host, user, timestamp, source snippet, or raw provider output. This schema is the wire envelope; the Rust implementation in crates/lekalo-core/src/artifacts is normative for cross-field invariants.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "project_ref",
+    "lock_ref",
+    "inputs",
+    "artifacts",
+    "source_maps",
+    "manifest_digest"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/artifact-manifest/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.artifact-manifest@1.0.0"
+    },
+    "project_ref": {
+      "$ref": "#/$defs/project_id",
+      "description": "The stable project semantic id the artifacts were generated from; never a path or host name."
+    },
+    "lock_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "digest"],
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/lock/v1.0.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest",
+          "description": "The exact LockDigest of the lockfile revision this manifest was generated under; the manifest is stale against any other revision."
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "ir"],
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/input_pin",
+          "description": "The exact canonical Model payload (version and payload digest) the artifacts were generated from."
+        },
+        "ir": {
+          "$ref": "#/$defs/input_pin",
+          "description": "The exact canonical typed-IR payload compiled from that Model."
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "maxItems": 65536,
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "source_maps": {
+      "type": "array",
+      "maxItems": 65536,
+      "items": {
+        "$ref": "#/$defs/source_map"
+      }
+    },
+    "manifest_digest": {
+      "$ref": "#/$defs/digest",
+      "description": "SHA-256 over the canonical payload bytes of this document with the manifest_digest property removed and without the final LF; non-self-referential by construction."
+    }
+  },
+  "$defs": {
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "component_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,127}$"
+    },
+    "project_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+      "description": "One-segment immutable project semantic id (Model 1.0 grammar); the Rust grammar is normative."
+    },
+    "semantic_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,2}$",
+      "description": "Two- or three-segment stable symbol semantic id (Model 1.0 grammar); the Rust grammar is normative."
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}(/[a-z0-9][a-z0-9_.-]{0,63}){1,31}$",
+      "description": "Project-relative POSIX logical path with portable lowercase segments; the accepted path policy (traversal, absolute, drive, URI, backslash, percent, colon, device, short-name, NFC, and trailing dot/space refusals) is normative and enforced by the Rust checker."
+    },
+    "byte_range": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "input_pin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "digest"],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest",
+          "description": "SHA-256 over the exact canonical payload bytes of that input."
+        }
+      }
+    },
+    "artifact_kind": {
+      "enum": [
+        "source",
+        "test",
+        "schema",
+        "config",
+        "docs",
+        "data"
+      ]
+    },
+    "lifecycle": {
+      "enum": [
+        "generated",
+        "scaffolded",
+        "checked",
+        "external",
+        "custom"
+      ]
+    },
+    "regeneration_policy": {
+      "enum": [
+        "on-input-change",
+        "once",
+        "validate-only",
+        "reference-only",
+        "manual-only"
+      ]
+    },
+    "adapter_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "digest", "artifacts", "protocol_version"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/component_id"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest",
+          "description": "The exact adapter package digest pinned in the lockfile; a version-only match is invalid."
+        },
+        "artifacts": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["platform", "digest"],
+            "properties": {
+              "platform": {
+                "type": "string",
+                "pattern": "^(any|[a-z0-9_]+(?:-[a-z0-9_]+)+)$"
+              },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        },
+        "protocol_version": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/version"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Must equal the locked target protocol version; null only while the lock pins no target protocol."
+        }
+      }
+    },
+    "generator_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/component_id"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "digest", "canonicalization"],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest",
+          "description": "SHA-256 over the artifact file's exact observed bytes."
+        },
+        "canonicalization": {
+          "const": "exact-file-bytes"
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "semantic_owner",
+        "path",
+        "artifact_kind",
+        "lifecycle",
+        "content",
+        "input_refs",
+        "regeneration_policy"
+      ],
+      "properties": {
+        "semantic_owner": {
+          "$ref": "#/$defs/semantic_id",
+          "description": "The stable semantic symbol that owns the artifact; never an authority-matrix canonical owner and never a free-form string."
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "artifact_kind": {
+          "$ref": "#/$defs/artifact_kind"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/lifecycle"
+        },
+        "adapter_ref": {
+          "$ref": "#/$defs/adapter_ref",
+          "description": "The exact locked adapter identity that produced or verifies the artifact; deep-equal to the resolved lock component. Required exactly when the bound lock pins a published target protocol and forbidden while that protocol is unpublished; the Rust checker is normative for this cross-binding."
+        },
+        "generator_ref": {
+          "$ref": "#/$defs/generator_ref",
+          "description": "The logical generator identity supplied by that locked adapter; never a separately invented install."
+        },
+        "content": {
+          "$ref": "#/$defs/content"
+        },
+        "input_refs": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/semantic_id"
+          },
+          "description": "The stable semantic input symbols traced into this artifact; sorted by bytes, unique."
+        },
+        "regeneration_policy": {
+          "$ref": "#/$defs/regeneration_policy",
+          "description": "Must pair one-to-one with lifecycle: generated/on-input-change, scaffolded/once, checked/validate-only, external/reference-only, custom/manual-only."
+        }
+      }
+    },
+    "source_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "input_revision", "entries"],
+      "properties": {
+        "artifact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["semantic_owner", "path", "artifact_kind"],
+          "properties": {
+            "semantic_owner": {
+              "$ref": "#/$defs/semantic_id"
+            },
+            "path": {
+              "$ref": "#/$defs/path"
+            },
+            "artifact_kind": {
+              "$ref": "#/$defs/artifact_kind"
+            }
+          }
+        },
+        "input_revision": {
+          "$ref": "#/$defs/digest",
+          "description": "Must equal the digest over the canonical inputs payload of this manifest; binds every range to the exact inputs the artifact was generated from."
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["semantic_id", "start", "end"],
+            "properties": {
+              "semantic_id": {
+                "$ref": "#/$defs/semantic_id"
+              },
+              "start": {
+                "$ref": "#/$defs/byte_range"
+              },
+              "end": {
+                "$ref": "#/$defs/byte_range",
+                "description": "Half-open byte offset into the generated artifact bytes; end must be greater than start."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -207,6 +207,23 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 family, each as a minor increment; issue #15 added the `inspect.*` family
 the same way).
 
+## Generated-artifact ownership and drift detection
+
+Issue #21 adds the ownership manifest for generated artifacts and the
+read-only drift gate. Every artifact entry binds its semantic owner, the
+exact locked adapter and generator identity, the exact lockfile revision
+and generation inputs, and the SHA-256 of the file's exact bytes;
+generated drift, staleness, absence, and orphans under
+`.lekalo/generated/` block `lekalo generate --check`, while scaffolded,
+checked, external, and custom findings are reported without blocking and
+never repaired. Orphan cleanup runs only as a deterministic preview
+followed by an exact `--confirm sha256:PLAN_ID` with full revalidation
+and zero-deletes races. Source maps carry semantic-id to generated-range
+traceability bound to the exact inputs revision. See
+[docs/artifact-manifest.md](docs/artifact-manifest.md),
+[ADR-0015](docs/adr/0015-artifact-ownership-manifest.md), and
+`contracts/artifact-manifest.schema.v1.0.0.json`.
+
 ## Semantic validation
 
 Issue #12 implements `lekalo validate` over the typed IR: phase-ordered
@@ -227,9 +244,10 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #15 carries prospective product
-0.1.21 (issue #22 published product 0.1.19 at `31468e9`; issue #23
-published product 0.1.20 at `eef1863`; issue #14
+independent of product releases; issue #21 carries prospective product
+0.1.22 (issue #15 published product 0.1.21 at `9ab5b07`; issue #23
+published product 0.1.20 at `eef1863`; issue #22
+published product 0.1.19 at `31468e9`; issue #14
 published product 0.1.12 at `81666da`; issue #13
 published product 0.1.11 at `007c01d`; issue #12
 published product 0.1.10 at `fdfbcb5`; issue #11

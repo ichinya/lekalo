@@ -985,21 +985,29 @@ impl Fs {
     }
 }
 
+/// The closed set of structure codes whose refusal is a policy denial
+/// (the denied exit class): links, reparse aliases, special files,
+/// hostile names, and placement violations. One source of truth for the
+/// checker and for downstream services that must reclassify a loader
+/// passthrough without weakening the rule identity.
+pub(crate) fn structure_policy_code(code: &str) -> Option<&'static str> {
+    Some(match code {
+        "structure.path-link" => "structure.path-link",
+        "structure.path-special" => "structure.path-special",
+        "structure.selection-alias" => "structure.selection-alias",
+        "structure.nested-root" => "structure.nested-root",
+        "structure.canonical-unexpected-entry" => "structure.canonical-unexpected-entry",
+        "structure.module-subdirectory" => "structure.module-subdirectory",
+        "structure.runtime-unexpected-entry" => "structure.runtime-unexpected-entry",
+        _ => return None,
+    })
+}
+
 /// Map a scan failure onto the accepted outcome classes: links, reparse
 /// aliases, and special files are policy denials; everything else is
 /// malformed structure.
 pub fn classify_failure(failure: ScanFailure) -> StructureOutcome {
-    let denied = matches!(
-        failure.code,
-        "structure.path-link"
-            | "structure.path-special"
-            | "structure.selection-alias"
-            | "structure.nested-root"
-            | "structure.canonical-unexpected-entry"
-            | "structure.module-subdirectory"
-            | "structure.runtime-unexpected-entry"
-    );
-    if denied {
+    if structure_policy_code(failure.code).is_some() {
         StructureOutcome::Denied(vec![failure])
     } else {
         StructureOutcome::Invalid(vec![failure])
