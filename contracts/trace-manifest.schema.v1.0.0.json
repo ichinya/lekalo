@@ -1,0 +1,593 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/trace-manifest.schema.v1.0.0.json",
+  "title": "Lekalo neutral trace manifest",
+  "description": "Closed contract of one neutral trace manifest (issue #22): the requirement -> symbol -> binding/artifact -> scenario/native-test -> gate chain expressed without embedding any OpenSpec, HLV, Scenario, Graph, or Artifact native wire object. The trace contract version is independent of the product release, of the Model/IR/graph/effects/protocol contract versions, and of the diagnostic registry version. Lekalo owns this contract and its typed validation semantics; persisted trace.manifest instances remain AI Factory-owned direct evidence under the accepted authority boundary (canonicalOwner ai-factory, allowedPaths .ai-factory/traces/**). No physical root, raw source, timestamp, host, locale, provider transcript, report body, or stdout/stderr may appear.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "manifestId",
+    "projectRef",
+    "completeness",
+    "sourceRevision",
+    "modelRef",
+    "exportProfile",
+    "nodes",
+    "relations",
+    "gaps"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/trace-manifest/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.trace-manifest@1.0.0"
+    },
+    "manifestId": {
+      "description": "The stable logical export identity of one manifest; never a path, URL, or timestamp.",
+      "$ref": "#/$defs/manifestId"
+    },
+    "projectRef": {
+      "description": "The opaque stable project identity; no repository URL or physical root.",
+      "$ref": "#/$defs/semanticId"
+    },
+    "completeness": {
+      "description": "The completeness claim. full requires zero gaps, every relation confirmed, and complete sink coverage for the export profile; partial requires at least one explicit gap.",
+      "enum": [
+        "full",
+        "partial"
+      ]
+    },
+    "sourceRevision": {
+      "description": "The exact source control revision the whole manifest is bound to.",
+      "$ref": "#/$defs/revision"
+    },
+    "modelRef": {
+      "description": "The exact Model contract version and canonical model digest binding.",
+      "$ref": "#/$defs/contractRef"
+    },
+    "irRef": {
+      "$ref": "#/$defs/contractRef"
+    },
+    "graphRef": {
+      "$ref": "#/$defs/contractRef"
+    },
+    "artifactManifestRef": {
+      "$ref": "#/$defs/contractRef"
+    },
+    "exportProfile": {
+      "description": "The closed chain-coverage claim: every sink node must be reachable from at least one source node of the profile following relation directions.",
+      "enum": [
+        "requirement-to-gate",
+        "requirement-to-test",
+        "requirement-to-scenario",
+        "artifact-to-gate",
+        "artifact-to-test"
+      ]
+    },
+    "nodes": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "relations": {
+      "type": "array",
+      "maxItems": 250000,
+      "items": {
+        "$ref": "#/$defs/relation"
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/gap"
+      }
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "description": "A stable semantic id: dotted lowercase segments or an uppercase requirement id (issue #6 grammar).",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_.:-]{0,191}$",
+      "maxLength": 192
+    },
+    "manifestId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]{2,127}$",
+      "maxLength": 128
+    },
+    "revision": {
+      "description": "An exact lowercase hex source revision: 40 hex (SHA-1) or 64 hex (SHA-256).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "digest": {
+      "description": "The exact `sha256:<64 lowercase hex>` digest grammar.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "contractVersion": {
+      "description": "A canonical `X.Y.Z` contract version.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "nodeId": {
+      "description": "One occurrence-safe node identity, unique inside one manifest.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,191}$",
+      "maxLength": 192
+    },
+    "adapterId": {
+      "description": "A namespaced provider or adapter identity.",
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(/[a-z][a-z0-9-]{0,62})?$",
+      "maxLength": 128
+    },
+    "externalSystem": {
+      "description": "The closed external source-system vocabulary; identity data always stays owner-owned.",
+      "enum": [
+        "openspec",
+        "hlv",
+        "source-native",
+        "aifhub",
+        "lekalo"
+      ]
+    },
+    "logicalPath": {
+      "description": "A privacy-safe project-relative POSIX logical path; lexical grammar only, never resolved physically.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$",
+      "maxLength": 512
+    },
+    "externalRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "system",
+        "originalId"
+      ],
+      "properties": {
+        "system": {
+          "$ref": "#/$defs/externalSystem"
+        },
+        "originalId": {
+          "description": "The external original id preserved verbatim (OpenSpec requirement, HLV native test/diagnostic, provider id); never display text or rendered prose.",
+          "$ref": "#/$defs/semanticId"
+        },
+        "contractVersion": {
+          "$ref": "#/$defs/contractVersion"
+        },
+        "revision": {
+          "$ref": "#/$defs/revision"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "contractRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "digest"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/contractVersion"
+        },
+        "digest": {
+          "description": "The canonical digest of the referenced contract payload.",
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId",
+        "nodeKind"
+      ],
+      "properties": {
+        "nodeId": {
+          "$ref": "#/$defs/nodeId"
+        },
+        "nodeKind": {
+          "enum": [
+            "requirement",
+            "symbol",
+            "artifact",
+            "scenario",
+            "native_test",
+            "gate",
+            "diagnostic"
+          ]
+        },
+        "requirementId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "semanticId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "artifactId": {
+          "description": "The stable artifact-entry identity from the artifact-manifest seam.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "maxLength": 128
+        },
+        "ownership": {
+          "description": "The closed artifact ownership vocabulary.",
+          "enum": [
+            "generated",
+            "scaffolded",
+            "checked",
+            "external",
+            "custom"
+          ]
+        },
+        "path": {
+          "$ref": "#/$defs/logicalPath"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "revision": {
+          "$ref": "#/$defs/revision"
+        },
+        "generatorRef": {
+          "$ref": "#/$defs/adapterId"
+        },
+        "manifestDigest": {
+          "description": "The canonical digest of the artifact manifest revision the entry is bound to.",
+          "$ref": "#/$defs/digest"
+        },
+        "scenarioId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "testId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "gateId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "diagnosticId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "contractVersion": {
+          "$ref": "#/$defs/contractVersion"
+        },
+        "evidenceDigest": {
+          "description": "The exact digest of the referenced evidence payload; identity never derives from it.",
+          "$ref": "#/$defs/digest"
+        },
+        "externalRefs": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/externalRef"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "requirement"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "requirementId"
+            ],
+            "properties": {
+              "requirementId": {
+                "$ref": "#/$defs/semanticId"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "symbol"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "semanticId"
+            ],
+            "properties": {
+              "semanticId": {
+                "$ref": "#/$defs/semanticId"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "artifact"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "artifactId",
+              "ownership",
+              "path",
+              "contentDigest"
+            ],
+            "properties": {
+              "artifactId": {
+                "$ref": "#/$defs/semanticId"
+              },
+              "ownership": {
+                "enum": [
+                  "generated",
+                  "scaffolded",
+                  "checked",
+                  "external",
+                  "custom"
+                ]
+              },
+              "path": {
+                "$ref": "#/$defs/logicalPath"
+              },
+              "contentDigest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "scenario"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "scenarioId"
+            ],
+            "properties": {
+              "scenarioId": {
+                "$ref": "#/$defs/semanticId"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "native_test"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "testId"
+            ],
+            "properties": {
+              "testId": {
+                "$ref": "#/$defs/semanticId"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "gate"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "gateId"
+            ],
+            "properties": {
+              "gateId": {
+                "$ref": "#/$defs/semanticId"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "diagnostic"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "diagnosticId"
+            ],
+            "properties": {
+              "diagnosticId": {
+                "$ref": "#/$defs/semanticId"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relationId",
+        "relationKind",
+        "fromNode",
+        "toNode",
+        "occurrence",
+        "provenance",
+        "confidence",
+        "status",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "relationId": {
+          "description": "The canonical identity: `sha256:` over the fixed domain tag plus the relation kind, endpoints, and occurrence, so repeated endpoint pairs stay distinct.",
+          "$ref": "#/$defs/digest"
+        },
+        "relationKind": {
+          "enum": [
+            "implements",
+            "binds",
+            "covers",
+            "verifies",
+            "evidences",
+            "derived_from",
+            "references",
+            "supersedes"
+          ]
+        },
+        "fromNode": {
+          "$ref": "#/$defs/nodeId"
+        },
+        "toNode": {
+          "$ref": "#/$defs/nodeId"
+        },
+        "occurrence": {
+          "description": "The stable parent member/role/ordinal of this use; never an array position.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$",
+          "maxLength": 64
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "enum": [
+            "exact",
+            "high",
+            "medium",
+            "low",
+            "unknown"
+          ]
+        },
+        "status": {
+          "enum": [
+            "confirmed",
+            "candidate",
+            "stale",
+            "conflicting",
+            "invalid",
+            "unsupported",
+            "infrastructure"
+          ]
+        },
+        "evidenceRefs": {
+          "description": "The exact nodes carrying the evidence for this relation; every reference must resolve.",
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/nodeId"
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "sourceSystem",
+        "sourceRevision",
+        "sourceDigest",
+        "recordedBy"
+      ],
+      "properties": {
+        "origin": {
+          "enum": [
+            "declared",
+            "observed",
+            "inferred",
+            "imported"
+          ]
+        },
+        "sourceSystem": {
+          "$ref": "#/$defs/externalSystem"
+        },
+        "sourceRevision": {
+          "$ref": "#/$defs/revision"
+        },
+        "sourceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "recordedBy": {
+          "$ref": "#/$defs/adapterId"
+        },
+        "sourcePath": {
+          "$ref": "#/$defs/logicalPath"
+        }
+      }
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gapKind",
+        "status"
+      ],
+      "properties": {
+        "gapKind": {
+          "enum": [
+            "missing-requirement",
+            "missing-symbol",
+            "missing-binding",
+            "missing-artifact",
+            "missing-scenario",
+            "missing-native-test",
+            "missing-gate",
+            "stale-revision",
+            "digest-mismatch",
+            "conflict",
+            "unsupported-provider",
+            "privacy-redacted"
+          ]
+        },
+        "status": {
+          "description": "A gap is never confirmed: the closed gap statuses exclude confirmed by construction.",
+          "enum": [
+            "candidate",
+            "stale",
+            "conflicting",
+            "invalid",
+            "unsupported",
+            "infrastructure"
+          ]
+        },
+        "anchorNode": {
+          "description": "The existing node the missing chain segment hangs on.",
+          "$ref": "#/$defs/nodeId"
+        },
+        "expected": {
+          "description": "The opaque external id the chain expected; never fabricated into a node.",
+          "$ref": "#/$defs/semanticId"
+        },
+        "sourcePath": {
+          "$ref": "#/$defs/logicalPath"
+        }
+      }
+    }
+  }
+}

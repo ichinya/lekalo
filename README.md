@@ -159,6 +159,23 @@ in the core; the contract, guarantees, and limits live in
 `contracts/effect-graph.schema.v1.0.0.json`; hermetic fixtures are under
 `tests/fixtures/effects/`.
 
+## Neutral trace manifest
+
+Issue #22 defines the closed, versioned traceability contract
+(`lekalo/trace-manifest/v1.0.0`) for the requirement -> symbol ->
+binding/artifact -> scenario/native-test -> gate chain, consumable by
+AIFHub as plain JSON with no Rust coupling. Lekalo owns the contract,
+typed validation, canonical export, and derived queries; persisted
+`trace.manifest` evidence stays AI Factory-owned under the accepted
+authority boundary. Closed relation kinds with an explicit endpoint
+matrix, occurrence-safe many-to-many edges, verbatim external ids,
+full/partial/gap/dangling semantics, byte-stable canonical export and
+digest, and the thin `lekalo trace validate | export | query` handoff.
+The details live in [docs/trace-manifest.md](docs/trace-manifest.md),
+[ADR-0014](docs/adr/0014-trace-manifest.md), and
+`contracts/trace-manifest.schema.v1.0.0.json`; hermetic fixtures are
+under `tests/fixtures/trace/`.
+
 ## Stable machine-readable diagnostics
 
 Issue #11 freezes the diagnostic wire: every failure carries closed wire
@@ -193,8 +210,10 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #14 carries prospective product
-0.1.20 (issue #13 published product 0.1.11 at `007c01d`; issue #12
+independent of product releases; issue #22 carries prospective product
+0.1.19 (issue #23 published product 0.1.20 at `eef1863`; issue #14
+published product 0.1.12 at `81666da`; issue #13
+published product 0.1.11 at `007c01d`; issue #12
 published product 0.1.10 at `fdfbcb5`; issue #11
 published product 0.1.9 at `5b885bf`; issue #10
 published product 0.1.8 at `8ddbbf0`; issues #8/#9

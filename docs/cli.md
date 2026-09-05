@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.20. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.19. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -211,14 +211,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.20"
+  "version": "0.1.19"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.20`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.1.19`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -287,6 +287,43 @@ The change set of `conflicts --changed` is a typed handoff in the command
 line; the tool never parses Git or infers changed symbols. The contract,
 guarantees, and limits are documented in [docs/effect-graph.md](effect-graph.md)
 and [ADR-0013](adr/0013-effect-graph.md).
+
+## Trace
+
+Issue #22 validates, exports, and queries the neutral trace manifest
+through three thin subcommands. The core owns every decision (wire and
+semantics validation, the completeness policy, canonical bytes,
+queries); the binary only reads the document, selects, renders, and maps
+exits onto the accepted 0/1 envelope. Successes exit 0 on stdout;
+wire/semantics violations (`graph.input-invalid`, `LEK-GRAPH-003`),
+unknown query subjects (`graph.unknown-node`, `LEK-GRAPH-007`), and
+unreadable files (`loader.io`) exit 1 on stderr.
+
+```sh
+lekalo trace validate tests/fixtures/trace/full.trace.json
+# trace manifest planner-trace-full
+#   completeness full (requirement-to-gate)
+#   nodes 9; relations 9; gaps 0; uncovered sinks 0
+
+lekalo trace export tests/fixtures/trace/full.trace.json > manifest.json
+# human export is exactly the canonical bytes + LF
+
+lekalo trace query tests/fixtures/trace/full.trace.json requirements-for:planner.focus_task
+# requirement PLANNER-REQ-001 implements requirements.focus_task confirmed/exact
+# requirement PLANNER-REQ-002 implements requirements.focus_task_archive confirmed/exact
+
+lekalo trace query tests/fixtures/trace/partial.trace.json gaps
+# gap missing-gate candidate anchor=symbol:planner.archive_task expected=hlv.gate.archive
+# gap stale-revision stale anchor=symbol:planner.archive_task
+```
+
+`export --json` embeds the canonical bytes plus the `manifestDigest`
+(`sha256:` over exactly those bytes). The closed query selectors are
+`requirements-for:ID`, `symbols-for:ID`, `artifacts-for:ID`,
+`tests-for:ID`, `gates-for:ID`, `diagnostics-for:ID`, and `gaps`. The
+contract, guarantees, and limits are documented in
+[docs/trace-manifest.md](trace-manifest.md) and
+[ADR-0014](adr/0014-trace-manifest.md).
 
 ## Development checks
 

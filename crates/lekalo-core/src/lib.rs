@@ -9,6 +9,7 @@ pub mod lockfile;
 pub mod project_fs;
 pub mod result;
 pub mod scenario;
+pub mod trace;
 pub mod validator;
 pub mod versioning;
 

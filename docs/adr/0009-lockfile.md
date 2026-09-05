@@ -10,7 +10,8 @@ every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 tag on `8ddbbf0`). Issue #9 published product 0.1.7 at `f0b3784`; issue
 #11 published product 0.1.9 at `5b885bf`; #12 published product
 0.1.10 at `fdfbcb5`; issue #13 published product 0.1.11 at `007c01d`; issue
-#14 now carries prospective product 0.1.12. The lock
+#14 published product 0.1.12 at `81666da`; issue #23 published product
+0.1.20 at `eef1863`; issue #22 now carries prospective product 0.1.19. The lock
 schema version (`lekalo/lock/v1.0.0`, identity `dev.lekalo.lock@1.0.0`), the
 resolver algorithm version (1.0.0), and every contract version remain
 independent of the product release by design.

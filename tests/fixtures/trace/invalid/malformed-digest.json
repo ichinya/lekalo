@@ -1,0 +1,291 @@
+{
+  "gaps": [],
+  "relations": [
+    {
+      "relationId": "sha256:d53c5c552aa2ba71d1c1b74f71a2566f4dc8f55eeaf1e6cd0c3b89093070ac44",
+      "relationKind": "implements",
+      "fromNode": "symbol:planner.focus_task",
+      "toNode": "requirement:PLANNER-REQ-001",
+      "occurrence": "requirements.focus_task",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "openspec",
+        "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sourceDigest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    },
+    {
+      "relationId": "sha256:37f2325ff4bd0ec20054118747b3f77366ce97ccacd1b04060a2818fc7005f92",
+      "relationKind": "implements",
+      "fromNode": "symbol:planner.switch_focus",
+      "toNode": "requirement:PLANNER-REQ-001",
+      "occurrence": "requirements.switch_focus",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "openspec",
+        "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sourceDigest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    },
+    {
+      "relationId": "sha256:10cd42897849acc30237bb51fc088881be89c200938991f569ad5ec3bb32dde7",
+      "relationKind": "implements",
+      "fromNode": "symbol:planner.focus_task",
+      "toNode": "requirement:PLANNER-REQ-002",
+      "occurrence": "requirements.focus_task_archive",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "openspec",
+        "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sourceDigest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    },
+    {
+      "relationId": "sha256:805d08ec841c9d3b1a6c3aa310bd95d686e2d173ba7d23d5c40516958b5426db",
+      "relationKind": "binds",
+      "fromNode": "symbol:planner.focus_task",
+      "toNode": "artifact:apps-api-focus-task",
+      "occurrence": "bindings.focus_task",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "openspec",
+        "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sourceDigest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    },
+    {
+      "relationId": "sha256:05490aa332e5ac55217605d90146215bb0d9fa1c9977161fcbaabb7fb880536d",
+      "relationKind": "binds",
+      "fromNode": "symbol:planner.focus_task",
+      "toNode": "artifact:apps-api-focus-task",
+      "occurrence": "bindings.focus_task_shadow",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "aifhub",
+        "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sourceDigest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "high",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    },
+    {
+      "relationId": "sha256:abfd3ec2a3cf819b1a82ff0d2426d576fc7b85b2da763beda8726b808c6c6ba3",
+      "relationKind": "covers",
+      "fromNode": "scenario:planner-scenario-switch-focus",
+      "toNode": "symbol:planner.focus_task",
+      "occurrence": "covers.focus_task",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "lekalo",
+        "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sourceDigest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    },
+    {
+      "relationId": "sha256:0011f4a720b6831a0c187f548b81c3447d7d18eaf46352c86fabf201e8335929",
+      "relationKind": "verifies",
+      "fromNode": "test:node-focus-task-switch",
+      "toNode": "scenario:planner-scenario-switch-focus",
+      "occurrence": "verifies.switch_focus",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "source-native",
+        "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sourceDigest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "high",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    },
+    {
+      "relationId": "sha256:2960ce9fa5cb95d63bc693870867ec14d1a014731498b36e568581448ebe500b",
+      "relationKind": "evidences",
+      "fromNode": "gate:hlv-gate-focus",
+      "toNode": "test:node-focus-task-switch",
+      "occurrence": "evidences.focus",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "hlv",
+        "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sourceDigest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    },
+    {
+      "relationId": "sha256:4a2af03f66189106ef3016408113543baa9d563dd9a12d02911780e5be106ac2",
+      "relationKind": "references",
+      "fromNode": "gate:hlv-gate-focus",
+      "toNode": "diagnostic:hlv-diag-focus",
+      "occurrence": "references.focus_diag",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "hlv",
+        "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sourceDigest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "nodeId": "requirement:PLANNER-REQ-001",
+      "nodeKind": "requirement",
+      "requirementId": "PLANNER-REQ-001",
+      "externalRefs": [
+        {
+          "system": "openspec",
+          "originalId": "PLANNER-REQ-001"
+        }
+      ]
+    },
+    {
+      "nodeId": "requirement:PLANNER-REQ-002",
+      "nodeKind": "requirement",
+      "requirementId": "PLANNER-REQ-002",
+      "externalRefs": [
+        {
+          "system": "openspec",
+          "originalId": "PLANNER-REQ-002"
+        }
+      ]
+    },
+    {
+      "nodeId": "symbol:planner.focus_task",
+      "nodeKind": "symbol",
+      "semanticId": "planner.focus_task"
+    },
+    {
+      "nodeId": "symbol:planner.switch_focus",
+      "nodeKind": "symbol",
+      "semanticId": "planner.switch_focus"
+    },
+    {
+      "nodeId": "artifact:apps-api-focus-task",
+      "nodeKind": "artifact",
+      "artifactId": "apps-api-focus-task",
+      "ownership": "generated",
+      "path": "apps/api/src/planner/focus-task.ts",
+      "contentDigest": "sha256:b014179b2ee4568dcc81f34c0f41758ed0b8ea121c6a4196617af3eb970e89db",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "generatorRef": "dev.lekalo/lekalo-generator",
+      "manifestDigest": "sha256:5907f73818388059d8eaf7aedf513ebc7707c44ab9489e2c519c5371e44d0d89",
+      "externalRefs": [
+        {
+          "system": "aifhub",
+          "originalId": "provider.node.artifact.1"
+        }
+      ]
+    },
+    {
+      "nodeId": "scenario:planner-scenario-switch-focus",
+      "nodeKind": "scenario",
+      "scenarioId": "planner.scenario.switch_focus",
+      "contractVersion": "0.1.0",
+      "evidenceDigest": "sha256:92d05fac7e5107c2ff126dbdce512b4f71784b182539e810b6a75085e623a7b7"
+    },
+    {
+      "nodeId": "test:node-focus-task-switch",
+      "nodeKind": "native_test",
+      "testId": "node.focus-task-switch",
+      "contractVersion": "1.0.0",
+      "evidenceDigest": "sha256:c83cb43fd1eea4890b70829155dd7912ed47e1b15fb93af43a58071152c66b82",
+      "externalRefs": [
+        {
+          "system": "source-native",
+          "originalId": "node.test.focus-task-switch"
+        }
+      ]
+    },
+    {
+      "nodeId": "gate:hlv-gate-focus",
+      "nodeKind": "gate",
+      "gateId": "hlv.gate.focus",
+      "contractVersion": "1.0.0",
+      "evidenceDigest": "sha256:b89919c0b3f5055ae76433c01dd5780fb5be2196848c459a4764bdd80ffdd2c7",
+      "externalRefs": [
+        {
+          "system": "hlv",
+          "originalId": "hlv.native.gate.focus"
+        }
+      ]
+    },
+    {
+      "nodeId": "diagnostic:hlv-diag-focus",
+      "nodeKind": "diagnostic",
+      "diagnosticId": "hlv.diag.focus",
+      "contractVersion": "1.0.0",
+      "externalRefs": [
+        {
+          "system": "hlv",
+          "originalId": "hlv.native.diag.focus"
+        }
+      ]
+    }
+  ],
+  "exportProfile": "requirement-to-gate",
+  "modelRef": {
+    "schemaVersion": "1.0.0",
+    "digest": "sha256:short"
+  },
+  "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "completeness": "full",
+  "projectRef": "planner",
+  "identity": "dev.lekalo.trace-manifest@1.0.0",
+  "manifestId": "planner-trace-full",
+  "schemaVersion": "lekalo/trace-manifest/v1.0.0",
+  "irRef": {
+    "schemaVersion": "0.1.0",
+    "digest": "sha256:2a1fc47e370ce2783d8ca5725b38d07498166e1968cc5c86cb30847c923d9c3c"
+  },
+  "graphRef": {
+    "schemaVersion": "1.0.0",
+    "digest": "sha256:5907f73818388059d8eaf7aedf513ebc7707c44ab9489e2c519c5371e44d0d89"
+  }
+}

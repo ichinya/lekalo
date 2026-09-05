@@ -4,8 +4,10 @@ Date: 2026-09-05
 Status: accepted for issue #13
 
 Custody: this issue published product 0.1.11 (annotated tag `v0.1.11` on
-`007c01d`); issue #14 now carries the **prospective product candidate
-0.1.12** in every accepted path (workspace `Cargo.toml`, both `lekalo`
+`007c01d`); issue #14 published product 0.1.12 (annotated tag `v0.1.12` on
+`81666da`); issue #23 published product 0.1.20 (annotated tag `v0.1.20`
+on `eef1863`); issue #22 now carries the **prospective product candidate
+0.1.19** in every accepted path (workspace `Cargo.toml`, both `lekalo`
 packages in `Cargo.lock`, the `--version` behavior and its pinning tests,
 `README.md`, `docs/cli.md`); issue #12 published product 0.1.10 (annotated
 tag `v0.1.10` on `fdfbcb5`, followed by the CI-parity fix `47b2ec8`). The graph

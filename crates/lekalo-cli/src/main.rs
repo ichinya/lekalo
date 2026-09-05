@@ -119,6 +119,38 @@ enum Commands {
         #[command(subcommand)]
         command: EffectsCommands,
     },
+    /// Validate, canonically export, or query one neutral trace manifest.
+    Trace {
+        #[command(subcommand)]
+        command: TraceCommands,
+    },
+}
+
+/// The `trace` subcommands: a thin handoff to the core trace validator.
+/// The manifest document is read at the given path and every decision —
+/// wire validation, completeness policy, canonical bytes, queries —
+/// lives in the core.
+#[derive(Debug, Subcommand)]
+enum TraceCommands {
+    /// Validate one neutral trace manifest document.
+    Validate {
+        /// Path to the trace manifest JSON document.
+        path: String,
+    },
+    /// Emit the canonical bytes and digest of one validated manifest.
+    Export {
+        /// Path to the trace manifest JSON document.
+        path: String,
+    },
+    /// Run one closed forward/reverse query over a validated manifest.
+    Query {
+        /// Path to the trace manifest JSON document.
+        path: String,
+        /// The closed selector: `requirements-for:ID`, `symbols-for:ID`,
+        /// `artifacts-for:ID`, `tests-for:ID`, `gates-for:ID`,
+        /// `diagnostics-for:ID`, or `gaps`.
+        selector: String,
+    },
 }
 
 /// The `effects` subcommands: a thin handoff to the core effect engine.
@@ -269,6 +301,7 @@ fn main() -> ExitCode {
             }
             Commands::Graph { command } => run_graph(command),
             Commands::Effects { command } => run_effects(command),
+            Commands::Trace { command } => run_trace(command),
         },
         Err(error) => match error.kind() {
             ErrorKind::DisplayHelp => {
@@ -1146,4 +1179,224 @@ fn edge_line(label: &str, edge: &lekalo_core::graph::GraphEdge) -> String {
         key.to(),
         edge.confidence().as_str()
     )
+}
+
+/// Run one `trace` subcommand: read the manifest document bytes and hand
+/// them to the core trace validator. Every trace decision — wire
+/// validation, completeness policy, canonical export, queries — lives in
+/// the core; this binary only reads the file, selects, renders, and maps
+/// exits onto the accepted 0/1 envelope.
+fn run_trace(command: TraceCommands) -> DomainResult {
+    let (path, step) = match command {
+        TraceCommands::Validate { path } => (path, TraceStep::Validate),
+        TraceCommands::Export { path } => (path, TraceStep::Export),
+        TraceCommands::Query { path, selector } => (path, TraceStep::Query(selector)),
+    };
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                io::ErrorKind::NotFound => "file-missing",
+                io::ErrorKind::PermissionDenied => "file-unreadable",
+                _ => "file-unreadable",
+            };
+            return DomainResult::invalid(lekalo_core::trace::io_failure(detail));
+        }
+    };
+    let manifest = match lekalo_core::trace::TraceManifest::parse(&bytes) {
+        Ok(manifest) => manifest,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    match step {
+        TraceStep::Validate => trace_validate(&manifest),
+        TraceStep::Export => trace_export(&manifest),
+        TraceStep::Query(selector) => trace_query(&manifest, &selector),
+    }
+}
+
+/// The selected trace operation, resolved before the file is read.
+enum TraceStep {
+    Validate,
+    Export,
+    Query(String),
+}
+
+/// `lekalo trace validate PATH`: the accepted success envelope carries the
+/// manifest summary; partial manifests report their uncovered sinks
+/// explicitly, never silently.
+fn trace_validate(manifest: &lekalo_core::trace::TraceManifest) -> DomainResult {
+    let report = manifest.report();
+    let mut uncovered = String::new();
+    if !report.uncovered_sinks.is_empty() {
+        uncovered = format!(
+            ",\"uncoveredSinks\":[{}]",
+            report
+                .uncovered_sinks
+                .iter()
+                .map(|id| format!("\"{id}\""))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+    }
+    let json = format!(
+        "{{\"status\":\"valid\",\"trace\":{{\"manifestId\":\"{}\",\"projectRef\":\"{}\",\"completeness\":\"{}\",\"exportProfile\":\"{}\",\"sourceRevision\":\"{}\",\"nodeCount\":{},\"relationCount\":{},\"gapCount\":{},\"uncoveredSinkCount\":{}{}}}}}",
+        report.manifest_id,
+        report.project_ref,
+        report.completeness.as_str(),
+        report.export_profile.as_str(),
+        report.source_revision,
+        report.node_count,
+        report.relation_count,
+        report.gap_count,
+        report.uncovered_sinks.len(),
+        uncovered
+    );
+    let human = format!(
+        "trace manifest {}\n#   completeness {} ({})\n#   nodes {}; relations {}; gaps {}; uncovered sinks {}",
+        report.manifest_id,
+        report.completeness.as_str(),
+        report.export_profile.as_str(),
+        report.node_count,
+        report.relation_count,
+        report.gap_count,
+        report.uncovered_sinks.len()
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo trace export PATH`: the canonical bytes are the export. Human
+/// output is exactly the canonical bytes (the renderer adds the final
+/// LF); JSON output embeds the same bytes as a value plus the digest.
+fn trace_export(manifest: &lekalo_core::trace::TraceManifest) -> DomainResult {
+    let canonical = match manifest.canonical_bytes() {
+        Ok(canonical) => canonical,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let digest = match manifest.digest() {
+        Ok(digest) => digest,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let json =
+        format!("{{\"status\":\"valid\",\"trace\":{canonical},\"manifestDigest\":\"{digest}\"}}");
+    DomainResult::graph(json, canonical, Vec::new())
+}
+
+/// `lekalo trace query PATH SELECTOR`: the closed forward/reverse
+/// selectors answered from the normalized relation index; `gaps` projects
+/// the explicit gap list.
+fn trace_query(manifest: &lekalo_core::trace::TraceManifest, selector: &str) -> DomainResult {
+    let selection = match lekalo_core::trace::QuerySelection::parse(selector) {
+        Ok(selection) => selection,
+        Err(_) => {
+            return DomainResult::invalid(lekalo_core::trace::io_failure("selector-invalid"));
+        }
+    };
+    if selection == lekalo_core::trace::QuerySelection::Gaps {
+        return trace_gaps(manifest);
+    }
+    let rows = match manifest.query(&selection) {
+        Ok(rows) => rows,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let mut rows_json = String::new();
+    let mut human = String::new();
+    for (index, row) in rows.iter().enumerate() {
+        if index > 0 {
+            rows_json.push(',');
+            human.push('\n');
+        }
+        rows_json.push_str(&format!(
+            "{{\"id\":\"{}\",\"nodeId\":\"{}\",\"relation\":\"{}\",\"occurrence\":\"{}\",\"status\":\"{}\",\"confidence\":\"{}\"}}",
+            row.id,
+            row.node_id,
+            row.relation.as_str(),
+            row.occurrence,
+            row.status.as_str(),
+            row.confidence.as_str()
+        ));
+        human.push_str(&format!(
+            "{} {} {} {} {}/{}",
+            matched_kind_label(&selection),
+            row.id,
+            row.relation.as_str(),
+            row.occurrence,
+            row.status.as_str(),
+            row.confidence.as_str()
+        ));
+    }
+    let (name, target) = (selection.name(), selection.target().unwrap_or_default());
+    let json = format!(
+        "{{\"status\":\"valid\",\"trace\":{{\"selector\":\"{name}\",\"target\":\"{target}\",\"rows\":[{rows_json}]}}}}"
+    );
+    let human = if rows.is_empty() {
+        format!("{name} {target}: no matches")
+    } else {
+        human
+    };
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// The explicit gap projection: every gap with its kind, status, anchor,
+/// and expectation, in canonical order — a missing link is never silent.
+fn trace_gaps(manifest: &lekalo_core::trace::TraceManifest) -> DomainResult {
+    let gaps = &manifest.manifest().gaps;
+    let mut rows_json = String::new();
+    let mut human = String::new();
+    for (index, gap) in gaps.iter().enumerate() {
+        if index > 0 {
+            rows_json.push(',');
+            human.push('\n');
+        }
+        let anchor = gap.anchor_node.as_deref().unwrap_or_default();
+        let expected = gap.expected.as_deref().unwrap_or_default();
+        rows_json.push_str(&format!(
+            "{{\"gapKind\":\"{}\",\"status\":\"{}\",\"anchorNode\":{},\"expected\":{}}}",
+            gap.gap_kind.as_str(),
+            gap.status.as_str(),
+            quoted_or_null(gap.anchor_node.as_deref()),
+            quoted_or_null(gap.expected.as_deref())
+        ));
+        let _ = anchor;
+        let _ = expected;
+        human.push_str(&format!(
+            "gap {} {}",
+            gap.gap_kind.as_str(),
+            gap.status.as_str()
+        ));
+        if let Some(anchor) = gap.anchor_node.as_deref() {
+            human.push_str(&format!(" anchor={anchor}"));
+        }
+        if let Some(expected) = gap.expected.as_deref() {
+            human.push_str(&format!(" expected={expected}"));
+        }
+    }
+    let json = format!(
+        "{{\"status\":\"valid\",\"trace\":{{\"selector\":\"gaps\",\"rows\":[{rows_json}]}}}}"
+    );
+    let human = if gaps.is_empty() {
+        "gaps: none".to_owned()
+    } else {
+        human
+    };
+    DomainResult::graph(json, human, Vec::new())
+}
+
+fn quoted_or_null(value: Option<&str>) -> String {
+    match value {
+        Some(value) => format!("\"{value}\""),
+        None => "null".to_owned(),
+    }
+}
+
+/// The stable human label for one matched query row.
+fn matched_kind_label(selection: &lekalo_core::trace::QuerySelection) -> &'static str {
+    match selection {
+        lekalo_core::trace::QuerySelection::RequirementsFor(_) => "requirement",
+        lekalo_core::trace::QuerySelection::SymbolsFor(_) => "symbol",
+        lekalo_core::trace::QuerySelection::ArtifactsFor(_) => "artifact",
+        lekalo_core::trace::QuerySelection::TestsFor(_) => "native_test",
+        lekalo_core::trace::QuerySelection::GatesFor(_) => "gate",
+        lekalo_core::trace::QuerySelection::DiagnosticsFor(_) => "diagnostic",
+        lekalo_core::trace::QuerySelection::Gaps => "gap",
+    }
 }
