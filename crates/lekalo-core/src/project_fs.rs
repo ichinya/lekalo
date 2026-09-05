@@ -16,6 +16,7 @@ pub const MAX_WALK_ENTRIES: usize = 10_000;
 
 /// `FILE_ATTRIBUTE_REPARSE_POINT` — every Windows reparse point (symlink,
 /// junction, mount point) must be rejected on sight.
+#[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
 
 /// The optional definition-kind file stems inside a module directory.
@@ -275,11 +276,10 @@ pub fn sort_names(entries: &mut [(String, EntryType)]) {
 
 #[cfg(unix)]
 mod imp {
-    use super::{metadata_is_link, EntryType, FsErrorKind};
+    use super::{EntryType, FsErrorKind};
     use rustix::fd::OwnedFd;
     use rustix::fs::{openat, statat, AtFlags, Dir, FileType, Mode, OFlags};
     use rustix::io::Errno;
-    use std::os::unix::fs::FileTypeExt;
     use std::path::Path;
 
     /// Root directory handle: an O_NOFOLLOW|O_DIRECTORY descriptor.
@@ -290,7 +290,7 @@ mod imp {
     fn classify(file_type: FileType) -> EntryType {
         if file_type.is_file() {
             EntryType::File
-        } else if file_type.is_directory() {
+        } else if file_type.is_dir() {
             EntryType::Directory
         } else if file_type.is_symlink() {
             EntryType::Symlink
@@ -315,7 +315,7 @@ mod imp {
     impl super::Fs {
         pub fn open(root: &Path) -> Result<Self, FsErrorKind> {
             let root_fd =
-                openat(rustix::fs::cwd(), root, DIR_OPEN, Mode::empty()).map_err(error_of)?;
+                openat(rustix::fs::CWD, root, DIR_OPEN, Mode::empty()).map_err(error_of)?;
             Ok(Self {
                 inner: FsInner { root_fd },
             })
@@ -350,11 +350,13 @@ mod imp {
             let mut collected = Vec::new();
             while let Some(entry) = handle.read() {
                 let entry = entry.map_err(error_of)?;
-                let name = entry
-                    .file_name()
-                    .to_str()
-                    .ok_or(FsErrorKind::Io)?
-                    .to_owned();
+                // Raw getdents yields "." and ".."; std read_dir semantics
+                // (the shared contract) exclude them.
+                let raw = entry.file_name();
+                if raw.to_bytes() == b"." || raw.to_bytes() == b".." {
+                    continue;
+                }
+                let name = raw.to_str().map_err(|_| FsErrorKind::Io)?.to_owned();
                 let entry_type = match entry.file_type() {
                     FileType::Unknown => {
                         // d_type unknown on this filesystem: resolve with a
@@ -397,11 +399,11 @@ mod imp {
             {
                 return Err(FsErrorKind::Io);
             }
-            read_limited(std::fs::File::from(file), max)
+            read_limited(std::fs::File::from(file), max).map(Some)
         }
     }
 
-    fn read_limited(mut file: std::fs::File, max: usize) -> Result<Vec<u8>, FsErrorKind> {
+    fn read_limited(file: std::fs::File, max: usize) -> Result<Vec<u8>, FsErrorKind> {
         use std::io::Read;
         let mut buffer = Vec::new();
         file.take((max as u64) + 1)

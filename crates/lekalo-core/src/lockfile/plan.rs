@@ -612,9 +612,9 @@ pub(crate) struct UpdateGuard {
 
 #[cfg(unix)]
 struct GuardFile {
-    // Held for RAII: dropping the descriptor releases the OS lock.
+    // Held for RAII: dropping the file releases the OS lock.
     #[allow(dead_code)]
-    descriptor: rustix::fd::OwnedFd,
+    file: std::fs::File,
 }
 
 #[cfg(windows)]
@@ -651,19 +651,18 @@ fn acquire_guard(root: &Path) -> Result<UpdateGuard, LockFailure> {
     let guard_path = root.join(GUARD);
     #[cfg(unix)]
     {
-        use rustix::fd::OwnedFd;
-        use rustix::fs::{flock, openat, FlockOperation, Mode, OFlags};
-        let descriptor: OwnedFd = openat(
-            rustix::fs::cwd(),
-            &guard_path,
-            OFlags::RDWR | OFlags::CREATE | OFlags::CLOEXEC,
-            Mode::empty(),
-        )
-        .map_err(|_| LockFailure::CommitFailed)?;
-        flock(&descriptor, FlockOperation::LockExclusiveNonblocking)
+        use rustix::fs::{flock, FlockOperation};
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&guard_path)
+            .map_err(|_| LockFailure::CommitFailed)?;
+        flock(&file, FlockOperation::NonBlockingLockExclusive)
             .map_err(|_| LockFailure::UpdateInProgress)?;
         Ok(UpdateGuard {
-            _file: GuardFile { descriptor },
+            _file: GuardFile { file },
         })
     }
     #[cfg(windows)]
