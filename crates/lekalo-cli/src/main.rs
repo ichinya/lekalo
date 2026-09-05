@@ -109,6 +109,64 @@ enum Commands {
         #[arg(long)]
         offline: bool,
     },
+    /// Project the deterministic dependency graph of semantic symbols.
+    Graph {
+        #[command(subcommand)]
+        command: GraphCommands,
+    },
+}
+
+/// The `graph` subcommands: a thin handoff to the core graph engine.
+#[derive(Debug, Subcommand)]
+enum GraphCommands {
+    /// Show one symbol with its direct dependencies and dependents.
+    Show {
+        /// The semantic id of the symbol (or `kind:id`).
+        symbol: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Report what depends on one symbol (the reverse view).
+    Callers {
+        /// The semantic id of the symbol (or `kind:id`).
+        symbol: String,
+        /// Walk the full reverse closure, not just direct callers.
+        #[arg(long)]
+        transitive: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Report the shortest dependency path between two symbols.
+    Path {
+        /// The start semantic id.
+        from: String,
+        /// The end semantic id.
+        to: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Export the whole canonical graph as compact deterministic JSON.
+    Export {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// The export format; only the closed canonical JSON exists.
+        #[arg(long, value_name = "FORMAT", default_value = "json")]
+        format: GraphFormat,
+        /// Attach the declaration spans sidecar from the #8 source map.
+        #[arg(long)]
+        spans: bool,
+    },
+}
+
+/// The closed graph export format vocabulary.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum GraphFormat {
+    /// Canonical compact JSON (the only v1 format).
+    Json,
 }
 
 /// The `migrate` arguments.
@@ -166,6 +224,7 @@ fn main() -> ExitCode {
             Commands::Context { symbol, budget } => {
                 lekalo_core::Request::Context { symbol, budget }.dispatch()
             }
+            Commands::Graph { command } => run_graph(command),
         },
         Err(error) => match error.kind() {
             ErrorKind::DisplayHelp => {
@@ -565,4 +624,216 @@ fn render_ir_success(
         model.definitions.len()
     );
     (json, human)
+}
+
+/// Run one `graph` subcommand: load and compile the project, hand the IR
+/// to the core graph engine, and project the result. Every graph decision
+/// — construction, traversal, cycle policy, limits, diagnostics — lives in
+/// the core; this binary only selects, renders, and maps exits.
+fn run_graph(command: GraphCommands) -> DomainResult {
+    match command {
+        GraphCommands::Show { symbol, project } => {
+            with_graph(&project, &[], |graph, _| graph_show(graph, &symbol))
+        }
+        GraphCommands::Callers {
+            symbol,
+            transitive,
+            project,
+        } => with_graph(&project, &[], |graph, _| {
+            graph_callers(graph, &symbol, transitive)
+        }),
+        GraphCommands::Path { from, to, project } => {
+            with_graph(&project, &[], |graph, _| graph_path(graph, &from, &to))
+        }
+        GraphCommands::Export {
+            project,
+            format: GraphFormat::Json,
+            spans,
+        } => with_graph(&project, &["graph export"], |graph, compilation| {
+            graph_export(graph, compilation, spans)
+        }),
+    }
+}
+
+/// Load and compile the selected project, build the graph, and run `step`.
+/// Load, IR, and graph failures pass through untouched in that order.
+fn with_graph(
+    project: &Option<String>,
+    steps: &[&str],
+    render: impl FnOnce(
+        &lekalo_core::graph::DependencyGraph,
+        &lekalo_core::ir::Compilation,
+    ) -> DomainResult,
+) -> DomainResult {
+    let _ = steps;
+    let selection = LoadSelection {
+        project: project
+            .clone()
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    let model = match lekalo_core::loader::normalize_model(&selection) {
+        Err(result) => return result,
+        Ok(model) => model,
+    };
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Err(failure) => return failure.into_result(),
+        Ok(compilation) => compilation,
+    };
+    let graph = match lekalo_core::graph::build(&compilation.project) {
+        Err(set) => return DomainResult::invalid(set),
+        Ok(graph) => graph,
+    };
+    render(&graph, &compilation)
+}
+
+/// `lekalo graph show SYMBOL`: the node card plus direct dependencies and
+/// dependents; an unknown symbol is an explicit `graph.unknown-node`
+/// failure, never an empty success.
+fn graph_show(graph: &lekalo_core::graph::DependencyGraph, symbol: &str) -> DomainResult {
+    let Some(node) = graph.resolve(symbol) else {
+        return DomainResult::invalid(lekalo_core::graph::diagnostic::unknown_node_set(symbol));
+    };
+    let filter = lekalo_core::graph::EdgeFilter::new();
+    let dependencies = graph.direct_dependencies(node.id(), &filter);
+    let dependents = graph.reverse_dependencies(node.id(), &filter);
+    let json = format!(
+        "{{\"status\":\"valid\",\"graph\":{}}}",
+        lekalo_core::graph::canonical::show_payload_bytes(node, &dependencies, &dependents)
+    );
+    let mut human = vec![format!("{} {}", node.kind(), node.id().semantic_id())];
+    for edge in &dependencies {
+        human.push(edge_line("dependency", edge));
+    }
+    for edge in &dependents {
+        human.push(edge_line("dependent", edge));
+    }
+    DomainResult::graph(json, human.join("\n"), Vec::new())
+}
+
+/// `lekalo graph callers SYMBOL`: the reverse view — direct by default,
+/// the full bounded reverse closure with `--transitive`.
+fn graph_callers(
+    graph: &lekalo_core::graph::DependencyGraph,
+    symbol: &str,
+    transitive: bool,
+) -> DomainResult {
+    let Some(node) = graph.resolve(symbol) else {
+        return DomainResult::invalid(lekalo_core::graph::diagnostic::unknown_node_set(symbol));
+    };
+    let filter = lekalo_core::graph::EdgeFilter::new();
+    if transitive {
+        let spec = lekalo_core::graph::TraversalSpec::new(lekalo_core::graph::Direction::Reverse)
+            .with_filter(filter);
+        let traversal = match graph.transitive(node.id(), &spec) {
+            Err(set) => return DomainResult::invalid(set),
+            Ok(traversal) => traversal,
+        };
+        let json = format!(
+            "{{\"status\":\"valid\",\"graph\":{}}}",
+            lekalo_core::graph::canonical::callers_payload_bytes(
+                node,
+                traversal.edges(),
+                traversal.complete()
+            )
+        );
+        let mut human = vec![format!(
+            "{} {} (transitive, depth {})",
+            node.kind(),
+            node.id().semantic_id(),
+            traversal.max_depth_seen()
+        )];
+        for edge in traversal.edges() {
+            human.push(edge_line("caller", edge));
+        }
+        DomainResult::graph(json, human.join("\n"), Vec::new())
+    } else {
+        let callers: Vec<lekalo_core::graph::GraphEdge> = graph
+            .reverse_dependencies(node.id(), &filter)
+            .into_iter()
+            .cloned()
+            .collect();
+        let json = format!(
+            "{{\"status\":\"valid\",\"graph\":{}}}",
+            lekalo_core::graph::canonical::callers_payload_bytes(node, callers.as_slice(), true)
+        );
+        let mut human = vec![format!("{} {}", node.kind(), node.id().semantic_id())];
+        for edge in &callers {
+            human.push(edge_line("caller", edge));
+        }
+        DomainResult::graph(json, human.join("\n"), Vec::new())
+    }
+}
+
+/// `lekalo graph path FROM TO`: the deterministic shortest path; no path
+/// is an explicit `graph.path-not-found` failure.
+fn graph_path(graph: &lekalo_core::graph::DependencyGraph, from: &str, to: &str) -> DomainResult {
+    let Some(from_node) = graph.resolve(from) else {
+        return DomainResult::invalid(lekalo_core::graph::diagnostic::unknown_node_set(from));
+    };
+    let Some(to_node) = graph.resolve(to) else {
+        return DomainResult::invalid(lekalo_core::graph::diagnostic::unknown_node_set(to));
+    };
+    let spec = lekalo_core::graph::PathSpec::new();
+    let path = match graph.shortest_path(from_node.id(), to_node.id(), &spec) {
+        Err(set) => return DomainResult::invalid(set),
+        Ok(path) => path,
+    };
+    let json = format!(
+        "{{\"status\":\"valid\",\"graph\":{}}}",
+        lekalo_core::graph::canonical::path_payload_bytes(&path)
+    );
+    let mut human = vec![format!(
+        "path {} -> {} ({} hops, {})",
+        from_node.id(),
+        to_node.id(),
+        path.length(),
+        path.confidence().as_str()
+    )];
+    for (position, edge) in path.edges().iter().enumerate() {
+        let _ = position;
+        human.push(edge_line("hop", edge));
+    }
+    DomainResult::graph(json, human.join("\n"), Vec::new())
+}
+
+/// `lekalo graph export`: the canonical graph bytes in the success
+/// envelope, with the optional declaration-span sidecar.
+fn graph_export(
+    graph: &lekalo_core::graph::DependencyGraph,
+    compilation: &lekalo_core::ir::Compilation,
+    spans: bool,
+) -> DomainResult {
+    let bytes = match graph.to_canonical_json() {
+        Err(set) => return DomainResult::invalid(set),
+        Ok(bytes) => bytes,
+    };
+    let mut json = String::from("{\"status\":\"valid\",\"graph\":");
+    json.push_str(&bytes);
+    if spans {
+        json.push_str(",\"spans\":");
+        json.push_str(&lekalo_core::graph::canonical::spans_sidecar_bytes(
+            graph,
+            compilation.source_map.entries(),
+        ));
+    }
+    json.push('}');
+    let human = format!(
+        "built graph {}: {} nodes, {} edges",
+        graph.identity(),
+        graph.nodes().len(),
+        graph.edges().len()
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// One stable human edge line: `relation from -> to (confidence)`.
+fn edge_line(label: &str, edge: &lekalo_core::graph::GraphEdge) -> String {
+    let key = edge.key();
+    format!(
+        "  {label} {} {} -> {} ({})",
+        key.relation(),
+        key.from(),
+        key.to(),
+        edge.confidence().as_str()
+    )
 }

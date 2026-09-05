@@ -3,11 +3,10 @@
 Date: 2026-09-04
 Status: accepted for issue #12
 
-Custody: this issue carries the **prospective product candidate 0.1.10** in
-every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
-`Cargo.lock`, the `--version` behavior and its pinning tests, `README.md`,
-`docs/cli.md`); issue #11 published product 0.1.9 (annotated tag on
-`5b885bf`). The validation-profile contract version
+Custody: issue #13 now carries the **prospective product candidate 0.1.11**
+in every accepted path; this issue published product 0.1.10 (annotated
+tag `v0.1.10` on `fdfbcb5`, followed by the CI-parity fix `47b2ec8`),
+with the same accepted custody paths as every issue since #3. The validation-profile contract version
 (`lekalo/validation-profile/v1.0.0`) and the diagnostic registry increment
 (`1.0.0` → `1.1.0`) are independent of the product release, of the
 Model/IR/protocol contract versions, and of the lock wire by design.

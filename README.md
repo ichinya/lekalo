@@ -127,6 +127,21 @@ paths or credentials. See [docs/lockfile.md](docs/lockfile.md),
 [ADR-0009](docs/adr/0009-lockfile.md), and the hermetic fixtures under
 `tests/fixtures/lockfile/`.
 
+## Dependency graph of semantic symbols
+
+Issue #13 projects the deterministic dependency graph over the typed IR:
+twelve core node kinds and twelve core relations with closed provenance
+and confidence, precomputed reverse indexes, forward/reverse and
+direct/transitive traversal, shortest paths, module boundaries, bounded
+slices, kind-specific cycle policy (`requires`/`derived_from` acyclic),
+and byte-identical canonical export. `writes`/`implements`/`verifies`
+stay registered but unemitted until their typed owners land. The thin
+`lekalo graph show | callers | path | export` handoff keeps every decision
+in the core; the contract, guarantees, and limits live in
+[docs/graph.md](docs/graph.md), [ADR-0012](docs/adr/0012-dependency-graph.md),
+and `contracts/graph.schema.v1.0.0.json`; hermetic fixtures are under
+`tests/fixtures/graph/`.
+
 ## Stable machine-readable diagnostics
 
 Issue #11 freezes the diagnostic wire: every failure carries closed wire
@@ -137,8 +152,9 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.1.0.json` (issue #12 extended it with the
-`semantic.*`/`validate.*` families as a minor increment).
+`contracts/diagnostic-registry.v1.2.0.json` (issue #12 extended it with the
+`semantic.*`/`validate.*` families and issue #13 added the `graph.*`
+family, each as a minor increment).
 
 ## Semantic validation
 
@@ -160,8 +176,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #12 carries prospective product
-0.1.10 (issue #11 published product 0.1.9 at `5b885bf`; issue #10
+independent of product releases; issue #13 carries prospective product
+0.1.11 (issue #12 published product 0.1.10 at `fdfbcb5`; issue #11
+published product 0.1.9 at `5b885bf`; issue #10
 published product 0.1.8 at `8ddbbf0`; issues #8/#9
 published products 0.1.6/0.1.7, the latter at `f0b3784`).
 

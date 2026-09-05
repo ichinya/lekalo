@@ -1,7 +1,7 @@
 {
   "schema_version": "lekalo/diagnostic-registry/v1.0.0",
-  "identity": "dev.lekalo.diagnostic-registry@1.1.0",
-  "registry_version": "1.1.0",
+  "identity": "dev.lekalo.diagnostic-registry@1.2.0",
+  "registry_version": "1.2.0",
   "closed": true,
   "entries": [
     {
@@ -66,6 +66,187 @@
       "default_message": "The embedded diagnostic registry violates its invariants.",
       "location_requirement": "none",
       "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.cycle-forbidden",
+      "code": "LEK-GRAPH-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.cycle-forbidden",
+      "default_message": "A graph-owned acyclic relation contains a cycle.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "relation",
+          "type": "token"
+        },
+        {
+          "name": "members",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.export-limit",
+      "code": "LEK-GRAPH-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.export-limit",
+      "default_message": "The canonical graph export exceeds its byte bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "bytes",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.input-invalid",
+      "code": "LEK-GRAPH-003",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.input-invalid",
+      "default_message": "The compiled project violates a graph construction invariant.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "role",
+          "type": "token"
+        },
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.path-not-found",
+      "code": "LEK-GRAPH-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.path-not-found",
+      "default_message": "No dependency path connects the two symbols.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "from",
+          "type": "token"
+        },
+        {
+          "name": "to",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.provenance-incomplete",
+      "code": "LEK-GRAPH-005",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "graph.provenance-incomplete",
+      "default_message": "An edge carries incomplete provenance evidence.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.traversal-limit",
+      "code": "LEK-GRAPH-006",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.traversal-limit",
+      "default_message": "A graph traversal exceeded its recorded bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.unknown-node",
+      "code": "LEK-GRAPH-007",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.unknown-node",
+      "default_message": "A graph query named a node the graph does not contain.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.unknown-relation",
+      "code": "LEK-GRAPH-008",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.unknown-relation",
+      "default_message": "A graph filter named a relation the registry does not contain.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "relation",
+          "type": "token"
+        }
+      ],
       "allowed_fix_ids": [],
       "lifecycle": "active"
     },

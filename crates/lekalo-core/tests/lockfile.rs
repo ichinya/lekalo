@@ -34,7 +34,7 @@ use lekalo_core::versioning::{ContractVersion, VersionRegistry};
 const GOLDEN: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:71462bb6468b995b2104d70a608f3661922f96d4329e46e27010b08a0976dd1d";
+    "sha256:50166d51ec1f53e594702ed271fbc6dd843c6927c6de5d649e39860aaf3991f5";
 const MULTI: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/multi-adapter.lock.json");
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/lockfile/project";
@@ -263,7 +263,7 @@ fn golden_contract_only_lock_parses_and_matches_its_independent_digest() {
     let lock = Lockfile::parse_canonical(GOLDEN).expect("golden lock parses");
     assert_eq!(lock.digest().as_str(), GOLDEN_DIGEST);
     assert_eq!(lock.resolver_version().as_str(), RESOLVER_VERSION);
-    assert_eq!(lock.core_version().as_str(), "0.1.10");
+    assert_eq!(lock.core_version().as_str(), "0.1.11");
     assert_eq!(lock.target_protocol(), None);
     // Round-trip: canonical bytes are byte-identical to the committed file.
     assert_eq!(lock.canonical_bytes().as_ref(), GOLDEN);
@@ -333,17 +333,17 @@ fn wire_refusals_carry_the_closed_reason_codes() {
         ),
         (
             "v-prefixed version",
-            tampered("\"version\":\"0.1.10\"", "\"version\":\"v0.1.9\""),
+            tampered("\"version\":\"0.1.11\"", "\"version\":\"v0.1.9\""),
             "lock.schema-invalid",
         ),
         (
             "build metadata version",
-            tampered("\"version\":\"0.1.10\"", "\"version\":\"0.1.9+meta\""),
+            tampered("\"version\":\"0.1.11\"", "\"version\":\"0.1.9+meta\""),
             "lock.schema-invalid",
         ),
         (
             "range version",
-            tampered("\"version\":\"0.1.10\"", "\"version\":\"^0.1\""),
+            tampered("\"version\":\"0.1.11\"", "\"version\":\"^0.1\""),
             "lock.schema-invalid",
         ),
         (
@@ -494,22 +494,22 @@ fn multi_adapter_resolution_selects_highest_stable_and_is_order_independent() {
         .with_adapter(ComponentId::parse("node-typescript").expect("id"))
         .with_target(Platform::parse("any").expect("platform"));
 
-    // Insertion order A: 0.1.2 then 0.1.10 then 0.2.0-rc.1 (prerelease).
+    // Insertion order A: 0.1.2 then 0.1.11 then 0.2.0-rc.1 (prerelease).
     let candidates_a = CandidateSet::empty()
         .with_adapter(adapter_candidate("node-typescript", "0.2.0-rc.1", 1, "any"))
-        .with_adapter(adapter_candidate("node-typescript", "0.1.10", 2, "any"))
+        .with_adapter(adapter_candidate("node-typescript", "0.1.11", 2, "any"))
         .with_adapter(adapter_candidate("node-typescript", "0.1.2", 3, "any"));
     // Insertion order B: exact reverse.
     let candidates_b = CandidateSet::empty()
         .with_adapter(adapter_candidate("node-typescript", "0.1.2", 3, "any"))
-        .with_adapter(adapter_candidate("node-typescript", "0.1.10", 2, "any"))
+        .with_adapter(adapter_candidate("node-typescript", "0.1.11", 2, "any"))
         .with_adapter(adapter_candidate("node-typescript", "0.2.0-rc.1", 1, "any"));
 
     let resolved_a = LockResolver::resolve(&request, &candidates_a, &registry).expect("A");
     let resolved_b = LockResolver::resolve(&request, &candidates_b, &registry).expect("B");
     assert_eq!(resolved_a.canonical_bytes(), resolved_b.canonical_bytes());
     assert_eq!(resolved_a.adapters().len(), 1);
-    assert_eq!(resolved_a.adapters()[0].version().as_str(), "0.1.10");
+    assert_eq!(resolved_a.adapters()[0].version().as_str(), "0.1.11");
 }
 
 #[test]

@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.10. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.11. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -25,6 +25,10 @@ lekalo migrate --to model/TARGET [--dry-run] [--project DIR]
 lekalo migrate --rollback PLAN_ID [--project DIR]
 lekalo compatibility
 lekalo validate [--project DIR] [--module MODULE] [--strict]
+lekalo graph show SYMBOL [--project DIR]
+lekalo graph callers SYMBOL [--transitive] [--project DIR]
+lekalo graph path FROM TO [--project DIR]
+lekalo graph export [--format json] [--spans] [--project DIR]
 lekalo inspect SYMBOL
 lekalo impact SYMBOL
 lekalo context SYMBOL --budget TOKENS
@@ -207,15 +211,49 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.10"
+  "version": "0.1.11"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.10`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.1.11`. Human and JSON
 renderers consume the same `DomainResult`.
+
+## Graph
+
+Issue #13 projects the deterministic dependency graph of semantic symbols
+through four thin subcommands. The core owns every decision (construction,
+traversal, cycles, slices, limits); the binary only selects, renders, and
+maps exits onto the accepted 0/1 envelope. Successes exit 0 on stdout;
+unknown nodes (`graph.unknown-node`, `LEK-GRAPH-007`), unknown relation
+filters (`graph.unknown-relation`), missing paths (`graph.path-not-found`),
+bound exhaustion (`graph.traversal-limit`), fatal input
+(`graph.input-invalid`), and forbidden cycles (`graph.cycle-forbidden`)
+exit 1 on stderr.
+
+```sh
+lekalo graph show planner.focus_task
+# entity planner.focus_task
+#   dependency accepts operation:planner.focus_task -> type:planner.task_id (canonical)
+
+lekalo graph callers planner.task_focused            # direct reverse view
+lekalo graph callers planner.task --transitive       # bounded reverse closure
+lekalo graph path planner.api_focus planner.task_focused
+# path endpoint:planner.api_focus -> event:planner.task_focused (2 hops, canonical)
+
+lekalo graph export --format json                    # canonical graph bytes
+lekalo graph export --spans                          # + declaration-span sidecar
+```
+
+`graph export --json` wraps the canonical graph bytes in the success
+envelope: `{"status":"valid","graph":{...}}`. The bytes are byte-identical
+for the same IR across reruns, frontends, and platforms. `--spans` appends
+the `spans` sidecar (declaration path and range per node, resolved through
+the #8 source map) without touching the semantic bytes. The contract,
+guarantees, and limits are documented in [docs/graph.md](graph.md) and
+[ADR-0012](adr/0012-dependency-graph.md).
 
 ## Development checks
 

@@ -3,7 +3,7 @@
   "diagnostics": [
     {
       "schema_version": "lekalo/diagnostic/v1.0.0",
-      "registry_version": "1.1.0",
+      "registry_version": "1.2.0",
       "id": "cli.usage",
       "code": "LEK-CLI-001",
       "severity": "error",

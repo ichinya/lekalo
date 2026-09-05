@@ -9,7 +9,7 @@ use lekalo_core::result::DomainResult;
 #[test]
 fn embedded_registry_parses_and_is_closed() {
     let registry = DiagnosticRegistry::embedded().expect("embedded registry is valid");
-    assert_eq!(registry.registry_version(), "1.1.0");
+    assert_eq!(registry.registry_version(), "1.2.0");
     assert!(registry.len() >= 100, "the core rule inventory is present");
     // A second parse of the exact bytes yields the same table (pure data).
     let again = DiagnosticRegistry::from_bytes(REGISTRY_BYTES).expect("registry bytes re-validate");
@@ -81,11 +81,11 @@ fn the_failure_envelope_keeps_the_normative_field_order() {
 
 #[test]
 fn version_results_omit_empty_diagnostic_fields() {
-    let result = DomainResult::version("0.1.10");
+    let result = DomainResult::version("0.1.11");
     let json = result.to_json_string();
     assert_eq!(
         json,
-        "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.10\"\n}"
+        "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.11\"\n}"
     );
     assert!(!json.contains("diagnostics"));
     assert!(!json.contains("reasonCodes"));

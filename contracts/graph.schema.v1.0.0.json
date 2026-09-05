@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/graph.schema.v1.0.0.json",
+  "title": "Lekalo dependency graph",
+  "description": "Closed contract of one deterministic dependency graph over semantic symbols (issue #13). The graph contract version is independent of the product release, the Model/IR/protocol contract versions, and the diagnostic registry version. A canonical graph payload carries the project identity, the contract identity, the exact source Model version, the node list, the direct edge list, and graph metadata; transitive edges are never materialized. No physical root, raw source, timestamp, host, locale, target implementation body, or adapter transcript may appear.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "modelVersion",
+    "metadata",
+    "nodes",
+    "edges"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/graph/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.graph@1.0.0"
+    },
+    "modelVersion": {
+      "enum": ["0.1.0", "1.0.0"]
+    },
+    "project": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edgeCount", "nodeCount"],
+      "properties": {
+        "nodeCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "edgeCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "description": "A stable semantic id: dotted lowercase segments or an uppercase requirement id.",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_.:-]{0,191}$",
+      "maxLength": 192
+    },
+    "nodeId": {
+      "description": "A kind-qualified node identity: registry kind key, a colon, then the semantic id.",
+      "type": "string",
+      "pattern": "^(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,191}$",
+      "maxLength": 208
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nodeId"
+        },
+        "kind": {
+          "enum": [
+            "project",
+            "module",
+            "type",
+            "entity",
+            "operation",
+            "policy",
+            "event",
+            "effect",
+            "endpoint",
+            "scenario",
+            "target-binding",
+            "requirement"
+          ]
+        },
+        "module": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "subkind": {
+          "enum": ["scalar", "enum", "value-object", "command", "query"]
+        }
+      },
+      "description": "subkind is present exactly for kind type (scalar/enum/value-object) and kind operation (command/query); the coherence rule is enforced by the release gate invariants."
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "relation",
+        "occurrence",
+        "provenance",
+        "confidence"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/nodeId"
+        },
+        "to": {
+          "$ref": "#/$defs/nodeId"
+        },
+        "relation": {
+          "enum": [
+            "requires",
+            "references",
+            "accepts",
+            "returns",
+            "reads",
+            "writes",
+            "emits",
+            "authorizes",
+            "exposes",
+            "implements",
+            "verifies",
+            "derived_from"
+          ]
+        },
+        "occurrence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "enum": [
+            "canonical",
+            "verified",
+            "extracted",
+            "inferred",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "provenance": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["referenceRole", "occurrence", "sourceSymbol"],
+          "properties": {
+            "referenceRole": {
+              "enum": [
+                "module-import",
+                "entity-field",
+                "value-object-field",
+                "event-payload",
+                "command-effect",
+                "effect-entity",
+                "scenario-covers",
+                "command-input",
+                "query-returns",
+                "query-reads",
+                "policy-applies-to",
+                "endpoint-invokes",
+                "effect-emits",
+                "derived-from"
+              ]
+            },
+            "occurrence": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "sourceSymbol": {
+              "$ref": "#/$defs/semanticId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "adapterId",
+            "targetId",
+            "protocolVersion",
+            "evidenceDigest",
+            "evidenceStatus"
+          ],
+          "properties": {
+            "adapterId": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(/[a-z][a-z0-9-]{0,62})?$",
+              "maxLength": 128
+            },
+            "targetId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "protocolVersion": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+              "maxLength": 32
+            },
+            "evidenceDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "evidenceStatus": {
+              "enum": ["fresh", "stale", "unknown"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["algorithmId", "algorithmVersion", "parentEdgeKeys"],
+          "properties": {
+            "algorithmId": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(/[a-z][a-z0-9-]{0,62})?$",
+              "maxLength": 128
+            },
+            "algorithmVersion": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+              "maxLength": 32
+            },
+            "parentEdgeKeys": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "type": "string",
+                "maxLength": 448
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
