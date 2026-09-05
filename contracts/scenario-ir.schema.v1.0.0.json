@@ -1,0 +1,849 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/scenario-ir.schema.v1.0.0.json",
+  "title": "Lekalo Scenario IR",
+  "description": "Closed contract of one portable behavioral scenario (issue #23). The Scenario IR contract version is independent of the product release, of the source Model and IR contract versions, of the diagnostic registry, of the target protocol, and of every execution backend. One document binds one stable scenario identity to ordered given/when/then steps with typed values and references, a data-flow-validated assertion set, set-like tags and namespaced metadata, and typed backend bindings that reference native tests or fake-reference evaluations as data. No physical root, absolute path, source bytes, runtime value, host, user, timestamp, credential, stack, provider output, or adapter transcript may appear. Behavioral order is preserved exactly; only set-like collections (tags, capabilities, projections, bindings) and map keys are sorted in canonical form.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "projectId",
+    "scenarioId",
+    "scenarioVersion",
+    "summary",
+    "irRef",
+    "modelRef",
+    "given",
+    "when",
+    "then",
+    "bindings",
+    "tags",
+    "metadata"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/scenario-ir/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.scenario-ir@1.0.0"
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "scenarioId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "scenarioVersion": {
+      "$ref": "#/$defs/semver"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "digest"],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.1.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modelVersion", "digest"],
+      "properties": {
+        "modelVersion": {
+          "enum": ["0.1.0", "1.0.0"]
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "given": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/givenStep" }
+    },
+    "when": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/whenStep" }
+    },
+    "then": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": { "$ref": "#/$defs/thenStep" }
+    },
+    "bindings": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/binding" }
+    },
+    "tags": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/tag" }
+    },
+    "metadata": {
+      "$ref": "#/$defs/namespacedMetadata"
+    },
+    "sourceMapRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "digest", "entries"],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.scenario-sourcemap@1.0.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "entries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8192
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 191,
+      "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,2}$"
+    },
+    "stepId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "fieldName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "tag": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"
+    },
+    "namespacedId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "memberPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1031,
+      "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64}){0,15}$"
+    },
+    "typeRef": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 191,
+      "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,2}$"
+    },
+    "metadataKey": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 129,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "metadataValue": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      ]
+    },
+    "namespacedMetadata": {
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": { "$ref": "#/$defs/metadataKey" },
+      "additionalProperties": { "$ref": "#/$defs/metadataValue" }
+    },
+    "ordinal": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "typedValue": {
+      "oneOf": [
+        { "$ref": "#/$defs/typedNull" },
+        { "$ref": "#/$defs/typedBoolean" },
+        { "$ref": "#/$defs/typedInteger" },
+        { "$ref": "#/$defs/typedString" },
+        { "$ref": "#/$defs/typedDecimal" },
+        { "$ref": "#/$defs/typedDate" },
+        { "$ref": "#/$defs/typedDatetime" },
+        { "$ref": "#/$defs/typedUuid" },
+        { "$ref": "#/$defs/typedUri" },
+        { "$ref": "#/$defs/typedList" },
+        { "$ref": "#/$defs/typedObject" }
+      ]
+    },
+    "typedNull": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "null" },
+        "value": { "const": null }
+      }
+    },
+    "typedBoolean": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "boolean" },
+        "value": { "type": "boolean" }
+      }
+    },
+    "typedInteger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "integer" },
+        "value": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "typedString": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "string" },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "typedDecimal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "decimal" },
+        "value": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]*[1-9])?$"
+        }
+      }
+    },
+    "typedDate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "date" },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        }
+      }
+    },
+    "typedDatetime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "datetime" },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+        }
+      }
+    },
+    "typedUuid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "uuid" },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        }
+      }
+    },
+    "typedUri": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "uri" },
+        "value": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 2048,
+          "pattern": "^[a-z][a-z0-9+.-]*://[^\u0000-\u0020<>\"{}|\\\\^`]+$"
+        }
+      }
+    },
+    "typedList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "list" },
+        "value": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/typedValue" }
+        }
+      }
+    },
+    "typedObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "object" },
+        "value": {
+          "type": "object",
+          "maxProperties": 4096,
+          "propertyNames": { "$ref": "#/$defs/fieldName" },
+          "additionalProperties": { "$ref": "#/$defs/typedValue" }
+        }
+      }
+    },
+    "valueOrRef": {
+      "oneOf": [
+        { "$ref": "#/$defs/typedValue" },
+        { "$ref": "#/$defs/ref" }
+      ]
+    },
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$ref", "id"],
+      "properties": {
+        "$ref": {
+          "enum": [
+            "symbol",
+            "operation",
+            "entity",
+            "field",
+            "event",
+            "job",
+            "effect",
+            "error",
+            "requirement",
+            "fixture",
+            "actor",
+            "step-output",
+            "given-value",
+            "clock",
+            "id-source"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191,
+          "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){0,2}$|^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+        },
+        "path": { "$ref": "#/$defs/memberPath" },
+        "type": { "$ref": "#/$defs/typeRef" }
+      }
+    },
+    "fieldPredicate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "equals"],
+      "properties": {
+        "field": { "$ref": "#/$defs/fieldName" },
+        "equals": { "$ref": "#/$defs/valueOrRef" }
+      }
+    },
+    "fieldExpectation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value"],
+          "properties": {
+            "value": { "$ref": "#/$defs/valueOrRef" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["match"],
+          "properties": {
+            "match": {
+              "enum": ["datetime", "uuid", "uri", "decimal", "non-null"]
+            }
+          }
+        }
+      ]
+    },
+    "entityExpectation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["presence"],
+          "properties": {
+            "presence": { "enum": ["exists", "missing"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["count"],
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4096
+            }
+          }
+        }
+      ]
+    },
+    "occurrenceCount": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["atLeast"],
+          "properties": {
+            "atLeast": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4096
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exactly"],
+          "properties": {
+            "exactly": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4096
+            }
+          }
+        }
+      ]
+    },
+    "emittedTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["event", "job"] },
+        "id": { "$ref": "#/$defs/semanticId" }
+      }
+    },
+    "givenStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stepId", "precondition"],
+      "properties": {
+        "stepId": { "$ref": "#/$defs/stepId" },
+        "precondition": {
+          "oneOf": [
+            { "$ref": "#/$defs/statePrecondition" },
+            { "$ref": "#/$defs/fixturePrecondition" },
+            { "$ref": "#/$defs/actorPrecondition" },
+            { "$ref": "#/$defs/clockPrecondition" },
+            { "$ref": "#/$defs/idSourcePrecondition" }
+          ]
+        }
+      }
+    },
+    "statePrecondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "entity", "selector", "fields"],
+      "properties": {
+        "kind": { "const": "state" },
+        "entity": { "$ref": "#/$defs/semanticId" },
+        "selector": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/fieldPredicate" }
+        },
+        "fields": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 64,
+          "propertyNames": { "$ref": "#/$defs/fieldName" },
+          "additionalProperties": { "$ref": "#/$defs/valueOrRef" }
+        }
+      }
+    },
+    "fixturePrecondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "fixture", "version"],
+      "properties": {
+        "kind": { "const": "fixture" },
+        "fixture": { "$ref": "#/$defs/namespacedId" },
+        "version": { "$ref": "#/$defs/semver" },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/namespacedId" }
+        }
+      }
+    },
+    "actorPrecondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "actor"],
+      "properties": {
+        "kind": { "const": "actor" },
+        "actor": { "$ref": "#/$defs/namespacedId" },
+        "scope": { "$ref": "#/$defs/namespacedId" }
+      }
+    },
+    "clockPrecondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "at"],
+      "properties": {
+        "kind": { "const": "clock" },
+        "at": { "$ref": "#/$defs/typedDatetime" }
+      }
+    },
+    "idSourcePrecondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "seed", "algorithm"],
+      "properties": {
+        "kind": { "const": "id_source" },
+        "seed": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "algorithm": { "enum": ["uuidv4", "sequence"] }
+      }
+    },
+    "whenStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stepId", "action"],
+      "properties": {
+        "stepId": { "$ref": "#/$defs/stepId" },
+        "action": { "$ref": "#/$defs/invokeAction" },
+        "replay": { "$ref": "#/$defs/replayMeta" }
+      }
+    },
+    "invokeAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "operation", "input"],
+      "properties": {
+        "kind": { "const": "invoke" },
+        "operation": { "$ref": "#/$defs/semanticId" },
+        "input": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": { "$ref": "#/$defs/fieldName" },
+          "additionalProperties": { "$ref": "#/$defs/valueOrRef" }
+        },
+        "actor": { "$ref": "#/$defs/actorRef" },
+        "clock": { "$ref": "#/$defs/clockRef" },
+        "idempotencyKey": { "$ref": "#/$defs/valueOrRef" }
+      }
+    },
+    "replayMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["of", "expect"],
+      "properties": {
+        "of": { "$ref": "#/$defs/stepId" },
+        "expect": { "enum": ["same-result", "no-duplicate"] }
+      }
+    },
+    "thenStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stepId", "observes", "assertion"],
+      "properties": {
+        "stepId": { "$ref": "#/$defs/stepId" },
+        "observes": { "$ref": "#/$defs/stepId" },
+        "assertion": {
+          "oneOf": [
+            { "$ref": "#/$defs/resultAssertion" },
+            { "$ref": "#/$defs/errorAssertion" },
+            { "$ref": "#/$defs/entityStateAssertion" },
+            { "$ref": "#/$defs/emittedAssertion" },
+            { "$ref": "#/$defs/forbiddenEffectAssertion" },
+            { "$ref": "#/$defs/authorizationAssertion" },
+            { "$ref": "#/$defs/idempotencyAssertion" },
+            { "$ref": "#/$defs/contractMatchAssertion" },
+            { "$ref": "#/$defs/deterministicFixtureAssertion" },
+            { "$ref": "#/$defs/unsupportedAssertion" }
+          ]
+        }
+      }
+    },
+    "resultAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "valueType"],
+      "properties": {
+        "kind": { "const": "result" },
+        "valueType": { "$ref": "#/$defs/typeRef" },
+        "value": { "$ref": "#/$defs/valueOrRef" }
+      }
+    },
+    "errorAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "error"],
+      "properties": {
+        "kind": { "const": "error" },
+        "error": { "$ref": "#/$defs/semanticId" },
+        "payload": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": { "$ref": "#/$defs/fieldName" },
+          "additionalProperties": { "$ref": "#/$defs/valueOrRef" }
+        },
+        "contract": { "$ref": "#/$defs/namespacedId" }
+      }
+    },
+    "entityStateAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "entity", "where", "expect"],
+      "properties": {
+        "kind": { "const": "entity_state" },
+        "entity": { "$ref": "#/$defs/semanticId" },
+        "where": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/fieldPredicate" }
+        },
+        "expect": { "$ref": "#/$defs/entityExpectation" },
+        "fields": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": { "$ref": "#/$defs/fieldName" },
+          "additionalProperties": { "$ref": "#/$defs/fieldExpectation" }
+        }
+      }
+    },
+    "emittedAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "target"],
+      "properties": {
+        "kind": { "const": "emitted" },
+        "target": { "$ref": "#/$defs/emittedTarget" },
+        "count": { "$ref": "#/$defs/occurrenceCount" }
+      }
+    },
+    "forbiddenEffectAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "effect", "scope"],
+      "properties": {
+        "kind": { "const": "forbidden_effect" },
+        "effect": { "$ref": "#/$defs/semanticId" },
+        "scope": { "enum": ["entity", "field", "resource"] },
+        "field": { "$ref": "#/$defs/fieldName" }
+      },
+      "if": { "properties": { "scope": { "const": "field" } } },
+      "then": { "required": ["field"], "properties": { "field": { "$ref": "#/$defs/fieldName" } } },
+      "else": { "not": { "required": ["field"] } }
+    },
+    "authorizationAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "actor", "policy", "outcome"],
+      "properties": {
+        "kind": { "const": "authorization" },
+        "actor": { "$ref": "#/$defs/actorRef" },
+        "policy": { "$ref": "#/$defs/namespacedId" },
+        "outcome": { "enum": ["allowed", "denied"] }
+      }
+    },
+    "idempotencyAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "replay", "equivalence", "duplicates"],
+      "properties": {
+        "kind": { "const": "idempotency" },
+        "replay": { "$ref": "#/$defs/stepId" },
+        "equivalence": { "enum": ["identical", "equivalent"] },
+        "duplicates": { "const": "none" }
+      }
+    },
+    "contractMatchAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "contract"],
+      "properties": {
+        "kind": { "const": "contract_match" },
+        "contract": { "$ref": "#/$defs/namespacedId" },
+        "projection": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/memberPath" }
+        }
+      }
+    },
+    "deterministicFixtureAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "digest"],
+      "properties": {
+        "kind": { "const": "deterministic_fixture" },
+        "digest": { "$ref": "#/$defs/digest" },
+        "clock": { "$ref": "#/$defs/clockRef" },
+        "idSource": { "$ref": "#/$defs/idSourceRef" }
+      }
+    },
+    "unsupportedAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "capability"],
+      "properties": {
+        "kind": { "const": "unsupported" },
+        "capability": { "$ref": "#/$defs/namespacedId" },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "actorRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$ref", "id"],
+      "properties": {
+        "$ref": { "const": "actor" },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 191,
+          "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,2}$|^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+        }
+      }
+    },
+    "clockRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$ref", "id"],
+      "properties": {
+        "$ref": { "const": "clock" },
+        "id": { "$ref": "#/$defs/stepId" }
+      }
+    },
+    "idSourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$ref", "id"],
+      "properties": {
+        "$ref": { "const": "id-source" },
+        "id": { "$ref": "#/$defs/stepId" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "runner",
+        "runnerVersion",
+        "capabilities",
+        "capabilityDigest",
+        "test"
+      ],
+      "properties": {
+        "backend": { "enum": ["fake-reference", "native"] },
+        "runner": { "$ref": "#/$defs/namespacedId" },
+        "runnerVersion": { "$ref": "#/$defs/semver" },
+        "protocol": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "version"],
+          "properties": {
+            "id": { "$ref": "#/$defs/namespacedId" },
+            "version": { "$ref": "#/$defs/semver" }
+          }
+        },
+        "profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "version"],
+          "properties": {
+            "id": { "$ref": "#/$defs/namespacedId" },
+            "version": { "$ref": "#/$defs/semver" }
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/namespacedId" }
+        },
+        "capabilityDigest": { "$ref": "#/$defs/digest" },
+        "test": { "$ref": "#/$defs/namespacedId" },
+        "mode": { "enum": ["generated", "scaffolded", "checked"] },
+        "evidenceDigest": { "$ref": "#/$defs/digest" }
+      }
+    }
+  }
+}
