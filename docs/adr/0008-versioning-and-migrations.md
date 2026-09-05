@@ -16,8 +16,10 @@ Issue #9 published product 0.1.7 at `f0b3784`; issue #10 published
 product 0.1.8 at `8ddbbf0`; issue #11 carried prospective product 0.1.9;
 issue #12 published product 0.1.10 at `fdfbcb5`; issue #13 published product
 0.1.11 at `007c01d`; issue #14 published product 0.1.12 at `81666da`;
-issue #23 published product 0.1.20 at `eef1863`; issue #22 now carries
-prospective product 0.1.19.
+issue #23 published product 0.1.20 (annotated tag `v0.1.20` on
+`eef1863`); issue #22 published product 0.1.19 (annotated tag
+`v0.1.19` on `31468e9`); issue #15 now carries prospective product
+0.1.21.
 Issue #8 published product 0.1.6 at `5580b83`. Product versions, Model schema versions, the IR
 contract version, and the protocol version are independent by design.
 

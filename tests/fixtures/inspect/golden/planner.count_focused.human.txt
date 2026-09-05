@@ -1,0 +1,26 @@
+symbol: planner.count_focused
+kind: query
+module: planner
+version: 1
+description: Count focused tasks
+source: lekalo/modules/planner/queries.yaml#/definitions/12
+selector: exact-id planner.count_focused
+contract:
+  reads: planner.task
+  returns: planner.task_state
+invariants: state=empty
+policies: state=empty
+effects: state=available
+  - read operation:planner.count_focused -> planner.task (canonical)
+dependencies: state=available
+  - reads planner.task (canonical)
+  - derived_from PLANNER-REQ-001 (canonical)
+  - returns planner.task_state (canonical)
+dependents: state=empty
+scenarios: state=unsupported returned=0 omitted=0
+bindings: state=unsupported returned=0 omitted=0
+ownership: unsupported (owner-not-accepted)
+portability: empty
+trace: unsupported (owner-not-accepted)
+completeness: partial
+  reasons: ownership-unavailable, trace-unavailable, scenario-details-unavailable, bindings-not-requested, scenarios-not-requested

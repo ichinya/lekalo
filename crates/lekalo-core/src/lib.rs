@@ -3,6 +3,7 @@
 pub mod diagnostics;
 pub mod effects;
 pub mod graph;
+pub mod inspect;
 pub mod ir;
 pub mod loader;
 pub mod lockfile;

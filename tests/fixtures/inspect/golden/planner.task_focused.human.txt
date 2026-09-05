@@ -1,0 +1,27 @@
+symbol: planner.task_focused
+kind: event
+module: planner
+version: 1
+description: A task became focused
+source: lekalo/modules/planner/events.yaml#/definitions/24
+selector: exact-id planner.task_focused
+contract:
+  payload:
+    - task_id: planner.task_id [required]
+    - focused_at: planner.due_date
+invariants: state=empty
+policies: state=empty
+effects: state=available readers=0 writers=0 emitters=1
+dependencies: state=available
+  - references planner.due_date (canonical)
+  - references planner.task_id (canonical)
+dependents: state=available
+  - emits planner.create_task (canonical)
+  - references planner.focus_flow (canonical)
+scenarios: state=unsupported returned=0 omitted=0
+bindings: state=unsupported returned=0 omitted=0
+ownership: unsupported (owner-not-accepted)
+portability: empty
+trace: unsupported (owner-not-accepted)
+completeness: partial
+  reasons: ownership-unavailable, trace-unavailable, scenario-details-unavailable, bindings-not-requested, scenarios-not-requested

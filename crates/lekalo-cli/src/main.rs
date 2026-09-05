@@ -72,8 +72,19 @@ enum Commands {
     },
     /// Print the embedded contract version registry.
     Compatibility,
-    /// Inspect one semantic symbol (recognized; implementation follows in a later issue).
-    Inspect { symbol: String },
+    /// Inspect one semantic symbol: identity, contract, effects,
+    /// relations, and bounded projections in one deterministic view.
+    Inspect {
+        /// A full semantic id (`planner.focus_task`) or a safe short
+        /// name (`focus_task`).
+        symbol: String,
+        /// Comma-separated optional projections: `bindings`, `scenarios`.
+        #[arg(long, value_name = "SECTIONS")]
+        include: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
     /// Report the impact of one semantic symbol (recognized; implementation follows later).
     Impact { symbol: String },
     /// Build a bounded context for one semantic symbol (recognized; implementation follows later).
@@ -294,7 +305,11 @@ fn main() -> ExitCode {
                 strict,
             } => run_validate(project, module, strict),
             Commands::Compatibility => run_compatibility(),
-            Commands::Inspect { symbol } => lekalo_core::Request::Inspect { symbol }.dispatch(),
+            Commands::Inspect {
+                symbol,
+                include,
+                project,
+            } => run_inspect(&symbol, include.as_deref(), &project),
             Commands::Impact { symbol } => lekalo_core::Request::Impact { symbol }.dispatch(),
             Commands::Context { symbol, budget } => {
                 lekalo_core::Request::Context { symbol, budget }.dispatch()
@@ -411,6 +426,59 @@ fn run_validate(project: Option<String>, module: Option<String>, strict: bool) -
     }
 }
 
+/// Run `lekalo inspect`: load and compile the project, build the graph
+/// and effect projections, and hand everything to the core inspect
+/// engine. Every inspect decision — selector grammar, resolution,
+/// ambiguity, bounds, section states — lives in the core; this binary
+/// only selects, renders, and maps exits. A malformed `--include`
+/// value is a stable usage failure before any project is loaded.
+fn run_inspect(symbol: &str, include: Option<&str>, project: &Option<String>) -> DomainResult {
+    let include = match include {
+        None => lekalo_core::inspect::Include::default(),
+        Some(text) => match lekalo_core::inspect::Include::parse(text) {
+            Some(include) => include,
+            None => return DomainResult::usage_error(),
+        },
+    };
+    // Grammar-validate the selector before any project discovery: a
+    // malformed selector is a pure usage failure with no echo.
+    if let Err(set) = lekalo_core::inspect::validate_selector(symbol) {
+        return DomainResult::invalid(set);
+    }
+    let selection = LoadSelection {
+        project: project
+            .clone()
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    let model = match lekalo_core::loader::normalize_model(&selection) {
+        Err(result) => return result,
+        Ok(model) => model,
+    };
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Err(failure) => return failure.into_result(),
+        Ok(compilation) => compilation,
+    };
+    let graph = match lekalo_core::graph::build(&compilation.project) {
+        Err(set) => return DomainResult::invalid(set),
+        Ok(graph) => graph,
+    };
+    let effects = match lekalo_core::effects::build(&compilation.project) {
+        Err(set) => return DomainResult::invalid(set),
+        Ok(effects) => effects,
+    };
+    let request = lekalo_core::inspect::InspectRequest {
+        selector: symbol.to_owned(),
+        include,
+    };
+    match lekalo_core::inspect::run(&compilation, &graph, &effects, &request) {
+        Err(set) => DomainResult::invalid(set),
+        Ok(outcome) => DomainResult::graph(
+            format!("{{\"status\":\"valid\",\"inspect\":{}}}", outcome.json),
+            outcome.human,
+            Vec::new(),
+        ),
+    }
+}
 /// The fail-closed set for an unusable embedded contract (developer fault).
 fn registry_invariant_failure() -> lekalo_core::diagnostics::DiagnosticSet {
     lekalo_core::validator::registry_invariant_failure()

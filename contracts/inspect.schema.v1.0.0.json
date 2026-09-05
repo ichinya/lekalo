@@ -1,0 +1,832 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/inspect.schema.v1.0.0.json",
+  "title": "Lekalo inspect result",
+  "description": "Closed contract of one deterministic single-symbol inspect projection (issue #15). The inspect contract version is independent of the product release, of the Model/IR/graph/effect/protocol contract versions, and of the diagnostic registry version. The payload is a read-only projection over the accepted canonical IR, dependency graph, and effect graph: it carries the resolved selector, the symbol identity card, the per-kind contract, and every mandatory section in fixed wire order (identity, contract, invariants, policies, effects, dependencies, dependents, scenarios, bindings, ownership, portability, trace, completeness, diagnostics). Sections that have no accepted data source or were not requested are explicitly marked with a closed state and reason, never silently dropped. No physical root, raw source text, username, URL, timestamp, locale value, runtime value, or adapter transcript may appear.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "modelVersion",
+    "selector",
+    "symbol",
+    "contract",
+    "invariants",
+    "policies",
+    "effects",
+    "dependencies",
+    "dependents",
+    "scenarios",
+    "bindings",
+    "ownership",
+    "portability",
+    "trace",
+    "completeness",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/inspect/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.inspect@1.0.0"
+    },
+    "modelVersion": {
+      "enum": ["0.1.0", "1.0.0"]
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/moduleId" },
+        "modelRef": { "$ref": "#/$defs/contractRef" },
+        "irRef": { "$ref": "#/$defs/digestRef" }
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "input", "resolvedId"],
+      "properties": {
+        "mode": {
+          "enum": ["exact-id", "short-name", "alias"]
+        },
+        "input": { "$ref": "#/$defs/selectorToken" },
+        "resolvedId": { "$ref": "#/$defs/semanticId" }
+      }
+    },
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "moduleId", "version"],
+      "properties": {
+        "id": { "$ref": "#/$defs/semanticId" },
+        "kind": { "$ref": "#/$defs/definitionKind" },
+        "moduleId": { "$ref": "#/$defs/moduleId" },
+        "version": { "$ref": "#/$defs/ordinal" },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "visibility": {
+          "enum": ["module", "project"]
+        },
+        "portability": {
+          "enum": ["portable", "target-specific"]
+        },
+        "source": { "$ref": "#/$defs/sourceLocation" }
+      }
+    },
+    "contract": { "$ref": "#/$defs/sectionContract" },
+    "invariants": { "$ref": "#/$defs/sectionItems" },
+    "policies": { "$ref": "#/$defs/sectionItems" },
+    "effects": { "$ref": "#/$defs/sectionItems" },
+    "dependencies": { "$ref": "#/$defs/sectionItems" },
+    "dependents": { "$ref": "#/$defs/sectionItems" },
+    "scenarios": { "$ref": "#/$defs/sectionItems" },
+    "bindings": { "$ref": "#/$defs/sectionItems" },
+    "ownership": { "$ref": "#/$defs/sectionUnsupported" },
+    "portability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "complete"],
+      "properties": {
+        "state": { "$ref": "#/$defs/sectionState" },
+        "complete": { "type": "boolean" },
+        "mode": {
+          "enum": ["portable", "target-specific"]
+        }
+      }
+    },
+    "trace": { "$ref": "#/$defs/sectionUnsupported" },
+    "completeness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reasons", "omittedItems"],
+      "properties": {
+        "state": {
+          "enum": ["complete", "partial", "unknown", "unsupported"]
+        },
+        "reasons": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/reasonToken" },
+          "maxItems": 32,
+          "uniqueItems": true
+        },
+        "omittedItems": { "$ref": "#/$defs/ordinal" }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+        "maxLength": 128
+      },
+      "maxItems": 64,
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "ordinal": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "moduleId": {
+      "$comment": "A module or project semantic id: exactly one Model name segment.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,2}$"
+    },
+    "fieldName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "selectorToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,2}$"
+    },
+    "reasonToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "contractRef": {
+      "type": "string",
+      "pattern": "^dev\\.lekalo\\.model@[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "digest"],
+      "properties": {
+        "identity": {
+          "type": "string",
+          "pattern": "^dev\\.lekalo\\.ir@[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "definitionKind": {
+      "enum": [
+        "scalar",
+        "enum",
+        "value-object",
+        "entity",
+        "command",
+        "query",
+        "policy",
+        "event",
+        "effect",
+        "endpoint",
+        "scenario",
+        "target-binding"
+      ]
+    },
+    "confidence": {
+      "enum": ["canonical", "verified", "extracted", "inferred", "unknown"]
+    },
+    "sectionState": {
+      "enum": ["available", "empty", "unknown", "unsupported", "truncated", "error"]
+    },
+    "sourceLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "pointer"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "pointer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(/[A-Za-z0-9_.:-]+)+$"
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["startByte", "endByte"],
+          "properties": {
+            "startByte": { "$ref": "#/$defs/ordinal" },
+            "endByte": { "$ref": "#/$defs/ordinal" }
+          }
+        }
+      }
+    },
+    "typeRef": {
+      "$comment": "Named TypeRef projected as its typed shape: a semantic leaf reference, a list wrapper, or an optional wrapper. Nesting depth is bounded by the Model type-expression depth (four including the leaf); the producer never emits deeper values.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref"],
+          "properties": {
+            "ref": { "$ref": "#/$defs/semanticId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["list"],
+          "properties": {
+            "list": { "$ref": "#/$defs/typeRef" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["optional"],
+          "properties": {
+            "optional": { "$ref": "#/$defs/typeRef" }
+          }
+        }
+      ]
+    },
+    "fieldItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "required"],
+      "properties": {
+        "name": { "$ref": "#/$defs/fieldName" },
+        "type": { "$ref": "#/$defs/typeRef" },
+        "required": { "type": "boolean" },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "enumValueItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "sectionContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "complete"],
+      "properties": {
+        "state": { "$ref": "#/$defs/sectionState" },
+        "complete": { "type": "boolean" },
+        "bounds": { "$ref": "#/$defs/bounds" },
+        "base": {
+          "enum": ["string", "number", "boolean", "date", "datetime", "uuid", "uri"]
+        },
+        "values": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/enumValueItem" },
+          "maxItems": 256
+        },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fieldItem" },
+          "maxItems": 256
+        },
+        "input": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fieldItem" },
+          "maxItems": 256
+        },
+        "output": { "$ref": "#/$defs/typeRef" },
+        "decision": {
+          "enum": ["allow", "deny"]
+        },
+        "operation": {
+          "enum": ["create", "update", "delete"]
+        },
+        "target": { "$ref": "#/$defs/semanticId" },
+        "emits": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semanticId" },
+          "maxItems": 256
+        },
+        "reads": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semanticId" },
+          "maxItems": 256
+        },
+        "invokes": { "$ref": "#/$defs/semanticId" },
+        "method": {
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 512,
+          "pattern": "^(/[a-z0-9:_{}-]+)+$"
+        },
+        "targetName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "covers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semanticId" },
+          "maxItems": 256
+        }
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["limit", "returned", "omitted"],
+      "properties": {
+        "limit": { "$ref": "#/$defs/ordinal" },
+        "returned": { "$ref": "#/$defs/ordinal" },
+        "omitted": { "$ref": "#/$defs/ordinal" },
+        "reason": { "$ref": "#/$defs/reasonToken" },
+        "frontier": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "sectionItems": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "complete"],
+      "properties": {
+        "state": { "$ref": "#/$defs/sectionState" },
+        "complete": { "type": "boolean" },
+        "bounds": { "$ref": "#/$defs/bounds" },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["readerCount", "writerCount", "emitterCount"],
+          "properties": {
+            "readerCount": { "$ref": "#/$defs/count" },
+            "writerCount": { "$ref": "#/$defs/count" },
+            "emitterCount": { "$ref": "#/$defs/count" }
+          }
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/anySectionItem" }
+        }
+      }
+    },
+    "sectionUnsupported": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "complete", "reason"],
+      "properties": {
+        "state": {
+          "enum": ["unsupported", "unknown", "error"]
+        },
+        "complete": { "const": false },
+        "reason": { "$ref": "#/$defs/reasonToken" }
+      }
+    },
+    "anySectionItem": {
+      "oneOf": [
+        { "$ref": "#/$defs/invariantItem" },
+        { "$ref": "#/$defs/policyItem" },
+        { "$ref": "#/$defs/effectItem" },
+        { "$ref": "#/$defs/relationItem" },
+        { "$ref": "#/$defs/scenarioItem" },
+        { "$ref": "#/$defs/bindingItem" }
+      ]
+    },
+    "invariantItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "fields"],
+      "properties": {
+        "type": {
+          "const": "identity"
+        },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fieldName" },
+          "minItems": 1,
+          "maxItems": 256
+        }
+      }
+    },
+    "policyItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "decision"],
+      "properties": {
+        "id": { "$ref": "#/$defs/semanticId" },
+        "decision": {
+          "enum": ["allow", "deny"]
+        }
+      }
+    },
+    "effectItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "kind",
+        "action",
+        "resource",
+        "field",
+        "effect",
+        "occurrence",
+        "provenance",
+        "confidence",
+        "transactionGroup",
+        "sensitivity"
+      ],
+      "properties": {
+        "operation": {
+          "type": "string",
+          "pattern": "^operation:[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "kind": {
+          "enum": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "write-field",
+            "emit-event",
+            "enqueue-job",
+            "external-call",
+            "cache-read",
+            "cache-write",
+            "cache-invalidate",
+            "publish-output",
+            "audit-log",
+            "transaction-boundary"
+          ]
+        },
+        "action": {
+          "oneOf": [
+            {
+              "enum": ["set", "clear", "append", "replace", "merge"]
+            },
+            { "type": "null" }
+          ]
+        },
+        "resource": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id"],
+          "properties": {
+            "kind": {
+              "enum": [
+                "canonical",
+                "target-resource",
+                "external-service",
+                "cache",
+                "event",
+                "job",
+                "output",
+                "audit"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+            }
+          }
+        },
+        "field": {
+          "oneOf": [
+            { "$ref": "#/$defs/fieldName" },
+            { "type": "null" }
+          ]
+        },
+        "effect": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^effect:[A-Za-z0-9][A-Za-z0-9._:-]*$"
+            },
+            {
+              "type": "string",
+              "pattern": "^#[0-9]+$"
+            }
+          ]
+        },
+        "occurrence": { "$ref": "#/$defs/ordinal" },
+        "provenance": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "irDigest", "role", "occurrence", "symbol"],
+              "properties": {
+                "type": { "const": "canonical-ir" },
+                "irDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "role": {
+                  "enum": ["query-reads", "command-effect", "effect-emits"]
+                },
+                "occurrence": { "$ref": "#/$defs/ordinal" },
+                "symbol": { "$ref": "#/$defs/semanticId" }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "adapterId", "targetId", "protocolVersion", "evidenceDigest", "trust"],
+              "properties": {
+                "type": { "const": "evidence" },
+                "adapterId": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+                },
+                "targetId": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+                },
+                "protocolVersion": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+                },
+                "evidenceDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "trust": {
+                  "enum": ["verified", "current", "extracted", "inferred", "stale", "unknown", "rejected"]
+                }
+              }
+            }
+          ]
+        },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "transactionGroup": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+            },
+            { "type": "null" }
+          ]
+        },
+        "sensitivity": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["contract", "state"],
+              "properties": {
+                "contract": {
+                  "type": "string",
+                  "minLength": 5,
+                  "maxLength": 128,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*@[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "state": {
+                  "enum": ["classified", "unclassified"]
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "relationItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relation", "endpoint", "occurrence", "provenance", "confidence"],
+      "properties": {
+        "relation": {
+          "enum": [
+            "requires",
+            "references",
+            "accepts",
+            "returns",
+            "reads",
+            "writes",
+            "emits",
+            "authorizes",
+            "exposes",
+            "implements",
+            "verifies",
+            "derived_from"
+          ]
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "occurrence": { "$ref": "#/$defs/ordinal" },
+        "provenance": {
+          "$comment": "The exact provenance record of the accepted #13 graph: canonical-IR reference sites, typed adapter evidence, or derived records. The producer projects the graph record unchanged.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["referenceRole", "occurrence", "sourceSymbol"],
+              "properties": {
+                "referenceRole": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "occurrence": { "$ref": "#/$defs/ordinal" },
+                "sourceSymbol": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 192,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["adapterId", "targetId", "protocolVersion", "evidenceDigest", "evidenceStatus"],
+              "properties": {
+                "adapterId": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+                },
+                "targetId": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+                },
+                "protocolVersion": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+                },
+                "evidenceDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "evidenceStatus": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["algorithmId", "algorithmVersion", "parentEdgeKeys"],
+              "properties": {
+                "algorithmId": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+                },
+                "algorithmVersion": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+                },
+                "parentEdgeKeys": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "maxItems": 8
+                }
+              }
+            }
+          ]
+        },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "scenarioItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/semanticId" },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "bindingItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bindingId", "moduleId", "targetId", "status", "confidence"],
+      "properties": {
+        "bindingId": { "$ref": "#/$defs/semanticId" },
+        "moduleId": { "$ref": "#/$defs/semanticId" },
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "status": {
+          "enum": ["declared"]
+        },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "profileRef": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["namespace", "schema", "version", "digest", "data"],
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+            },
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "data": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          }
+        }
+      }
+    }
+  }
+}

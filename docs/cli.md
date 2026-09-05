@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.19. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.21. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -29,17 +29,18 @@ lekalo graph show SYMBOL [--project DIR]
 lekalo graph callers SYMBOL [--transitive] [--project DIR]
 lekalo graph path FROM TO [--project DIR]
 lekalo graph export [--format json] [--spans] [--project DIR]
-lekalo inspect SYMBOL
+lekalo inspect SYMBOL [--include SECTIONS] [--project DIR]
 lekalo impact SYMBOL
 lekalo context SYMBOL --budget TOKENS
 ```
 
-`--version`, `load`, `lock`, `update`, `migrate`, and `compatibility` are
-implemented. The remaining three subcommands are
-recognized stubs: valid syntax reaches the named capability and returns
-`unsupported`. `SYMBOL` is an opaque string at this layer, and `TOKENS` is an
-unsigned integer. Semantic ID rules, validation, graph construction, and
-real inspect, impact, or context behavior belong to later issues.
+`--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
+`validate`, `graph`, `effects`, and `inspect` are implemented. The two
+remaining subcommands are recognized stubs: valid syntax reaches the named
+capability and returns `unsupported`. `SYMBOL` is an opaque string at this
+layer, and `TOKENS` is an unsigned integer. Semantic ID rules, validation,
+graph construction, and real impact or context behavior belong to later
+issues.
 When those capabilities are implemented they are bound by
 dev.lekalo.semantic-ids@0.1.0 to use the validated semantic ID verbatim as
 their canonical key; the implemented loader already consumes those IDs
@@ -177,12 +178,12 @@ Malformed syntax:
 }
 ```
 
-Recognized unavailable capability (using `inspect` as the example):
+Recognized unavailable capability (using `impact` as the example):
 
 ```json
 {
   "status": "unsupported",
-  "capability": "inspect",
+  "capability": "impact",
   "diagnostics": [
     {
       "schema_version": "lekalo/diagnostic/v1.0.0",
@@ -211,14 +212,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.19"
+  "version": "0.1.21"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.19`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.1.21`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -324,6 +325,34 @@ lekalo trace query tests/fixtures/trace/partial.trace.json gaps
 contract, guarantees, and limits are documented in
 [docs/trace-manifest.md](trace-manifest.md) and
 [ADR-0014](adr/0014-trace-manifest.md).
+
+## Inspect
+
+Issue #15 answers the single-symbol question through one thin subcommand.
+The core owns every decision — selector grammar and resolution, the #6
+alias registry, ambiguity bounds, section states, limits — and projects
+one normalized object into the human and JSON views; the binary only
+selects, renders, and maps exits onto the accepted 0/1 envelope.
+Successes exit 0 on stdout; unknown symbols
+(`inspect.symbol-unknown`/`inspect.short-name-unknown`, `LEK-INS-001` /
+`LEK-INS-002`), ambiguity (`inspect.short-name-ambiguous`,
+`LEK-INS-003`), and output-bound exhaustion (`inspect.output-limit`,
+`LEK-INS-004`) exit 1 on stderr. A selector that violates the grammar
+(`cli.usage`) never echoes the rejected input.
+
+```sh
+lekalo inspect planner.focus_task
+lekalo inspect focus_task --json                     # safe short name
+lekalo inspect planner.task --include bindings,scenarios
+```
+
+Success envelopes wrap the payload as
+`{"status":"valid","inspect":{...}}` with the fixed section order
+identity, contract, invariants, policies, effects, dependencies,
+dependents, scenarios, bindings, ownership, portability, trace,
+completeness, diagnostics. The contract, guarantees, and limits are
+documented in [docs/inspect.md](inspect.md) and
+[ADR-0014](adr/0014-inspect.md).
 
 ## Development checks
 

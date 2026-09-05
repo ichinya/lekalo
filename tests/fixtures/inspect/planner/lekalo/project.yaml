@@ -1,0 +1,18 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner
+    kind: project
+    version: 3
+    description: "Focus planner inspect example model"
+    derived_from:
+      - "PLANNER-REQ-001"
+    id_registry:
+      rename_history:
+        - from: "audit.work_item"
+          to: "audit.task"
+          definition_version: 2
+          same_identity: true
+      tombstones:
+        - id: "planner.old_task"
+          reason: "deleted"
+          since: 2

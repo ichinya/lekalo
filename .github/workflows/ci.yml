@@ -39,6 +39,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-scenario-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-effect-graph-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-inspect-contracts.mjs
       - name: Run contract checkers and suites
         run: |
           node scripts/check-authority.mjs

@@ -1,0 +1,24 @@
+symbol: planner.focus_flow
+kind: scenario
+module: planner
+version: 1
+description: Focus flow
+source: lekalo/modules/planner/scenarios.yaml#/definitions/19
+selector: exact-id planner.focus_flow
+contract:
+  summary: Focusing a task emits the focused event.
+  covers: planner.focus_task, planner.task_focused
+invariants: state=empty
+policies: state=empty
+effects: state=empty
+dependencies: state=available
+  - references planner.task_focused (canonical)
+  - references planner.focus_task (canonical)
+dependents: state=empty
+scenarios: state=unsupported returned=0 omitted=0
+bindings: state=unsupported returned=0 omitted=0
+ownership: unsupported (owner-not-accepted)
+portability: empty
+trace: unsupported (owner-not-accepted)
+completeness: partial
+  reasons: ownership-unavailable, trace-unavailable, scenario-details-unavailable, bindings-not-requested, scenarios-not-requested

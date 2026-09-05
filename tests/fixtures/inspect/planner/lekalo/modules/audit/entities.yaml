@@ -1,0 +1,19 @@
+schema_version: "1.0.0"
+definitions:
+  - id: audit.note
+    kind: scalar
+    version: 1
+    description: "Audit note text"
+    base: string
+  - id: audit.task
+    kind: entity
+    version: 2
+    description: "An audited work item"
+    fields:
+      - name: task_id
+        type: "audit.note"
+        required: true
+      - name: stamp
+        type: "audit.note"
+    identity:
+      - task_id

@@ -176,6 +176,22 @@ The details live in [docs/trace-manifest.md](docs/trace-manifest.md),
 `contracts/trace-manifest.schema.v1.0.0.json`; hermetic fixtures are
 under `tests/fixtures/trace/`.
 
+## Inspect: one semantic symbol
+
+Issue #15 answers the single-symbol question for humans and AI consumers:
+`lekalo inspect planner.focus_task [--json] [--include bindings,scenarios]`
+projects the resolved selector, the identity card, the per-kind contract,
+invariants, applicable policies, direct effect edges, dependencies and
+dependents, covering scenarios, module bindings, portability, and explicit
+completeness — every mandatory section present with closed
+`empty`/`unknown`/`unsupported`/`truncated` states instead of silent
+omission. Safe selector grammar, distinct unknown/ambiguous diagnostics,
+the #6 alias registry semantics, fixed wire order, and a recorded bound
+profile keep reruns byte-identical. See [docs/inspect.md](docs/inspect.md),
+[ADR-0014](docs/adr/0014-inspect.md), and
+`contracts/inspect.schema.v1.0.0.json`; hermetic fixtures are under
+`tests/fixtures/inspect/`.
+
 ## Stable machine-readable diagnostics
 
 Issue #11 freezes the diagnostic wire: every failure carries closed wire
@@ -186,9 +202,10 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.2.0.json` (issue #12 extended it with the
+`contracts/diagnostic-registry.v1.3.0.json` (issue #12 extended it with the
 `semantic.*`/`validate.*` families and issue #13 added the `graph.*`
-family, each as a minor increment).
+family, each as a minor increment; issue #15 added the `inspect.*` family
+the same way).
 
 ## Semantic validation
 
@@ -210,8 +227,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #22 carries prospective product
-0.1.19 (issue #23 published product 0.1.20 at `eef1863`; issue #14
+independent of product releases; issue #15 carries prospective product
+0.1.21 (issue #22 published product 0.1.19 at `31468e9`; issue #23
+published product 0.1.20 at `eef1863`; issue #14
 published product 0.1.12 at `81666da`; issue #13
 published product 0.1.11 at `007c01d`; issue #12
 published product 0.1.10 at `fdfbcb5`; issue #11

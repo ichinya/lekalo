@@ -29,7 +29,7 @@ fn diagnostic_item_json(
     message: &str,
 ) -> String {
     format!(
-        "{{\n      \"schema_version\": \"lekalo/diagnostic/v1.0.0\",\n      \"registry_version\": \"1.2.0\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
+        "{{\n      \"schema_version\": \"lekalo/diagnostic/v1.0.0\",\n      \"registry_version\": \"1.3.0\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
     )
 }
 
@@ -105,9 +105,10 @@ fn plain_and_json_version_outputs_are_exact_in_both_flag_orders() {
 }
 
 #[test]
-fn every_stub_is_exact_in_human_and_both_json_flag_orders() {
+fn every_remaining_stub_is_exact_in_human_and_both_json_flag_orders() {
+    // `inspect` is implemented since issue #15; the remaining stubs
+    // keep the exact recognized-but-unimplemented envelope.
     let cases = [
-        ("inspect", vec!["inspect", "planner.task"]),
         ("impact", vec!["impact", "planner.task"]),
         (
             "context",
@@ -178,9 +179,11 @@ fn malformed_invocations_are_stable_usage_errors_and_never_exit_two() {
 #[test]
 fn escaped_json_literals_do_not_select_json_output() {
     let inspect = lekalo(&["inspect", "--", "--json"]);
-    assert_exit(&inspect, 4);
-    assert_eq!(inspect.stdout, unsupported_human().as_bytes());
-    assert!(inspect.stderr.is_empty());
+    // The escaped literal becomes the inspect selector; it violates the
+    // selector grammar, so it is a stable usage failure with no echo.
+    assert_exit(&inspect, 1);
+    assert!(inspect.stdout.is_empty());
+    assert_eq!(inspect.stderr, usage_human().as_bytes());
     assert_no_escaped_argument_leak(&inspect);
 
     for args in [
@@ -367,14 +370,14 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
 
     let root_manifest =
         std::fs::read_to_string(workspace.join("Cargo.toml")).expect("read workspace Cargo.toml");
-    assert_eq!(root_manifest.matches("version = \"0.1.19\"").count(), 1);
+    assert_eq!(root_manifest.matches("version = \"0.1.21\"").count(), 1);
     for member in [
         "crates/lekalo-core/Cargo.toml",
         "crates/lekalo-cli/Cargo.toml",
     ] {
         let manifest =
             std::fs::read_to_string(workspace.join(member)).expect("read member manifest");
-        assert!(!manifest.contains("0.1.19"));
+        assert!(!manifest.contains("0.1.21"));
         assert!(manifest.contains("version.workspace = true"));
     }
 }

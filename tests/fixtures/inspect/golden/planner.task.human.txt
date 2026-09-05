@@ -1,0 +1,39 @@
+symbol: planner.task
+kind: entity
+module: planner
+version: 1
+description: A focusable task
+source: lekalo/modules/planner/entities.yaml#/definitions/22
+selector: exact-id planner.task
+contract:
+  fields:
+    - task_id: planner.task_id [required]
+    - title: planner.text [required]
+    - state: planner.task_state [required]
+    - due: planner.due_date?
+    - window: list<planner.due_window>
+invariants: state=available
+  - identity task_id
+policies: state=empty
+effects: state=available readers=3 writers=3 emitters=0
+dependencies: state=available
+  - references planner.due_date (canonical)
+  - references planner.due_window (canonical)
+  - references planner.task_id (canonical)
+  - references planner.task_state (canonical)
+  - references planner.text (canonical)
+dependents: state=available
+  - references planner.archive_task (canonical)
+  - references planner.create_task (canonical)
+  - references planner.edit_task (canonical)
+  - reads planner.count_focused (canonical)
+  - returns planner.list_tasks (canonical)
+  - reads planner.list_tasks (canonical)
+  - reads planner.user_names (canonical)
+scenarios: state=unsupported returned=0 omitted=0
+bindings: state=unsupported returned=0 omitted=0
+ownership: unsupported (owner-not-accepted)
+portability: empty
+trace: unsupported (owner-not-accepted)
+completeness: partial
+  reasons: ownership-unavailable, trace-unavailable, scenario-details-unavailable, bindings-not-requested, scenarios-not-requested

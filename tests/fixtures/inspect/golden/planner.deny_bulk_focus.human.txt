@@ -1,0 +1,22 @@
+symbol: planner.deny_bulk_focus
+kind: policy
+module: planner
+version: 1
+description: Bulk focus is out of scope
+source: lekalo/modules/planner/policies.yaml#/definitions/14
+selector: exact-id planner.deny_bulk_focus
+contract:
+  decision: deny
+invariants: state=empty
+policies: state=empty
+effects: state=empty
+dependencies: state=available
+  - authorizes planner.focus_task (canonical)
+dependents: state=empty
+scenarios: state=unsupported returned=0 omitted=0
+bindings: state=unsupported returned=0 omitted=0
+ownership: unsupported (owner-not-accepted)
+portability: empty
+trace: unsupported (owner-not-accepted)
+completeness: partial
+  reasons: ownership-unavailable, trace-unavailable, scenario-details-unavailable, bindings-not-requested, scenarios-not-requested

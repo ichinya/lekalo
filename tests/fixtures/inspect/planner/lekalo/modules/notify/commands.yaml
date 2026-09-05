@@ -1,0 +1,29 @@
+schema_version: "1.0.0"
+definitions:
+  - id: notify.rename_user
+    kind: effect
+    version: 1
+    description: "Renames a user"
+    operation: update
+    entity: "notify.user"
+  - id: notify.rename_user_cmd
+    kind: command
+    version: 1
+    description: "Rename one user"
+    input:
+      - name: user_id
+        type: "notify.user_id"
+        required: true
+      - name: name
+        type: "notify.text"
+        required: true
+    effects:
+      - "notify.rename_user"
+  - id: notify.purge_cache_cmd
+    kind: command
+    version: 1
+    description: "Purge notification caches"
+    input:
+      - name: user_id
+        type: "notify.user_id"
+        required: true
