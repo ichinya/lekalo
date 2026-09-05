@@ -1,0 +1,42 @@
+{
+  "binding": {
+    "cacheIdentity": "dev.lekalo.cache@1.0.0",
+    "contracts": [
+      {
+        "family": "dev.lekalo.graph",
+        "identity": "dev.lekalo.graph@1.0.0"
+      },
+      {
+        "family": "dev.lekalo.effects",
+        "identity": "dev.lekalo.effects@1.0.0"
+      }
+    ],
+    "pipelineRevision": 1
+  },
+  "dependencies": [],
+  "identity": "dev.lekalo.cache@1.0.0",
+  "key": {
+    "graphDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+    "kind": "effect-fragment"
+  },
+  "keyDigest": "sha256:bcb5d8032a8b0b2fc606e043785c4cabb59269559dd6d5c8de33d7c18b2093a4",
+  "payload": {
+    "encoding": "lekalo/canonical-json",
+    "value": {
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000009",
+      "fields": [
+        {
+          "name": "declared",
+          "value": 2
+        },
+        {
+          "name": "detected",
+          "value": 0
+        }
+      ]
+    }
+  },
+  "payloadDigest": "sha256:9076ec1c70350b3e6eea93f13188648e3ec4e9dd8b8b4f36a147f4553bc27416",
+  "recordKind": "effect-fragment",
+  "schemaVersion": "lekalo/cache/v1.0.0"
+}

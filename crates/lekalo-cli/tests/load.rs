@@ -50,7 +50,11 @@ fn alias_free_path(path: &Path) -> PathBuf {
 /// exercised through this helper.
 fn run_load(selector: &str, extra_args: &[&str], cwd: Option<&Path>) -> Output {
     let mut command = Command::new(binary());
-    command.arg("load").arg("--project").arg(selector);
+    command
+        .arg("--no-cache")
+        .arg("load")
+        .arg("--project")
+        .arg(selector);
     for argument in extra_args {
         command.arg(argument);
     }
@@ -64,7 +68,7 @@ fn run_load(selector: &str, extra_args: &[&str], cwd: Option<&Path>) -> Output {
 /// Run `lekalo load` with no selector: discovery from `cwd`.
 fn run_discovery(cwd: &Path, extra_args: &[&str]) -> Output {
     let mut command = Command::new(binary());
-    command.arg("load");
+    command.arg("--no-cache").arg("load");
     for argument in extra_args {
         command.arg(argument);
     }
@@ -303,7 +307,7 @@ fn selection_precedence_project_flag_beats_environment() {
     let bad = format!("{FIXTURE_ROOT}/invalid-json-comment");
     let mut command = Command::new(binary());
     command
-        .args(["load", "--json", "--project"])
+        .args(["--no-cache", "load", "--json", "--project"])
         .arg(&good)
         .current_dir(workspace_root());
     command.env("LEKALO_PROJECT", &bad);
@@ -317,7 +321,7 @@ fn environment_selector_loads_and_clean_output_leaks_no_paths() {
     let absolute = workspace_root().join(&selector);
     let mut command = Command::new(binary());
     command
-        .args(["load", "--json"])
+        .args(["--no-cache", "load", "--json"])
         .current_dir(workspace_root());
     command.env("LEKALO_PROJECT", &selector);
     let output = command.output().expect("run");

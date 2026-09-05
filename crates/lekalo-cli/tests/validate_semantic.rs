@@ -8,6 +8,10 @@ use std::process::{Command, Output};
 const FIXTURES: &str = "tests/fixtures/validation";
 
 fn lekalo_in(dir: &Path, args: &[&str]) -> Output {
+    // The pre-cache suites pin the published --no-cache path; cache-on
+    // behavior is exercised by tests/cache.rs.
+    let mut args = args.to_vec();
+    args.insert(0, "--no-cache");
     Command::new(env!("CARGO_BIN_EXE_lekalo"))
         .args(args)
         .current_dir(dir)

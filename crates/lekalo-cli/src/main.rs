@@ -33,6 +33,11 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
+    /// Bypass every cache read, write, and lock; outputs match a clean
+    /// full rebuild and no runtime files are created or touched.
+    #[arg(long, global = true)]
+    no_cache: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -158,6 +163,11 @@ enum Commands {
         #[arg(long, value_name = "PLAN_ID")]
         confirm: Option<String>,
     },
+    /// Inspect or clear the incremental cache of this project.
+    Cache {
+        #[command(subcommand)]
+        command: CacheCommands,
+    },
 }
 
 /// The `trace` subcommands: a thin handoff to the core trace validator.
@@ -184,6 +194,26 @@ enum TraceCommands {
         /// `artifacts-for:ID`, `tests-for:ID`, `gates-for:ID`,
         /// `diagnostics-for:ID`, or `gaps`.
         selector: String,
+    },
+}
+
+/// The `cache` subcommands: the thin status/clear handoff (issue #20).
+#[derive(Debug, Subcommand)]
+enum CacheCommands {
+    /// Print the read-only, bounded cache health projection.
+    Status {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Clear the cache home (`.lekalo/cache/**` except migration state).
+    Clear {
+        /// Required explicit confirmation; the CI-safe invocation form.
+        #[arg(long)]
+        yes: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
     },
 }
 
@@ -320,13 +350,13 @@ fn main() -> ExitCode {
                 apply,
                 offline: _,
             } => run_update(project, dry_run, apply),
-            Commands::Load { project, spans, ir } => run_load(project, spans, ir),
+            Commands::Load { project, spans, ir } => run_load(project, spans, ir, cli.no_cache),
             Commands::Migrate { migrate } => run_migrate(migrate),
             Commands::Validate {
                 project,
                 module,
                 strict,
-            } => run_validate(project, module, strict),
+            } => run_validate(project, module, strict, cli.no_cache),
             Commands::Compatibility => run_compatibility(),
             Commands::Inspect {
                 symbol,
@@ -337,8 +367,8 @@ fn main() -> ExitCode {
             Commands::Context { symbol, budget } => {
                 lekalo_core::Request::Context { symbol, budget }.dispatch()
             }
-            Commands::Graph { command } => run_graph(command),
-            Commands::Effects { command } => run_effects(command),
+            Commands::Graph { command } => run_graph(command, cli.no_cache),
+            Commands::Effects { command } => run_effects(command, cli.no_cache),
             Commands::Trace { command } => run_trace(command),
             Commands::Generate {
                 project,
@@ -347,6 +377,7 @@ fn main() -> ExitCode {
                 dry_run,
                 confirm,
             } => run_generate(project, check, clean, dry_run, confirm),
+            Commands::Cache { command } => run_cache(command),
         },
         Err(error) => match error.kind() {
             ErrorKind::DisplayHelp => {
@@ -396,21 +427,18 @@ fn emit(result: DomainResult, json: bool) -> ExitCode {
 
 /// Resolve the selection (explicit `--project` beats `LEKALO_PROJECT`) and
 /// run the loader; the loader returns the terminal domain result.
-fn run_load(project: Option<String>, spans: bool, ir: bool) -> DomainResult {
+fn run_load(project: Option<String>, spans: bool, ir: bool, no_cache: bool) -> DomainResult {
     let selection = LoadSelection {
         project: project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
     };
     match ir {
-        false => lekalo_core::loader::run(&selection, spans),
-        true => match lekalo_core::loader::normalize_model(&selection) {
+        false => lekalo_core::cache::run_load(&selection, spans, no_cache),
+        true => match lekalo_core::cache::load_compiled(&selection, no_cache) {
             Err(result) => result,
-            Ok(model) => match lekalo_core::ir::compile(&model) {
-                Err(failure) => failure.into_result(),
-                Ok(compilation) => {
-                    let (json, human) = render_ir_success(&model, &compilation, spans);
-                    DomainResult::ir(json, human)
-                }
-            },
+            Ok((model, compilation)) => {
+                let (json, human) = render_ir_success(&model, &compilation, spans);
+                DomainResult::ir(json, human)
+            }
         },
     }
 }
@@ -420,17 +448,18 @@ fn run_load(project: Option<String>, spans: bool, ir: bool) -> DomainResult {
 /// versioning failures pass through untouched; semantic invalidity maps to
 /// the invalid envelope (exit 1) and valid outcomes carry only
 /// warning/info diagnostics (exit 0).
-fn run_validate(project: Option<String>, module: Option<String>, strict: bool) -> DomainResult {
+fn run_validate(
+    project: Option<String>,
+    module: Option<String>,
+    strict: bool,
+    no_cache: bool,
+) -> DomainResult {
     let selection = LoadSelection {
         project: project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
     };
-    let model = match lekalo_core::loader::normalize_model(&selection) {
+    let (model, compilation) = match lekalo_core::cache::load_compiled(&selection, no_cache) {
         Err(result) => return result,
-        Ok(model) => model,
-    };
-    let compilation = match lekalo_core::ir::compile(&model) {
-        Err(failure) => return failure.into_result(),
-        Ok(compilation) => compilation,
+        Ok(pair) => pair,
     };
     let profile = match if strict {
         lekalo_core::validator::ValidationProfile::embedded_strict()
@@ -806,22 +835,40 @@ fn render_ir_success(
 /// decision — projection, evidence attachment, comparison, conflicts,
 /// limits, diagnostics — lives in the core; this binary only selects,
 /// renders, and maps exits.
-fn run_effects(command: EffectsCommands) -> DomainResult {
+fn run_effects(command: EffectsCommands, no_cache: bool) -> DomainResult {
     match command {
-        EffectsCommands::Show { operation, project } => with_effects(&project, |project, graph| {
-            effects_show(project, graph, &operation)
-        }),
+        EffectsCommands::Show { operation, project } => {
+            with_effects(&project, no_cache, |project, graph| {
+                effects_show(project, graph, &operation)
+            })
+        }
         EffectsCommands::Writers {
             resource,
             readers,
             project,
-        } => with_effects(&project, |project, graph| {
+        } => with_effects(&project, no_cache, |project, graph| {
             effects_writers(project, graph, &resource, readers)
         }),
         EffectsCommands::Conflicts { changed, project } => {
-            with_effects(&project, |project, graph| {
+            with_effects(&project, no_cache, |project, graph| {
                 effects_conflicts(project, graph, &changed)
             })
+        }
+    }
+}
+
+/// Run one `cache` subcommand: the read-only health projection, or the
+/// explicit-confirmation clear of the governed cache home.
+fn run_cache(command: CacheCommands) -> DomainResult {
+    match command {
+        CacheCommands::Status { project } => lekalo_core::cache::status(&selection_for(&project)),
+        CacheCommands::Clear { yes, project } => {
+            if !yes {
+                // The explicit confirmation is part of the accepted
+                // surface; there is no implicit clear.
+                return DomainResult::usage_error();
+            }
+            lekalo_core::cache::clear(&selection_for(&project))
         }
     }
 }
@@ -831,6 +878,7 @@ fn run_effects(command: EffectsCommands) -> DomainResult {
 /// order.
 fn with_effects(
     project: &Option<String>,
+    no_cache: bool,
     step: impl FnOnce(
         &lekalo_core::ir::CompiledProject,
         &lekalo_core::effects::EffectGraph,
@@ -841,18 +889,19 @@ fn with_effects(
             .clone()
             .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
     };
-    let model = match lekalo_core::loader::normalize_model(&selection) {
+    let session = match lekalo_core::cache::Session::open(&selection, no_cache) {
         Err(result) => return result,
-        Ok(model) => model,
+        Ok(session) => session,
     };
-    let compilation = match lekalo_core::ir::compile(&model) {
-        Err(failure) => return failure.into_result(),
-        Ok(compilation) => compilation,
+    let (_model, compilation) = match session.load_compiled(&selection) {
+        Err(result) => return result,
+        Ok(pair) => pair,
     };
     let graph = match lekalo_core::effects::build(&compilation.project) {
         Err(set) => return DomainResult::invalid(set),
         Ok(graph) => graph,
     };
+    session.record_effects(&graph);
     step(&compilation.project, &graph)
 }
 
@@ -1071,59 +1120,59 @@ fn effect_line(label: &str, edge: &lekalo_core::effects::EffectEdge) -> String {
 /// to the core graph engine, and project the result. Every graph decision
 /// — construction, traversal, cycle policy, limits, diagnostics — lives in
 /// the core; this binary only selects, renders, and maps exits.
-fn run_graph(command: GraphCommands) -> DomainResult {
+fn run_graph(command: GraphCommands, no_cache: bool) -> DomainResult {
     match command {
         GraphCommands::Show { symbol, project } => {
-            with_graph(&project, &[], |graph, _| graph_show(graph, &symbol))
+            with_graph(&project, no_cache, |graph, _| graph_show(graph, &symbol))
         }
         GraphCommands::Callers {
             symbol,
             transitive,
             project,
-        } => with_graph(&project, &[], |graph, _| {
+        } => with_graph(&project, no_cache, |graph, _| {
             graph_callers(graph, &symbol, transitive)
         }),
         GraphCommands::Path { from, to, project } => {
-            with_graph(&project, &[], |graph, _| graph_path(graph, &from, &to))
+            with_graph(&project, no_cache, |graph, _| graph_path(graph, &from, &to))
         }
         GraphCommands::Export {
             project,
             format: GraphFormat::Json,
             spans,
-        } => with_graph(&project, &["graph export"], |graph, compilation| {
+        } => with_graph(&project, no_cache, |graph, compilation| {
             graph_export(graph, compilation, spans)
         }),
     }
 }
 
-/// Load and compile the selected project, build the graph, and run `step`.
-/// Load, IR, and graph failures pass through untouched in that order.
+/// Load and compile the selected project, build the graph, record the
+/// graph fragment, and run `render`.
 fn with_graph(
     project: &Option<String>,
-    steps: &[&str],
+    no_cache: bool,
     render: impl FnOnce(
         &lekalo_core::graph::DependencyGraph,
         &lekalo_core::ir::Compilation,
     ) -> DomainResult,
 ) -> DomainResult {
-    let _ = steps;
     let selection = LoadSelection {
         project: project
             .clone()
             .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
     };
-    let model = match lekalo_core::loader::normalize_model(&selection) {
+    let session = match lekalo_core::cache::Session::open(&selection, no_cache) {
         Err(result) => return result,
-        Ok(model) => model,
+        Ok(session) => session,
     };
-    let compilation = match lekalo_core::ir::compile(&model) {
-        Err(failure) => return failure.into_result(),
-        Ok(compilation) => compilation,
+    let (_model, compilation) = match session.load_compiled(&selection) {
+        Err(result) => return result,
+        Ok(pair) => pair,
     };
     let graph = match lekalo_core::graph::build(&compilation.project) {
         Err(set) => return DomainResult::invalid(set),
         Ok(graph) => graph,
     };
+    session.record_graph(&compilation, &graph);
     render(&graph, &compilation)
 }
 

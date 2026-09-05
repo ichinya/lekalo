@@ -27,7 +27,11 @@ fn binary() -> &'static str {
 
 fn run_load(selector: &str, extra_args: &[&str]) -> Output {
     let mut command = Command::new(binary());
-    command.arg("load").arg("--project").arg(selector);
+    command
+        .arg("--no-cache")
+        .arg("load")
+        .arg("--project")
+        .arg(selector);
     for argument in extra_args {
         command.arg(argument);
     }

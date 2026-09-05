@@ -18,7 +18,11 @@ fn workspace_root() -> PathBuf {
 
 fn run_load(selector: &str, extra_args: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_lekalo"));
-    command.arg("load").arg("--project").arg(selector);
+    command
+        .arg("--no-cache")
+        .arg("load")
+        .arg("--project")
+        .arg(selector);
     for argument in extra_args {
         command.arg(argument);
     }
@@ -57,6 +61,7 @@ fn golden_projections_are_byte_stable_across_reruns() {
     let cases: Vec<(Vec<&str>, &str)> = vec![
         (
             vec![
+                "--no-cache",
                 "load",
                 "--json",
                 "--project",
@@ -66,6 +71,7 @@ fn golden_projections_are_byte_stable_across_reruns() {
         ),
         (
             vec![
+                "--no-cache",
                 "load",
                 "--project",
                 "tests/fixtures/loader/invalid-duplicate-definition",
@@ -74,6 +80,7 @@ fn golden_projections_are_byte_stable_across_reruns() {
         ),
         (
             vec![
+                "--no-cache",
                 "load",
                 "--ir",
                 "--json",

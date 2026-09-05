@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "lekalo/cache/v1.0.0",
+  "identity": "dev.lekalo.cache@1.0.0",
+  "recordKind": "source",
+  "key": { "kind": "source", "path": "lekalo/project.yaml", "rawDigest": "sha256:000000000000000000000000000000000000000000000000000000000000000A" },
+  "binding": { "cacheIdentity": "dev.lekalo.cache@1.0.0", "contracts": [], "pipelineRevision": 1 },
+  "dependencies": [],
+  "payload": { "encoding": "lekalo/canonical-json", "value": { "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000009", "fields": [] } },
+  "payloadDigest": "sha256:81808c167f4a20a3e3887442ad523e597dfacb95cc97a7fe064e0275dafbe62a"
+}

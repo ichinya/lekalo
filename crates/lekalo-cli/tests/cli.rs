@@ -319,6 +319,10 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
     assert_eq!(
         core_normal_dependencies,
         [
+            // Issue #20 adds the audited SQLite backend (bundled
+            // amalgamation, exact-pinned, MIT, MSRV-compatible) behind the
+            // cache storage seam.
+            "rusqlite",
             "saphyr-parser",
             // Issue #9 adds the audited strict SemVer implementation and
             // the MSRV-proven SHA-256 digest for deterministic plan and
@@ -370,14 +374,14 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
 
     let root_manifest =
         std::fs::read_to_string(workspace.join("Cargo.toml")).expect("read workspace Cargo.toml");
-    assert_eq!(root_manifest.matches("version = \"0.1.22\"").count(), 1);
+    assert_eq!(root_manifest.matches("version = \"0.1.23\"").count(), 1);
     for member in [
         "crates/lekalo-core/Cargo.toml",
         "crates/lekalo-cli/Cargo.toml",
     ] {
         let manifest =
             std::fs::read_to_string(workspace.join(member)).expect("read member manifest");
-        assert!(!manifest.contains("0.1.22"));
+        assert!(!manifest.contains("0.1.23"));
         assert!(manifest.contains("version.workspace = true"));
     }
 }

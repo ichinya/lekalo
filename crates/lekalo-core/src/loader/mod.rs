@@ -775,6 +775,16 @@ pub(crate) fn build_normalized_model(
     })
 }
 
+/// Render the terminal CLI envelope from one normalized aggregate (phase
+/// 9) for the issue #20 cache pipeline: the exact `run` rendering, on the
+/// already-loaded model.
+pub(crate) fn render_model_envelope(
+    model: &NormalizedModel,
+    spans_requested: bool,
+) -> DomainResult {
+    render_load_output(model, spans_requested)
+}
+
 /// Render the terminal CLI envelope from one normalized aggregate (phase 9):
 /// canonical model bytes, the optional sorted source map, and the success
 /// line. Byte-identical to the pre-#8 rendering.

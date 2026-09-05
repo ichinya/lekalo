@@ -244,8 +244,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #21 carries prospective product
-0.1.22 (issue #15 published product 0.1.21 at `9ab5b07`; issue #23
+independent of product releases; issue #20 carries prospective product
+0.1.23 (issue #21 published product 0.1.22 at `2dab70e`; issue #15
+published product 0.1.21 at `9ab5b07`; issue #23
 published product 0.1.20 at `eef1863`; issue #22
 published product 0.1.19 at `31468e9`; issue #14
 published product 0.1.12 at `81666da`; issue #13

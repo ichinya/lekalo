@@ -1,0 +1,36 @@
+{
+  "binding": {
+    "cacheIdentity": "dev.lekalo.cache@1.0.0",
+    "contracts": [],
+    "pipelineRevision": 1
+  },
+  "dependencies": [
+    {
+      "keyDigest": "sha256:784dadc6097f91b00575eda378bad2a4d97c2647d482dc1e1ffbe33d8e2062c1",
+      "ordinal": 0,
+      "role": "input"
+    }
+  ],
+  "identity": "dev.lekalo.cache@1.0.0",
+  "key": {
+    "kind": "parsed-fragment",
+    "path": "lekalo/project.yaml",
+    "rawDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+  },
+  "keyDigest": "sha256:72673e25f53da49ad6298f302d35b2f8888b8945c8a8bee512e563b7a87877b5",
+  "payload": {
+    "encoding": "lekalo/canonical-json",
+    "value": {
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000009",
+      "fields": [
+        {
+          "name": "definitions",
+          "value": 3
+        }
+      ]
+    }
+  },
+  "payloadDigest": "sha256:62d24a516d91c99bde915979a465dc5507c146538fd3179bfe7aea74f2e43b4d",
+  "recordKind": "parsed-fragment",
+  "schemaVersion": "lekalo/cache/v1.0.0"
+}

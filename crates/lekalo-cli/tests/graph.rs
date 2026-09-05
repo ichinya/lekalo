@@ -9,6 +9,10 @@ use std::process::{Command, Output};
 const FIXTURE: &str = "tests/fixtures/graph/planner";
 
 fn lekalo_in(dir: &Path, args: &[&str]) -> Output {
+    // The pre-cache suites pin the published --no-cache path; cache-on
+    // behavior is exercised by tests/cache.rs.
+    let mut args = args.to_vec();
+    args.insert(0, "--no-cache");
     Command::new(env!("CARGO_BIN_EXE_lekalo"))
         .args(args)
         .current_dir(dir)
@@ -294,11 +298,11 @@ fn version_reports_the_prospective_product_version() {
     let project = fixture_path();
     let human = lekalo_in(&project, &["--version"]);
     assert_eq!(exit_code(&human), 0);
-    assert_eq!(stdout_text(&human).trim(), "lekalo 0.1.22");
+    assert_eq!(stdout_text(&human).trim(), "lekalo 0.1.23");
     let json = lekalo_in(&project, &["--json", "--version"]);
     assert_eq!(exit_code(&json), 0);
     assert_eq!(
         stdout_text(&json).trim(),
-        "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.22\"\n}"
+        "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.23\"\n}"
     );
 }
