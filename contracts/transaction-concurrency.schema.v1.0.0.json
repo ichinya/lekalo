@@ -1,0 +1,948 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/transaction-concurrency.schema.v1.0.0.json",
+  "title": "Lekalo Transaction and Concurrency Attachment",
+  "description": "Closed independent attachment contract for declared transaction, atomicity, concurrency-control, idempotency, retry, and compensation semantics (issue #24). One document binds one project identity to typed operation contracts with required/optional/forbidden transaction semantics, local atomic effect groups, optimistic version/ETag and pessimistic lock preconditions, closed isolation requirements, unique invariants, separate idempotency and retry declarations, explicit partial-failure boundaries, typed compensation references, capability requirement records, and deterministic concurrency race cases keyed to Scenario IR documents. The attachment is pure declaration and validation data: it never executes, never claims runtime enforcement, and never carries source text, physical paths, raw tokens, ETag literals, credentials, runtime values, timestamps, host data, or adapter transcripts. The contract version is independent of the product release, of the source Model and IR contract versions, of the effect graph, of the Scenario IR, of the error-contract family, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "operations",
+    "invariants",
+    "concurrencyCases",
+    "capabilityRequirements"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/transaction-concurrency/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.transaction-concurrency@1.0.0"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "modelRef": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "$ref": "#/$defs/irRef"
+    },
+    "effectGraphRef": {
+      "$ref": "#/$defs/effectGraphRef"
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    },
+    "invariants": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/invariant"
+      }
+    },
+    "concurrencyCases": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/concurrencyCase"
+      }
+    },
+    "capabilityRequirements": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/capabilityRequirement"
+      }
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "qualifiedSemanticId": {
+      "type": "string",
+      "minLength": 11,
+      "maxLength": 202,
+      "pattern": "^operation:[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "namespacedId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "groupId": {
+      "$ref": "#/$defs/namespacedId"
+    },
+    "requirementId": {
+      "$ref": "#/$defs/namespacedId"
+    },
+    "field": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "errorRef": {
+      "description": "Opaque typed reference to an owner-supplied error contract (#62). Never an error message, code literal, or transport status.",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 96,
+      "pattern": "^errors?\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "effectRef": {
+      "description": "The canonical #14 EffectId spelling: operation|kind|subject|origin|occurrence. Subject may carry one field after '#'. The typed normalizer validates the closed kind vocabulary and part grammars.",
+      "type": "string",
+      "minLength": 7,
+      "maxLength": 512,
+      "pattern": "^operation:[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*\\|[a-z-]+\\|[a-z0-9][a-z0-9._:/-]{0,191}(#[a-z][a-z0-9_]*)?\\|(effect:[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*|#[0-9]{1,10})\\|[0-9]{1,10}$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "enum": [
+            "0.1.0",
+            "1.0.0"
+          ]
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.1.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "effectGraphRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.effects@1.0.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationRef",
+        "operationVersion",
+        "transaction",
+        "isolationRequirement",
+        "atomicEffectGroups",
+        "preconditions",
+        "failureBoundaries",
+        "idempotency",
+        "retry",
+        "capabilityRequirements"
+      ],
+      "properties": {
+        "operationRef": {
+          "$ref": "#/$defs/qualifiedSemanticId"
+        },
+        "operationVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "transaction": {
+          "enum": [
+            "required",
+            "optional",
+            "forbidden"
+          ]
+        },
+        "isolationRequirement": {
+          "$ref": "#/$defs/isolationLevel"
+        },
+        "atomicEffectGroups": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/atomicEffectGroup"
+          }
+        },
+        "preconditions": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/precondition"
+          }
+        },
+        "failureBoundaries": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/failureBoundary"
+          }
+        },
+        "idempotency": {
+          "$ref": "#/$defs/idempotency"
+        },
+        "retry": {
+          "$ref": "#/$defs/retry"
+        },
+        "capabilityRequirements": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        }
+      }
+    },
+    "isolationLevel": {
+      "enum": [
+        "none",
+        "read_committed",
+        "repeatable_read",
+        "snapshot",
+        "serializable"
+      ]
+    },
+    "atomicEffectGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groupId",
+        "effectRefs",
+        "scope",
+        "atomicity",
+        "commitBoundary",
+        "failurePolicy"
+      ],
+      "properties": {
+        "groupId": {
+          "$ref": "#/$defs/groupId"
+        },
+        "effectRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/effectRef"
+          }
+        },
+        "scope": {
+          "const": "local"
+        },
+        "atomicity": {
+          "const": "all_or_nothing"
+        },
+        "commitBoundary": {
+          "enum": [
+            "before_external_effects",
+            "after_external_effects"
+          ]
+        },
+        "failurePolicy": {
+          "const": "abort"
+        }
+      }
+    },
+    "precondition": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "version",
+            "etag",
+            "lock"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "version"
+              }
+            }
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "resourceRef",
+              "tokenFieldRef",
+              "suppliedBy",
+              "compare",
+              "check",
+              "mismatch"
+            ],
+            "properties": {
+              "kind": {
+                "const": "version"
+              },
+              "resourceRef": {
+                "$ref": "#/$defs/namespacedId"
+              },
+              "tokenFieldRef": {
+                "$ref": "#/$defs/field"
+              },
+              "suppliedBy": {
+                "enum": [
+                  "input_ref",
+                  "prior_read_ref"
+                ]
+              },
+              "compare": {
+                "const": "exact"
+              },
+              "check": {
+                "const": "at_commit"
+              },
+              "mismatch": {
+                "$ref": "#/$defs/errorRef"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "etag"
+              }
+            }
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "resourceRef",
+              "etagRef",
+              "suppliedBy",
+              "compare",
+              "check",
+              "mismatch"
+            ],
+            "properties": {
+              "kind": {
+                "const": "etag"
+              },
+              "resourceRef": {
+                "$ref": "#/$defs/namespacedId"
+              },
+              "etagRef": {
+                "description": "Typed reference to where the opaque validator token is carried (for example a header or metadata field). Never the literal token bytes.",
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 96,
+                "pattern": "^(header|metadata|input)\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*$"
+              },
+              "suppliedBy": {
+                "enum": [
+                  "input_ref",
+                  "prior_read_ref"
+                ]
+              },
+              "compare": {
+                "const": "exact"
+              },
+              "check": {
+                "const": "at_commit"
+              },
+              "mismatch": {
+                "$ref": "#/$defs/errorRef"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "lock"
+              }
+            }
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "resourceRef",
+              "scope",
+              "mode",
+              "acquisition",
+              "orderKey",
+              "timeoutPolicy"
+            ],
+            "properties": {
+              "kind": {
+                "const": "lock"
+              },
+              "resourceRef": {
+                "$ref": "#/$defs/namespacedId"
+              },
+              "scope": {
+                "enum": [
+                  "entity",
+                  "key",
+                  "range"
+                ]
+              },
+              "mode": {
+                "enum": [
+                  "shared",
+                  "exclusive"
+                ]
+              },
+              "acquisition": {
+                "enum": [
+                  "before_read",
+                  "before_write"
+                ]
+              },
+              "orderKey": {
+                "description": "Deterministic canonical acquisition key for global deadlock-free ordering. Bounded printable ASCII, no paths, no secrets.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[a-z0-9][a-z0-9.:#_-]*$"
+              },
+              "timeoutPolicy": {
+                "enum": [
+                  "fail_fast",
+                  "blocking_with_deadline"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "failureBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boundaryId",
+        "kind",
+        "subjectRef"
+      ],
+      "properties": {
+        "boundaryId": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "kind": {
+          "enum": [
+            "atomic_group",
+            "non_atomic_effect",
+            "compensation"
+          ]
+        },
+        "subjectRef": {
+          "description": "The group id, effect id, or compensating operation reference this boundary partitions.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/groupId"
+            },
+            {
+              "$ref": "#/$defs/effectRef"
+            },
+            {
+              "$ref": "#/$defs/qualifiedSemanticId"
+            }
+          ]
+        },
+        "compensationRef": {
+          "description": "Typed reference to an idempotent compensating operation or effect contract. Required on non_atomic_effect boundaries for external effects; it is a recovery declaration, never proof of atomicity.",
+          "$ref": "#/$defs/qualifiedSemanticId"
+        },
+        "outcome": {
+          "description": "The only outcome a compensation boundary may declare: recovery can be required after an attempted compensation; the original success is never silently reported.",
+          "const": "recovery_required"
+        }
+      }
+    },
+    "invariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invariantId",
+        "kind",
+        "resourceRef",
+        "keyFields",
+        "predicate",
+        "violation",
+        "enforcement"
+      ],
+      "properties": {
+        "invariantId": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "kind": {
+          "const": "unique"
+        },
+        "resourceRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "keyFields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "predicate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "op",
+                "field"
+              ],
+              "properties": {
+                "op": {
+                  "const": "field_not_null"
+                },
+                "field": {
+                  "$ref": "#/$defs/field"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "op",
+                "field",
+                "value"
+              ],
+              "properties": {
+                "op": {
+                  "const": "field_equals"
+                },
+                "field": {
+                  "$ref": "#/$defs/field"
+                },
+                "value": {
+                  "$ref": "#/$defs/typedLiteral"
+                }
+              }
+            }
+          ]
+        },
+        "violation": {
+          "$ref": "#/$defs/errorRef"
+        },
+        "enforcement": {
+          "enum": [
+            "optimistic",
+            "pessimistic",
+            "database_constraint",
+            "either"
+          ]
+        }
+      }
+    },
+    "typedLiteral": {
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[a-z0-9][a-z0-9._:@-]*$"
+        }
+      ]
+    },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "scope",
+        "record",
+        "duplicate",
+        "sameKeyDifferentRequest"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "not_applicable",
+            "not_guaranteed",
+            "intrinsic",
+            "key_required",
+            "key_optional"
+          ]
+        },
+        "keyRef": {
+          "description": "Typed reference to the exact request field carrying the idempotency key. Required for key_required and key_optional; forbidden otherwise.",
+          "$ref": "#/$defs/field"
+        },
+        "scope": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "record": {
+          "enum": [
+            "durable",
+            "none"
+          ]
+        },
+        "duplicate": {
+          "enum": [
+            "replay_result",
+            "reject_same_key",
+            "join_in_flight"
+          ]
+        },
+        "sameKeyDifferentRequest": {
+          "const": "conflict"
+        }
+      }
+    },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "safety",
+        "condition",
+        "phases"
+      ],
+      "properties": {
+        "safety": {
+          "enum": [
+            "safe",
+            "conditional",
+            "unsafe"
+          ]
+        },
+        "condition": {
+          "enum": [
+            "none",
+            "idempotency_key",
+            "reconciliation",
+            "manual_only"
+          ]
+        },
+        "phases": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "before_commit",
+              "after_commit_unknown",
+              "external_partial"
+            ]
+          }
+        }
+      }
+    },
+    "capabilityRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requirementId",
+        "capability",
+        "minimum",
+        "reason"
+      ],
+      "properties": {
+        "requirementId": {
+          "$ref": "#/$defs/requirementId"
+        },
+        "capability": {
+          "anyOf": [
+            {
+              "enum": [
+                "transaction.atomic_group",
+                "transaction.rollback",
+                "isolation.none",
+                "isolation.read_committed",
+                "isolation.repeatable_read",
+                "isolation.snapshot",
+                "isolation.serializable",
+                "lock.shared",
+                "lock.exclusive",
+                "lock.key",
+                "lock.range",
+                "concurrency.compare_and_set",
+                "concurrency.etag_if_match",
+                "invariant.unique_concurrent",
+                "idempotency.durable_key",
+                "idempotency.replay",
+                "external.compensation"
+              ]
+            },
+            {
+              "description": "An accepted distributed-protocol capability owned by the protocol owners.",
+              "type": "string",
+              "minLength": 12,
+              "maxLength": 96,
+              "pattern": "^distributed\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+            }
+          ]
+        },
+        "minimum": {
+          "enum": [
+            "full",
+            "partial"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;()/_-]*$"
+        }
+      }
+    },
+    "concurrencyCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "scenarioRef",
+        "participants",
+        "invocations",
+        "schedule",
+        "barriers",
+        "expectedInvariantRefs",
+        "expectedOutcomes",
+        "capabilityRequirementRefs"
+      ],
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "scenarioRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scenarioId",
+            "scenarioVersion",
+            "irDigest"
+          ],
+          "properties": {
+            "scenarioId": {
+              "$ref": "#/$defs/semanticId"
+            },
+            "scenarioVersion": {
+              "$ref": "#/$defs/semver"
+            },
+            "irDigest": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        },
+        "participants": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "participantId",
+              "stepId"
+            ],
+            "properties": {
+              "participantId": {
+                "$ref": "#/$defs/semanticId"
+              },
+              "stepId": {
+                "$ref": "#/$defs/semanticId"
+              }
+            }
+          }
+        },
+        "invocations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "invocationId",
+              "participantId",
+              "stepId"
+            ],
+            "properties": {
+              "invocationId": {
+                "$ref": "#/$defs/semanticId"
+              },
+              "participantId": {
+                "$ref": "#/$defs/semanticId"
+              },
+              "stepId": {
+                "$ref": "#/$defs/semanticId"
+              }
+            }
+          }
+        },
+        "schedule": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/scheduleNode"
+          }
+        },
+        "barriers": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/barrier"
+          }
+        },
+        "expectedInvariantRefs": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/namespacedId"
+          }
+        },
+        "expectedOutcomes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "participantId",
+              "outcome"
+            ],
+            "properties": {
+              "participantId": {
+                "$ref": "#/$defs/semanticId"
+              },
+              "outcome": {
+                "enum": [
+                  "success",
+                  "conflict",
+                  "error",
+                  "infrastructure",
+                  "unsupported",
+                  "degraded",
+                  "recovery_required"
+                ]
+              }
+            }
+          }
+        },
+        "capabilityRequirementRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        }
+      }
+    },
+    "scheduleNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId",
+        "kind"
+      ],
+      "properties": {
+        "nodeId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "enum": [
+            "invoke",
+            "barrier"
+          ]
+        },
+        "invocationId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "joins": {
+          "description": "Explicit deterministic predecessor nodes this node waits for. Order is not semantic; the set is.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        }
+      }
+    },
+    "barrier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "barrierId",
+        "waitsFor"
+      ],
+      "properties": {
+        "barrierId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "waitsFor": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        }
+      }
+    }
+  }
+}

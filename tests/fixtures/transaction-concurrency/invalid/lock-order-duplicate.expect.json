@@ -1,0 +1,1 @@
+{"rule":"concurrency.precondition-invalid","detail":"duplicate-lock-order-key"}

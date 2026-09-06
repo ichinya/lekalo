@@ -1,7 +1,7 @@
 //! Issue #16 CLI tests for the `lekalo impact` handoff: the symbol mode
 //! over the hermetic planner fixture, the typed `--changed` Git adapter in
 //! committed and worktree modes, the selector grammar, the strict-profile
-//! denial, canonical byte stability, and the 0.1.26 version custody probe.
+//! denial, canonical byte stability, and the 0.1.27 version custody probe.
 //!
 //! Every child chdir runs through the alias-free temp spelling: GitHub's
 //! Windows runners export `%TEMP%` with the 8.3 profile alias and the
@@ -265,12 +265,12 @@ fn version_probe_prints_the_prospective_product() {
     let dir = std::env::temp_dir();
     let output = lekalo_in(&dir, &["--version"]);
     assert_eq!(exit_code(&output), 0);
-    assert_eq!(stdout_text(&output).trim_end(), "lekalo 0.1.26");
+    assert_eq!(stdout_text(&output).trim_end(), "lekalo 0.1.27");
     let json = lekalo_in(&dir, &["--json", "--version"]);
     assert_eq!(exit_code(&json), 0);
     assert_eq!(
         stdout_text(&json).trim_end(),
-        "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.26\"\n}"
+        "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.27\"\n}"
     );
 }
 

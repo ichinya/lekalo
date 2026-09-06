@@ -3,7 +3,7 @@
   "diagnostics": [
     {
       "schema_version": "lekalo/diagnostic/v1.0.0",
-      "registry_version": "1.5.0",
+      "registry_version": "1.6.0",
       "id": "ir.unknown-field",
       "code": "LEK-IR-005",
       "severity": "error",

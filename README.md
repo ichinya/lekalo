@@ -258,6 +258,23 @@ recorded owner decisions live in [docs/validation.md](docs/validation.md)
 and [ADR-0011](docs/adr/0011-semantic-validation.md); the hermetic fixture
 matrix is under `tests/fixtures/validation/`.
 
+## Transaction and concurrency contracts
+
+Issue #24 publishes the closed transaction-concurrency attachment
+(`lekalo/transaction-concurrency/v1.0.0`): required/optional/forbidden
+transaction semantics, local all-or-nothing atomic effect groups keyed by
+exact effect IDs, optimistic version/ETag and pessimistic lock
+preconditions, the closed isolation vocabulary with its owner-published
+relation table, unique invariants, separate idempotency and retry
+declarations, visible partial-failure boundaries with typed compensation
+references, capability requirements with strict/permissive target
+mapping, and deterministic concurrency race cases keyed to Scenario IR —
+including the planner concurrent-focus fixture. Pure declaration and
+validation: no runtime execution, no adapter, no report surface. See
+[docs/transaction-concurrency.md](docs/transaction-concurrency.md),
+[ADR-0020](docs/adr/0020-transaction-concurrency.md), and the hermetic
+fixtures under `tests/fixtures/transaction-concurrency/`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -266,8 +283,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #18 carries prospective product
-0.1.26 (issue #17 published product 0.1.25 (annotated tag `v0.1.25` on
+independent of product releases; issue #24 carries prospective product
+0.1.27 (issue #18 published product 0.1.26 (annotated tag `v0.1.26` on
+`3710179`); issue #17 published product 0.1.25 (annotated tag `v0.1.25` on
 `e627fe5`); issue #16 published product 0.1.24 (annotated tag `v0.1.24` on
 `b4109e5`); issue #20 published product 0.1.23 (annotated tag `v0.1.23` on
 `15be55a`); issue #21 published product 0.1.22 at `2dab70e`; issue #15

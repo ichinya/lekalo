@@ -45,6 +45,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-impact-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-context-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-semantic-diff-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-transaction-concurrency-contracts.mjs
       - name: Run contract checkers and suites
         run: |
           node scripts/check-authority.mjs
