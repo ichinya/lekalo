@@ -25,6 +25,294 @@
       "lifecycle": "active"
     },
     {
+      "id": "authorization.actor-invalid",
+      "code": "LEK-AUTH-002",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "authorization.actor-invalid",
+      "default_message": "The actor type or authentication requirement is unknown or mismatched.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "rule",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.composition-invalid",
+      "code": "LEK-AUTH-007",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "authorization.composition-invalid",
+      "default_message": "The policy composition is cyclic, ambiguous, or conflicting.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "rule",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.document-invalid",
+      "code": "LEK-AUTH-001",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "authorization.document-invalid",
+      "default_message": "The authorization document violates its closed schema.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "rule",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.effect-unprotected",
+      "code": "LEK-AUTH-009",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "authorization.effect-unprotected",
+      "default_message": "A protected effect has no authorization declaration.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "effect",
+          "type": "token"
+        },
+        {
+          "name": "operation",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.error-ref-unresolved",
+      "code": "LEK-AUTH-006",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "authorization.error-ref-unresolved",
+      "default_message": "The error contract reference is malformed or unreachable.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "policy",
+          "type": "token"
+        },
+        {
+          "name": "errorRef",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.field-uncovered",
+      "code": "LEK-AUTH-008",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "authorization.field-uncovered",
+      "default_message": "A protected field read or write has no allow decision.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "field",
+          "type": "token"
+        },
+        {
+          "name": "operation",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.limit-exceeded",
+      "code": "LEK-AUTH-011",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "authorization.limit-exceeded",
+      "default_message": "The authorization document exceeds a closed bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "limit",
+          "type": "token"
+        },
+        {
+          "name": "count",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.mapping-stale",
+      "code": "LEK-AUTH-010",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "authorization.mapping-stale",
+      "default_message": "Adapter mapping evidence is missing, stale, partial, or unsupported and cannot pass strict review.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "policy",
+          "type": "token"
+        },
+        {
+          "name": "state",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.policy-invalid",
+      "code": "LEK-AUTH-004",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "authorization.policy-invalid",
+      "default_message": "A policy declaration is duplicated or conflicts with another.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "policy",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.profile-invalid",
+      "code": "LEK-AUTH-012",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "unsupported-version"
+      ],
+      "message_id": "authorization.profile-invalid",
+      "default_message": "The authorization profile reference is unknown or stale.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "profile",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.ref-unresolved",
+      "code": "LEK-AUTH-005",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "authorization.ref-unresolved",
+      "default_message": "A declared authorization reference does not resolve against the compiled model.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "policy",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.scope-invalid",
+      "code": "LEK-AUTH-003",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "authorization.scope-invalid",
+      "default_message": "A scope binding is duplicated, untyped, or uses a forbidden literal.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "policy",
+          "type": "token"
+        },
+        {
+          "name": "dimension",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "cli.usage",
       "code": "LEK-CLI-001",
       "category": "infrastructure",

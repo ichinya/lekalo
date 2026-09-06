@@ -1,0 +1,445 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/authorization.schema.v1.0.0.json",
+  "title": "Lekalo authorization",
+  "description": "Closed contract of one canonical Lekalo authorization document (issue #25). The document declares actors, scope bindings, capabilities, roles, ownership predicates, field-level read/write permissions, policy composition, protected-effect coverage, adapter mapping evidence, and the required error-contract references for every denied path. It carries semantic identities, declared field names, and bounded symbolic values only: no runtime principals, tokens, claims, provider names, middleware names, or secrets. The document is deterministic, non-executable, and evaluated deny-by-default under the built-in strict profile.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "model_ref",
+    "profile_ref",
+    "policies"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/authorization/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.authorization@1.0.0"
+    },
+    "model_ref": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "profile_ref": {
+      "const": "dev.lekalo.authorization-profile@1.0.0"
+    },
+    "capabilities": {
+      "$ref": "#/$defs/symbolDecls"
+    },
+    "roles": {
+      "$ref": "#/$defs/symbolDecls"
+    },
+    "policies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/policy"
+      },
+      "maxItems": 256
+    },
+    "compositions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/composition"
+      },
+      "maxItems": 256
+    },
+    "mappings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/mapping"
+      },
+      "maxItems": 256
+    }
+  },
+  "$defs": {
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "ir_digest"
+      ],
+      "properties": {
+        "schema_version": {
+          "enum": ["0.1.0", "1.0.0"]
+        },
+        "ir_digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "segment": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "symbolId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,2}$",
+      "maxLength": 190
+    },
+    "localId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,2}$",
+      "maxLength": 190
+    },
+    "fieldName": {
+      "$ref": "#/$defs/segment"
+    },
+    "logicalPath": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63}){0,63}$",
+      "maxLength": 1024
+    },
+    "actorType": {
+      "enum": [
+        "public",
+        "identity.user",
+        "identity.service",
+        "system.job",
+        "internal"
+      ]
+    },
+    "decision": {
+      "enum": ["allow", "deny"]
+    },
+    "mappingState": {
+      "enum": ["full", "partial", "unsupported", "unknown"]
+    },
+    "relation": {
+      "enum": ["equality", "membership", "ownership"]
+    },
+    "actorField": {
+      "enum": ["actor.id", "actor.tenant_id", "actor.workspace_id"]
+    },
+    "scopeSource": {
+      "type": "string",
+      "pattern": "^(actor\\.(id|tenant_id|workspace_id)|input\\.[a-z][a-z0-9_]{0,62}|resource\\.[a-z][a-z0-9_]{0,62}|scope\\.(tenant|workspace|user))$"
+    },
+    "scopeAnchor": {
+      "type": "string",
+      "pattern": "^(resource\\.[a-z][a-z0-9_]{0,62}|scope\\.(tenant|workspace|user))$"
+    },
+    "symbolDecls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/localId"
+          },
+          "implies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/localId"
+            },
+            "maxItems": 64
+          }
+        }
+      },
+      "maxItems": 256
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "relation", "anchor"],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/scopeSource"
+        },
+        "relation": {
+          "$ref": "#/$defs/relation"
+        },
+        "anchor": {
+          "$ref": "#/$defs/scopeAnchor"
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 3,
+      "properties": {
+        "tenant": {
+          "$ref": "#/$defs/binding"
+        },
+        "workspace": {
+          "$ref": "#/$defs/binding"
+        },
+        "user": {
+          "$ref": "#/$defs/binding"
+        }
+      }
+    },
+    "operand": {
+      "type": "string",
+      "pattern": "^(actor\\.(id|tenant_id|workspace_id)|input\\.[a-z][a-z0-9_]{0,62}|resource\\.[a-z][a-z0-9_]{0,62}|scope\\.(tenant|workspace|user))$",
+      "maxLength": 128
+    },
+    "literal": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "predicate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["all"],
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/predicate"
+              },
+              "maxItems": 64
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["any"],
+          "properties": {
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/predicate"
+              },
+              "maxItems": 64
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["not"],
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/predicate"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["left", "op", "right"],
+          "properties": {
+            "left": {
+              "$ref": "#/$defs/operand"
+            },
+            "op": {
+              "enum": ["equals", "not_equals"]
+            },
+            "right": {
+              "$ref": "#/$defs/literal"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["left", "op", "values"],
+          "properties": {
+            "left": {
+              "$ref": "#/$defs/operand"
+            },
+            "op": {
+              "const": "in"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/literal"
+              },
+              "maxItems": 64
+            }
+          }
+        }
+      ]
+    },
+    "fieldPermissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "read": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fieldName"
+          },
+          "maxItems": 256
+        },
+        "write": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fieldName"
+          },
+          "maxItems": 256
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "actor",
+        "decision",
+        "error_ref",
+        "applies_to"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/localId"
+        },
+        "actor": {
+          "$ref": "#/$defs/actorType"
+        },
+        "decision": {
+          "$ref": "#/$defs/decision"
+        },
+        "error_ref": {
+          "$ref": "#/$defs/symbolId"
+        },
+        "applies_to": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/symbolId"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "job": {
+          "$ref": "#/$defs/symbolId"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/localId"
+          },
+          "maxItems": 256
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/localId"
+          },
+          "maxItems": 256
+        },
+        "ownership": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["resource_field", "actor_field"],
+            "properties": {
+              "resource_field": {
+                "$ref": "#/$defs/fieldName"
+              },
+              "actor_field": {
+                "$ref": "#/$defs/actorField"
+              }
+            }
+          },
+          "maxItems": 64
+        },
+        "conditions": {
+          "$ref": "#/$defs/predicate"
+        },
+        "fields": {
+          "$ref": "#/$defs/fieldPermissions"
+        },
+        "composition": {
+          "$ref": "#/$defs/localId"
+        }
+      }
+    },
+    "composition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/localId"
+        },
+        "all_of": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/localId"
+          },
+          "maxItems": 256
+        },
+        "any_of": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/localId"
+          },
+          "maxItems": 256
+        }
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "authorization_contract_ref",
+        "semantic_policy_ref",
+        "mapping_state",
+        "observed_revision"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,62}(/[a-z][a-z0-9_-]{0,62}){0,2}$",
+          "maxLength": 190
+        },
+        "authorization_contract_ref": {
+          "const": "dev.lekalo.authorization@1.0.0"
+        },
+        "semantic_policy_ref": {
+          "$ref": "#/$defs/localId"
+        },
+        "mapping_state": {
+          "$ref": "#/$defs/mappingState"
+        },
+        "evidence_ref": {
+          "$ref": "#/$defs/logicalPath"
+        },
+        "observed_revision": {
+          "$ref": "#/$defs/sha256"
+        },
+        "reason_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/symbolId"
+          },
+          "maxItems": 16
+        }
+      }
+    }
+  }
+}

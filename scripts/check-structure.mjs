@@ -13,7 +13,7 @@ const fixturesDir = join(root, "tests", "fixtures", "structure");
 
 const KIND_FILES = ["entities", "commands", "queries", "policies", "events", "scenarios", "bindings"];
 const MODULE_FILES = new Set(["module", ...KIND_FILES]);
-const CANONICAL_ROOT_ENTRIES = new Set(["project.yaml", "modules", "targets"]);
+const CANONICAL_ROOT_ENTRIES = new Set(["project.yaml", "modules", "targets", "authorization.yaml"]);
 const RUNTIME_ENTRIES = new Set(["import", "cache", "generated", "consumer", "privacy"]);
 const RUNTIME_CONTAINER_CHILDREN = new Map([
   ["consumer", new Set(["model", "bindings"])],
@@ -231,6 +231,7 @@ export async function validateProject(projectRoot) {
   for (const entry of lekaloListing.entries) {
     if (!CANONICAL_ROOT_ENTRIES.has(entry.name)) return denied(["structure.canonical-unexpected-entry", `lekalo/${entry.name}`]);
     if (entry.name === "project.yaml" && !entry.isFile()) return invalid(["structure.document-missing", "lekalo/project.yaml"]);
+    if (entry.name === "authorization.yaml" && !entry.isFile()) return invalid(["structure.directory-required", "lekalo/authorization.yaml"]);
     if (["modules", "targets"].includes(entry.name) && !entry.isDirectory()) return invalid(["structure.directory-required", `lekalo/${entry.name}`]);
   }
 

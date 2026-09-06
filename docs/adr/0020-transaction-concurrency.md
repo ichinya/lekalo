@@ -3,11 +3,13 @@
 Date: 2026-09-06
 Status: accepted for issue #24
 
-Custody: this issue carries the **prospective product candidate 0.1.27** in
+Custody: this issue carried the **prospective product candidate 0.1.27** in
 every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 `Cargo.lock`, the regenerated committed golden lock and its digest, the
 `--version` behavior and its pinning tests, `README.md`, `docs/cli.md`);
-issue #18 published product 0.1.26 (annotated tag `v0.1.26` on `3710179`).
+the candidate was published as product 0.1.27 (annotated tag `v0.1.27` on
+`ef7680d`); issue #18 published product 0.1.26 (annotated tag `v0.1.26` on
+`3710179`).
 The transaction-concurrency contract version
 (`lekalo/transaction-concurrency/v1.0.0`, identity
 `dev.lekalo.transaction-concurrency@1.0.0`) is independent of the product

@@ -12,8 +12,9 @@ tag `v0.1.21` on `9ab5b07`); issue #21 published product 0.1.22
 (annotated tag `v0.1.22` on `2dab70e`); issue #20 published product
 0.1.23 (annotated tag `v0.1.23` on `15be55a`); issue #16 published
 product 0.1.24 (annotated tag `v0.1.24` on `b4109e5`); issue #17 published
-product 0.1.25 (annotated tag `v0.1.25` on `e627fe5`); issue #18 now carries the
-**prospective product candidate 0.1.26** in every accepted path (workspace `Cargo.toml`, both `lekalo`
+product 0.1.25 (annotated tag `v0.1.25` on `e627fe5`); issue #18 published product 0.1.26 (annotated tag `v0.1.26` on
+`3710179`); issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
+`ef7680d`); issue #25 now carries the **prospective product candidate 0.1.28** in every accepted path (workspace `Cargo.toml`, both `lekalo`
 packages in `Cargo.lock`, the `--version` behavior and its pinning tests,
 `README.md`, `docs/cli.md`); issue #12 published product 0.1.10 (annotated
 tag `v0.1.10` on `fdfbcb5`, followed by the CI-parity fix `47b2ec8`). The graph

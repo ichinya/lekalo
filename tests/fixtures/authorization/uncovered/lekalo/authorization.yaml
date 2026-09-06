@@ -1,0 +1,30 @@
+schema_version: "lekalo/authorization/v1.0.0"
+identity: "dev.lekalo.authorization@1.0.0"
+model_ref:
+  schema_version: "1.0.0"
+  ir_digest: "sha256:1f824102640caa3aa4ffb5e906db4dff9539587e14d2f9949ce67b98dc9b901e"
+profile_ref: "dev.lekalo.authorization-profile@1.0.0"
+capabilities:
+  - id: planner.cap.task_read
+  - id: planner.cap.task_write
+    implies:
+      - "planner.cap.task_read"
+roles:
+  - id: planner.role.guest
+  - id: planner.role.member
+    implies:
+      - "planner.role.guest"
+  - id: planner.role.admin
+    implies:
+      - "planner.role.member"
+policies:
+  - id: planner.policy.deny_archived
+    actor: identity.user
+    decision: deny
+    error_ref: "planner.error.forbidden"
+    applies_to:
+      - "planner.update_task"
+    conditions:
+      left: "resource.state"
+      op: equals
+      right: "archived"

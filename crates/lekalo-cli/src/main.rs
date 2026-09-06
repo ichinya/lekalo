@@ -679,6 +679,20 @@ fn run_validate(
     match outcome {
         Err(set) => DomainResult::invalid(set),
         Ok(report) => {
+            // Authorization review (#25): reference integrity is
+            // invalid in every profile; the strict profile blocks
+            // uncovered protected effects, stale model pins, and
+            // non-full adapter mapping states (denied, exit 3).
+            match lekalo_core::authorization::review_selection(&selection, &compilation, strict) {
+                Err(result) => return result,
+                Ok(lekalo_core::authorization::Review::Invalid(set)) => {
+                    return DomainResult::invalid(set);
+                }
+                Ok(lekalo_core::authorization::Review::Denied(set)) => {
+                    return DomainResult::denied(set);
+                }
+                Ok(lekalo_core::authorization::Review::Ok) => {}
+            }
             let (json, human) = render_validate_success(&model, &report);
             let diagnostics = report.diagnostics().as_slice().to_vec();
             DomainResult::validation(json, human, diagnostics)

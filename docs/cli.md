@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.27. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.28. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -86,6 +86,19 @@ profiles are governed by [validation.md](validation.md) and
 [ADR-0011](adr/0011-semantic-validation.md); `--strict` selects the strict
 built-in profile, and `--module` scopes the report to one module while
 keeping every error anywhere in the project.
+
+Under `--strict`, `validate` additionally runs the issue #25
+authorization review after semantic validation succeeds. Reference
+integrity failures (unknown operations, fields, capabilities, roles,
+compositions, or mappings; implication or composition cycles; unknown
+fields or actors) are `invalid` (exit 1, stderr) in both profiles. A
+protected effect without allow coverage, a stale `model_ref` digest, or
+adapter mapping evidence below `full` is `denied` (exit 3, stdout) —
+including a project whose protected effects have no
+`lekalo/authorization.yaml` at all. The default profile is advisory and
+never blocks; the closed vocabulary, evaluation semantics, and limits
+are documented in [authorization.md](authorization.md) and
+[ADR-0021](adr/0021-authorization.md).
 
 ### `lekalo lock` and `lekalo update`
 
@@ -216,14 +229,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.27"
+  "version": "0.1.28"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.27`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.1.28`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -514,5 +527,6 @@ scripts/test-effect-graph-contracts.mjs,
 scripts/test-artifact-manifest-contracts.mjs,
 scripts/test-cache-contracts.mjs,
 scripts/test-context-contracts.mjs,
-and scripts/test-semantic-diff-contracts.mjs through NODE_PATH,
+scripts/test-semantic-diff-contracts.mjs,
+and scripts/test-authorization-contracts.mjs through NODE_PATH,
 and fails the job on any install, version, or gate failure.

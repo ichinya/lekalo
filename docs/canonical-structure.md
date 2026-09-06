@@ -18,6 +18,7 @@ the checker.
 <project-root>/
   lekalo/
     project.yaml
+    authorization.yaml
     modules/
       <module>/
         module.yaml
@@ -60,6 +61,7 @@ All other shown files and directories are optional legal homes. The leaf names b
 | Path | Class | Committed | Owner |
 |---|---|---|---|
 | `lekalo/project.yaml` | canonical marker/model document | yes | Lekalo |
+| `lekalo/authorization.yaml` | canonical authorization document (#25) | yes | Lekalo |
 | `lekalo/modules/<module>/**` | canonical semantic model | yes | Lekalo |
 | `lekalo/targets/<target-id>.yaml` | canonical target configuration | yes | Lekalo |
 | `lekalo.lock` | canonical resolved versions | yes | Lekalo (#10) |
@@ -162,6 +164,9 @@ At #4, file contents are opaque:
   directly below it is a module home and must contain `module.yaml`;
 - only `module.yaml` and the seven definition-kind files listed in the layout
   may appear directly inside a module; nested module directories are denied;
+- `lekalo/authorization.yaml`, when present, is the single project-level
+  authorization document of issue #25 (exactly one, at the root; never
+  per-module);
 - `lekalo/targets/`, when present, contains only `<target-id>.yaml` files;
 - `lekalo.lock`, when present, must be a physical regular file.
 

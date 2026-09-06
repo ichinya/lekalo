@@ -1,0 +1,8 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.deny_bulk_update
+    kind: policy
+    version: 1
+    applies_to:
+      - "planner.update_task"
+    decision: deny

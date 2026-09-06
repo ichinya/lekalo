@@ -3,11 +3,14 @@
 Date: 2026-09-05
 Status: accepted for issue #18
 
-Custody: this issue carries the **prospective product candidate 0.1.26** in
+Custody: issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
+`ef7680d`); issue #25 now carries the **prospective product candidate 0.1.28** in
 every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 `Cargo.lock`, the regenerated committed golden lock and its digest, the
 `--version` behavior and its pinning tests, `README.md`, `docs/cli.md`);
-issue #17 published product 0.1.25 (annotated tag `v0.1.25` on `e627fe5`).
+this issue published product 0.1.26 (annotated tag `v0.1.26` on
+`3710179`); issue #17 published product 0.1.25 (annotated tag `v0.1.25` on
+`e627fe5`).
 The semantic-diff contract version (`lekalo/semantic-diff/v1.0.0`, identity
 `dev.lekalo.semantic-diff@1.0.0`) is independent of the product release, of
 the Model/IR/graph/effect/protocol contract versions, and of the

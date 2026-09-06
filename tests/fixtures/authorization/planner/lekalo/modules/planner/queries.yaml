@@ -1,0 +1,12 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.list_tasks
+    kind: query
+    version: 1
+    reads:
+      - "planner.task"
+  - id: planner.public_stats
+    kind: query
+    version: 1
+    reads:
+      - "planner.task"

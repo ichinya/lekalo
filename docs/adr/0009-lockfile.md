@@ -18,8 +18,9 @@ issue #21 published product 0.1.22 (annotated tag `v0.1.22` on
 `2dab70e`); issue #20 published product 0.1.23 (annotated tag
 `v0.1.23` on `15be55a`); issue #16 published product
 0.1.24 (annotated tag `v0.1.24` on `b4109e5`); issue #17 published
-product 0.1.25 (annotated tag `v0.1.25` on `e627fe5`); issue #18 now carries
-prospective product 0.1.26. The lock
+product 0.1.25 (annotated tag `v0.1.25` on `e627fe5`); issue #18 published product 0.1.26 (annotated tag `v0.1.26` on
+`3710179`); issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
+`ef7680d`); issue #25 now carries prospective product 0.1.28. The lock
 schema version (`lekalo/lock/v1.0.0`, identity `dev.lekalo.lock@1.0.0`), the
 resolver algorithm version (1.0.0), and every contract version remain
 independent of the product release by design.

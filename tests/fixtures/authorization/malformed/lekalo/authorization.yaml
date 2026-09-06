@@ -1,0 +1,161 @@
+schema_version: "lekalo/authorization/v1.0.0"
+identity: "dev.lekalo.authorization@1.0.0"
+model_ref:
+  schema_version: "1.0.0"
+  ir_digest: "sha256:1f824102640caa3aa4ffb5e906db4dff9539587e14d2f9949ce67b98dc9b901e"
+surprise_field: true
+profile_ref: "dev.lekalo.authorization-profile@1.0.0"
+capabilities:
+  - id: planner.cap.task_read
+  - id: planner.cap.task_write
+    implies:
+      - "planner.cap.task_read"
+roles:
+  - id: planner.role.guest
+  - id: planner.role.member
+    implies:
+      - "planner.role.guest"
+  - id: planner.role.admin
+    implies:
+      - "planner.role.member"
+policies:
+  - id: planner.policy.deny_archived
+    actor: identity.user
+    decision: deny
+    error_ref: "planner.error.forbidden"
+    applies_to:
+      - "planner.update_task"
+    conditions:
+      left: "resource.state"
+      op: equals
+      right: "archived"
+  - id: planner.policy.public_read_state
+    actor: identity.robot
+    decision: allow
+    error_ref: "planner.error.unauthorized"
+    applies_to:
+      - "planner.public_stats"
+    fields:
+      read:
+        - state
+        - task_id
+  - id: planner.policy.task_archive_job
+    actor: system.job
+    job: "planner.jobs.nightly_archive"
+    decision: allow
+    error_ref: "planner.error.forbidden"
+    applies_to:
+      - "planner.update_task"
+    scope:
+      tenant:
+        source: "input.tenant_id"
+        relation: equality
+        anchor: "resource.tenant_id"
+    fields:
+      read:
+        - state
+        - task_id
+      write:
+        - state
+  - id: planner.policy.task_read_member
+    actor: identity.user
+    decision: allow
+    error_ref: "planner.error.forbidden"
+    applies_to:
+      - "planner.create_task"
+      - "planner.list_tasks"
+      - "planner.update_task"
+    scope:
+      tenant:
+        source: "actor.tenant_id"
+        relation: equality
+        anchor: "resource.tenant_id"
+      workspace:
+        source: "actor.workspace_id"
+        relation: equality
+        anchor: "resource.workspace_id"
+    roles:
+      - "planner.role.member"
+    fields:
+      read:
+        - state
+        - task_id
+        - tenant_id
+        - title
+        - workspace_id
+  - id: planner.policy.task_write_admin
+    actor: identity.user
+    decision: allow
+    error_ref: "planner.error.forbidden"
+    applies_to:
+      - "planner.update_task"
+    scope:
+      tenant:
+        source: "actor.tenant_id"
+        relation: equality
+        anchor: "resource.tenant_id"
+    roles:
+      - "planner.role.admin"
+    fields:
+      read:
+        - owner_id
+        - state
+        - task_id
+        - tenant_id
+        - title
+        - workspace_id
+      write:
+        - owner_id
+        - state
+        - task_id
+        - tenant_id
+        - title
+        - workspace_id
+  - id: planner.policy.task_write_owner
+    actor: identity.user
+    decision: allow
+    error_ref: "planner.error.forbidden"
+    applies_to:
+      - "planner.create_task"
+      - "planner.update_task"
+    scope:
+      tenant:
+        source: "actor.tenant_id"
+        relation: equality
+        anchor: "resource.tenant_id"
+      workspace:
+        source: "actor.workspace_id"
+        relation: equality
+        anchor: "resource.workspace_id"
+      user:
+        source: "actor.id"
+        relation: ownership
+        anchor: "resource.owner_id"
+    capabilities:
+      - "planner.cap.task_write"
+    ownership:
+      - resource_field: owner_id
+        actor_field: "actor.id"
+    composition: "planner.comp.task_write"
+    fields:
+      read:
+        - owner_id
+        - state
+        - task_id
+        - tenant_id
+        - title
+        - workspace_id
+      write:
+        - state
+        - title
+compositions:
+  - id: planner.comp.task_write
+    all_of:
+      - "planner.policy.task_read_member"
+mappings:
+  - target: "rest/gateway"
+    authorization_contract_ref: "dev.lekalo.authorization@1.0.0"
+    semantic_policy_ref: "planner.policy.task_write_owner"
+    mapping_state: full
+    evidence_ref: "lekalo/targets/rest.yaml"
+    observed_revision: "sha256:1111111111111111111111111111111111111111111111111111111111111111"

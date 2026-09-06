@@ -1,0 +1,53 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.task_id
+    kind: scalar
+    version: 1
+    base: uuid
+  - id: planner.tenant_id
+    kind: scalar
+    version: 1
+    base: string
+  - id: planner.workspace_id
+    kind: scalar
+    version: 1
+    base: string
+  - id: planner.owner_id
+    kind: scalar
+    version: 1
+    base: string
+  - id: planner.title
+    kind: scalar
+    version: 1
+    base: string
+  - id: planner.task_state
+    kind: enum
+    version: 1
+    values:
+      - value: backlog
+      - value: focused
+      - value: archived
+  - id: planner.task
+    kind: entity
+    version: 1
+    fields:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: tenant_id
+        type: "planner.tenant_id"
+        required: true
+      - name: workspace_id
+        type: "planner.workspace_id"
+        required: true
+      - name: owner_id
+        type: "planner.owner_id"
+        required: true
+      - name: title
+        type: "planner.title"
+        required: true
+      - name: state
+        type: "planner.task_state"
+        required: true
+    identity:
+      - task_id

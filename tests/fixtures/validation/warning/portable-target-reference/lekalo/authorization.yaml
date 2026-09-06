@@ -1,0 +1,31 @@
+schema_version: "lekalo/authorization/v1.0.0"
+identity: "dev.lekalo.authorization@1.0.0"
+model_ref:
+  schema_version: "0.1.0"
+  ir_digest: "sha256:fc2e92978c852f27d1f3895ab141cf8feb31fde637fa1179e6a601a67dacaa7f"
+profile_ref: "dev.lekalo.authorization-profile@1.0.0"
+policies:
+  - id: planner.policy.create_task
+    actor: identity.user
+    decision: allow
+    error_ref: "planner.error.forbidden"
+    applies_to:
+      - "planner.create_task"
+    fields:
+      read:
+        - state
+        - task_id
+        - title
+      write:
+        - title
+  - id: planner.policy.get_task
+    actor: identity.user
+    decision: allow
+    error_ref: "planner.error.forbidden"
+    applies_to:
+      - "planner.get_task"
+    fields:
+      read:
+        - state
+        - task_id
+        - title
