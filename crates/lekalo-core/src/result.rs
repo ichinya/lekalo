@@ -139,6 +139,9 @@ pub enum SuccessPayload {
     /// Graph success (compact envelope bytes built by the CLI renderer);
     /// may carry the non-blocking graph diagnostics.
     Graph { json: String, human: String },
+    /// Impact success (compact envelope bytes built by the CLI renderer);
+    /// may carry the non-blocking impact diagnostics.
+    Impact { json: String, human: String },
     /// Receipt success (pretty two-space JSON without trailing newline).
     Receipt { json: String, human: String },
 }
@@ -229,6 +232,19 @@ impl DomainResult {
     ) -> Self {
         Self::Valid {
             payload: SuccessPayload::Graph { json, human },
+            diagnostics,
+        }
+    }
+
+    /// An impact success with exact compact envelope bytes and the
+    /// non-blocking impact diagnostics (warning/info only).
+    pub fn impact(
+        json: String,
+        human: String,
+        diagnostics: Vec<crate::diagnostics::Diagnostic>,
+    ) -> Self {
+        Self::Valid {
+            payload: SuccessPayload::Impact { json, human },
             diagnostics,
         }
     }
@@ -342,6 +358,7 @@ impl DomainResult {
                     | SuccessPayload::Ir { json, .. }
                     | SuccessPayload::Validation { json, .. }
                     | SuccessPayload::Graph { json, .. }
+                    | SuccessPayload::Impact { json, .. }
                     | SuccessPayload::Receipt { json, .. } => json.clone(),
                 };
                 if !diagnostics.is_empty() {
@@ -409,6 +426,7 @@ impl DomainResult {
                     | SuccessPayload::Ir { human, .. }
                     | SuccessPayload::Validation { human, .. }
                     | SuccessPayload::Graph { human, .. }
+                    | SuccessPayload::Impact { human, .. }
                     | SuccessPayload::Receipt { human, .. } => human
                         .lines()
                         .map(|line| line.to_owned())
@@ -490,12 +508,12 @@ mod tests {
 
     #[test]
     fn version_payload_matches_the_published_bytes() {
-        let result = DomainResult::version("0.1.23");
+        let result = DomainResult::version("0.1.24");
         assert_eq!(
             result.to_json_string(),
-            "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.23\"\n}"
+            "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.24\"\n}"
         );
-        assert_eq!(result.to_human_string("lekalo"), "lekalo 0.1.23");
+        assert_eq!(result.to_human_string("lekalo"), "lekalo 0.1.24");
     }
 
     #[test]

@@ -91,7 +91,7 @@ fn golden_projections_are_byte_stable_across_reruns() {
         ),
         (vec!["--json", "--bogus"], "usage-envelope.json"),
         (
-            vec!["--json", "impact", "planner.task"],
+            vec!["--json", "context", "planner.task", "--budget", "512"],
             "unsupported-envelope.json",
         ),
     ];

@@ -1,0 +1,18 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.create_task
+    kind: effect
+    version: 1
+    description: "Creates the focused task"
+    operation: create
+    entity: "planner.task"
+  - id: planner.focus_task
+    kind: command
+    version: 1
+    description: "Focus one task"
+    input:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+    effects:
+      - "planner.create_task"

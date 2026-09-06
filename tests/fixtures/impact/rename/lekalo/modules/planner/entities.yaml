@@ -1,0 +1,28 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.text
+    kind: scalar
+    version: 1
+    description: "Human-readable text"
+    base: string
+  - id: planner.task_id
+    kind: scalar
+    version: 1
+    description: "Stable task identifier"
+    base: uuid
+    visibility: project
+  - id: planner.task
+    kind: entity
+    version: 1
+    description: "A focusable task"
+    renamed_from:
+      - "planner.jobs"
+    fields:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: title
+        type: "planner.text"
+        required: true
+    identity:
+      - task_id

@@ -4,6 +4,8 @@
 
 use clap::{error::ErrorKind, Args, ColorChoice, Parser, Subcommand};
 use lekalo_core::artifacts::{ArtifactFailure, CheckReceipt, GenerateService};
+
+mod git_input;
 use lekalo_core::loader::LoadSelection;
 use lekalo_core::lockfile::plan::LockService;
 use lekalo_core::lockfile::resolution::CandidateSet;
@@ -19,6 +21,51 @@ use std::process::ExitCode;
 const PROGRAM_NAME: &str = "lekalo";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const OUTPUT_FAILURE: u8 = 1;
+
+/// The `impact` argument surface: one symbol root or the typed
+/// `--changed` selector family, plus the bounded filters.
+#[derive(Debug, Args)]
+struct ImpactArgs {
+    /// The semantic id of the symbol (exclusive with `--changed`).
+    symbol: Option<String>,
+    /// Analyze the changed inputs instead of one symbol.
+    #[arg(long, conflicts_with = "symbol")]
+    changed: bool,
+    /// The committed read-only base revision.
+    #[arg(long, value_name = "REF", requires = "changed")]
+    base: Option<String>,
+    /// The committed read-only candidate revision (exclusive with
+    /// `--worktree`).
+    #[arg(
+        long,
+        value_name = "REF",
+        requires = "changed",
+        conflicts_with = "worktree"
+    )]
+    head: Option<String>,
+    /// Select the current index/worktree candidate (exclusive with
+    /// `--head`).
+    #[arg(long, requires = "changed")]
+    worktree: bool,
+    /// The traversal depth.
+    #[arg(long, value_name = "DEPTH", default_value_t = 3)]
+    depth: u16,
+    /// Narrow the traversal to one module semantic id.
+    #[arg(long, value_name = "MODULE")]
+    module: Option<String>,
+    /// Narrow the target projections to one target id.
+    #[arg(long, value_name = "TARGET")]
+    target: Option<String>,
+    /// Admit only these relations (repeatable).
+    #[arg(long, value_name = "KIND")]
+    relation: Vec<String>,
+    /// The closed impact profile.
+    #[arg(long, value_name = "PROFILE", default_value = "default")]
+    profile: String,
+    /// Project root selector, relative to the invocation directory.
+    #[arg(long, value_name = "DIR")]
+    project: Option<String>,
+}
 
 #[derive(Debug, Parser)]
 #[command(
@@ -91,8 +138,12 @@ enum Commands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
-    /// Report the impact of one semantic symbol (recognized; implementation follows later).
-    Impact { symbol: String },
+    /// Report the impact and change radius of one semantic symbol, or of
+    /// the changed inputs of a Git revision range or the working tree.
+    Impact {
+        #[command(flatten)]
+        args: ImpactArgs,
+    },
     /// Build a bounded context for one semantic symbol (recognized; implementation follows later).
     Context {
         symbol: String,
@@ -363,7 +414,7 @@ fn main() -> ExitCode {
                 include,
                 project,
             } => run_inspect(&symbol, include.as_deref(), &project),
-            Commands::Impact { symbol } => lekalo_core::Request::Impact { symbol }.dispatch(),
+            Commands::Impact { args } => run_impact(args),
             Commands::Context { symbol, budget } => {
                 lekalo_core::Request::Context { symbol, budget }.dispatch()
             }
@@ -1634,4 +1685,186 @@ fn check_human(receipt: &CheckReceipt) -> String {
 /// The stable human summary of a clean preview or apply.
 fn clean_human(verb: &str, plan_id: &str, count: usize) -> String {
     format!("generate {verb} plan {} (-{count})", plan_id)
+}
+/// The project root path the impact Git adapter runs in: the explicit
+/// selector, `LEKALO_PROJECT`, or the invocation directory.
+fn impact_project_root(project: &Option<String>) -> std::path::PathBuf {
+    std::path::PathBuf::from(
+        project
+            .clone()
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok())
+            .unwrap_or_else(|| ".".to_owned()),
+    )
+}
+
+/// The source-path index of one compilation: logical path to its sorted
+/// unique definition ids (the changed-input resolution surface).
+fn source_paths_of(
+    compilation: &lekalo_core::ir::Compilation,
+) -> std::collections::HashMap<&str, Vec<&str>> {
+    let mut index: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    for entry in compilation.source_map.entries() {
+        let Some(symbol) = &entry.semantic_id else {
+            continue;
+        };
+        let symbols = index.entry(entry.path.as_str()).or_default();
+        if !symbols.contains(&symbol.as_str()) {
+            symbols.push(symbol.as_str());
+        }
+    }
+    for symbols in index.values_mut() {
+        symbols.sort();
+    }
+    index
+}
+
+/// Run `lekalo impact`: load and compile the project, build the graph and
+/// effect projections, resolve the changed inputs when `--changed` was
+/// selected, and hand everything to the core analyzer. Every impact
+/// decision — traversal, risks, gates, limits, diagnostics — lives in the
+/// core; this binary only selects, renders, and maps exits.
+fn run_impact(args: ImpactArgs) -> DomainResult {
+    let ImpactArgs {
+        symbol,
+        changed,
+        base,
+        head,
+        worktree,
+        depth,
+        module,
+        target,
+        relation,
+        profile,
+        project,
+    } = args;
+    // Selector semantics the flags alone cannot express.
+    if !changed && (base.is_some() || head.is_some() || worktree) {
+        return DomainResult::invalid(lekalo_core::impact::diagnostic::selector_invalid_set(
+            "selector-requires-changed",
+        ));
+    }
+    let profile = match lekalo_core::impact::ImpactProfile::parse(&profile) {
+        Some(profile) => profile,
+        None => {
+            return DomainResult::invalid(lekalo_core::impact::diagnostic::selector_invalid_set(
+                "unknown-profile",
+            ))
+        }
+    };
+    let request = if changed {
+        lekalo_core::impact::ImpactRequest::for_changed()
+    } else {
+        match &symbol {
+            Some(symbol) => match lekalo_core::impact::ImpactRequest::for_symbol(symbol) {
+                Ok(request) => request,
+                Err(set) => return DomainResult::invalid(set),
+            },
+            None => return DomainResult::usage_error(),
+        }
+    };
+    let request = match request
+        .with_depth(depth)
+        .and_then(|request| request.with_relations(&relation))
+    {
+        Ok(request) => request,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let request = match if let Some(module) = &module {
+        request.with_module(module)
+    } else {
+        Ok(request)
+    } {
+        Ok(request) => request,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let request = match if let Some(target) = &target {
+        request.with_target(target)
+    } else {
+        Ok(request)
+    } {
+        Ok(request) => request,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let request = request.with_profile(profile);
+
+    // Load and compile; load, IR, and projection failures pass through.
+    let selection = selection_for(&project);
+    let model = match lekalo_core::loader::normalize_model(&selection) {
+        Err(result) => return result,
+        Ok(model) => model,
+    };
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Err(failure) => return failure.into_result(),
+        Ok(compilation) => compilation,
+    };
+    let graph = match lekalo_core::graph::build(&compilation.project) {
+        Err(set) => return DomainResult::invalid(set),
+        Ok(graph) => graph,
+    };
+    let effects = match lekalo_core::effects::build(&compilation.project) {
+        Err(set) => return DomainResult::invalid(set),
+        Ok(effects) => effects,
+    };
+
+    // The typed Git handoff lives entirely at this edge.
+    let changed_set = if changed {
+        match git_input::changed_input_set(
+            &impact_project_root(&project),
+            base.as_deref(),
+            head.as_deref(),
+            worktree,
+            &source_paths_of(&compilation),
+        ) {
+            Ok(set) => Some(set),
+            Err(failure) => return DomainResult::invalid(failure.diagnostic_set()),
+        }
+    } else {
+        None
+    };
+
+    match lekalo_core::impact::analyze(
+        &compilation.project,
+        &graph,
+        &effects,
+        &request,
+        changed_set.as_ref(),
+    ) {
+        Ok(result) => render_impact(&result),
+        Err(lekalo_core::impact::ImpactFailure::Invalid(set)) => DomainResult::invalid(set),
+        Err(lekalo_core::impact::ImpactFailure::Denied(set)) => DomainResult::denied(set),
+    }
+}
+
+/// The accepted impact success envelope: the fixed key order `status`,
+/// `impact`. Human and JSON are projections of the same result.
+fn render_impact(result: &lekalo_core::impact::ImpactResult) -> DomainResult {
+    let bytes = match result.to_canonical_json() {
+        Ok(bytes) => bytes,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let json = format!("{{\"status\":\"valid\",\"impact\":{}}}", bytes);
+    let mut human = vec![format!(
+        "impact {} ({})",
+        result.input_mode().key(),
+        result
+            .roots()
+            .iter()
+            .map(|root| root.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )];
+    human.push(format!(
+        "  direct {} transitive {} mandatory-public {}",
+        result.direct().summary.returned,
+        result.transitive().summary.returned,
+        result.mandatory_public().summary.returned
+    ));
+    human.push(format!("  risks {}", result.risks().summary.returned));
+    human.push(format!("  gates {}", result.gates().summary.returned));
+    human.push(format!(
+        "  evidence {} completeness {}",
+        result.evidence().summary.state.key(),
+        result.completeness().state.key()
+    ));
+    DomainResult::impact(json, human.join("\n"), result.warnings().to_vec())
 }

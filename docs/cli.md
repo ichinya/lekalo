@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.23. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.24. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -33,20 +33,20 @@ lekalo generate --check [--project DIR]
 lekalo generate --clean --dry-run [--project DIR]
 lekalo generate --clean --confirm sha256:PLAN_ID [--project DIR]
 lekalo inspect SYMBOL [--include SECTIONS] [--project DIR]
-lekalo impact SYMBOL
+lekalo impact SYMBOL [--depth N] [--relation KIND] [--profile default|strict] [--project DIR]
+lekalo impact --changed [--base REF] [--head REF] [--worktree] [--project DIR]
 lekalo context SYMBOL --budget TOKENS
 ```
 
 `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
-`validate`, `graph`, `effects`, `generate`, and `inspect` are implemented.
-The two remaining subcommands are recognized stubs: valid syntax reaches the
-named capability and returns `unsupported`. `SYMBOL` is an opaque string at
-this layer, and `TOKENS` is an unsigned integer. Semantic ID rules,
-validation, graph construction, and real impact or context behavior belong
-to later issues.
-When those capabilities are implemented they are bound by
+`validate`, `graph`, `effects`, `generate`, `inspect`, and `impact` are
+implemented. The remaining subcommand is a recognized stub: valid syntax
+reaches the named capability and returns `unsupported`. `SYMBOL` is an
+opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic
+ID rules, validation, and graph construction bind every implemented
+command. When the remaining capability is implemented it is bound by
 dev.lekalo.semantic-ids@0.1.0 to use the validated semantic ID verbatim as
-their canonical key; the implemented loader already consumes those IDs
+its canonical key; the implemented loader already consumes those IDs
 verbatim when it normalizes references.
 
 `--json` is global and may appear before or after a subcommand. Both
@@ -215,14 +215,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.23"
+  "version": "0.1.24"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.23`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.1.24`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -391,8 +391,36 @@ lekalo generate --clean --confirm sha256:973d6dd3ef84df5e286622a796e542f9dac2097
 generate applied plan sha256:973d... (-1)
 ```
 
-## Development checks
+## Impact
 
+Issue #16 answers the change-radius question through one command with two
+modes. The core owns every decision (typed changed-input handoff
+validation, bounded reverse traversal, the depth-free mandatory-public
+closure, risks, gates, canonical bytes); the binary only selects, renders,
+and maps exits onto the accepted 0/1/3 envelope. Strict-profile denials
+(`impact.gate-blocked`, `LEK-IMPACT-010`) exit 3 on stdout; selector,
+changed-input, traversal, and output faults exit 1 on stderr.
+
+```sh
+lekalo impact planner.task --depth 3
+# impact symbol (entity:planner.task)
+#   direct 6 transitive 6 mandatory-public 0
+#   risks 6
+#   gates 9
+#   evidence incomplete completeness incomplete
+
+lekalo impact --changed --worktree                      # index/worktree vs HEAD
+lekalo impact --changed --base main                     # committed base vs HEAD
+lekalo impact --changed --base main --head feature      # two committed revisions
+```
+
+Success envelopes wrap the payload as `{"status":"valid","impact":{...}}`
+with the canonical, digest-carrying impact object; `--profile strict`
+denies with `{"status":"denied",...}` when a required gate rests on
+unknown or stale evidence. The contract, guarantees, limits, and the
+closed risk/gate vocabularies are documented in
+[docs/impact.md](impact.md) and [ADR-0017](adr/0017-impact.md).
+## Development checks
 ```sh
 cargo fmt --all -- --check
 cargo check --workspace --all-targets --locked

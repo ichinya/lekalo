@@ -29,7 +29,7 @@ fn diagnostic_item_json(
     message: &str,
 ) -> String {
     format!(
-        "{{\n      \"schema_version\": \"lekalo/diagnostic/v1.0.0\",\n      \"registry_version\": \"1.3.0\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
+        "{{\n      \"schema_version\": \"lekalo/diagnostic/v1.0.0\",\n      \"registry_version\": \"1.4.0\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
     )
 }
 
@@ -106,15 +106,12 @@ fn plain_and_json_version_outputs_are_exact_in_both_flag_orders() {
 
 #[test]
 fn every_remaining_stub_is_exact_in_human_and_both_json_flag_orders() {
-    // `inspect` is implemented since issue #15; the remaining stubs
-    // keep the exact recognized-but-unimplemented envelope.
-    let cases = [
-        ("impact", vec!["impact", "planner.task"]),
-        (
-            "context",
-            vec!["context", "planner.task", "--budget", "512"],
-        ),
-    ];
+    // `inspect` (issue #15) and `impact` (issue #16) are implemented; the
+    // remaining stubs keep the exact recognized-but-unimplemented envelope.
+    let cases = [(
+        "context",
+        vec!["context", "planner.task", "--budget", "512"],
+    )];
 
     for (capability, args) in cases {
         let human = lekalo(&args);
@@ -374,14 +371,14 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
 
     let root_manifest =
         std::fs::read_to_string(workspace.join("Cargo.toml")).expect("read workspace Cargo.toml");
-    assert_eq!(root_manifest.matches("version = \"0.1.23\"").count(), 1);
+    assert_eq!(root_manifest.matches("version = \"0.1.24\"").count(), 1);
     for member in [
         "crates/lekalo-core/Cargo.toml",
         "crates/lekalo-cli/Cargo.toml",
     ] {
         let manifest =
             std::fs::read_to_string(workspace.join(member)).expect("read member manifest");
-        assert!(!manifest.contains("0.1.23"));
+        assert!(!manifest.contains("0.1.24"));
         assert!(manifest.contains("version.workspace = true"));
     }
 }

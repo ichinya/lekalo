@@ -1,0 +1,705 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/impact.schema.v1.0.0.json",
+  "title": "Lekalo impact",
+  "description": "Closed contract of one deterministic impact and change-radius analysis (issue #16). The impact contract version is independent of the product release, of the Model/IR/graph/effect/diff contract versions, and of the diagnostic registry version. A canonical impact payload carries the contract identity, the exact input mode and roots, the direct, transitive, and mandatory-public radius, the closed risk vector, the affected target, scenario, test, and gate projections, bounded explanation paths, explicit evidence and completeness, and the canonical digest. No physical root, raw source, patch text, timestamp, runtime value, host, locale, repository identity, or adapter transcript may appear. Canonical bytes are compact UTF-8 JSON whose object keys follow this schema order; set-like arrays sort by unsigned UTF-8 of their typed keys; the digest is the SHA-256 of the canonical envelope bytes with the digest field set to the empty string.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "algorithm",
+    "modelVersion",
+    "project",
+    "input",
+    "request",
+    "roots",
+    "direct",
+    "transitive",
+    "mandatoryPublic",
+    "risks",
+    "targets",
+    "artifacts",
+    "scenarios",
+    "tests",
+    "gates",
+    "explanations",
+    "evidence",
+    "completeness",
+    "diagnosticRefs",
+    "digest"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/impact/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.impact@1.0.0"
+    },
+    "algorithm": {
+      "const": "dev.lekalo.impact.algorithm@1.0.0"
+    },
+    "modelVersion": {
+      "enum": ["0.1.0", "1.0.0"]
+    },
+    "project": {
+      "oneOf": [
+        { "$ref": "#/$defs/semanticId" },
+        { "type": "null" }
+      ]
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "baseRevisionRef", "candidateRevisionRef", "changedInputDigest"],
+      "properties": {
+        "mode": {
+          "enum": ["symbol", "committed", "index", "worktree", "mixed"]
+        },
+        "baseRevisionRef": {
+          "$ref": "#/$defs/revisionRef"
+        },
+        "candidateRevisionRef": {
+          "$ref": "#/$defs/revisionRef"
+        },
+        "changedInputDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["depth", "relations", "kinds", "module", "target", "profile"],
+      "properties": {
+        "depth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "relations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/relationKind" }
+        },
+        "kinds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nodeKind" }
+        },
+        "module": {
+          "oneOf": [
+            { "$ref": "#/$defs/semanticId" },
+            { "type": "null" }
+          ]
+        },
+        "target": {
+          "oneOf": [
+            { "$ref": "#/$defs/boundedToken" },
+            { "type": "null" }
+          ]
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        }
+      }
+    },
+    "roots": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/nodeRef" }
+    },
+    "direct": { "$ref": "#/$defs/impactSection" },
+    "transitive": { "$ref": "#/$defs/impactSection" },
+    "mandatoryPublic": { "$ref": "#/$defs/impactSection" },
+    "risks": { "$ref": "#/$defs/riskSection" },
+    "targets": { "$ref": "#/$defs/targetSection" },
+    "artifacts": { "$ref": "#/$defs/simpleSection" },
+    "scenarios": { "$ref": "#/$defs/simpleSection" },
+    "tests": { "$ref": "#/$defs/simpleSection" },
+    "gates": { "$ref": "#/$defs/gateSection" },
+    "explanations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/explanationPath" }
+    },
+    "evidence": { "$ref": "#/$defs/evidenceSection" },
+    "completeness": { "$ref": "#/$defs/completenessSection" },
+    "diagnosticRefs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ruleId" }
+    },
+    "digest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "boundedToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "nodeKind": {
+      "enum": [
+        "project",
+        "module",
+        "type",
+        "entity",
+        "operation",
+        "policy",
+        "event",
+        "effect",
+        "endpoint",
+        "scenario",
+        "target-binding",
+        "requirement"
+      ]
+    },
+    "relationKind": {
+      "enum": [
+        "requires",
+        "references",
+        "accepts",
+        "returns",
+        "reads",
+        "writes",
+        "emits",
+        "authorizes",
+        "exposes",
+        "implements",
+        "verifies",
+        "derived_from"
+      ]
+    },
+    "profile": {
+      "enum": ["default", "strict"]
+    },
+    "nodeRef": {
+      "type": "string",
+      "pattern": "^(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "revisionRef": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        { "type": "null" }
+      ]
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "ruleId": {
+      "type": "string",
+      "pattern": "^impact\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]+)*$",
+      "maxLength": 64
+    },
+    "confidence": {
+      "enum": ["canonical", "verified", "extracted", "inferred", "unknown"]
+    },
+    "evidenceState": {
+      "enum": ["canonical", "verified", "extracted", "inferred", "stale", "unknown"]
+    },
+    "sectionState": {
+      "enum": ["complete", "incomplete", "stale", "unknown", "unsupported", "conflicting"]
+    },
+    "scope": {
+      "enum": ["direct", "transitive", "mandatory-public"]
+    },
+    "riskDimension": {
+      "enum": [
+        "public_contract",
+        "migration_data",
+        "transaction",
+        "authorization",
+        "portability",
+        "effects",
+        "bindings_artifacts",
+        "scenarios_tests"
+      ]
+    },
+    "gateState": {
+      "enum": ["selected", "not-required", "unknown", "blocked"]
+    },
+    "gateId": {
+      "type": "string",
+      "pattern": "^impact\\.gate\\.[a-z][a-z-]*$",
+      "maxLength": 64
+    },
+    "provenanceKind": {
+      "enum": ["canonical-ir", "evidence", "derived"]
+    },
+    "edgeRef": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 420,
+      "pattern": "^(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[A-Za-z0-9][A-Za-z0-9._:-]*\\|[a-z_]+\\|(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[A-Za-z0-9][A-Za-z0-9._:-]*\\|[0-9]+$"
+    },
+    "pathId": {
+      "type": "string",
+      "pattern": "^impact\\.path\\.[0-9a-f]{16}$"
+    },
+    "sectionBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "complete",
+        "returned",
+        "omitted",
+        "frontier",
+        "provenance",
+        "confidence"
+      ],
+      "properties": {
+        "state": { "$ref": "#/$defs/sectionState" },
+        "complete": { "type": "boolean" },
+        "returned": { "$ref": "#/$defs/count" },
+        "omitted": { "$ref": "#/$defs/count" },
+        "frontier": { "$ref": "#/$defs/count" },
+        "provenance": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/provenanceKind" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "reasonRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ruleId" }
+        }
+      }
+    },
+    "impactItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "scope",
+        "distance",
+        "reasonRefs",
+        "pathRefs",
+        "evidenceState",
+        "confidence",
+        "riskRefs",
+        "requiredGateRefs"
+      ],
+      "properties": {
+        "subject": { "$ref": "#/$defs/nodeRef" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "distance": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "reasonRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ruleId" }
+        },
+        "pathRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/pathId" }
+        },
+        "evidenceState": { "$ref": "#/$defs/evidenceState" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "riskRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/riskDimension" }
+        },
+        "requiredGateRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/gateId" }
+        }
+      }
+    },
+    "impactSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "complete",
+        "returned",
+        "omitted",
+        "frontier",
+        "provenance",
+        "confidence"
+      ],
+      "properties": {
+        "state": { "$ref": "#/$defs/sectionState" },
+        "complete": { "type": "boolean" },
+        "returned": { "$ref": "#/$defs/count" },
+        "omitted": { "$ref": "#/$defs/count" },
+        "frontier": { "$ref": "#/$defs/count" },
+        "provenance": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/provenanceKind" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "reasonRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ruleId" }
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/impactItem" }
+        }
+      }
+    },
+    "riskItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dimension",
+        "state",
+        "subjectRefs",
+        "reasonRefs",
+        "evidenceRefs",
+        "required",
+        "confidence"
+      ],
+      "properties": {
+        "dimension": { "$ref": "#/$defs/riskDimension" },
+        "state": { "$ref": "#/$defs/sectionState" },
+        "subjectRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nodeRef" }
+        },
+        "reasonRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ruleId" }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/boundedToken" }
+        },
+        "required": { "type": "boolean" },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "riskSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "complete",
+        "returned",
+        "omitted",
+        "frontier",
+        "provenance",
+        "confidence"
+      ],
+      "properties": {
+        "state": { "$ref": "#/$defs/sectionState" },
+        "complete": { "type": "boolean" },
+        "returned": { "$ref": "#/$defs/count" },
+        "omitted": { "$ref": "#/$defs/count" },
+        "frontier": { "$ref": "#/$defs/count" },
+        "provenance": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/provenanceKind" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "reasonRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ruleId" }
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/riskItem" }
+        }
+      }
+    },
+    "targetItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["binding", "target", "reasonRefs", "confidence"],
+      "properties": {
+        "binding": { "$ref": "#/$defs/nodeRef" },
+        "target": { "$ref": "#/$defs/boundedToken" },
+        "reasonRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ruleId" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "targetSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "complete",
+        "returned",
+        "omitted",
+        "frontier",
+        "provenance",
+        "confidence"
+      ],
+      "properties": {
+        "state": { "$ref": "#/$defs/sectionState" },
+        "complete": { "type": "boolean" },
+        "returned": { "$ref": "#/$defs/count" },
+        "omitted": { "$ref": "#/$defs/count" },
+        "frontier": { "$ref": "#/$defs/count" },
+        "provenance": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/provenanceKind" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "reasonRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ruleId" }
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/targetItem" }
+        }
+      }
+    },
+    "namedItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "reasonRefs", "confidence"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nodeRef" },
+        "state": { "$ref": "#/$defs/evidenceState" },
+        "reasonRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ruleId" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "simpleSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "complete",
+        "returned",
+        "omitted",
+        "frontier",
+        "provenance",
+        "confidence"
+      ],
+      "properties": {
+        "state": { "$ref": "#/$defs/sectionState" },
+        "complete": { "type": "boolean" },
+        "returned": { "$ref": "#/$defs/count" },
+        "omitted": { "$ref": "#/$defs/count" },
+        "frontier": { "$ref": "#/$defs/count" },
+        "provenance": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/provenanceKind" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "reasonRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ruleId" }
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/namedItem" }
+        }
+      }
+    },
+    "gateItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gateId",
+        "owner",
+        "reasonRefs",
+        "required",
+        "state",
+        "evidenceState",
+        "confidence"
+      ],
+      "properties": {
+        "gateId": { "$ref": "#/$defs/gateId" },
+        "owner": { "$ref": "#/$defs/boundedToken" },
+        "reasonRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ruleId" }
+        },
+        "required": { "type": "boolean" },
+        "state": { "$ref": "#/$defs/gateState" },
+        "evidenceState": { "$ref": "#/$defs/evidenceState" },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "gateSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "complete",
+        "returned",
+        "omitted",
+        "frontier",
+        "provenance",
+        "confidence"
+      ],
+      "properties": {
+        "state": { "$ref": "#/$defs/sectionState" },
+        "complete": { "type": "boolean" },
+        "returned": { "$ref": "#/$defs/count" },
+        "omitted": { "$ref": "#/$defs/count" },
+        "frontier": { "$ref": "#/$defs/count" },
+        "provenance": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/provenanceKind" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "reasonRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ruleId" }
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/gateItem" }
+        }
+      }
+    },
+    "explanationPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pathId",
+        "root",
+        "subject",
+        "orderedEdges",
+        "relationKinds",
+        "confidence",
+        "provenanceRefs"
+      ],
+      "properties": {
+        "pathId": { "$ref": "#/$defs/pathId" },
+        "root": { "$ref": "#/$defs/nodeRef" },
+        "subject": { "$ref": "#/$defs/nodeRef" },
+        "orderedEdges": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/edgeRef" }
+        },
+        "relationKinds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/relationKind" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "provenanceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/provenanceKind" }
+        }
+      }
+    },
+    "evidenceSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "complete",
+        "returned",
+        "omitted",
+        "frontier",
+        "provenance",
+        "confidence"
+      ],
+      "properties": {
+        "state": { "$ref": "#/$defs/sectionState" },
+        "complete": { "type": "boolean" },
+        "returned": { "$ref": "#/$defs/count" },
+        "omitted": { "$ref": "#/$defs/count" },
+        "frontier": { "$ref": "#/$defs/count" },
+        "provenance": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/provenanceKind" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "reasonRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ruleId" }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["surface", "state", "reasonRefs", "confidence"],
+            "properties": {
+              "surface": {
+                "enum": [
+                  "graph",
+                  "effects",
+                  "changed-inputs",
+                  "detected-evidence",
+                  "manifests",
+                  "scenarios",
+                  "tests"
+                ]
+              },
+              "state": { "$ref": "#/$defs/sectionState" },
+              "reasonRefs": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "$ref": "#/$defs/ruleId" }
+              },
+              "confidence": { "$ref": "#/$defs/confidence" }
+            }
+          }
+        }
+      }
+    },
+    "completenessSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "complete",
+        "returned",
+        "omitted",
+        "frontier",
+        "provenance",
+        "confidence",
+        "reasonRefs"
+      ],
+      "properties": {
+        "state": { "$ref": "#/$defs/sectionState" },
+        "complete": { "type": "boolean" },
+        "returned": { "$ref": "#/$defs/count" },
+        "omitted": { "$ref": "#/$defs/count" },
+        "frontier": { "$ref": "#/$defs/count" },
+        "provenance": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/provenanceKind" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "reasonRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ruleId" }
+        }
+      }
+    }
+  }
+}

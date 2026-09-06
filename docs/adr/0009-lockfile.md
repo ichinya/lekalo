@@ -15,7 +15,9 @@ tag on `8ddbbf0`). Issue #9 published product 0.1.7 at `f0b3784`; issue
 product 0.1.19 (annotated tag `v0.1.19` on `31468e9`); issue #15
 published product 0.1.21 (annotated tag `v0.1.21` on `9ab5b07`);
 issue #21 published product 0.1.22 (annotated tag `v0.1.22` on
-`2dab70e`); issue #20 now carries prospective product 0.1.23. The lock
+`2dab70e`); issue #20 published product 0.1.23 (annotated tag
+`v0.1.23` on `15be55a`); issue #16 now carries prospective product
+0.1.24. The lock
 schema version (`lekalo/lock/v1.0.0`, identity `dev.lekalo.lock@1.0.0`), the
 resolver algorithm version (1.0.0), and every contract version remain
 independent of the product release by design.

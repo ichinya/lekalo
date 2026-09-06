@@ -1,0 +1,8 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner
+    kind: project
+    version: 1
+    description: "Focus planner effect-graph example model"
+    derived_from:
+      - "PLANNER-REQ-001"

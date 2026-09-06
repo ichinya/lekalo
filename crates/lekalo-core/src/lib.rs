@@ -5,6 +5,7 @@ pub mod cache;
 pub mod diagnostics;
 pub mod effects;
 pub mod graph;
+pub mod impact;
 pub mod inspect;
 pub mod ir;
 pub mod loader;

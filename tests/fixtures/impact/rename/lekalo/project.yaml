@@ -1,0 +1,14 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner
+    kind: project
+    version: 1
+    description: "Focus planner rename-history example model"
+    derived_from:
+      - "PLANNER-REQ-001"
+    id_registry:
+      rename_history:
+        - from: "planner.jobs"
+          to: "planner.task"
+          definition_version: 1
+          same_identity: true
