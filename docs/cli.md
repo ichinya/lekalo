@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.24. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.25. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -35,19 +35,20 @@ lekalo generate --clean --confirm sha256:PLAN_ID [--project DIR]
 lekalo inspect SYMBOL [--include SECTIONS] [--project DIR]
 lekalo impact SYMBOL [--depth N] [--relation KIND] [--profile default|strict] [--project DIR]
 lekalo impact --changed [--base REF] [--head REF] [--worktree] [--project DIR]
-lekalo context SYMBOL --budget TOKENS
+lekalo context SYMBOL --budget TOKENS [--spans] [--project DIR]
+lekalo context --changed SYMBOLS --budget TOKENS [--spans] [--project DIR]
 ```
 
 `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
-`validate`, `graph`, `effects`, `generate`, `inspect`, and `impact` are
-implemented. The remaining subcommand is a recognized stub: valid syntax
-reaches the named capability and returns `unsupported`. `SYMBOL` is an
+`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, and
+`context` are implemented; none remains a recognized stub. `SYMBOL` is an
 opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic
 ID rules, validation, and graph construction bind every implemented
-command. When the remaining capability is implemented it is bound by
+command. Every implemented capability is bound by
 dev.lekalo.semantic-ids@0.1.0 to use the validated semantic ID verbatim as
 its canonical key; the implemented loader already consumes those IDs
-verbatim when it normalizes references.
+verbatim when it normalizes references, and the graph, effects, context,
+and impact engines resolve them through the kind-qualified node identity.
 
 `--json` is global and may appear before or after a subcommand. Both
 `lekalo --json --version` and `lekalo --version --json` select JSON output.
@@ -126,7 +127,7 @@ adapter discovery.
 | 4 | `unsupported` | stdout | Recognized capability unavailable in this build |
 | 5 | `unsupported-version` | stderr | Model contract version outside the exact 0.1.0/1.0.0 set |
 
-The stubs emit only 0/1/4. The loader emits 0/1/3/5 as specified in
+No subcommand remains a stub. The loader emits 0/1/3/5 as specified in
 [loader.md](loader.md).
 
 Loader failures are pretty-printed with two-space indentation and carry
@@ -215,14 +216,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.24"
+  "version": "0.1.25"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.24`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.1.25`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -291,6 +292,39 @@ The change set of `conflicts --changed` is a typed handoff in the command
 line; the tool never parses Git or infers changed symbols. The contract,
 guarantees, and limits are documented in [docs/effect-graph.md](effect-graph.md)
 and [ADR-0013](adr/0013-effect-graph.md).
+
+## Context
+
+Issue #17 projects the bounded context capsule for one symbol or one
+explicitly supplied change set. The core owns every decision
+(selection, estimation, truncation, projection); the binary only
+selects, renders, and maps exits onto the accepted 0/1 envelope. The
+human stream carries the agent-facing Markdown of the capsule; `--json`
+wraps the structured capsule (`lekalo/context/v1.0.0`) in the success
+envelope. Successes exit 0 on stdout; unknown symbols
+(`graph.unknown-node`, `LEK-GRAPH-007`), out-of-range budgets and
+over-bound scopes (`graph.input-invalid`), and manifest bound exhaustion
+(`graph.traversal-limit`) exit 1 on stderr. An exhausted but in-range
+budget is never an error: the capsule is emitted with exact truncation
+metadata (`fits`, `minimumRequired`, per-fact manifest rows).
+
+```sh
+lekalo context planner.focus_task --budget 5000
+lekalo context planner.focus_task --budget 5000 --spans
+lekalo context --changed planner.focus_task,planner.edit_task_cmd --budget 12000 --json
+```
+
+Protected semantic facts (the root contract, its policies, effects,
+direct dependencies, scenarios, public impact, and bindings) are typed
+records, never collapsed into ambiguous prose; supporting context (type
+cards, bounded closure) is ranked and may be excluded. The estimator
+profile (`dev.lekalo.estimator.chars-4@1.0.0`, the offline deterministic
+fallback) pins its identity, version, and digest into every capsule.
+`--spans` attaches the declaration-span sidecar (logical
+project-relative paths only) as the restricted raw-source evidence path;
+the default never carries source bytes, secrets, `.env` content, or
+absolute paths. The contract, guarantees, and limits are documented in
+[docs/context.md](context.md) and [ADR-0018](adr/0018-context-capsules.md).
 
 ## Trace
 
@@ -438,5 +472,7 @@ scripts/test-diagnostic-contracts.mjs,
 scripts/test-validation-contracts.mjs,
 scripts/test-graph-contracts.mjs,
 scripts/test-effect-graph-contracts.mjs,
-and scripts/test-artifact-manifest-contracts.mjs through NODE_PATH,
+scripts/test-artifact-manifest-contracts.mjs,
+scripts/test-cache-contracts.mjs,
+and scripts/test-context-contracts.mjs through NODE_PATH,
 and fails the job on any install, version, or gate failure.

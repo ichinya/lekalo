@@ -81,11 +81,11 @@ fn the_failure_envelope_keeps_the_normative_field_order() {
 
 #[test]
 fn version_results_omit_empty_diagnostic_fields() {
-    let result = DomainResult::version("0.1.24");
+    let result = DomainResult::version("0.1.25");
     let json = result.to_json_string();
     assert_eq!(
         json,
-        "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.24\"\n}"
+        "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.25\"\n}"
     );
     assert!(!json.contains("diagnostics"));
     assert!(!json.contains("reasonCodes"));

@@ -3,12 +3,13 @@
 Date: 2026-09-06
 Status: accepted for issue #16
 
-Custody: this issue carries the **prospective product candidate 0.1.24** in
-every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
-`Cargo.lock` including the regenerated committed golden lock and its
-digests, the `--version` behavior and its pinning tests, `README.md`,
-`docs/cli.md`); issue #20 published product 0.1.23 (annotated tag
-`v0.1.23` on `15be55a`, remote CI green). The impact contract version
+Custody: issue #17 now carries the **prospective product candidate
+0.1.25** in every accepted path (workspace `Cargo.toml`, both `lekalo`
+packages in `Cargo.lock` including the regenerated committed golden lock
+and its digests, the `--version` behavior and its pinning tests,
+`README.md`, `docs/cli.md`); this issue published product 0.1.24
+(annotated tag `v0.1.24` on `b4109e5`); issue #20 published product
+0.1.23 (annotated tag `v0.1.23` on `15be55a`, remote CI green). The impact contract version
 (`lekalo/impact/v1.0.0`, identity `dev.lekalo.impact@1.0.0`) is independent
 of the product release, of the Model/IR/graph/effect contract versions,
 and of the diagnostic registry by design; this issue also records the

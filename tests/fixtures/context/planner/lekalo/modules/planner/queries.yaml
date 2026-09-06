@@ -1,0 +1,31 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.count_focused
+    kind: query
+    version: 1
+    description: "Count focused tasks"
+    derived_from:
+      - "PLANNER-REQ-001"
+    reads:
+      - "planner.task"
+    returns:
+      ref: "planner.task_state"
+  - id: planner.list_tasks
+    kind: query
+    version: 1
+    description: "List tasks by state"
+    reads:
+      - "planner.task"
+    returns:
+      list:
+        ref: "planner.task"
+  - id: planner.user_names
+    kind: query
+    version: 1
+    description: "Names of users owning tasks"
+    reads:
+      - "notify.user"
+      - "planner.task"
+    returns:
+      list:
+        ref: "planner.text"

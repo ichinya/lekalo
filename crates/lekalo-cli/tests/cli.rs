@@ -46,25 +46,8 @@ fn usage_json() -> String {
     )
 }
 
-fn unsupported_json(capability: &str) -> String {
-    format!(
-        "{{\n  \"status\": \"unsupported\",\n  \"capability\": \"{capability}\",\n  \"diagnostics\": [\n    {}\n  ],\n  \"reasonCodes\": [\n    \"core.capability-unavailable\"\n  ]\n}}\n",
-        diagnostic_item_json(
-            "core.capability-unavailable",
-            "LEK-DIAG-001",
-            "info",
-            "infrastructure",
-            "The requested capability is not implemented yet."
-        )
-    )
-}
-
 fn usage_human() -> &'static str {
     "invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.\n"
-}
-
-fn unsupported_human() -> &'static str {
-    "unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested capability is not implemented yet.\n"
 }
 
 fn assert_json_document(bytes: &[u8]) {
@@ -101,39 +84,6 @@ fn plain_and_json_version_outputs_are_exact_in_both_flag_orders() {
         assert_eq!(output.stdout, version_json().as_bytes());
         assert!(output.stderr.is_empty());
         assert_json_document(&output.stdout);
-    }
-}
-
-#[test]
-fn every_remaining_stub_is_exact_in_human_and_both_json_flag_orders() {
-    // `inspect` (issue #15) and `impact` (issue #16) are implemented; the
-    // remaining stubs keep the exact recognized-but-unimplemented envelope.
-    let cases = [(
-        "context",
-        vec!["context", "planner.task", "--budget", "512"],
-    )];
-
-    for (capability, args) in cases {
-        let human = lekalo(&args);
-        assert_exit(&human, 4);
-        assert_eq!(human.stdout, unsupported_human().as_bytes());
-        assert!(human.stderr.is_empty());
-
-        let mut json_before = vec!["--json"];
-        json_before.extend(args.iter().copied());
-        let before = lekalo(&json_before);
-        assert_exit(&before, 4);
-        assert_eq!(before.stdout, unsupported_json(capability).as_bytes());
-        assert!(before.stderr.is_empty());
-        assert_json_document(&before.stdout);
-
-        let mut json_after = args.clone();
-        json_after.push("--json");
-        let after = lekalo(&json_after);
-        assert_exit(&after, 4);
-        assert_eq!(after.stdout, unsupported_json(capability).as_bytes());
-        assert!(after.stderr.is_empty());
-        assert_json_document(&after.stdout);
     }
 }
 
@@ -371,14 +321,14 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
 
     let root_manifest =
         std::fs::read_to_string(workspace.join("Cargo.toml")).expect("read workspace Cargo.toml");
-    assert_eq!(root_manifest.matches("version = \"0.1.24\"").count(), 1);
+    assert_eq!(root_manifest.matches("version = \"0.1.25\"").count(), 1);
     for member in [
         "crates/lekalo-core/Cargo.toml",
         "crates/lekalo-cli/Cargo.toml",
     ] {
         let manifest =
             std::fs::read_to_string(workspace.join(member)).expect("read member manifest");
-        assert!(!manifest.contains("0.1.24"));
+        assert!(!manifest.contains("0.1.25"));
         assert!(manifest.contains("version.workspace = true"));
     }
 }

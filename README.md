@@ -159,6 +159,27 @@ in the core; the contract, guarantees, and limits live in
 `contracts/effect-graph.schema.v1.0.0.json`; hermetic fixtures are under
 `tests/fixtures/effects/`.
 
+## Bounded context capsules
+
+Issue #17 projects the minimal-but-sufficient context capsule for one
+symbol or one explicitly supplied change set: `lekalo context SYMBOL
+--budget TOKENS` and `lekalo context --changed SYMBOLS --budget
+TOKENS`. Selection is pure and deterministic over the typed IR, the
+dependency graph, and the effect graph; protected semantic facts are
+typed records that the budget never collapses into ambiguous prose;
+supporting context is ranked and may be excluded with one explainable
+manifest row per candidate; truncation is always explicit metadata
+(`fits`, `minimumRequired`); and the fixed offline estimator profile
+pins its identity, version, and digest into every capsule. Raw source,
+secrets, `.env` content, and absolute paths never enter; the only
+source evidence is the opt-in declaration-span sidecar of logical
+paths. One normalized capsule renders both the agent-facing Markdown
+and the structured JSON (`lekalo/context/v1.0.0`). The contract,
+guarantees, and limits live in [docs/context.md](docs/context.md),
+[ADR-0018](docs/adr/0018-context-capsules.md), and
+`contracts/context-capsule.schema.v1.0.0.json`; hermetic fixtures are
+under `tests/fixtures/context/`.
+
 ## Neutral trace manifest
 
 Issue #22 defines the closed, versioned traceability contract
@@ -244,8 +265,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #16 carries prospective product
-0.1.24 (issue #20 published product 0.1.23 (annotated tag `v0.1.23` on
+independent of product releases; issue #17 carries prospective product
+0.1.25 (issue #16 published product 0.1.24 (annotated tag `v0.1.24` on
+`b4109e5`); issue #20 published product 0.1.23 (annotated tag `v0.1.23` on
 `15be55a`); issue #21 published product 0.1.22 at `2dab70e`; issue #15
 published product 0.1.21 at `9ab5b07`; issue #23
 published product 0.1.20 at `eef1863`; issue #22

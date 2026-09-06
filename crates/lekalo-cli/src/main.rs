@@ -144,11 +144,29 @@ enum Commands {
         #[command(flatten)]
         args: ImpactArgs,
     },
-    /// Build a bounded context for one semantic symbol (recognized; implementation follows later).
+    /// Build a bounded context capsule for one semantic symbol, or for the
+    /// explicitly supplied changed symbols. The human projection of the
+    /// valid result is the agent-facing Markdown; `--json` emits the
+    /// structured capsule (`lekalo/context/v1.0.0`).
     Context {
-        symbol: String,
+        /// The semantic id of the symbol (or `kind:id`); exactly one of
+        /// this and `--changed` is required.
+        symbol: Option<String>,
+        /// Comma-separated changed symbol ids (a typed handoff; this
+        /// command never parses Git or infers changed symbols).
+        #[arg(long, value_name = "SYMBOLS")]
+        changed: Option<String>,
+        /// The token budget of the capsule; an over-budget capsule is
+        /// emitted with explicit truncation metadata instead of an error.
         #[arg(long, value_name = "TOKENS")]
         budget: u64,
+        /// Attach the declaration-span sidecar (logical project-relative
+        /// paths only) as the opt-in source-evidence path.
+        #[arg(long)]
+        spans: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
     },
     /// Create the committed project lock, or check an existing one.
     Lock {
@@ -415,9 +433,13 @@ fn main() -> ExitCode {
                 project,
             } => run_inspect(&symbol, include.as_deref(), &project),
             Commands::Impact { args } => run_impact(args),
-            Commands::Context { symbol, budget } => {
-                lekalo_core::Request::Context { symbol, budget }.dispatch()
-            }
+            Commands::Context {
+                symbol,
+                changed,
+                budget,
+                spans,
+                project,
+            } => run_context(symbol, changed, budget, spans, &project),
             Commands::Graph { command } => run_graph(command, cli.no_cache),
             Commands::Effects { command } => run_effects(command, cli.no_cache),
             Commands::Trace { command } => run_trace(command),
@@ -1165,6 +1187,59 @@ fn effect_line(label: &str, edge: &lekalo_core::effects::EffectEdge) -> String {
         subject,
         edge.confidence().as_str()
     )
+}
+
+/// Run `lekalo context`: load and compile the project, hand the IR to the
+/// core context engine, and project the one normalized capsule to both
+/// renderers (Markdown on the human stream, the structured capsule inside
+/// the JSON envelope). Load and IR failures pass through untouched;
+/// capsule input failures are the stable `invalid` envelope.
+fn run_context(
+    symbol: Option<String>,
+    changed: Option<String>,
+    budget: u64,
+    spans: bool,
+    project: &Option<String>,
+) -> DomainResult {
+    let scope = match (symbol, changed) {
+        (Some(symbol), None) => lekalo_core::context::CapsuleScope::Symbol(symbol),
+        (None, Some(changed)) => {
+            let mut roots = Vec::new();
+            for name in changed.split(',') {
+                let name = name.trim();
+                if name.is_empty() {
+                    return DomainResult::usage_error();
+                }
+                roots.push(name.to_owned());
+            }
+            lekalo_core::context::CapsuleScope::Changed(roots)
+        }
+        (Some(_), Some(_)) | (None, None) => return DomainResult::usage_error(),
+    };
+    let selection = LoadSelection {
+        project: project
+            .clone()
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    let model = match lekalo_core::loader::normalize_model(&selection) {
+        Err(result) => return result,
+        Ok(model) => model,
+    };
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Err(failure) => return failure.into_result(),
+        Ok(compilation) => compilation,
+    };
+    match lekalo_core::context::plan(&scope, budget, spans, &compilation) {
+        Err(set) => DomainResult::invalid(set),
+        Ok(capsule) => DomainResult::graph(
+            format!(
+                "{{\"status\":\"valid\",\"context\":{}}}",
+                capsule.to_canonical_json()
+            ),
+            capsule.to_markdown(),
+            Vec::new(),
+        ),
+    }
 }
 
 /// Run one `graph` subcommand: load and compile the project, hand the IR

@@ -1,0 +1,26 @@
+schema_version: "1.0.0"
+definitions:
+  - id: notify.text
+    kind: scalar
+    version: 1
+    description: "Human-readable user name"
+    base: string
+  - id: notify.user_id
+    kind: scalar
+    version: 1
+    description: "Stable user identifier"
+    base: uuid
+    visibility: project
+  - id: notify.user
+    kind: entity
+    version: 1
+    description: "A notification-reachable user"
+    fields:
+      - name: user_id
+        type: "notify.user_id"
+        required: true
+      - name: name
+        type: "notify.text"
+        required: true
+    identity:
+      - user_id

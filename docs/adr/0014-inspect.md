@@ -5,8 +5,10 @@ Status: accepted for issue #15
 
 Custody: this issue published product 0.1.21 (annotated tag `v0.1.21` on
 `9ab5b07`); issue #21 published product 0.1.22 (annotated tag `v0.1.22`
-on `2dab70e`); issue #20 now carries the **prospective product candidate
-0.1.23** in every accepted path (workspace `Cargo.toml`, both `lekalo`
+on `2dab70e`); issue #20 published product 0.1.23 (annotated tag
+`v0.1.23` on `15be55a`); issue #16 published product 0.1.24 (annotated
+tag `v0.1.24` on `b4109e5`); issue #17 now carries the **prospective product
+candidate 0.1.25** in every accepted path (workspace `Cargo.toml`, both `lekalo`
 packages in `Cargo.lock` including the regenerated committed golden
 lock and its digest, the `--version` behavior and its pinning tests,
 `README.md`,

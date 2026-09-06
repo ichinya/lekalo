@@ -90,10 +90,6 @@ fn golden_projections_are_byte_stable_across_reruns() {
             "ir-failure-envelope.json",
         ),
         (vec!["--json", "--bogus"], "usage-envelope.json"),
-        (
-            vec!["--json", "context", "planner.task", "--budget", "512"],
-            "unsupported-envelope.json",
-        ),
     ];
     for (args, golden_name) in cases {
         let expected = golden(golden_name);

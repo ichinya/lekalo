@@ -3,13 +3,15 @@
 Date: 2026-09-05
 Status: accepted for issue #20
 
-Custody: this issue carries the **prospective product candidate 0.1.23**
-in every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
-`Cargo.lock` including the regenerated committed golden lock and its
-digests, the `--version` behavior and its pinning tests, `README.md`,
-`docs/cli.md`); issue #14 published product 0.1.12 (annotated tag
-`v0.1.12` on `81666da`); issue #21 published product 0.1.22 (annotated
-tag `v0.1.22` on `2dab70e`). The cache contract version
+Custody: issue #17 now carries the **prospective product candidate
+0.1.25** in every accepted path (workspace `Cargo.toml`, both `lekalo`
+packages in `Cargo.lock` including the regenerated committed golden lock
+and its digests, the `--version` behavior and its pinning tests,
+`README.md`, `docs/cli.md`); issue #16 published product 0.1.24
+(annotated tag `v0.1.24` on `b4109e5`); this issue published product 0.1.23
+(annotated tag `v0.1.23` on `15be55a`); issue #21 published product
+0.1.22 (annotated tag `v0.1.22` on `2dab70e`); issue #14 published
+product 0.1.12 (annotated tag `v0.1.12` on `81666da`). The cache contract version
 (`lekalo/cache/v1.0.0`, identity `dev.lekalo.cache@1.0.0`) is independent
 of the product release, of every Model/IR/graph/effect/lock/protocol
 contract version, and of the diagnostic registry by design.

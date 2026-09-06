@@ -2,6 +2,7 @@
 
 pub mod artifacts;
 pub mod cache;
+pub mod context;
 pub mod diagnostics;
 pub mod effects;
 pub mod graph;
