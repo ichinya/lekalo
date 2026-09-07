@@ -223,12 +223,14 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.7.0.json` (issue #12 extended it with the
+`contracts/diagnostic-registry.v1.8.0.json` (issue #12 extended it with the
 `semantic.*`/`validate.*` families and issue #13 added the `graph.*`
 family, each as a minor increment; issue #15 added the `inspect.*` family
 the same way; issue #16 added the `impact.*` family issue #18 adds the
 `diff.*` family, and issue #25 adds the `authorization.*` family, and
-issue #62 adds the `error.*` family, each as a
+issue #62 adds the `error.*` family, and issue #26 adds the
+`extended.*`, `event.*`, `job.*`, `call.*`, `cache.*`,
+`publication.*`, `contract.*`, and `case.*` families, each as a
 wire-shape-preserving minor increment).
 
 ## Generated-artifact ownership and drift detection
@@ -259,6 +261,28 @@ the 0/1 exit classes. The registry successor, closed profile contract, and
 recorded owner decisions live in [docs/validation.md](docs/validation.md)
 and [ADR-0011](docs/adr/0011-semantic-validation.md); the hermetic fixture
 matrix is under `tests/fixtures/validation/`.
+
+## Extended effect contracts
+
+Issue #26 publishes the closed extended-effects attachment
+(`lekalo/extended-effects/v1.0.0`): event contracts with delivery,
+ordering, deduplication, and correlation semantics; job contracts with
+payload, queue class, retry/backoff, idempotency, timeout, and
+dead-letter policies; external-call contracts with provider
+capabilities, typed request/response/error contracts, and
+read/write/destructive classification with mandatory compensation for
+mutating calls; cache contracts with exact key contracts, declared
+operations, consistency, and freshness; and publication contracts with
+explicit opt-in and approval, sensitivity classification, and immutable
+revisioned snapshots — plus typed adapter-capability requirement
+records with strict/permissive target mapping and deterministic
+partial-failure cases keyed to Scenario IR. A sensitive effect
+automatically requires its security review gate; nothing enters a
+surface implicitly. Pure declaration and validation: no runtime
+execution, no queue or provider implementation, no adapter. See
+[docs/extended-effects.md](docs/extended-effects.md),
+[ADR-0023](docs/adr/0023-extended-effects.md), and the hermetic
+fixtures under `tests/fixtures/extended-effects/`.
 
 ## Transaction and concurrency contracts
 
@@ -303,8 +327,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #62 carries prospective product
-0.1.29 (issue #25 published product 0.1.28 (annotated tag `v0.1.28` on
+independent of product releases; issue #26 carries prospective product
+0.1.30 (issue #62 published product 0.1.29 (annotated tag `v0.1.29` on
+`de6f8a7`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on
 `967bf52`); issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
 `ef7680d`); issue #18 published product 0.1.26 (annotated tag `v0.1.26` on
 `3710179`); issue #17 published product 0.1.25 (annotated tag `v0.1.25` on

@@ -1,0 +1,1023 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/extended-effects.schema.v1.0.0.json",
+  "title": "Lekalo Extended Effect Contracts",
+  "description": "Closed independent attachment contract declaring the non-database effect semantics of one project (issue #26): event contracts (schema and version, local/durable delivery, ordering and deduplication, correlation and causation fields), job contracts (payload, queue class, retry and backoff, idempotency, timeout and dead-letter policy), external-call contracts (provider capability, request/response/error contract, timeout and retry, read/write/destructive classification, compensation under partial failure), cache contracts (key contract, read/write/invalidate operations, consistency and freshness), and publication contracts (destination, explicit opt-in and approval, privacy classification, immutable revisioned snapshots) — plus typed adapter-capability requirement records and deterministic partial-failure cases keyed to Scenario IR documents. The attachment is pure declaration and validation data: it never executes, never claims runtime enforcement, and never carries source text, physical paths, raw tokens, credentials, runtime values, timestamps, host data, or adapter transcripts. The contract version is independent of the product release, of the source Model and IR contract versions, of the effect graph, of the Scenario IR, of the error-contract family, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "events",
+    "jobs",
+    "calls",
+    "cacheContracts",
+    "publications",
+    "partialFailureCases",
+    "capabilityRequirements"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/extended-effects/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.extended-effects@1.0.0"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "modelRef": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "$ref": "#/$defs/irRef"
+    },
+    "effectGraphRef": {
+      "$ref": "#/$defs/effectGraphRef"
+    },
+    "events": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/eventContract"
+      }
+    },
+    "jobs": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/jobContract"
+      }
+    },
+    "calls": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/callContract"
+      }
+    },
+    "cacheContracts": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/cacheContract"
+      }
+    },
+    "publications": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/publicationContract"
+      }
+    },
+    "partialFailureCases": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/partialFailureCase"
+      }
+    },
+    "capabilityRequirements": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/capabilityRequirement"
+      }
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "namespacedId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "contractRef": {
+      "$ref": "#/$defs/namespacedId"
+    },
+    "requirementId": {
+      "$ref": "#/$defs/namespacedId"
+    },
+    "field": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "errorRef": {
+      "description": "Opaque typed reference to an owner-supplied error contract (#62). Never an error message, code literal, transport status, or catch-all.",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 96,
+      "pattern": "^errors?\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "providerContract": {
+      "description": "Typed provider capability contract in the accepted #14 provider grammar: namespaced id plus exact SemVer tail. Never a URL, hostname, credential, or runtime endpoint.",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 96,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*@[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "effectRef": {
+      "description": "The canonical #14 EffectId spelling: operation|kind|subject|origin|occurrence. The typed normalizer enforces the closed kind vocabulary, the per-family kind binding, and the part grammars.",
+      "type": "string",
+      "minLength": 7,
+      "maxLength": 512,
+      "pattern": "^operation:[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*\\|[a-z-]+\\|[a-z0-9][a-z0-9._:/-]{0,191}(#[a-z][a-z0-9_]*)?\\|(effect:[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*|#[0-9]{1,10})\\|[0-9]{1,10}$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "enum": [
+            "0.1.0",
+            "1.0.0"
+          ]
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.1.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "effectGraphRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.effects@1.0.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "contributions": {
+      "description": "The explicit inclusion matrix. Nothing is ever contributed implicitly: each surface (effect graph, impact analysis, context capsules, scenario coverage) receives the contract only when its flag is true.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "graph",
+        "impact",
+        "context",
+        "scenarios"
+      ],
+      "properties": {
+        "graph": {
+          "type": "boolean"
+        },
+        "impact": {
+          "type": "boolean"
+        },
+        "context": {
+          "type": "boolean"
+        },
+        "scenarios": {
+          "type": "boolean"
+        }
+      }
+    },
+    "securityGate": {
+      "description": "The review-gate hint a sensitive effect automatically requires: an opaque typed pointer to the owning review contract. Never a credential, token, or reviewer identity.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewRef"
+      ],
+      "properties": {
+        "reviewRef": {
+          "$ref": "#/$defs/namespacedId"
+        }
+      }
+    },
+    "deduplication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "none",
+            "key",
+            "durable_key"
+          ]
+        },
+        "keyField": {
+          "description": "The exact event payload field carrying the deduplication key. Required for key and durable_key, forbidden otherwise.",
+          "$ref": "#/$defs/field"
+        }
+      }
+    },
+    "eventContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractRef",
+        "contractVersion",
+        "effectRef",
+        "eventVersion",
+        "schemaDigest",
+        "delivery",
+        "ordering",
+        "deduplication",
+        "sensitivity",
+        "portability",
+        "contributions",
+        "capabilityRequirementRefs"
+      ],
+      "properties": {
+        "contractRef": {
+          "$ref": "#/$defs/contractRef"
+        },
+        "contractVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "effectRef": {
+          "$ref": "#/$defs/effectRef"
+        },
+        "eventVersion": {
+          "description": "The declared event schema version, not a contract version.",
+          "$ref": "#/$defs/semver"
+        },
+        "schemaDigest": {
+          "description": "Digest over the exact canonical event schema payload.",
+          "$ref": "#/$defs/sha256"
+        },
+        "delivery": {
+          "enum": [
+            "local",
+            "durable"
+          ]
+        },
+        "ordering": {
+          "enum": [
+            "unordered",
+            "per_key",
+            "total"
+          ]
+        },
+        "deduplication": {
+          "$ref": "#/$defs/deduplication"
+        },
+        "correlationId": {
+          "description": "The payload field carrying the correlation id, when declared.",
+          "$ref": "#/$defs/field"
+        },
+        "causationId": {
+          "description": "The payload field carrying the causation id, when declared.",
+          "$ref": "#/$defs/field"
+        },
+        "sensitivity": {
+          "$ref": "#/$defs/sensitivity"
+        },
+        "securityGate": {
+          "$ref": "#/$defs/securityGate"
+        },
+        "portability": {
+          "$ref": "#/$defs/portability"
+        },
+        "targetProfileRef": {
+          "description": "The target profile that owns the runtime-specific details. Required when portability is target-specific, forbidden when portable.",
+          "$ref": "#/$defs/namespacedId"
+        },
+        "contributions": {
+          "$ref": "#/$defs/contributions"
+        },
+        "capabilityRequirementRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        }
+      }
+    },
+    "jobRetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxAttempts",
+        "backoff"
+      ],
+      "properties": {
+        "maxAttempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "backoff": {
+          "enum": [
+            "none",
+            "fixed",
+            "exponential"
+          ]
+        },
+        "capMillis": {
+          "description": "The backoff ceiling in milliseconds. Required for fixed and exponential, forbidden for none.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600000
+        }
+      }
+    },
+    "jobIdempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "none",
+            "key",
+            "intrinsic"
+          ]
+        },
+        "keyField": {
+          "description": "The exact payload field carrying the idempotency key. Required for key, forbidden otherwise.",
+          "$ref": "#/$defs/field"
+        }
+      }
+    },
+    "jobContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractRef",
+        "contractVersion",
+        "effectRef",
+        "payloadDigest",
+        "queueClass",
+        "retry",
+        "idempotency",
+        "timeoutMillis",
+        "deadLetter",
+        "sensitivity",
+        "portability",
+        "contributions",
+        "capabilityRequirementRefs"
+      ],
+      "properties": {
+        "contractRef": {
+          "$ref": "#/$defs/contractRef"
+        },
+        "contractVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "effectRef": {
+          "$ref": "#/$defs/effectRef"
+        },
+        "payloadDigest": {
+          "description": "Digest over the exact canonical job payload schema.",
+          "$ref": "#/$defs/sha256"
+        },
+        "queueClass": {
+          "description": "The declared queue class or capability selector of the executing queue.",
+          "$ref": "#/$defs/namespacedId"
+        },
+        "retry": {
+          "$ref": "#/$defs/jobRetry"
+        },
+        "idempotency": {
+          "$ref": "#/$defs/jobIdempotency"
+        },
+        "timeoutMillis": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400000
+        },
+        "deadLetter": {
+          "enum": [
+            "none",
+            "park",
+            "escalate"
+          ]
+        },
+        "sensitivity": {
+          "$ref": "#/$defs/sensitivity"
+        },
+        "securityGate": {
+          "$ref": "#/$defs/securityGate"
+        },
+        "portability": {
+          "$ref": "#/$defs/portability"
+        },
+        "targetProfileRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "contributions": {
+          "$ref": "#/$defs/contributions"
+        },
+        "capabilityRequirementRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        }
+      }
+    },
+    "callRetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxAttempts",
+        "safety"
+      ],
+      "properties": {
+        "maxAttempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "safety": {
+          "enum": [
+            "safe",
+            "conditional_idempotent",
+            "unsafe"
+          ]
+        }
+      }
+    },
+    "callContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractRef",
+        "contractVersion",
+        "effectRef",
+        "providerContract",
+        "requestDigest",
+        "responseDigest",
+        "errorRefs",
+        "timeoutMillis",
+        "retry",
+        "classification",
+        "sensitivity",
+        "portability",
+        "contributions",
+        "capabilityRequirementRefs"
+      ],
+      "properties": {
+        "contractRef": {
+          "$ref": "#/$defs/contractRef"
+        },
+        "contractVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "effectRef": {
+          "$ref": "#/$defs/effectRef"
+        },
+        "providerContract": {
+          "$ref": "#/$defs/providerContract"
+        },
+        "requestDigest": {
+          "description": "Digest over the exact canonical request schema.",
+          "$ref": "#/$defs/sha256"
+        },
+        "responseDigest": {
+          "description": "Digest over the exact canonical response schema.",
+          "$ref": "#/$defs/sha256"
+        },
+        "errorRefs": {
+          "description": "The closed typed error vocabulary. At least one owner-supplied error contract; errors never collapse to a catch-all.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/errorRef"
+          }
+        },
+        "timeoutMillis": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600000
+        },
+        "retry": {
+          "$ref": "#/$defs/callRetry"
+        },
+        "classification": {
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ]
+        },
+        "compensationRef": {
+          "description": "Typed reference to the idempotent compensating operation. Required for write and destructive calls; it is a recovery declaration, never proof of atomicity.",
+          "type": "string",
+          "minLength": 11,
+          "maxLength": 202,
+          "pattern": "^operation:[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+        },
+        "sensitivity": {
+          "$ref": "#/$defs/sensitivity"
+        },
+        "securityGate": {
+          "$ref": "#/$defs/securityGate"
+        },
+        "portability": {
+          "$ref": "#/$defs/portability"
+        },
+        "targetProfileRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "contributions": {
+          "$ref": "#/$defs/contributions"
+        },
+        "capabilityRequirementRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        }
+      }
+    },
+    "cacheKeyContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keyVersion",
+        "keyFields"
+      ],
+      "properties": {
+        "keyVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "keyFields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        }
+      }
+    },
+    "cacheFreshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ttlMillis": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31536000000
+        },
+        "maxStaleMillis": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31536000000
+        }
+      }
+    },
+    "cacheContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractRef",
+        "contractVersion",
+        "effectRef",
+        "keyContract",
+        "operations",
+        "consistency",
+        "sensitivity",
+        "portability",
+        "contributions",
+        "capabilityRequirementRefs"
+      ],
+      "properties": {
+        "contractRef": {
+          "$ref": "#/$defs/contractRef"
+        },
+        "contractVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "effectRef": {
+          "$ref": "#/$defs/effectRef"
+        },
+        "keyContract": {
+          "$ref": "#/$defs/cacheKeyContract"
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "read",
+              "write",
+              "invalidate"
+            ]
+          }
+        },
+        "consistency": {
+          "enum": [
+            "eventual",
+            "read_your_writes",
+            "strong"
+          ]
+        },
+        "freshness": {
+          "$ref": "#/$defs/cacheFreshness"
+        },
+        "sensitivity": {
+          "$ref": "#/$defs/sensitivity"
+        },
+        "securityGate": {
+          "$ref": "#/$defs/securityGate"
+        },
+        "portability": {
+          "$ref": "#/$defs/portability"
+        },
+        "targetProfileRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "contributions": {
+          "$ref": "#/$defs/contributions"
+        },
+        "capabilityRequirementRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        }
+      }
+    },
+    "publicationConsent": {
+      "description": "The explicit opt-in and approval contract. Publication never happens implicitly; approved publication requires a named approver reference.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "optIn",
+        "approval"
+      ],
+      "properties": {
+        "optIn": {
+          "const": true
+        },
+        "approval": {
+          "enum": [
+            "draft",
+            "preview",
+            "approved"
+          ]
+        },
+        "approverRef": {
+          "description": "Opaque typed reference to the approving authority contract. Required when approval is approved, forbidden otherwise.",
+          "$ref": "#/$defs/namespacedId"
+        }
+      }
+    },
+    "publicationSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "revisionField"
+      ],
+      "properties": {
+        "mode": {
+          "const": "revisioned"
+        },
+        "revisionField": {
+          "description": "The immutable revision identifier field of every published snapshot.",
+          "$ref": "#/$defs/field"
+        }
+      }
+    },
+    "publicationContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractRef",
+        "contractVersion",
+        "effectRef",
+        "destination",
+        "consent",
+        "sensitivity",
+        "snapshot",
+        "portability",
+        "contributions",
+        "capabilityRequirementRefs"
+      ],
+      "properties": {
+        "contractRef": {
+          "$ref": "#/$defs/contractRef"
+        },
+        "contractVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "effectRef": {
+          "$ref": "#/$defs/effectRef"
+        },
+        "destination": {
+          "description": "The typed publication destination selector.",
+          "$ref": "#/$defs/namespacedId"
+        },
+        "consent": {
+          "$ref": "#/$defs/publicationConsent"
+        },
+        "sensitivity": {
+          "$ref": "#/$defs/sensitivity"
+        },
+        "securityGate": {
+          "$ref": "#/$defs/securityGate"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/publicationSnapshot"
+        },
+        "portability": {
+          "$ref": "#/$defs/portability"
+        },
+        "targetProfileRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "contributions": {
+          "$ref": "#/$defs/contributions"
+        },
+        "capabilityRequirementRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        }
+      }
+    },
+    "sensitivity": {
+      "description": "The privacy/security classification. A sensitive effect automatically requires its securityGate hint.",
+      "enum": [
+        "standard",
+        "sensitive"
+      ]
+    },
+    "portability": {
+      "description": "The target-neutrality declaration. Runtime-specific details live only in the referenced target profile.",
+      "enum": [
+        "portable",
+        "target-specific"
+      ]
+    },
+    "scenarioRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioId",
+        "scenarioVersion",
+        "irDigest"
+      ],
+      "properties": {
+        "scenarioId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 191,
+          "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,2}$"
+        },
+        "scenarioVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "irDigest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "caseFault": {
+      "description": "The deterministic fault injected at one step. none executes the step unchanged; the other values inject the named failure class before the effect completes.",
+      "enum": [
+        "none",
+        "timeout",
+        "error",
+        "infrastructure",
+        "cancel"
+      ]
+    },
+    "caseStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stepId",
+        "contractRef",
+        "fault"
+      ],
+      "properties": {
+        "stepId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "contractRef": {
+          "$ref": "#/$defs/contractRef"
+        },
+        "fault": {
+          "$ref": "#/$defs/caseFault"
+        }
+      }
+    },
+    "caseNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId",
+        "kind"
+      ],
+      "properties": {
+        "nodeId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "enum": [
+            "invoke",
+            "fault",
+            "barrier"
+          ]
+        },
+        "stepId": {
+          "description": "The executed or fault-injected step. Required for invoke and fault nodes, forbidden for barrier nodes.",
+          "$ref": "#/$defs/semanticId"
+        },
+        "joins": {
+          "description": "Explicit deterministic predecessor nodes this node waits for. Order is not semantic; the set is.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        }
+      }
+    },
+    "expectedOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractRef",
+        "outcome"
+      ],
+      "properties": {
+        "contractRef": {
+          "$ref": "#/$defs/contractRef"
+        },
+        "outcome": {
+          "enum": [
+            "success",
+            "conflict",
+            "error",
+            "infrastructure",
+            "unsupported",
+            "degraded",
+            "recovery_required"
+          ]
+        }
+      }
+    },
+    "partialFailureCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "scenarioRef",
+        "steps",
+        "schedule",
+        "expectedOutcomes",
+        "capabilityRequirementRefs"
+      ],
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "scenarioRef": {
+          "$ref": "#/$defs/scenarioRef"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/caseStep"
+          }
+        },
+        "schedule": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/caseNode"
+          }
+        },
+        "expectedOutcomes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/expectedOutcome"
+          }
+        },
+        "capabilityRequirementRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        }
+      }
+    },
+    "capabilityRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requirementId",
+        "capability",
+        "minimum",
+        "reason"
+      ],
+      "properties": {
+        "requirementId": {
+          "$ref": "#/$defs/requirementId"
+        },
+        "capability": {
+          "anyOf": [
+            {
+              "enum": [
+                "delivery.durable",
+                "ordering.total",
+                "ordering.per_key",
+                "dedup.durable_key",
+                "queue.dead_letter",
+                "call.compensation",
+                "cache.strong",
+                "cache.read_your_writes",
+                "publish.approval",
+                "publish.revisioned_snapshot",
+                "security.review_gate"
+              ]
+            },
+            {
+              "description": "A provider-owned adapter capability whose concrete owner is the named provider contract.",
+              "type": "string",
+              "minLength": 12,
+              "maxLength": 96,
+              "pattern": "^provider\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+            }
+          ]
+        },
+        "minimum": {
+          "enum": [
+            "full",
+            "partial"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;()/_-]*$"
+        }
+      }
+    }
+  }
+}

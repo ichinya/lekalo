@@ -3,7 +3,7 @@
 Date: 2026-09-07
 Status: accepted for issue #62
 
-Custody: issue #62 carries the **prospective product candidate 0.1.29** in
+Custody: issue #62 published product 0.1.29 (annotated tag `v0.1.29` on `de6f8a7`); issue #26 now carries the **prospective product candidate 0.1.30** in
 every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 `Cargo.lock` including the regenerated committed golden lock and its
 digests, the `--version` behavior and its pinning tests, `README.md`,
@@ -15,7 +15,7 @@ tag `v0.1.27` on `ef7680d`); issue #18 published product 0.1.26
 identities `dev.lekalo.error-contract@1.0.0` and
 `dev.lekalo.error-registry@1.0.0`) are independent of the product
 release, of the Model/IR/diagnostic/protocol contract versions, and of
-every other registered family by design. The placeholder 0.1.29 is
+every other registered family by design. The placeholder 0.1.29 was
 reconciled to the publication-order version at integration.
 
 ## Context

@@ -2,14 +2,14 @@
 
 Issue #11 defines the stable, machine-readable diagnostic contract: one
 closed wire item (`lekalo/diagnostic/v1.0.0`), one embedded rule registry
-(`dev.lekalo.diagnostic-registry@1.7.0`, registry version `1.7.0` — issue #12 added the `semantic.*`/`validate.*` families and issue #13 added the `graph.*` family, each as a wire-shape-preserving minor increment; issue #14's effect graph reuses the `graph.*` infrastructure rules with bounded tokens and keeps its comparison states as result data; issue #15 added the `inspect.*` family for the single-symbol inspect projection as the same kind of minor increment; issue #16 adds the `impact.*` family plus the one `denied` rule its strict bounded denial requires as the same kind of wire-shape-preserving additive minor increment; issue #18 adds the `diff.*` family for the semantic diff as the same kind of wire-shape-preserving additive minor increment; issue #25 adds the `authorization.*` family for the authorization contract as the same kind of wire-shape-preserving additive minor increment; issue #62 adds the `error.*` family for the explicit error contracts as the same kind of wire-shape-preserving additive minor increment), a typed
+(`dev.lekalo.diagnostic-registry@1.8.0`, registry version `1.8.0` — issue #12 added the `semantic.*`/`validate.*` families and issue #13 added the `graph.*` family, each as a wire-shape-preserving minor increment; issue #14's effect graph reuses the `graph.*` infrastructure rules with bounded tokens and keeps its comparison states as result data; issue #15 added the `inspect.*` family for the single-symbol inspect projection as the same kind of minor increment; issue #16 adds the `impact.*` family plus the one `denied` rule its strict bounded denial requires as the same kind of wire-shape-preserving additive minor increment; issue #18 adds the `diff.*` family for the semantic diff as the same kind of wire-shape-preserving additive minor increment; issue #25 adds the `authorization.*` family for the authorization contract as the same kind of wire-shape-preserving additive minor increment; issue #62 adds the `error.*` family for the explicit error contracts as the same kind of wire-shape-preserving additive minor increment; issue #26 adds the `extended.*`, `event.*`, `job.*`, `call.*`, `cache.*`, `publication.*`, `contract.*`, and `case.*` families for the extended effect contracts as the same kind of wire-shape-preserving additive minor increment), a typed
 Rust API, deterministic normalization, and the human and JSON projections
 through the shared `DomainResult` envelope. The contracts are published as
 
 - [`contracts/diagnostic.schema.v1.0.0.json`](../contracts/diagnostic.schema.v1.0.0.json) — one diagnostic item,
 - [`contracts/diagnostic-registry.schema.v1.0.0.json`](../contracts/diagnostic-registry.schema.v1.0.0.json) — the registry schema,
-- [`contracts/diagnostic-registry.v1.7.0.json`](../contracts/diagnostic-registry.v1.7.0.json) — the current registry instance,
-- [`contracts/diagnostic-registry.v1.6.0.json`](../contracts/diagnostic-registry.v1.6.0.json) — the accepted predecessor instance.
+- [`contracts/diagnostic-registry.v1.8.0.json`](../contracts/diagnostic-registry.v1.8.0.json) — the current registry instance,
+- [`contracts/diagnostic-registry.v1.7.0.json`](../contracts/diagnostic-registry.v1.7.0.json) — the accepted predecessor instance.
 
 Versions are independent of the product release, the Model/IR/protocol
 contract versions, the lock wire, and the resolver algorithm version.

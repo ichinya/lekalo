@@ -9,7 +9,7 @@ every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 `--version` behavior and its pinning tests, `README.md`, `docs/cli.md`);
 the candidate was published as product 0.1.27 (annotated tag `v0.1.27` on
 `ef7680d`); issue #18 published product 0.1.26 (annotated tag `v0.1.26` on
-`3710179`).
+`3710179`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on `de6f8a7`); issue #26 now carries the **prospective product candidate 0.1.30** in every accepted path.
 The transaction-concurrency contract version
 (`lekalo/transaction-concurrency/v1.0.0`, identity
 `dev.lekalo.transaction-concurrency@1.0.0`) is independent of the product

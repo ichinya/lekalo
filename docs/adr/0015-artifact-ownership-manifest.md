@@ -14,7 +14,7 @@ issue #20 published product 0.1.23 (annotated tag `v0.1.23` on
 `v0.1.24` on `b4109e5`); issue #17 published product 0.1.25 (annotated
 tag `v0.1.25` on `e627fe5`); issue #18 published product 0.1.26 (annotated tag `v0.1.26` on
 `3710179`); issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
-`ef7680d`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on `967bf52`); issue #62 now carries the **prospective product candidate 0.1.29** in every accepted path (workspace `Cargo.toml`, both `lekalo`
+`ef7680d`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on `967bf52`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on `de6f8a7`); issue #26 now carries the **prospective product candidate 0.1.30** in every accepted path (workspace `Cargo.toml`, both `lekalo`
 packages in `Cargo.lock` including the regenerated committed golden lock
 and its digests, the `--version` behavior and its pinning tests,
 `README.md`, `docs/cli.md`); issue #13 published product 0.1.11

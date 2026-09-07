@@ -26,8 +26,7 @@ product 0.1.24 (annotated tag `v0.1.24` on `b4109e5`); issue #17 published
 product 0.1.25 (annotated tag `v0.1.25` on `e627fe5`); issue #18 published
 product 0.1.26 (annotated tag `v0.1.26` on `3710179`); issue #24 published
 product 0.1.27 (annotated tag `v0.1.27` on `ef7680d`); issue #25 published
-product 0.1.28 (annotated tag `v0.1.28` on `967bf52`); issue #62 now carries
-prospective product 0.1.29. Issue #8 published product 0.1.6 at `5580b83`. Product versions,
+product 0.1.28 (annotated tag `v0.1.28` on `967bf52`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on `de6f8a7`); issue #26 now carries prospective product 0.1.30. Issue #8 published product 0.1.6 at `5580b83`. Product versions,
 Model schema versions, the IR
 contract version, and the protocol version are independent by design.
 

@@ -5,7 +5,7 @@ Status: accepted for issue #12
 
 Custody: issue #18 published product 0.1.26 (annotated tag `v0.1.26` on
 `3710179`); issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
-`ef7680d`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on `967bf52`); issue #62 now carries the **prospective product candidate 0.1.29**
+`ef7680d`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on `967bf52`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on `de6f8a7`); issue #26 now carries the **prospective product candidate 0.1.30**
 in every accepted path; issue #17 published product 0.1.25 (annotated tag
 `v0.1.25` on `e627fe5`); issue #16 published product 0.1.24 (annotated tag
 `v0.1.24` on `b4109e5`); issue #20 published product 0.1.23 (annotated tag

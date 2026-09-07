@@ -4,7 +4,7 @@ Date: 2026-09-05
 Status: accepted for issue #18
 
 Custody: issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
-`ef7680d`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on `967bf52`); issue #62 now carries the **prospective product candidate 0.1.29** in
+`ef7680d`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on `967bf52`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on `de6f8a7`); issue #26 now carries the **prospective product candidate 0.1.30** in
 every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 `Cargo.lock`, the regenerated committed golden lock and its digest, the
 `--version` behavior and its pinning tests, `README.md`, `docs/cli.md`);

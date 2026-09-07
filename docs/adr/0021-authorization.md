@@ -8,8 +8,7 @@ every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 `Cargo.lock` including the regenerated committed golden lock and its
 digests, the `--version` behavior and its pinning tests, `README.md`,
 `docs/cli.md`); the candidate was published as product 0.1.28 (annotated
-tag `v0.1.28` on `967bf52`); issue #62 now carries the **prospective
-product candidate 0.1.29** in every accepted path; issue #24 published
+tag `v0.1.28` on `967bf52`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on `de6f8a7`); issue #26 now carries the **prospective product candidate 0.1.30** in every accepted path; issue #24 published
 product 0.1.27 (annotated tag `v0.1.27` on `ef7680d`); issue #18
 published product 0.1.26 (annotated tag
 `v0.1.26` on `3710179`). The authorization contract version

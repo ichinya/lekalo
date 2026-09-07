@@ -290,17 +290,17 @@ fn snapshot(root: &Path) -> Vec<(String, u64)> {
     entries
 }
 
-/// Version custody: the binary reports the prospective 0.1.29.
+/// Version custody: the binary reports the prospective 0.1.30.
 #[test]
 fn version_probe_reports_the_prospective_release() {
     let project = fixture_path();
     let human = lekalo_in(&project, &["--version"]);
     assert_eq!(exit_code(&human), 0);
-    assert_eq!(stdout_text(&human).trim(), "lekalo 0.1.29");
+    assert_eq!(stdout_text(&human).trim(), "lekalo 0.1.30");
     let json = lekalo_in(&project, &["--json", "--version"]);
     assert_eq!(exit_code(&json), 0);
     assert_eq!(
         stdout_text(&json).trim_end(),
-        "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.29\"\n}"
+        "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.30\"\n}"
     );
 }

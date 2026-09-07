@@ -8,6 +8,7 @@ pub mod diagnostics;
 pub mod diff;
 pub mod effects;
 pub mod error_contract;
+pub mod extended_effects;
 pub mod graph;
 pub mod impact;
 pub mod inspect;
