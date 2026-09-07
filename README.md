@@ -223,14 +223,15 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.8.0.json` (issue #12 extended it with the
+`contracts/diagnostic-registry.v1.9.0.json` (issue #12 extended it with the
 `semantic.*`/`validate.*` families and issue #13 added the `graph.*`
 family, each as a minor increment; issue #15 added the `inspect.*` family
 the same way; issue #16 added the `impact.*` family issue #18 adds the
 `diff.*` family, and issue #25 adds the `authorization.*` family, and
 issue #62 adds the `error.*` family, and issue #26 adds the
 `extended.*`, `event.*`, `job.*`, `call.*`, `cache.*`,
-`publication.*`, `contract.*`, and `case.*` families, each as a
+`publication.*`, `contract.*`, and `case.*` families, and issue #63 adds
+the `invariant.*` family, each as a
 wire-shape-preserving minor increment).
 
 ## Generated-artifact ownership and drift detection
@@ -319,6 +320,31 @@ validation: no transport runtime, no adapter execution. See
 [ADR-0022](docs/adr/0022-error-contracts.md), and the hermetic fixtures
 under `tests/fixtures/error-contract/`.
 
+
+## Invariants and state transitions
+
+Issue #63 makes domain invariants and state transitions first-class,
+machine-checkable contract data: the closed invariant-transition wire
+schema (`lekalo/invariant-transition/v1.0.0`) binding one project to
+one exact Model pin, IR digest, and attachment revision; bounded
+state spaces with explicit initial/terminal states and explicit
+cycle and dead-state policies; eleven closed invariant kinds over a
+minimal bounded predicate/value AST; typed transitions with ordered
+assignment sets, operation-entry preconditions, separate
+authorization policy references, and branch error references;
+deterministic local state-graph checks (reachability, dead states,
+bounded iterative SCC/cycle policy); verification mappings with
+declared enforcement layers, typed evidence, and explicit
+gap/dangling/stale/conflict statuses; and bounded property hints.
+Stable semantic IDs, deterministic canonical bytes, and a pure
+semantic diff (breaking / non-breaking / policy-change) feed the
+graph, diff, impact, context, and scenario owners. Pure declaration
+and validation: no runtime enforcement, no adapters, no SQL or
+method enforcement, and no enforcement claim without target
+evidence. See [docs/invariant-transition.md](docs/invariant-transition.md),
+[ADR-0024](docs/adr/0024-invariant-transition.md), and the hermetic
+fixtures under `tests/fixtures/invariant-transition/`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -327,8 +353,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #26 carries prospective product
-0.1.30 (issue #62 published product 0.1.29 (annotated tag `v0.1.29` on
+independent of product releases; issue #63 carries prospective product
+0.1.31 (issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
+`9020558`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on
 `de6f8a7`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on
 `967bf52`); issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
 `ef7680d`); issue #18 published product 0.1.26 (annotated tag `v0.1.26` on

@@ -1,0 +1,1 @@
+{"rule":"invariant.contract-invalid","detail":"immutable-after-state-shape"}

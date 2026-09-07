@@ -1,0 +1,1468 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/invariant-transition.schema.v1.0.0.json",
+  "title": "Lekalo Invariant and State-Transition Contracts",
+  "description": "Closed independent attachment contract declaring first-class domain invariants and state transitions of one project (issue #63): bounded state spaces with explicit initial and terminal states and an explicit cycle policy, eleven closed invariant kinds (field/value, cross-field, uniqueness, cardinality, temporal, aggregate consistency, conditional requirement, one-active, member-of-set, immutable-after-state, target capability) over a minimal closed predicate/value AST, typed transitions with ordered assignments, preconditions, authorization policy references, and branch error references, verification mappings with declared enforcement layers and typed evidence, and bounded property hints. The attachment is pure declaration and validation data: it never executes, never claims runtime enforcement without target evidence, and never carries source text, physical paths, raw tokens, credentials, runtime values, timestamps, host data, or provider transcripts. The contract version is independent of the product release, of the source Model and IR contract versions, of the Scenario IR, of the error-contract family, of the authorization family, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "stateSpaces",
+    "invariants",
+    "transitions",
+    "verificationMappings"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/invariant-transition/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.invariant-transition@1.0.0"
+    },
+    "attachmentRevision": {
+      "description": "The exact revision of this attachment; verification mappings bind it and a mismatch is a stale mapping, never a silent reuse.",
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "modelRef": {
+      "description": "The exact bound source Model contract: accepted version plus canonical digest.",
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "description": "The exact bound IR contract: accepted identity plus canonical digest.",
+      "$ref": "#/$defs/irRef"
+    },
+    "sourceMapRef": {
+      "description": "Optional accepted source-map reference binding declared occurrences to their logical origins.",
+      "$ref": "#/$defs/namespacedId"
+    },
+    "stateSpaces": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/stateSpace"
+      }
+    },
+    "invariants": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/invariant"
+      }
+    },
+    "transitions": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/transition"
+      }
+    },
+    "verificationMappings": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/verificationMapping"
+      }
+    },
+    "propertyHints": {
+      "description": "Optional bounded property-based test hints. Pure pointers for the scenario and reference-evaluation owners; never executable.",
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/propertyHint"
+      }
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "namespacedId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "requirementId": {
+      "$ref": "#/$defs/namespacedId"
+    },
+    "field": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "safeText": {
+      "description": "Bounded declaration text. Never source text, paths, credentials, URLs, runtime values, or provider output.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;()/_-]*$"
+    },
+    "stateRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "typeRef": {
+      "description": "A closed reference into the source Model type grammar.",
+      "$ref": "#/$defs/semanticId"
+    },
+    "entityRef": {
+      "description": "A closed reference to one declared entity of the source Model.",
+      "$ref": "#/$defs/semanticId"
+    },
+    "fieldRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field"
+      ],
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/entityRef"
+        },
+        "field": {
+          "$ref": "#/$defs/field"
+        }
+      }
+    },
+    "errorRef": {
+      "description": "Opaque typed reference into the owner-supplied error-contract family (#62). Never an error message, code literal, transport status, or catch-all.",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 96,
+      "pattern": "^errors?\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "policyRef": {
+      "description": "Opaque typed reference into the owner-supplied authorization family (#25). Never an actor, scope literal, permission check, or value predicate.",
+      "$ref": "#/$defs/namespacedId"
+    },
+    "commandRef": {
+      "description": "A closed reference to one declared command or operation of the source Model.",
+      "$ref": "#/$defs/semanticId"
+    },
+    "expressionRef": {
+      "description": "Opaque typed reference into the future typed-expression family (#66). Required to be resolvable by its owner before any execution claim; here it is declaration data only.",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 96,
+      "pattern": "^expr\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "enum": [
+            "0.1.0",
+            "1.0.0"
+          ]
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.1.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "stateState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stateId"
+      ],
+      "properties": {
+        "stateId": {
+          "$ref": "#/$defs/stateRef"
+        },
+        "initial": {
+          "type": "boolean"
+        },
+        "terminal": {
+          "type": "boolean"
+        }
+      }
+    },
+    "stateSpace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stateSpaceId",
+        "entity",
+        "states",
+        "cyclePolicy",
+        "deadPolicy"
+      ],
+      "properties": {
+        "stateSpaceId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "entity": {
+          "$ref": "#/$defs/entityRef"
+        },
+        "states": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/stateState"
+          }
+        },
+        "cyclePolicy": {
+          "description": "The explicit cycle policy. allow records cycles as facts; forbid makes any cycle, including self-cycles, invalid.",
+          "enum": [
+            "allow",
+            "forbid"
+          ]
+        },
+        "deadPolicy": {
+          "description": "The dead nonterminal state policy. forbid makes a reachable nonterminal state without outgoing transitions invalid.",
+          "enum": [
+            "allow",
+            "forbid"
+          ]
+        }
+      }
+    },
+    "valueNode": {
+      "description": "One closed value node: bounded literals, typed references, the deterministic clock reference, or closed list/object composites. No floats, no dynamic lookup, no target snippets.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "null"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "boolean"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "integer"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "string"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 256
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "decimal"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 34,
+              "pattern": "^-?(0|[1-9][0-9]{0,19})(\\.[0-9]{1,12})?$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "date"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "datetime"
+            },
+            "value": {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]{1,6})?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "uuid"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "uri"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[a-z][a-z0-9+.-]*:[^\\s]*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "typeRef",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "enum_member"
+            },
+            "typeRef": {
+              "$ref": "#/$defs/typeRef"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9_-]*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "field"
+          ],
+          "properties": {
+            "kind": {
+              "const": "field"
+            },
+            "entity": {
+              "$ref": "#/$defs/entityRef"
+            },
+            "field": {
+              "$ref": "#/$defs/field"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "field"
+          ],
+          "properties": {
+            "kind": {
+              "const": "input"
+            },
+            "field": {
+              "$ref": "#/$defs/field"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "field"
+          ],
+          "properties": {
+            "kind": {
+              "const": "prior"
+            },
+            "field": {
+              "$ref": "#/$defs/field"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "now"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "items"
+          ],
+          "properties": {
+            "kind": {
+              "const": "list"
+            },
+            "items": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/valueNode"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "entries"
+          ],
+          "properties": {
+            "kind": {
+              "const": "object"
+            },
+            "entries": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "key",
+                  "value"
+                ],
+                "properties": {
+                  "key": {
+                    "$ref": "#/$defs/field"
+                  },
+                  "value": {
+                    "$ref": "#/$defs/valueNode"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "durationNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit",
+        "amount"
+      ],
+      "properties": {
+        "unit": {
+          "enum": [
+            "seconds",
+            "minutes",
+            "hours",
+            "days"
+          ]
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31536000
+        }
+      }
+    },
+    "predicateNode": {
+      "description": "One closed predicate node: the finite operation vocabulary over value nodes. Depth and fanout are bounded by the attachment limits; loops, recursion, reflection, and target snippets do not exist here.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "left",
+            "right"
+          ],
+          "properties": {
+            "op": {
+              "const": "equal"
+            },
+            "left": {
+              "$ref": "#/$defs/valueNode"
+            },
+            "right": {
+              "$ref": "#/$defs/valueNode"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "left",
+            "right"
+          ],
+          "properties": {
+            "op": {
+              "const": "not_equal"
+            },
+            "left": {
+              "$ref": "#/$defs/valueNode"
+            },
+            "right": {
+              "$ref": "#/$defs/valueNode"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "operand"
+          ],
+          "properties": {
+            "op": {
+              "const": "is_null"
+            },
+            "operand": {
+              "$ref": "#/$defs/valueNode"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "operand"
+          ],
+          "properties": {
+            "op": {
+              "const": "not_null"
+            },
+            "operand": {
+              "$ref": "#/$defs/valueNode"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "operand",
+            "values"
+          ],
+          "properties": {
+            "op": {
+              "const": "in_set"
+            },
+            "operand": {
+              "$ref": "#/$defs/valueNode"
+            },
+            "values": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/valueNode"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "from",
+            "predicate"
+          ],
+          "properties": {
+            "op": {
+              "const": "all"
+            },
+            "from": {
+              "$ref": "#/$defs/valueNode"
+            },
+            "predicate": {
+              "$ref": "#/$defs/predicateNode"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "from",
+            "predicate"
+          ],
+          "properties": {
+            "op": {
+              "const": "any"
+            },
+            "from": {
+              "$ref": "#/$defs/valueNode"
+            },
+            "predicate": {
+              "$ref": "#/$defs/predicateNode"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "operands"
+          ],
+          "properties": {
+            "op": {
+              "const": "and"
+            },
+            "operands": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/predicateNode"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "operands"
+          ],
+          "properties": {
+            "op": {
+              "const": "or"
+            },
+            "operands": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/predicateNode"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "left",
+            "right"
+          ],
+          "properties": {
+            "op": {
+              "const": "before"
+            },
+            "left": {
+              "$ref": "#/$defs/valueNode"
+            },
+            "right": {
+              "$ref": "#/$defs/valueNode"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "left",
+            "right"
+          ],
+          "properties": {
+            "op": {
+              "const": "after"
+            },
+            "left": {
+              "$ref": "#/$defs/valueNode"
+            },
+            "right": {
+              "$ref": "#/$defs/valueNode"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "left",
+            "duration"
+          ],
+          "properties": {
+            "op": {
+              "const": "within"
+            },
+            "left": {
+              "$ref": "#/$defs/valueNode"
+            },
+            "duration": {
+              "$ref": "#/$defs/durationNode"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "from",
+            "min",
+            "max"
+          ],
+          "properties": {
+            "op": {
+              "const": "count"
+            },
+            "from": {
+              "$ref": "#/$defs/valueNode"
+            },
+            "min": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "operand",
+            "set"
+          ],
+          "properties": {
+            "op": {
+              "const": "member_of"
+            },
+            "operand": {
+              "$ref": "#/$defs/valueNode"
+            },
+            "set": {
+              "$ref": "#/$defs/valueNode"
+            }
+          }
+        }
+      ]
+    },
+    "capabilityRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requirementId",
+        "capability",
+        "minimum",
+        "reason"
+      ],
+      "properties": {
+        "requirementId": {
+          "$ref": "#/$defs/requirementId"
+        },
+        "capability": {
+          "anyOf": [
+            {
+              "enum": [
+                "state.transition_consistency",
+                "state.reachability",
+                "invariant.uniqueness",
+                "invariant.one_active",
+                "invariant.cardinality",
+                "invariant.temporal_ordering",
+                "invariant.immutable_after_state"
+              ]
+            },
+            {
+              "description": "A provider-owned adapter capability whose concrete owner is the named provider contract.",
+              "type": "string",
+              "minLength": 12,
+              "maxLength": 96,
+              "pattern": "^provider\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+            }
+          ]
+        },
+        "minimum": {
+          "enum": [
+            "full",
+            "partial"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/safeText"
+        }
+      }
+    },
+    "invariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invariantId",
+        "stateSpaceId",
+        "kind"
+      ],
+      "properties": {
+        "invariantId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "stateSpaceId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "enum": [
+            "field_value",
+            "cross_field",
+            "uniqueness",
+            "cardinality",
+            "temporal",
+            "aggregate_consistency",
+            "conditional_requirement",
+            "one_active",
+            "member_of_set",
+            "immutable_after_state",
+            "target_capability"
+          ]
+        },
+        "description": {
+          "$ref": "#/$defs/safeText"
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/fieldRef"
+          }
+        },
+        "predicate": {
+          "$ref": "#/$defs/predicateNode"
+        },
+        "min": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "triggerState": {
+          "$ref": "#/$defs/stateRef"
+        },
+        "allowedStates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/stateRef"
+          }
+        },
+        "partition": {
+          "$ref": "#/$defs/fieldRef"
+        },
+        "maxActive": {
+          "const": 1
+        },
+        "aggregateRef": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "requiredFields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "capabilityRequirement": {
+          "$ref": "#/$defs/capabilityRequirement"
+        },
+        "conflictErrorRef": {
+          "$ref": "#/$defs/errorRef"
+        },
+        "errorRefs": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/errorRef"
+          }
+        },
+        "requirementRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        },
+        "scenarioRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/scenarioRef"
+          }
+        },
+        "capabilityRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        }
+      }
+    },
+    "assignmentValue": {
+      "description": "One closed assignment source: a bounded literal, an input or prior-state field reference, the deterministic clock, or a #66 expression reference. No arbitrary code, no SQL, no target snippets.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "literal"
+            },
+            "value": {
+              "$ref": "#/$defs/valueNode"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "field"
+          ],
+          "properties": {
+            "kind": {
+              "const": "input"
+            },
+            "field": {
+              "$ref": "#/$defs/field"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "field"
+          ],
+          "properties": {
+            "kind": {
+              "const": "prior"
+            },
+            "field": {
+              "$ref": "#/$defs/field"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "now"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "expressionRef"
+          ],
+          "properties": {
+            "kind": {
+              "const": "expression"
+            },
+            "expressionRef": {
+              "$ref": "#/$defs/expressionRef"
+            }
+          }
+        }
+      ]
+    },
+    "assignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "value"
+      ],
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/field"
+        },
+        "value": {
+          "$ref": "#/$defs/assignmentValue"
+        }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transitionId",
+        "stateSpaceId",
+        "fromStates",
+        "toState",
+        "command"
+      ],
+      "properties": {
+        "transitionId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "stateSpaceId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "fromStates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/stateRef"
+          }
+        },
+        "toState": {
+          "$ref": "#/$defs/stateRef"
+        },
+        "command": {
+          "$ref": "#/$defs/commandRef"
+        },
+        "assignments": {
+          "description": "The declared write set in behavioral order; duplicate fields and contradictory writes are invalid.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/assignment"
+          }
+        },
+        "parallel": {
+          "description": "Declares the assignment set explicitly parallel: order carries no semantics and the set must still be conflict-free.",
+          "type": "boolean"
+        },
+        "preconditions": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/predicateNode"
+          }
+        },
+        "policyRef": {
+          "$ref": "#/$defs/policyRef"
+        },
+        "errorRefs": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/errorRef"
+          }
+        },
+        "requirementRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        },
+        "scenarioRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/scenarioRef"
+          }
+        },
+        "capabilityRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/requirementId"
+          }
+        }
+      }
+    },
+    "scenarioRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioId",
+        "scenarioVersion",
+        "irDigest"
+      ],
+      "properties": {
+        "scenarioId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 191,
+          "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,2}$"
+        },
+        "scenarioVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "irDigest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "targetRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetKind",
+        "targetId"
+      ],
+      "properties": {
+        "targetKind": {
+          "enum": [
+            "validator",
+            "runtime_method",
+            "database_constraint",
+            "storage",
+            "native_test",
+            "adapter",
+            "scenario",
+            "requirement",
+            "unknown"
+          ]
+        },
+        "targetId": {
+          "description": "A bounded opaque target identifier in the owner's namespace. Never a file path, URL, method signature, or SQL text.",
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9_-]*)*/[a-z][a-z0-9_-]*$"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executableDigest",
+        "sourceRevision",
+        "resultStatus",
+        "evidenceDigest"
+      ],
+      "properties": {
+        "profileRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "adapterRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "protocolRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "executableDigest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sourceRevision": {
+          "$ref": "#/$defs/semver"
+        },
+        "scenarioRef": {
+          "$ref": "#/$defs/scenarioRef"
+        },
+        "testRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "gateRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "resultStatus": {
+          "description": "The sanitized execution result. A pass here is evidence, never an enforcement claim.",
+          "enum": [
+            "pass",
+            "fail",
+            "skipped",
+            "unknown"
+          ]
+        },
+        "evidenceDigest": {
+          "description": "An opaque digest over the owner-held evidence artifact; the artifact itself never enters this attachment.",
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "verificationMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mappingId",
+        "subject",
+        "relation",
+        "targetRef",
+        "enforcementLayer",
+        "status",
+        "confidence"
+      ],
+      "properties": {
+        "mappingId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "subject": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "invariant",
+                "transition"
+              ]
+            },
+            "id": {
+              "$ref": "#/$defs/semanticId"
+            }
+          }
+        },
+        "relation": {
+          "enum": [
+            "verified_by",
+            "tested_by",
+            "enforced_by",
+            "constrains",
+            "changes_state",
+            "requires_command",
+            "requires_capability"
+          ]
+        },
+        "targetRef": {
+          "$ref": "#/$defs/targetRef"
+        },
+        "enforcementLayer": {
+          "enum": [
+            "validator",
+            "runtime_method",
+            "database_constraint",
+            "storage",
+            "native_test",
+            "adapter",
+            "unknown"
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "status": {
+          "description": "The mapping status. full and verified require current bound evidence; gap means none; dangling, stale, conflict, unsupported, and unknown are explicit degraded states.",
+          "enum": [
+            "full",
+            "verified",
+            "partial",
+            "gap",
+            "dangling",
+            "stale",
+            "conflict",
+            "unsupported",
+            "unknown"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      }
+    },
+    "propertyHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hintId",
+        "subject",
+        "property"
+      ],
+      "properties": {
+        "hintId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "subject": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "invariant",
+                "transition",
+                "state_space"
+              ]
+            },
+            "id": {
+              "$ref": "#/$defs/semanticId"
+            }
+          }
+        },
+        "property": {
+          "enum": [
+            "uniqueness",
+            "one_active",
+            "transition_consistency",
+            "temporal_ordering",
+            "cardinality_bounds",
+            "immutable_after_state"
+          ]
+        },
+        "description": {
+          "$ref": "#/$defs/safeText"
+        }
+      }
+    }
+  }
+}

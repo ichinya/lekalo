@@ -12,6 +12,7 @@ pub mod extended_effects;
 pub mod graph;
 pub mod impact;
 pub mod inspect;
+pub mod invariant_transition;
 pub mod ir;
 pub mod loader;
 pub mod lockfile;
