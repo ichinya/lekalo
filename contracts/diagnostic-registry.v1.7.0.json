@@ -1,0 +1,3912 @@
+{
+  "schema_version": "lekalo/diagnostic-registry/v1.0.0",
+  "identity": "dev.lekalo.diagnostic-registry@1.7.0",
+  "registry_version": "1.7.0",
+  "closed": true,
+  "entries": [
+    {
+      "id": "adapter.diagnostic-invalid",
+      "code": "LEK-ADP-001",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "adapter.diagnostic-invalid",
+      "default_message": "A provider-supplied diagnostic was refused.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.actor-invalid",
+      "code": "LEK-AUTH-002",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "authorization.actor-invalid",
+      "default_message": "The actor type or authentication requirement is unknown or mismatched.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "rule",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.composition-invalid",
+      "code": "LEK-AUTH-007",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "authorization.composition-invalid",
+      "default_message": "The policy composition is cyclic, ambiguous, or conflicting.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "rule",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.document-invalid",
+      "code": "LEK-AUTH-001",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "authorization.document-invalid",
+      "default_message": "The authorization document violates its closed schema.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "rule",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.effect-unprotected",
+      "code": "LEK-AUTH-009",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "authorization.effect-unprotected",
+      "default_message": "A protected effect has no authorization declaration.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "effect",
+          "type": "token"
+        },
+        {
+          "name": "operation",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.error-ref-unresolved",
+      "code": "LEK-AUTH-006",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "authorization.error-ref-unresolved",
+      "default_message": "The error contract reference is malformed or unreachable.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "policy",
+          "type": "token"
+        },
+        {
+          "name": "errorRef",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.field-uncovered",
+      "code": "LEK-AUTH-008",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "authorization.field-uncovered",
+      "default_message": "A protected field read or write has no allow decision.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "field",
+          "type": "token"
+        },
+        {
+          "name": "operation",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.limit-exceeded",
+      "code": "LEK-AUTH-011",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "authorization.limit-exceeded",
+      "default_message": "The authorization document exceeds a closed bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "limit",
+          "type": "token"
+        },
+        {
+          "name": "count",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.mapping-stale",
+      "code": "LEK-AUTH-010",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "authorization.mapping-stale",
+      "default_message": "Adapter mapping evidence is missing, stale, partial, or unsupported and cannot pass strict review.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "policy",
+          "type": "token"
+        },
+        {
+          "name": "state",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.policy-invalid",
+      "code": "LEK-AUTH-004",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "authorization.policy-invalid",
+      "default_message": "A policy declaration is duplicated or conflicts with another.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "policy",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.profile-invalid",
+      "code": "LEK-AUTH-012",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "unsupported-version"
+      ],
+      "message_id": "authorization.profile-invalid",
+      "default_message": "The authorization profile reference is unknown or stale.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "profile",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.ref-unresolved",
+      "code": "LEK-AUTH-005",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "authorization.ref-unresolved",
+      "default_message": "A declared authorization reference does not resolve against the compiled model.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "policy",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "authorization.scope-invalid",
+      "code": "LEK-AUTH-003",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "authorization.scope-invalid",
+      "default_message": "A scope binding is duplicated, untyped, or uses a forbidden literal.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "policy",
+          "type": "token"
+        },
+        {
+          "name": "dimension",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "cli.usage",
+      "code": "LEK-CLI-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "cli.usage",
+      "default_message": "Malformed command-line syntax.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "concurrency.capability-missing",
+      "code": "LEK-TC-009",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "concurrency.capability-missing",
+      "default_message": "A declared guarantee lacks its capability requirement record.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "concurrency.case-invalid",
+      "code": "LEK-TC-008",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "concurrency.case-invalid",
+      "default_message": "The concurrency case violates a schedule or reference invariant.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "concurrency.invariant-invalid",
+      "code": "LEK-TC-007",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "concurrency.invariant-invalid",
+      "default_message": "The unique invariant declaration violates a closed vocabulary rule.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "concurrency.precondition-invalid",
+      "code": "LEK-TC-006",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "concurrency.precondition-invalid",
+      "default_message": "The optimistic or pessimistic precondition declaration is invalid.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "concurrency.retry-conflict",
+      "code": "LEK-TC-010",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "concurrency.retry-conflict",
+      "default_message": "The idempotency, retry, or compensation declarations contradict each other.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "core.capability-unavailable",
+      "code": "LEK-DIAG-001",
+      "category": "infrastructure",
+      "default_severity": "info",
+      "allowed_statuses": [
+        "unsupported"
+      ],
+      "message_id": "core.capability-unavailable",
+      "default_message": "The requested capability is not implemented yet.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "diagnostics.registry-invalid",
+      "code": "LEK-DIAG-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "diagnostics.registry-invalid",
+      "default_message": "The embedded diagnostic registry violates its invariants.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "diff.adapter-invalid",
+      "code": "LEK-DIFF-001",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "diff.adapter-invalid",
+      "default_message": "A namespaced adapter contribution was refused.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "diff.change-limit",
+      "code": "LEK-DIFF-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "diff.change-limit",
+      "default_message": "The semantic diff exceeds its change-record bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "diff.export-limit",
+      "code": "LEK-DIFF-003",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "diff.export-limit",
+      "default_message": "The canonical semantic diff exceeds its byte bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "bytes",
+          "type": "count"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "diff.history-invalid",
+      "code": "LEK-DIFF-004",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "diff.history-invalid",
+      "default_message": "The rename or tombstone history is ambiguous, cyclic, dangling, or conflicting.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "diff.input-invalid",
+      "code": "LEK-DIFF-005",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "diff.input-invalid",
+      "default_message": "The diff input violates a semantic-diff construction invariant.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "diff.profile-invalid",
+      "code": "LEK-DIFF-006",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "diff.profile-invalid",
+      "default_message": "The compatibility profile reference is malformed or unknown.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "diff.seed-limit",
+      "code": "LEK-DIFF-007",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "diff.seed-limit",
+      "default_message": "The semantic diff exceeds its affected-seed bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "diff.subject-limit",
+      "code": "LEK-DIFF-008",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "diff.subject-limit",
+      "default_message": "The compared projection exceeds its semantic-subject bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "error.binding-invalid",
+      "code": "LEK-ERR-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "error.binding-invalid",
+      "default_message": "The operation error binding does not match the accepted IR.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "error.code-reused",
+      "code": "LEK-ERR-005",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "error.code-reused",
+      "default_message": "The machine error code collides with a live entry or a tombstone.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "code",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "error.contract-invalid",
+      "code": "LEK-ERR-001",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "error.contract-invalid",
+      "default_message": "The error contract is malformed or violates a closed invariant.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "error.coverage-invalid",
+      "code": "LEK-ERR-007",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "error.coverage-invalid",
+      "default_message": "Declared error coverage is missing, empty, or contradictory.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "error.diff-invalid",
+      "code": "LEK-ERR-010",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "error.diff-invalid",
+      "default_message": "The error contract revision comparison is ambiguous or invalid.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "error.limit-exceeded",
+      "code": "LEK-ERR-011",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "error.limit-exceeded",
+      "default_message": "A declared error-contract bound was crossed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "error.mapping-invalid",
+      "code": "LEK-ERR-009",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "error.mapping-invalid",
+      "default_message": "The target mapping violates the projection invariants or declares a catch-all under the strict profile.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "error.mapping-missing",
+      "code": "LEK-ERR-008",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "error.mapping-missing",
+      "default_message": "The strict target mapping does not cover every declared union member.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "error.payload-invalid",
+      "code": "LEK-ERR-003",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "error.payload-invalid",
+      "default_message": "The error payload schema or value violates its closed field rules.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "field",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "error.registry-invalid",
+      "code": "LEK-ERR-012",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "error.registry-invalid",
+      "default_message": "The error registry bytes violate a registry invariant.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "error.retry-idempotency-conflict",
+      "code": "LEK-ERR-006",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "error.retry-idempotency-conflict",
+      "default_message": "Retry, idempotency, and effect metadata contradict each other.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "error.unreachable",
+      "code": "LEK-ERR-004",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "error.unreachable",
+      "default_message": "The declared error is not reachable from any operation binding.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.cycle-forbidden",
+      "code": "LEK-GRAPH-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.cycle-forbidden",
+      "default_message": "A graph-owned acyclic relation contains a cycle.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "relation",
+          "type": "token"
+        },
+        {
+          "name": "members",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.export-limit",
+      "code": "LEK-GRAPH-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.export-limit",
+      "default_message": "The canonical graph export exceeds its byte bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "bytes",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.input-invalid",
+      "code": "LEK-GRAPH-003",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.input-invalid",
+      "default_message": "The compiled project violates a graph construction invariant.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "role",
+          "type": "token"
+        },
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.path-not-found",
+      "code": "LEK-GRAPH-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.path-not-found",
+      "default_message": "No dependency path connects the two symbols.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "from",
+          "type": "token"
+        },
+        {
+          "name": "to",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.provenance-incomplete",
+      "code": "LEK-GRAPH-005",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "graph.provenance-incomplete",
+      "default_message": "An edge carries incomplete provenance evidence.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.traversal-limit",
+      "code": "LEK-GRAPH-006",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.traversal-limit",
+      "default_message": "A graph traversal exceeded its recorded bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.unknown-node",
+      "code": "LEK-GRAPH-007",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.unknown-node",
+      "default_message": "A graph query named a node the graph does not contain.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "graph.unknown-relation",
+      "code": "LEK-GRAPH-008",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "graph.unknown-relation",
+      "default_message": "A graph filter named a relation the registry does not contain.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "relation",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "impact.changed-input-incomplete",
+      "code": "LEK-IMPACT-003",
+      "category": "infrastructure",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "impact.changed-input-incomplete",
+      "default_message": "Some changed inputs resolved to no semantic symbols.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "impact.changed-input-invalid",
+      "code": "LEK-IMPACT-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "impact.changed-input-invalid",
+      "default_message": "The changed-input handoff is malformed or violates containment.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "impact.effect-stale",
+      "code": "LEK-IMPACT-005",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "impact.effect-stale",
+      "default_message": "Detected effect evidence for an affected operation is stale.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "impact.evidence-unknown",
+      "code": "LEK-IMPACT-006",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "impact.evidence-unknown",
+      "default_message": "Required evidence for an impact projection is unavailable.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "impact.gate-blocked",
+      "code": "LEK-IMPACT-010",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "impact.gate-blocked",
+      "default_message": "Strict-profile impact is blocked on required unknown or stale evidence.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "impact.output-limit",
+      "code": "LEK-IMPACT-009",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "impact.output-limit",
+      "default_message": "The canonical impact result exceeded its recorded byte bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "bytes",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "impact.public-impact-incomplete",
+      "code": "LEK-IMPACT-007",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "impact.public-impact-incomplete",
+      "default_message": "The mandatory public impact closure stopped at a hard bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "impact.selector-invalid",
+      "code": "LEK-IMPACT-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "impact.selector-invalid",
+      "default_message": "The impact selector or filter combination is invalid.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "impact.symbol-unknown",
+      "code": "LEK-IMPACT-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "impact.symbol-unknown",
+      "default_message": "The requested symbol is not part of the impact graph.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "impact.traversal-limit",
+      "code": "LEK-IMPACT-008",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "impact.traversal-limit",
+      "default_message": "The impact traversal exceeded its recorded bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "inspect.output-limit",
+      "code": "LEK-INS-004",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "inspect.output-limit",
+      "default_message": "The inspect result exceeds its output bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "inspect.short-name-ambiguous",
+      "code": "LEK-INS-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "inspect.short-name-ambiguous",
+      "default_message": "A short name matches more than one symbol; disambiguation is required.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "candidates",
+          "type": "list"
+        },
+        {
+          "name": "matched",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "inspect.short-name-unknown",
+      "code": "LEK-INS-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "inspect.short-name-unknown",
+      "default_message": "A short name matches no symbol.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "inspect.symbol-unknown",
+      "code": "LEK-INS-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "inspect.symbol-unknown",
+      "default_message": "The selector names no inspectable symbol.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ir.duplicate-member",
+      "code": "LEK-IR-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "ir.duplicate-member",
+      "default_message": "A set-like array declares the same member twice.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "field",
+          "type": "token"
+        },
+        {
+          "name": "value",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ir.kind-placement",
+      "code": "LEK-IR-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "ir.kind-placement",
+      "default_message": "A definition kind appears in a document that does not accept it.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "kind",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ir.kind-unknown",
+      "code": "LEK-IR-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "ir.kind-unknown",
+      "default_message": "A kind value is outside the closed vocabulary.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "kind",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ir.missing-field",
+      "code": "LEK-IR-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "ir.missing-field",
+      "default_message": "A required key is absent.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "field",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ir.unknown-field",
+      "code": "LEK-IR-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "ir.unknown-field",
+      "default_message": "A key is not accepted by the closed schema.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "field",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ir.value-invalid",
+      "code": "LEK-IR-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "ir.value-invalid",
+      "default_message": "A value violates its grammar or rule.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "value",
+          "type": "token"
+        },
+        {
+          "name": "field",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.ambiguous-short-reference",
+      "code": "LEK-LOAD-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.ambiguous-short-reference",
+      "default_message": "A short reference matches more than one definition.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "candidates",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.conflicting-declaration",
+      "code": "LEK-LOAD-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.conflicting-declaration",
+      "default_message": "One symbol id is declared by more than one document.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "id",
+          "type": "token"
+        },
+        {
+          "name": "paths",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.document-shape",
+      "code": "LEK-LOAD-003",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.document-shape",
+      "default_message": "The document does not match the required shape.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.duplicate-definition",
+      "code": "LEK-LOAD-004",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.duplicate-definition",
+      "default_message": "The same definition id is declared twice.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "id",
+          "type": "token"
+        },
+        {
+          "name": "paths",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.duplicate-key",
+      "code": "LEK-LOAD-005",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.duplicate-key",
+      "default_message": "One mapping declares the same key twice.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "key",
+          "type": "token"
+        },
+        {
+          "name": "firstSpan",
+          "type": "record"
+        },
+        {
+          "name": "duplicateSpan",
+          "type": "record"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.duplicate-module-id",
+      "code": "LEK-LOAD-006",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.duplicate-module-id",
+      "default_message": "Two directories declare the same module id.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "module",
+          "type": "token"
+        },
+        {
+          "name": "directories",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.encoding",
+      "code": "LEK-LOAD-007",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.encoding",
+      "default_message": "The source bytes are not decodable text.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "reason",
+          "type": "token"
+        },
+        {
+          "name": "byte",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.import-cycle",
+      "code": "LEK-LOAD-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.import-cycle",
+      "default_message": "Module imports form a cycle.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "cycle",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.import-invalid",
+      "code": "LEK-LOAD-009",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.import-invalid",
+      "default_message": "A declared import is not usable.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "import",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.import-missing",
+      "code": "LEK-LOAD-010",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.import-missing",
+      "default_message": "A declared import names no known module.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "module",
+          "type": "token"
+        },
+        {
+          "name": "import",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.io",
+      "code": "LEK-LOAD-011",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.io",
+      "default_message": "The source could not be read.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.json-parse",
+      "code": "LEK-LOAD-012",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.json-parse",
+      "default_message": "The JSON document does not parse.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.limit-exceeded",
+      "code": "LEK-LOAD-013",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.limit-exceeded",
+      "default_message": "A fixed input bound was exceeded.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "limit",
+          "type": "token"
+        },
+        {
+          "name": "max",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.path-escape",
+      "code": "LEK-LOAD-014",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "loader.path-escape",
+      "default_message": "An import escapes the project root.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "import",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.reference-without-import",
+      "code": "LEK-LOAD-015",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.reference-without-import",
+      "default_message": "A reference names a module that is not imported.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "module",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.short-reference-unresolved",
+      "code": "LEK-LOAD-016",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.short-reference-unresolved",
+      "default_message": "A short reference matches no definition.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "module",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.type-depth",
+      "code": "LEK-LOAD-017",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.type-depth",
+      "default_message": "A nested type exceeds the fixed depth bound.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "maxLevels",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.type-syntax",
+      "code": "LEK-LOAD-018",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.type-syntax",
+      "default_message": "A type expression is not well formed.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "type",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "maxLevels",
+          "type": "count"
+        },
+        {
+          "name": "wrapper",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.yaml-parse",
+      "code": "LEK-LOAD-019",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.yaml-parse",
+      "default_message": "The YAML document does not parse.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "loader.yaml-unsupported",
+      "code": "LEK-LOAD-020",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "loader.yaml-unsupported",
+      "default_message": "The YAML feature is not supported.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.catalog-unavailable",
+      "code": "LEK-LOCK-001",
+      "category": "infrastructure",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "lock.catalog-unavailable",
+      "default_message": "The needed catalog snapshot is not available.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.commit-failed",
+      "code": "LEK-LOCK-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "lock.commit-failed",
+      "default_message": "A staged write or replacement failed.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.component-unavailable",
+      "code": "LEK-LOCK-003",
+      "category": "infrastructure",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "lock.component-unavailable",
+      "default_message": "A locked component is not available locally.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "kind",
+          "type": "token"
+        },
+        {
+          "name": "id",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.component-version-unsupported",
+      "code": "LEK-LOCK-004",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "lock.component-version-unsupported",
+      "default_message": "A contract version is outside the accepted registry.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "family",
+          "type": "token"
+        },
+        {
+          "name": "version",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.digest-mismatch",
+      "code": "LEK-LOCK-005",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "lock.digest-mismatch",
+      "default_message": "Declared bytes do not match the actual bytes.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "domain",
+          "type": "token"
+        },
+        {
+          "name": "identity",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.missing",
+      "code": "LEK-LOCK-006",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "lock.missing",
+      "default_message": "The lock file does not exist but is required.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.noncanonical",
+      "code": "LEK-LOCK-007",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "lock.noncanonical",
+      "default_message": "The lock file is valid but not byte-canonical.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.path-denied",
+      "code": "LEK-LOCK-008",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "lock.path-denied",
+      "default_message": "A path policy refusal inside the lock surface.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.platform-unavailable",
+      "code": "LEK-LOCK-009",
+      "category": "infrastructure",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "lock.platform-unavailable",
+      "default_message": "A locked platform artifact is not available locally.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "adapter",
+          "type": "token"
+        },
+        {
+          "name": "platform",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.preview-required",
+      "code": "LEK-LOCK-010",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "lock.preview-required",
+      "default_message": "A mutating update needs an explicit preview or plan identity.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.private-data-forbidden",
+      "code": "LEK-LOCK-011",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "lock.private-data-forbidden",
+      "default_message": "A private path, URL, or credential shape was refused.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "field",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.profile-unversioned",
+      "code": "LEK-LOCK-012",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "lock.profile-unversioned",
+      "default_message": "A profile has no exact version.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "id",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.recovery-required",
+      "code": "LEK-LOCK-013",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "lock.recovery-required",
+      "default_message": "An ambiguous post-replace state demands re-reading.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.reference-invalid",
+      "code": "LEK-LOCK-014",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "lock.reference-invalid",
+      "default_message": "A cross-field, reference, sort, or duplicate invariant failed.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.resolution-ambiguous",
+      "code": "LEK-LOCK-015",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "lock.resolution-ambiguous",
+      "default_message": "Two indistinguishable candidates remain.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "identity",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.resolution-provider-unavailable",
+      "code": "LEK-LOCK-016",
+      "category": "infrastructure",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "lock.resolution-provider-unavailable",
+      "default_message": "The resolution provider seam cannot supply data.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.schema-invalid",
+      "code": "LEK-LOCK-017",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "lock.schema-invalid",
+      "default_message": "The lock file is not a valid v1 wire document.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.source-changed",
+      "code": "LEK-LOCK-018",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "lock.source-changed",
+      "default_message": "The project, catalog, or lock state changed between preview and apply.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.stale",
+      "code": "LEK-LOCK-019",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "lock.stale",
+      "default_message": "The lock no longer matches the current project request.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.unsupported-schema-version",
+      "code": "LEK-LOCK-020",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "lock.unsupported-schema-version",
+      "default_message": "The lock wire carries a future schema discriminator.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "found",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "lock.update-in-progress",
+      "code": "LEK-LOCK-021",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "lock.update-in-progress",
+      "default_message": "Another update holds the runtime guard.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.command-effect-kind-mismatch",
+      "code": "LEK-SEM-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.command-effect-kind-mismatch",
+      "default_message": "A command effect references a definition that is not an effect.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.command-effect-unresolved",
+      "code": "LEK-SEM-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.command-effect-unresolved",
+      "default_message": "A command effect references an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.effect-emits-kind-mismatch",
+      "code": "LEK-SEM-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.effect-emits-kind-mismatch",
+      "default_message": "An effect emits reference points at a definition that is not an event.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.effect-emits-unresolved",
+      "code": "LEK-SEM-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.effect-emits-unresolved",
+      "default_message": "An effect emits reference points at an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.effect-resource-kind-mismatch",
+      "code": "LEK-SEM-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.effect-resource-kind-mismatch",
+      "default_message": "An effect entity reference points at a definition that is not an entity.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.effect-resource-unresolved",
+      "code": "LEK-SEM-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.effect-resource-unresolved",
+      "default_message": "An effect entity reference points at an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.endpoint-operation-kind-mismatch",
+      "code": "LEK-SEM-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.endpoint-operation-kind-mismatch",
+      "default_message": "An endpoint invokes a definition that is neither a command nor a query.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.endpoint-operation-unresolved",
+      "code": "LEK-SEM-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.endpoint-operation-unresolved",
+      "default_message": "An endpoint invokes an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.entity-identity-field-missing",
+      "code": "LEK-SEM-009",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.entity-identity-field-missing",
+      "default_message": "An entity identity names a field the entity does not declare.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "field",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.policy-operation-kind-mismatch",
+      "code": "LEK-SEM-010",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.policy-operation-kind-mismatch",
+      "default_message": "A policy applies to a definition that is not a command, query, or effect.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.policy-operation-unresolved",
+      "code": "LEK-SEM-011",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.policy-operation-unresolved",
+      "default_message": "A policy applies to an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.portable-target-reference",
+      "code": "LEK-SEM-012",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "semantic.portable-target-reference",
+      "default_message": "A portable definition directly references a target-specific definition.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.public-output-private-type",
+      "code": "LEK-SEM-013",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.public-output-private-type",
+      "default_message": "A project-visible query returns a module-private named type.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.query-read-kind-mismatch",
+      "code": "LEK-SEM-014",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.query-read-kind-mismatch",
+      "default_message": "A query reads a definition that is not an entity.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.query-read-unresolved",
+      "code": "LEK-SEM-015",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.query-read-unresolved",
+      "default_message": "A query reads an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.scenario-operation-unresolved",
+      "code": "LEK-SEM-016",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.scenario-operation-unresolved",
+      "default_message": "A scenario covers an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.type-recursion",
+      "code": "LEK-SEM-017",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.type-recursion",
+      "default_message": "A required named-type reference cycle makes the type infinite.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.type-ref-kind-mismatch",
+      "code": "LEK-SEM-018",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.type-ref-kind-mismatch",
+      "default_message": "A type reference points at a definition that is not a named type.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.type-ref-unresolved",
+      "code": "LEK-SEM-019",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.type-ref-unresolved",
+      "default_message": "A type reference points at an unknown symbol.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "semantic.visibility-boundary-violation",
+      "code": "LEK-SEM-020",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "semantic.visibility-boundary-violation",
+      "default_message": "A definition references a module-private symbol of another module.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "definition",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.canonical-unexpected-entry",
+      "code": "LEK-STR-001",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.canonical-unexpected-entry",
+      "default_message": "Unexpected entry in the canonical project layout.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.directory-required",
+      "code": "LEK-STR-002",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.directory-required",
+      "default_message": "A required directory is missing from the project layout.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.directory-unreadable",
+      "code": "LEK-STR-003",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.directory-unreadable",
+      "default_message": "The directory could not be read.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.document-missing",
+      "code": "LEK-STR-004",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.document-missing",
+      "default_message": "A required project document is missing.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.lock-not-file",
+      "code": "LEK-STR-005",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.lock-not-file",
+      "default_message": "The lock path is not a regular file.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.module-subdirectory",
+      "code": "LEK-STR-006",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.module-subdirectory",
+      "default_message": "A module directory contains a nested module directory.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.nested-root",
+      "code": "LEK-STR-007",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.nested-root",
+      "default_message": "The project root is nested inside another project.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.path-absolute",
+      "code": "LEK-STR-008",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.path-absolute",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.path-case",
+      "code": "LEK-STR-009",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.path-case",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.path-device",
+      "code": "LEK-STR-010",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.path-device",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.path-empty",
+      "code": "LEK-STR-011",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.path-empty",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.path-escape",
+      "code": "LEK-STR-012",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.path-escape",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.path-link",
+      "code": "LEK-STR-013",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.path-link",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.path-not-nfc",
+      "code": "LEK-STR-014",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.path-not-nfc",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.path-segment",
+      "code": "LEK-STR-015",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.path-segment",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.path-short-name",
+      "code": "LEK-STR-016",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.path-short-name",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.path-special",
+      "code": "LEK-STR-017",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.path-special",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.path-traversal",
+      "code": "LEK-STR-018",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.path-traversal",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.project-not-directory",
+      "code": "LEK-STR-019",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.project-not-directory",
+      "default_message": "The project selector is not a directory.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.root-not-found",
+      "code": "LEK-STR-020",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.root-not-found",
+      "default_message": "No project root was found.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.root-unreadable",
+      "code": "LEK-STR-021",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.root-unreadable",
+      "default_message": "The project root could not be read.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.runtime-unexpected-entry",
+      "code": "LEK-STR-022",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.runtime-unexpected-entry",
+      "default_message": "Unexpected entry under the runtime home.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.scan-limit",
+      "code": "LEK-STR-023",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.scan-limit",
+      "default_message": "The project scan stopped at its fixed bound.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.selection-absolute",
+      "code": "LEK-STR-024",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.selection-absolute",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.selection-alias",
+      "code": "LEK-STR-025",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.selection-alias",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.selection-device",
+      "code": "LEK-STR-026",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.selection-device",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.selection-empty",
+      "code": "LEK-STR-027",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.selection-empty",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.selection-escape",
+      "code": "LEK-STR-028",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.selection-escape",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.selection-segment",
+      "code": "LEK-STR-029",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.selection-segment",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.selection-short-name",
+      "code": "LEK-STR-030",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.selection-short-name",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.selection-traversal",
+      "code": "LEK-STR-031",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.selection-traversal",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "structure.selection-unreadable",
+      "code": "LEK-STR-032",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "structure.selection-unreadable",
+      "default_message": "Project path policy refusal.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transaction.export-limit",
+      "code": "LEK-TC-011",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transaction.export-limit",
+      "default_message": "The canonical attachment exceeds its byte bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transaction.external-atomic",
+      "code": "LEK-TC-004",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transaction.external-atomic",
+      "default_message": "An external effect was declared inside a local atomic group.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transaction.group-missing",
+      "code": "LEK-TC-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transaction.group-missing",
+      "default_message": "A required transaction operation declares no atomic effect group.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transaction.group-overlap",
+      "code": "LEK-TC-003",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transaction.group-overlap",
+      "default_message": "An effect belongs to more than one atomic group or a duplicate reference was declared.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transaction.input-invalid",
+      "code": "LEK-TC-001",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transaction.input-invalid",
+      "default_message": "The attachment violates a transaction-concurrency construction invariant.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transaction.partial-unacknowledged",
+      "code": "LEK-TC-005",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transaction.partial-unacknowledged",
+      "default_message": "An external effect can survive local rollback without compensation metadata.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "validate.module-unresolved",
+      "code": "LEK-VAL-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "validate.module-unresolved",
+      "default_message": "The module scope selector names no module in the project.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "module",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "validate.profile-invalid",
+      "code": "LEK-VAL-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "validate.profile-invalid",
+      "default_message": "The validation profile violates its closed contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "validate.span-unavailable",
+      "code": "LEK-VAL-003",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "validate.span-unavailable",
+      "default_message": "A source-derived semantic diagnostic lacks its required source span.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.adapter-incompatible",
+      "code": "LEK-VER-001",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "versioning.adapter-incompatible",
+      "default_message": "The adapter compatibility range refuses the contract version.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "adapter",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.adapter-manifest-invalid",
+      "code": "LEK-VER-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "versioning.adapter-manifest-invalid",
+      "default_message": "The adapter compatibility manifest is not valid.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.backup-failed",
+      "code": "LEK-VER-003",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "versioning.backup-failed",
+      "default_message": "Creating the migration backup failed.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.commit-failed",
+      "code": "LEK-VER-004",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "versioning.commit-failed",
+      "default_message": "Writing the migration failed.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.extension-incompatible",
+      "code": "LEK-VER-005",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "versioning.extension-incompatible",
+      "default_message": "A required extension is unavailable.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "adapter",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.invalid-version",
+      "code": "LEK-VER-006",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "versioning.invalid-version",
+      "default_message": "The version or target selector spelling is not canonical.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.migration-in-progress",
+      "code": "LEK-VER-007",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "versioning.migration-in-progress",
+      "default_message": "Another migration holds the runtime lock.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.migration-precondition",
+      "code": "LEK-VER-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "versioning.migration-precondition",
+      "default_message": "Representability preconditions failed; owner edits are required.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "violations",
+          "type": "records"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.mixed-versions",
+      "code": "LEK-VER-009",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "versioning.mixed-versions",
+      "default_message": "Documents declare different Model schema versions.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "documents",
+          "type": "records"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.no-migration-path",
+      "code": "LEK-VER-010",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "versioning.no-migration-path",
+      "default_message": "No migration path connects the two versions.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "from",
+          "type": "token"
+        },
+        {
+          "name": "to",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.not-file-migratable",
+      "code": "LEK-VER-011",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "versioning.not-file-migratable",
+      "default_message": "A document cannot be rewritten byte-safely.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "path",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.protocol-unpublished",
+      "code": "LEK-VER-012",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "versioning.protocol-unpublished",
+      "default_message": "The protocol family has no published version.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.recovery-required",
+      "code": "LEK-VER-013",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "versioning.recovery-required",
+      "default_message": "A crashed transaction demands recovery.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.registry-invalid",
+      "code": "LEK-VER-014",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "versioning.registry-invalid",
+      "default_message": "The embedded version registry violates its invariants.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.rollback-conflict",
+      "code": "LEK-VER-015",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "versioning.rollback-conflict",
+      "default_message": "The migrated state changed after the migration; rollback is refused.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.rollback-failed",
+      "code": "LEK-VER-016",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "versioning.rollback-failed",
+      "default_message": "Restoring the backup failed after writes began.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.source-changed",
+      "code": "LEK-VER-017",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "versioning.source-changed",
+      "default_message": "The recorded source state changed under the same identity.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "versioning.unsupported-version",
+      "code": "LEK-VER-018",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "versioning.unsupported-version",
+      "default_message": "The contract version is outside the accepted registry.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "version",
+          "type": "token"
+        },
+        {
+          "name": "state",
+          "type": "token"
+        },
+        {
+          "name": "replacement",
+          "type": "token"
+        },
+        {
+          "name": "documents",
+          "type": "records"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    }
+  ]
+}

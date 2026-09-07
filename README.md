@@ -223,11 +223,12 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.6.0.json` (issue #12 extended it with the
+`contracts/diagnostic-registry.v1.7.0.json` (issue #12 extended it with the
 `semantic.*`/`validate.*` families and issue #13 added the `graph.*`
 family, each as a minor increment; issue #15 added the `inspect.*` family
 the same way; issue #16 added the `impact.*` family issue #18 adds the
-`diff.*` family, and issue #25 adds the `authorization.*` family, each as a
+`diff.*` family, and issue #25 adds the `authorization.*` family, and
+issue #62 adds the `error.*` family, each as a
 wire-shape-preserving minor increment).
 
 ## Generated-artifact ownership and drift detection
@@ -276,6 +277,24 @@ validation: no runtime execution, no adapter, no report surface. See
 [ADR-0020](docs/adr/0020-transaction-concurrency.md), and the hermetic
 fixtures under `tests/fixtures/transaction-concurrency/`.
 
+## Error contracts and typed results
+
+Issue #62 makes operation errors a formal, versioned part of the
+behavior contract: the closed error-contract and error-registry wire
+schemas (`lekalo/error-contract/v1.0.0`, `lekalo/error-registry/v1.0.0`),
+the canonical registry binding the planner operations to typed `Result<
+Output, ErrorUnion>` unions, immutable `LEK-ERR-NNN` codes with
+closed categories, payloads, and public/private message separation,
+retry/idempotency/effect agreement, scenario/waiver coverage, strict
+target-mapping invariants with catch-all detection, language-neutral
+Node/PHP/Go projection vectors that preserve the canonical `{id, code,
+category, payload}`, a separate unknown-infrastructure channel, and a
+semantic diff with explicit breaking rules. Pure declaration and
+validation: no transport runtime, no adapter execution. See
+[docs/error-contracts.md](docs/error-contracts.md),
+[ADR-0022](docs/adr/0022-error-contracts.md), and the hermetic fixtures
+under `tests/fixtures/error-contract/`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -284,8 +303,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #25 carries prospective product
-0.1.28 (issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
+independent of product releases; issue #62 carries prospective product
+0.1.29 (issue #25 published product 0.1.28 (annotated tag `v0.1.28` on
+`967bf52`); issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
 `ef7680d`); issue #18 published product 0.1.26 (annotated tag `v0.1.26` on
 `3710179`); issue #17 published product 0.1.25 (annotated tag `v0.1.25` on
 `e627fe5`); issue #16 published product 0.1.24 (annotated tag `v0.1.24` on

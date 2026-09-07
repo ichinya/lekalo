@@ -1,0 +1,1 @@
+{"schema_version":"lekalo/error-contract/v1.0.0","errors":["planner.input_invalid","planner.store_unavailable"],"kind":"query","operation":"planner.list_tasks","output":{"list":{"ref":"planner.task"}}}

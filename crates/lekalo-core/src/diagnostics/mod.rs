@@ -142,6 +142,11 @@ impl Diagnostic {
         &self.message
     }
 
+    /// The bounded structured data of this diagnostic.
+    pub fn data(&self) -> &DataObject {
+        &self.data
+    }
+
     /// The logical path, when the diagnostic is located.
     pub fn path(&self) -> Option<&str> {
         self.source.as_ref()?.path.as_deref()

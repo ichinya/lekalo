@@ -3,12 +3,15 @@
 Date: 2026-09-06
 Status: accepted for issue #25
 
-Custody: this issue carries the **prospective product candidate 0.1.28** in
+Custody: this issue carried the **prospective product candidate 0.1.28** in
 every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 `Cargo.lock` including the regenerated committed golden lock and its
 digests, the `--version` behavior and its pinning tests, `README.md`,
-`docs/cli.md`); issue #24 published product 0.1.27 (annotated tag
-`v0.1.27` on `ef7680d`); issue #18 published product 0.1.26 (annotated tag
+`docs/cli.md`); the candidate was published as product 0.1.28 (annotated
+tag `v0.1.28` on `967bf52`); issue #62 now carries the **prospective
+product candidate 0.1.29** in every accepted path; issue #24 published
+product 0.1.27 (annotated tag `v0.1.27` on `ef7680d`); issue #18
+published product 0.1.26 (annotated tag
 `v0.1.26` on `3710179`). The authorization contract version
 (`lekalo/authorization/v1.0.0`, identity `dev.lekalo.authorization@1.0.0`)
 and the strict review profile identity

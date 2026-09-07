@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.28. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.1.29. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -229,14 +229,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.28"
+  "version": "0.1.29"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.28`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.1.29`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph

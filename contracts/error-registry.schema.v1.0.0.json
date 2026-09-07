@@ -1,0 +1,518 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/error-registry.schema.v1.0.0.json",
+  "title": "Lekalo error registry",
+  "description": "Closed contract of the canonical error registry (issue #62). The registry is the only source of error identity: every entry carries one stable semantic id, one immutable machine code, one closed category, a closed named-field payload schema with explicit public/private exposure, public/private message template references, retry/idempotency/effect metadata, closed observability severity, scenario/test/waiver coverage, and a logical source requirement with its invariant. Entries and bindings sort canonically; retired codes are tombstoned forever and never reassigned; unknown infrastructure failures never appear as declared errors. No raw source text, physical path, host, credential, timestamp, or runtime value may appear.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "closed",
+    "errors",
+    "bindings",
+    "tombstones"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/error-registry/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.error-registry@1.0.0"
+    },
+    "closed": {
+      "const": true
+    },
+    "errors": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/errorContract"
+      }
+    },
+    "bindings": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/operationErrorContract"
+      }
+    },
+    "tombstones": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/tombstone"
+      }
+    }
+  },
+  "$defs": {
+    "errorId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}\\.[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$",
+      "maxLength": 190
+    },
+    "errorCode": {
+      "type": "string",
+      "pattern": "^LEK-ERR-[0-9]{3}$"
+    },
+    "messageTemplateId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){2,6}$",
+      "maxLength": 190
+    },
+    "category": {
+      "enum": [
+        "validation",
+        "auth",
+        "conflict",
+        "not-found",
+        "domain",
+        "infrastructure"
+      ]
+    },
+    "exposure": {
+      "enum": [
+        "public",
+        "private"
+      ]
+    },
+    "fieldName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "typeRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ref"
+          ],
+          "properties": {
+            "ref": {
+              "$ref": "#/$defs/errorId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "list"
+          ],
+          "properties": {
+            "list": {
+              "$ref": "#/$defs/typeRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "optional"
+          ],
+          "properties": {
+            "optional": {
+              "$ref": "#/$defs/typeRef"
+            }
+          }
+        }
+      ]
+    },
+    "payloadField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "required",
+        "exposure"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "type": {
+          "$ref": "#/$defs/typeRef"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "exposure": {
+          "$ref": "#/$defs/exposure"
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fields"
+      ],
+      "properties": {
+        "fields": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/payloadField"
+          }
+        }
+      }
+    },
+    "messages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "public"
+      ],
+      "properties": {
+        "public": {
+          "$ref": "#/$defs/messageTemplate"
+        },
+        "private": {
+          "$ref": "#/$defs/messageTemplate"
+        }
+      }
+    },
+    "messageTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "template",
+        "fields"
+      ],
+      "properties": {
+        "template": {
+          "$ref": "#/$defs/messageTemplateId"
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/fieldName"
+          }
+        }
+      }
+    },
+    "retry": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policy"
+          ],
+          "properties": {
+            "policy": {
+              "const": "never"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policy"
+          ],
+          "properties": {
+            "policy": {
+              "const": "safe"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policy",
+            "condition"
+          ],
+          "properties": {
+            "policy": {
+              "const": "conditional"
+            },
+            "condition": {
+              "enum": [
+                "idempotency-key",
+                "reconciliation"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "idempotency": {
+      "enum": [
+        "guaranteed",
+        "key-required",
+        "not-guaranteed",
+        "not-applicable"
+      ]
+    },
+    "effect": {
+      "enum": [
+        "none",
+        "read",
+        "write",
+        "destructive",
+        "external"
+      ]
+    },
+    "observability": {
+      "enum": [
+        "info",
+        "warning",
+        "error",
+        "critical"
+      ]
+    },
+    "coverage": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scenarios"
+          ],
+          "properties": {
+            "scenarios": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/coverageRef"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tests"
+          ],
+          "properties": {
+            "tests": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/coverageRef"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "waiver"
+          ],
+          "properties": {
+            "waiver": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "ref",
+                "owner",
+                "reason"
+              ],
+              "properties": {
+                "ref": {
+                  "$ref": "#/$defs/coverageRef"
+                },
+                "owner": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._@/-]{0,127}$"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "expires": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "coverageRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,190}$"
+    },
+    "sourceRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "start",
+        "end"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,62}(/[a-z0-9][a-z0-9._-]{0,62})*$",
+          "maxLength": 256
+        },
+        "start": {
+          "$ref": "#/$defs/position"
+        },
+        "end": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "byte",
+        "line",
+        "column"
+      ],
+      "properties": {
+        "byte": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "invariant": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "errorContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "code",
+        "category",
+        "payload",
+        "messages",
+        "retry",
+        "idempotency",
+        "effect",
+        "observability",
+        "coverage",
+        "source",
+        "invariant"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/errorId"
+        },
+        "code": {
+          "$ref": "#/$defs/errorCode"
+        },
+        "category": {
+          "$ref": "#/$defs/category"
+        },
+        "payload": {
+          "$ref": "#/$defs/payload"
+        },
+        "messages": {
+          "$ref": "#/$defs/messages"
+        },
+        "retry": {
+          "$ref": "#/$defs/retry"
+        },
+        "idempotency": {
+          "$ref": "#/$defs/idempotency"
+        },
+        "effect": {
+          "$ref": "#/$defs/effect"
+        },
+        "observability": {
+          "$ref": "#/$defs/observability"
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRange"
+        },
+        "invariant": {
+          "$ref": "#/$defs/invariant"
+        }
+      }
+    },
+    "operationKind": {
+      "enum": [
+        "command",
+        "query"
+      ]
+    },
+    "outputType": {
+      "anyOf": [
+        {
+          "const": null
+        },
+        {
+          "$ref": "#/$defs/typeRef"
+        }
+      ]
+    },
+    "operationErrorContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "kind",
+        "output",
+        "errors"
+      ],
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/errorId"
+        },
+        "kind": {
+          "$ref": "#/$defs/operationKind"
+        },
+        "output": {
+          "$ref": "#/$defs/outputType"
+        },
+        "errors": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/errorId"
+          }
+        }
+      }
+    },
+    "tombstone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/errorCode"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    }
+  }
+}

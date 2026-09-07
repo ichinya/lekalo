@@ -1,0 +1,1 @@
+{"errors":["planner.focus_conflict","planner.focus_denied","planner.input_invalid","planner.store_unavailable","planner.task_not_found"],"kind":"command","operation":"planner.focus_task","output":null,"schema_version":"lekalo/error-contract/v0.9.0"}

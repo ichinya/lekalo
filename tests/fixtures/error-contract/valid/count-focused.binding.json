@@ -1,0 +1,1 @@
+{"schema_version":"lekalo/error-contract/v1.0.0","errors":["planner.store_unavailable"],"kind":"query","operation":"planner.count_focused","output":{"ref":"planner.task_state"}}

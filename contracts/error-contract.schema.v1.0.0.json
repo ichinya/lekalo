@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/error-contract.schema.v1.0.0.json",
+  "title": "Lekalo operation error contract",
+  "description": "Closed contract of one typed operation error binding (issue #62): the explicit `Result<Output, ErrorUnion>` declaration attached to one command or query. The union is closed, non-empty, unique, and canonically sorted by unsigned UTF-8 error id; every member resolves to a registry-declared error contract. Output is the operation result type (`null` for the command unit) in the accepted Model type grammar. Target mappings, HTTP statuses, and exception classes are projections that live outside this contract and never replace the canonical id and code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation",
+    "kind",
+    "output",
+    "errors"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/error-contract/v1.0.0"
+    },
+    "operation": {
+      "$ref": "#/$defs/errorId"
+    },
+    "kind": {
+      "$ref": "#/$defs/operationKind"
+    },
+    "output": {
+      "$ref": "#/$defs/outputType"
+    },
+    "errors": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/errorId"
+      }
+    }
+  },
+  "$defs": {
+    "errorId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}\\.[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$",
+      "maxLength": 190
+    },
+    "operationKind": {
+      "enum": [
+        "command",
+        "query"
+      ]
+    },
+    "outputType": {
+      "anyOf": [
+        {
+          "const": null
+        },
+        {
+          "$ref": "#/$defs/typeRef"
+        }
+      ]
+    },
+    "typeRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ref"
+          ],
+          "properties": {
+            "ref": {
+              "$ref": "#/$defs/errorId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "list"
+          ],
+          "properties": {
+            "list": {
+              "$ref": "#/$defs/typeRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "optional"
+          ],
+          "properties": {
+            "optional": {
+              "$ref": "#/$defs/typeRef"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
