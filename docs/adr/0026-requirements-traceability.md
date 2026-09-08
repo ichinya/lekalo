@@ -124,9 +124,9 @@ use opaque SHA-256 tokens. These changes repair the unpublished contract
 candidate; published Model/IR/neutral trace contracts are untouched.
 
 The prepared registry integration uses frozen #27 candidate
-`5b14d6722cb05b7610d3a1ab8ed3822fc6b7b30e` and requirement candidate
-`9aa8bd8cf3a5a8b01a2c890e67ca5a17286675e9`. Registry 1.10.0 remains
-byte-preserved; 1.11.0 retains all 222 predecessor entries and adds ten
+`30b2d7ebd8dd1aa74e1590cd8e6efe456251986e` and requirement candidate
+`9aa8bd8cf3a5a8b01a2c890e67ca5a17286675e9`. The corrected registry 1.10.0 is
+byte-preserved from that exact source; 1.11.0 retains all 222 predecessor entries and adds ten
 requirement entries. Acceptance still requires matching the actually
 accepted #27 base and independent reviews of the final integrated source.
 

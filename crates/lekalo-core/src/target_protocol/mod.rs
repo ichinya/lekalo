@@ -17,7 +17,7 @@
 //!
 //! The only coupling to an adapter is this process protocol: core never
 //! loads a library, ABI, or plugin, and a protocol mismatch is refused as
-//! `unsupported-version` before any generation can start.
+//! `unsupported` (exit 4/stdout) before any generation can start.
 
 mod confinement;
 #[cfg(test)]

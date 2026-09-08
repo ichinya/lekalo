@@ -49,8 +49,9 @@ process protocol: adapters as separate executables in any language.
    rollback; incomplete rollback is partial. Publication across files is
    not a crash-atomic transaction.
 7. Closed error classification: infrastructure (spawn/timeout/crash/invalid
-   JSON/output cap — exit 4), protocol mismatch (exit 5), capability
-   (exit 4), policy (exit 3), operation errors (exit 1, including partial
+   JSON/output cap — exit 4), adapter wire token/version/negotiation mismatch
+   (`unsupported`, exit 4/stdout), capability (`unsupported`, exit 4/stdout),
+   policy (exit 3), operation errors (exit 1, including partial
    results flagged by the adapter). Fifteen registered `target.*` rules
    (`LEK-TGT-001..015`) as the diagnostic registry's v1.10.0
    wire-shape-preserving minor increment.
@@ -74,7 +75,11 @@ process protocol: adapters as separate executables in any language.
   byte-drift semantics of the #21 gate.
 - `versioning.protocol-unpublished` remains a live refusal path for
   registries that do not publish the family (synthetic, older, or custom);
-  it is no longer the answer the embedded registry gives.
+  it is no longer the answer the embedded registry gives. Registry publication
+  and versioning preflight failures retain their `unsupported-version`,
+  exit 5/stderr outcome; an adapter's incompatible wire handshake uses the
+  issue's explicit `unsupported`, exit 4/stdout outcome. These are distinct
+  shared status classes, and their global taxonomy is unchanged.
 - Adapter authors target a frozen 1.0.0 wire: closed shapes mean every
   future member is a reviewed protocol version, never a silent extension.
 

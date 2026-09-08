@@ -35,9 +35,11 @@ Describe is mandatory. It negotiates adapter identity/version/digest,
 protocol versions, operations, transports, targets, profiles, read/write
 scopes and optional structured progress. Every refresh revokes the old
 handshake and pending plan before any fallible work, including successful,
-failed and cancelled calls through `describe_with_cancel`. A protocol mismatch
-remains `unsupported-version`/exit 5; missing capability remains
-`unsupported`/exit 4.
+failed and cancelled calls through `describe_with_cancel`. An adapter wire token,
+exact version or declared-version negotiation mismatch returns `unsupported`,
+exit 4/stdout, before generation; a missing capability has the same status,
+exit and stream with its distinct reason code. Registry publication and versioning
+preflight refusals retain `unsupported-version`, exit 5/stderr.
 
 ## Transport and decoding
 
@@ -149,14 +151,15 @@ and the future generation CLI are not qualified by these tests.
 
 ## Failure classification and integration
 
-| Failure | Public status / exit |
+| Failure | Public status / exit / stream |
 | --- | --- |
-| Invalid local request or plan mismatch | invalid / 1 |
-| Adapter operation error | invalid / 1 |
-| Scope/protected-home policy violation | denied / 3 |
-| Unsupported capability | unsupported / 4 |
-| Spawn, deadline, cancellation, crash, malformed output, output cap | unavailable / 4 |
-| Protocol/version mismatch | unsupported-version / 5 |
+| Invalid local request or plan mismatch | invalid / 1 / stderr |
+| Adapter operation error | invalid / 1 / stderr |
+| Scope/protected-home policy violation | denied / 3 / stdout |
+| Unsupported capability (`target.capability-unsupported`) | unsupported / 4 / stdout |
+| Spawn, deadline, cancellation, crash, malformed output, output cap | unavailable / 4 / stdout |
+| Adapter wire token/version/negotiation mismatch (`target.protocol-mismatch`) | unsupported / 4 / stdout |
+| Registry protocol unpublished or unsupported preflight version (`versioning.*`) | unsupported-version / 5 / stderr |
 
 Public diagnostics use opaque path subjects and fixed adapter error codes.
 `adapter-error-partial` preserves an adapter's partial-error claim without

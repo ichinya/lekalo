@@ -60,7 +60,7 @@ if (!validateRegistry(registry)) {
 // 1.11.0 is additive to the exact frozen target-protocol predecessor.
 // Normalize checkout line endings only; every entry and its semantics survive.
 const predecessorText = readFileSync(resolve(root, "contracts/diagnostic-registry.v1.10.0.json"), "utf8").replace(/\r\n/g, "\n");
-if (createHash("sha256").update(predecessorText).digest("hex") !== "c13a0c2d0cf93c8cbee32615833b43a29e9d4ea89c1f2ba31c70635f1afff4f6") {
+if (createHash("sha256").update(predecessorText).digest("hex") !== "e043f45e3f46e3de6170f06118b57fea78c3063ba7ee3646ebd8522cce20eebd") {
   fail("predecessor-custody");
 }
 const predecessor = JSON.parse(predecessorText);
@@ -123,6 +123,9 @@ for (const envelope of envelopes) {
     }
     const registered = registry.entries.find((entry) => entry.id === diagnostic.id);
     if (!registered) fail("unregistered-id", { envelope: envelope.name, id: diagnostic.id });
+    if (!registered.allowed_statuses.includes(envelope.document.status)) {
+      fail("status-not-allowed", { envelope: envelope.name, id: diagnostic.id, status: envelope.document.status });
+    }
     if (registered.code !== diagnostic.code) fail("code-drift", { envelope: envelope.name, id: diagnostic.id });
     if (registered.default_severity !== diagnostic.severity) fail("severity-drift", envelope.name);
     if (registered.category !== diagnostic.category) fail("category-drift", envelope.name);

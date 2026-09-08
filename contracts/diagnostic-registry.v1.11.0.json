@@ -4212,7 +4212,7 @@
       "category": "adapter",
       "default_severity": "error",
       "allowed_statuses": [
-        "unsupported-version"
+        "unsupported"
       ],
       "message_id": "target.protocol-mismatch",
       "default_message": "The adapter speaks a different protocol token or an unsupported exact protocol version.",
