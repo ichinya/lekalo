@@ -141,8 +141,16 @@ impl Sandbox {
             .prefix("lekalo-target-sandbox-")
             .tempdir()
             .map_err(|_| refusal("sandbox-create"))?;
-        let project = owned.path().join("project");
-        let runtime = owned.path().join("runtime");
+        // macOS checks executable and profile paths after resolving /var.
+        // Use one canonical spelling for the whole private view, including
+        // the copied program, script, request and writable output paths.
+        #[cfg(target_os = "macos")]
+        let owned_root =
+            std::fs::canonicalize(owned.path()).map_err(|_| refusal("sandbox-create"))?;
+        #[cfg(not(target_os = "macos"))]
+        let owned_root = owned.path();
+        let project = owned_root.join("project");
+        let runtime = owned_root.join("runtime");
         std::fs::create_dir(&project)
             .and_then(|()| std::fs::create_dir(&runtime))
             .map_err(|_| refusal("sandbox-create"))?;
@@ -340,6 +348,11 @@ impl Sandbox {
             ]);
         }
         args.extend([
+            // The synthetic root and bind-mount ancestor directories are
+            // otherwise writable. A nonrecursive remount preserves only
+            // the separate output mounts explicitly granted above.
+            "--remount-ro".into(),
+            "/".into(),
             "--chdir".into(),
             self.project.to_string_lossy().into_owned(),
             "--".into(),
@@ -472,18 +485,7 @@ mod tests {
         #[cfg(target_os = "macos")]
         if result.exit_code != 0 {
             let staged = sandbox.command(&command).unwrap();
-            let canonical = std::fs::canonicalize(sandbox.owned.path()).unwrap();
-            // Fixed trusted inline code only: distinguish a copied-binary
-            // execution failure from a profile failure, never a client fallback.
-            let control = transport::run_private(&staged, b"", &limits, &sandbox.project, None);
-            eprintln!(
-                "private fixed copied-binary control: {:?}",
-                control.as_ref().map(|v| (
-                    v.exit_code,
-                    String::from_utf8_lossy(&v.stdout),
-                    String::from_utf8_lossy(&v.stderr)
-                ))
-            );
+            let canonical = sandbox.runtime.parent().unwrap();
             let mut metadata = String::from("(allow file-read-metadata");
             for ancestor in canonical.ancestors() {
                 metadata.push_str(&format!(
@@ -496,31 +498,16 @@ mod tests {
                 "(allow file-map-executable (subpath {}) (subpath \"/System\") (subpath \"/usr/lib\"))",
                 serde_json::to_string(&canonical.join("runtime").to_string_lossy()).unwrap()
             );
-            for (name, extra, canonical_exec) in [
-                ("canonical-exec", "", true),
-                ("process-fork", "(allow process-fork)", true),
-                ("process-operations", "(allow process*)", true),
-                (
-                    "dev-null-write",
-                    "(allow file-write-data (literal \"/dev/null\"))",
-                    true,
-                ),
-            ] {
+            for variant_bits in 0..8 {
                 let mut wrapper = sandbox.macos_command(&staged);
-                wrapper.args[1] = wrapper.args[1].replace(
-                    sandbox.owned.path().to_str().unwrap(),
-                    canonical.to_str().unwrap(),
-                );
-                wrapper.args[1].push_str(&format!(
-                    "{map}{metadata}(allow file-read* (literal \"/\"))"
-                ));
-                wrapper.args[1].push_str(extra);
-                wrapper.args[1].push_str("(debug deny)");
-                if canonical_exec {
-                    wrapper.args[2] = std::fs::canonicalize(&staged.program)
-                        .unwrap()
-                        .to_string_lossy()
-                        .into_owned();
+                if variant_bits & 1 != 0 {
+                    wrapper.args[1].push_str("(allow file-read* (literal \"/\"))");
+                }
+                if variant_bits & 2 != 0 {
+                    wrapper.args[1].push_str(&map);
+                }
+                if variant_bits & 4 != 0 {
+                    wrapper.args[1].push_str(&metadata);
                 }
                 let variant =
                     transport::run_private(&wrapper, b"", &limits, &sandbox.project, None);
@@ -531,7 +518,7 @@ mod tests {
                         String::from_utf8_lossy(&v.stderr),
                     )
                 });
-                eprintln!("private synthetic macOS variant {name}: {evidence:?}");
+                eprintln!("private synthetic macOS variant bits={variant_bits} (root=1,map=2,metadata=4): {evidence:?}");
             }
         }
         assert_eq!(
@@ -570,6 +557,41 @@ mod tests {
         );
         let response: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
         assert_eq!(response["operation"], "describe");
+
+        // Denied absolute writes must fail inside the namespace as well as
+        // preserve the real project. Empty mount ancestors are not outputs.
+        std::fs::create_dir_all(root.path().join(".lekalo/ir")).unwrap();
+        std::fs::write(root.path().join(".lekalo/ir/input.json"), b"owned input").unwrap();
+        let sandbox = Sandbox::new(root.path(), &[], &[], false).unwrap();
+        let command = transport::AdapterCommand {
+            program: "node".into(),
+            args: vec![
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../tests/fixtures/target-protocol/boundary-adapter.mjs")
+                    .to_string_lossy()
+                    .into_owned(),
+                "--mode".into(),
+                "describe-read".into(),
+                "--host-root".into(),
+                root.path().to_string_lossy().into_owned(),
+            ],
+        };
+        let result = sandbox
+            .run(&command, request, &limits, false, None)
+            .unwrap();
+        assert_eq!(
+            result.exit_code,
+            0,
+            "private synthetic boundary evidence: stderr={:?}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let response: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(response["operation"], "describe");
+        assert_eq!(
+            std::fs::read(root.path().join(".lekalo/ir/input.json")).unwrap(),
+            b"owned input"
+        );
+        assert!(!root.path().join("other").exists());
     }
 
     #[test]
