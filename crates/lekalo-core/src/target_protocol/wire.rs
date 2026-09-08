@@ -10,7 +10,10 @@
 use serde::{Deserialize, Serialize};
 
 use super::scopes;
-use super::version::{MAX_PLAN_ENTRIES, PROTOCOL_TOKEN, REQUEST_ID_PREFIX, VERSION};
+use super::version::{
+    is_supported_version, MAX_CONSTRAINT_VALUE, MAX_DECLARED_CAPABILITIES, MAX_IR_VERSIONS,
+    MAX_PLAN_ENTRIES, PROTOCOL_TOKEN, REQUEST_ID_PREFIX,
+};
 
 // An omitted optional member is legal; explicit null is never part of v1.
 // Parsing directly into closed structs also rejects decoded duplicate keys
@@ -45,7 +48,7 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
             detail: ProtocolMismatch::Token,
         });
     }
-    if request.protocol_version != VERSION {
+    if !is_supported_version(&request.protocol_version) {
         return Err(super::TargetFailure::ProtocolMismatch {
             detail: ProtocolMismatch::Version,
         });
@@ -164,6 +167,19 @@ pub fn is_plan_id(value: &str) -> bool {
     })
 }
 
+/// Whether every declared optional constraint value is inside the closed
+/// bound (issue #28).
+fn constraints_bounded(constraints: Option<&AdapterConstraints>) -> bool {
+    constraints.map_or(true, |constraints| {
+        [constraints.max_entries, constraints.max_writes]
+            .into_iter()
+            .all(|value| match value {
+                Some(value) => (1..=MAX_CONSTRAINT_VALUE).contains(&value),
+                None => true,
+            })
+    })
+}
+
 /// Schema value constraints. Contextual operation/plan checks follow this
 /// shared decoder in the client; no test-only parser owns these decisions.
 fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity> {
@@ -198,6 +214,23 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                 .all(|v| scopes::is_token(v))
             || !unique(&c.read_scopes, 0, 64)
             || !unique(&c.write_scopes, 0, 64)
+            || !unique(&c.ir_versions, 0, MAX_IR_VERSIONS)
+            || !c.ir_versions.iter().all(|v| contract_version(v))
+            || c.capabilities.len() > MAX_DECLARED_CAPABILITIES
+            || !c.capabilities.keys().all(|id| is_capability_id(id))
+            || !c
+                .capabilities
+                .keys()
+                .all(|id| crate::target_protocol::capability::definition(id).is_some())
+            || !constraints_bounded(c.constraints.as_ref())
+        {
+            return invalid;
+        }
+        // The extension members exist only on the 1.1.0 contract; a
+        // response claiming the base version must keep the exact
+        // published 1.0.0 shape (issue #28).
+        if response.protocol_version == super::version::BASE_VERSION
+            && (!c.ir_versions.is_empty() || !c.capabilities.is_empty() || c.constraints.is_some())
         {
             return invalid;
         }
@@ -385,7 +418,7 @@ pub struct RequestEnvelope {
 }
 
 /// The adapter identity every response binds its evidence to.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AdapterIdentity {
     pub id: String,
@@ -411,6 +444,78 @@ pub struct Capabilities {
     pub write_scopes: Vec<String>,
     #[serde(default)]
     pub progress: bool,
+    /// The IR contract versions the adapter accepts (issue #28, protocol
+    /// 1.1.0). Absent on a 1.0.0 session: IR compatibility is then
+    /// governed upstream by the #9 compatibility preflight, never
+    /// guessed here.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ir_versions: Vec<String>,
+    /// The named capability support states the adapter declares
+    /// (issue #28, protocol 1.1.0). Canonical byte order comes from the
+    /// `BTreeMap`; an absent id is undeclared, never optimistically
+    /// available.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub capabilities: std::collections::BTreeMap<String, SupportState>,
+    /// Optional declared constraints (issue #28, protocol 1.1.0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub constraints: Option<AdapterConstraints>,
+}
+
+/// The closed support-state set of one named capability (issue #28).
+///
+/// `unknown` is a declared state and a discovery verdict, never an
+/// optimistic yes: only the explicit non-strict selection policy may
+/// proceed past it, and it never satisfies a required capability.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SupportState {
+    Full,
+    Partial,
+    Unsupported,
+    Unknown,
+}
+
+impl SupportState {
+    /// The stable wire token.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Partial => "partial",
+            Self::Unsupported => "unsupported",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// The optional constraints an adapter declares about itself (issue #28).
+///
+/// Values are advisory declared bounds for future operation consumers;
+/// discovery validates, records, and projects them, and never derives
+/// authority from them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdapterConstraints {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_entries: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_writes: Option<u64>,
+}
+
+/// Whether one string is a capability identifier: the closed lowercase
+/// dotted-segment grammar shared with the lock's `CapabilityId`.
+pub fn is_capability_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.split('.').all(|segment| {
+            !segment.is_empty()
+                && segment.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+                && segment.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || byte == b'-'
+                        || byte == b'_'
+                })
+        })
 }
 
 /// One declared or observed write: the logical path, the action, and — for
@@ -682,18 +787,20 @@ pub enum ResponseRejection {
     Invalid(ResponseInvalidity),
 }
 
-/// Validate the identity members every response must carry. Protocol
-/// token/version deviations are protocol mismatches (`unsupported` before
-/// any generation); echo mismatches are malformed responses.
+/// Validate the identity members every response must carry against the
+/// exact negotiated session version. Protocol token/version deviations
+/// are protocol mismatches (`unsupported` before any generation); echo
+/// mismatches are malformed responses.
 pub fn validate_response_identity(
     response: &ResponseEnvelope,
+    expected_protocol_version: &str,
     expected_request_id: &str,
     expected_operation: Operation,
 ) -> Result<(), ResponseRejection> {
     if response.protocol != PROTOCOL_TOKEN {
         return Err(ResponseRejection::Protocol(ProtocolMismatch::Token));
     }
-    if response.protocol_version != VERSION {
+    if response.protocol_version != expected_protocol_version {
         return Err(ResponseRejection::Protocol(ProtocolMismatch::Version));
     }
     if response.operation != expected_operation {
@@ -847,9 +954,17 @@ pub fn is_sha256_digest(value: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// The highest supported protocol version an adapter declared. The
+/// caller has proven the session version's membership before calling.
+pub fn negotiated(capabilities: &Capabilities) -> &'static str {
+    super::version::negotiate(&capabilities.protocol_versions)
+        .expect("session version membership checked before negotiation")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::target_protocol::version::VERSION;
 
     fn base_request() -> RequestEnvelope {
         RequestEnvelope {

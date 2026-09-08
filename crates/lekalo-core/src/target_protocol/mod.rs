@@ -19,12 +19,15 @@
 //! loads a library, ABI, or plugin, and a protocol mismatch is refused as
 //! `unsupported` (exit 4/stdout) before any generation can start.
 
+pub mod capability;
 mod confinement;
 #[cfg(test)]
 mod conformance;
 pub mod diagnostic;
+pub mod discovery;
 pub mod plan;
 pub mod scopes;
+pub mod selection;
 pub mod transport;
 pub mod version;
 pub mod wire;
@@ -39,11 +42,16 @@ use wire::{Operation, RequestEnvelope, ResponseEnvelope, ResponseInvalidity, Res
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DescribeOutcome {
     /// The capabilities the adapter declared (identity, versions,
-    /// operations, transports, scopes).
+    /// operations, transports, scopes, and — on a 1.1.0 session — IR
+    /// versions, named capability support states, and constraints).
     pub capabilities: wire::Capabilities,
     /// The digest over the canonical capability bytes: the evidence anchor
     /// every later operation binds to.
     pub capability_digest: String,
+    /// The exact protocol version this session negotiated: the highest
+    /// supported version the adapter declared, proven by a describe
+    /// exchange at exactly that version.
+    pub negotiated_version: &'static str,
 }
 
 /// One pending planned exchange, bound by a successful dry run.
@@ -102,6 +110,9 @@ pub enum TargetFailure {
     ProtocolMismatch { detail: wire::ProtocolMismatch },
     /// The adapter does not offer the requested operation/target/profile.
     CapabilityUnsupported { detail: &'static str },
+    /// The adapter did not declare the core IR contract version, so no
+    /// IR-carrying operation may be sent to it (issue #28).
+    IrUnsupported,
     /// A declared scope violates grammar, protection, or verifiability.
     ScopeViolation {
         path: Option<String>,
@@ -232,14 +243,49 @@ impl TargetClient {
         // including an already-cancelled attempt and command/setup failures.
         self.described = None;
         self.binding = None;
-        let protocol_version = published_version()?;
-        let request_id = wire::request_id(&base_envelope(
+        // Probe at the base wire version every v1-line adapter accepts,
+        // then upgrade only to a version the adapter explicitly declared.
+        // A session therefore always runs on a version both sides named.
+        let probe = usable_protocol_versions()?[0];
+        let (capabilities, digest) = self.run_describe(command, cwd, cancel, probe)?;
+        let negotiated = wire::negotiated(&capabilities);
+        let (capabilities, digest) = if negotiated != probe {
+            let (upgraded, digest) = self.run_describe(command, cwd, cancel, negotiated)?;
+            if wire::negotiated(&upgraded) != negotiated {
+                return Err(TargetFailure::ProtocolMismatch {
+                    detail: wire::ProtocolMismatch::Negotiation,
+                });
+            }
+            (upgraded, digest)
+        } else {
+            (capabilities, digest)
+        };
+        let outcome = DescribeOutcome {
+            capability_digest: digest,
+            capabilities,
+            negotiated_version: negotiated,
+        };
+        self.described = Some((command.clone(), outcome));
+        Ok(&self.described.as_ref().expect("just stored").1)
+    }
+
+    /// Run one bounded `describe` exchange at exactly `session_version`
+    /// and validate the response against the closed #27 contract plus the
+    /// #28 extension rules. Safe discovery: no IR path, no write
+    /// operation, read-only confined private view.
+    fn run_describe(
+        &mut self,
+        command: &AdapterCommand,
+        cwd: &std::path::Path,
+        cancel: Option<&AtomicBool>,
+        session_version: &'static str,
+    ) -> Result<(wire::Capabilities, String), TargetFailure> {
+        let mut envelope = base_envelope(
             Operation::Describe,
-            protocol_version.clone(),
+            session_version.to_owned(),
             self.wire_limits(),
-        ));
-        let mut envelope = base_envelope(Operation::Describe, protocol_version, self.wire_limits());
-        envelope.request_id = request_id;
+        );
+        envelope.request_id = wire::request_id(&envelope);
         let serialized = serialize(&envelope)?;
         let sandbox = confinement::Sandbox::new(cwd, &[], &[], false)?;
         let exchange = sandbox.run(command, &serialized, &self.limits, false, cancel);
@@ -263,7 +309,7 @@ impl TargetClient {
         if !capabilities
             .protocol_versions
             .iter()
-            .any(|v| v == version::VERSION)
+            .any(|v| v == session_version)
         {
             return Err(TargetFailure::ProtocolMismatch {
                 detail: wire::ProtocolMismatch::Negotiation,
@@ -279,15 +325,11 @@ impl TargetClient {
         {
             return invalid(ResponseInvalidity::Evidence);
         }
-        let outcome = DescribeOutcome {
-            capability_digest: format!(
-                "sha256:{}",
-                plan::sha256_hex(&canonical_bytes(&capabilities))
-            ),
-            capabilities,
-        };
-        self.described = Some((command.clone(), outcome));
-        Ok(&self.described.as_ref().expect("just stored").1)
+        let digest = format!(
+            "sha256:{}",
+            plan::sha256_hex(&canonical_bytes(&capabilities))
+        );
+        Ok((capabilities, digest))
     }
 
     /// Run one adapter operation end to end: request validation against the
@@ -323,6 +365,21 @@ impl TargetClient {
             });
         }
         let capabilities = described.capabilities.clone();
+        // An adapter that negotiated the 1.1.0 extension and did not
+        // declare the core IR contract version never receives an
+        // IR-carrying operation: the incompatible adapter is filtered
+        // before any project IR could be disclosed (issue #28). A legacy
+        // 1.0.0 session keeps the #27 contract: its IR compatibility is
+        // governed upstream by the #9 compatibility preflight and lock.
+        if request.operation.requires_ir()
+            && described.negotiated_version == version::VERSION
+            && !capabilities
+                .ir_versions
+                .iter()
+                .any(|declared| declared == crate::ir::version::VERSION)
+        {
+            return Err(TargetFailure::IrUnsupported);
+        }
         self.validate_call_request(&request, &capabilities)?;
         if applying && pending.is_none() {
             return Err(TargetFailure::RequestInvalid { detail: "plan-id" });
@@ -371,7 +428,7 @@ impl TargetClient {
             }
             plan::validate_preconditions(&binding.entries, &before)?;
         }
-        let protocol_version = published_version()?;
+        let protocol_version = described.negotiated_version.to_owned();
         let dry_run = match request.operation {
             Operation::Generate => request.dry_run,
             _ => None,
@@ -507,7 +564,12 @@ impl TargetClient {
                 detail: format!("exit-{}", success.exit_code),
             });
         }
-        match wire::validate_response_identity(&response, &request.request_id, request.operation) {
+        match wire::validate_response_identity(
+            &response,
+            &request.protocol_version,
+            &request.request_id,
+            request.operation,
+        ) {
             Ok(()) => {}
             Err(wire::ResponseRejection::Protocol(detail)) => {
                 return Err(TargetFailure::ProtocolMismatch { detail });
@@ -744,14 +806,33 @@ impl TargetClient {
     }
 }
 
-/// The published protocol version of the embedded registry.
-fn published_version() -> Result<String, TargetFailure> {
+/// The supported protocol versions the embedded registry currently
+/// publishes, ascending. The describe probe uses the first; negotiation
+/// may raise the session to any later entry. A registry that publishes
+/// nothing is the #27 `ProtocolUnpublished` refusal; a published version
+/// outside this core's decoder set is a registry/decoder drift refused
+/// as the developer-fault `RegistryInvalid`.
+fn usable_protocol_versions() -> Result<Vec<&'static str>, TargetFailure> {
+    use crate::versioning::family::ProtocolContract;
+    use crate::versioning::version::ContractVersion;
     let registry = crate::versioning::VersionRegistry::embedded()
         .map_err(|_| TargetFailure::RegistryInvalid)?;
-    match registry.protocol().current() {
-        Some(current) => Ok(current.to_string()),
-        None => Err(TargetFailure::ProtocolUnpublished),
+    let usable: Vec<&'static str> = version::SUPPORTED_VERSIONS
+        .iter()
+        .copied()
+        .filter(|spelling| {
+            ContractVersion::<ProtocolContract>::parse_canonical(spelling).is_ok_and(|parsed| {
+                registry
+                    .protocol()
+                    .record(&parsed)
+                    .is_some_and(|record| record.state.is_usable())
+            })
+        })
+        .collect();
+    if usable.is_empty() {
+        return Err(TargetFailure::ProtocolUnpublished);
     }
+    Ok(usable)
 }
 
 /// The shared envelope prefix every request carries.

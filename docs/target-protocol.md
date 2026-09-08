@@ -1,10 +1,70 @@
 # Target adapter process protocol
 
-`lekalo.target/v1`, contract 1.0.0, connects core to separate executables.
-Adapters may be written in any language; core loads no native plugin ABI.
-The operations are describe, scan, bind, validate, generate, verify,
-plan-clean and clean. Product 0.2.0, Model 1.0.0, IR 0.1.0 and diagnostic
-registry 1.10.0 remain independent version lines.
+`lekalo.target/v1`, contract 1.0.0 with the additive 1.1.0 extension,
+connects core to separate executables. Adapters may be written in any
+language; core loads no native plugin ABI. The operations are describe,
+scan, bind, validate, generate, verify, plan-clean and clean. Product
+0.2.2, Model 1.0.0, IR 0.1.0 and diagnostic registry 1.12.0 remain
+independent version lines.
+
+## Version negotiation and capability discovery (issue #28)
+
+The v1 line carries two exact contract versions. The base `1.0.0`
+envelope is what every v1-line adapter accepts and what the frozen
+`contracts/target-protocol.schema.v1.0.0.json` document describes. The
+current `1.1.0` (`contracts/target-protocol.schema.v1.1.0.json`)
+additively extends the describe response's `capabilities` object with:
+
+- `ir_versions` — the IR contract versions the adapter accepts
+  (exact-set membership, zero to eight entries);
+- `capabilities` — a map from named capability ids to the closed support
+  states `full`, `partial`, `unsupported`, `unknown` (at most 64 entries,
+  dotted lowercase ids);
+- `constraints` — optional declared bounds (`max_entries`, `max_writes`)
+  recorded as evidence for future operation consumers.
+
+Negotiation is probe-and-upgrade and deterministic. Core probes with a
+`describe` request at the base version, which every v1-line adapter
+accepts, computes the highest supported version in the adapter's
+declared `protocol_versions`, and — only when that is higher than the
+base — re-describes at exactly that version. The session's negotiated
+version is the request version of the final describe, and every later
+exchange runs at it. A response claiming the base version may not carry
+extension members (the frozen 1.0.0 meaning is preserved byte for
+byte), and declared capability ids must carry versioned definitions in
+the embedded capability registry
+(`dev.lekalo.target-capabilities@1.0.0`); unknown ids refuse the
+response.
+
+Discovery (`target_protocol::discovery`) is safe by construction: it
+sends `describe` only — no IR path, no target or profile, no write
+operation — so an incompatible adapter is characterized and filtered
+before any project IR could be disclosed to it. An adapter on a 1.1.0
+session that did not declare the core IR contract version can never
+receive an IR-carrying operation (`target.ir-unsupported`, exit
+4/stdout); a legacy 1.0.0 session keeps the #27 contract, where IR
+compatibility is governed upstream by the #9 compatibility preflight and
+the lock. Discovery distinguishes the adapter's declared digest from the
+verified digest over the launched entry bytes (the executable, or its
+first-argument script), and records per-capability provenance:
+`declared` from the handshake, `probed` after a successful read-only
+operation, `verified` after a full planned-and-applied exchange.
+
+Selection (`target_protocol::selection`) consumes discovered candidates
+plus an explicit policy and produces a closed, serializable report with
+one fixed filter order: declared IR compatibility, then required
+capability support under the policy. `partial` proceeds only with the
+explicit `allow_partial` policy; `unknown` never satisfies a required
+capability and proceeds only with the explicit non-strict policy, each
+recorded as a warning. Survivors are ordered by adapter id ascending,
+version descending, selected profile, and every excluded candidate is
+reported with sorted stable reason tokens — the verdict is
+machine-readable and explainable. Discovery results cache under exact
+version/digest keys (adapter identity, executable bytes, negotiated
+protocol, IR version, capability-definition registry, capability
+digest); any change misses. The resolved capability snapshot lands in
+the committed `lekalo.lock` through the #10 resolver, with each entry
+bound to its capability definition version.
 
 ## Requests and identities
 
@@ -172,8 +232,10 @@ publishing its arbitrary code/message. Neither partial nor an error envelope
 proves that an ambient filesystem was unchanged: preservation comes from
 isolation and refusal to publish its stage.
 
-The integration surface is `TargetClient::describe` / `TargetClient::call`.
-This issue provides no adapter catalog, native target package, generation CLI
-or persisted cross-session plan authority. `transport::run` is explicitly a
-raw process primitive for callers owning its command; it does not implement
-scope policy and is never an unconfined fallback for TargetClient.
+The integration surface is `TargetClient::describe` / `TargetClient::call`
+plus the issue #28 discovery, capability-definition, and selection
+modules. This issue provides no adapter catalog, native target package,
+generation CLI or persisted cross-session plan authority.
+`transport::run` is explicitly a raw process primitive for callers
+owning its command; it does not implement scope policy and is never an
+unconfined fallback for TargetClient.

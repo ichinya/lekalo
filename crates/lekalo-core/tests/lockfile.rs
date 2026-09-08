@@ -34,7 +34,7 @@ use lekalo_core::versioning::{ContractVersion, VersionRegistry};
 const GOLDEN: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:ffa0a8ff664eafe58a649be3d2e22b82b5b2c68ba44896dcf4777ca947543bf3";
+    "sha256:da0853ab24d2e2ea0b372c0d97fee093e4a19b93f9d7e5e6f0dab94bf986464d";
 const MULTI: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/multi-adapter.lock.json");
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/lockfile/project";
@@ -48,19 +48,13 @@ fn model_1_0() -> ContractVersion<ModelContract> {
 }
 
 fn protocol_version() -> ContractVersion<ProtocolContract> {
-    ContractVersion::<ProtocolContract>::parse_canonical("1.0.0").expect("1.0.0 is canonical")
-}
-
-fn registry_version() -> ContractVersion<RegistryContract> {
-    VersionRegistry::embedded()
-        .expect("embedded registry")
-        .registry_version()
-        .clone()
+    ContractVersion::<ProtocolContract>::parse_canonical("1.1.0").expect("1.1.0 is canonical")
 }
 
 /// A synthetic registry identical to the embedded one except that the
-/// protocol family publishes 1.0.0 — the published-protocol world the
-/// multi-adapter resolver tests run in.
+/// protocol family publishes the base 1.0.0 and the #28 extension 1.1.0
+/// (current) — the published-protocol world the multi-adapter resolver
+/// tests run in.
 fn published_protocol_registry() -> VersionRegistry {
     const JSON: &str = r#"
 {
@@ -89,11 +83,13 @@ fn published_protocol_registry() -> VersionRegistry {
       "migrations": []
     },
     "protocol": {
-      "current": "1.0.0",
+      "current": "1.1.0",
       "aliases": [],
       "versions": [
         {"version": "1.0.0", "state": "supported", "classification": "additive",
-         "reason": "Synthetic published protocol for issue #10 hermetic tests."}
+         "reason": "Synthetic published protocol for issue #10 hermetic tests."},
+        {"version": "1.1.0", "state": "supported", "classification": "additive",
+         "reason": "Synthetic protocol extension for the capability discovery issue."}
       ],
       "migrations": []
     }
@@ -113,7 +109,10 @@ fn request(registry: &VersionRegistry) -> ResolutionRequest {
 
 fn manifest_for(adapter: &str) -> AdapterCompatibilityManifest {
     AdapterCompatibilityManifest::new(
-        registry_version(),
+        ContractVersion::<RegistryContract>::parse_canonical(
+            lekalo_core::versioning::compatibility::MANIFEST_SCHEMA_VERSION,
+        )
+        .expect("manifest schema version is canonical"),
         adapter,
         ContractVersion::<IrContract>::parse_canonical("0.1.0").expect("ir min"),
         ContractVersion::<IrContract>::parse_canonical("0.1.0").expect("ir max"),
@@ -263,9 +262,9 @@ fn golden_contract_only_lock_parses_and_matches_its_independent_digest() {
     let lock = Lockfile::parse_canonical(GOLDEN).expect("golden lock parses");
     assert_eq!(lock.digest().as_str(), GOLDEN_DIGEST);
     assert_eq!(lock.resolver_version().as_str(), RESOLVER_VERSION);
-    assert_eq!(lock.core_version().as_str(), "0.2.0");
+    assert_eq!(lock.core_version().as_str(), "0.2.2");
     let protocol = lock.target_protocol().expect("published protocol");
-    assert_eq!(protocol.version().as_str(), "1.0.0");
+    assert_eq!(protocol.version().as_str(), "1.1.0");
     // Round-trip: canonical bytes are byte-identical to the committed file.
     assert_eq!(lock.canonical_bytes().as_ref(), GOLDEN);
 }
@@ -334,17 +333,17 @@ fn wire_refusals_carry_the_closed_reason_codes() {
         ),
         (
             "v-prefixed version",
-            tampered("\"version\":\"0.2.0\"", "\"version\":\"v0.1.9\""),
+            tampered("\"version\":\"0.2.2\"", "\"version\":\"v0.2.2\""),
             "lock.schema-invalid",
         ),
         (
             "build metadata version",
-            tampered("\"version\":\"0.2.0\"", "\"version\":\"0.1.9+meta\""),
+            tampered("\"version\":\"0.2.2\"", "\"version\":\"0.2.2+meta\""),
             "lock.schema-invalid",
         ),
         (
             "range version",
-            tampered("\"version\":\"0.2.0\"", "\"version\":\"^0.1\""),
+            tampered("\"version\":\"0.2.2\"", "\"version\":\"^0.2\""),
             "lock.schema-invalid",
         ),
         (
@@ -381,7 +380,7 @@ fn multi_adapter_wire_document_parses_with_references_resolved() {
     assert_eq!(lock.profiles().len(), 1);
     assert_eq!(lock.capabilities().len(), 2);
     let protocol = lock.target_protocol().expect("published protocol");
-    assert_eq!(protocol.version().as_str(), "1.0.0");
+    assert_eq!(protocol.version().as_str(), "1.1.0");
 }
 
 #[test]
@@ -621,7 +620,10 @@ fn duplicate_identities_and_missing_platforms_and_incompatible_manifests_classif
             Sha256Digest::from_hex(&hex64(3)),
         )],
         AdapterCompatibilityManifest::new(
-            registry_version(),
+            ContractVersion::<RegistryContract>::parse_canonical(
+                lekalo_core::versioning::compatibility::MANIFEST_SCHEMA_VERSION,
+            )
+            .expect("manifest schema version is canonical"),
             "node-typescript",
             ir_version(),
             ir_version(),

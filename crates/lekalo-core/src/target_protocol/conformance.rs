@@ -139,7 +139,11 @@ fn invalid_apply_plan_is_refused_before_the_actual_os_launch() {
 fn response_request(response: &wire::ResponseEnvelope) -> RequestEnvelope {
     let mut request = base_envelope(
         response.operation,
-        version::VERSION.into(),
+        if version::is_supported_version(&response.protocol_version) {
+            response.protocol_version.clone()
+        } else {
+            version::BASE_VERSION.to_owned()
+        },
         wire::Limits {
             timeout_ms: Some(20000),
             max_output_bytes: Some(8388608),

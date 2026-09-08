@@ -223,7 +223,7 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.10.0.json` (issue #12 extended it with the
+`contracts/diagnostic-registry.v1.12.0.json` (issue #12 extended it with the
 `semantic.*`/`validate.*` families and issue #13 added the `graph.*`
 family, each as a minor increment; issue #15 added the `inspect.*` family
 the same way; issue #16 added the `impact.*` family issue #18 adds the
@@ -360,12 +360,29 @@ declare read/write scopes; canonical Lekalo/OpenSpec homes are
 unwritable; `generate` requires a dry-run write plan whose declared
 paths, actions, and digests are verified against the observed project
 state, with every deviation classified (`target.*` family, registry
-v1.10.0). The contract, transport rules, and error taxonomy live in
+v1.12.0). The contract, transport rules, and error taxonomy live in
 [docs/target-protocol.md](docs/target-protocol.md) and
-[ADR-0025](docs/adr/0025-target-protocol.md); the wire schema is
-`contracts/target-protocol.schema.v1.0.0.json`; the language-neutral
-fake adapter and hermetic fixtures are under
-`tests/fixtures/target-protocol/`.
+[ADR-0025](docs/adr/0025-target-protocol.md); the wire schemas are
+`contracts/target-protocol.schema.v1.0.0.json` (frozen base) and
+`contracts/target-protocol.schema.v1.1.0.json` (additive describe
+extension, issue #28); the language-neutral fake adapter and hermetic
+fixtures are under `tests/fixtures/target-protocol/`.
+
+Issue #28 adds capability discovery and version negotiation over the
+same wire: the describe handshake probes at the base version and
+upgrades only to a protocol version the adapter declared
+(1.0.0/1.1.0); the 1.1.0 describe response additively declares accepted
+IR contract versions, named capability support states
+(`full`/`partial`/`unsupported`/`unknown`), and optional constraints.
+Discovery is safe (describe only: no IR, no writes), distinguishes the
+declared digest from the verified executable digest, records per-
+capability provenance (`declared`/`probed`/`verified`), and caches
+verdicts under exact version/digest keys. Deterministic selection
+filters incompatible adapters before any project IR is transferred —
+`partial` requires the explicit policy, `unknown` is never an optimistic
+yes — and reports the selected and excluded candidates with stable
+reasons. The resolved capability snapshot resolves into the committed
+`lekalo.lock`.
 
 ## Lekalo Model contracts and semantic IDs
 
@@ -375,8 +392,8 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #27 carries prospective product
-0.2.0 (issue #63 published product 0.1.31 (annotated tag `v0.1.31` on
+independent of product releases; issue #28 carries prospective product
+0.2.2 (issue #63 published product 0.1.31 (annotated tag `v0.1.31` on
 `9cdd8c1`); issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
 `9020558`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on
 `de6f8a7`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on

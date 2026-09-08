@@ -53,7 +53,7 @@ fn human_projection_is_one_stable_line() {
     assert_eq!(
         stdout_text(&output),
         "compatibility: model current 1.0.0 (0.1.0..1.0.0), ir current 0.1.0, \
-         protocol current 1.0.0\n"
+         protocol current 1.1.0\n"
     );
 }
 
@@ -64,7 +64,7 @@ fn the_projection_reports_exactly_the_three_families_in_order() {
     let value: serde_json::Value =
         serde_json::from_str(stdout_text(&output).trim()).expect("envelope parses");
     assert_eq!(value["status"], "valid");
-    assert_eq!(value["registryVersion"], "1.0.0");
+    assert_eq!(value["registryVersion"], "1.1.0");
     let families = value["families"].as_array().expect("families array");
     assert_eq!(families.len(), 3);
     assert_eq!(families[0]["family"], "model");
@@ -79,7 +79,9 @@ fn the_projection_reports_exactly_the_three_families_in_order() {
     assert_eq!(families[1]["current"], "0.1.0");
     assert_eq!(families[1]["migrations"].as_array().map(Vec::len), Some(0));
     assert_eq!(families[2]["family"], "protocol");
-    assert_eq!(families[2]["current"], "1.0.0");
-    assert_eq!(families[2]["versions"].as_array().map(Vec::len), Some(1));
+    assert_eq!(families[2]["current"], "1.1.0");
+    assert_eq!(families[2]["versions"].as_array().map(Vec::len), Some(2));
+    assert_eq!(families[2]["versions"][0]["version"], "1.0.0");
+    assert_eq!(families[2]["versions"][1]["version"], "1.1.0");
     assert_eq!(families[2]["aliases"][0]["alias"], "v1");
 }

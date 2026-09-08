@@ -64,6 +64,12 @@ Top-level keys, in wire (byte-sorted) order: `adapters`, `capabilities`,
   `target/profile/id/version/provider`; `support ∈ {full, partial,
   unsupported, unknown}`; `unknown`/`unsupported` never satisfies a required
   capability, `partial` only with the explicit accepted policy.
+  Since issue #28 the candidate supply for this snapshot may come from
+  live capability discovery over the target protocol: each entry's
+  version is then the capability definition version its support state
+  was read under, and each support state carries the provenance
+  (`declared`/`probed`/`verified`) recorded by discovery and surfaced in
+  the selection report.
 
 ## Digest domains
 

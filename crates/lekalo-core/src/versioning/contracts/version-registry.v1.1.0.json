@@ -1,0 +1,79 @@
+{
+  "registry": "dev.lekalo.version-registry",
+  "registryVersion": "1.1.0",
+  "families": {
+    "model": {
+      "current": "1.0.0",
+      "aliases": [
+        {
+          "alias": "v1",
+          "version": "1.0.0"
+        }
+      ],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "state": "deprecated",
+          "deprecatedSince": "1.0.0",
+          "retirementNotBefore": "2.0.0",
+          "classification": "additive",
+          "reason": "Initial Model contract; deprecated by Model 1.0.0 and still fully loadable, validatable, and migratable."
+        },
+        {
+          "version": "1.0.0",
+          "state": "supported",
+          "classification": "breaking",
+          "reason": "Model 1.0.0 tightened the module-ID grammar and introduced stable semantic IDs; the change is breaking for the Model family."
+        }
+      ],
+      "migrations": [
+        {
+          "id": "model-0.1.0-to-1.0.0@1",
+          "from": "0.1.0",
+          "to": "1.0.0",
+          "classification": "breaking",
+          "loss": [],
+          "regenerationImpact": "none",
+          "reason": "Schema-version-only rewrite permitted exactly when the Model 1.0.0 representability preconditions hold; every other byte is preserved."
+        }
+      ]
+    },
+    "ir": {
+      "current": "0.1.0",
+      "aliases": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "The accepted IR contract dev.lekalo.ir@0.1.0; the sole supported IR version."
+        }
+      ],
+      "migrations": []
+    },
+    "protocol": {
+      "current": "1.1.0",
+      "aliases": [
+        {
+          "alias": "v1",
+          "version": "1.0.0"
+        }
+      ],
+      "versions": [
+        {
+          "version": "1.0.0",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "The published target process protocol lekalo.target/v1 (dev.lekalo.protocol@1.0.0): process envelope, handshake, transport, and error classification for external target adapters (issue #27)."
+        },
+        {
+          "version": "1.1.0",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "The additive describe-response extension (dev.lekalo.target-protocol@1.1.0, issue #28): declared IR contract versions, named capability support states, and optional declared constraints, negotiated by the probe-and-upgrade describe handshake while the 1.0.0 document keeps its exact published meaning."
+        }
+      ],
+      "migrations": []
+    }
+  }
+}

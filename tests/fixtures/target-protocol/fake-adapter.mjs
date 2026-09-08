@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The hermetic fake target adapter (issue #27).
+ * The hermetic fake target adapter (issues #27 and #28).
  *
  * A dependency-free Node.js adapter implementing the full
  * `lekalo.target/v1` handshake: describe negotiation, every v1 operation,
@@ -36,6 +36,52 @@ const FAULT =
   faultArg !== -1 && process.argv[faultArg + 1]
     ? process.argv[faultArg + 1]
     : (process.env.LEKALO_FAKE_ADAPTER ?? "");
+
+/**
+ * The declared capability profile (issue #28): `legacy` (default) speaks
+ * exactly the 1.0.0 contract; the fluent variants additionally declare
+ * protocol 1.1.0 and answer a 1.1.0 describe with IR versions, named
+ * capability support states, and constraints. `unknown` declares unknown
+ * states, `incompatible` declares an IR set without the core IR version,
+ * and `partial` is the issue's example map.
+ */
+const variantArg = process.argv.indexOf("--lekalo-adapter-variant");
+const VARIANT =
+  variantArg !== -1 && process.argv[variantArg + 1]
+    ? process.argv[variantArg + 1]
+    : (process.env.LEKALO_ADAPTER_VARIANT ?? "legacy");
+
+const FLUENT = VARIANT !== "legacy";
+const CAPABILITY_PROFILES = {
+  fluent: {
+    "scan.symbols": "full",
+    "generate.zod": "full",
+    "generate.openapi": "partial",
+    "verify.scenarios": "full",
+    "generate.ui": "unsupported",
+  },
+  unknown: {
+    "scan.symbols": "unknown",
+    "generate.zod": "full",
+    "generate.openapi": "full",
+    "verify.scenarios": "full",
+    "generate.ui": "unknown",
+  },
+  incompatible: {
+    "scan.symbols": "full",
+    "generate.zod": "full",
+    "generate.openapi": "full",
+    "verify.scenarios": "full",
+    "generate.ui": "unsupported",
+  },
+  partial: {
+    "scan.symbols": "full",
+    "generate.zod": "partial",
+    "generate.openapi": "partial",
+    "verify.scenarios": "partial",
+    "generate.ui": "unsupported",
+  },
+};
 
 const ADAPTER = {
   id: "node-typescript",
@@ -82,10 +128,10 @@ function planId(writes) {
   return "plan-" + sha256(canonical(writes)).slice("sha256:".length);
 }
 
-function capabilities() {
-  return {
+function capabilities(requestedVersion) {
+  const declared = {
     adapter: ADAPTER,
-    protocol_versions: ["1.0.0"],
+    protocol_versions: FLUENT ? ["1.0.0", "1.1.0"] : ["1.0.0"],
     operations: [
       "describe",
       "scan",
@@ -103,6 +149,14 @@ function capabilities() {
     transports: ["stdin", "file"],
     progress: true,
   };
+  // The 1.1.0 extension members exist only on a 1.1.0 describe: a base
+  // response keeps the exact published 1.0.0 shape.
+  if (FLUENT && requestedVersion === "1.1.0") {
+    declared.ir_versions = VARIANT === "incompatible" ? ["0.2.0"] : ["0.1.0"];
+    declared.capabilities = CAPABILITY_PROFILES[VARIANT] ?? CAPABILITY_PROFILES.fluent;
+    declared.constraints = { max_entries: 10000 };
+  }
+  return declared;
 }
 
 function respond(request, payload) {
@@ -153,7 +207,7 @@ if (fault("hang")) {
 } else {
   switch (request.operation) {
     case "describe":
-      respond(request, { capabilities: capabilities() });
+      respond(request, { capabilities: capabilities(request.protocol_version) });
       break;
     case "scan":
       respond(request, {

@@ -64,20 +64,32 @@ function failAll(failures) {
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
 
-let schema;
-try {
-  const raw = read("../contracts/target-protocol.schema.v1.0.0.json");
-  if (duplicateKeys(raw).length) failEarly("schema-duplicate", "duplicate decoded schema key");
-  schema = JSON.parse(raw);
-} catch (error) {
-  failEarly("schema", String(error));
+const schemas = {
+  "1.0.0": JSON.parse(read("../contracts/target-protocol.schema.v1.0.0.json")),
+  "1.1.0": JSON.parse(read("../contracts/target-protocol.schema.v1.1.0.json")),
+};
+// Fixtures whose name carries the v1_1 marker live on the 1.1.0 contract;
+// every other fixture stays on the frozen published 1.0.0 document.
+const schemaFor = (name) => (name.includes("v1_1") ? schemas["1.1.0"] : schemas["1.0.0"]);
+const validators = Object.fromEntries(
+  Object.entries(schemas).map(([version, schema]) => [version, ajv.compile(schema)]),
+);
+// The extension members are additive: a 1.1.0 response carrying them must
+// be refused by the frozen 1.0.0 document, and the two documents must
+// still accept every legacy fixture.
+for (const name of ["describe-request.json", "describe-response.json"]) {
+  const legacy = JSON.parse(read(`../tests/fixtures/target-protocol/valid/${name}`));
+  if (!validators["1.0.0"](legacy)) failEarly("legacy-golden", `${name} must stay a 1.0.0 document`);
+  if (!validators["1.1.0"](legacy)) failEarly("additive-golden", `${name} must validate under 1.1.0`);
 }
-
-let validate;
-try {
-  validate = ajv.compile(schema);
-} catch (error) {
-  failEarly("schema-compile", String(error));
+const extensionGolden = JSON.parse(
+  read("../tests/fixtures/target-protocol/valid/describe-response-v1_1.json"),
+);
+if (!validators["1.1.0"](extensionGolden)) {
+  failEarly("extension-golden", "the 1.1.0 extension golden must validate under 1.1.0");
+}
+if (validators["1.0.0"](extensionGolden)) {
+  failEarly("extension-not-additive", "the frozen 1.0.0 document must refuse extension members");
 }
 
 const ROOT = "../tests/fixtures/target-protocol/";
@@ -89,11 +101,11 @@ for (const vector of JSON.parse(read(ROOT + "error-code-vectors.json"))) {
   response.error = {
     class: "invalid", code: vector.unit.repeat(vector.repeat), message: "owned synthetic error",
   };
-  if (validate(response) !== vector.valid) failEarly("error-code-parity", vector.name);
+  if (validators["1.0.0"](response) !== vector.valid) failEarly("error-code-parity", vector.name);
 }
 
 for (const field of ["path", "scope"]) {
-  const definition = schema.$defs[field === "path" ? "logicalPath" : "scope"];
+  const definition = schemas["1.0.0"].$defs[field === "path" ? "logicalPath" : "scope"];
   const check = ajv.compile(definition);
   for (const vector of JSON.parse(read(ROOT + "scope-grammar.json"))) {
     if (check(vector.value) !== vector[field]) failEarly("scope-parity", `${field}: ${vector.value}`);
@@ -200,8 +212,9 @@ for (const entry of readdirSync(new URL(ROOT, import.meta.url))) {
     }
     if (entry === "valid") {
       goldens += 1;
-      if (!validate(parsed)) {
-        failures.push({ case: caseName, detail: `schema: ${ajv.errorsText(validate.errors)}` });
+      const validator = validators[schemaFor(name).$id.endsWith("v1.1.0.json") ? "1.1.0" : "1.0.0"];
+      if (!validator(parsed)) {
+        failures.push({ case: caseName, detail: `schema: ${ajv.errorsText(validator.errors)}` });
         continue;
       }
       if (raw.endsWith("\n")) {
@@ -231,7 +244,7 @@ for (const entry of readdirSync(new URL(ROOT, import.meta.url))) {
       failures.push({ case: caseName, detail: `bad detail: ${JSON.stringify(detail)}` });
       continue;
     }
-    const rejected = !validate(parsed);
+    const rejected = !validators[schemaFor(name).$id.endsWith("v1.1.0.json") ? "1.1.0" : "1.0.0"](parsed);
     if (!rejected) schemaAcceptedContextualVectors += 1;
   }
 }
