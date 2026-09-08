@@ -381,7 +381,9 @@ impl Sandbox {
     #[cfg(target_os = "macos")]
     fn macos_command(&self, command: &transport::AdapterCommand) -> transport::AdapterCommand {
         let quoted = |p: &Path| serde_json::to_string(&p.to_string_lossy()).expect("string");
-        let mut profile = format!("(version 1)(deny default)(allow process-exec)(allow sysctl-read)(allow mach-lookup (global-name \"com.apple.system.logger\"))(allow file-read* (subpath \"/System\") (subpath \"/usr/lib\") (subpath \"/dev\") (subpath {}) (subpath {}))", quoted(&self.runtime), quoted(&self.project));
+        // dyld opens the filesystem root while resolving its runtime paths.
+        // This literal permits that directory alone, never its descendants.
+        let mut profile = format!("(version 1)(deny default)(allow process-exec)(allow sysctl-read)(allow mach-lookup (global-name \"com.apple.system.logger\"))(allow file-read* (literal \"/\") (subpath \"/System\") (subpath \"/usr/lib\") (subpath \"/dev\") (subpath {}) (subpath {}))", quoted(&self.runtime), quoted(&self.project));
         for root in &self.write_roots {
             profile.push_str(&format!("(allow file-write* (subpath {}))", quoted(root)));
         }
@@ -482,45 +484,6 @@ mod tests {
             ..Default::default()
         };
         let result = sandbox.run(&command, b"", &limits, false, None).unwrap();
-        #[cfg(target_os = "macos")]
-        if result.exit_code != 0 {
-            let staged = sandbox.command(&command).unwrap();
-            let canonical = sandbox.runtime.parent().unwrap();
-            let mut metadata = String::from("(allow file-read-metadata");
-            for ancestor in canonical.ancestors() {
-                metadata.push_str(&format!(
-                    " (literal {})",
-                    serde_json::to_string(&ancestor.to_string_lossy()).unwrap()
-                ));
-            }
-            metadata.push(')');
-            let map = format!(
-                "(allow file-map-executable (subpath {}) (subpath \"/System\") (subpath \"/usr/lib\"))",
-                serde_json::to_string(&canonical.join("runtime").to_string_lossy()).unwrap()
-            );
-            for variant_bits in 0..8 {
-                let mut wrapper = sandbox.macos_command(&staged);
-                if variant_bits & 1 != 0 {
-                    wrapper.args[1].push_str("(allow file-read* (literal \"/\"))");
-                }
-                if variant_bits & 2 != 0 {
-                    wrapper.args[1].push_str(&map);
-                }
-                if variant_bits & 4 != 0 {
-                    wrapper.args[1].push_str(&metadata);
-                }
-                let variant =
-                    transport::run_private(&wrapper, b"", &limits, &sandbox.project, None);
-                let evidence = variant.as_ref().map(|v| {
-                    (
-                        v.exit_code,
-                        String::from_utf8_lossy(&v.stdout),
-                        String::from_utf8_lossy(&v.stderr),
-                    )
-                });
-                eprintln!("private synthetic macOS variant bits={variant_bits} (root=1,map=2,metadata=4): {evidence:?}");
-            }
-        }
         assert_eq!(
             result.exit_code,
             0,

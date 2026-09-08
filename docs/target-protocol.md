@@ -122,7 +122,7 @@ promise is confinement of project data, not zero operating-system access.
 See Microsoft's [AppContainer launch guide](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer).
 
 Linux requires `/usr/bin/bwrap`: separate user/mount/PID/network namespaces,
-read-only system runtime roots, and staged writable mounts. The product does
+read-only system runtime roots and mount ancestors, and staged writable mounts. The product does
 not install it; CI provisions it explicitly. Hosts restricting unprivileged
 user namespaces through AppArmor also need an administrator-provided bwrap
 launcher profile. The [AppArmor bwrap policy](https://gitlab.com/apparmor/apparmor/-/blob/apparmor-4.1/profiles/apparmor/profiles/extras/bwrap-userns-restrict)
@@ -131,7 +131,10 @@ CI loads its dedicated variant into the ephemeral runner's kernel and removes
 it afterward; it neither installs persistent policy files nor disables the
 global namespace restriction. Core never changes host policy or retries with
 weaker isolation when the backend is denied. macOS requires
-`/usr/bin/sandbox-exec` with a deny-by-default profile. Projects inside an
+`/usr/bin/sandbox-exec` with a deny-by-default profile. The private view and
+all copied runtime paths use their canonical spelling. Its loader can read
+the exact filesystem root directory, without access to descendant paths;
+project reads remain confined to the private view. Projects inside an
 allowed system runtime tree are refused. Missing or unsupported confinement
 fails closed, with no ambient fallback. Linux/macOS behavioral qualification
 comes from the exact-candidate hosted gates, never from Windows tests.
