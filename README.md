@@ -367,6 +367,20 @@ v1.10.0). The contract, transport rules, and error taxonomy live in
 fake adapter and hermetic fixtures are under
 `tests/fixtures/target-protocol/`.
 
+## Adoption: `lekalo init --adopt`
+
+Issue #38 connects Lekalo to an existing repository without moving
+sources or generating extra code: bounded read-only detection with
+provenance and confidence (manifests, package managers, language and
+framework hints, workspace roots, source and test directories, OpenAPI
+files, existing OpenSpec/AI Factory/HLV layouts, native gate command
+proposals, installed target adapters, observed modules), the minimal
+canonical skeleton (`lekalo/project.yaml`), atomic no-overwrite writes
+with journal and rollback, an idempotent re-run, and an in-process
+load+validate gate. `--dry-run` prints every planned write without
+touching the tree. The contract and the closed `init.*` diagnostics live
+in [docs/adopt.md](docs/adopt.md) and
+[ADR-0028](docs/adr/0028-init-adopt.md).
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -375,8 +389,8 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #27 carries prospective product
-0.2.0 (issue #63 published product 0.1.31 (annotated tag `v0.1.31` on
+independent of product releases; issue #38 carries prospective product
+0.2.3 (issue #63 published product 0.1.31 (annotated tag `v0.1.31` on
 `9cdd8c1`); issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
 `9020558`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on
 `de6f8a7`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on

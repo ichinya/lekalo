@@ -250,7 +250,25 @@ enum Commands {
         #[arg(long, value_name = "PLAN_ID")]
         confirm: Option<String>,
     },
-    /// Inspect or clear the incremental cache of this project.
+    /// Adopt an existing repository: detection, a minimal canonical
+    /// skeleton, and the no-overwrite adoption plan (issue #38).
+    Init {
+        /// Adopt the existing repository at the adoption root.
+        #[arg(long)]
+        adopt: bool,
+        /// Explicit target selection; written to `lekalo/targets/`.
+        #[arg(long, value_name = "TARGET")]
+        target: Option<String>,
+        /// Explicit canonical project id when derivation is ambiguous.
+        #[arg(long, value_name = "ID")]
+        project_id: Option<String>,
+        /// Adoption root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Print the full adoption plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
     Cache {
         #[command(subcommand)]
         command: CacheCommands,
@@ -483,6 +501,13 @@ fn main() -> ExitCode {
                 confirm,
             } => run_generate(project, check, clean, dry_run, confirm),
             Commands::Cache { command } => run_cache(command),
+            Commands::Init {
+                adopt,
+                target,
+                project_id,
+                project,
+                dry_run,
+            } => run_init(adopt, target, project_id, project, dry_run),
         },
         Err(error) => match error.kind() {
             ErrorKind::DisplayHelp => {
@@ -809,6 +834,37 @@ fn run_lock(project: Option<String>, check: bool) -> DomainResult {
         ),
         Err(failure) => DomainResult::from(&failure),
     }
+}
+
+/// Run `lekalo init --adopt`: the thin handoff to the core adoption
+/// service. Greenfield `init` is not part of issue #38 and stays the
+/// stable usage failure until its own issue lands.
+fn run_init(
+    adopt: bool,
+    target: Option<String>,
+    project_id: Option<String>,
+    project: Option<String>,
+    dry_run: bool,
+) -> DomainResult {
+    if !adopt {
+        return DomainResult::usage_error();
+    }
+    if let Some(target) = target.as_deref() {
+        if !lekalo_core::init::detect::valid_target_id(target) {
+            return DomainResult::usage_error();
+        }
+    }
+    if let Some(project_id) = project_id.as_deref() {
+        if !lekalo_core::init::valid_project_id(project_id) {
+            return DomainResult::usage_error();
+        }
+    }
+    lekalo_core::init::adopt(&lekalo_core::init::AdoptRequest {
+        project,
+        target,
+        project_id,
+        dry_run,
+    })
 }
 
 /// Run `lekalo update`: `--dry-run` previews the plan, `--apply PLAN_ID`

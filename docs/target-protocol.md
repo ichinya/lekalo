@@ -3,7 +3,7 @@
 `lekalo.target/v1`, contract 1.0.0, connects core to separate executables.
 Adapters may be written in any language; core loads no native plugin ABI.
 The operations are describe, scan, bind, validate, generate, verify,
-plan-clean and clean. Product 0.2.0, Model 1.0.0, IR 0.1.0 and diagnostic
+plan-clean and clean. Product 0.2.3, Model 1.0.0, IR 0.1.0 and diagnostic
 registry 1.10.0 remain independent version lines.
 
 ## Requests and identities

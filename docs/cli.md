@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.2.0. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.2.3. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -17,6 +17,7 @@ with filesystem access and it never writes.
 
 ```text
 lekalo --version
+lekalo init --adopt [--target TARGET] [--project-id ID] [--project DIR] [--dry-run]
 lekalo load [--project DIR] [--spans] [--ir]
 lekalo lock [--check] [--offline] [--project DIR]
 lekalo update --dry-run [--offline] [--project DIR]
@@ -39,7 +40,7 @@ lekalo context SYMBOL --budget TOKENS [--spans] [--project DIR]
 lekalo context --changed SYMBOLS --budget TOKENS [--spans] [--project DIR]
 ```
 
-`--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
+`init --adopt`, `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
 `validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, and
 `context` are implemented; none remains a recognized stub. `SYMBOL` is an
 opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic
@@ -53,6 +54,19 @@ and impact engines resolve them through the kind-qualified node identity.
 `--json` is global and may appear before or after a subcommand. Both
 `lekalo --json --version` and `lekalo --version --json` select JSON output.
 Root and per-command help remain clap help text rather than a domain failure.
+
+### `lekalo init --adopt`
+
+`init --adopt` connects Lekalo to an existing repository (issue #38):
+read-only detection with provenance and confidence, the minimal canonical
+skeleton (`lekalo/project.yaml`, plus `lekalo/targets/<id>.yaml` only for
+an explicit `--target`), atomic no-overwrite writes with journal and
+rollback, and an in-process load+validate gate over the result. `--dry-run`
+prints the full plan and writes nothing; a repeated init is idempotent.
+Observed modules stay observations in the receipt — the Model contract has
+no module-mode field, so none is emitted. `init` without `--adopt` is the
+stable usage failure until greenfield creation lands. The normative
+contract is [adopt.md](adopt.md) and [ADR-0028](adr/0028-init-adopt.md).
 
 ### `lekalo load`
 
@@ -229,14 +243,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.2.0"
+  "version": "0.2.3"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.2.0`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.2.3`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
