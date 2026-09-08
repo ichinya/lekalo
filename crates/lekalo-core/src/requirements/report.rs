@@ -470,15 +470,15 @@ impl Report {
         Ok(bytes)
     }
 
-    /// Project this report into the typed #22 neutral trace manifest,
-    /// re-validated by the accepted trace validator. Pure and
-    /// read-only.
-    /// The canonical manifest digest: `sha256:` over the canonical
+    /// The bare 64-character lowercase SHA-256 hex digest of the canonical
     /// report bytes, or the refusal set.
     pub fn digest(&self) -> Result<String, DiagnosticSet> {
         Ok(super::sha256_hex(self.canonical_bytes()?.as_bytes()))
     }
 
+    /// Project this report into the typed #22 neutral trace manifest,
+    /// re-validated by the accepted trace validator. Pure and
+    /// read-only.
     pub fn trace_manifest(&self) -> Result<crate::trace::TraceManifest, DiagnosticSet> {
         super::trace::validated_manifest(self)
     }

@@ -254,7 +254,8 @@ reported explicitly.
 
 Canonical attachment and report bytes are compact UTF-8 JSON with
 byte-sorted object keys and canonically sorted collections (no trailing
-LF); the report digest is `sha256:` over exactly those bytes. Bounds
+LF); `reportDigest` is the bare 64-character lowercase SHA-256 hex digest
+over exactly those bytes. Bounds
 (owner-approved v1, ADR-0026): 8 providers, 4096 references, 256
 capabilities across accepted and active specs per provider, 10000 distinct
 requirement ids per provider (including removed/disputed ids), 10000
