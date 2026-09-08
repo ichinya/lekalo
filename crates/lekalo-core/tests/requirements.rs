@@ -323,6 +323,59 @@ fn native_removal_bullets_deny_and_keep_impact_after_archive() {
 }
 
 #[test]
+fn explicit_removal_overrides_equal_body_hints_but_not_conflicts() {
+    for survivors in [1, 2] {
+        let project = temp_project();
+        let path = project.root.join("openspec/specs/planner/spec.md");
+        let accepted = fs::read_to_string(&path).unwrap();
+        let body = accepted
+            .split("### Requirement: Focus task")
+            .nth(1)
+            .unwrap()
+            .split("### Requirement: Restore focus")
+            .next()
+            .unwrap();
+        let mut text = accepted.clone();
+        for i in 0..survivors {
+            text.push_str(&format!("\n### Requirement: Unrelated {i}{body}"));
+        }
+        fs::write(path, text).unwrap();
+        delta(
+            &project,
+            "a-remove",
+            "## REMOVED Requirements\n- `### Requirement: Focus task`\n",
+        );
+        let json = attachment_json(|_| {});
+        let before = snapshot(&project.root);
+        let removed = resolve_temp(&project, &json);
+        assert_eq!(focus(&removed).status, "missing");
+        assert!(focus(&removed).renamed_to.is_none());
+        assert!(focus(&removed).rename_candidates.is_empty());
+        assert!(removed
+            .report
+            .impact
+            .iter()
+            .any(|row| { row.requirement == "planner.REQ-focus-task" && row.change == "removed" }));
+        assert!(matches!(removed.verdict, ResolutionVerdict::Denied(_)));
+        assert_eq!(snapshot(&project.root), before);
+
+        delta(
+            &project,
+            "b-conflict",
+            "## MODIFIED Requirements\n### Requirement: Focus task\nSHALL conflict.\n",
+        );
+        let before = snapshot(&project.root);
+        let conflict = resolve_temp(&project, &json);
+        assert_eq!(focus(&conflict).status, "conflict");
+        assert!(conflict.report.impact.iter().any(|row| {
+            row.requirement == "planner.REQ-focus-task" && row.change == "conflict"
+        }));
+        assert!(matches!(conflict.verdict, ResolutionVerdict::Denied(_)));
+        assert_eq!(snapshot(&project.root), before);
+    }
+}
+
+#[test]
 fn native_rename_with_optional_modification_preserves_archive_traceability() {
     for modified in [false, true] {
         let project = temp_project();

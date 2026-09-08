@@ -101,6 +101,8 @@ pub(crate) struct Snapshot {
     pub conflicts: Vec<ConflictRow>,
     /// Explicit active rename evidence, old id to new id.
     pub renames: BTreeMap<String, String>,
+    /// Requirement ids successfully removed by explicit active operations.
+    pub removals: BTreeSet<String>,
 }
 
 impl Snapshot {
@@ -113,6 +115,7 @@ impl Snapshot {
             entries: Vec::new(),
             conflicts: Vec::new(),
             renames: BTreeMap::new(),
+            removals: BTreeSet::new(),
         }
     }
 }
@@ -165,6 +168,7 @@ struct State {
     owners: BTreeMap<String, Key>,
     touched: BTreeMap<Key, String>,
     renames: BTreeMap<String, String>,
+    removals: BTreeSet<String>,
 }
 
 impl State {
@@ -269,6 +273,7 @@ impl State {
                 (Section::Removed, false) => self.conflict(&key, "removed-missing"),
                 (Section::Removed, true) => {
                     self.effective.remove(&key);
+                    self.removals.insert(block.id());
                 }
                 (Section::Added | Section::Modified, _) => {
                     self.effective.insert(key, block.entry(path, Some(change)));
@@ -393,6 +398,7 @@ fn load(fs: &crate::project_fs::Fs, decl: &ProviderDecl) -> Result<Snapshot, Tre
         entries,
         conflicts: state.conflicts.into_iter().collect(),
         renames: state.renames,
+        removals: state.removals,
     })
 }
 

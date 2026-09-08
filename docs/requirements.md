@@ -199,6 +199,9 @@ Impact labels `rename-candidate` and `ambiguous-rename` distinguish one
 equal-body hint from several. Equal text alone cannot prove identity:
 `renamedTo` remains null for either case, and the missing-reference gate
 denies. An explicit rename plus modification still reports the rename.
+An explicit active removal reports `removed` and suppresses equal-body
+rename hints; unrelated surviving requirements cannot override that evidence.
+Conflicts still take precedence over removal evidence.
 
 ## Archiving is traceability-neutral
 

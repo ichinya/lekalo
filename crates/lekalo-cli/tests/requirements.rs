@@ -575,6 +575,85 @@ fn native_repeated_sections_deny_and_distinct_sections_resolve() {
 }
 
 #[test]
+fn explicit_removal_report_and_query_override_body_similarity() {
+    for (operation, survivors, expected) in [
+        ("remove", 0, "removed"),
+        ("remove", 1, "removed"),
+        ("remove", 2, "removed"),
+        ("rename", 1, "renamed"),
+        ("absent", 1, "rename-candidate"),
+        ("absent", 2, "ambiguous-rename"),
+    ] {
+        let temp = scratch();
+        let dir = temp.path();
+        let body = "The planner SHALL retain the requested action.\n";
+        let mut accepted = "## Requirements\n".to_owned();
+        if operation != "absent" {
+            accepted.push_str(&format!("### Requirement: Old\n{body}"));
+        }
+        for i in 0..survivors {
+            accepted.push_str(&format!("\n### Requirement: Unrelated {i}\n{body}"));
+        }
+        fs::write(dir.join("openspec/specs/planner/spec.md"), accepted).unwrap();
+        let delta = match operation {
+            "remove" => Some("## REMOVED Requirements\n- `### Requirement: Old`\n"),
+            "rename" => Some("## RENAMED Requirements\n- FROM: `### Requirement: Old`\n- TO: `### Requirement: Renamed`\n"),
+            _ => None,
+        };
+        if let Some(delta) = delta {
+            let path = dir.join("openspec/changes/operation/specs/planner");
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("spec.md"), delta).unwrap();
+        }
+        let mut value = attachment(dir);
+        value["references"] = json!([{
+            "symbol": "planner.focus_task", "relation": "implements", "source": "openspec",
+            "requirement": "planner.REQ-old", "revision": digest(body.as_bytes())
+        }]);
+        save_attachment(dir, &value);
+        let before = tree_bytes(dir);
+        let report = requirements_json(dir, "report", 0);
+        let reference = &report["report"]["references"][0];
+        assert_eq!(reference["status"], "missing");
+        assert_eq!(
+            reference["renamedTo"],
+            if operation == "rename" {
+                json!("planner.REQ-renamed")
+            } else {
+                Value::Null
+            }
+        );
+        assert_eq!(
+            reference["renameCandidates"].as_array().unwrap().len(),
+            if operation == "absent" { survivors } else { 0 }
+        );
+        assert_eq!(report["report"]["impact"][0]["change"], expected);
+        let output = lekalo_in(
+            dir,
+            &[
+                "--json",
+                "requirements",
+                "query",
+                "requirements.attachment.json",
+                "impact",
+                "--project",
+                ".",
+            ],
+        );
+        assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
+        assert!(output.stderr.is_empty());
+        let query: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(query["requirements"]["impact"], report["report"]["impact"]);
+        assert_eq!(requirements_json(dir, "validate", 3)["status"], "denied");
+        assert_eq!(
+            tree_bytes(dir),
+            before,
+            "{operation}/{survivors}: no writes"
+        );
+    }
+}
+
+#[test]
 fn native_plan_archive_preserves_confirmed_trace() {
     for vector in native_vectors()["vectors"]
         .as_array()

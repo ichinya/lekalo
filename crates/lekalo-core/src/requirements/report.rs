@@ -224,6 +224,11 @@ pub(crate) fn build(
         })
         .collect();
 
+    let removed: std::collections::BTreeSet<(&str, &str)> = snapshots
+        .iter()
+        .flat_map(|s| s.removals.iter().map(|id| (s.source.as_str(), id.as_str())))
+        .collect();
+
     // Reference resolution, in the attachment's canonical order.
     let mut references: Vec<ReferenceRow> = Vec::new();
     for link in attachment.references() {
@@ -247,7 +252,7 @@ pub(crate) fn build(
             renamed_to = explicit
                 .get(&(source, requirement))
                 .map(|id| (*id).to_owned());
-            if renamed_to.is_none() {
+            if renamed_to.is_none() && !removed.contains(&(source, requirement)) {
                 rename_candidates = digests
                     .get(&(source, link.revision.as_str()))
                     .into_iter()
