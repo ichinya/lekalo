@@ -352,3 +352,61 @@ fn successful_refresh_and_failed_refresh_both_revoke_the_previous_plan() {
     assert!(c.plan_binding().is_none());
     p.unchanged();
 }
+
+#[test]
+fn cancellable_refresh_revokes_authority_on_success_failure_and_cancellation() {
+    use std::sync::atomic::AtomicBool;
+
+    for mode in ["cancelled", "failed-command", "successful", "none-flag"] {
+        let p = Project::new();
+        let cmd = p.command("normal");
+        let mut c = client();
+        c.describe(&cmd, p.root()).unwrap();
+        let id = plan(&mut c, &cmd, &p);
+        let flag = AtomicBool::new(mode == "cancelled");
+        let missing = AdapterCommand {
+            program: "lekalo-nonexistent-adapter".into(),
+            args: vec![],
+        };
+        let refreshed = c.describe_with_cancel(
+            if mode == "failed-command" {
+                &missing
+            } else {
+                &cmd
+            },
+            p.root(),
+            if mode == "none-flag" {
+                None
+            } else {
+                Some(&flag)
+            },
+        );
+        let successful = matches!(mode, "successful" | "none-flag");
+        assert_eq!(refreshed.is_ok(), successful, "{mode}");
+        assert_eq!(c.describe_outcome().is_some(), successful, "{mode}");
+        assert!(c.plan_binding().is_none(), "{mode}");
+        assert!(call(
+            &mut c,
+            &cmd,
+            &p,
+            request(Operation::Generate, Some(false), Some(&id)),
+        )
+        .is_err());
+        assert!(!p.root().join("out").exists(), "{mode}");
+        p.unchanged();
+
+        // Revocation must still permit a fresh successful handshake and plan.
+        c.describe_with_cancel(&cmd, p.root(), None).unwrap();
+        let fresh_id = plan(&mut c, &cmd, &p);
+        call(
+            &mut c,
+            &cmd,
+            &p,
+            request(Operation::Generate, Some(false), Some(&fresh_id)),
+        )
+        .unwrap();
+        assert!(p.root().join("out/file.txt").is_file(), "{mode}");
+        assert!(c.plan_binding().is_none());
+        p.unchanged();
+    }
+}

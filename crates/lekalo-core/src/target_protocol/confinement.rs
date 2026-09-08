@@ -361,6 +361,12 @@ impl Sandbox {
         limits: &transport::TransportLimits,
         cancel: Option<&AtomicBool>,
     ) -> Result<transport::TransportSuccess, transport::TransportFailure> {
+        let wrapper = self.macos_command(command);
+        transport::run_private(&wrapper, request, limits, &self.project, cancel)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn macos_command(&self, command: &transport::AdapterCommand) -> transport::AdapterCommand {
         let quoted = |p: &Path| serde_json::to_string(&p.to_string_lossy()).expect("string");
         let mut profile = format!("(version 1)(deny default)(allow process-exec)(allow sysctl-read)(allow mach-lookup (global-name \"com.apple.system.logger\"))(allow file-read* (subpath \"/System\") (subpath \"/usr/lib\") (subpath \"/dev\") (subpath {}) (subpath {}))", quoted(&self.runtime), quoted(&self.project));
         for root in &self.write_roots {
@@ -372,11 +378,10 @@ impl Sandbox {
             command.program.to_string_lossy().into_owned(),
         ];
         args.extend(command.args.clone());
-        let wrapper = transport::AdapterCommand {
+        transport::AdapterCommand {
             program: "/usr/bin/sandbox-exec".into(),
             args,
-        };
-        transport::run_private(&wrapper, request, limits, &self.project, cancel)
+        }
     }
 }
 
@@ -464,6 +469,37 @@ mod tests {
             ..Default::default()
         };
         let result = sandbox.run(&command, b"", &limits, false, None).unwrap();
+        #[cfg(target_os = "macos")]
+        if result.exit_code != 0 {
+            let staged = sandbox.command(&command).unwrap();
+            let canonical = std::fs::canonicalize(sandbox.owned.path()).unwrap();
+            for (name, extra, canonicalize) in [
+                ("canonical-only", "", true),
+                (
+                    "root-metadata",
+                    "(allow file-read-metadata (literal \"/\"))",
+                    true,
+                ),
+                ("root-read", "(allow file-read* (literal \"/\"))", true),
+                (
+                    "root-read-original-paths",
+                    "(allow file-read* (literal \"/\"))",
+                    false,
+                ),
+            ] {
+                let mut wrapper = sandbox.macos_command(&staged);
+                if canonicalize {
+                    wrapper.args[1] = wrapper.args[1].replace(
+                        sandbox.owned.path().to_str().unwrap(),
+                        canonical.to_str().unwrap(),
+                    );
+                }
+                wrapper.args[1].push_str(extra);
+                let variant =
+                    transport::run_private(&wrapper, b"", &limits, &sandbox.project, None);
+                eprintln!("private synthetic macOS variant {name}: {variant:?}");
+            }
+        }
         assert_eq!(
             result.exit_code,
             0,
@@ -471,6 +507,35 @@ mod tests {
             String::from_utf8_lossy(&result.stderr)
         );
         assert_eq!(result.stdout, b"lekalo-confined-node-ok");
+
+        // Loading a copied module and reading the request exercise runtime
+        // paths that the inline startup control above does not touch.
+        let sandbox = Sandbox::new(root.path(), &[], &[], false).unwrap();
+        let command = transport::AdapterCommand {
+            program: "node".into(),
+            args: vec![Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/target-protocol/fake-adapter.mjs")
+                .to_string_lossy()
+                .into_owned()],
+        };
+        let request = include_bytes!(
+            "../../../../tests/fixtures/target-protocol/valid/describe-request.json"
+        );
+        let limits = transport::TransportLimits {
+            max_output_bytes: 8_192,
+            ..limits
+        };
+        let result = sandbox
+            .run(&command, request, &limits, false, None)
+            .unwrap();
+        assert_eq!(
+            result.exit_code,
+            0,
+            "private synthetic adapter evidence: stderr={:?}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let response: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(response["operation"], "describe");
     }
 
     #[test]

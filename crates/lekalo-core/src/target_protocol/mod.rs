@@ -218,9 +218,6 @@ impl TargetClient {
         command: &AdapterCommand,
         cwd: &std::path::Path,
     ) -> Result<&DescribeOutcome, TargetFailure> {
-        // Refresh is a revocation boundary, including every failed refresh.
-        self.described = None;
-        self.binding = None;
         self.describe_with_cancel(command, cwd, None)
     }
 
@@ -231,6 +228,10 @@ impl TargetClient {
         cwd: &std::path::Path,
         cancel: Option<&AtomicBool>,
     ) -> Result<&DescribeOutcome, TargetFailure> {
+        // Every public refresh path revokes authority before any fallible work,
+        // including an already-cancelled attempt and command/setup failures.
+        self.described = None;
+        self.binding = None;
         let protocol_version = published_version()?;
         let request_id = wire::request_id(&base_envelope(
             Operation::Describe,

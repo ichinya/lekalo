@@ -134,6 +134,17 @@ jobs:
         continue-on-error: true
         timeout-minutes: 3
         run: cargo test -p lekalo-core --lib unix_confined_runtime_qualification --locked -- --nocapture
+      - name: Inspect bounded Linux namespace denial evidence
+        if: runner.os == 'Linux'
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          sysctl kernel.apparmor_restrict_unprivileged_userns
+          /usr/bin/bwrap --version
+          sudo journalctl -k --since '5 minutes ago' --no-pager --grep 'apparmor=.*comm="bwrap"' | tail -n 12
+          for profile in /etc/apparmor.d/bwrap /etc/apparmor.d/bwrap-userns-restrict; do
+            if test -f "$profile"; then head -n 90 "$profile"; fi
+          done
       - run: cargo test --workspace --locked --no-fail-fast
       - name: Qualify bounded Unix process and request-file lifecycle
         if: runner.os != 'Windows'
