@@ -102,9 +102,15 @@ verification. Snapshots include empty directories and reject links/special
 entries. The scoped private view is bounded to 4096 entries and 64 MiB of
 copied input, with a 64-directory depth limit and bounded directory enumeration. Unknown bytes never prove equality.
 
-Apply can write only its staged output areas. After the process tree exits,
+Apply writes only inside its private staged view. After the process tree exits,
 core verifies the whole staged view, the exact echoed plan and output
 hashes, then rechecks real inputs and before-state before publishing.
+Exact file scopes support creation, replacement and deletion, including files
+at the project root. Linux grants their parent directory inside the private
+stage because unlink changes a directory entry; an individual writable file
+bind mount cannot provide that authority. This grants no additional real
+project access or readable input bytes, and changes to undeclared staged
+siblings or protected inputs still fail whole-stage verification.
 Undeclared writes, malformed replies, missing echoes and adapter errors
 publish nothing. Atomic replacements do not modify hard-linked targets in
 place. Ordinary publication I/O failures attempt rollback and explicitly

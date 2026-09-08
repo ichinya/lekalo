@@ -13,6 +13,8 @@ const file = arg('--lekalo-request-file');
 const req = JSON.parse(fs.readFileSync(file ?? 0, 'utf8'));
 const res = { protocol:'lekalo.target/v1', protocol_version:'1.0.0', operation:req.operation, request_id:req.request_id, status:'ok', evidence:{adapter} };
 const caps = { adapter, protocol_versions:['1.0.0'], operations:['describe','scan','bind','validate','verify','generate','plan-clean','clean'], transports:['stdin','file'], targets:['test'], profiles:['default','other'], read_scopes:['.lekalo/ir/**'], write_scopes:['out/**'], progress:false };
+const output = arg('--output') ?? 'out/file.txt';
+if (arg('--write-scopes')) caps.write_scopes = arg('--write-scopes').split(',');
 function attempt(fn) { try { fn(); return 'allowed'; } catch { return 'denied'; } }
 function put(path, content='forbidden') { fs.mkdirSync(dirname(path),{recursive:true}); fs.writeFileSync(path,content); }
 if (mode === 'hang' && req.operation !== 'describe') setTimeout(()=>process.exit(),3000);
@@ -57,7 +59,7 @@ else if (mode === 'descendant' && req.operation !== 'describe') {
     res.result={ok:true,findings:[]};
   } else if (req.operation === 'bind') res.result={bindings:[{module:'test',target:'test',profile:'default'}]};
   else {
-    const path='out/file.txt';
+    const path=output;
     const cleaning=req.operation==='clean'||req.operation==='plan-clean';
     const action=cleaning?'delete':mode==='replace'?'replace':'create';
     const writes=[{path,action,...(cleaning?{}:{sha256:digest('generated')})}];
@@ -68,6 +70,8 @@ else if (mode === 'descendant' && req.operation !== 'describe') {
       if (cleaning) fs.unlinkSync(path); else put(path,'generated');
       if (mode==='outside-apply') put('other/hidden.txt');
       if (mode==='extra-write'||mode==='apply-error') put('out/undeclared.txt');
+      if (mode==='sibling-write') put(join(dirname(path),'undeclared.txt'));
+      if (mode==='input-write') put(req.ir_path);
       if (mode==='no-echo') delete res.evidence.plan_id;
       if (mode==='apply-error') {
         res.status='error'; delete res.writes;

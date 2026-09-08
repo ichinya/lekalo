@@ -644,10 +644,13 @@ fn timeout_crash_and_garbage_classify_as_infrastructure() {
 
     let sandbox = Sandbox::new("crash");
     let command = faulted_command("crash");
+    // Crash/JSON classification does not impose the deliberate hang's short
+    // startup deadline; use the same bounded budget as normal exchanges.
+    let mut client = TargetClient::new(test_limits());
     let error = client
         .describe(&command, &sandbox.dir)
         .expect_err("crashed");
-    assert!(matches!(error, TargetFailure::Crash { .. }));
+    assert!(matches!(error, TargetFailure::Crash { .. }), "{error:?}");
     assert_eq!(
         error.rule(),
         ("target.crash", lekalo_core::Status::Unavailable)

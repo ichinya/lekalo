@@ -283,6 +283,145 @@ fn create_replace_and_delete_obey_before_state_and_preserve_existing_data() {
 }
 
 #[test]
+fn exact_file_scopes_create_replace_and_clean_through_the_confined_client() {
+    for (path, scopes) in [
+        ("out/file.txt", "out/file.txt"),
+        ("file.txt", "file.txt"),
+        ("out/file.txt", "out/**"), // Recursive positive control.
+        ("out/file.txt", "out/**,out/file.txt"),
+        ("out/file.txt", "out/file.txt,out/**"),
+        ("out/file.txt", "out/file.txt,out/other.txt"),
+        ("out/nested/file.txt", "out/nested/file.txt,out/**"),
+    ] {
+        for existing in [false, true] {
+            let p = Project::new();
+            let output = p.root().join(path);
+            if existing {
+                std::fs::create_dir_all(output.parent().unwrap()).unwrap();
+                std::fs::write(&output, b"existing output").unwrap();
+            }
+            let mut cmd = p.command(if existing { "replace" } else { "normal" });
+            cmd.args.extend([
+                "--output".into(),
+                path.into(),
+                "--write-scopes".into(),
+                scopes.into(),
+            ]);
+            let mut c = client();
+            c.describe(&cmd, p.root()).unwrap();
+            let id = plan(&mut c, &cmd, &p);
+            assert_eq!(output.exists(), existing, "planning must not write");
+            if existing {
+                assert_eq!(std::fs::read(&output).unwrap(), b"existing output");
+            }
+            call(
+                &mut c,
+                &cmd,
+                &p,
+                request(Operation::Generate, Some(false), Some(&id)),
+            )
+            .unwrap_or_else(|error| panic!("generate {path} {scopes} {existing}: {error:?}"));
+            assert_eq!(std::fs::read(&output).unwrap(), b"generated");
+            let id = call(&mut c, &cmd, &p, request(Operation::PlanClean, None, None))
+                .unwrap()
+                .plan_id
+                .unwrap();
+            assert_eq!(std::fs::read(&output).unwrap(), b"generated");
+            call(&mut c, &cmd, &p, request(Operation::Clean, None, Some(&id)))
+                .unwrap_or_else(|error| panic!("clean {path} {scopes} {existing}: {error:?}"));
+            assert!(!output.exists());
+            assert!(c.plan_binding().is_none());
+            assert!(matches!(
+                call(&mut c, &cmd, &p, request(Operation::Clean, None, Some(&id))),
+                Err(TargetFailure::RequestInvalid { detail: "plan-id" })
+            ));
+            p.unchanged();
+        }
+    }
+}
+
+#[test]
+fn exact_file_scope_parent_access_never_publishes_undeclared_changes() {
+    for (path, mode) in [
+        ("out/file.txt", "sibling-write"),
+        ("file.txt", "sibling-write"),
+        ("file.txt", "input-write"),
+    ] {
+        for existing in [false, true] {
+            let p = Project::new();
+            let output = p.root().join(path);
+            if existing {
+                std::fs::create_dir_all(output.parent().unwrap()).unwrap();
+                std::fs::write(&output, b"existing output").unwrap();
+            }
+            let sibling = output.parent().unwrap().join("undeclared.txt");
+            std::fs::create_dir_all(sibling.parent().unwrap()).unwrap();
+            std::fs::write(&sibling, b"preserved sibling").unwrap();
+            let mut cmd = p.command(mode);
+            cmd.args.extend([
+                "--output".into(),
+                path.into(),
+                "--write-scopes".into(),
+                path.into(),
+            ]);
+            let mut c = client();
+            c.describe(&cmd, p.root()).unwrap();
+            let id = if existing {
+                call(&mut c, &cmd, &p, request(Operation::PlanClean, None, None))
+                    .unwrap()
+                    .plan_id
+                    .unwrap()
+            } else {
+                plan(&mut c, &cmd, &p)
+            };
+            let req = if existing {
+                request(Operation::Clean, None, Some(&id))
+            } else {
+                request(Operation::Generate, Some(false), Some(&id))
+            };
+            let error = call(&mut c, &cmd, &p, req).unwrap_err();
+            // Linux must execute the staged sibling mutation, then reject it
+            // through whole-stage verification. Other backends may deny it
+            // earlier with their narrower existing-file grants.
+            if cfg!(target_os = "linux") {
+                assert!(
+                    matches!(
+                        error,
+                        TargetFailure::PlanMismatch {
+                            detail: "undeclared",
+                            ..
+                        }
+                    ),
+                    "{path} {mode} {existing}: {error:?}"
+                );
+            } else {
+                assert!(
+                    matches!(
+                        error,
+                        TargetFailure::PlanMismatch {
+                            detail: "undeclared",
+                            ..
+                        } | TargetFailure::Crash { .. }
+                    ),
+                    "{path} {mode} {existing}: {error:?}"
+                );
+            }
+            assert!(c.plan_binding().is_none());
+            assert_eq!(output.exists(), existing);
+            if existing {
+                assert_eq!(std::fs::read(&output).unwrap(), b"existing output");
+            }
+            assert_eq!(std::fs::read(&sibling).unwrap(), b"preserved sibling");
+            assert_eq!(
+                std::fs::read(p.root().join(".lekalo/ir/input.json")).unwrap(),
+                b"input"
+            );
+            p.unchanged();
+        }
+    }
+}
+
+#[test]
 fn oversized_file_refuses_before_dry_run_and_directories_remain_intact() {
     let p = Project::new();
     let cmd = p.command("mutate-dry");
