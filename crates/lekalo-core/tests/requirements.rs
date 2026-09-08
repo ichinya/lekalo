@@ -47,6 +47,28 @@ fn fixture_attachment() -> RequirementsAttachment {
     RequirementsAttachment::parse(&bytes).expect("fixture attachment parses")
 }
 
+#[test]
+fn project_id_vectors_match_both_production_wire_entrypoints() {
+    let vectors: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/requirements/project-id-vectors.json"
+    ))
+    .unwrap();
+    for vector in vectors.as_array().unwrap() {
+        let json = attachment_json(|j| j["projectId"] = vector["id"].clone());
+        let valid = vector["valid"].as_bool().unwrap();
+        assert_eq!(
+            RequirementsAttachment::from_value(&json).is_ok(),
+            valid,
+            "{vector}"
+        );
+        assert_eq!(
+            RequirementsAttachment::parse(&serde_json::to_vec(&json).unwrap()).is_ok(),
+            valid,
+            "{vector}"
+        );
+    }
+}
+
 /// Resolve the fixture attachment from the committed fixture tree.
 fn resolve_fixture() -> lekalo_core::requirements::Resolution {
     let attachment = fixture_attachment();

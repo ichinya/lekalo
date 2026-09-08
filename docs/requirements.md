@@ -37,6 +37,11 @@ The closed top-level members are `schemaVersion`, `identity`, `projectId`,
 `modelRef` (exact Model version + SHA-256 over the canonical Model payload
 bytes), `providers`, and `references`.
 
+`projectId` uses the accepted Model project grammar: one lowercase segment
+matching `^[a-z][a-z0-9_]{0,62}$`, excluding `lekalo` and `dev`. One- and
+two-character project IDs are valid; the attachment still pins the exact
+canonical Model digest.
+
 - `providers[]` — at most 8. Each declares one `source` namespace id
   (`^[a-z][a-z0-9-]{0,31}$`), one `kind` (v1 ships exactly the on-disk
   `openspec` provider), and one project-relative logical `root`. Source ids
@@ -79,6 +84,11 @@ sections `## ADDED Requirements`, `## MODIFIED Requirements`,
 `## Purpose` are allowed, but a delta requirement without a recognized
 operation fails closed. Backtick and tilde fences mask structural headings;
 all example content and later requirement prose remain in the revision.
+Accepted specs expose requirements only inside the first unfenced
+`## Requirements` section (case-insensitive), ending at the next unfenced
+H2. Requirement headings before it, in appendices, in later Requirements
+sections, or in a document without that section do not enter the accepted
+catalog. Fenced headings inside a requirement remain body bytes.
 Changes apply in ascending change-directory order. Within each change the
 native order is RENAMED, REMOVED, MODIFIED, ADDED:
 
@@ -201,6 +211,13 @@ The requirements report uses recursively byte-sorted object keys. The
 published neutral trace contract retains its own fixed field order. The
 Node gate checks those formats independently and exercises duplicate-key,
 unsorted-key, trace-order, and schema-limit negative controls.
+
+Symbol nodes retain the complete Model ID in `semanticId`. Their local
+`nodeId` is `symbol:<semanticId>` when that fits the accepted trace bound;
+otherwise it is `symbol-sha256:<64 lowercase hex>` over the full semantic
+ID bytes. Relations and gap anchors use the same identity. These disjoint
+namespaces preserve existing short-ID exports and support 191-character
+semantic IDs without truncation or changes to the published trace contract.
 
 This correction revises the still-unpublished report candidate: consumers
 of the earlier candidate replace conflict `title` with `subjectId`, read

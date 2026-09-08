@@ -218,6 +218,20 @@ if (!validateAttachment(attachment)) {
   fail("attachment:schema", JSON.stringify(validateAttachment.errors));
 }
 
+// The same vectors exercise parse/from_value and real CLI loads in Rust.
+const projectIdVectors = JSON.parse(readFileSync(resolve(root,
+  "tests/fixtures/requirements/project-id-vectors.json"), "utf8"));
+const modelSchema = JSON.parse(readFileSync(resolve(root,
+  "contracts/model.schema.v1.0.0.json"), "utf8"));
+const validateModelProjectId = ajv.compile({
+  $defs: modelSchema.$defs, $ref: "#/$defs/projectId",
+});
+for (const {id, valid} of projectIdVectors) {
+  const candidate = structuredClone(attachment); candidate.projectId = id;
+  if (validateAttachment(candidate) !== valid) fail(`project-id/${JSON.stringify(id)}`, "attachment grammar differs");
+  if (validateModelProjectId(id) !== valid) fail(`model-project-id/${JSON.stringify(id)}`, "Model grammar differs");
+}
+
 // 2. Every wire-invalid vector fails Ajv (semantic-only vectors pass).
 for (const name of readdirSync(resolve(root, invalidDir)).sort()) {
   const text = readFileSync(resolve(root, invalidDir, name), "utf8");
@@ -271,6 +285,18 @@ if (!validateTrace(traceDocument)) {
   fail("golden/trace:schema", JSON.stringify(validateTrace.errors));
 }
 
+// Real CLI export with two valid 191-character semantic IDs differing only
+// at the final character; the Rust CLI regression pins these exact bytes.
+const maximalGolden = goldenDigest("maximal.trace.json");
+scanDuplicateKeys("golden/maximal", maximalGolden.text);
+const maximalTrace = JSON.parse(maximalGolden.payload);
+if (!validateTrace(maximalTrace)) fail("golden/maximal:schema", JSON.stringify(validateTrace.errors));
+if (canonicalTrace(maximalTrace) !== maximalGolden.payload) fail("golden/maximal:canonical-form", "trace is not canonical");
+const maximalSymbols = maximalTrace.nodes.filter(n => n.semanticId?.length === 191);
+if (maximalSymbols.length !== 2 || new Set(maximalSymbols.map(n => n.nodeId)).size !== 2) {
+  fail("golden/maximal:identity", "maximum semantic IDs must have distinct local nodes");
+}
+
 if (
   reportDocument.modelRef.modelVersion !== attachment.modelRef.modelVersion ||
   reportDocument.modelRef.digest !== attachment.modelRef.digest
@@ -305,6 +331,7 @@ process.stdout.write(
     attachment: "valid",
     invalidVectors: readdirSync(resolve(root, invalidDir)).length,
     semanticVectors: readdirSync(resolve(root, semanticDir)).length,
-    goldens: ["planner.report.json", "planner.trace.json"],
+    projectIdVectors: projectIdVectors.length,
+    goldens: ["planner.report.json", "planner.trace.json", "maximal.trace.json"],
   })}\n`,
 );

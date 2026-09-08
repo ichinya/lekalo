@@ -82,7 +82,7 @@ pub(crate) fn project(report: &Report) -> Result<Manifest, DiagnosticSet> {
     }
     for symbol in &symbols {
         nodes.push(Node {
-            node_id: format!("symbol:{symbol}"),
+            node_id: symbol_node_id(symbol),
             node_kind: NodeKind::Symbol,
             requirement_id: None,
             semantic_id: Some((*symbol).to_owned()),
@@ -114,7 +114,7 @@ pub(crate) fn project(report: &Report) -> Result<Manifest, DiagnosticSet> {
         if row.status == "missing" || row.status == "conflict" {
             continue;
         }
-        let from = format!("symbol:{}", row.symbol);
+        let from = symbol_node_id(&row.symbol);
         let to = requirement_node_id(&row.source, &row.requirement);
         let relation_kind = RelationKind::Implements;
         let occurrence = format!("{}.{}", row.relation, index);
@@ -168,7 +168,7 @@ pub(crate) fn project(report: &Report) -> Result<Manifest, DiagnosticSet> {
             gaps.push(Gap {
                 gap_kind: GapKind::MissingRequirement,
                 status: Status::Candidate,
-                anchor_node: Some(format!("symbol:{}", row.symbol)),
+                anchor_node: Some(symbol_node_id(&row.symbol)),
                 expected: Some(requirement_node_id(&row.source, &row.requirement)),
                 source_path: None,
             });
@@ -176,7 +176,7 @@ pub(crate) fn project(report: &Report) -> Result<Manifest, DiagnosticSet> {
             gaps.push(Gap {
                 gap_kind: GapKind::Conflict,
                 status: Status::Conflicting,
-                anchor_node: Some(format!("symbol:{}", row.symbol)),
+                anchor_node: Some(symbol_node_id(&row.symbol)),
                 expected: Some(requirement_node_id(&row.source, &row.requirement)),
                 source_path: None,
             });
@@ -244,6 +244,18 @@ pub(crate) fn project(report: &Report) -> Result<Manifest, DiagnosticSet> {
 /// The manifest-local node id of one namespaced requirement.
 fn requirement_node_id(source: &str, requirement: &str) -> String {
     format!("requirement:{source}:{requirement}")
+}
+
+/// Preserve existing short local identities. Long semantic IDs use their full
+/// SHA-256 in a disjoint namespace, never a truncated semantic ID or array index.
+/// The original semantic ID remains verbatim on the symbol node.
+fn symbol_node_id(symbol: &str) -> String {
+    let readable = format!("symbol:{symbol}");
+    if crate::trace::id::is_node_id(&readable) {
+        readable
+    } else {
+        format!("symbol-sha256:{}", super::sha256_hex(symbol.as_bytes()))
+    }
 }
 
 /// Project one resolved report into the typed #22 trace manifest,

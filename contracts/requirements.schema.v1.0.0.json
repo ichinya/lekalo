@@ -44,9 +44,12 @@
   "$defs": {
     "projectId": {
       "type": "string",
-      "minLength": 3,
-      "maxLength": 192,
-      "pattern": "^[a-z0-9_][a-z0-9_.:-]*$"
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+      "not": {
+        "enum": ["lekalo", "dev"]
+      }
     },
     "semanticId": {
       "type": "string",

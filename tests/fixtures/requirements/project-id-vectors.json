@@ -1,0 +1,21 @@
+[
+  {"id":"p","valid":true},
+  {"id":"ab","valid":true},
+  {"id":"a0_","valid":true},
+  {"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","valid":true},
+  {"id":"lekalo_app","valid":true},
+  {"id":"dev2","valid":true},
+  {"id":"","valid":false},
+  {"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","valid":false},
+  {"id":"lekalo","valid":false},
+  {"id":"dev","valid":false},
+  {"id":"0ab","valid":false},
+  {"id":"_ab","valid":false},
+  {"id":"Abc","valid":false},
+  {"id":"a.b","valid":false},
+  {"id":"a:b","valid":false},
+  {"id":"a-b","valid":false},
+  {"id":"a b","valid":false},
+  {"id":"a\n","valid":false},
+  {"id":"aé","valid":false}
+]

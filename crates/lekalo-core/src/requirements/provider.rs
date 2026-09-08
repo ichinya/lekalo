@@ -505,6 +505,7 @@ fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, Tre
         .replace('\r', "\n");
     let mut document = Document::default();
     let mut section = None;
+    let mut accepted_section_seen = false;
     let mut current: Option<(String, Section, Vec<String>)> = None;
     let mut rename_from: Option<RawBlock> = None;
     let mut fence: Option<(u8, usize)> = None;
@@ -558,16 +559,26 @@ fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, Tre
             }
             section = if delta {
                 Section::parse(line[2..].trim())
-            } else {
+            } else if !accepted_section_seen
+                && line[2..].trim().eq_ignore_ascii_case("Requirements")
+            {
+                // Native accepted specs expose only the first Requirements
+                // section. The next unfenced H2 closes it permanently.
+                accepted_section_seen = true;
                 Some(Section::Added)
+            } else {
+                None
             };
             continue;
         }
         if let Some(title) = title.or(removed_bullet) {
             let operation = if delta {
                 section.ok_or(TreeError::Shape)?
+            } else if let Some(operation) = section {
+                operation
             } else {
-                Section::Added
+                // Examples outside the native section are not requirements.
+                continue;
             };
             if operation == Section::Renamed {
                 return Err(TreeError::Shape);
