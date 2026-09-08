@@ -51,11 +51,22 @@
     },
     {
       "family": "protocol",
-      "current": null,
-      "min": null,
-      "max": null,
-      "aliases": [],
-      "versions": [],
+      "current": "1.0.0",
+      "min": "1.0.0",
+      "max": "1.0.0",
+      "aliases": [
+        {
+          "alias": "v1",
+          "version": "1.0.0"
+        }
+      ],
+      "versions": [
+        {
+          "version": "1.0.0",
+          "state": "supported",
+          "classification": "additive"
+        }
+      ],
       "migrations": []
     }
   ]

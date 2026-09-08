@@ -53,7 +53,7 @@ fn human_projection_is_one_stable_line() {
     assert_eq!(
         stdout_text(&output),
         "compatibility: model current 1.0.0 (0.1.0..1.0.0), ir current 0.1.0, \
-         protocol unpublished\n"
+         protocol current 1.0.0\n"
     );
 }
 
@@ -79,6 +79,7 @@ fn the_projection_reports_exactly_the_three_families_in_order() {
     assert_eq!(families[1]["current"], "0.1.0");
     assert_eq!(families[1]["migrations"].as_array().map(Vec::len), Some(0));
     assert_eq!(families[2]["family"], "protocol");
-    assert!(families[2]["current"].is_null());
-    assert_eq!(families[2]["versions"].as_array().map(Vec::len), Some(0));
+    assert_eq!(families[2]["current"], "1.0.0");
+    assert_eq!(families[2]["versions"].as_array().map(Vec::len), Some(1));
+    assert_eq!(families[2]["aliases"][0]["alias"], "v1");
 }

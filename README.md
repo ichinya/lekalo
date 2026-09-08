@@ -223,7 +223,7 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.9.0.json` (issue #12 extended it with the
+`contracts/diagnostic-registry.v1.10.0.json` (issue #12 extended it with the
 `semantic.*`/`validate.*` families and issue #13 added the `graph.*`
 family, each as a minor increment; issue #15 added the `inspect.*` family
 the same way; issue #16 added the `impact.*` family issue #18 adds the
@@ -231,7 +231,7 @@ the same way; issue #16 added the `impact.*` family issue #18 adds the
 issue #62 adds the `error.*` family, and issue #26 adds the
 `extended.*`, `event.*`, `job.*`, `call.*`, `cache.*`,
 `publication.*`, `contract.*`, and `case.*` families, and issue #63 adds
-the `invariant.*` family, each as a
+the `invariant.*` family, and issue #27 adds the `target.*` family, each as a
 wire-shape-preserving minor increment).
 
 ## Generated-artifact ownership and drift detection
@@ -344,6 +344,28 @@ method enforcement, and no enforcement claim without target
 evidence. See [docs/invariant-transition.md](docs/invariant-transition.md),
 [ADR-0024](docs/adr/0024-invariant-transition.md), and the hermetic
 fixtures under `tests/fixtures/invariant-transition/`.
+## Target protocol
+
+Issue #27 publishes the target process protocol (`lekalo.target/v1`,
+`dev.lekalo.protocol@1.0.0` in the version registry): target adapters are
+separate executables in any language — never Rust ABI plugins, never
+internal dependencies. Eight operations (`describe`, `scan`, `bind`,
+`validate`, `generate`, `verify`, `plan-clean`, `clean`) run over closed
+JSON envelopes: `describe` is the mandatory capability handshake,
+protocol or version mismatch is refused `unsupported` before any
+generation, requests carry deterministic identifiers and evidence
+bindings, and stderr stays diagnostics-only. The direct argv transport
+enforces deadline, cancellation, request and output caps. Adapters
+declare read/write scopes; canonical Lekalo/OpenSpec homes are
+unwritable; `generate` requires a dry-run write plan whose declared
+paths, actions, and digests are verified against the observed project
+state, with every deviation classified (`target.*` family, registry
+v1.10.0). The contract, transport rules, and error taxonomy live in
+[docs/target-protocol.md](docs/target-protocol.md) and
+[ADR-0025](docs/adr/0025-target-protocol.md); the wire schema is
+`contracts/target-protocol.schema.v1.0.0.json`; the language-neutral
+fake adapter and hermetic fixtures are under
+`tests/fixtures/target-protocol/`.
 
 ## Lekalo Model contracts and semantic IDs
 
@@ -353,8 +375,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #63 carries prospective product
-0.1.31 (issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
+independent of product releases; issue #27 carries prospective product
+0.2.0 (issue #63 published product 0.1.31 (annotated tag `v0.1.31` on
+`9cdd8c1`); issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
 `9020558`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on
 `de6f8a7`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on
 `967bf52`); issue #24 published product 0.1.27 (annotated tag `v0.1.27` on

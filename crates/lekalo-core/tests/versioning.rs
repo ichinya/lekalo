@@ -217,8 +217,15 @@ mod embedded_registry {
         assert!(ir_family.edges().is_empty());
 
         let protocol_family = registry.protocol();
-        assert!(protocol_family.current().is_none());
-        assert!(protocol_family.versions().is_empty());
+        assert_eq!(
+            protocol_family.current().map(|v| v.to_string()),
+            Some("1.0.0".to_owned())
+        );
+        assert_eq!(protocol_family.versions().len(), 1);
+        assert_eq!(protocol_family.aliases().len(), 1);
+        assert_eq!(protocol_family.aliases()[0].0.as_str(), "v1");
+        assert_eq!(protocol_family.aliases()[0].1.as_str(), "1.0.0");
+        assert!(protocol_family.edges().is_empty());
     }
 
     #[test]

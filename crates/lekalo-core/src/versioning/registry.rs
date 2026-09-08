@@ -587,7 +587,7 @@ impl VersionRegistry {
         &self.ir
     }
 
-    /// The protocol family registry (unpublished).
+    /// The protocol family registry (`lekalo.target/v1` since issue #27).
     pub fn protocol(&self) -> &FamilyRegistry<ProtocolContract> {
         &self.protocol
     }

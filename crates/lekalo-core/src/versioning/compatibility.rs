@@ -9,9 +9,11 @@
 //! inclusive bounds; wildcards, `VersionReq`-style requirements, and build
 //! metadata do not exist here.
 //!
-//! With the protocol family still unpublished, no external adapter can be
-//! compatible: the preflight returns `versioning.protocol-unpublished`
-//! before any runner could be created.
+//! Until issue #27 the protocol family was unpublished, so no external
+//! adapter could be compatible. The family now publishes `1.0.0`
+//! (`lekalo.target/v1`); an unpublished or unregistered protocol still
+//! refuses through `versioning.protocol-unpublished` before any runner
+//! could be created.
 
 use serde::Serialize;
 
@@ -145,8 +147,8 @@ impl AdapterCompatibilityManifest {
 /// reasons.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompatibilityVerdict {
-    /// Generation may proceed (never reachable while the protocol family
-    /// is unpublished).
+    /// Generation may proceed (unreachable while the protocol family
+    /// stays unpublished in the consulted registry).
     Compatible,
     /// Generation must not start; the reasons are sorted stable codes.
     Incompatible {
@@ -201,8 +203,8 @@ impl CompatibilityPreflight {
             reasons.push(reasons::UNSUPPORTED_VERSION);
         }
 
-        // 3. Current protocol registry support. The family is unpublished:
-        //    no version exists, so no external adapter is runnable.
+        // 3. Current protocol registry support. An unpublished family
+        //    carries no version, so no external adapter is runnable.
         let Some(protocol_version) = protocol else {
             reasons.push(reasons::PROTOCOL_UNPUBLISHED);
             return finish(reasons);

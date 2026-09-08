@@ -14,7 +14,7 @@ the product release:
 | --- | --- | --- | --- |
 | user-facing Lekalo Model schema | `model` | 1.0.0 | 0.1.0 (deprecated), 1.0.0 |
 | normalized Lekalo IR | `ir` | 0.1.0 | 0.1.0 |
-| target/provider process protocol | `protocol` | — | unpublished |
+| target/provider process protocol | `protocol` | 1.0.0 | 1.0.0 |
 
 The compiled IR is never migrated: an IR transition is always produced by
 rebuilding from migrated Model source, and the receipt proves the semantic
@@ -102,14 +102,14 @@ byte for byte, and the declared loss list is empty.
 
 ### Compatibility preflight
 
-`lekalo compatibility` prints the embedded registry. Adapters declare
-compatibility through a typed manifest (`irMin`/`irMax`,
+Adapters declare compatibility through a typed manifest (`irMin`/`irMax`,
 `protocolMin`/`protocolMax`, required extensions). The preflight decides
 in one fixed order — manifest schema/version, current IR support, current
 protocol support, inclusive IR range, inclusive protocol range, required
 extensions — and no generation may start on a non-compatible verdict.
-While the protocol family is unpublished, no external adapter can be
-compatible (`versioning.protocol-unpublished`).
+Since issue #27 the protocol family publishes 1.0.0 (`lekalo.target/v1`),
+so adapters can be compatible; a registry that does not publish the family
+still refuses every external adapter (`versioning.protocol-unpublished`).
 
 ## Transaction, backups, rollback, recovery
 

@@ -7,7 +7,7 @@ use std::process::{Command, Output};
 
 const GOLDEN: &str = include_str!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:bc4dbad93b7a3d26b215720b5f67c675aec309727b3a1fc602bacdda02c2976d";
+    "sha256:ffa0a8ff664eafe58a649be3d2e22b82b5b2c68ba44896dcf4777ca947543bf3";
 const REFERENCE_PROJECT: &str = "tests/fixtures/lockfile/project";
 
 fn lekalo_in(dir: &Path, args: &[&str]) -> Output {
@@ -179,7 +179,11 @@ fn noncanonical_locks_are_refused_and_never_rewritten() {
 }
 
 #[test]
-fn a_lock_with_adapters_under_the_unpublished_protocol_is_refused() {
+fn a_multi_adapter_lock_gets_past_the_protocol_publication_gate() {
+    // Issue #27 publishes the protocol: a lock that carries adapters no
+    // longer dies in the publication gate (exit 5). The same fixture now
+    // travels further and is refused on request currency instead — a
+    // different diagnosis at a later checkpoint, never a silent pass.
     let dir = project_dir("protocol");
     let multi = std::fs::read_to_string(workspace_path(
         "tests/fixtures/lockfile/valid/multi-adapter.lock.json",
@@ -193,8 +197,9 @@ fn a_lock_with_adapters_under_the_unpublished_protocol_is_refused() {
     )
     .expect("write lock");
     let output = lekalo_in(&dir, &["lock"]);
-    assert_eq!(output.status.code(), Some(5), "{output:?}");
-    assert!(stderr(&output).contains("versioning.protocol-unpublished"));
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(stderr(&output).contains("lock.stale"));
+    assert!(!stderr(&output).contains("versioning.protocol-unpublished"));
     std::fs::remove_dir_all(&dir).expect("cleanup");
 }
 

@@ -34,7 +34,7 @@ use lekalo_core::versioning::{ContractVersion, VersionRegistry};
 const GOLDEN: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:bc4dbad93b7a3d26b215720b5f67c675aec309727b3a1fc602bacdda02c2976d";
+    "sha256:ffa0a8ff664eafe58a649be3d2e22b82b5b2c68ba44896dcf4777ca947543bf3";
 const MULTI: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/multi-adapter.lock.json");
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/lockfile/project";
@@ -263,8 +263,9 @@ fn golden_contract_only_lock_parses_and_matches_its_independent_digest() {
     let lock = Lockfile::parse_canonical(GOLDEN).expect("golden lock parses");
     assert_eq!(lock.digest().as_str(), GOLDEN_DIGEST);
     assert_eq!(lock.resolver_version().as_str(), RESOLVER_VERSION);
-    assert_eq!(lock.core_version().as_str(), "0.1.31");
-    assert_eq!(lock.target_protocol(), None);
+    assert_eq!(lock.core_version().as_str(), "0.2.0");
+    let protocol = lock.target_protocol().expect("published protocol");
+    assert_eq!(protocol.version().as_str(), "1.0.0");
     // Round-trip: canonical bytes are byte-identical to the committed file.
     assert_eq!(lock.canonical_bytes().as_ref(), GOLDEN);
 }
@@ -333,17 +334,17 @@ fn wire_refusals_carry_the_closed_reason_codes() {
         ),
         (
             "v-prefixed version",
-            tampered("\"version\":\"0.1.31\"", "\"version\":\"v0.1.9\""),
+            tampered("\"version\":\"0.2.0\"", "\"version\":\"v0.1.9\""),
             "lock.schema-invalid",
         ),
         (
             "build metadata version",
-            tampered("\"version\":\"0.1.31\"", "\"version\":\"0.1.9+meta\""),
+            tampered("\"version\":\"0.2.0\"", "\"version\":\"0.1.9+meta\""),
             "lock.schema-invalid",
         ),
         (
             "range version",
-            tampered("\"version\":\"0.1.31\"", "\"version\":\"^0.1\""),
+            tampered("\"version\":\"0.2.0\"", "\"version\":\"^0.1\""),
             "lock.schema-invalid",
         ),
         (
@@ -474,14 +475,52 @@ fn contract_only_resolution_is_deterministic() {
     );
 }
 
+/// A synthetic registry whose protocol family stays unpublished — the
+/// pre-#27 world, kept alive so the publication gate stays tested.
+fn unpublished_protocol_registry() -> VersionRegistry {
+    const JSON: &str = r#"
+{
+  "registry": "dev.lekalo.version-registry",
+  "registryVersion": "1.0.0",
+  "families": {
+    "model": {
+      "current": "1.0.0",
+      "aliases": [],
+      "versions": [
+        {"version": "1.0.0", "state": "supported", "classification": "additive",
+         "reason": "Synthetic published model for issue #10 hermetic tests."}
+      ],
+      "migrations": []
+    },
+    "ir": {
+      "current": "0.1.0",
+      "aliases": [],
+      "versions": [
+        {"version": "0.1.0", "state": "supported", "classification": "additive",
+         "reason": "Synthetic published IR for issue #10 hermetic tests."}
+      ],
+      "migrations": []
+    },
+    "protocol": {
+      "current": null,
+      "aliases": [],
+      "versions": [],
+      "migrations": []
+    }
+  }
+}
+"#;
+    VersionRegistry::from_bytes(JSON.as_bytes()).expect("synthetic registry is valid")
+}
+
 #[test]
 fn executable_candidates_with_unpublished_protocol_are_refused() {
-    let registry = VersionRegistry::embedded().expect("embedded registry");
+    let registry = unpublished_protocol_registry();
     let candidates =
         CandidateSet::empty().with_adapter(adapter_candidate("node-typescript", "0.1.2", 1, "any"));
     let request =
-        request(registry).with_adapter(ComponentId::parse("node-typescript").expect("id"));
-    let error = LockResolver::resolve(&request, &candidates, registry)
+        request(&registry).with_adapter(ComponentId::parse("node-typescript").expect("id"));
+    let error = LockResolver::resolve(&request, &candidates, &registry)
         .map(|_: Lockfile| ())
         .expect_err("unpublished protocol");
     assert_eq!(reason(&error), "versioning.protocol-unpublished");
