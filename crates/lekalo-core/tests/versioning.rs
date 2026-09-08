@@ -550,6 +550,41 @@ mod compatibility {
     }
 
     #[test]
+    fn historical_protocol_snapshot_does_not_inherit_publication() {
+        let mut snapshot: serde_json::Value =
+            serde_json::from_slice(lekalo_core::versioning::REGISTRY_BYTES).unwrap();
+        snapshot["families"]["protocol"] = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/versioning/protocol-unpublished.family.json"
+        ))
+        .unwrap();
+        let historical =
+            VersionRegistry::from_bytes(&serde_json::to_vec(&snapshot).unwrap()).unwrap();
+        let published = VersionRegistry::embedded().unwrap();
+        assert!(historical.protocol().current().is_none());
+        assert!(historical.protocol().resolve_alias("v1").is_none());
+        assert_eq!(
+            published.protocol().resolve_alias("v1"),
+            Some(&protocol("1.0.0"))
+        );
+        let selected = protocol("1.0.0");
+        for (registry, version, expected) in [
+            (&historical, None, &["versioning.protocol-unpublished"][..]),
+            (
+                &historical,
+                Some(&selected),
+                &["versioning.unsupported-version"][..],
+            ),
+            (published, None, &["versioning.protocol-unpublished"][..]),
+            (published, Some(&selected), &[][..]),
+        ] {
+            let verdict =
+                CompatibilityPreflight::check(registry, &ir("0.1.0"), version, &manifest());
+            assert_eq!(verdict.reasons(), expected);
+            assert_eq!(verdict.is_compatible(), expected.is_empty());
+        }
+    }
+
+    #[test]
     fn required_extensions_are_never_satisfied_by_the_accepted_ir() {
         let registry = VersionRegistry::embedded().expect("valid");
         let mut extended = manifest();
@@ -568,7 +603,7 @@ mod compatibility {
     #[test]
     fn unregistered_protocol_and_inverted_ranges_refuse() {
         let registry = VersionRegistry::embedded().expect("valid");
-        // A protocol version outside the (empty) registry: unsupported.
+        // A protocol version outside the published exact set: unsupported.
         let verdict = CompatibilityPreflight::check(
             registry,
             &ir("0.1.0"),
