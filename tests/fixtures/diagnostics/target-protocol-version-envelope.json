@@ -1,0 +1,25 @@
+{
+  "status": "unsupported",
+  "diagnostics": [
+    {
+      "schema_version": "lekalo/diagnostic/v1.0.0",
+      "registry_version": "1.10.0",
+      "id": "target.protocol-mismatch",
+      "code": "LEK-TGT-003",
+      "severity": "error",
+      "category": "adapter",
+      "message_id": "target.protocol-mismatch",
+      "message": "The adapter speaks a different protocol token or an unsupported exact protocol version.",
+      "data": {
+        "detail": "version"
+      },
+      "related_locations": [],
+      "causes": [],
+      "fixes": [],
+      "metadata": {}
+    }
+  ],
+  "reasonCodes": [
+    "target.protocol-mismatch"
+  ]
+}

@@ -37,9 +37,7 @@ pub fn rule_for(failure: &TargetFailure) -> (&'static str, Status) {
         TargetFailure::RegistryInvalid => ("versioning.registry-invalid", Status::Invalid),
         TargetFailure::RequestInvalid { .. } => ("target.request-invalid", Status::Invalid),
         TargetFailure::HandshakeRequired { .. } => ("target.handshake-required", Status::Invalid),
-        TargetFailure::ProtocolMismatch { .. } => {
-            ("target.protocol-mismatch", Status::UnsupportedVersion)
-        }
+        TargetFailure::ProtocolMismatch { .. } => ("target.protocol-mismatch", Status::Unsupported),
         TargetFailure::CapabilityUnsupported { .. } => {
             ("target.capability-unsupported", Status::Unsupported)
         }
@@ -157,7 +155,7 @@ mod tests {
                     detail: crate::target_protocol::wire::ProtocolMismatch::Token,
                 },
                 "target.protocol-mismatch",
-                Status::UnsupportedVersion,
+                Status::Unsupported,
             ),
             (
                 TargetFailure::Timeout,
@@ -183,5 +181,27 @@ mod tests {
             let result = DomainResult::from(failure);
             assert_eq!(result.status(), status);
         }
+    }
+
+    #[test]
+    fn unpublished_protocol_keeps_the_version_specific_result() {
+        let failure = TargetFailure::ProtocolUnpublished;
+        assert_eq!(
+            failure.rule(),
+            (
+                "versioning.protocol-unpublished",
+                Status::UnsupportedVersion
+            )
+        );
+        let result = DomainResult::from(failure);
+        let envelope: serde_json::Value = serde_json::from_str(&result.to_json_string()).unwrap();
+        assert_eq!(result.status(), Status::UnsupportedVersion);
+        assert_eq!(result.exit_code(), 5);
+        assert!(result.writes_stderr());
+        assert_eq!(envelope["status"], "unsupported-version");
+        assert_eq!(
+            envelope["reasonCodes"],
+            serde_json::json!(["versioning.protocol-unpublished"])
+        );
     }
 }

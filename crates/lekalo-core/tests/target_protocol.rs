@@ -236,6 +236,18 @@ fn capability_and_request_validation_refuse_before_transport() {
         error,
         TargetFailure::CapabilityUnsupported { detail: "target" }
     );
+    let result = lekalo_core::DomainResult::from(&error);
+    let envelope: serde_json::Value = serde_json::from_str(&result.to_json_string()).unwrap();
+    assert_eq!(result.status(), lekalo_core::Status::Unsupported);
+    assert_eq!(result.exit_code(), 4);
+    assert!(!result.writes_stderr());
+    assert_eq!(envelope["status"], "unsupported");
+    assert_eq!(
+        envelope["reasonCodes"],
+        serde_json::json!(["target.capability-unsupported"])
+    );
+    assert_eq!(envelope["diagnostics"][0]["code"], "LEK-TGT-004");
+    assert_eq!(envelope["diagnostics"][0]["data"]["detail"], "target");
 }
 
 #[test]
@@ -541,37 +553,74 @@ fn undeclared_writes_are_caught_against_the_plan() {
 
 #[test]
 fn protocol_mismatches_are_unsupported_before_any_generation() {
-    let sandbox = Sandbox::new("wrong-token");
-    let command = faulted_command("wrong-token");
-    let mut client = TargetClient::new(test_limits());
-    let error = client
-        .describe(&command, &sandbox.dir)
-        .expect_err("foreign token");
-    assert_eq!(
-        error,
-        TargetFailure::ProtocolMismatch {
-            detail: ProtocolMismatch::Token
-        }
-    );
-    assert_eq!(
-        error.rule(),
+    for (fault, detail, golden) in [
         (
-            "target.protocol-mismatch",
-            lekalo_core::Status::UnsupportedVersion
-        )
-    );
+            "wrong-token",
+            ProtocolMismatch::Token,
+            include_str!("../../../tests/fixtures/diagnostics/target-protocol-token-envelope.json"),
+        ),
+        (
+            "wrong-version",
+            ProtocolMismatch::Version,
+            include_str!(
+                "../../../tests/fixtures/diagnostics/target-protocol-version-envelope.json"
+            ),
+        ),
+    ] {
+        let sandbox = Sandbox::new(fault);
+        let command = faulted_command(fault);
+        let mut client = TargetClient::new(test_limits());
+        let error = client
+            .describe(&command, &sandbox.dir)
+            .expect_err("wire mismatch must refuse the handshake");
+        assert_eq!(error, TargetFailure::ProtocolMismatch { detail });
 
-    let sandbox = Sandbox::new("wrong-version");
-    let command = faulted_command("wrong-version");
-    let error = client
-        .describe(&command, &sandbox.dir)
-        .expect_err("unsupported version");
-    assert_eq!(
-        error,
-        TargetFailure::ProtocolMismatch {
-            detail: ProtocolMismatch::Version
-        }
-    );
+        // Exercise the production envelope, including the registry's status
+        // allowlist and the shared exit/stream contract used by CLI renderers.
+        let result = lekalo_core::DomainResult::from(&error);
+        let json = result.to_json_string();
+        let envelope: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(envelope["status"], "unsupported", "{fault}: {json}");
+        assert_eq!(result.status(), lekalo_core::Status::Unsupported);
+        assert_eq!(result.exit_code(), 4);
+        assert!(!result.writes_stderr());
+        assert_eq!(
+            envelope["reasonCodes"],
+            serde_json::json!(["target.protocol-mismatch"])
+        );
+        assert_eq!(envelope["diagnostics"][0]["code"], "LEK-TGT-003");
+        assert_eq!(
+            envelope["diagnostics"][0]["data"]["detail"],
+            detail.detail()
+        );
+        assert!(envelope.get("capability").is_none());
+        assert_eq!(json, golden.trim_end());
+
+        assert!(client.describe_outcome().is_none());
+        assert!(client.plan_binding().is_none());
+        let generation = client.call(
+            &command,
+            call_request(
+                Operation::Generate,
+                Some(TARGET),
+                Some(PROFILE),
+                Some(IR),
+                Some(false),
+                None,
+            ),
+            &sandbox.dir,
+            &sandbox.fs(),
+            None,
+        );
+        assert_eq!(
+            generation.unwrap_err(),
+            TargetFailure::HandshakeRequired {
+                operation: Operation::Generate
+            }
+        );
+        assert!(!sandbox.dir.join(".lekalo/generated").exists());
+        assert_eq!(std::fs::read(sandbox.dir.join(IR)).unwrap(), b"{}");
+    }
 }
 
 #[test]

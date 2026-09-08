@@ -96,6 +96,9 @@ for (const envelope of envelopes) {
     }
     const registered = registry.entries.find((entry) => entry.id === diagnostic.id);
     if (!registered) fail("unregistered-id", { envelope: envelope.name, id: diagnostic.id });
+    if (!registered.allowed_statuses.includes(envelope.document.status)) {
+      fail("status-not-allowed", { envelope: envelope.name, id: diagnostic.id, status: envelope.document.status });
+    }
     if (registered.code !== diagnostic.code) fail("code-drift", { envelope: envelope.name, id: diagnostic.id });
     if (registered.default_severity !== diagnostic.severity) fail("severity-drift", envelope.name);
     if (registered.category !== diagnostic.category) fail("category-drift", envelope.name);
