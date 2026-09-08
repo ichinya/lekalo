@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.2.0. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.2.1. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -229,14 +229,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.2.0"
+  "version": "0.2.1"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.2.0`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.2.1`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -476,6 +476,38 @@ lekalo generate --clean --dry-run
 lekalo generate --clean --confirm sha256:973d6dd3ef84df5e286622a796e542f9dac20974047f21ec0a1a095501949734
 generate applied plan sha256:973d... (-1)
 ```
+
+## Requirements
+
+The `lekalo requirements` handoff resolves one requirements attachment
+(`lekalo/requirements/v1.0.0`) against its project: the read-only OpenSpec
+provider walks `specs/**` and `changes/**`, projects the effective
+requirement set, and pins every reference to an exact body revision. All
+decisions live in the core; the binary selects, renders, and maps exits,
+and nothing is ever written.
+
+```sh
+lekalo requirements validate tests/fixtures/requirements/planner/requirements.attachment.json --project tests/fixtures/requirements/planner
+# requirements planner
+#   requirements 3; references 3; fresh 3; stale 0; missing 0; conflict 0; coverage gaps 0; conflicts 0
+
+lekalo requirements report ... > report.json     # canonical report bytes
+lekalo requirements query ... coverage-gaps      # requirements no symbol links
+lekalo requirements query ... impact             # changed/removed/renamed/conflict rows
+lekalo requirements query ... symbol:planner.focus_task
+lekalo requirements query ... requirement:openspec:planner.REQ-focus-task
+lekalo requirements trace ... > trace.json       # neutral #22 trace projection
+```
+
+Exit protocol: `0` valid (validate: every reference fresh, no conflict),
+`1` malformed attachment, unknown symbol or source, invalid provider tree,
+unknown query selector or subject; `3` denied — stale, missing, or
+conflicted references, any conflict in a resolved tree, or a Model
+pin/project custody mismatch; `4` an absent provider tree that references
+depend on. Human and JSON are projections of the same result; the report
+and trace exports emit canonical bytes with pinned digests. See
+[docs/requirements.md](requirements.md) and
+[ADR-0026](adr/0026-requirements-traceability.md).
 
 ## Impact
 

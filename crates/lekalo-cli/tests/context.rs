@@ -394,15 +394,15 @@ fn output_streams_and_privacy_stay_on_the_accepted_contract() {
     assert!(!failure.stderr.is_empty());
 }
 
-/// The version custody probe: the binary is exactly 0.2.0.
+/// The version custody probe: the binary is exactly 0.2.1.
 #[test]
 fn the_version_is_the_prospective_product_version() {
     let project = fixture_path();
     let human = lekalo_in(&project, &["--version"]);
-    assert_eq!(stdout_text(&human).trim(), "lekalo 0.2.0");
+    assert_eq!(stdout_text(&human).trim(), "lekalo 0.2.1");
     let json = lekalo_in(&project, &["--json", "--version"]);
     assert_eq!(
         stdout_text(&json).trim(),
-        "{\n  \"status\": \"valid\",\n  \"version\": \"0.2.0\"\n}"
+        "{\n  \"status\": \"valid\",\n  \"version\": \"0.2.1\"\n}"
     );
 }

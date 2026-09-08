@@ -6,6 +6,8 @@
 // on Node 18 and 24) and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,7 +41,7 @@ const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf
 
 const itemSchema = read("contracts/diagnostic.schema.v1.0.0.json");
 const registrySchema = read("contracts/diagnostic-registry.schema.v1.0.0.json");
-const registry = read("contracts/diagnostic-registry.v1.10.0.json");
+const registry = read("contracts/diagnostic-registry.v1.11.0.json");
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateItem = ajv.compile(itemSchema);
@@ -54,6 +56,31 @@ const fail = (reason, detail) => {
 if (!validateRegistry(registry)) {
   fail("registry-instance-invalid", validateRegistry.errors);
 }
+
+// 1.11.0 is additive to the exact frozen target-protocol predecessor.
+// Normalize checkout line endings only; every entry and its semantics survive.
+const predecessorText = readFileSync(resolve(root, "contracts/diagnostic-registry.v1.10.0.json"), "utf8").replace(/\r\n/g, "\n");
+if (createHash("sha256").update(predecessorText).digest("hex") !== "c13a0c2d0cf93c8cbee32615833b43a29e9d4ea89c1f2ba31c70635f1afff4f6") {
+  fail("predecessor-custody");
+}
+const predecessor = JSON.parse(predecessorText);
+const isAdditive = (candidate) => {
+  const entries = new Map(candidate.entries.map((entry) => [entry.id, entry]));
+  return predecessor.entries.every((entry) => isDeepStrictEqual(entries.get(entry.id), entry));
+};
+if (!isAdditive(registry)) fail("predecessor-entry-drift");
+const additions = registry.entries.filter((entry) => !predecessor.entries.some((old) => old.id === entry.id));
+if (additions.length !== 10 || additions.some((entry) => !entry.id.startsWith("requirements.") || !entry.code.startsWith("LEK-REQ-"))) {
+  fail("requirement-additions", additions.map((entry) => entry.id));
+}
+// A missing target entry or changed classification must actually fail the gate.
+const target = predecessor.entries.find((entry) => entry.code.startsWith("LEK-TGT-"));
+if (!target) fail("missing-target-predecessor");
+const missing = structuredClone(registry);
+missing.entries = missing.entries.filter((entry) => entry.id !== target.id);
+const changed = structuredClone(registry);
+changed.entries.find((entry) => entry.id === target.id).allowed_statuses = ["valid"];
+if (isAdditive(missing) || isAdditive(changed)) fail("additive-negative-control");
 
 // 2. Registry invariants that JSON Schema cannot express.
 const ids = registry.entries.map((entry) => entry.id);

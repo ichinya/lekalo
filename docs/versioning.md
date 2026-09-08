@@ -22,7 +22,7 @@ this inventory against the compiled protocol version/token, the wire
 schema, and the compatibility golden. Its boundary controls retain the
 pre-publication family snapshot (`current: null`, empty versions, aliases,
 and migrations): that snapshot remains unpublished and cannot stand in for
-the current protocol. Product 0.2.0 does not change Model 1.0.0 or IR 0.1.0.
+the current protocol. Product 0.2.1 does not change Model 1.0.0 or IR 0.1.0.
 
 The compiled IR is never migrated: an IR transition is always produced by
 rebuilding from migrated Model source, and the receipt proves the semantic
