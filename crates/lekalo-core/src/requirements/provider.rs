@@ -498,6 +498,26 @@ fn header_reference(text: &str) -> Option<&str> {
     requirement_title(text.trim().trim_matches('`').trim())
 }
 
+/// ECMAScript `\s`, as used by native OpenSpec's code-fence.ts. Rust's
+/// Unicode whitespace differs (notably U+0085 and U+FEFF). This predicate
+/// applies to fence boundaries only; it does not normalize body bytes.
+fn native_fence_whitespace(c: char) -> bool {
+    matches!(
+        c,
+        '\u{0009}'..='\u{000d}'
+            | ' '
+            | '\u{00a0}'
+            | '\u{1680}'
+            | '\u{2000}'..='\u{200a}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{202f}'
+            | '\u{205f}'
+            | '\u{3000}'
+            | '\u{feff}'
+    )
+}
+
 fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, TreeError> {
     let text = text
         .trim_start_matches('\u{feff}')
@@ -505,26 +525,31 @@ fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, Tre
         .replace('\r', "\n");
     let mut document = Document::default();
     let mut section = None;
+    let mut delta_sections = BTreeSet::new();
     let mut accepted_section_seen = false;
     let mut current: Option<(String, Section, Vec<String>)> = None;
     let mut rename_from: Option<RawBlock> = None;
     let mut fence: Option<(u8, usize)> = None;
     for line in text.split('\n') {
-        let trimmed = line.trim_start_matches(' ');
-        let indent = line.len() - trimmed.len();
+        // Native OpenSpec accepts arbitrary leading whitespace and opener
+        // info, including backticks. A close needs the same marker, at least
+        // the opener length, and only native whitespace after the run.
+        let trimmed = line.trim_start_matches(native_fence_whitespace);
         let marker = trimmed.as_bytes().first().copied();
         let run = trimmed.bytes().take_while(|b| Some(*b) == marker).count();
-        let fence_line = indent <= 3 && matches!(marker, Some(b'`' | b'~')) && run >= 3;
+        let fence_line = matches!(marker, Some(b'`' | b'~')) && run >= 3;
         let masked = if let Some((open, length)) = fence {
             if fence_line
                 && marker == Some(open)
                 && run >= length
-                && trimmed[run..].trim().is_empty()
+                && trimmed[run..]
+                    .trim_matches(native_fence_whitespace)
+                    .is_empty()
             {
                 fence = None;
             }
             true
-        } else if fence_line && (marker != Some(b'`') || !trimmed[run..].contains('`')) {
+        } else if fence_line {
             fence = Some((marker.expect("fence marker"), run));
             true
         } else {
@@ -558,7 +583,17 @@ fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, Tre
                 return Err(TreeError::Shape);
             }
             section = if delta {
-                Section::parse(line[2..].trim())
+                let operation = Section::parse(line[2..].trim());
+                if let Some(operation) = operation {
+                    // Native selects one body per operation (exact-title
+                    // repeats overwrite; case variants select differently).
+                    // This reader supports one section per operation only:
+                    // never certify a union that native archive will discard.
+                    if !delta_sections.insert(operation) {
+                        return Err(TreeError::DuplicateSection);
+                    }
+                }
+                operation
             } else if !accepted_section_seen
                 && line[2..].trim().eq_ignore_ascii_case("Requirements")
             {
@@ -692,6 +727,8 @@ enum TreeError {
     Limit,
     /// The tree violates the v1 layout or text contract.
     Shape,
+    /// Repeated delta operation sections are outside the supported subset.
+    DuplicateSection,
 }
 
 impl TreeError {
@@ -711,6 +748,7 @@ impl TreeError {
             Self::Io => Loaded::Invalid("tree-unreadable"),
             Self::Limit => Loaded::Invalid("tree-over-limit"),
             Self::Shape => Loaded::Invalid("tree-shape"),
+            Self::DuplicateSection => Loaded::Invalid("duplicate-operation-section"),
         }
     }
 }

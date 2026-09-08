@@ -132,6 +132,17 @@ Native syntax was checked against the official
 [requirement parser](https://github.com/Fission-AI/OpenSpec/blob/main/src/core/parsers/requirement-blocks.ts),
 and [delta application](https://github.com/Fission-AI/OpenSpec/blob/main/src/core/specs-apply.ts).
 
+The third correction pins fence behavior to OpenSpec commit
+`e062b9572be933564ba3899d059377dfa1393e32`, including arbitrary native
+whitespace indentation and opener info. Repeated operation sections in one
+delta file are explicitly unsupported, including case variants and empty
+repeats: the provider fails before returning any catalog or trace. This
+avoids certifying a union of operations when native archive selects only
+one section body. Distinct operations and fenced example headings remain
+supported. The committed native parser vectors record executed native
+catalogs, body revisions and archive plans; they establish these bounded
+cases without claiming exhaustive Markdown or archive CLI equivalence.
+
 - Lekalo gains requirement traceability with zero Model/IR/schema churn and
   zero writes to OpenSpec-owned paths.
 - Consumers get two closed JSON contracts plus the existing trace contract;

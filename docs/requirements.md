@@ -82,8 +82,23 @@ deltas; the `archive` subtree is never active). Deltas use the OpenSpec
 sections `## ADDED Requirements`, `## MODIFIED Requirements`,
 `## REMOVED Requirements`, and `## RENAMED Requirements`. Preambles such as
 `## Purpose` are allowed, but a delta requirement without a recognized
-operation fails closed. Backtick and tilde fences mask structural headings;
-all example content and later requirement prose remain in the revision.
+operation fails closed. Each operation may have **at most one unfenced
+section per delta file**, including empty sections and case variants.
+Repeated ADDED, MODIFIED, REMOVED or RENAMED sections reject the provider
+with `requirements.provider-invalid` (`duplicate-operation-section`):
+validate/report/trace exit 1 and emit no successful report or trace. Native
+OpenSpec selects the last body for an exactly repeated title, and the first
+matching title spelling for case variants; Lekalo deliberately rejects both
+forms instead of aggregating operations that archive may discard. Distinct
+operation sections remain supported in any order. This restriction is per
+file; headings inside fences do not count as sections.
+
+Backtick and tilde fences mask structural headings. Following the inspected
+native parser, openers accept any leading ECMAScript whitespace (including
+four spaces or tabs) and any info suffix (including backticks). Closers use
+the same marker, at least the opener length, and only ECMAScript whitespace
+afterward; their indentation is unrestricted. All example content and later
+requirement prose remain in the revision.
 Accepted specs expose requirements only inside the first unfenced
 `## Requirements` section (case-insensitive), ending at the next unfenced
 H2. Requirement headings before it, in appendices, in later Requirements

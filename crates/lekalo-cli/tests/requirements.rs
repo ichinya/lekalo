@@ -86,6 +86,206 @@ fn requirements_json(dir: &Path, op: &str, expected: u8) -> Value {
     value
 }
 
+fn native_vectors() -> Value {
+    serde_json::from_str(include_str!(
+        "../../../tests/fixtures/requirements/native-parser-vectors.json"
+    ))
+    .unwrap()
+}
+
+fn tree_bytes(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(root, &path, out);
+            } else {
+                out.push((
+                    path.strip_prefix(root).unwrap().into(),
+                    fs::read(path).unwrap(),
+                ));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, dir, &mut out);
+    out.sort();
+    out
+}
+
+// Expected catalogs/digests and archive text come from executing the pinned
+// native parser, not this reader. Repeated sections deliberately fail closed.
+fn check_native_vectors(kind: &str) {
+    for vector in native_vectors()["vectors"].as_array().unwrap() {
+        if vector["kind"] != kind {
+            continue;
+        }
+        let name = vector["name"].as_str().unwrap();
+        let temp = scratch();
+        let dir = temp.path();
+        let accepted = dir.join("openspec/specs/planner/spec.md");
+        let active = dir.join("openspec/changes/2026-09-01-archive-focus");
+        fs::write(&accepted, vector["accepted"].as_str().unwrap()).unwrap();
+        fs::write(
+            active.join("specs/planner/spec.md"),
+            vector["delta"].as_str().unwrap(),
+        )
+        .unwrap();
+        let mut value = attachment(dir);
+        value["references"] = vector["expectedEntries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| {
+                json!({
+                    "symbol":"planner.focus_task", "relation":"implements", "source":"openspec",
+                    "requirement":entry["id"], "revision":entry["revision"]
+                })
+            })
+            .collect::<Vec<_>>()
+            .into();
+        save_attachment(dir, &value);
+        let before = tree_bytes(dir);
+        if vector["unsupported"] == true {
+            for op in ["validate", "report", "trace"] {
+                let output = lekalo_in(
+                    dir,
+                    &[
+                        "--json",
+                        "requirements",
+                        op,
+                        "requirements.attachment.json",
+                        "--project",
+                        ".",
+                    ],
+                );
+                assert_eq!(
+                    exit_code(&output),
+                    1,
+                    "{name}/{op}: {}",
+                    stderr_text(&output)
+                );
+                assert!(
+                    output.stdout.is_empty(),
+                    "{name}/{op} must not emit success data"
+                );
+                assert!(
+                    stderr_text(&output).contains("requirements.provider-invalid"),
+                    "{name}"
+                );
+                assert!(
+                    stderr_text(&output).contains("duplicate-operation-section"),
+                    "{name}"
+                );
+            }
+            assert_eq!(tree_bytes(dir), before, "{name} no writes");
+            continue;
+        }
+        requirements_json(dir, "validate", 0);
+        let report = requirements_json(dir, "report", 0);
+        let entries: Vec<Value> = report["report"]["requirements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| json!({"id":r["id"], "revision":r["digest"]}))
+            .collect();
+        assert_eq!(
+            Value::from(entries),
+            vector["expectedEntries"],
+            "{name} native catalog and body digests"
+        );
+        let trace = requirements_json(dir, "trace", 0);
+        assert_eq!(
+            trace["trace"]["relations"].as_array().unwrap().len(),
+            vector["expectedEntries"].as_array().unwrap().len(),
+            "{name}"
+        );
+        assert_eq!(tree_bytes(dir), before, "{name} no writes");
+
+        for excluded in vector["excluded"].as_array().unwrap() {
+            value["references"].as_array_mut().unwrap().push(json!({
+                "symbol":"planner.focus_task", "relation":"implements", "source":"openspec",
+                "requirement":excluded["id"], "revision":excluded["revision"]
+            }));
+        }
+        if !vector["excluded"].as_array().unwrap().is_empty() {
+            save_attachment(dir, &value);
+            let before = tree_bytes(dir);
+            requirements_json(dir, "validate", 3);
+            let report = requirements_json(dir, "report", 0);
+            let trace = requirements_json(dir, "trace", 0);
+            for excluded in vector["excluded"].as_array().unwrap() {
+                assert!(
+                    report["report"]["references"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|r| r["requirement"] == excluded["id"] && r["status"] == "missing"),
+                    "{name}"
+                );
+                let target = format!("requirement:openspec:{}", excluded["id"].as_str().unwrap());
+                assert!(
+                    !trace["trace"]["relations"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|r| r["toNode"] == target),
+                    "{name} example must not be confirmed"
+                );
+            }
+            assert_eq!(tree_bytes(dir), before, "{name} denied no writes");
+        }
+    }
+}
+
+#[test]
+fn native_fence_matrix_matches_catalog_revisions_and_cli_gates() {
+    check_native_vectors("fence");
+}
+
+#[test]
+fn native_repeated_sections_deny_and_distinct_sections_resolve() {
+    check_native_vectors("repeated");
+}
+
+#[test]
+fn native_plan_archive_preserves_confirmed_trace() {
+    for vector in native_vectors()["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["name"] == "distinct-sections" || v["name"] == "distinct-sections-reversed")
+    {
+        let temp = scratch();
+        let dir = temp.path();
+        let accepted = dir.join("openspec/specs/planner/spec.md");
+        let active = dir.join("openspec/changes/2026-09-01-archive-focus");
+        fs::write(&accepted, vector["accepted"].as_str().unwrap()).unwrap();
+        fs::write(
+            active.join("specs/planner/spec.md"),
+            vector["delta"].as_str().unwrap(),
+        )
+        .unwrap();
+        let mut value = attachment(dir);
+        value["references"] = vector["expectedEntries"].as_array().unwrap().iter()
+            .map(|e| json!({"symbol":"planner.focus_task", "relation":"implements", "source":"openspec", "requirement":e["id"], "revision":e["revision"]})).collect::<Vec<_>>().into();
+        save_attachment(dir, &value);
+        requirements_json(dir, "validate", 0);
+        let before = requirements_json(dir, "trace", 0);
+        // This disk transition applies the native parser's recorded plan; it
+        // does not invoke or claim qualification of the OpenSpec archive CLI.
+        fs::write(&accepted, vector["archiveAccepted"].as_str().unwrap()).unwrap();
+        let archive = dir.join("openspec/changes/archive");
+        fs::create_dir_all(&archive).unwrap();
+        fs::rename(active, archive.join("2026-09-01-archive-focus")).unwrap();
+        let snapshot = tree_bytes(dir);
+        requirements_json(dir, "validate", 0);
+        let after = requirements_json(dir, "trace", 0);
+        assert_eq!(before, after, "{} native plan archive", vector["name"]);
+        assert_eq!(tree_bytes(dir), snapshot);
+    }
+}
+
 #[test]
 fn accepted_requirements_are_confined_to_the_first_native_section() {
     let body = "This example is documentation only and is not an accepted requirement.\n";

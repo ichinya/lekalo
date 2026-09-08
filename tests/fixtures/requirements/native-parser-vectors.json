@@ -1,0 +1,1350 @@
+{
+  "provenance": {
+    "repository": "Fission-AI/OpenSpec",
+    "commit": "e062b9572be933564ba3899d059377dfa1393e32",
+    "sourceHashes": {
+      "requirement-blocks.ts": "11741688e58251df118c7da5cd67ccadca7911b0e2db858e378d4b8e0e4c9812",
+      "requirement-text.ts": "476f8b9b88678c6225b8f1098ae46d4fa833f4da945a5e98242e92df359f12a0",
+      "code-fence.ts": "e699fce87b2ef25f59921f92e531be5e79cdc57e1e234d61e3f8e05ef916bd08"
+    },
+    "expectations": "Executed extractRequirementsSection and parseDeltaSpec; repeated operation sections are explicitly unsupported, including case variants and empty sections."
+  },
+  "vectors": [
+    {
+      "name": "accepted-four-space-backtick",
+      "kind": "fence",
+      "accepted": "## Requirements\n    ```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n    ```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:5bad3f54830324e24296757b7e50e34b6665974fb72c9d60c8a9874736ceaffd"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-four-space-tilde",
+      "kind": "fence",
+      "accepted": "## Requirements\n    ~~~md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n    ~~~\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:2ad07121ab72105ad9df24be859cb4fa3337ba80e22f79e661ad5b3dcdfd5915"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-tab-backtick",
+      "kind": "fence",
+      "accepted": "## Requirements\n\t```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n\t```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:2b5fde5d3f4e509ee0155b90ae39c56b83b2439cebf98915ccb3dbccbb41f917"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-tab-tilde",
+      "kind": "fence",
+      "accepted": "## Requirements\n\t~~~md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n\t~~~\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:53436574ca5a0b6b03eedf5d5053903e9cb68dfb4d08895aecbf5e66a17be0c7"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-backtick-info",
+      "kind": "fence",
+      "accepted": "## Requirements\n```md`example\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n    ```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:5bad3f54830324e24296757b7e50e34b6665974fb72c9d60c8a9874736ceaffd"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-native-tab-close",
+      "kind": "fence",
+      "accepted": "## Requirements\n```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n\t```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:2b5fde5d3f4e509ee0155b90ae39c56b83b2439cebf98915ccb3dbccbb41f917"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-native-four-space-close",
+      "kind": "fence",
+      "accepted": "## Requirements\n~~~md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n    ~~~\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:2ad07121ab72105ad9df24be859cb4fa3337ba80e22f79e661ad5b3dcdfd5915"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-standard",
+      "kind": "fence",
+      "accepted": "## Requirements\n```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:70a43a6c8f089a69dd54610ee054b758c732a36fae9353290c2ee752d24e3a83"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-three-space",
+      "kind": "fence",
+      "accepted": "## Requirements\n   ~~~~md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n   ~~~~\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:31ce7d5a2dadb1e2c132bbf9bb41d847e94eb488e2adb3b2b7304b08423ce53d"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-longer-close",
+      "kind": "fence",
+      "accepted": "## Requirements\n````md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n     `````\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:860f6eb11a5439ee0ee210d6dc10bfe973356f170c1ad642cca0569190696c75"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-wrong-marker",
+      "kind": "fence",
+      "accepted": "## Requirements\n```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n~~~\n### Requirement: Still hidden\nThe planner SHALL support Still hidden.\n```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:36fcd8e13bbdadc532f6612dd001fbf68e07e798d106bb0da2fa8c5e212b9dcd"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-short-close",
+      "kind": "fence",
+      "accepted": "## Requirements\n~~~~md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n~~~\n### Requirement: Still hidden\nThe planner SHALL support Still hidden.\n~~~~\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:2242549f03c5f0aeacbc3316336c9c91ccafa9375fe0aaf7836314c19c84e807"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-close-info",
+      "kind": "fence",
+      "accepted": "## Requirements\n```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n```suffix\n### Requirement: Still hidden\nThe planner SHALL support Still hidden.\n```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:da6ae55617b3ba680a4cfc611e3c0f6316a53e7c15ca7b8b11c07a09679954af"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-nbsp",
+      "kind": "fence",
+      "accepted": "## Requirements\n ~~~md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n ~~~\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:40801db041950e1b012eb8da85fdb80fa1eaa9571c8098c16be190423aa584ef"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-bom-whitespace",
+      "kind": "fence",
+      "accepted": "## Requirements\n ﻿```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n﻿```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:251d80fa298492a84d364a4d9c444166b4a2750329c2661519d8602c241ff5e8"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "delta-four-space-backtick",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n    ```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n    ```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:5bad3f54830324e24296757b7e50e34b6665974fb72c9d60c8a9874736ceaffd"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-four-space-tilde",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n    ~~~md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n    ~~~\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:2ad07121ab72105ad9df24be859cb4fa3337ba80e22f79e661ad5b3dcdfd5915"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-tab-backtick",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n\t```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n\t```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:2b5fde5d3f4e509ee0155b90ae39c56b83b2439cebf98915ccb3dbccbb41f917"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-tab-tilde",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n\t~~~md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n\t~~~\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:53436574ca5a0b6b03eedf5d5053903e9cb68dfb4d08895aecbf5e66a17be0c7"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-backtick-info",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n```md`example\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n    ```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:5bad3f54830324e24296757b7e50e34b6665974fb72c9d60c8a9874736ceaffd"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-native-tab-close",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n\t```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:2b5fde5d3f4e509ee0155b90ae39c56b83b2439cebf98915ccb3dbccbb41f917"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-native-four-space-close",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n~~~md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n    ~~~\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:2ad07121ab72105ad9df24be859cb4fa3337ba80e22f79e661ad5b3dcdfd5915"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-standard",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:70a43a6c8f089a69dd54610ee054b758c732a36fae9353290c2ee752d24e3a83"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-three-space",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n   ~~~~md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n   ~~~~\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:31ce7d5a2dadb1e2c132bbf9bb41d847e94eb488e2adb3b2b7304b08423ce53d"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-longer-close",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n````md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n     `````\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:860f6eb11a5439ee0ee210d6dc10bfe973356f170c1ad642cca0569190696c75"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-wrong-marker",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n~~~\n### Requirement: Still hidden\nThe planner SHALL support Still hidden.\n```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:36fcd8e13bbdadc532f6612dd001fbf68e07e798d106bb0da2fa8c5e212b9dcd"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-short-close",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n~~~~md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n~~~\n### Requirement: Still hidden\nThe planner SHALL support Still hidden.\n~~~~\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:2242549f03c5f0aeacbc3316336c9c91ccafa9375fe0aaf7836314c19c84e807"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-close-info",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n```suffix\n### Requirement: Still hidden\nThe planner SHALL support Still hidden.\n```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:da6ae55617b3ba680a4cfc611e3c0f6316a53e7c15ca7b8b11c07a09679954af"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-nbsp",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n ~~~md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n ~~~\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:40801db041950e1b012eb8da85fdb80fa1eaa9571c8098c16be190423aa584ef"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "delta-bom-whitespace",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n ﻿```md\n### Requirement: Hidden example\nThe system SHALL keep this as an example only.\n﻿```\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:251d80fa298492a84d364a4d9c444166b4a2750329c2661519d8602c241ff5e8"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n"
+    },
+    {
+      "name": "accepted-body-boundaries",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Actual requirement\nThe system SHALL preserve all body bytes.\n    ```md\n## MODIFIED Requirements\n### Requirement: Body example\nSHALL remain example.\n\t```\n### Notes\nThe system SHALL include the following prose.\n### Requirement: Following requirement\nThe planner SHALL support Following requirement.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:7602b28149a972305d95ab743fad687eab6e37fd5268814a1f65294328e1eac5"
+        },
+        {
+          "id": "planner.REQ-following-requirement",
+          "revision": "sha256:5fa93710a7d6463d0f297a12aea66cb39ef730fd4e5968a3d66ec7260a7f7510"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-body-example",
+          "revision": "sha256:d83af868b713a863fa1f7fc57a1fb600bac82a23f8024dc4a732b702d6cd32ac"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe system SHALL preserve all body bytes.\n    ```md\n## MODIFIED Requirements\n### Requirement: Body example\nSHALL remain example.\n\t```\n### Notes\nThe system SHALL include the following prose.\n\n### Requirement: Following requirement\nThe planner SHALL support Following requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "accepted-non-native-whitespace",
+      "kind": "fence",
+      "accepted": "## Requirements\n```\n### Requirement: Visible requirement\nThe planner SHALL support Visible requirement.\n```\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        },
+        {
+          "id": "planner.REQ-visible-requirement",
+          "revision": "sha256:a347eb2cd0a59dcc53b440af5a36c37ae5403f96f8722c4a3243eace3553a7a5"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Visible requirement\nThe planner SHALL support Visible requirement.\n```\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "delta-body-boundaries",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Actual requirement\nThe system SHALL preserve all body bytes.\n    ```md\n## MODIFIED Requirements\n### Requirement: Body example\nSHALL remain example.\n\t```\n### Notes\nThe system SHALL include the following prose.\n### Requirement: Following requirement\nThe planner SHALL support Following requirement.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:7602b28149a972305d95ab743fad687eab6e37fd5268814a1f65294328e1eac5"
+        },
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-following-requirement",
+          "revision": "sha256:5fa93710a7d6463d0f297a12aea66cb39ef730fd4e5968a3d66ec7260a7f7510"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-body-example",
+          "revision": "sha256:d83af868b713a863fa1f7fc57a1fb600bac82a23f8024dc4a732b702d6cd32ac"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Actual requirement\nThe system SHALL preserve all body bytes.\n    ```md\n## MODIFIED Requirements\n### Requirement: Body example\nSHALL remain example.\n\t```\n### Notes\nThe system SHALL include the following prose.\n\n### Requirement: Following requirement\nThe planner SHALL support Following requirement.\n"
+    },
+    {
+      "name": "delta-non-native-whitespace",
+      "kind": "fence",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n```\n### Requirement: Visible requirement\nThe planner SHALL support Visible requirement.\n```\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        },
+        {
+          "id": "planner.REQ-visible-requirement",
+          "revision": "sha256:a347eb2cd0a59dcc53b440af5a36c37ae5403f96f8722c4a3243eace3553a7a5"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Visible requirement\nThe planner SHALL support Visible requirement.\n```\n"
+    },
+    {
+      "name": "first-accepted-section",
+      "kind": "fence",
+      "accepted": "### Requirement: Before example\nThe planner SHALL support Before example.\n## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n## Appendix\n### Requirement: Appendix example\nThe planner SHALL support Appendix example.\n## Requirements\n### Requirement: Later example\nThe planner SHALL support Later example.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Spare\nThe planner SHALL support Spare.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-actual-requirement",
+          "revision": "sha256:0fb877171f9d6c06ea98ffaa5db9a9be25fe329da3e84d9b746d7ec2b93c1230"
+        },
+        {
+          "id": "planner.REQ-spare",
+          "revision": "sha256:c0184a3dd5254c150558da0734b652a04fab814c4e23c4861fbeb3e9de4324fb"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-before-example",
+          "revision": "sha256:7d138dbd8f43caed1e90e025166f19bb9d584578b48182de282c61055302b611"
+        },
+        {
+          "id": "planner.REQ-appendix-example",
+          "revision": "sha256:f0df8f4ec8ceb76350ecb8b7e0ac25b89e6153b10e061f80be02e04da5c2a146"
+        },
+        {
+          "id": "planner.REQ-later-example",
+          "revision": "sha256:fda1cb0dcb42518f50fe6a7c964ad0ccfd2ea0769dafc57b36786286b08b1d62"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Actual requirement\nThe planner SHALL support Actual requirement.\n\n### Requirement: Spare\nThe planner SHALL support Spare.\n"
+    },
+    {
+      "name": "repeated-added-exact",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Ignored early addition\nThe planner SHALL support Ignored early addition.\n\n## ADDED Requirements\n### Requirement: Kept final addition\nThe planner SHALL support Kept final addition.\n",
+      "unsupported": true,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-kept-final-addition",
+          "revision": "sha256:1e1c08690735c57cc3c6edca6ff9cb9d34da70a597fee8d0627fd41c7bcd4cc6"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Kept final addition\nThe planner SHALL support Kept final addition.\n"
+    },
+    {
+      "name": "repeated-added-case-variant",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Ignored early addition\nThe planner SHALL support Ignored early addition.\n\n## added requirements\n### Requirement: Kept final addition\nThe planner SHALL support Kept final addition.\n",
+      "unsupported": true,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-ignored-early-addition",
+          "revision": "sha256:5000d23764e973572efc1f0d9097607028f1cf86716f1b82c3faee89659bcbf3"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Ignored early addition\nThe planner SHALL support Ignored early addition.\n"
+    },
+    {
+      "name": "repeated-added-empty-final",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Ignored early addition\nThe planner SHALL support Ignored early addition.\n\n## ADDED Requirements\n",
+      "unsupported": true,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n"
+    },
+    {
+      "name": "repeated-modified-exact",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## MODIFIED Requirements\n### Requirement: Focus task\nThe planner SHALL apply the ignored early revision.\n\n## MODIFIED Requirements\n### Requirement: Restore focus\nThe planner SHALL apply the final revision.\n",
+      "unsupported": true,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:688d0d36cf731e92e74ee59ffc337c55062ddaba17559791b73d2a3fde205520"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL apply the final revision.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n"
+    },
+    {
+      "name": "repeated-modified-case-variant",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## MODIFIED Requirements\n### Requirement: Focus task\nThe planner SHALL apply the ignored early revision.\n\n## modified requirements\n### Requirement: Restore focus\nThe planner SHALL apply the final revision.\n",
+      "unsupported": true,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:3d36a82a418520389507b9ac4d5ec28678ebdf45bb939131d320fdbd7d5fcc80"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL apply the ignored early revision.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n"
+    },
+    {
+      "name": "repeated-modified-empty-final",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## MODIFIED Requirements\n### Requirement: Focus task\nThe planner SHALL apply the ignored early revision.\n\n## MODIFIED Requirements\n",
+      "unsupported": true,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n"
+    },
+    {
+      "name": "repeated-removed-exact",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## REMOVED Requirements\n- `### Requirement: Focus task`\n\n## REMOVED Requirements\n- `### Requirement: Restore focus`\n",
+      "unsupported": true,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n"
+    },
+    {
+      "name": "repeated-removed-case-variant",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## REMOVED Requirements\n- `### Requirement: Focus task`\n\n## removed requirements\n- `### Requirement: Restore focus`\n",
+      "unsupported": true,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n"
+    },
+    {
+      "name": "repeated-removed-empty-final",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## REMOVED Requirements\n- `### Requirement: Focus task`\n\n## REMOVED Requirements\n",
+      "unsupported": true,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n"
+    },
+    {
+      "name": "repeated-renamed-exact",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## RENAMED Requirements\n- FROM: `### Requirement: Focus task`\n- TO: `### Requirement: Ignored rename`\n\n## RENAMED Requirements\n- FROM: `### Requirement: Restore focus`\n- TO: `### Requirement: Kept rename`\n",
+      "unsupported": true,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-kept-rename",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Kept rename\nThe planner SHALL support Restore focus.\n"
+    },
+    {
+      "name": "repeated-renamed-case-variant",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## RENAMED Requirements\n- FROM: `### Requirement: Focus task`\n- TO: `### Requirement: Ignored rename`\n\n## renamed requirements\n- FROM: `### Requirement: Restore focus`\n- TO: `### Requirement: Kept rename`\n",
+      "unsupported": true,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-ignored-rename",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Ignored rename\nThe planner SHALL support Focus task.\n"
+    },
+    {
+      "name": "repeated-renamed-empty-final",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## RENAMED Requirements\n- FROM: `### Requirement: Focus task`\n- TO: `### Requirement: Ignored rename`\n\n## RENAMED Requirements\n",
+      "unsupported": true,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n"
+    },
+    {
+      "name": "distinct-sections",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## RENAMED Requirements\n- FROM: `### Requirement: Focus task`\n- TO: `### Requirement: Focus selection`\n\n## REMOVED Requirements\n- `### Requirement: Restore focus`\n\n## MODIFIED Requirements\n### Requirement: Focus selection\nThe planner SHALL apply the new selection.\n\n## ADDED Requirements\n### Requirement: Kept final addition\nThe planner SHALL support Kept final addition.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-selection",
+          "revision": "sha256:da0243c896015e38db495bd8e920f635d0fdd3ec9e1b53deb07b0271426ada3b"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-kept-final-addition",
+          "revision": "sha256:1e1c08690735c57cc3c6edca6ff9cb9d34da70a597fee8d0627fd41c7bcd4cc6"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Focus selection\nThe planner SHALL apply the new selection.\n\n### Requirement: Kept final addition\nThe planner SHALL support Kept final addition.\n"
+    },
+    {
+      "name": "distinct-sections-reversed",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n### Requirement: Kept final addition\nThe planner SHALL support Kept final addition.\n\n## MODIFIED Requirements\n### Requirement: Focus selection\nThe planner SHALL apply the new selection.\n\n## REMOVED Requirements\n- `### Requirement: Restore focus`\n\n## RENAMED Requirements\n- FROM: `### Requirement: Focus task`\n- TO: `### Requirement: Focus selection`\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-selection",
+          "revision": "sha256:da0243c896015e38db495bd8e920f635d0fdd3ec9e1b53deb07b0271426ada3b"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-kept-final-addition",
+          "revision": "sha256:1e1c08690735c57cc3c6edca6ff9cb9d34da70a597fee8d0627fd41c7bcd4cc6"
+        }
+      ],
+      "excluded": [],
+      "archiveAccepted": "## Requirements\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Focus selection\nThe planner SHALL apply the new selection.\n\n### Requirement: Kept final addition\nThe planner SHALL support Kept final addition.\n"
+    },
+    {
+      "name": "fenced-repeated-section",
+      "kind": "repeated",
+      "accepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n",
+      "delta": "## ADDED Requirements\n    ```md\n## ADDED Requirements\n### Requirement: Hidden example\nThe planner SHALL support Hidden example.\n\t```\n### Requirement: Kept final addition\nThe planner SHALL support Kept final addition.\n",
+      "unsupported": false,
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-focus-task",
+          "revision": "sha256:1a539c5374da39a2f001ed9ce805786887bbb8d367de92e49375ad5a1b1ec363"
+        },
+        {
+          "id": "planner.REQ-keep-stable",
+          "revision": "sha256:f190d20f1d9916c5c0296059fc885cd8df125ec33075b2e510428ab58f8f0bde"
+        },
+        {
+          "id": "planner.REQ-kept-final-addition",
+          "revision": "sha256:1e1c08690735c57cc3c6edca6ff9cb9d34da70a597fee8d0627fd41c7bcd4cc6"
+        },
+        {
+          "id": "planner.REQ-restore-focus",
+          "revision": "sha256:787ea140356d8778bcb75b3238ed3815490ff165abace2b676aa5dc027177a93"
+        }
+      ],
+      "excluded": [
+        {
+          "id": "planner.REQ-hidden-example",
+          "revision": "sha256:e908f7f26010974cddca32ef8a371faf4d0038dcd57bb544d551187d5080e637"
+        }
+      ],
+      "archiveAccepted": "## Requirements\n### Requirement: Focus task\nThe planner SHALL support Focus task.\n\n### Requirement: Restore focus\nThe planner SHALL support Restore focus.\n\n### Requirement: Keep stable\nThe planner SHALL support Keep stable.\n\n### Requirement: Kept final addition\nThe planner SHALL support Kept final addition.\n"
+    }
+  ]
+}
