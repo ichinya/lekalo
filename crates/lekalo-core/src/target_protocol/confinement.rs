@@ -199,9 +199,12 @@ impl Sandbox {
                 let destination = project.join(relative);
                 if scope.ends_with("/**") {
                     std::fs::create_dir_all(&destination).map_err(|_| refusal("sandbox-copy"))?;
-                } else if !destination.exists() {
-                    // Exact absent files need a writable parent to create.
-                    // The staged full-tree verifier still permits only the plan.
+                } else if cfg!(target_os = "linux") || !destination.exists() {
+                    // Creating an exact file needs a writable parent. Linux
+                    // also needs that directory for unlink: binding an existing
+                    // file itself leaves its directory entry read-only.
+                    // This grants only private-stage access; whole-tree
+                    // verification still permits publication of only the plan.
                     let parent = destination.parent().expect("project child");
                     std::fs::create_dir_all(parent).map_err(|_| refusal("sandbox-copy"))?;
                     write_roots.push(parent.to_path_buf());
