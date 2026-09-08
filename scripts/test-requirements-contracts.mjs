@@ -15,8 +15,8 @@
 // crates/lekalo-core/tests/requirements.rs), and both digest sidecars
 // are recomputed over the exact golden payloads. A raw-text scan
 // additionally rejects duplicate JSON keys, which a parsed-value
-// representation cannot see. Vectors whose rejection is semantic only вЂ”
-// the closed wire cannot express them вЂ” live in the `diff` directory and
+// representation cannot see. Vectors whose rejection is semantic only —
+// the closed wire cannot express them — live in the `diff` directory and
 // must satisfy Ajv; the typed normalizer rejects them (proven by the
 // Rust suite).
 

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dev.lekalo/requirements-report.schema.v1.0.0.json",
   "title": "Lekalo Requirements Report",
-  "description": "Closed derived read-only report of one requirements attachment resolution (issue #36): the effective requirement catalog with exact body revisions, every reference resolution status (fresh, stale, missing, conflict), the coverage gaps (requirements no symbol links), the explicit conflicts that block silent resolution, and the changed-requirement impact rows. Canonical bytes are compact UTF-8 JSON with byte-sorted object keys. The report carries ids, digests, and bounded identifiers only \u0432\u0402\u201d never requirement text, absolute paths, or host data.",
+  "description": "Closed derived read-only report of one requirements attachment resolution (issue #36): the effective requirement catalog with exact body revisions, every reference resolution status (fresh, stale, missing, conflict), the coverage gaps (requirements no symbol links), the explicit conflicts that block silent resolution, and the changed-requirement impact rows. Canonical bytes are compact UTF-8 JSON with byte-sorted object keys. The report carries ids, digests, and bounded identifiers only \u2014 never requirement text, absolute paths, or host data.",
   "type": "object",
   "additionalProperties": false,
   "required": [
