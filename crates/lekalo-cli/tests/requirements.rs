@@ -244,6 +244,239 @@ fn native_fence_matrix_matches_catalog_revisions_and_cli_gates() {
 }
 
 #[test]
+fn native_lexical_catalogs_and_actual_rebuilt_specs_preserve_trace() {
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/requirements/native-lexical-vectors.json"
+    ))
+    .unwrap();
+    for vector in vectors["vectors"].as_array().unwrap() {
+        let name = vector["name"].as_str().unwrap();
+        let temp = scratch();
+        let dir = temp.path();
+        let spec = dir.join("openspec/specs/planner/spec.md");
+        let active = dir.join("openspec/changes/2026-09-01-archive-focus");
+        fs::write(&spec, vector["accepted"].as_str().unwrap()).unwrap();
+        fs::write(
+            active.join("specs/planner/spec.md"),
+            vector["delta"].as_str().unwrap(),
+        )
+        .unwrap();
+        let mut value = attachment(dir);
+        value["references"] =
+            if vector["unsupported"] == true {
+                json!([])
+            } else {
+                vector["expectedEntries"].as_array().unwrap().iter().map(|e| json!({
+                "symbol":"planner.focus_task", "relation":"implements", "source":"openspec",
+                "requirement":e["id"], "revision":e["revision"]
+            })).collect::<Vec<_>>().into()
+            };
+        save_attachment(dir, &value);
+        let snapshot = tree_bytes(dir);
+        if vector["unsupported"] == true {
+            for op in ["validate", "report", "trace"] {
+                let result = lekalo_in(
+                    dir,
+                    &[
+                        "--json",
+                        "requirements",
+                        op,
+                        "requirements.attachment.json",
+                        "--project",
+                        ".",
+                    ],
+                );
+                assert_eq!(
+                    exit_code(&result),
+                    1,
+                    "{name}/{op}: {}",
+                    stderr_text(&result)
+                );
+                assert!(result.stdout.is_empty(), "{name}/{op} partial success");
+                assert!(
+                    stderr_text(&result).contains("requirements.provider-invalid"),
+                    "{name}/{op}"
+                );
+            }
+            assert_eq!(snapshot, tree_bytes(dir), "{name} rejected no writes");
+            continue;
+        }
+        let output = lekalo_in(
+            dir,
+            &[
+                "--json",
+                "requirements",
+                "report",
+                "requirements.attachment.json",
+                "--project",
+                ".",
+            ],
+        );
+        assert_eq!(exit_code(&output), 0, "{name}: {}", stderr_text(&output));
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let entries: Vec<_> = report["report"]["requirements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| json!({"id":r["id"], "revision":r["digest"]}))
+            .collect();
+        assert_eq!(
+            Value::from(entries),
+            vector["expectedEntries"],
+            "{name} native catalog/revisions"
+        );
+        requirements_json(dir, "validate", 0);
+        let before = requirements_json(dir, "trace", 0);
+        assert_eq!(
+            before["trace"]["relations"].as_array().unwrap().len(),
+            vector["expectedEntries"].as_array().unwrap().len(),
+            "{name}"
+        );
+        assert_eq!(snapshot, tree_bytes(dir), "{name} no writes");
+        if let Some(rebuilt) = vector["archiveAccepted"].as_str() {
+            // Actual upstream buildUpdatedSpec output, recorded in the fixture.
+            // Native refusals have no rebuilt text and are extraction-only cases.
+            fs::write(&spec, rebuilt).unwrap();
+            fs::create_dir_all(dir.join("openspec/changes/archive")).unwrap();
+            fs::rename(active, dir.join("openspec/changes/archive/correction")).unwrap();
+            let snapshot = tree_bytes(dir);
+            requirements_json(dir, "validate", 0);
+            assert_eq!(
+                before,
+                requirements_json(dir, "trace", 0),
+                "{name} actual native rebuild"
+            );
+            assert_eq!(snapshot, tree_bytes(dir), "{name} archived no writes");
+        } else {
+            assert!(
+                vector["nativeError"].is_string(),
+                "{name} must record the native refusal"
+            );
+        }
+    }
+}
+
+#[cfg(any(unix, windows))]
+fn directory_link(target: &Path, link: &Path) {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target, link).unwrap();
+    #[cfg(windows)]
+    {
+        let result = Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link.to_string_lossy().replace('/', "\\"))
+            .arg(target.to_string_lossy().replace('/', "\\"))
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "junction: {}",
+            stderr_text(&result)
+        );
+    }
+}
+
+#[test]
+#[cfg(any(unix, windows))]
+fn provider_directory_links_fail_closed_even_when_empty_or_missing_children() {
+    for kind in ["root", "specs", "changes", "change", "ancestor"] {
+        for full in [false, true] {
+            for referenced in [false, true] {
+                let temp = tempfile::tempdir().unwrap();
+                let dir = temp.path().join("project");
+                copy_fixture(&fixture_path().join("lekalo"), &dir.join("lekalo"));
+                let external = temp.path().join("external");
+                fs::create_dir(&external).unwrap();
+                if full {
+                    copy_fixture(&fixture_path().join("openspec"), &external);
+                }
+                let link = match kind {
+                    "root" => dir.join("openspec"),
+                    "specs" => dir.join("openspec/specs"),
+                    "changes" => dir.join("openspec/changes"),
+                    "change" => dir.join("openspec/changes/correction"),
+                    "ancestor" => dir.join("nested"),
+                    _ => unreachable!(),
+                };
+                fs::create_dir_all(link.parent().unwrap()).unwrap();
+                directory_link(&external, &link);
+                let mut value = attachment(&fixture_path());
+                if kind == "ancestor" {
+                    value["providers"][0]["root"] = "nested/openspec".into();
+                }
+                if !referenced {
+                    value["references"] = json!([]);
+                }
+                save_attachment(&dir, &value);
+                for op in ["validate", "report", "trace"] {
+                    let result = lekalo_in(
+                        &dir,
+                        &[
+                            "--json",
+                            "requirements",
+                            op,
+                            "requirements.attachment.json",
+                            "--project",
+                            ".",
+                        ],
+                    );
+                    assert_eq!(
+                        exit_code(&result),
+                        1,
+                        "{kind}/{full}/{referenced}/{op}: {}",
+                        stderr_text(&result)
+                    );
+                    assert!(result.stdout.is_empty());
+                    assert!(stderr_text(&result).contains("requirements.provider-invalid"));
+                }
+            }
+        }
+    }
+    for kind in ["absent", "empty-root", "empty-specs", "full"] {
+        for referenced in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let dir = temp.path();
+            copy_fixture(&fixture_path().join("lekalo"), &dir.join("lekalo"));
+            match kind {
+                "empty-root" => fs::create_dir(dir.join("openspec")).unwrap(),
+                "empty-specs" => fs::create_dir_all(dir.join("openspec/specs")).unwrap(),
+                "full" => copy_fixture(&fixture_path().join("openspec"), &dir.join("openspec")),
+                _ => (),
+            }
+            let mut value = attachment(&fixture_path());
+            if !referenced {
+                value["references"] = json!([]);
+            }
+            save_attachment(dir, &value);
+            let result = lekalo_in(
+                dir,
+                &[
+                    "--json",
+                    "requirements",
+                    "validate",
+                    "requirements.attachment.json",
+                    "--project",
+                    ".",
+                ],
+            );
+            let expected = if !referenced || kind == "full" {
+                0
+            } else if kind == "absent" {
+                4
+            } else {
+                3
+            };
+            assert_eq!(
+                exit_code(&result),
+                expected,
+                "{kind}/{referenced}: {}",
+                stderr_text(&result)
+            );
+        }
+    }
+}
+
+#[test]
 fn native_repeated_sections_deny_and_distinct_sections_resolve() {
     check_native_vectors("repeated");
 }

@@ -69,10 +69,16 @@ combined requirement id at most 128. No identifier is truncated to fit.
 ### Revision digests
 
 A revision digest is the SHA-256 over the canonical requirement body: every
-line with trailing whitespace dropped, leading and trailing blank lines
+line with trailing ECMAScript whitespace dropped, leading and trailing blank lines
 dropped, one trailing newline. The title line is excluded, so a pure rename
 (title change, unchanged body) is detectable as an id move with an identical
 digest. Canonical bytes never enter Lekalo — only the digest.
+
+The whitespace set is the pinned native parser's `\s`/String trim set at
+every lexical stage, including whole-block tails: TAB, NBSP and U+FEFF are
+whitespace; U+0085 NEL is content. This corrects the unpublished candidate's
+Rust-whitespace digests for those boundary characters. Existing ordinary
+body digests and all independent contract versions remain unchanged.
 
 ## Resolution
 
@@ -122,6 +128,37 @@ REMOVED accepts both requirement blocks and native bullets such as
 - FROM: `### Requirement: Focus task`
 - TO: `### Requirement: Focus selection`
 ```
+
+Heading labels are case-insensitive, but directive labels are separate:
+`FROM:`, `TO:` and the reference's `Requirement:` are case-sensitive.
+Directive references support either no backticks or exactly one balanced
+backtick pair immediately around `### Requirement: <title>`. Whitespace
+after `###` and `Requirement:` follows native ECMAScript rules. Lowercase
+reference labels, multiple/unbalanced backtick wrappers, backticks within
+reference names, or whitespace between an opening backtick and `###` are
+unsupported. Malformed reference-like lines in REMOVED and nonempty
+unrecognized lines in RENAMED reject the provider; they never silently
+rename or remove a requirement that native parsing retains. Ordinary
+REMOVED-block rationale remains body content.
+
+The bounded reader also rejects accepted documents with a leading BOM,
+delta documents with multiple leading BOMs, empty delta H2 headings, and
+U+2028/U+2029 in unfenced structural/directive lines. Native extraction
+strips exactly one leading BOM, but native accepted-file structure preflight
+does not; excluding accepted BOM documents avoids certifying that ambiguous
+surface. A single delta BOM is supported. U+2028/U+2029 remain permitted in
+ordinary body text and native fences. Empty requirement names fail title
+validation. These unsupported forms return `requirements.provider-invalid`
+(usually `unsupported-native-grammar`; malformed titles/layouts use
+`tree-shape`), with exit 1 and no successful catalog or trace. The reader
+does not replace OpenSpec's separate archive structure/scenario checks.
+
+The shared filesystem boundary checks the root and every directory component
+before Windows enumeration, entry lookup or file reads. Empty directories
+and missing children cannot hide an existing junction/reparse-point ancestor.
+An absent ordinary provider stays optional, an existing ordinary empty tree
+is valid, and referenced absence stays unavailable. Unix continues to use
+component-relative no-follow directory handles.
 
 Every contradiction records an explicit conflict (`duplicate-title`,
 `added-existing`, `duplicate-added`, `modified-missing`, `removed-missing`,

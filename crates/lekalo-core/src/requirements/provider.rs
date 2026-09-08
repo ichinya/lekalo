@@ -23,6 +23,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::native_lexical::{self as native, header_reference, requirement_title};
 use super::version;
 use super::{is_change_id, requirement_id, sha256_digest, title_slug, ProviderDecl, ProviderKind};
 
@@ -485,42 +486,16 @@ fn raw_block(capability: &str, title: &str, body: &[String]) -> Result<RawBlock,
     })
 }
 
-fn requirement_title(line: &str) -> Option<&str> {
-    let heading = line.strip_prefix("###")?.trim_start();
-    let prefix = heading.get(..12)?;
-    prefix
-        .eq_ignore_ascii_case("Requirement:")
-        .then(|| heading[12..].trim())
-        .filter(|s| !s.is_empty())
-}
-
-fn header_reference(text: &str) -> Option<&str> {
-    requirement_title(text.trim().trim_matches('`').trim())
-}
-
-/// ECMAScript `\s`, as used by native OpenSpec's code-fence.ts. Rust's
-/// Unicode whitespace differs (notably U+0085 and U+FEFF). This predicate
-/// applies to fence boundaries only; it does not normalize body bytes.
-fn native_fence_whitespace(c: char) -> bool {
-    matches!(
-        c,
-        '\u{0009}'..='\u{000d}'
-            | ' '
-            | '\u{00a0}'
-            | '\u{1680}'
-            | '\u{2000}'..='\u{200a}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202f}'
-            | '\u{205f}'
-            | '\u{3000}'
-            | '\u{feff}'
-    )
-}
-
 fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, TreeError> {
+    // Native extraction strips exactly one BOM, but accepted-file archive
+    // structure preflight does not. Exclude accepted BOM documents and repeated
+    // delta BOMs from the supported subset rather than certify that ambiguity.
+    if text.starts_with('\u{feff}') && (!delta || text.starts_with("\u{feff}\u{feff}")) {
+        return Err(TreeError::UnsupportedGrammar);
+    }
     let text = text
-        .trim_start_matches('\u{feff}')
+        .strip_prefix('\u{feff}')
+        .unwrap_or(text)
         .replace("\r\n", "\n")
         .replace('\r', "\n");
     let mut document = Document::default();
@@ -534,7 +509,7 @@ fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, Tre
         // Native OpenSpec accepts arbitrary leading whitespace and opener
         // info, including backticks. A close needs the same marker, at least
         // the opener length, and only native whitespace after the run.
-        let trimmed = line.trim_start_matches(native_fence_whitespace);
+        let trimmed = native::trim_start(line);
         let marker = trimmed.as_bytes().first().copied();
         let run = trimmed.bytes().take_while(|b| Some(*b) == marker).count();
         let fence_line = matches!(marker, Some(b'`' | b'~')) && run >= 3;
@@ -542,9 +517,7 @@ fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, Tre
             if fence_line
                 && marker == Some(open)
                 && run >= length
-                && trimmed[run..]
-                    .trim_matches(native_fence_whitespace)
-                    .is_empty()
+                && native::trim(&trimmed[run..]).is_empty()
             {
                 fence = None;
             }
@@ -555,22 +528,41 @@ fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, Tre
         } else {
             false
         };
+        if !masked
+            && native::has_line_separator(line)
+            && (line.starts_with('#')
+                || matches!(section, Some(Section::Removed | Section::Renamed)))
+        {
+            return Err(TreeError::UnsupportedGrammar);
+        }
         let title = if masked {
             None
         } else {
             requirement_title(line)
         };
-        let section_heading = !masked
-            && line
-                .strip_prefix("##")
-                .is_some_and(|rest| rest.starts_with(char::is_whitespace));
+        let section_title = (!masked).then(|| native::section_title(line)).flatten();
+        let section_heading = section_title.is_some();
         let removed_bullet = if !masked && section == Some(Section::Removed) {
-            line.trim_start()
-                .strip_prefix('-')
-                .and_then(header_reference)
+            if let Some(rest) = native::trim_start(line).strip_prefix('-') {
+                let reference = header_reference(rest);
+                if reference.is_none() && rest.contains("###") {
+                    return Err(TreeError::UnsupportedGrammar);
+                }
+                reference
+            } else {
+                None
+            }
         } else {
             None
         };
+        if !masked
+            && section == Some(Section::Removed)
+            && title.is_none()
+            && removed_bullet.is_none()
+            && line.contains("###")
+        {
+            return Err(TreeError::UnsupportedGrammar);
+        }
         if title.is_some() || section_heading || removed_bullet.is_some() {
             if let Some((name, operation, body)) = current.take() {
                 document
@@ -583,7 +575,11 @@ fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, Tre
                 return Err(TreeError::Shape);
             }
             section = if delta {
-                let operation = Section::parse(line[2..].trim());
+                let title = section_title.expect("section heading");
+                if title.is_empty() {
+                    return Err(TreeError::UnsupportedGrammar);
+                }
+                let operation = Section::parse(title);
                 if let Some(operation) = operation {
                     // Native selects one body per operation (exact-title
                     // repeats overwrite; case variants select differently).
@@ -595,7 +591,9 @@ fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, Tre
                 }
                 operation
             } else if !accepted_section_seen
-                && line[2..].trim().eq_ignore_ascii_case("Requirements")
+                && section_title
+                    .expect("section heading")
+                    .eq_ignore_ascii_case("Requirements")
             {
                 // Native accepted specs expose only the first Requirements
                 // section. The next unfenced H2 closes it permanently.
@@ -622,31 +620,32 @@ fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, Tre
             continue;
         }
         if !masked && section == Some(Section::Renamed) {
-            let text = line.trim().strip_prefix('-').unwrap_or(line.trim()).trim();
+            let text = native::trim(line);
+            let text = native::trim_start(text.strip_prefix('-').unwrap_or(text));
             if let Some(rest) = text.strip_prefix("FROM:") {
                 if rename_from.is_some() {
                     return Err(TreeError::Shape);
                 }
                 rename_from = Some(raw_block(
                     capability,
-                    header_reference(rest).ok_or(TreeError::Shape)?,
+                    header_reference(rest).ok_or(TreeError::UnsupportedGrammar)?,
                     &[],
                 )?);
             } else if let Some(rest) = text.strip_prefix("TO:") {
                 let from = rename_from.take().ok_or(TreeError::Shape)?;
                 let to = raw_block(
                     capability,
-                    header_reference(rest).ok_or(TreeError::Shape)?,
+                    header_reference(rest).ok_or(TreeError::UnsupportedGrammar)?,
                     &[],
                 )?;
                 document.renames.push((from, to));
             } else if !text.is_empty() {
-                return Err(TreeError::Shape);
+                return Err(TreeError::UnsupportedGrammar);
             }
             continue;
         }
         if let Some((_, _, body)) = &mut current {
-            body.push(line.trim_end().to_owned());
+            body.push(native::trim_end(line).to_owned());
         }
     }
     if rename_from.is_some() {
@@ -729,6 +728,8 @@ enum TreeError {
     Shape,
     /// Repeated delta operation sections are outside the supported subset.
     DuplicateSection,
+    /// A construct outside the explicitly documented native lexical subset.
+    UnsupportedGrammar,
 }
 
 impl TreeError {
@@ -749,6 +750,7 @@ impl TreeError {
             Self::Limit => Loaded::Invalid("tree-over-limit"),
             Self::Shape => Loaded::Invalid("tree-shape"),
             Self::DuplicateSection => Loaded::Invalid("duplicate-operation-section"),
+            Self::UnsupportedGrammar => Loaded::Invalid("unsupported-native-grammar"),
         }
     }
 }

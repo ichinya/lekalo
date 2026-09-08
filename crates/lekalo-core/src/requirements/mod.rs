@@ -28,6 +28,7 @@
 
 pub mod diagnostic;
 mod json;
+mod native_lexical;
 pub(crate) mod provider;
 pub mod report;
 pub mod trace;

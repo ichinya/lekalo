@@ -143,6 +143,17 @@ supported. The committed native parser vectors record executed native
 catalogs, body revisions and archive plans; they establish these bounded
 cases without claiming exhaustive Markdown or archive CLI equivalence.
 
+The fourth correction shares ECMAScript whitespace across all lexical
+stages and revision trimming, while keeping case-insensitive requirement
+headings separate from case-sensitive rename/removal directives. Ambiguous
+reference wrappers, accepted leading BOMs, repeated delta BOMs, empty delta
+H2 headings and structural Unicode line separators are explicitly rejected
+as documented in `docs/requirements.md`. The lexical fixtures retain original
+native extraction/plans and actual `buildUpdatedSpec` output; native structure
+refusals remain separate extraction observations. Windows directory operations
+now check every ancestor before enumeration, including empty and missing-child
+paths, with the same check shared by entry lookup and file reading.
+
 - Lekalo gains requirement traceability with zero Model/IR/schema churn and
   zero writes to OpenSpec-owned paths.
 - Consumers get two closed JSON contracts plus the existing trace contract;

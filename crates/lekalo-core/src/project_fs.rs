@@ -448,12 +448,22 @@ mod imp {
     }
 
     impl FsInner {
-        fn physical(&self, logical: &str) -> PathBuf {
+        /// Check the root and every directory component before any operation,
+        /// even enumeration of an empty directory or a missing-child probe.
+        fn directory(&self, logical: &str) -> Result<PathBuf, FsErrorKind> {
             let mut path = self.root.clone();
+            let metadata = fs::symlink_metadata(&path).map_err(|error| error_of(&error))?;
+            if classify(&metadata) != EntryType::Directory {
+                return Err(FsErrorKind::Io);
+            }
             for segment in super::logical_segments(logical) {
                 path.push(segment);
+                let metadata = fs::symlink_metadata(&path).map_err(|error| error_of(&error))?;
+                if classify(&metadata) != EntryType::Directory {
+                    return Err(FsErrorKind::Io);
+                }
             }
-            path
+            Ok(path)
         }
     }
 
@@ -471,14 +481,14 @@ mod imp {
         }
 
         pub fn entry_type(&self, logical_dir: &str, name: &str) -> Result<EntryType, FsErrorKind> {
-            let mut path = self.inner.physical(logical_dir);
+            let mut path = self.inner.directory(logical_dir)?;
             path.push(name);
             let metadata = fs::symlink_metadata(&path).map_err(|error| error_of(&error))?;
             Ok(classify(&metadata))
         }
 
         pub fn entries(&self, logical_dir: &str) -> Result<Vec<(String, EntryType)>, FsErrorKind> {
-            let path = self.inner.physical(logical_dir);
+            let path = self.inner.directory(logical_dir)?;
             let read = fs::read_dir(&path).map_err(|error| error_of(&error))?;
             let mut collected = Vec::new();
             for entry in read {
@@ -504,15 +514,7 @@ mod imp {
             name: &str,
             max: usize,
         ) -> Result<Option<Vec<u8>>, FsErrorKind> {
-            let mut component_path = self.inner.root.clone();
-            for segment in super::logical_segments(logical_dir) {
-                component_path.push(segment);
-                let metadata =
-                    fs::symlink_metadata(&component_path).map_err(|error| error_of(&error))?;
-                if classify(&metadata) != EntryType::Directory {
-                    return Err(FsErrorKind::Io);
-                }
-            }
+            let mut component_path = self.inner.directory(logical_dir)?;
             component_path.push(name);
             let before = fs::symlink_metadata(&component_path).map_err(|error| error_of(&error))?;
             if classify(&before) != EntryType::File {
