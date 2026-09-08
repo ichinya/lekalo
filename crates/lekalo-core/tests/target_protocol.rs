@@ -59,6 +59,8 @@ impl Sandbox {
         let dir =
             std::env::temp_dir().join(format!("lekalo-target-{tag}-{}-{id}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("sandbox dir");
+        std::fs::create_dir_all(dir.join(".lekalo/ir")).expect("IR directory");
+        std::fs::write(dir.join(".lekalo/ir/planner.json"), b"{}").expect("IR input");
         Self { dir }
     }
 
@@ -462,7 +464,7 @@ fn plan_clean_then_clean_round_trips_the_deletions() {
 }
 
 #[test]
-fn dry_run_mutation_is_refused_as_denied() {
+fn dry_run_mutation_is_prevented_by_confinement() {
     let sandbox = Sandbox::new("mutate-dry");
     let command = faulted_command("mutate-dry");
     let mut client = TargetClient::new(test_limits());
@@ -483,11 +485,10 @@ fn dry_run_mutation_is_refused_as_denied() {
             None,
         )
         .expect_err("dry run mutated");
-    assert!(matches!(error, TargetFailure::DryRunMutation { .. }));
-    assert_eq!(
-        error.rule(),
-        ("target.dry-run-mutation", lekalo_core::Status::Denied)
-    );
+    // The OS rejects the attempted write. Node exits instead of returning a
+    // valid envelope; no after-the-fact mutation is claimed or normalized.
+    assert!(matches!(error, TargetFailure::Crash { .. }), "{error:?}");
+    assert!(!sandbox.dir.join(".lekalo/generated").exists());
 }
 
 #[test]

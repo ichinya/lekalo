@@ -23,12 +23,20 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// A snapshot of one write scope: logical path to observed content digest.
-/// Files that are unreadable or oversized record a stable marker so a
-/// change is still detected, never silently ignored.
+/// Directories have a distinct marker. Unreadable, oversized and special
+/// entries refuse the snapshot; unknown content never proves equality.
 pub type Snapshot = BTreeMap<String, String>;
 
-/// The unreadable-content marker recorded in snapshots.
-const UNREADABLE: &str = "unreadable";
+/// Inspect every entry in a private scoped view, including empty directories.
+pub(super) fn snapshot_all(fs: &crate::project_fs::Fs) -> Result<Snapshot, SnapshotRejection> {
+    let mut out = Snapshot::new();
+    let entries = bounded_entries(fs, "")?;
+    walk_entries(fs, "", &entries, &mut out, &mut 0)?;
+    Ok(out)
+}
+
+/// Directory identity cannot be confused with a file digest.
+const DIRECTORY: &str = "directory";
 
 /// Observe one declared scope: recursive scopes walk their root, exact
 /// scopes record the single named file. A scope over a not-yet-existing
@@ -42,6 +50,18 @@ pub fn snapshot_scope(
     scope: &str,
     out: &mut Snapshot,
 ) -> Result<(), SnapshotRejection> {
+    snapshot_scope_bounded(fs, scope, out, &mut 0)
+}
+
+fn snapshot_scope_bounded(
+    fs: &crate::project_fs::Fs,
+    scope: &str,
+    out: &mut Snapshot,
+    bytes: &mut usize,
+) -> Result<(), SnapshotRejection> {
+    if !scopes::is_scope(scope) {
+        return Err(SnapshotRejection::Scope);
+    }
     let parts: Vec<&str> = scope.split('/').collect();
     let recursive = parts.last() == Some(&"**");
     let (dir, name) = match parts.split_last() {
@@ -55,10 +75,13 @@ pub fn snapshot_scope(
         // A scope over a not-yet-existing root observes nothing; any other
         // refusal (non-directory root, unreadable entry) is an unverifiable
         // scope, never a silent pass.
-        match fs.entries(&dir) {
-            Ok(entries) => walk_entries(fs, &dir, &entries, out)?,
-            Err(crate::project_fs::FsErrorKind::NotFound) => {}
-            Err(_) => return Err(SnapshotRejection::Scope),
+        match bounded_entries(fs, &dir) {
+            Ok(entries) => {
+                out.insert(dir.clone(), DIRECTORY.to_owned());
+                walk_entries(fs, &dir, &entries, out, bytes)?;
+            }
+            Err(SnapshotRejection::Missing) => {}
+            Err(error) => return Err(error),
         }
     } else {
         let logical = if dir.is_empty() {
@@ -67,7 +90,7 @@ pub fn snapshot_scope(
             format!("{dir}/{name}")
         };
         match fs.entry_type(&dir, name) {
-            Ok(crate::project_fs::EntryType::File) => record_file(fs, &logical, out)?,
+            Ok(crate::project_fs::EntryType::File) => record_file(fs, &logical, out, bytes)?,
             Err(crate::project_fs::FsErrorKind::NotFound) => {}
             _ => return Err(SnapshotRejection::Scope),
         }
@@ -85,6 +108,7 @@ fn walk_entries(
     dir: &str,
     entries: &[(String, crate::project_fs::EntryType)],
     out: &mut Snapshot,
+    bytes: &mut usize,
 ) -> Result<(), SnapshotRejection> {
     for (child, kind) in entries {
         let logical = if dir.is_empty() {
@@ -92,13 +116,20 @@ fn walk_entries(
         } else {
             format!("{dir}/{child}")
         };
+        if !scopes::is_logical_path(&logical) {
+            return Err(SnapshotRejection::Scope);
+        }
+        if out.len() >= super::version::MAX_SCOPED_FILES {
+            return Err(SnapshotRejection::Limit);
+        }
         match kind {
             crate::project_fs::EntryType::File => {
-                record_file(fs, &logical, out)?;
+                record_file(fs, &logical, out, bytes)?;
             }
             crate::project_fs::EntryType::Directory => {
-                let nested = fs.entries(&logical).map_err(|_| SnapshotRejection::Io)?;
-                walk_entries(fs, &logical, &nested, out)?;
+                out.insert(logical.clone(), DIRECTORY.to_owned());
+                let nested = bounded_entries(fs, &logical)?;
+                walk_entries(fs, &logical, &nested, out, bytes)?;
             }
             // Symlinks and special entries are hostile inside a declared
             // write scope: refuse rather than verify around them.
@@ -120,23 +151,24 @@ fn split_logical(logical: &str) -> Option<(String, String)> {
     }
 }
 
-/// Record one file's digest (or the unreadable marker).
+/// Record one verified digest under the aggregate 64 MiB observation cap.
 fn record_file(
     fs: &crate::project_fs::Fs,
     logical: &str,
     out: &mut Snapshot,
+    observed_bytes: &mut usize,
 ) -> Result<(), SnapshotRejection> {
     let (dir, name) = split_logical(logical).ok_or(SnapshotRejection::Scope)?;
     match fs.read_file_opt(&dir, &name, super::version::MAX_FILE_BYTES) {
         Ok(Some(bytes)) => {
+            *observed_bytes = observed_bytes.saturating_add(bytes.len());
+            if *observed_bytes > 64 * 1024 * 1024 {
+                return Err(SnapshotRejection::Limit);
+            }
             out.insert(logical.to_owned(), sha256_hex(&bytes));
         }
-        Ok(None) => {
-            out.insert(logical.to_owned(), UNREADABLE.to_owned());
-        }
-        Err(crate::project_fs::FsErrorKind::Limit { .. }) => {
-            out.insert(logical.to_owned(), UNREADABLE.to_owned());
-        }
+        Ok(None) => return Err(SnapshotRejection::Io),
+        Err(crate::project_fs::FsErrorKind::Limit { .. }) => return Err(SnapshotRejection::Limit),
         Err(_) => return Err(SnapshotRejection::Io),
     }
     Ok(())
@@ -145,6 +177,8 @@ fn record_file(
 /// Why a scope snapshot could not be taken.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SnapshotRejection {
+    /// The named root is absent; internal walks treat this as unverified.
+    Missing,
     /// The scope names a non-directory/non-file entry or is not a verifiable
     /// recursive form.
     Scope,
@@ -158,11 +192,27 @@ impl SnapshotRejection {
     /// The bounded wire token carried in diagnostic data.
     pub fn detail(self) -> &'static str {
         match self {
+            Self::Missing => "verification-io",
             Self::Scope => "unverifiable-scope",
             Self::Limit => "scope-limit",
             Self::Io => "verification-io",
         }
     }
+}
+
+fn bounded_entries(
+    fs: &crate::project_fs::Fs,
+    logical: &str,
+) -> Result<Vec<(String, crate::project_fs::EntryType)>, SnapshotRejection> {
+    if logical.split('/').count() > 64 {
+        return Err(SnapshotRejection::Limit);
+    }
+    fs.entries_bounded(logical, super::version::MAX_SCOPED_FILES)
+        .map_err(|error| match error {
+            crate::project_fs::FsErrorKind::NotFound => SnapshotRejection::Missing,
+            crate::project_fs::FsErrorKind::Limit { .. } => SnapshotRejection::Limit,
+            _ => SnapshotRejection::Io,
+        })
 }
 
 /// Snapshot every declared write scope in canonical order.
@@ -171,8 +221,9 @@ pub fn snapshot_scopes(
     write_scopes: &[String],
 ) -> Result<Snapshot, SnapshotRejection> {
     let mut out = Snapshot::new();
+    let mut bytes = 0;
     for scope in write_scopes {
-        snapshot_scope(fs, scope, &mut out)?;
+        snapshot_scope_bounded(fs, scope, &mut out, &mut bytes)?;
     }
     Ok(out)
 }
@@ -206,6 +257,7 @@ pub fn verify_applied(
     before: &Snapshot,
     after: &Snapshot,
 ) -> Result<(), super::TargetFailure> {
+    validate_preconditions(writes, before)?;
     for entry in writes {
         let (dir, name) = split_logical(&entry.path)
             .ok_or_else(|| super::TargetFailure::plan_mismatch(Some(entry.path.clone()), "path"))?;
@@ -255,10 +307,44 @@ pub fn verify_applied(
     let declared: std::collections::BTreeSet<&str> =
         writes.iter().map(|e| e.path.as_str()).collect();
     for path in changed_paths(before, after) {
+        // Creating the parent directories needed by a declared new file is
+        // the only implicit mutation allowed by a file plan.
+        if !before.contains_key(&path)
+            && after.get(&path).is_some_and(|kind| kind == DIRECTORY)
+            && writes.iter().any(|entry| {
+                entry.action != WriteAction::Delete && entry.path.starts_with(&format!("{path}/"))
+            })
+        {
+            continue;
+        }
         if !declared.contains(path.as_str()) {
             return Err(super::TargetFailure::plan_mismatch(
                 Some(path),
                 "undeclared",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Check action meaning before launching the applying child. A create can
+/// never overwrite; replace/delete require an observed regular file.
+pub fn validate_preconditions(
+    writes: &[WriteEntry],
+    before: &Snapshot,
+) -> Result<(), super::TargetFailure> {
+    for entry in writes {
+        let previous = before.get(&entry.path);
+        let valid = match entry.action {
+            WriteAction::Create => previous.is_none(),
+            WriteAction::Replace | WriteAction::Delete => {
+                previous.is_some_and(|value| value != DIRECTORY)
+            }
+        };
+        if !valid {
+            return Err(super::TargetFailure::plan_mismatch(
+                Some(entry.path.clone()),
+                "precondition",
             ));
         }
     }
@@ -289,6 +375,31 @@ pub fn covered_by(path: &str, scopes_list: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshots_bound_directory_depth_and_enumeration_before_recursing() {
+        let project = tempfile::tempdir().unwrap();
+        let mut directory = project.path().join("out");
+        std::fs::create_dir(&directory).unwrap();
+        for _ in 0..64 {
+            directory = directory.join("x");
+            std::fs::create_dir(&directory).unwrap();
+        }
+        let fs = crate::project_fs::Fs::open(project.path()).unwrap();
+        assert_eq!(
+            snapshot_scopes(&fs, &["out/**".into()]),
+            Err(SnapshotRejection::Limit)
+        );
+        let wide = tempfile::tempdir().unwrap();
+        std::fs::write(wide.path().join("one"), b"1").unwrap();
+        std::fs::write(wide.path().join("two"), b"2").unwrap();
+        let fs = crate::project_fs::Fs::open(wide.path()).unwrap();
+        assert!(matches!(
+            fs.entries_bounded("", 1),
+            Err(crate::project_fs::FsErrorKind::Limit { max: 1 })
+        ));
+        assert_eq!(fs.entries_bounded("", 2).unwrap().len(), 2);
+    }
 
     #[test]
     fn sha256_matches_the_known_vectors() {

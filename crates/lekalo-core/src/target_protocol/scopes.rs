@@ -37,11 +37,22 @@ pub const PROTECTED_HOMES: [(&str, &[&str]); 8] = [
 const MAX_VALUE_BYTES: usize = 512;
 
 /// Maximum one-segment length in bytes.
-const MAX_SEGMENT_BYTES: usize = 128;
+const MAX_SEGMENT_BYTES: usize = 64;
 
 /// Whether one path segment is a portable scope/path segment.
 fn segment_ok(segment: &str) -> bool {
-    if segment == ".." || segment.is_empty() || segment.len() > MAX_SEGMENT_BYTES {
+    let portable = if let Some(tail) = segment.strip_prefix('.') {
+        format!("x{tail}")
+    } else {
+        segment.to_owned()
+    };
+    if segment == "."
+        || segment == ".."
+        || segment.ends_with('.')
+        || crate::project_fs::path_violation(&portable).is_some()
+        || segment.is_empty()
+        || segment.len() > MAX_SEGMENT_BYTES
+    {
         return false;
     }
     let mut chars = segment.chars();
@@ -80,7 +91,8 @@ pub fn is_scope(value: &str) -> bool {
     match segments(value) {
         Some(parts) => match parts.split_last() {
             Some((last, head)) => {
-                head.iter().all(|p| segment_ok(p)) && (*last == "**" || segment_ok(last))
+                head.iter().all(|p| segment_ok(p))
+                    && ((*last == "**" && !head.is_empty()) || segment_ok(last))
             }
             None => false,
         },
@@ -89,6 +101,9 @@ pub fn is_scope(value: &str) -> bool {
 }
 
 pub fn scope_covers(scope: &str, path: &str) -> bool {
+    if !is_scope(scope) || !is_logical_path(path) {
+        return false;
+    }
     let (Some(scope_parts), Some(path_parts)) = (segments(scope), segments(path)) else {
         return false;
     };

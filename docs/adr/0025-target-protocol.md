@@ -26,33 +26,38 @@ process protocol: adapters as separate executables in any language.
    `generate`, `verify`, `plan-clean`, `clean` — over a request/response
    envelope pair. `describe` is the mandatory handshake: capability
    negotiation before any destructive operation.
-3. Transport without shells: direct argv spawn in the project root, request
+3. Transport without shells: direct argv spawn in a private scoped project view, request
    over stdin (or a bounded temporary file for adapters that declare only
    `file`), one response envelope on stdout, stderr as bounded diagnostics
    evidence only. Deadline, cancellation, request and output caps are
    enforced by the client, and every refusal is classified infrastructure.
-4. Deterministic identifiers: `request_id` and `plan_id` are SHA-256 over
-   canonical envelope bytes — never timestamps, random values, absolute
-   paths, or host data. Evidence bindings (adapter identity, plan echo) make
-   every response attributable to one request and one plan.
+4. Deterministic identifiers bind canonical request/plan bytes and private
+   project identity, operation, parameters, input/output before-state and
+   negotiated capabilities. The public IDs are opaque digests. Adapters echo
+   the supplied IDs; every apply attempt consumes its authority, and every
+   handshake refresh revokes previous authority before attempting a launch.
 5. Scopes and protected homes. Adapters declare read/write scopes in
    `describe`; the grammar is portable lowercase segments with an optional
    trailing `**`. Canonical Lekalo and OpenSpec homes are unwritable by
    declaration and by plan, whatever the adapter claims.
-6. Dry-run write plans are mandatory before generation and clean. A dry run
-   must not change anything (before/after scope snapshots prove it); the
-   apply must reproduce the identical plan (same `plan_id`, same entries)
-   and the observed project state must match the declared digests exactly —
-   nothing more, nothing less, inside the declared scopes.
+6. Dry-run write plans are mandatory before generation and clean. OS
+   confinement makes describe/read/planning views read-only. An apply
+   changes only its private staged output; core validates the full staged
+   tree and exact plan echo before publishing any real project changes.
+   Create/replace/delete preconditions and context are checked before child
+   launch and again before publication. Ordinary I/O failures attempt
+   rollback; incomplete rollback is partial. Publication across files is
+   not a crash-atomic transaction.
 7. Closed error classification: infrastructure (spawn/timeout/crash/invalid
    JSON/output cap — exit 4), protocol mismatch (exit 5), capability
    (exit 4), policy (exit 3), operation errors (exit 1, including partial
    results flagged by the adapter). Fifteen registered `target.*` rules
    (`LEK-TGT-001..015`) as the diagnostic registry's v1.10.0
    wire-shape-preserving minor increment.
-8. Language neutrality is proven, not asserted: the committed fake adapter
-   is a dependency-free Node.js script implementing the full handshake, and
-   the contract gate validates envelopes with the pinned Ajv schema.
+8. The committed dependency-free Node.js adapter exercises the full
+   handshake through real confinement. Native Go/PHP/Rust packages are not
+   claimed tested. Ajv validates schema shape; Rust executes the semantic
+   vectors through the production decoder and validators.
 9. No CLI surface in this issue. The generation owner (#91) integrates
    `TargetClient`; this issue ships the client, the protocol, and the tests
    that exercise real cross-process transport.

@@ -17,8 +17,11 @@
 //!
 //! The only coupling to an adapter is this process protocol: core never
 //! loads a library, ABI, or plugin, and a protocol mismatch is refused as
-//! `unsupported` before any generation can start.
+//! `unsupported-version` before any generation can start.
 
+mod confinement;
+#[cfg(test)]
+mod conformance;
 pub mod diagnostic;
 pub mod plan;
 pub mod scopes;
@@ -53,6 +56,9 @@ pub struct PlanBinding {
     pub plan_id: String,
     /// The exact declared entries, in canonical order.
     pub entries: Vec<wire::WriteEntry>,
+    /// Private authorization context; never projected into diagnostics.
+    context: String,
+    before: plan::Snapshot,
 }
 
 /// The caller's request for one adapter operation.
@@ -212,6 +218,9 @@ impl TargetClient {
         command: &AdapterCommand,
         cwd: &std::path::Path,
     ) -> Result<&DescribeOutcome, TargetFailure> {
+        // Refresh is a revocation boundary, including every failed refresh.
+        self.described = None;
+        self.binding = None;
         self.describe_with_cancel(command, cwd, None)
     }
 
@@ -231,10 +240,14 @@ impl TargetClient {
         let mut envelope = base_envelope(Operation::Describe, protocol_version, self.wire_limits());
         envelope.request_id = request_id;
         let serialized = serialize(&envelope)?;
-        let exchange = transport::run(command, &serialized, &self.limits, cwd, false, cancel);
+        let sandbox = confinement::Sandbox::new(cwd, &[], &[], false)?;
+        let exchange = sandbox.run(command, &serialized, &self.limits, false, cancel);
         let response = self.interpret(exchange, &envelope)?;
         let invalid = |detail| Err(TargetFailure::ResponseInvalid { detail });
         if response.writes.is_some() {
+            return invalid(ResponseInvalidity::UnexpectedMember);
+        }
+        if response.result.is_some() || response.progress.is_some() {
             return invalid(ResponseInvalidity::UnexpectedMember);
         }
         let Some(capabilities) = response.capabilities.clone() else {
@@ -285,9 +298,19 @@ impl TargetClient {
         command: &AdapterCommand,
         request: CallRequest<'_>,
         cwd: &std::path::Path,
-        fs: &Fs,
+        _fs: &Fs,
         cancel: Option<&AtomicBool>,
     ) -> Result<CallOutcome, TargetFailure> {
+        let applying = request.operation == Operation::Clean
+            || (request.operation == Operation::Generate && request.dry_run == Some(false));
+        let planning = request.operation == Operation::PlanClean
+            || (request.operation == Operation::Generate && request.dry_run == Some(true));
+        // Every apply attempt consumes authority before any fallible work.
+        // An uncertain/partial operation must be replanned, never replayed.
+        let pending = if applying { self.binding.take() } else { None };
+        if planning {
+            self.binding = None;
+        }
         let Some((described_command, described)) = self.described.as_ref() else {
             return Err(TargetFailure::HandshakeRequired {
                 operation: request.operation,
@@ -300,6 +323,53 @@ impl TargetClient {
         }
         let capabilities = described.capabilities.clone();
         self.validate_call_request(&request, &capabilities)?;
+        if applying && pending.is_none() {
+            return Err(TargetFailure::RequestInvalid { detail: "plan-id" });
+        }
+        // Observe the execution root ourselves; an unrelated caller Fs can
+        // never supply authorization evidence for the child cwd.
+        let root = std::fs::canonicalize(cwd).map_err(|_| TargetFailure::RequestInvalid {
+            detail: "project-root",
+        })?;
+        let fs = Fs::open(&root).map_err(|_| TargetFailure::RequestInvalid {
+            detail: "project-root",
+        })?;
+        let inputs = snapshot_scopes(&fs, &capabilities.read_scopes)?;
+        if request
+            .ir_path
+            .is_some_and(|path| !inputs.get(path).is_some_and(|value| value != "directory"))
+        {
+            return Err(TargetFailure::RequestInvalid { detail: "ir-input" });
+        }
+        let context = plan::sha256_hex(&canonical_bytes(&(
+            &root,
+            request.target,
+            request.profile,
+            request.ir_path,
+            &inputs,
+            &described.capability_digest,
+        )));
+        let before = snapshot_scopes(&fs, &capabilities.write_scopes)?;
+        if applying {
+            let binding = pending
+                .as_ref()
+                .ok_or(TargetFailure::RequestInvalid { detail: "plan-id" })?;
+            let expected_operation = if request.operation == Operation::Clean {
+                Operation::PlanClean
+            } else {
+                Operation::Generate
+            };
+            if binding.plan_id != request.plan_id.unwrap_or("")
+                || binding.operation != expected_operation
+                || binding.context != context
+            {
+                return Err(TargetFailure::plan_mismatch(None, "plan-context"));
+            }
+            if binding.before != before {
+                return Err(TargetFailure::plan_mismatch(None, "before-drift"));
+            }
+            plan::validate_preconditions(&binding.entries, &before)?;
+        }
         let protocol_version = published_version()?;
         let dry_run = match request.operation {
             Operation::Generate => request.dry_run,
@@ -318,62 +388,94 @@ impl TargetClient {
         envelope.profile = request.profile.map(str::to_owned);
         envelope.dry_run = dry_run;
         envelope.plan_id = plan_request;
-        envelope.request_id = wire::request_id(&envelope);
+        envelope.request_id = format!(
+            "req-{}",
+            plan::sha256_hex(&canonical_bytes(&(
+                wire::request_id(&envelope),
+                &context,
+                &before,
+            )))
+        );
         let serialized = serialize(&envelope)?;
         let use_file = !capabilities.transports.contains(&wire::Transport::Stdin);
 
-        // Write-carrying exchanges snapshot their scopes first: the apply is
-        // verified against the before state, and a dry run must not change
-        // anything at all.
-        let before = if request.operation.declares_writes() {
-            Some(snapshot_scopes(fs, &capabilities.write_scopes)?)
-        } else {
-            None
-        };
-
-        let exchange = transport::run(command, &serialized, &self.limits, cwd, use_file, cancel);
+        let sandbox = confinement::Sandbox::new(
+            &root,
+            &capabilities.read_scopes,
+            &capabilities.write_scopes,
+            applying,
+        )?;
+        let stage_fs = Fs::open(&sandbox.project).map_err(|_| TargetFailure::TransportFailed {
+            detail: "sandbox-view",
+        })?;
+        let stage_before = plan::snapshot_all(&stage_fs).map_err(snapshot_rejection)?;
+        let exchange = sandbox.run(command, &serialized, &self.limits, use_file, cancel);
         let response = self.interpret(exchange, &envelope)?;
         self.validate_response_payload(&request, &response, &capabilities)?;
         let writes = response.writes.clone().unwrap_or_default();
 
         let mut outcome_plan_id = None;
         if request.operation.declares_writes() {
-            let after = snapshot_scopes(fs, &capabilities.write_scopes)?;
+            let after = plan::snapshot_all(&stage_fs).map_err(snapshot_rejection)?;
             let is_planning = request.operation == Operation::PlanClean
                 || (request.operation == Operation::Generate && request.dry_run == Some(true));
             if is_planning {
-                if let Some(path) = plan::changed_paths(&before.expect("snapshotted"), &after)
+                if let Some(path) = plan::changed_paths(&stage_before, &after)
                     .into_iter()
                     .next()
                 {
                     return Err(TargetFailure::DryRunMutation { path: Some(path) });
                 }
-                let identity = wire::plan_id(&writes);
+                plan::validate_preconditions(&writes, &before)?;
+                if request.operation == Operation::PlanClean
+                    && writes
+                        .iter()
+                        .any(|entry| entry.action != wire::WriteAction::Delete)
+                {
+                    return Err(TargetFailure::plan_mismatch(None, "clean-action"));
+                }
+                let identity = format!(
+                    "plan-{}",
+                    plan::sha256_hex(&canonical_bytes(&(
+                        request.operation,
+                        &context,
+                        &before,
+                        &writes,
+                    )))
+                );
                 self.binding = Some(PlanBinding {
                     operation: request.operation,
                     plan_id: identity.clone(),
                     entries: writes,
+                    context,
+                    before,
                 });
                 outcome_plan_id = Some(identity);
             } else {
-                let Some(binding) = self.binding.take() else {
+                let Some(binding) = pending else {
                     return Err(TargetFailure::RequestInvalid { detail: "plan-id" });
                 };
                 if binding.plan_id != envelope.plan_id.as_deref().unwrap_or("") {
                     return Err(TargetFailure::plan_mismatch(None, "plan-id"));
                 }
-                if response
-                    .evidence
-                    .plan_id
-                    .as_deref()
-                    .is_some_and(|id| id != binding.plan_id)
-                {
+                if response.evidence.plan_id.as_deref() != Some(binding.plan_id.as_str()) {
                     return Err(TargetFailure::plan_mismatch(None, "plan-id"));
                 }
                 if !plan::plans_equal(&binding.entries, &writes) {
                     return Err(TargetFailure::plan_mismatch(None, "plan-drift"));
                 }
-                plan::verify_applied(fs, &writes, &before.expect("snapshotted"), &after)?;
+                plan::verify_applied(&stage_fs, &writes, &stage_before, &after)?;
+                // Validate every response and staged byte before publishing.
+                // Re-check real inputs/output pre-state after the child exits.
+                if snapshot_scopes(&fs, &capabilities.read_scopes)? != inputs
+                    || snapshot_scopes(&fs, &capabilities.write_scopes)? != before
+                {
+                    return Err(TargetFailure::plan_mismatch(None, "before-drift"));
+                }
+                if cancel.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed)) {
+                    return Err(TargetFailure::Cancelled);
+                }
+                sandbox.publish(&root, &writes, &before)?;
                 outcome_plan_id = Some(binding.plan_id);
             }
         }
@@ -386,46 +488,17 @@ impl TargetClient {
     /// Map one transport exchange onto a validated response envelope.
     fn interpret(
         &self,
-        exchange: Result<transport::TransportSuccess, transport::TransportFailure>,
+        exchange: Result<transport::TransportSuccess, TargetFailure>,
         request: &RequestEnvelope,
     ) -> Result<ResponseEnvelope, TargetFailure> {
-        let success = match exchange {
-            Ok(success) => success,
-            Err(error) => {
-                return Err(match error {
-                    transport::TransportFailure::Spawn => {
-                        TargetFailure::TransportFailed { detail: "spawn" }
-                    }
-                    transport::TransportFailure::RequestWrite => TargetFailure::TransportFailed {
-                        detail: "request-write",
-                    },
-                    transport::TransportFailure::Timeout => TargetFailure::Timeout,
-                    transport::TransportFailure::Cancelled => TargetFailure::Cancelled,
-                    transport::TransportFailure::OutputLimit { stream } => {
-                        TargetFailure::OutputLimit { stream }
-                    }
-                });
-            }
-        };
+        let success = exchange?;
         // The envelope is the protocol: unparseable output is an
         // infrastructure refusal; a non-zero exit with a well-formed error
         // envelope stays an operation error, anything else is a crash.
-        let value: serde_json::Value = match serde_json::from_slice(&success.stdout) {
-            Ok(value) => value,
-            Err(_) => {
-                return Err(TargetFailure::crash_or_invalid(
-                    success.exit_code,
-                    ResponseInvalidity::NotJson,
-                ));
-            }
-        };
-        let response: ResponseEnvelope = match serde_json::from_value(value) {
+        let response = match wire::decode_response(&success.stdout) {
             Ok(response) => response,
-            Err(_) => {
-                return Err(TargetFailure::crash_or_invalid(
-                    success.exit_code,
-                    ResponseInvalidity::Shape,
-                ));
+            Err(detail) => {
+                return Err(TargetFailure::crash_or_invalid(success.exit_code, detail));
             }
         };
         if response.status == ResponseStatus::Ok && success.exit_code != 0 {
@@ -456,8 +529,35 @@ impl TargetClient {
                 detail: ResponseInvalidity::ErrorPairing,
             });
         }
+        if let Some((_, described)) = self.described.as_ref() {
+            if response.evidence.adapter != described.capabilities.adapter {
+                return Err(TargetFailure::ResponseInvalid {
+                    detail: ResponseInvalidity::Evidence,
+                });
+            }
+        }
         if response.status == ResponseStatus::Error {
             let error = response.error.as_ref().expect("pairing checked");
+            if response.capabilities.is_some()
+                || response.result.is_some()
+                || response.progress.is_some()
+            {
+                return Err(TargetFailure::ResponseInvalid {
+                    detail: ResponseInvalidity::UnexpectedMember,
+                });
+            }
+            if let Some(writes) = &response.writes {
+                if !request.operation.declares_writes() || error.partial != Some(true) {
+                    return Err(TargetFailure::ResponseInvalid {
+                        detail: ResponseInvalidity::UnexpectedMember,
+                    });
+                }
+                let scopes = self
+                    .describe_outcome()
+                    .map(|d| d.capabilities.write_scopes.as_slice())
+                    .unwrap_or(&[]);
+                wire::validate_writes(writes, scopes)?;
+            }
             let mut code = error.code.clone();
             code.truncate(128);
             return Err(TargetFailure::OperationFailed {
@@ -465,13 +565,6 @@ impl TargetClient {
                 code,
                 partial: error.partial.unwrap_or(false),
             });
-        }
-        if let Some((_, described)) = self.described.as_ref() {
-            if response.evidence.adapter != described.capabilities.adapter {
-                return Err(TargetFailure::ResponseInvalid {
-                    detail: ResponseInvalidity::Evidence,
-                });
-            }
         }
         Ok(response)
     }
@@ -506,6 +599,9 @@ impl TargetClient {
             || (request.operation == Operation::Generate && request.dry_run == Some(false));
         if apply != request.plan_id.is_some() {
             // Apply exchanges must echo a plan; planning exchanges must not.
+            return invalid("plan-id");
+        }
+        if request.plan_id.is_some_and(|id| !wire::is_plan_id(id)) {
             return invalid("plan-id");
         }
         if request.operation == Operation::Generate && request.target.is_none() {
@@ -546,9 +642,7 @@ impl TargetClient {
             if !scopes::is_logical_path(ir_path) {
                 return invalid("grammar");
             }
-            if !capabilities.read_scopes.is_empty()
-                && !plan::covered_by(ir_path, &capabilities.read_scopes)
-            {
+            if !plan::covered_by(ir_path, &capabilities.read_scopes) {
                 return Err(TargetFailure::scope_violation(
                     Some(ir_path.to_owned()),
                     "ir-uncovered",
@@ -588,6 +682,15 @@ impl TargetClient {
         capabilities: &wire::Capabilities,
     ) -> Result<(), TargetFailure> {
         let invalid = |detail| Err(TargetFailure::ResponseInvalid { detail });
+        if response.capabilities.is_some() {
+            return invalid(ResponseInvalidity::UnexpectedMember);
+        }
+        if (request.operation == Operation::Clean
+            || (request.operation == Operation::Generate && request.dry_run == Some(false)))
+            && response.evidence.plan_id.as_deref() != request.plan_id
+        {
+            return Err(TargetFailure::plan_mismatch(None, "plan-id"));
+        }
         // Progress is legal only from an adapter that declared it.
         if response.progress.is_some() && !capabilities.progress {
             return invalid(ResponseInvalidity::UnexpectedMember);
@@ -604,6 +707,24 @@ impl TargetClient {
             {
                 return invalid(ResponseInvalidity::UnexpectedMember);
             }
+            if result.findings.is_some()
+                && !matches!(request.operation, Operation::Validate | Operation::Verify)
+            {
+                return invalid(ResponseInvalidity::UnexpectedMember);
+            }
+            if result.truncated.is_some() && request.operation != Operation::Scan {
+                return invalid(ResponseInvalidity::UnexpectedMember);
+            }
+        }
+        let result = response.result.as_ref();
+        let complete = match request.operation {
+            Operation::Scan => result.is_some_and(|r| r.entries.is_some()),
+            Operation::Bind => result.is_some_and(|r| r.bindings.is_some()),
+            Operation::Validate | Operation::Verify => result.is_some_and(|r| r.ok.is_some()),
+            _ => result.is_none(),
+        };
+        if !complete {
+            return invalid(ResponseInvalidity::Shape);
         }
         if request.operation.declares_writes() {
             let Some(writes) = &response.writes else {
@@ -658,6 +779,7 @@ fn base_envelope(
 
 /// Serialize one request to compact canonical JSON, bounded.
 fn serialize(envelope: &RequestEnvelope) -> Result<Vec<u8>, TargetFailure> {
+    wire::validate_request(envelope)?;
     let bytes = serde_json::to_vec(envelope).map_err(|_| TargetFailure::RequestInvalid {
         detail: "serialize",
     })?;
@@ -687,4 +809,18 @@ fn snapshot_rejection(rejection: plan::SnapshotRejection) -> TargetFailure {
 /// Snapshot every declared write scope, mapping refusals onto failures.
 fn snapshot_scopes(fs: &Fs, write_scopes: &[String]) -> Result<plan::Snapshot, TargetFailure> {
     plan::snapshot_scopes(fs, write_scopes).map_err(snapshot_rejection)
+}
+
+fn transport_failure(error: transport::TransportFailure) -> TargetFailure {
+    match error {
+        transport::TransportFailure::Spawn => TargetFailure::TransportFailed { detail: "spawn" },
+        transport::TransportFailure::RequestWrite => TargetFailure::TransportFailed {
+            detail: "request-write",
+        },
+        transport::TransportFailure::Timeout => TargetFailure::Timeout,
+        transport::TransportFailure::Cancelled => TargetFailure::Cancelled,
+        transport::TransportFailure::OutputLimit { stream } => {
+            TargetFailure::OutputLimit { stream }
+        }
+    }
 }

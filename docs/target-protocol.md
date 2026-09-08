@@ -1,168 +1,152 @@
-# Target protocol (issue #27)
+# Target adapter process protocol
 
-Status: normative for issue #27. This document defines the process/JSON
-protocol `lekalo.target/v1` that connects the Lekalo core to external target
-adapters. The design decision is [ADR-0025](adr/0025-target-protocol.md).
+`lekalo.target/v1`, contract 1.0.0, connects core to separate executables.
+Adapters may be written in any language; core loads no native plugin ABI.
+The operations are describe, scan, bind, validate, generate, verify,
+plan-clean and clean. Product 0.2.0, Model 1.0.0, IR 0.1.0 and diagnostic
+registry 1.10.0 remain independent version lines.
 
-Target adapters are separate executables written in any language — Rust, Go,
-Node.js, PHP, or anything else that can read stdin and write stdout JSON.
-They are never Rust dynamic plugins, never `cdylib` extensions, and never
-internal core dependencies: the only coupling between core and adapter is
-this protocol. Core never loads a library, ABI, or plugin.
+## Requests and identities
 
-## Contract identity
+Core sends a closed compact JSON envelope containing protocol,
+protocol_version, operation, request_id and project_root (`.`). The latter
+names a fresh private project view, never an ambient grant to the real root.
 
-- Wire token: `lekalo.target/v1`, exact contract version `1.0.0`
-  (`dev.lekalo.protocol@1.0.0` in the embedded version registry, selector
-  alias `protocol/v1`).
-- Wire schema: `contracts/target-protocol.schema.v1.0.0.json`, closed
-  (`additionalProperties: false` everywhere), draft 2020-12.
-- Registry family: `protocol`, published by this issue. While it stayed
-  unpublished, no external adapter could be compatible
-  (`versioning.protocol-unpublished`); publication is what turns every
-  downstream seam on (`lekalo lock` protocol pins, adapter compatibility
-  preflight, artifact adapter binding).
+| Operation | ir_path | target | profile | dry_run | plan_id |
+| --- | --- | --- | --- | --- | --- |
+| describe | forbidden | forbidden | forbidden | forbidden | forbidden |
+| scan | optional | optional | optional | forbidden | forbidden |
+| bind | optional | required | required | forbidden | forbidden |
+| validate | required | optional | optional | forbidden | forbidden |
+| generate | required | required | optional | required | apply only |
+| verify | required | optional | optional | forbidden | forbidden |
+| plan-clean | optional | optional | optional | forbidden | forbidden |
+| clean | optional | optional | optional | forbidden | required |
 
-## Operations v1
+`wire::request_id` computes the canonical envelope digest. Operational
+client IDs additionally bind the private project identity, target/profile,
+IR path, exact readable input bytes, output before-state and negotiated
+capability digest. Absolute paths are not added to public wire envelopes.
+Equivalent operations in different projects intentionally have different
+IDs. Adapters echo the supplied request ID instead of recomputing it.
 
-```text
-describe    capability negotiation; the mandatory handshake
-scan        read-only survey of target applicability
-bind        module/target/profile binding proposal
-validate    IR/target compatibility findings
-generate    dry-run plan first, then a plan-bound apply
-verify      post-generation verification findings
-plan-clean  deterministic deletion plan (dry by definition)
-clean       exact execution of a plan-clean plan
-```
+Describe is mandatory. It negotiates adapter identity/version/digest,
+protocol versions, operations, transports, targets, profiles, read/write
+scopes and optional structured progress. Every refresh revokes the old
+handshake and pending plan before any fallible work. A protocol mismatch
+remains `unsupported-version`/exit 5; missing capability remains
+`unsupported`/exit 4.
 
-## Request envelope
+## Transport and decoding
 
-Sent by core, serialized to compact canonical JSON (sorted keys, no
-whitespace). The request identifier is derived, never random:
-`request_id = "req-" ++ hex(sha256(canonical(request without request_id)))`,
-so identical inputs produce identical identifiers across runs and hosts, and
-every response echo binds to exactly one request.
+The executable is launched from an argv vector without a command interpreter.
+Requests use stdin or an exclusively created bounded request file, passed as
+`--lekalo-request-file PATH`. Owned request resources are cleaned on every
+return path, including spawn failure; Unix request files use mode 0600.
+The response is one JSON envelope on stdout. Stderr is captured under a
+64 KiB cap and never parsed as protocol or projected into public diagnostics.
 
-```json
-{
-  "protocol": "lekalo.target/v1",
-  "protocol_version": "1.0.0",
-  "operation": "generate",
-  "request_id": "req-…",
-  "project_root": ".",
-  "ir_path": ".lekalo/ir/planner.json",
-  "target": "node-typescript",
-  "profile": "default",
-  "dry_run": true,
-  "limits": { "timeout_ms": 600000, "max_output_bytes": 8388608 },
-  "plan_id": "plan-…"
-}
-```
+Default limits are a 600-second child deadline, 8 MiB stdout and 1 MiB
+request. Timeout, cancellation and output overflow terminate the owned
+process tree. Windows uses a kill-on-close job; Linux uses a PID namespace;
+the raw Unix transport uses its own process group. Reader joins never wait
+unconditionally on a pipe retained by an escaped descendant. The macOS
+confined profile prohibits descendant creation.
 
-Closed per-operation member table enforced by the client:
+Runtime decoding rejects duplicate decoded keys (including escaped keys),
+explicit null optionals, unknown fields, invalid tokens/versions, collection
+bounds and operation-specific result shapes. All semantic fixtures execute
+against production Rust decoding and validation with exact rule/detail
+expectations. The pinned Ajv 8.17.1 gate checks the raw schema for duplicate
+keys before parsing; schema acceptance is reported separately from semantic
+runtime rejection. Neither a filename whitelist nor a fixture name is a
+runtime proof.
 
-| operation   | ir_path  | target  | profile | dry_run        | plan_id |
-| ----------- | -------- | ------- | ------- | -------------- | ------- |
-| describe    | —        | —       | —       | forbidden      | forbidden |
-| scan        | optional | optional | optional | forbidden     | forbidden |
-| bind        | optional | required | required | forbidden    | forbidden |
-| validate    | required | optional | optional | forbidden    | forbidden |
-| generate    | required | required | optional | required     | apply only |
-| verify      | required | optional | optional | forbidden    | forbidden |
-| plan-clean  | optional | optional | optional | forbidden    | forbidden |
-| clean       | optional | optional | optional | forbidden    | required |
+## Scopes and plans
 
-## Transport
+Paths are canonical lowercase portable segments, at most 64 bytes per
+segment and 512 bytes overall. Dot/traversal segments, trailing-dot aliases,
+DOS devices, absolute paths and backslashes are rejected. Scopes optionally
+end with `/**`; the unbounded root `**` is forbidden. Protected write homes
+are `lekalo/`, `lekalo.lock`, `.lekalo/{ir,cache,import,privacy,consumer}/`
+and `openspec/`.
 
-- The adapter executable is spawned directly from an argv vector — no shell,
-  no interpolation, no environment trust — in the project root.
-- The request travels over stdin. An adapter that declares only the `file`
-  transport receives the request through a bounded temporary file outside
-  the project, delivered by appending `--lekalo-request-file <PATH>` to its
-  argv. The file is deleted when the child exits.
-- The response is one JSON envelope on stdout. stderr is diagnostics and
-  logs only: captured under a 64 KiB cap as evidence, never parsed.
-- Hard bounds: deadline (default 600 s), stdout cap (default 8 MiB), request
-  cap (1 MiB). Exceeding the deadline or the caps kills the child and
-  classifies as infrastructure. A caller cancel flag kills the child too.
+An IR path must exist as a readable regular file and be covered by a read
+scope. An empty read-scope list grants no input access. Only read-scope bytes
+enter the private view. Existing write-scope files expose their shape as
+empty placeholders unless also covered by a read scope; write authority
+alone never exports existing user content.
 
-## Response envelope and handshake
+Describe, read operations and planning use a read-only private view enforced
+by the OS. An adapter crashing on a denied write is classified as a crash;
+core does not claim that a mutation occurred or silently turn it into a
+successful dry run. Successful generate dry-run or plan-clean produces a
+pending plan bound to the operation, full context, handshake and exact
+before-state. The caller must echo core's opaque `plan_id`. Every apply
+attempt consumes that authority, including failed/partial attempts.
 
-The response echoes `protocol`, `protocol_version`, `operation`, and
-`request_id`, and always carries `evidence` binding the adapter identity
-(`id`, `version`, package `digest`) and, for write-carrying exchanges, the
-`plan_id`. `status` is `ok` or `error`; an error envelope carries the closed
-error taxonomy (`class`: `invalid|unsupported|infrastructure|conflict`,
-adapter `code`, bounded `message`, `retryable`/`partial` flags, `detail`).
-`describe` additionally returns the capability map: protocol versions,
-operations, transports, targets, profiles, read/write scopes, and whether
-structured progress is emitted (progress is optional and legal only from an
-adapter that declared it).
+All binding, context and before-state checks precede child launch. Create
+requires absence; replace/delete require an existing regular file; clean
+plans contain only deletions. Files over 4 MiB or otherwise unreadable refuse
+verification. Snapshots include empty directories and reject links/special
+entries. The scoped private view is bounded to 4096 entries and 64 MiB of
+copied input, with a 64-directory depth limit and bounded directory enumeration. Unknown bytes never prove equality.
 
-A protocol token or exact-version deviation anywhere is a protocol mismatch
-and is refused as `unsupported-version` before any generation can start.
-The negotiated version must appear in the adapter's declared
-`protocol_versions`.
+Apply can write only its staged output areas. After the process tree exits,
+core verifies the whole staged view, the exact echoed plan and output
+hashes, then rechecks real inputs and before-state before publishing.
+Undeclared writes, malformed replies, missing echoes and adapter errors
+publish nothing. Atomic replacements do not modify hard-linked targets in
+place. Ordinary publication I/O failures attempt rollback and explicitly
+report incomplete rollback as partial. Multi-file publication is not a
+crash-atomic filesystem transaction; concurrent privileged host mutation is
+outside this process-confinement boundary.
 
-## Scopes, protected homes, write plans
+## Platform boundary
 
-- Scopes are declared in `describe`: portable lowercase segments with an
-  optional trailing `**`; traversal (`..`), absolute paths, and backslashes
-  never parse.
-- Canonical homes can never be covered by a write scope and never appear in
-  a write plan: `lekalo/`, `lekalo.lock`, `.lekalo/ir/`, `.lekalo/cache/`,
-  `.lekalo/import/`, `.lekalo/privacy/`, `.lekalo/consumer/`, and
-  `openspec/`. An adapter cannot silently mutate canonical Lekalo/OpenSpec
-  files — the refusal is a denial (exit 3) even when the adapter declares
-  the scope.
-- Every `ir_path` the client sends must sit inside a declared read scope;
-  every planned path must sit inside a declared write scope.
-- `generate` requires `dry_run: true` first. The dry run returns the
-  declared output plan — exact logical paths, `create`/`replace`/`delete`,
-  and the SHA-256 of the exact resulting bytes — and must change nothing;
-  the core snapshots the write scopes before and after and refuses any
-  mutation as a denial.
-- The apply echoes the deterministic `plan_id`
-  (`"plan-" ++ hex(sha256(canonical(plan)))`), must reproduce the identical
-  plan (deterministic adapters make plans reproducible; nothing persists
-  between the two child processes), and after the child exits the core
-  verifies the observed project state: every declared write matches the
-  declared digest, every declared deletion is gone, and nothing else inside
-  the declared write scopes changed. Violations are `target.plan-mismatch`.
+Windows uses a fresh LPAC profile with the `registryRead` capability needed
+by Node/libuv startup, an explicit inherited-handle list, and a job assigned
+before resuming the suspended process. ACLs and integrity labels change only
+on owned private staging. Projects with shared LPAC grants, callback ACLs,
+reparse entries or an uninspectable/over-100000-entry tree are refused before
+execution. LPAC retains OS-granted system access and registry reads: the
+promise is confinement of project data, not zero operating-system access.
+See Microsoft's [AppContainer launch guide](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer).
 
-## Error classification
+Linux requires `/usr/bin/bwrap`: separate user/mount/PID/network namespaces,
+read-only system runtime roots, and staged writable mounts. The product does
+not install it; CI provisions it explicitly. macOS requires
+`/usr/bin/sandbox-exec` with a deny-by-default profile. Projects inside an
+allowed system runtime tree are refused. Missing or unsupported confinement
+fails closed, with no ambient fallback. Linux/macOS behavioral qualification
+comes from the exact-candidate hosted gates, never from Windows tests.
 
-Closed, with registered `target.*` diagnostics (registry v1.10.0,
-`LEK-TGT-001..015`):
+The executable and a first-argument script are copied into a private runtime.
+Additional external runtime assets/packages need a future explicit bundle
+contract and receive no implicit host grant. Node's preserve-symlinks flags
+avoid reading host ancestors of the already link-free copied script. The
+reference adapter is a standalone Node script; Go/PHP/Rust target packages
+and the future generation CLI are not qualified by these tests.
 
-- infrastructure (exit 4, unavailable): spawn failure, request-write
-  failure, deadline exceeded, caller cancellation, output-limit violation,
-  crash (non-zero exit without a usable error envelope), invalid JSON,
-  malformed envelope.
-- protocol (exit 5, unsupported-version): foreign token, unsupported exact
-  version, failed negotiation — refused before any generation.
-- adapter capability (exit 4, unsupported): operation/target/profile not
-  offered.
-- policy (exit 3, denied): scope grammar/protection violations, dry-run
-  mutation.
-- operation (exit 1, invalid): malformed local requests, adapter-reported
-  in-envelope errors, plan mismatches.
+## Failure classification and integration
 
-## Language neutrality
+| Failure | Public status / exit |
+| --- | --- |
+| Invalid local request or plan mismatch | invalid / 1 |
+| Adapter operation error | invalid / 1 |
+| Scope/protected-home policy violation | denied / 3 |
+| Unsupported capability | unsupported / 4 |
+| Spawn, deadline, cancellation, crash, malformed output, output cap | unavailable / 4 |
+| Protocol/version mismatch | unsupported-version / 5 |
 
-The fake adapter (`tests/fixtures/target-protocol/fake-adapter.mjs`) is a
-dependency-free Node.js script implementing the full handshake — describe,
-all eight operations, deterministic plans, and fault injection for the
-contract tests (`--lekalo-fault wrong-token|wrong-version|garbage|crash|
-hang|noise|bad-echo|boom|mutate-dry|extra-write`). It doubles as the
-reference implementation an adapter author in any other language can port:
-stdin, stdout, canonical JSON, SHA-256 — nothing else.
+Public diagnostics use opaque path subjects and fixed adapter error codes.
+`adapter-error-partial` preserves an adapter's partial-error claim without
+publishing its arbitrary code/message. Neither partial nor an error envelope
+proves that an ambient filesystem was unchanged: preservation comes from
+isolation and refusal to publish its stage.
 
-## Boundaries
-
-Pure protocol definition and client transport: no generation execution, no
-adapter catalog, no CLI surface (the `generate` owner integrates the client),
-no persistence of plans between processes, and no network access. The thin
-handoff for the generation owner (#91) is `TargetClient::describe` /
-`TargetClient::call` in `lekalo_core::target_protocol`.
+The integration surface is `TargetClient::describe` / `TargetClient::call`.
+This issue provides no adapter catalog, native target package, generation CLI
+or persisted cross-session plan authority. `transport::run` is explicitly a
+raw process primitive for callers owning its command; it does not implement
+scope policy and is never an unconfined fallback for TargetClient.

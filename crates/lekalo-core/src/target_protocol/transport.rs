@@ -12,9 +12,20 @@
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
+
+#[cfg(test)]
+thread_local! { static LAUNCHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+#[cfg(test)]
+pub(super) fn record_launch() {
+    LAUNCHES.with(|count| count.set(count.get() + 1));
+}
+#[cfg(test)]
+pub(super) fn launches() -> usize {
+    LAUNCHES.with(std::cell::Cell::get)
+}
 
 /// The direct adapter invocation: program plus argv vector.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -109,7 +120,8 @@ pub struct TransportSuccess {
     pub stderr_truncated: bool,
 }
 
-/// Run one adapter exchange to completion.
+/// Run one raw process exchange to completion. This primitive does not
+/// enforce project scopes; TargetClient always uses its confined runner.
 ///
 /// `request` is the serialized request envelope; `file_transport` switches
 /// delivery from stdin to the temporary-file convention.
@@ -121,46 +133,111 @@ pub fn run(
     file_transport: bool,
     cancel: Option<&AtomicBool>,
 ) -> Result<TransportSuccess, TransportFailure> {
+    run_impl(command, request, limits, cwd, file_transport, cancel, false)
+}
+
+#[cfg(unix)]
+pub(super) fn run_private(
+    command: &AdapterCommand,
+    request: &[u8],
+    limits: &TransportLimits,
+    cwd: &Path,
+    cancel: Option<&AtomicBool>,
+) -> Result<TransportSuccess, TransportFailure> {
+    run_impl(command, request, limits, cwd, false, cancel, true)
+}
+
+fn run_impl(
+    command: &AdapterCommand,
+    request: &[u8],
+    limits: &TransportLimits,
+    cwd: &Path,
+    file_transport: bool,
+    cancel: Option<&AtomicBool>,
+    clear_env: bool,
+) -> Result<TransportSuccess, TransportFailure> {
     if request.len() > limits.max_request_bytes {
         return Err(TransportFailure::RequestWrite);
     }
     let mut argv: Vec<String> = Vec::new();
-    let mut temp_path: Option<PathBuf> = None;
+    let mut temp_file = None;
     if file_transport {
-        let path = write_request_file(request)?;
+        let file = write_request_file(request)?;
         argv.push("--lekalo-request-file".to_owned());
-        argv.push(path.display().to_string());
-        temp_path = Some(path);
+        argv.push(file.path().display().to_string());
+        temp_file = Some(file);
     }
-    let mut child = std::process::Command::new(&command.program)
+    if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return Err(TransportFailure::Cancelled);
+    }
+    let mut process = std::process::Command::new(&command.program);
+    if clear_env {
+        process.env_clear();
+    }
+    process
         .args(&command.args)
         .args(&argv)
         .current_dir(cwd)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|_| TransportFailure::Spawn)?;
+        .stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        process.process_group(0);
+    }
+    #[cfg(test)]
+    record_launch();
+    let mut child = process.spawn().map_err(|_| TransportFailure::Spawn)?;
 
     let result = pump(&mut child, request, limits, cancel);
+    terminate(&mut child);
     let _ = child.wait();
-    if let Some(path) = temp_path {
-        let _ = std::fs::remove_file(path);
-    }
+    drop(temp_file);
     result
 }
 
 /// Deliver stdin, collect bounded output, and enforce deadline/cancel while
 /// the child runs.
-fn pump(
-    child: &mut std::process::Child,
+pub(super) trait Process {
+    fn stdin(&mut self) -> Option<Box<dyn Write + Send>>;
+    fn stdout(&mut self) -> Option<Box<dyn Read + Send>>;
+    fn stderr(&mut self) -> Option<Box<dyn Read + Send>>;
+    fn poll(&mut self) -> std::io::Result<Option<i32>>;
+    fn terminate(&mut self);
+    fn reap(&mut self);
+}
+
+impl Process for std::process::Child {
+    fn stdin(&mut self) -> Option<Box<dyn Write + Send>> {
+        self.stdin.take().map(|v| Box::new(v) as _)
+    }
+    fn stdout(&mut self) -> Option<Box<dyn Read + Send>> {
+        self.stdout.take().map(|v| Box::new(v) as _)
+    }
+    fn stderr(&mut self) -> Option<Box<dyn Read + Send>> {
+        self.stderr.take().map(|v| Box::new(v) as _)
+    }
+    fn poll(&mut self) -> std::io::Result<Option<i32>> {
+        self.try_wait().map(|v| v.map(|s| s.code().unwrap_or(-1)))
+    }
+    fn terminate(&mut self) {
+        terminate(self);
+    }
+    fn reap(&mut self) {
+        let _ = self.wait();
+    }
+}
+
+pub(super) fn pump(
+    child: &mut impl Process,
     request: &[u8],
     limits: &TransportLimits,
     cancel: Option<&AtomicBool>,
 ) -> Result<TransportSuccess, TransportFailure> {
-    let mut stdin = child.stdin.take().ok_or(TransportFailure::Spawn)?;
-    let stdout = child.stdout.take().ok_or(TransportFailure::Spawn)?;
-    let stderr = child.stderr.take().ok_or(TransportFailure::Spawn)?;
+    let mut stdin = child.stdin().ok_or(TransportFailure::Spawn)?;
+    let stdout = child.stdout().ok_or(TransportFailure::Spawn)?;
+    let stderr = child.stderr().ok_or(TransportFailure::Spawn)?;
 
     // The threads own copied bounds and bytes: no borrowed data escapes.
     let request: Vec<u8> = request.to_vec();
@@ -184,11 +261,13 @@ fn pump(
         let _ = stderr_tx.send((bytes, truncated));
     });
 
-    let deadline = Instant::now() + Duration::from_millis(limits.timeout_ms);
+    let deadline = Instant::now()
+        .checked_add(Duration::from_millis(limits.timeout_ms))
+        .ok_or(TransportFailure::RequestWrite)?;
     let mut stdout_result: Option<(Vec<u8>, bool)> = None;
     let mut stderr_result: Option<(Vec<u8>, bool)> = None;
     let mut stdin_result: Option<Result<(), std::io::ErrorKind>> = None;
-    let mut status: Option<std::process::ExitStatus> = None;
+    let mut status: Option<i32> = None;
     let refusal: TransportFailure;
 
     loop {
@@ -243,7 +322,7 @@ fn pump(
             break;
         }
         if status.is_none() {
-            status = child.try_wait().map_err(|_| TransportFailure::Spawn)?;
+            status = child.poll().map_err(|_| TransportFailure::Spawn)?;
         }
         if let (Some(status), Some(stdin), Some(stdout_result), Some(stderr_result)) = (
             status.as_ref(),
@@ -251,7 +330,7 @@ fn pump(
             stdout_result.as_ref(),
             stderr_result.as_ref(),
         ) {
-            let exit_code = status.code().unwrap_or(-1);
+            let exit_code = *status;
             if exit_code != 0 && *stdin == Err(std::io::ErrorKind::BrokenPipe) {
                 return Err(TransportFailure::RequestWrite);
             }
@@ -270,14 +349,23 @@ fn pump(
 
     // A deadline/cancel/output-limit refusal: kill the child, then drain the
     // channels so their writer threads can exit and be joined.
-    let _ = child.kill();
-    let _ = child.wait();
+    child.terminate();
+    child.reap();
     let _ = stdin_rx.recv_timeout(Duration::from_secs(1));
     let _ = stdout_rx.recv_timeout(Duration::from_secs(1));
     let _ = stderr_rx.recv_timeout(Duration::from_secs(1));
-    let _ = stdin_handle.join();
-    let _ = stdout_handle.join();
-    let _ = stderr_handle.join();
+    // Never unconditionally join a pipe inherited by an escaped descendant.
+    // The confined runner prevents escape; the low-level raw transport also
+    // preserves its deadline if the caller runs an uncooperative process.
+    if stdin_handle.is_finished() {
+        let _ = stdin_handle.join();
+    }
+    if stdout_handle.is_finished() {
+        let _ = stdout_handle.join();
+    }
+    if stderr_handle.is_finished() {
+        let _ = stderr_handle.join();
+    }
     Err(refusal)
 }
 
@@ -309,20 +397,75 @@ fn read_bounded(mut stream: impl Read, cap: usize) -> (Vec<u8>, bool) {
 }
 
 /// Write the request to one bounded temporary file outside the project.
-fn write_request_file(request: &[u8]) -> Result<PathBuf, TransportFailure> {
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!(
-        "lekalo-target-request-{}-{seq}.json",
-        std::process::id()
-    ));
-    std::fs::write(&path, request).map_err(|_| TransportFailure::RequestWrite)?;
-    Ok(path)
+fn write_request_file(request: &[u8]) -> Result<tempfile::NamedTempFile, TransportFailure> {
+    let mut file = tempfile::Builder::new()
+        .prefix("lekalo-target-request-")
+        .suffix(".json")
+        .tempfile()
+        .map_err(|_| TransportFailure::RequestWrite)?;
+    file.write_all(request)
+        .map_err(|_| TransportFailure::RequestWrite)?;
+    file.flush().map_err(|_| TransportFailure::RequestWrite)?;
+    Ok(file)
+}
+
+fn terminate(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    if let Some(pid) = rustix::process::Pid::from_raw(child.id() as i32) {
+        if pid != rustix::process::Pid::INIT {
+            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+        }
+    }
+    let _ = child.kill();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn request_files_are_exclusive_and_owned_across_spawn_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let victim = root.path().join("victim");
+        std::fs::write(&victim, b"KEEP").unwrap();
+        // Occupying an obsolete predictable name must confer no custody on
+        // the transport and cannot cause either overwrite or cleanup.
+        let old = std::env::temp_dir().join(format!(
+            "lekalo-target-request-{}-0.json",
+            std::process::id()
+        ));
+        let link = std::fs::hard_link(&victim, &old).is_ok();
+        let owned = write_request_file(b"private-request").unwrap();
+        let path = owned.path().to_path_buf();
+        assert_ne!(path, old);
+        assert!(std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .is_err());
+        drop(owned);
+        assert!(!path.exists());
+        let command = AdapterCommand {
+            program: "lekalo-nonexistent-adapter".into(),
+            args: vec![],
+        };
+        assert_eq!(
+            run(
+                &command,
+                b"private-request",
+                &TransportLimits::default(),
+                root.path(),
+                true,
+                None
+            ),
+            Err(TransportFailure::Spawn)
+        );
+        assert_eq!(std::fs::read(&victim).unwrap(), b"KEEP");
+        if link {
+            assert_eq!(std::fs::read(&old).unwrap(), b"KEEP");
+            std::fs::remove_file(old).unwrap();
+        }
+    }
 
     #[test]
     fn bounded_reader_stops_at_the_cap() {

@@ -18,6 +18,15 @@ fn one(id: &str, data: DataObject) -> crate::diagnostics::Diagnostic {
     build(id, None, None, data).expect("target rules are registered and active")
 }
 
+// Opaque correlation subjects retain machine meaning without publishing
+// provider-controlled paths, credentials, codes or log text.
+fn subject(raw: &str) -> crate::diagnostics::types::DataValue {
+    token_value(&format!(
+        "subject-{}",
+        super::plan::sha256_hex(raw.as_bytes())
+    ))
+}
+
 /// The registered rule id and status of one failure.
 pub fn rule_for(failure: &TargetFailure) -> (&'static str, Status) {
     match failure {
@@ -68,28 +77,35 @@ impl From<&TargetFailure> for DomainResult {
             }
             TargetFailure::ScopeViolation { path, detail } => {
                 if let Some(path) = path {
-                    data.insert("path".to_owned(), token_value(path));
+                    data.insert("path".to_owned(), subject(path));
                 }
                 data.insert("detail".to_owned(), token_value(detail));
             }
             TargetFailure::ProtectedPath { path, home } => {
-                data.insert("path".to_owned(), token_value(path));
+                data.insert("path".to_owned(), subject(path));
                 data.insert("detail".to_owned(), token_value(home));
             }
             TargetFailure::DryRunMutation { path } => {
                 if let Some(path) = path {
-                    data.insert("path".to_owned(), token_value(path));
+                    data.insert("path".to_owned(), subject(path));
                 }
             }
             TargetFailure::PlanMismatch { path, detail } => {
                 if let Some(path) = path {
-                    data.insert("path".to_owned(), token_value(path));
+                    data.insert("path".to_owned(), subject(path));
                 }
                 data.insert("detail".to_owned(), token_value(detail));
             }
-            TargetFailure::OperationFailed { class, code, .. } => {
+            TargetFailure::OperationFailed { class, partial, .. } => {
                 data.insert("class".to_owned(), token_value(class.as_str()));
-                data.insert("code".to_owned(), token_value(code));
+                data.insert(
+                    "code".to_owned(),
+                    token_value(if *partial {
+                        "adapter-error-partial"
+                    } else {
+                        "adapter-error"
+                    }),
+                );
             }
             TargetFailure::ResponseInvalid { detail } => {
                 data.insert("detail".to_owned(), token_value(detail.detail()));
@@ -100,8 +116,8 @@ impl From<&TargetFailure> for DomainResult {
             TargetFailure::Timeout => {
                 data.insert("detail".to_owned(), token_value("deadline"));
             }
-            TargetFailure::Crash { detail } => {
-                data.insert("detail".to_owned(), token_value(detail));
+            TargetFailure::Crash { .. } => {
+                data.insert("detail".to_owned(), token_value("abnormal-exit"));
             }
             TargetFailure::OutputLimit { stream } => {
                 data.insert("stream".to_owned(), token_value(stream.as_str()));
@@ -116,6 +132,7 @@ impl From<&TargetFailure> for DomainResult {
             Status::Invalid => DomainResult::Invalid { diagnostics: set },
             Status::Denied => DomainResult::Denied { diagnostics: set },
             Status::Unavailable => DomainResult::Unavailable { diagnostics: set },
+            Status::Unsupported => DomainResult::UnsupportedOperation { diagnostics: set },
             Status::UnsupportedVersion => DomainResult::UnsupportedVersion { diagnostics: set },
             _ => DomainResult::Unavailable { diagnostics: set },
         }

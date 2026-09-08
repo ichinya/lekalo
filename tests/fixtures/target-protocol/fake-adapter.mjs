@@ -193,7 +193,7 @@ if (fault("hang")) {
       }
       respond(request, {
         writes,
-        evidence: { adapter: ADAPTER, plan_id: planId(writes) },
+        evidence: { adapter: ADAPTER, plan_id: request.plan_id ?? planId(writes) },
         progress: [
           { step: "compile", state: "done" },
           { step: "emit", state: "done" },
@@ -218,7 +218,7 @@ if (fault("hang")) {
       }
       respond(request, {
         writes: plan,
-        evidence: { adapter: ADAPTER, plan_id: planId(plan) },
+        evidence: { adapter: ADAPTER, plan_id: request.plan_id ?? planId(plan) },
       });
       break;
     }

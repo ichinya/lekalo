@@ -345,6 +345,15 @@ mod imp {
         }
 
         pub fn entries(&self, logical_dir: &str) -> Result<Vec<(String, EntryType)>, FsErrorKind> {
+            self.entries_bounded(logical_dir, usize::MAX)
+        }
+
+        /// Enumerate without allocating beyond the caller's entry bound.
+        pub fn entries_bounded(
+            &self,
+            logical_dir: &str,
+            max: usize,
+        ) -> Result<Vec<(String, EntryType)>, FsErrorKind> {
             let dir = self.dir_handle(logical_dir)?;
             let mut handle = Dir::read_from(&dir).map_err(error_of)?;
             let mut collected = Vec::new();
@@ -355,6 +364,9 @@ mod imp {
                 let raw = entry.file_name();
                 if raw.to_bytes() == b"." || raw.to_bytes() == b".." {
                     continue;
+                }
+                if collected.len() >= max {
+                    return Err(FsErrorKind::Limit { max });
                 }
                 let name = raw.to_str().map_err(|_| FsErrorKind::Io)?.to_owned();
                 let entry_type = match entry.file_type() {
@@ -478,10 +490,22 @@ mod imp {
         }
 
         pub fn entries(&self, logical_dir: &str) -> Result<Vec<(String, EntryType)>, FsErrorKind> {
+            self.entries_bounded(logical_dir, usize::MAX)
+        }
+
+        /// Enumerate without allocating beyond the caller's entry bound.
+        pub fn entries_bounded(
+            &self,
+            logical_dir: &str,
+            max: usize,
+        ) -> Result<Vec<(String, EntryType)>, FsErrorKind> {
             let path = self.inner.physical(logical_dir);
             let read = fs::read_dir(&path).map_err(|error| error_of(&error))?;
             let mut collected = Vec::new();
             for entry in read {
+                if collected.len() >= max {
+                    return Err(FsErrorKind::Limit { max });
+                }
                 let entry = entry.map_err(|error| error_of(&error))?;
                 let name = entry
                     .file_name()

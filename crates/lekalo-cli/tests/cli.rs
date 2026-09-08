@@ -250,7 +250,7 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
     }
 
     // Normal (non-dev, non-build) dependencies of lekalo-core; the
-    // cfg-gated rustix entry carries a target and is excluded here.
+    // cfg-gated native confinement entries carry a target and are excluded here.
     let core = packages
         .iter()
         .find(|package| package["name"] == "lekalo-core")
@@ -278,6 +278,9 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
             "serde",
             "serde_json",
             "sha2",
+            // Issue #27 uses exclusive owned temporary files and private
+            // adapter views in production, not only in test fixtures.
+            "tempfile",
             "unicode-normalization"
         ]
     );
