@@ -33,7 +33,8 @@ IDs. Adapters echo the supplied request ID instead of recomputing it.
 Describe is mandatory. It negotiates adapter identity/version/digest,
 protocol versions, operations, transports, targets, profiles, read/write
 scopes and optional structured progress. Every refresh revokes the old
-handshake and pending plan before any fallible work. A protocol mismatch
+handshake and pending plan before any fallible work, including successful,
+failed and cancelled calls through `describe_with_cancel`. A protocol mismatch
 remains `unsupported-version`/exit 5; missing capability remains
 `unsupported`/exit 4.
 
@@ -61,6 +62,13 @@ expectations. The pinned Ajv 8.17.1 gate checks the raw schema for duplicate
 keys before parsing; schema acceptance is reported separately from semantic
 runtime rejection. Neither a filename whitelist nor a fixture name is a
 runtime proof.
+
+Operation error codes contain 1–128 Unicode characters, counted as code
+points rather than UTF-8 bytes or grapheme clusters. The production decoder
+enforces this bound once; the client retains the validated internal code
+without byte truncation. Public diagnostics still use fixed redacted codes.
+Shared ASCII, Cyrillic, astral and combining-character vectors exercise the
+decoder, client and exact Ajv gate at and beyond the boundary.
 
 ## Scopes and plans
 
@@ -115,7 +123,14 @@ See Microsoft's [AppContainer launch guide](https://learn.microsoft.com/en-us/wi
 
 Linux requires `/usr/bin/bwrap`: separate user/mount/PID/network namespaces,
 read-only system runtime roots, and staged writable mounts. The product does
-not install it; CI provisions it explicitly. macOS requires
+not install it; CI provisions it explicitly. Hosts restricting unprivileged
+user namespaces through AppArmor also need an administrator-provided bwrap
+launcher profile. The [AppArmor bwrap policy](https://gitlab.com/apparmor/apparmor/-/blob/apparmor-4.1/profiles/apparmor/profiles/extras/bwrap-userns-restrict)
+permits namespace setup while stripping capabilities from executed children.
+CI loads its dedicated variant into the ephemeral runner's kernel and removes
+it afterward; it neither installs persistent policy files nor disables the
+global namespace restriction. Core never changes host policy or retries with
+weaker isolation when the backend is denied. macOS requires
 `/usr/bin/sandbox-exec` with a deny-by-default profile. Projects inside an
 allowed system runtime tree are refused. Missing or unsupported confinement
 fails closed, with no ambient fallback. Linux/macOS behavioral qualification

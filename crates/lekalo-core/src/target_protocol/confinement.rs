@@ -473,6 +473,17 @@ mod tests {
         if result.exit_code != 0 {
             let staged = sandbox.command(&command).unwrap();
             let canonical = std::fs::canonicalize(sandbox.owned.path()).unwrap();
+            // Fixed trusted inline code only: distinguish a copied-binary
+            // execution failure from a profile failure, never a client fallback.
+            let control = transport::run_private(&staged, b"", &limits, &sandbox.project, None);
+            eprintln!(
+                "private fixed copied-binary control: {:?}",
+                control.as_ref().map(|v| (
+                    v.exit_code,
+                    String::from_utf8_lossy(&v.stdout),
+                    String::from_utf8_lossy(&v.stderr)
+                ))
+            );
             let mut metadata = String::from("(allow file-read-metadata");
             for ancestor in canonical.ancestors() {
                 metadata.push_str(&format!(
@@ -485,13 +496,14 @@ mod tests {
                 "(allow file-map-executable (subpath {}) (subpath \"/System\") (subpath \"/usr/lib\"))",
                 serde_json::to_string(&canonical.join("runtime").to_string_lossy()).unwrap()
             );
-            for (name, extra) in [
-                ("map", map.clone()),
-                ("ancestor-metadata", metadata.clone()),
-                ("map-and-ancestors", format!("{map}{metadata}")),
+            for (name, extra, canonical_exec) in [
+                ("canonical-exec", "", true),
+                ("process-fork", "(allow process-fork)", true),
+                ("process-operations", "(allow process*)", true),
                 (
-                    "map-ancestors-root",
-                    format!("{map}{metadata}(allow file-read* (literal \"/\"))"),
+                    "dev-null-write",
+                    "(allow file-write-data (literal \"/dev/null\"))",
+                    true,
                 ),
             ] {
                 let mut wrapper = sandbox.macos_command(&staged);
@@ -499,8 +511,17 @@ mod tests {
                     sandbox.owned.path().to_str().unwrap(),
                     canonical.to_str().unwrap(),
                 );
-                wrapper.args[1].push_str(&extra);
+                wrapper.args[1].push_str(&format!(
+                    "{map}{metadata}(allow file-read* (literal \"/\"))"
+                ));
+                wrapper.args[1].push_str(extra);
                 wrapper.args[1].push_str("(debug deny)");
+                if canonical_exec {
+                    wrapper.args[2] = std::fs::canonicalize(&staged.program)
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned();
+                }
                 let variant =
                     transport::run_private(&wrapper, b"", &limits, &sandbox.project, None);
                 let evidence = variant.as_ref().map(|v| {
