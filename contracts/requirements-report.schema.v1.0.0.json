@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/requirements-report.schema.v1.0.0.json",
+  "title": "Lekalo Requirements Report",
+  "description": "Closed derived read-only report of one requirements attachment resolution (issue #36): the effective requirement catalog with exact body revisions, every reference resolution status (fresh, stale, missing, conflict), the coverage gaps (requirements no symbol links), the explicit conflicts that block silent resolution, and the changed-requirement impact rows. Canonical bytes are compact UTF-8 JSON with byte-sorted object keys. The report carries ids, digests, and bounded identifiers only — never requirement text, absolute paths, or host data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "projectId",
+    "modelRef",
+    "attachmentDigest",
+    "sourceRevision",
+    "providers",
+    "requirements",
+    "references",
+    "coverageGaps",
+    "conflicts",
+    "impact"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/requirements-report/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.requirements-report@1.0.0"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "modelRef": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "attachmentDigest": {
+      "$ref": "#/$defs/hex64"
+    },
+    "sourceRevision": {
+      "$ref": "#/$defs/hex64"
+    },
+    "providers": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/providerRow"
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/requirementRow"
+      }
+    },
+    "references": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/referenceRow"
+      }
+    },
+    "coverageGaps": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/coverageGapRow"
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/conflictRow"
+      }
+    },
+    "impact": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/impactRow"
+      }
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sourceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "requirementId": {
+      "type": "string",
+      "minLength": 7,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}\\.REQ-[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "enum": [
+            "0.1.0",
+            "1.0.0"
+          ]
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
+      }
+    },
+    "providerRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "kind",
+        "root",
+        "status",
+        "capabilityCount",
+        "requirementCount"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/sourceId"
+        },
+        "kind": {
+          "enum": [
+            "openspec"
+          ]
+        },
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "absent"
+          ]
+        },
+        "capabilityCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "requirementCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        }
+      }
+    },
+    "requirementRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "id",
+        "digest",
+        "origin",
+        "originId",
+        "symbols"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/sourceId"
+        },
+        "id": {
+          "$ref": "#/$defs/requirementId"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "origin": {
+          "enum": [
+            "accepted",
+            "change"
+          ]
+        },
+        "originId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "symbols": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        }
+      }
+    },
+    "referenceRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "relation",
+        "source",
+        "requirement",
+        "revision",
+        "status",
+        "currentRevision",
+        "renamedTo"
+      ],
+      "properties": {
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "relation": {
+          "enum": [
+            "derived_from",
+            "implements"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/sourceId"
+        },
+        "requirement": {
+          "$ref": "#/$defs/requirementId"
+        },
+        "revision": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "status": {
+          "enum": [
+            "fresh",
+            "stale",
+            "missing",
+            "conflict"
+          ]
+        },
+        "currentRevision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "renamedTo": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/requirementId"
+            }
+          ]
+        }
+      }
+    },
+    "coverageGapRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "id",
+        "digest"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/sourceId"
+        },
+        "id": {
+          "$ref": "#/$defs/requirementId"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
+      }
+    },
+    "conflictRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "capability",
+        "title",
+        "detail"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/sourceId"
+        },
+        "capability": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "detail": {
+          "enum": [
+            "duplicate-title",
+            "added-existing",
+            "duplicate-added",
+            "modified-missing",
+            "removed-missing",
+            "multiple-changes"
+          ]
+        }
+      }
+    },
+    "impactRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "requirement",
+        "change",
+        "symbols",
+        "renamedTo"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/sourceId"
+        },
+        "requirement": {
+          "$ref": "#/$defs/requirementId"
+        },
+        "change": {
+          "enum": [
+            "changed",
+            "removed",
+            "renamed",
+            "conflict"
+          ]
+        },
+        "symbols": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "renamedTo": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/requirementId"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
