@@ -11,7 +11,7 @@ requirement providers, and one derived, read-only report wire —
 carries the resolution results: the effective requirement catalog with exact
 revisions, per-reference resolution statuses, coverage gaps, explicit
 conflicts, and changed-requirement impact. Owner decisions are recorded in
-[ADR-0026](adr/0025-requirements-traceability.md).
+[ADR-0026](adr/0026-requirements-traceability.md).
 
 ## Authority and boundaries
 
@@ -56,7 +56,10 @@ The `openspec` provider derives stable ids from the artifacts:
 `specs/`, and `slug` is the deterministic kebab-case slug of the
 requirement title (`### Requirement: <title>`), e.g. `planner.REQ-focus-task`.
 Title slugs are stable under reordering and insertion; a title change is a
-new id, and the resolver detects exactly that move (see rename below).
+new id. Distinct case-sensitive titles that map to the same id produce an
+`id-collision` conflict, including when an earlier operation removed one
+title. A capability is at most 63 characters, a slug at most 64, and their
+combined requirement id at most 128. No identifier is truncated to fit.
 
 ### Revision digests
 
@@ -71,19 +74,40 @@ digest. Canonical bytes never enter Lekalo — only the digest.
 The provider reads `<root>/specs/<capability>/spec.md` (accepted/base) and
 `<root>/changes/<change-id>/specs/<capability>/spec.md` (active change
 deltas; the `archive` subtree is never active). Deltas use the OpenSpec
-sections `## ADDED Requirements`, `## MODIFIED Requirements`, and
-`## REMOVED Requirements`; a requirement block under any other section of a
-delta fails closed. Changes apply in ascending change-directory order to
-project the effective requirement set:
+sections `## ADDED Requirements`, `## MODIFIED Requirements`,
+`## REMOVED Requirements`, and `## RENAMED Requirements`. Preambles such as
+`## Purpose` are allowed, but a delta requirement without a recognized
+operation fails closed. Backtick and tilde fences mask structural headings;
+all example content and later requirement prose remain in the revision.
+Changes apply in ascending change-directory order. Within each change the
+native order is RENAMED, REMOVED, MODIFIED, ADDED:
 
 - ADDED — the title must not already exist (accepted or previously added);
 - MODIFIED — the title must exist; at most one active change may modify it;
 - REMOVED — the title must exist; at most one active change may remove it.
+- RENAMED — explicit FROM/TO requirement headers move an existing title to
+  a new title; a MODIFIED block may replace the body under the new title.
+  Both names participate in conflict detection.
+
+REMOVED accepts both requirement blocks and native bullets such as
+``- `### Requirement: Focus task` ``. RENAMED uses paired lines:
+
+```markdown
+## RENAMED Requirements
+- FROM: `### Requirement: Focus task`
+- TO: `### Requirement: Focus selection`
+```
 
 Every contradiction records an explicit conflict (`duplicate-title`,
 `added-existing`, `duplicate-added`, `modified-missing`, `removed-missing`,
-`multiple-changes`) and removes the disputed requirement from the effective
-set: a conflict is a gate, never a silent overwrite.
+`multiple-changes`, `id-collision`, `contradictory-operations`,
+`rename-conflict`, `renamed-missing`, `renamed-existing`) and removes the
+disputed requirement from the effective set. Operation history survives
+removals, so remove/add contradictions and repeated edits in one change
+cannot silently pass. Conflict rows contain `source`, `capability`,
+`subjectId` (the bare SHA-256 of the public requirement id), and a fixed
+`detail`; they never export the free-form title. Consumers can match a
+known reference by hashing its `requirement` id under the same source.
 
 Resolution statuses per reference:
 
@@ -91,7 +115,7 @@ Resolution statuses per reference:
 | --- | --- |
 | `fresh` | the requirement resolved and its body digest equals the pin |
 | `stale` | resolved, but the body changed since the pin |
-| `missing` | no such requirement; `renamedTo` names the id whose body digest equals the pin, when exactly that body still exists |
+| `missing` | no such requirement; `renamedTo` is populated only by explicit active rename evidence; `renameCandidates` lists all equal-body hints when no explicit evidence exists |
 | `conflict` | the requirement is disputed by active changes |
 
 The gate (`lekalo requirements validate`) passes only when every reference
@@ -102,13 +126,21 @@ An absent provider tree that references depend on is unavailable (exit 4).
 The Model pin and project id must match the supplied project exactly, or
 resolution denies before any filesystem work.
 
+Impact labels `rename-candidate` and `ambiguous-rename` distinguish one
+equal-body hint from several. Equal text alone cannot prove identity:
+`renamedTo` remains null for either case, and the missing-reference gate
+denies. An explicit rename plus modification still reports the rename.
+
 ## Archiving is traceability-neutral
 
 Archiving a change applies its content into the accepted specs. The
 projection of the same content yields the same ids and the same body
 digests, so a fresh reference stays fresh across the archive: only the
 origin (`change` → `accepted`) and the owning change id change. This is
-proven by the `archive_preserves_accepted_traceability` test.
+proven for additions, removals, renames, and rename plus modification by
+the integration tests. A reference updated to the new id and body stays
+fresh after archiving. Old ids remain missing; once an active rename is
+archived, the reader does not invent rename history from the base text.
 
 ## CLI
 
@@ -133,10 +165,14 @@ lekalo requirements trace ATTACHMENT --project DIR > trace-manifest.json
 completes (the report itself documents staleness); `validate` is the gate.
 `trace` projects the resolution into the neutral #22 trace contract —
 requirement nodes carry the OpenSpec original ids verbatim as external
-references with their exact body digests, every reference becomes an
+references with their exact body digests. Their neutral `requirementId`
+is `<source>:<requirement-id>`, preserving namespace identity across
+independent provider roots. Every resolved reference becomes an
 `implements` edge (the closed #22 endpoint matrix admits exactly one
 symbol→requirement kind, covering both declared relations), missing and
-conflicted links become explicit gaps, and the one unanchored
+conflicted links become explicit gaps. Provider conflicts also produce
+unanchored `conflict` gaps, including conflicts no symbol references;
+their expected identity is `conflict:<source>:<subjectId>`. The one unanchored
 `missing-gate` gap records that this projection carries no binding/test/gate
 chain. The manifest is re-validated by the accepted #22 validator before
 any byte is emitted; completeness is `partial` with the uncovered sinks
@@ -148,12 +184,31 @@ Canonical attachment and report bytes are compact UTF-8 JSON with
 byte-sorted object keys and canonically sorted collections (no trailing
 LF); the report digest is `sha256:` over exactly those bytes. Bounds
 (owner-approved v1, ADR-0026): 8 providers, 4096 references, 256
-capabilities and 10000 requirements per provider, 256 active changes, 128
-title characters, 1 MiB per spec document, 8 MiB per attachment, 32 MiB per
-canonical export. Every bound and semantic contradiction rejects with an
+capabilities across accepted and active specs per provider, 10000 distinct
+requirement ids per provider (including removed/disputed ids), 10000
+aggregate catalog/coverage/conflict rows across providers, 256 active
+changes per provider, 128 title characters, 512 ASCII characters per
+logical provider root, 1 MiB per spec document, 8 MiB per attachment, and
+32 MiB per canonical export. One delta contains at most 10000 operations;
+references and impact rows each cap at 4096. Every bound and semantic contradiction rejects with an
 explicit registered diagnostic (`LEK-REQ-001` … `LEK-REQ-010`) and no
-partial result; echoes are bounded fixed tokens — no requirement text, no
-paths beyond bounded logical ids, no host data.
+partial result before a successful resolution, including `validate`.
+Unknown keys and rejected roots use fixed diagnostic classifications;
+other diagnostic subjects are SHA-256 tokens. Duplicate decoded JSON
+members reject at the raw boundary, including nested and escaped keys.
+
+The requirements report uses recursively byte-sorted object keys. The
+published neutral trace contract retains its own fixed field order. The
+Node gate checks those formats independently and exercises duplicate-key,
+unsorted-key, trace-order, and schema-limit negative controls.
+
+This correction revises the still-unpublished report candidate: consumers
+of the earlier candidate replace conflict `title` with `subjectId`, read
+the required `renameCandidates` array, and handle the two new impact
+labels. No published Model, IR, or neutral trace contract changes. The
+diagnostic allocation remains 1.11.0; integration must merge the actual
+accepted #27 registry entries when available. Its paused work is not an
+accepted predecessor or an integration source.
 
 The committed planner fixture (`tests/fixtures/requirements/planner`)
 covers the fresh gate, the report and trace goldens

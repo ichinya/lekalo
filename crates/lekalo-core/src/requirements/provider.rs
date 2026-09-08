@@ -14,12 +14,14 @@
 //! removed requirement that does not exist, or a duplicate title inside
 //! one accepted capability each record an explicit conflict that gates
 //! the integration instead of picking a winner. Requirement bodies are
-//! never copied — only ids, bounded conflict titles, and digests.
+//! never copied — only ids, opaque conflict subjects, and digests.
 //!
 //! Archiving is traceability-neutral by construction: archiving a change
 //! moves its applied content into the accepted specs, and the projection
 //! of the same content yields the same ids and the same body digests, so
 //! a fresh reference stays fresh across the archive.
+
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::version;
 use super::{is_change_id, requirement_id, sha256_digest, title_slug, ProviderDecl, ProviderKind};
@@ -68,7 +70,7 @@ pub(crate) enum Origin {
 pub(crate) struct ConflictRow {
     /// The capability the disputed requirement belongs to.
     pub capability: String,
-    /// The exact disputed requirement title (bounded identifier data).
+    /// The internal disputed title, used for matching only; never exported.
     pub title: String,
     /// The fixed conflict classification token.
     pub detail: &'static str,
@@ -96,6 +98,8 @@ pub(crate) struct Snapshot {
     pub entries: Vec<CatalogEntry>,
     /// Every explicit conflict, canonically sorted.
     pub conflicts: Vec<ConflictRow>,
+    /// Explicit active rename evidence, old id to new id.
+    pub renames: BTreeMap<String, String>,
 }
 
 impl Snapshot {
@@ -107,6 +111,7 @@ impl Snapshot {
             status: ProviderStatus::Absent,
             entries: Vec::new(),
             conflicts: Vec::new(),
+            renames: BTreeMap::new(),
         }
     }
 }
@@ -120,228 +125,286 @@ struct RawBlock {
     body: Vec<u8>,
 }
 
-/// The delta section a requirement block belongs to.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// A document separates named operations from requirement bodies. Rename
+/// evidence is explicit; an equal digest alone never proves identity.
+#[derive(Default)]
+struct Document {
+    blocks: Vec<(RawBlock, Section)>,
+    renames: Vec<(RawBlock, RawBlock)>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum Section {
-    Added,
-    Modified,
+    Renamed,
     Removed,
+    Modified,
+    Added,
 }
 
 impl Section {
     fn parse(text: &str) -> Option<Self> {
-        match text {
-            "ADDED Requirements" => Some(Self::Added),
-            "MODIFIED Requirements" => Some(Self::Modified),
-            "REMOVED Requirements" => Some(Self::Removed),
+        match text.to_ascii_uppercase().as_str() {
+            "ADDED REQUIREMENTS" => Some(Self::Added),
+            "MODIFIED REQUIREMENTS" => Some(Self::Modified),
+            "REMOVED REQUIREMENTS" => Some(Self::Removed),
+            "RENAMED REQUIREMENTS" => Some(Self::Renamed),
             _ => None,
         }
     }
 }
 
-/// Load one provider snapshot through the confined read-only capability.
+type Key = (String, String);
+
+#[derive(Default)]
+struct State {
+    effective: BTreeMap<Key, CatalogEntry>,
+    conflicts: BTreeSet<ConflictRow>,
+    // Custody survives removals and failed edits. Slug ownership includes
+    // every encountered title, even one later removed or renamed.
+    owners: BTreeMap<String, Key>,
+    touched: BTreeMap<Key, String>,
+    renames: BTreeMap<String, String>,
+}
+
+impl State {
+    fn conflict(&mut self, key: &Key, detail: &'static str) {
+        self.effective.remove(key);
+        self.conflicts.insert(ConflictRow {
+            capability: key.0.clone(),
+            title: key.1.clone(),
+            detail,
+        });
+    }
+
+    fn disputed(&self, key: &Key) -> bool {
+        self.conflicts
+            .iter()
+            .any(|c| c.capability == key.0 && c.title == key.1)
+    }
+
+    fn register(&mut self, block: &RawBlock) {
+        let key = block.key();
+        let id = block.id();
+        if let Some(previous) = self.owners.get(&id).cloned() {
+            if previous != key {
+                self.conflict(&previous, "id-collision");
+                self.conflict(&key, "id-collision");
+            }
+        } else {
+            self.owners.insert(id, key);
+        }
+    }
+
+    fn apply_document(&mut self, mut document: Document, change: &str, path: &str) {
+        // Validate the complete operation history before applying anything.
+        // Only one rename TO plus one MODIFIED of that new title may share
+        // a title within a change. Every cross-change touch conflicts.
+        let mut operations: BTreeMap<Key, Vec<&str>> = BTreeMap::new();
+        for (block, section) in &document.blocks {
+            self.register(block);
+            operations
+                .entry(block.key())
+                .or_default()
+                .push(match section {
+                    Section::Added => "added",
+                    Section::Modified => "modified",
+                    Section::Removed => "removed",
+                    Section::Renamed => unreachable!("rename pairs are separate"),
+                });
+        }
+        for (from, to) in &document.renames {
+            self.register(from);
+            self.register(to);
+            operations.entry(from.key()).or_default().push("from");
+            operations.entry(to.key()).or_default().push("to");
+        }
+        for (key, mut ops) in operations {
+            ops.sort_unstable();
+            if self.touched.contains_key(&key) {
+                self.conflict(&key, "multiple-changes");
+            } else if ops.len() > 1 && ops != ["modified", "to"] {
+                self.conflict(&key, "contradictory-operations");
+            }
+            self.touched.insert(key, change.to_owned());
+        }
+        for (from, to) in document.renames {
+            let old = from.key();
+            let new = to.key();
+            let detail = if self.disputed(&old) || self.disputed(&new) {
+                Some("rename-conflict")
+            } else if !self.effective.contains_key(&old) {
+                Some("renamed-missing")
+            } else if self.effective.contains_key(&new) {
+                Some("renamed-existing")
+            } else {
+                None
+            };
+            if let Some(detail) = detail {
+                self.conflict(&old, detail);
+                self.conflict(&new, detail);
+                continue;
+            }
+            let mut entry = self
+                .effective
+                .remove(&old)
+                .expect("validated rename source");
+            entry.id = to.id();
+            entry.origin = Origin::Change;
+            entry.change = Some(change.to_owned());
+            entry.path = path.to_owned();
+            self.renames.insert(from.id(), to.id());
+            self.effective.insert(new, entry);
+        }
+        document.blocks.sort_by_key(|(_, section)| *section);
+        for (block, section) in document.blocks {
+            let key = block.key();
+            if self.disputed(&key) {
+                continue;
+            }
+            let exists = self.effective.contains_key(&key);
+            match (section, exists) {
+                (Section::Added, true) => self.conflict(&key, "added-existing"),
+                (Section::Modified, false) => self.conflict(&key, "modified-missing"),
+                (Section::Removed, false) => self.conflict(&key, "removed-missing"),
+                (Section::Removed, true) => {
+                    self.effective.remove(&key);
+                }
+                (Section::Added | Section::Modified, _) => {
+                    self.effective.insert(key, block.entry(path, Some(change)));
+                }
+                (Section::Renamed, _) => unreachable!("rename pairs are separate"),
+            }
+        }
+        // A later operation that disputes a rename target also disputes
+        // its source; never retain an apparently confirmed rename edge.
+        let renames = self.renames.clone();
+        for (from, to) in renames {
+            let old = self.owners.get(&from).cloned().expect("registered old id");
+            let new = self.owners.get(&to).cloned().expect("registered new id");
+            if self.disputed(&old) || self.disputed(&new) {
+                self.conflict(&old, "rename-conflict");
+                self.conflict(&new, "rename-conflict");
+                self.renames.remove(&from);
+            }
+        }
+    }
+}
+
+impl RawBlock {
+    fn key(&self) -> Key {
+        (self.capability.clone(), self.title.clone())
+    }
+    fn id(&self) -> String {
+        requirement_id(&self.capability, &self.slug)
+    }
+    fn entry(&self, path: &str, change: Option<&str>) -> CatalogEntry {
+        CatalogEntry {
+            id: self.id(),
+            digest: sha256_digest(&self.body),
+            origin: if change.is_some() {
+                Origin::Change
+            } else {
+                Origin::Accepted
+            },
+            change: change.map(str::to_owned),
+            path: path.to_owned(),
+        }
+    }
+}
+
+/// Load one complete provider, bounded across accepted and active inputs.
 pub(crate) fn load_snapshot(fs: &crate::project_fs::Fs, decl: &ProviderDecl) -> Loaded {
+    match load(fs, decl) {
+        Ok(snapshot) => Loaded::Resolved(snapshot),
+        Err(TreeError::Absent) => Loaded::Absent,
+        Err(error) => error.into_loaded(),
+    }
+}
+
+fn load(fs: &crate::project_fs::Fs, decl: &ProviderDecl) -> Result<Snapshot, TreeError> {
     if decl.kind != ProviderKind::Openspec {
-        return Loaded::Invalid("provider-kind");
+        return Err(TreeError::Shape);
     }
     let specs_dir = format!("{}/specs", decl.root);
     let changes_dir = format!("{}/changes", decl.root);
     let specs = match read_capabilities(fs, &specs_dir) {
-        Ok(capabilities) => capabilities,
-        Err(TreeError::Missing) => return Loaded::Absent,
-        Err(tree_error) => return tree_error.into_loaded(),
+        Ok(specs) => specs,
+        Err(TreeError::Missing) => {
+            // New capabilities can exist only in active deltas. An absent
+            // accepted specs directory is not an absent provider tree.
+            match fs.entries(&decl.root) {
+                Ok(_) => Vec::new(),
+                Err(crate::project_fs::FsErrorKind::NotFound) => return Err(TreeError::Absent),
+                Err(error) => return Err(TreeError::of(error)),
+            }
+        }
+        Err(error) => return Err(error),
     };
     let changes = match read_change_ids(fs, &changes_dir) {
         Ok(changes) => changes,
         Err(TreeError::Missing) => Vec::new(),
-        Err(tree_error) => return tree_error.into_loaded(),
+        Err(error) => return Err(error),
     };
-    if specs.len() > version::MAX_CAPABILITIES {
-        return Loaded::Invalid("capabilities-over-limit");
-    }
     if changes.len() > version::MAX_CHANGES {
-        return Loaded::Invalid("changes-over-limit");
+        return Err(TreeError::Bound("changes-over-limit"));
     }
-
-    // Effective state keyed by (capability, title): the pair the delta
-    // sections address requirements by.
-    let mut effective: std::collections::BTreeMap<(String, String), CatalogEntry> =
-        std::collections::BTreeMap::new();
-    let mut conflicts: std::collections::BTreeSet<ConflictRow> = std::collections::BTreeSet::new();
-
+    let mut capabilities = BTreeSet::new();
+    let mut state = State::default();
     for (capability, path) in &specs {
-        let blocks = match parse_document(fs, path, false) {
-            Ok(blocks) => blocks,
-            Err(tree_error) => return tree_error.into_loaded(),
-        };
-        if blocks.len() > version::MAX_REQUIREMENTS {
-            return Loaded::Invalid("requirements-over-limit");
-        }
-        let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        for (block, _) in blocks {
-            if !seen.insert(block.title.clone()) {
-                conflicts.insert(ConflictRow {
-                    capability: block.capability.clone(),
-                    title: block.title.clone(),
-                    detail: "duplicate-title",
-                });
+        capabilities.insert(capability.clone());
+        let document = parse_document(fs, path, false)?;
+        for (block, _) in document.blocks {
+            state.register(&block);
+            let key = block.key();
+            if state.disputed(&key) {
                 continue;
             }
-            effective.insert(
-                (block.capability.clone(), block.title.clone()),
-                CatalogEntry {
-                    id: requirement_id(capability, &block.slug),
-                    digest: sha256_digest(&block.body),
-                    origin: Origin::Accepted,
-                    change: None,
-                    path: path.clone(),
-                },
-            );
-        }
-    }
-
-    for change in &changes {
-        let change_specs = format!("{changes_dir}/{change}/specs");
-        let deltas = match read_capabilities(fs, &change_specs) {
-            Ok(capabilities) => capabilities,
-            Err(TreeError::Missing) => continue,
-            Err(tree_error) => return tree_error.into_loaded(),
-        };
-        for (capability, path) in &deltas {
-            let blocks = match parse_document(fs, path, true) {
-                Ok(blocks) => blocks,
-                Err(tree_error) => return tree_error.into_loaded(),
-            };
-            for (block, section) in blocks {
-                let key = (capability.clone(), block.title.clone());
-                let _ = apply(
-                    &mut effective,
-                    &mut conflicts,
-                    &key,
-                    &block,
-                    section,
-                    change,
-                    path,
-                );
+            match state.effective.entry(key.clone()) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(block.entry(path, None));
+                }
+                std::collections::btree_map::Entry::Occupied(entry) => {
+                    entry.remove();
+                    state.conflict(&key, "duplicate-title");
+                }
             }
         }
+        check_bounds(&state, &capabilities)?;
     }
-
-    let mut entries: Vec<CatalogEntry> = effective.into_values().collect();
-    entries.sort_by(|left, right| left.id.cmp(&right.id));
-    let conflicts: Vec<ConflictRow> = conflicts.into_iter().collect();
-    if entries.len() > version::MAX_REQUIREMENTS {
-        return Loaded::Invalid("requirements-over-limit");
+    for change in &changes {
+        let deltas = match read_capabilities(fs, &format!("{changes_dir}/{change}/specs")) {
+            Ok(deltas) => deltas,
+            Err(TreeError::Missing) => continue,
+            Err(error) => return Err(error),
+        };
+        for (capability, path) in deltas {
+            capabilities.insert(capability);
+            state.apply_document(parse_document(fs, &path, true)?, change, &path);
+            check_bounds(&state, &capabilities)?;
+        }
     }
-    Loaded::Resolved(Snapshot {
+    let mut entries: Vec<_> = state.effective.into_values().collect();
+    entries.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(Snapshot {
         source: decl.source.clone(),
         root: decl.root.clone(),
         status: ProviderStatus::Ok,
         entries,
-        conflicts,
+        conflicts: state.conflicts.into_iter().collect(),
+        renames: state.renames,
     })
 }
 
-/// Apply one delta block to the effective state. Every contradiction
-/// records an explicit conflict and leaves the disputed requirement out
-/// of the effective set; nothing is ever silently overwritten.
-fn apply(
-    effective: &mut std::collections::BTreeMap<(String, String), CatalogEntry>,
-    conflicts: &mut std::collections::BTreeSet<ConflictRow>,
-    key: &(String, String),
-    block: &RawBlock,
-    section: Section,
-    change: &str,
-    path: &str,
-) -> Result<(), &'static str> {
-    if is_disputed(conflicts, key) {
-        return Err("disputed");
+fn check_bounds(state: &State, capabilities: &BTreeSet<String>) -> Result<(), TreeError> {
+    if capabilities.len() > version::MAX_CAPABILITIES {
+        return Err(TreeError::Bound("capabilities-over-limit"));
     }
-    let existing = effective.remove(key);
-    match (section, existing) {
-        (Section::Added, Some(previous)) => {
-            let detail = match previous.origin {
-                Origin::Accepted => "added-existing",
-                Origin::Change => "duplicate-added",
-            };
-            record_conflict(conflicts, key, detail);
-            Err(detail)
-        }
-        (Section::Added, None) => {
-            effective.insert(
-                key.clone(),
-                CatalogEntry {
-                    id: requirement_id(&key.0, &block.slug),
-                    digest: sha256_digest(&block.body),
-                    origin: Origin::Change,
-                    change: Some(change.to_owned()),
-                    path: path.to_owned(),
-                },
-            );
-            Ok(())
-        }
-        (Section::Modified, None) => {
-            record_conflict(conflicts, key, "modified-missing");
-            Err("modified-missing")
-        }
-        (Section::Modified, Some(previous)) => {
-            if let Origin::Change = previous.origin {
-                if previous.change.as_deref() != Some(change) {
-                    record_conflict(conflicts, key, "multiple-changes");
-                    return Err("multiple-changes");
-                }
-            }
-            effective.insert(
-                key.clone(),
-                CatalogEntry {
-                    id: previous.id,
-                    digest: sha256_digest(&block.body),
-                    origin: Origin::Change,
-                    change: Some(change.to_owned()),
-                    path: path.to_owned(),
-                },
-            );
-            Ok(())
-        }
-        (Section::Removed, None) => {
-            record_conflict(conflicts, key, "removed-missing");
-            Err("removed-missing")
-        }
-        (Section::Removed, Some(previous)) => {
-            if let Origin::Change = previous.origin {
-                if previous.change.as_deref() != Some(change) {
-                    record_conflict(conflicts, key, "multiple-changes");
-                    return Err("multiple-changes");
-                }
-            }
-            // Removed stays removed; the key remains out of the
-            // effective set.
-            Ok(())
-        }
+    if state.owners.len() > version::MAX_REQUIREMENTS
+        || state.conflicts.len() > version::MAX_REQUIREMENTS
+    {
+        return Err(TreeError::Bound("requirements-over-limit"));
     }
-}
-
-/// Record one explicit conflict for a disputed (capability, title).
-fn record_conflict(
-    conflicts: &mut std::collections::BTreeSet<ConflictRow>,
-    key: &(String, String),
-    detail: &'static str,
-) {
-    conflicts.insert(ConflictRow {
-        capability: key.0.clone(),
-        title: key.1.clone(),
-        detail,
-    });
-}
-
-/// Whether the (capability, title) pair is already disputed.
-fn is_disputed(
-    conflicts: &std::collections::BTreeSet<ConflictRow>,
-    key: &(String, String),
-) -> bool {
-    conflicts
-        .iter()
-        .any(|row| row.capability == key.0 && row.title == key.1)
+    Ok(())
 }
 
 /// The capabilities of one specs directory: `(capability, logical spec
@@ -393,88 +456,168 @@ fn read_change_ids(
     Ok(changes)
 }
 
-/// Parse one spec or delta document into requirement blocks (with their
-/// delta sections). In accepted specs the section is meaningless and
-/// carries a placeholder; in deltas an unclassified or unknown section
-/// fails closed.
+/// Parse Markdown structure only outside code fences. Body content,
+/// including examples and non-requirement subheadings, stays in the digest.
 fn parse_document(
     fs: &crate::project_fs::Fs,
     path: &str,
     delta: bool,
-) -> Result<Vec<(RawBlock, Section)>, TreeError> {
-    let Some((dir, name)) = path.rsplit_once('/') else {
-        return Err(TreeError::Shape);
-    };
-    let bytes = match fs.read_file_opt(dir, name, version::MAX_SPEC_BYTES) {
-        Ok(Some(bytes)) => bytes,
-        Ok(None) => return Err(TreeError::Missing),
-        Err(crate::project_fs::FsErrorKind::Limit { .. }) => return Err(TreeError::Limit),
-        Err(_) => return Err(TreeError::Io),
-    };
+) -> Result<Document, TreeError> {
+    let (dir, name) = path.rsplit_once('/').ok_or(TreeError::Shape)?;
+    let bytes = fs
+        .read_file_opt(dir, name, version::MAX_SPEC_BYTES)
+        .map_err(TreeError::of)?
+        .ok_or(TreeError::Missing)?;
     let text = std::str::from_utf8(&bytes).map_err(|_| TreeError::Shape)?;
-    let capability = capability_of(path)?;
-    let mut blocks = Vec::new();
-    let mut section: Option<Section> = None;
-    // The open block: its title, slug, delta section, and body lines.
-    let mut current: Option<(String, String, Option<Section>, Vec<String>)> = None;
+    parse_text(text, &capability_of(path)?, delta)
+}
+
+fn raw_block(capability: &str, title: &str, body: &[String]) -> Result<RawBlock, TreeError> {
+    let slug = title_slug(title).ok_or(TreeError::Shape)?;
+    if !super::is_requirement_id(&requirement_id(capability, &slug)) {
+        return Err(TreeError::Bound("requirement-id-over-limit"));
+    }
+    Ok(RawBlock {
+        capability: capability.to_owned(),
+        title: title.to_owned(),
+        slug,
+        body: canonical_body(body),
+    })
+}
+
+fn requirement_title(line: &str) -> Option<&str> {
+    let heading = line.strip_prefix("###")?.trim_start();
+    let prefix = heading.get(..12)?;
+    prefix
+        .eq_ignore_ascii_case("Requirement:")
+        .then(|| heading[12..].trim())
+        .filter(|s| !s.is_empty())
+}
+
+fn header_reference(text: &str) -> Option<&str> {
+    requirement_title(text.trim().trim_matches('`').trim())
+}
+
+fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, TreeError> {
+    let text = text
+        .trim_start_matches('\u{feff}')
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+    let mut document = Document::default();
+    let mut section = None;
+    let mut current: Option<(String, Section, Vec<String>)> = None;
+    let mut rename_from: Option<RawBlock> = None;
+    let mut fence: Option<(u8, usize)> = None;
     for line in text.split('\n') {
-        let line = line.strip_suffix('\r').unwrap_or(line);
-        let heading_level = line
-            .chars()
-            .take_while(|character| *character == '#')
-            .count();
-        let is_heading =
-            heading_level > 0 && heading_level <= 3 && line[heading_level..].starts_with(' ');
-        if is_heading {
-            // A level <= 3 heading closes any open requirement block;
-            // deeper headings (scenario details) stay inside the body.
-            if let Some((title, slug, block_section, body)) = current.take() {
-                blocks.push((
-                    RawBlock {
-                        capability: capability.clone(),
-                        title,
-                        slug,
-                        body: canonical_body(&body),
-                    },
-                    block_section.unwrap_or(Section::Added),
-                ));
+        let trimmed = line.trim_start_matches(' ');
+        let indent = line.len() - trimmed.len();
+        let marker = trimmed.as_bytes().first().copied();
+        let run = trimmed.bytes().take_while(|b| Some(*b) == marker).count();
+        let fence_line = indent <= 3 && matches!(marker, Some(b'`' | b'~')) && run >= 3;
+        let masked = if let Some((open, length)) = fence {
+            if fence_line
+                && marker == Some(open)
+                && run >= length
+                && trimmed[run..].trim().is_empty()
+            {
+                fence = None;
             }
-            let heading = line[heading_level..].trim_start();
-            if heading_level == 3 {
-                let Some(title) = heading.strip_prefix("Requirement:") else {
-                    continue;
-                };
-                let title = title.trim();
-                let Some(slug) = title_slug(title) else {
+            true
+        } else if fence_line && (marker != Some(b'`') || !trimmed[run..].contains('`')) {
+            fence = Some((marker.expect("fence marker"), run));
+            true
+        } else {
+            false
+        };
+        let title = if masked {
+            None
+        } else {
+            requirement_title(line)
+        };
+        let section_heading = !masked
+            && line
+                .strip_prefix("##")
+                .is_some_and(|rest| rest.starts_with(char::is_whitespace));
+        let removed_bullet = if !masked && section == Some(Section::Removed) {
+            line.trim_start()
+                .strip_prefix('-')
+                .and_then(header_reference)
+        } else {
+            None
+        };
+        if title.is_some() || section_heading || removed_bullet.is_some() {
+            if let Some((name, operation, body)) = current.take() {
+                document
+                    .blocks
+                    .push((raw_block(capability, &name, &body)?, operation));
+            }
+        }
+        if section_heading {
+            if rename_from.is_some() {
+                return Err(TreeError::Shape);
+            }
+            section = if delta {
+                Section::parse(line[2..].trim())
+            } else {
+                Some(Section::Added)
+            };
+            continue;
+        }
+        if let Some(title) = title.or(removed_bullet) {
+            let operation = if delta {
+                section.ok_or(TreeError::Shape)?
+            } else {
+                Section::Added
+            };
+            if operation == Section::Renamed {
+                return Err(TreeError::Shape);
+            }
+            current = Some((title.to_owned(), operation, Vec::new()));
+            continue;
+        }
+        if !masked && section == Some(Section::Renamed) {
+            let text = line.trim().strip_prefix('-').unwrap_or(line.trim()).trim();
+            if let Some(rest) = text.strip_prefix("FROM:") {
+                if rename_from.is_some() {
                     return Err(TreeError::Shape);
-                };
-                current = Some((title.to_owned(), slug, section, Vec::new()));
-                continue;
-            }
-            if heading_level == 2 && delta {
-                section = match Section::parse(heading.trim()) {
-                    Some(section) => Some(section),
-                    None => return Err(TreeError::Shape),
-                };
+                }
+                rename_from = Some(raw_block(
+                    capability,
+                    header_reference(rest).ok_or(TreeError::Shape)?,
+                    &[],
+                )?);
+            } else if let Some(rest) = text.strip_prefix("TO:") {
+                let from = rename_from.take().ok_or(TreeError::Shape)?;
+                let to = raw_block(
+                    capability,
+                    header_reference(rest).ok_or(TreeError::Shape)?,
+                    &[],
+                )?;
+                document.renames.push((from, to));
+            } else if !text.is_empty() {
+                return Err(TreeError::Shape);
             }
             continue;
         }
-        if let Some((_, _, _, body)) = current.as_mut() {
+        if let Some((_, _, body)) = &mut current {
             body.push(line.trim_end().to_owned());
         }
     }
-    if let Some((title, slug, block_section, body)) = current.take() {
-        blocks.push((
-            RawBlock {
-                capability,
-                title,
-                slug,
-                body: canonical_body(&body),
-            },
-            block_section.unwrap_or(Section::Added),
-        ));
+    if rename_from.is_some() {
+        return Err(TreeError::Shape);
     }
-    Ok(blocks)
+    if let Some((name, operation, body)) = current {
+        document
+            .blocks
+            .push((raw_block(capability, &name, &body)?, operation));
+    }
+    if document.blocks.len() + document.renames.len() > version::MAX_REQUIREMENTS {
+        return Err(TreeError::Bound("requirements-over-limit"));
+    }
+    if delta && document.blocks.is_empty() && document.renames.is_empty() {
+        return Err(TreeError::Shape);
+    }
+    Ok(document)
 }
 
 /// The canonical body bytes a revision digest is computed over: exact
@@ -528,6 +671,8 @@ fn is_capability(text: &str) -> bool {
 
 /// Why one provider tree could not be read.
 enum TreeError {
+    Absent,
+    Bound(&'static str),
     /// The root or a capability directory does not exist.
     Missing,
     /// Any other filesystem failure.
@@ -549,6 +694,8 @@ impl TreeError {
 
     fn into_loaded(self) -> Loaded {
         match self {
+            Self::Absent => Loaded::Absent,
+            Self::Bound(detail) => Loaded::Invalid(detail),
             Self::Missing => Loaded::Invalid("tree-missing"),
             Self::Io => Loaded::Invalid("tree-unreadable"),
             Self::Limit => Loaded::Invalid("tree-over-limit"),

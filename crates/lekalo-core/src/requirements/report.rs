@@ -131,8 +131,10 @@ pub struct ReferenceRow {
     pub status: &'static str,
     /// The current body digest when the requirement resolved.
     pub current_revision: Option<String>,
-    /// The rename candidate when the pinned body moved to a new id.
+    /// The new id from explicit active rename evidence, otherwise absent.
     pub renamed_to: Option<String>,
+    /// Equal-body candidates are hints, never proof of a rename.
+    pub rename_candidates: Vec<String>,
 }
 
 /// One coverage gap: a requirement no symbol links.
@@ -155,8 +157,8 @@ pub struct ConflictRow {
     pub source: String,
     /// The disputed capability.
     pub capability: String,
-    /// The disputed requirement title.
-    pub title: String,
+    /// SHA-256 of the disputed requirement id; no free-form title is exported.
+    pub subject_id: String,
     /// The fixed conflict classification token.
     pub detail: String,
 }
@@ -169,7 +171,8 @@ pub struct ImpactRow {
     pub source: String,
     /// The requirement id the impact is about.
     pub requirement: String,
-    /// `changed`, `removed`, `renamed`, or `conflict`.
+    /// `changed`, `removed`, `renamed`, `conflict`, `rename-candidate`, or
+    /// `ambiguous-rename`.
     pub change: &'static str,
     /// The affected symbols, sorted.
     pub symbols: Vec<String>,
@@ -187,11 +190,11 @@ pub(crate) fn build(
     let attachment_digest = sha256_hex(canonical_value_bytes(&attachment.wire()).as_bytes());
 
     // Owned lookup indexes over the resolved catalogs: (source, id) to
-    // entry, (source, digest) to the smallest matching id (the rename
-    // candidate), and the set of disputed (source, id) pairs.
+    // entry, (source, digest) to every matching id (candidate evidence),
+    // and the set of disputed (source, id) pairs.
     let mut catalog: std::collections::BTreeMap<(&str, &str), &super::provider::CatalogEntry> =
         std::collections::BTreeMap::new();
-    let mut digests: std::collections::BTreeMap<(&str, &str), &str> =
+    let mut digests: std::collections::BTreeMap<(&str, &str), Vec<&str>> =
         std::collections::BTreeMap::new();
     let mut conflict_ids: std::collections::BTreeSet<(String, String)> =
         std::collections::BTreeSet::new();
@@ -200,7 +203,8 @@ pub(crate) fn build(
             catalog.insert((snapshot.source.as_str(), entry.id.as_str()), entry);
             digests
                 .entry((snapshot.source.as_str(), entry.digest.as_str()))
-                .or_insert(entry.id.as_str());
+                .or_default()
+                .push(entry.id.as_str());
         }
         for row in &snapshot.conflicts {
             let slug = super::title_slug(&row.title).unwrap_or_default();
@@ -211,6 +215,15 @@ pub(crate) fn build(
         }
     }
 
+    let explicit: std::collections::BTreeMap<(&str, &str), &str> = snapshots
+        .iter()
+        .flat_map(|s| {
+            s.renames
+                .iter()
+                .map(|(from, to)| ((s.source.as_str(), from.as_str()), to.as_str()))
+        })
+        .collect();
+
     // Reference resolution, in the attachment's canonical order.
     let mut references: Vec<ReferenceRow> = Vec::new();
     for link in attachment.references() {
@@ -219,6 +232,7 @@ pub(crate) fn build(
         let status;
         let mut current_revision = None;
         let mut renamed_to = None;
+        let mut rename_candidates = Vec::new();
         if conflict_ids.contains(&(source.to_owned(), requirement.to_owned())) {
             status = "conflict";
         } else if let Some(entry) = catalog.get(&(source, requirement)) {
@@ -230,9 +244,17 @@ pub(crate) fn build(
             current_revision = Some(entry.digest.clone());
         } else {
             status = "missing";
-            renamed_to = digests
-                .get(&(source, link.revision.as_str()))
+            renamed_to = explicit
+                .get(&(source, requirement))
                 .map(|id| (*id).to_owned());
+            if renamed_to.is_none() {
+                rename_candidates = digests
+                    .get(&(source, link.revision.as_str()))
+                    .into_iter()
+                    .flatten()
+                    .map(|id| (*id).to_owned())
+                    .collect();
+            }
         }
         references.push(ReferenceRow {
             symbol: link.symbol.clone(),
@@ -243,6 +265,7 @@ pub(crate) fn build(
             status,
             current_revision,
             renamed_to,
+            rename_candidates,
         });
     }
 
@@ -304,6 +327,10 @@ pub(crate) fn build(
         } else if rows.iter().any(|row| row.status == "missing") {
             if rows.iter().any(|row| row.renamed_to.is_some()) {
                 "renamed"
+            } else if rows.iter().any(|row| row.rename_candidates.len() > 1) {
+                "ambiguous-rename"
+            } else if rows.iter().any(|row| !row.rename_candidates.is_empty()) {
+                "rename-candidate"
             } else {
                 "removed"
             }
@@ -369,7 +396,13 @@ pub(crate) fn build(
             conflict_rows.push(ConflictRow {
                 source: snapshot.source.clone(),
                 capability: row.capability.clone(),
-                title: row.title.clone(),
+                subject_id: sha256_hex(
+                    requirement_id(
+                        &row.capability,
+                        &super::title_slug(&row.title).expect("validated title"),
+                    )
+                    .as_bytes(),
+                ),
                 detail: row.detail.to_owned(),
             });
         }
@@ -378,15 +411,19 @@ pub(crate) fn build(
         (
             &left.source[..],
             &left.capability[..],
-            &left.title[..],
+            &left.subject_id[..],
             &left.detail[..],
         )
             .cmp(&(
                 &right.source[..],
                 &right.capability[..],
-                &right.title[..],
+                &right.subject_id[..],
                 &right.detail[..],
             ))
+    });
+
+    conflict_rows.dedup_by(|a, b| {
+        a.source == b.source && a.subject_id == b.subject_id && a.detail == b.detail
     });
 
     let report = Report {
@@ -415,6 +452,14 @@ impl Report {
     /// canonical collections, no trailing LF), or the export-limit
     /// refusal.
     pub fn canonical_bytes(&self) -> Result<String, DiagnosticSet> {
+        if self.requirements.len() > version::MAX_REQUIREMENTS
+            || self.coverage_gaps.len() > version::MAX_REQUIREMENTS
+            || self.conflicts.len() > version::MAX_REQUIREMENTS
+            || self.references.len() > version::MAX_REFERENCES
+            || self.impact.len() > version::MAX_REFERENCES
+        {
+            return Err(diagnostic::export_limit("report-rows", "over-limit"));
+        }
         let bytes = super::canonical_value_bytes(self);
         if bytes.len() > version::MAX_EXPORT_BYTES {
             return Err(super::diagnostic::export_limit(
@@ -454,7 +499,7 @@ fn verdict_of(report: &Report) -> ResolutionVerdict {
     let conflicts: Vec<String> = report
         .conflicts
         .iter()
-        .map(|row| format!("{}:{}", row.source, row.title))
+        .map(|row| format!("{}:{}", row.source, row.subject_id))
         .collect();
     if stale.is_empty() && missing.is_empty() && conflicts.is_empty() {
         return ResolutionVerdict::Pass;

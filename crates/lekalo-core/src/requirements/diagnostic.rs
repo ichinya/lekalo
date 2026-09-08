@@ -3,15 +3,15 @@
 //!
 //! Every integration failure is one registered `requirements.*` rule
 //! assembled through the shared registry-backed constructor and finalized
-//! into a normalized [`DiagnosticSet`]. Every echoed token is bounded
+//! into a normalized [`DiagnosticSet`]. Subjects are hashed
 //! before construction: rule data carries only fixed detail tags and
-//! bounded identifier echoes — never raw input, paths, requirement text,
+//! opaque SHA-256 tokens — never raw input, paths, requirement text,
 //! digests, or attacker-controlled content. A registry construction
 //! failure collapses the whole set to the registry-invariant set (double
 //! developer fault) instead of panicking.
 
 use crate::diagnostics::normalize::{build, BuildError};
-use crate::diagnostics::types::{bound_token, token_value, DataObject, DataValue};
+use crate::diagnostics::types::{token_value, DataObject, DataValue};
 use crate::diagnostics::{Diagnostic, DiagnosticSet};
 use crate::result::{singleton_set, Status};
 
@@ -49,10 +49,10 @@ fn one(id: &str, data: DataObject) -> Built {
 }
 
 /// Build one validated diagnostic with a fixed detail tag and optional
-/// bounded subject echo, or an invariant-collapse marker.
+/// opaque subject digest, or an invariant-collapse marker.
 fn diagnostic(id: &str, detail: &str, subject: Option<&str>) -> Result<Diagnostic, ()> {
     let tag = match subject {
-        Some(subject) => format!("{detail}:{}", bounded(subject)),
+        Some(subject) => format!("{detail}:subject-{}", super::sha256_hex(subject.as_bytes())),
         None => detail.to_owned(),
     };
     let mut data = DataObject::new();
@@ -157,11 +157,6 @@ pub(crate) fn projection_empty() -> DiagnosticSet {
         Status::Invalid,
         vec![diagnostic(PROJECTION_EMPTY, "no-requirement-rows", None)],
     )
-}
-
-/// Bound an echoed identifier to the diagnostic token bound.
-pub(crate) fn bounded(text: &str) -> String {
-    bound_token(text)
 }
 
 /// Map an attachment document read failure to the fatal `invalid` set;

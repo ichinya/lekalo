@@ -49,7 +49,7 @@ pub(crate) fn from_value(json: &Json) -> Result<RequirementsAttachment, Diagnost
         .ok_or_else(|| diagnostic::document_invalid("top-level-shape", None))?;
     for key in object.keys() {
         if !TOP_LEVEL_KEYS.contains(&key.as_str()) {
-            return Err(diagnostic::document_invalid("unknown-field", Some(key)));
+            return Err(diagnostic::document_invalid("unknown-field", None));
         }
     }
     for required in TOP_LEVEL_KEYS {
@@ -172,7 +172,7 @@ fn model_ref(json: &Json) -> Result<ModelRef, DiagnosticSet> {
         .ok_or_else(|| diagnostic::document_invalid("model-ref", None))?;
     for key in object.keys() {
         if !MODEL_REF_KEYS.contains(&key.as_str()) {
-            return Err(diagnostic::document_invalid("unknown-field", Some(key)));
+            return Err(diagnostic::document_invalid("unknown-field", None));
         }
     }
     let model_version = object
@@ -204,7 +204,7 @@ fn providers(json: &[Json]) -> Result<Vec<ProviderDecl>, DiagnosticSet> {
             .ok_or_else(|| diagnostic::document_invalid("provider-shape", None))?;
         for key in object.keys() {
             if !PROVIDER_KEYS.contains(&key.as_str()) {
-                return Err(diagnostic::document_invalid("unknown-field", Some(key)));
+                return Err(diagnostic::document_invalid("unknown-field", None));
             }
         }
         for required in PROVIDER_KEYS {
@@ -236,8 +236,17 @@ fn providers(json: &[Json]) -> Result<Vec<ProviderDecl>, DiagnosticSet> {
             .get("root")
             .and_then(Json::as_str)
             .ok_or_else(|| diagnostic::document_invalid("provider-root", None))?;
-        if project_fs::path_violation(root).is_some() || !root.is_ascii() {
-            return Err(diagnostic::document_invalid("provider-root", Some(root)));
+        if project_fs::path_violation(root).is_some()
+            || root.len() > 512
+            || !root
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'/' | b'-'))
+            || !root
+                .as_bytes()
+                .first()
+                .is_some_and(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_'))
+        {
+            return Err(diagnostic::document_invalid("provider-root", None));
         }
         parsed.push(ProviderDecl {
             source: source.to_owned(),
@@ -257,7 +266,7 @@ fn references(json: &[Json]) -> Result<Vec<RequirementLink>, DiagnosticSet> {
             .ok_or_else(|| diagnostic::document_invalid("reference-shape", None))?;
         for key in object.keys() {
             if !REFERENCE_KEYS.contains(&key.as_str()) {
-                return Err(diagnostic::document_invalid("unknown-field", Some(key)));
+                return Err(diagnostic::document_invalid("unknown-field", None));
             }
         }
         for required in REFERENCE_KEYS {

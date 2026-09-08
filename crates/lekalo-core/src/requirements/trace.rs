@@ -35,7 +35,8 @@ const MANIFEST_ID: &str = "requirements-trace";
 /// the typed #22 validator, so an internal projection bug fails closed
 /// instead of emitting invalid bytes.
 pub(crate) fn project(report: &Report) -> Result<Manifest, DiagnosticSet> {
-    if report.requirements.is_empty() {
+    if report.requirements.is_empty() && report.references.is_empty() && report.conflicts.is_empty()
+    {
         return Err(diagnostic::projection_empty());
     }
 
@@ -49,7 +50,7 @@ pub(crate) fn project(report: &Report) -> Result<Manifest, DiagnosticSet> {
         nodes.push(Node {
             node_id: requirement_node_id(&row.source, &row.id),
             node_kind: NodeKind::Requirement,
-            requirement_id: Some(row.id.clone()),
+            requirement_id: Some(format!("{}:{}", row.source, row.id)),
             semantic_id: None,
             artifact_id: None,
             ownership: None,
@@ -181,6 +182,15 @@ pub(crate) fn project(report: &Report) -> Result<Manifest, DiagnosticSet> {
             });
         }
     }
+    for row in &report.conflicts {
+        gaps.push(Gap {
+            gap_kind: GapKind::Conflict,
+            status: Status::Conflicting,
+            anchor_node: None,
+            expected: Some(format!("conflict:{}:{}", row.source, row.subject_id)),
+            source_path: None,
+        });
+    }
     gaps.push(Gap {
         gap_kind: GapKind::MissingGate,
         status: Status::Candidate,
@@ -199,6 +209,10 @@ pub(crate) fn project(report: &Report) -> Result<Manifest, DiagnosticSet> {
                 right.anchor_node.as_deref().unwrap_or_default(),
                 right.expected.as_deref().unwrap_or_default(),
             ))
+    });
+
+    gaps.dedup_by(|a, b| {
+        a.gap_kind == b.gap_kind && a.anchor_node == b.anchor_node && a.expected == b.expected
     });
 
     // Provider rows are absent-tree-annotating: an absent provider with

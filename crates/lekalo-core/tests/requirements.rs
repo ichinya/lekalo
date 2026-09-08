@@ -31,11 +31,12 @@ fn workspace_root() -> PathBuf {
 
 /// Run `step` with the process working directory moved to `root`.
 fn with_cwd<T>(root: &Path, step: impl FnOnce() -> T) -> T {
-    let _guard = CWD_LOCK.lock().expect("cwd lock");
+    let guard = CWD_LOCK.lock().expect("cwd lock");
     let original = std::env::current_dir().expect("current dir");
-    std::env::set_current_dir(root).expect("enter root");
+    std::env::set_current_dir(alias_free_path(root)).expect("enter root");
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(step));
     std::env::set_current_dir(original).expect("restore cwd");
+    drop(guard);
     outcome.unwrap_or_else(|panic| std::panic::resume_unwind(panic))
 }
 
@@ -81,14 +82,553 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
+/// Use the physical spelling of fixtures, including junction and 8.3 TEMP
+/// aliases. Production selection guards intentionally reject those aliases.
+fn alias_free_path(path: &Path) -> PathBuf {
+    let canonical = path.canonicalize().expect("fixture path must exist");
+    #[cfg(windows)]
+    match canonical.to_string_lossy().strip_prefix(r"\\?\") {
+        // `\\?\C:\...` -> `C:\...`; UNC (`\\?\UNC\...`) stays verbatim.
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => canonical,
+    }
+    #[cfg(not(windows))]
+    canonical
+}
+
 fn temp_project() -> TempProject {
     let handle = tempfile::tempdir().expect("tempdir");
     let root = handle.path().join("planner");
     copy_dir(&workspace_root().join(FIXTURE), &root);
     TempProject {
-        root,
+        root: alias_free_path(&root),
         _handle: handle,
     }
+}
+
+fn resolve_temp(
+    project: &TempProject,
+    json: &serde_json::Value,
+) -> lekalo_core::requirements::Resolution {
+    let attachment = RequirementsAttachment::from_value(json).expect("valid attachment");
+    with_cwd(project.root.parent().unwrap(), || {
+        attachment
+            .resolve(&LoadSelection {
+                project: Some("planner".into()),
+            })
+            .expect("resolved provider")
+    })
+}
+
+fn delta(project: &TempProject, change: &str, text: &str) {
+    let dir = project
+        .root
+        .join("openspec/changes")
+        .join(change)
+        .join("specs/planner");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("spec.md"), text).unwrap();
+}
+
+fn focus(
+    resolution: &lekalo_core::requirements::Resolution,
+) -> &lekalo_core::requirements::ReferenceRow {
+    resolution
+        .report
+        .references
+        .iter()
+        .find(|r| r.requirement == "planner.REQ-focus-task")
+        .unwrap()
+}
+
+#[test]
+fn fenced_headings_and_non_requirement_subheadings_remain_in_revision() {
+    for fence in ["```", "~~~~", "   ````"] {
+        let project = temp_project();
+        let path = project.root.join("openspec/specs/planner/spec.md");
+        let text = format!("## Requirements\n### Requirement: Focus task\nThe system SHALL confirm.\n{fence}markdown\n# Payload\n### Requirement: Fake\nOLD EXAMPLE\n{fence}\n### Notes\nThe system SHALL confirm AFTER.\n");
+        fs::write(&path, &text).unwrap();
+        let mut json = attachment_json(|j| {
+            j["references"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|r| r["requirement"] == "planner.REQ-focus-task")
+        });
+        let before = resolve_temp(&project, &json);
+        assert_eq!(
+            before.report.requirements.len(),
+            2,
+            "the fenced fake header is not a requirement"
+        );
+        json["references"][0]["revision"] = serde_json::json!(focus(&before).current_revision);
+        fs::write(&path, text.replace("OLD EXAMPLE", "NEW EXAMPLE")).unwrap();
+        let example = resolve_temp(&project, &json);
+        assert_eq!(focus(&example).status, "stale");
+        fs::write(&path, text.replace("confirm AFTER", "skip AFTER")).unwrap();
+        let after = resolve_temp(&project, &json);
+        assert_eq!(focus(&after).status, "stale");
+        assert!(matches!(after.verdict, ResolutionVerdict::Denied(_)));
+    }
+}
+
+#[test]
+fn public_id_collisions_and_all_contradictory_histories_deny() {
+    for (first, second) in [
+        ("## MODIFIED Requirements\n### Requirement: Focus task\nA\n### Requirement: Focus task\nB\n", None),
+        ("## REMOVED Requirements\n### Requirement: Focus task\n", Some("## ADDED Requirements\n### Requirement: Focus task\nB\n")),
+        ("## ADDED Requirements\n### Requirement: Focus task\nB\n", Some("## REMOVED Requirements\n### Requirement: Focus task\n")),
+        ("## REMOVED Requirements\n### Requirement: Focus task\n\n## ADDED Requirements\n### Requirement: Focus task\nB\n", None),
+        ("## MODIFIED Requirements\n### Requirement: Focus Task\nB\n", None),
+    ] {
+        let project = temp_project();
+        delta(&project, "a-edit", first);
+        if let Some(second) = second { delta(&project, "b-edit", second); }
+        let result = resolve_temp(&project, &attachment_json(|_| {}));
+        assert!(matches!(result.verdict, ResolutionVerdict::Denied(_)));
+        assert_eq!(focus(&result).status, "conflict");
+        assert!(!result.report.requirements.iter().any(|r| r.id == "planner.REQ-focus-task"));
+        result.report.trace_manifest().expect("conflicted trace remains valid");
+    }
+    let project = temp_project();
+    let path = project.root.join("openspec/specs/planner/spec.md");
+    fs::write(
+        path,
+        "## Requirements\n### Requirement: Focus Task\nA\n### Requirement: Focus task\nB\n",
+    )
+    .unwrap();
+    let result = resolve_temp(&project, &attachment_json(|_| {}));
+    assert_eq!(focus(&result).status, "conflict");
+    assert!(result
+        .report
+        .conflicts
+        .iter()
+        .any(|c| c.detail == "id-collision"));
+    result.report.trace_manifest().unwrap();
+}
+
+#[test]
+fn native_removal_bullets_deny_and_keep_impact_after_archive() {
+    for header in [
+        "- `### Requirement: Focus task`",
+        "- ### Requirement: Focus task",
+    ] {
+        let project = temp_project();
+        delta(
+            &project,
+            "remove",
+            &format!("## REMOVED Requirements\n{header}\n"),
+        );
+        let json = attachment_json(|_| {});
+        let before = resolve_temp(&project, &json);
+        assert_eq!(focus(&before).status, "missing");
+        assert!(before
+            .report
+            .impact
+            .iter()
+            .any(|r| r.requirement == "planner.REQ-focus-task" && r.change == "removed"));
+        assert!(matches!(before.verdict, ResolutionVerdict::Denied(_)));
+        let path = project.root.join("openspec/specs/planner/spec.md");
+        let text = fs::read_to_string(&path).unwrap();
+        let start = text.find("### Requirement: Focus task").unwrap();
+        let end = text.find("### Requirement: Restore focus").unwrap();
+        fs::write(path, format!("{}{}", &text[..start], &text[end..])).unwrap();
+        fs::create_dir_all(project.root.join("openspec/changes/archive")).unwrap();
+        fs::rename(
+            project.root.join("openspec/changes/remove"),
+            project.root.join("openspec/changes/archive/remove"),
+        )
+        .unwrap();
+        let after = resolve_temp(&project, &json);
+        assert_eq!(before.report.source_revision, after.report.source_revision);
+        assert_eq!(focus(&after).status, "missing");
+    }
+}
+
+#[test]
+fn native_rename_with_optional_modification_preserves_archive_traceability() {
+    for modified in [false, true] {
+        let project = temp_project();
+        let mut text = "## Purpose\nUpdate focus.\n## RENAMED Requirements\n- FROM: `### Requirement: Focus task`\n- TO: `### Requirement: Focus selection`\n".to_owned();
+        if modified {
+            text.push_str("## MODIFIED Requirements\n### Requirement: Focus selection\nThe planner SHALL confirm the new selection.\n");
+        }
+        delta(&project, "rename", &text);
+        let mut json = attachment_json(|_| {});
+        let old = resolve_temp(&project, &json);
+        assert_eq!(
+            focus(&old).renamed_to.as_deref(),
+            Some("planner.REQ-focus-selection")
+        );
+        assert!(focus(&old).rename_candidates.is_empty());
+        assert!(old.report.impact.iter().any(|r| r.change == "renamed"));
+        let target = old
+            .report
+            .requirements
+            .iter()
+            .find(|r| r.id == "planner.REQ-focus-selection")
+            .unwrap();
+        for link in json["references"].as_array_mut().unwrap() {
+            if link["requirement"] == "planner.REQ-focus-task" {
+                link["requirement"] = serde_json::json!(target.id);
+                link["revision"] = serde_json::json!(target.digest);
+            }
+        }
+        let before = resolve_temp(&project, &json);
+        assert!(matches!(before.verdict, ResolutionVerdict::Pass));
+        let path = project.root.join("openspec/specs/planner/spec.md");
+        let accepted = fs::read_to_string(&path).unwrap();
+        let accepted = if modified {
+            let start = accepted.find("### Requirement: Focus task").unwrap();
+            let end = accepted.find("### Requirement: Restore focus").unwrap();
+            format!("{}### Requirement: Focus selection\nThe planner SHALL confirm the new selection.\n\n{}", &accepted[..start], &accepted[end..])
+        } else {
+            accepted.replace(
+                "### Requirement: Focus task",
+                "### Requirement: Focus selection",
+            )
+        };
+        fs::write(path, accepted).unwrap();
+        fs::create_dir_all(project.root.join("openspec/changes/archive")).unwrap();
+        fs::rename(
+            project.root.join("openspec/changes/rename"),
+            project.root.join("openspec/changes/archive/rename"),
+        )
+        .unwrap();
+        let after = resolve_temp(&project, &json);
+        assert!(matches!(after.verdict, ResolutionVerdict::Pass));
+        assert_eq!(before.report.source_revision, after.report.source_revision);
+        assert_eq!(
+            before
+                .report
+                .trace_manifest()
+                .unwrap()
+                .canonical_bytes()
+                .unwrap(),
+            after
+                .report
+                .trace_manifest()
+                .unwrap()
+                .canonical_bytes()
+                .unwrap()
+        );
+    }
+}
+
+#[test]
+fn unclassified_delta_blocks_and_incomplete_renames_refuse() {
+    for text in [
+        "### Requirement: Surprise\nSHALL happen\n",
+        "## UNKNOWN Requirements\n### Requirement: Surprise\nSHALL happen\n",
+        "## RENAMED Requirements\n- FROM: `### Requirement: Focus task`\n",
+        "## RENAMED Requirements\n- TO: `### Requirement: Focus selection`\n",
+    ] {
+        let project = temp_project();
+        delta(&project, "invalid", text);
+        with_cwd(project.root.parent().unwrap(), || {
+            let error = fixture_attachment()
+                .resolve(&LoadSelection {
+                    project: Some("planner".into()),
+                })
+                .err()
+                .expect("invalid delta");
+            assert_eq!(error.exit_code(), 1);
+            assert_eq!(error.diagnostics()[0].id(), "requirements.provider-invalid");
+        });
+    }
+}
+
+#[test]
+fn equal_bodies_preserve_ambiguous_rename_evidence() {
+    let project = temp_project();
+    let path = project.root.join("openspec/specs/planner/spec.md");
+    let text = fs::read_to_string(&path).unwrap();
+    let body = text
+        .split("### Requirement: Focus task")
+        .nth(1)
+        .unwrap()
+        .split("### Requirement: Restore focus")
+        .next()
+        .unwrap();
+    fs::write(path, format!("## Requirements\n### Requirement: Another focus{body}\n### Requirement: Different focus{body}")).unwrap();
+    let result = resolve_temp(&project, &attachment_json(|_| {}));
+    assert!(focus(&result).renamed_to.is_none());
+    assert_eq!(
+        focus(&result).rename_candidates,
+        ["planner.REQ-another-focus", "planner.REQ-different-focus"]
+    );
+    assert!(result
+        .report
+        .impact
+        .iter()
+        .any(|i| i.requirement == "planner.REQ-focus-task" && i.change == "ambiguous-rename"));
+}
+
+#[test]
+fn decoded_json_duplicates_cannot_replace_stale_links() {
+    let fresh = attachment_json(|_| {});
+    let mut stale = fresh.clone();
+    stale["references"][0]["revision"] = serde_json::json!(format!("sha256:{}", "0".repeat(64)));
+    let raw = serde_json::to_string(&stale).unwrap();
+    for key in ["references", r"\u0072eferences"] {
+        let duplicate = format!(
+            "{},\"{key}\":{}}}",
+            &raw[..raw.len() - 1],
+            fresh["references"]
+        );
+        assert!(RequirementsAttachment::parse(duplicate.as_bytes()).is_err());
+    }
+    for raw in [
+        r#"{"providers":[{"root":"x","root":"y"}]}"#,
+        r#"{"modelRef":{"digest":"a","\u0064igest":"b"}}"#,
+        r#"{"references":[{"source":"a","\u0073ource":"b"}]}"#,
+    ] {
+        let error = RequirementsAttachment::parse(raw.as_bytes()).unwrap_err();
+        assert_eq!(error.as_slice()[0].id(), "requirements.document-invalid");
+        assert!(format!("{error:?}").contains("duplicate-key"));
+    }
+}
+
+#[test]
+fn privacy_rejections_and_conflicts_export_no_raw_subjects() {
+    let marker = "PRIVATE-SENTINEL-36 https://example.invalid/token/SECRET-36";
+    for json in [
+        attachment_json(|j| j[marker] = true.into()),
+        attachment_json(|j| j["providers"][0]["root"] = format!("C:/private/{marker}").into()),
+    ] {
+        let error = RequirementsAttachment::from_value(&json).unwrap_err();
+        let output = format!("{error:?}").to_lowercase();
+        assert!(!output.contains("private-sentinel"));
+        assert!(!output.contains("https://"));
+    }
+    let project = temp_project();
+    for name in ["a-conflict", "b-conflict"] {
+        delta(
+            &project,
+            name,
+            &format!(
+                "## ADDED Requirements\n### Requirement: {marker}\nThe system SHALL notify.\n"
+            ),
+        );
+    }
+    let result = resolve_temp(&project, &attachment_json(|_| {}));
+    let output = result.report.canonical_bytes().unwrap().to_lowercase();
+    assert!(!output.contains("private-sentinel"));
+    assert!(!output.contains("https://"));
+    assert_eq!(result.report.conflicts.len(), 1);
+    let trace = result
+        .report
+        .trace_manifest()
+        .unwrap()
+        .canonical_bytes()
+        .unwrap();
+    assert!(trace.contains("\"gapKind\":\"conflict\""));
+    assert!(!trace.to_lowercase().contains("private-sentinel"));
+}
+
+#[test]
+fn multiple_provider_namespaces_resolve_and_project_independently() {
+    let project = temp_project();
+    copy_dir(&project.root.join("openspec"), &project.root.join("second"));
+    let mut json = attachment_json(|j| {
+        j["providers"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"source":"second","kind":"openspec","root":"second"}));
+        let mut links = j["references"].as_array().unwrap().clone();
+        for link in &mut links {
+            link["source"] = "second".into();
+        }
+        j["references"].as_array_mut().unwrap().extend(links);
+    });
+    let result = resolve_temp(&project, &json);
+    assert!(matches!(result.verdict, ResolutionVerdict::Pass));
+    let trace = result
+        .report
+        .trace_manifest()
+        .unwrap()
+        .canonical_bytes()
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_str(&trace).unwrap();
+    let identities: std::collections::BTreeSet<_> = value["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|n| n["requirementId"].as_str())
+        .collect();
+    assert_eq!(identities.len(), 6);
+    assert!(identities.contains("second:planner.REQ-focus-task"));
+    json["providers"].as_array_mut().unwrap().reverse();
+    json["references"].as_array_mut().unwrap().reverse();
+    let reversed = resolve_temp(&project, &json);
+    assert_eq!(
+        result.report.canonical_bytes().unwrap(),
+        reversed.report.canonical_bytes().unwrap()
+    );
+    assert_eq!(
+        trace,
+        reversed
+            .report
+            .trace_manifest()
+            .unwrap()
+            .canonical_bytes()
+            .unwrap()
+    );
+}
+
+#[test]
+fn logical_paths_and_requirement_ids_match_exact_wire_bounds() {
+    let root = format!("{}ab", "a/".repeat(255));
+    assert_eq!(root.len(), 512);
+    RequirementsAttachment::from_value(&attachment_json(|j| {
+        j["providers"][0]["root"] = root.clone().into()
+    }))
+    .unwrap();
+    for invalid in [
+        format!("{root}c"),
+        "openspec space".into(),
+        "-leading".into(),
+        "provider/@name".into(),
+    ] {
+        RequirementsAttachment::from_value(&attachment_json(|j| {
+            j["providers"][0]["root"] = invalid.into()
+        }))
+        .unwrap_err();
+    }
+    let capability = "c".repeat(63);
+    let title = "x".repeat(60);
+    let id = format!("{capability}.REQ-{title}");
+    assert_eq!(id.len(), 128);
+    RequirementsAttachment::from_value(&attachment_json(|j| {
+        j["references"][0]["requirement"] = id.clone().into()
+    }))
+    .unwrap();
+    for invalid in [
+        format!("{id}x"),
+        format!("{}.REQ-a", "c".repeat(64)),
+        "-cap.REQ-a".into(),
+        "cap.REQ--a".into(),
+    ] {
+        RequirementsAttachment::from_value(&attachment_json(|j| {
+            j["references"][0]["requirement"] = invalid.into()
+        }))
+        .unwrap_err();
+    }
+    let project = temp_project();
+    let dir = project.root.join("openspec/specs").join(&capability);
+    fs::create_dir(&dir).unwrap();
+    fs::write(
+        dir.join("spec.md"),
+        format!("## Requirements\n### Requirement: {title}\nSHALL work.\n"),
+    )
+    .unwrap();
+    let json = attachment_json(|j| j["references"] = serde_json::json!([]));
+    let result = resolve_temp(&project, &json);
+    assert!(result.report.requirements.iter().any(|r| r.id == id));
+    fs::write(
+        dir.join("spec.md"),
+        format!("## Requirements\n### Requirement: {title}x\nSHALL work.\n"),
+    )
+    .unwrap();
+    assert_provider_refuses(&project, &json);
+}
+
+fn assert_provider_refuses(project: &TempProject, json: &serde_json::Value) {
+    with_cwd(project.root.parent().unwrap(), || {
+        let failure = RequirementsAttachment::from_value(json)
+            .unwrap()
+            .resolve(&LoadSelection {
+                project: Some("planner".into()),
+            })
+            .err()
+            .expect("over-limit provider refuses");
+        assert_eq!(failure.exit_code(), 1);
+        assert!(matches!(
+            failure.diagnostics()[0].id(),
+            "requirements.provider-invalid" | "requirements.export-limit"
+        ));
+    });
+}
+
+#[test]
+fn active_capabilities_and_aggregate_catalog_enforce_boundary_before_success() {
+    let project = temp_project();
+    for i in 0..255 {
+        let dir = project
+            .root
+            .join(format!("openspec/changes/new/specs/cap-{i}"));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("spec.md"),
+            "## ADDED Requirements\n### Requirement: Added\nSHALL work.\n",
+        )
+        .unwrap();
+    }
+    let json = attachment_json(|j| j["references"] = serde_json::json!([]));
+    let boundary = resolve_temp(&project, &json);
+    assert_eq!(boundary.report.providers[0].capability_count, 256);
+    let dir = project.root.join("openspec/changes/new/specs/over-limit");
+    fs::create_dir(&dir).unwrap();
+    fs::write(
+        dir.join("spec.md"),
+        "## ADDED Requirements\n### Requirement: Overflow\nSHALL work.\n",
+    )
+    .unwrap();
+    assert_provider_refuses(&project, &json);
+
+    let project = temp_project();
+    let mut text = "## Requirements\n".to_owned();
+    for i in 0..5000 {
+        text.push_str(&format!("### Requirement: Rule {i}\nSHALL work.\n"));
+    }
+    for root in ["one", "two"] {
+        let dir = project.root.join(root).join("specs/cap");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("spec.md"), &text).unwrap();
+    }
+    let json = attachment_json(|j| {
+        j["references"] = serde_json::json!([]);
+        j["providers"] = serde_json::json!([
+            {"source":"one","kind":"openspec","root":"one"},
+            {"source":"two","kind":"openspec","root":"two"}
+        ]);
+    });
+    let boundary = resolve_temp(&project, &json);
+    assert_eq!(boundary.report.requirements.len(), 10000);
+    assert_eq!(boundary.report.coverage_gaps.len(), 10000);
+    assert!(matches!(boundary.verdict, ResolutionVerdict::Pass));
+    text.push_str("### Requirement: Overflow\nSHALL work.\n");
+    fs::write(project.root.join("two/specs/cap/spec.md"), text).unwrap();
+    assert_provider_refuses(&project, &json);
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_alias_temp_resolves_physical_fixture_root() {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+    let parent = tempfile::tempdir().unwrap();
+    let physical = alias_free_path(parent.path());
+    let target = physical.join("physical");
+    let alias = physical.join("alias");
+    fs::create_dir(&target).unwrap();
+    let status = Command::new("powershell.exe").args(["-NoProfile", "-NonInteractive", "-Command", "New-Item -ItemType Junction -Path $env:LEKALO_TEST_ALIAS -Target $env:LEKALO_TEST_TARGET | Out-Null"])
+        .env("LEKALO_TEST_ALIAS", &alias).env("LEKALO_TEST_TARGET", &target).creation_flags(0x08000000).status().unwrap();
+    assert!(status.success());
+    let output = Command::new(std::env::current_exe().unwrap())
+        .current_dir(&physical)
+        .args(["--exact", "archive_preserves_accepted_traceability"])
+        .env("TEMP", &alias)
+        .env("TMP", &alias)
+        .env("TMPDIR", &alias)
+        .creation_flags(0x08000000)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// Snapshot every file under `root` (relative path, exact bytes) for
@@ -327,7 +867,7 @@ fn stale_body_denies_and_reports_impact() {
 }
 
 #[test]
-fn rename_is_detected_as_an_id_move() {
+fn equal_body_is_only_a_rename_candidate() {
     let project = temp_project();
     let path = project.root.join("openspec/specs/planner/spec.md");
     let edited = fs::read_to_string(&path).expect("spec reads").replace(
@@ -352,17 +892,16 @@ fn rename_is_detected_as_an_id_move() {
         .expect("renamed reference");
     assert_eq!(stale.status, "missing");
     assert_eq!(
-        stale.renamed_to.as_deref(),
-        Some("planner.REQ-restore-last-focus"),
-        "the pinned body moved to the new id"
+        stale.rename_candidates,
+        vec!["planner.REQ-restore-last-focus"],
+        "an equal body suggests a candidate without proving identity"
     );
     assert!(
         resolution
             .report
             .impact
             .iter()
-            .any(|row| row.change == "renamed"
-                && row.renamed_to.as_deref() == Some("planner.REQ-restore-last-focus")),
+            .any(|row| row.change == "rename-candidate" && row.renamed_to.is_none()),
         "rename impact carries the new id"
     );
 }
@@ -434,7 +973,7 @@ fn conflicting_active_changes_block_resolution() {
     });
     assert_eq!(resolution.report.conflicts.len(), 1);
     assert_eq!(resolution.report.conflicts[0].detail, "multiple-changes");
-    assert_eq!(resolution.report.conflicts[0].title, "Restore focus");
+    assert_eq!(resolution.report.conflicts[0].subject_id.len(), 64);
     let disputed = resolution
         .report
         .references

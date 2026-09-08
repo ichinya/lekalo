@@ -8,14 +8,15 @@
 // and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 //
 // The gate independently proves the canonical form of both goldens:
-// re-serializing the parsed document with byte-sorted object keys must
+// report keys use byte order, trace keys use the published fixed order;
+// re-serializing the parsed document and canonical collections must
 // reproduce the committed bytes exactly (the Rust canonical writer is
 // verified against the same rule in
 // crates/lekalo-core/tests/requirements.rs), and both digest sidecars
 // are recomputed over the exact golden payloads. A raw-text scan
 // additionally rejects duplicate JSON keys, which a parsed-value
-// representation cannot see. Vectors whose rejection is semantic only —
-// the closed wire cannot express them — live in the `diff` directory and
+// representation cannot see. Vectors whose rejection is semantic only вЂ”
+// the closed wire cannot express them вЂ” live in the `diff` directory and
 // must satisfy Ajv; the typed normalizer rejects them (proven by the
 // Rust suite).
 
@@ -24,6 +25,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { canonicalTrace } from "./requirements-trace-canonical.mjs";
 
 const require = createRequire(import.meta.url);
 let Ajv2020;
@@ -103,25 +105,21 @@ const SEMANTIC_ONLY = new Set([
 
 // --- raw duplicate-key scan (a parsed value cannot see duplicates) ---
 function duplicateKeys(text) {
+  JSON.parse(text); // Reject malformed syntax independently of this key scan.
   const duplicates = new Set();
-  const stack = [{ inObject: false }];
-  const objectKeys = [];
-  let index = 0;
-  let current = [];
-  const pattern = /"(?:\\.|[^"\\])*"/;
-  while (index < text.length) {
-    const rest = text.slice(index);
-    const match = pattern.exec(rest);
-    if (!match) break;
-    const token = match[0];
-    index += match.index + token.length;
-    let lookahead = index;
-    while (lookahead < text.length && /\s/.test(text[lookahead])) lookahead += 1;
-    const isKey = text[lookahead] === ":";
-    if (isKey && stack[stack.length - 1].inObject) {
+  const stack = [];
+  const tokens = /"(?:\\.|[^"\\])*"|[{}\[\]:,]|[^\s{}\[\]:,"]+/g;
+  for (const [token] of text.matchAll(tokens)) {
+    const frame = stack.at(-1);
+    if (token === "{") stack.push({ keys: new Set(), key: true });
+    else if (token === "[") stack.push({ key: false });
+    else if (token === "}" || token === "]") stack.pop();
+    else if (token === "," && frame?.keys) frame.key = true;
+    else if (token === ":" && frame?.keys) frame.key = false;
+    else if (token.startsWith('"') && frame?.keys && frame.key) {
       const key = JSON.parse(token);
-      if (current.includes(key)) duplicates.add(key);
-      current.push(key);
+      if (frame.keys.has(key)) duplicates.add(key);
+      frame.keys.add(key);
     }
   }
   return [...duplicates];
@@ -136,9 +134,35 @@ function scanDuplicateKeys(name, text) {
 
 // --- canonical form: sorted object keys, compact separators ---
 function canonicalForm(documentText, name) {
+  // Write recursively rather than relying on JavaScript property insertion
+  // order (integer-looking keys get reordered even after Object.fromEntries).
+  function write(value) {
+    if (Array.isArray(value)) return `[${value.map(write).join(",")}]`;
+    if (value !== null && typeof value === "object") {
+      return `{${Object.keys(value)
+        .sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))
+        .map(key => `${JSON.stringify(key)}:${write(value[key])}`).join(",")}}`;
+    }
+    return JSON.stringify(value);
+  }
   const parsed = JSON.parse(documentText);
-  const resorted = JSON.stringify(parsed);
-  if (resorted !== documentText.replace(/\n$/, "")) {
+  const normalized = structuredClone(parsed);
+  if (normalized?.schemaVersion === 'lekalo/requirements-report/v1.0.0') {
+    const compare = keys => (a,b) => {
+      for (const key of keys) {
+        const order = Buffer.compare(Buffer.from(a[key]), Buffer.from(b[key]));
+        if (order) return order;
+      }
+      return 0;
+    };
+    for (const [field, keys] of Object.entries({providers:['source'], requirements:['source','id'], references:['symbol','relation','source','requirement','revision'], coverageGaps:['source','id'], conflicts:['source','capability','subjectId','detail'], impact:['source','requirement','change']})) {
+      normalized[field].sort(compare(keys));
+      for (const row of normalized[field]) {
+        row.symbols?.sort(); row.renameCandidates?.sort();
+      }
+    }
+  }
+  if (write(normalized) !== documentText.replace(/\n$/, "")) {
     fail(`${name}:canonical-form`, "bytes are not sorted-key compact JSON");
   }
   return parsed;
@@ -157,6 +181,31 @@ function goldenDigest(name) {
   }
   return { text, payload };
 }
+
+// Negative controls must exercise the same rejection paths used for goldens.
+const duplicateControls = [
+  '{"references":[],"references":[]}',
+  '{"providers":[{"root":"a","root":"b"}]}',
+  '{"modelRef":{"digest":"a","\u0064igest":"b"}}',
+  '{"references":[],"\u0072eferences":[]}',
+];
+for (const [i, text] of duplicateControls.entries()) {
+  const start = failures.length;
+  scanDuplicateKeys(`control/${i}`, text);
+  if (failures.length !== start + 1) fail(`control/${i}`, "duplicate-key rejection path did not fire");
+  else failures.splice(start, 1);
+}
+for (const text of ['{"a":{"x":1},"b":{"x":2}}', JSON.stringify({a: 'braces { and key "x":', b: 2})]) {
+  // Sibling object keys are independent, and string contents are opaque.
+  if (duplicateKeys(text).length) fail("control/siblings", "false duplicate");
+}
+for (const [i, text] of ['{"z":1,"a":2}', '{"a":[{"z":1,"a":2}]}', '{"2":0,"10":0}'].entries()) {
+  const start = failures.length;
+  canonicalForm(text, `control/unsorted-${i}`);
+  if (failures.length !== start + 1) fail(`control/unsorted-${i}`, "canonical rejection path did not fire");
+  else failures.splice(start, 1);
+}
+canonicalForm('{"10":0,"2":0,"a":[{"a":2,"z":1}]}', "control/canonical");
 
 // 1. The committed attachment validates.
 const attachmentText = readFileSync(
@@ -205,7 +254,19 @@ if (!validateReport(reportDocument)) {
 // trace contract and is canonical with a pinned digest.
 const traceGolden = goldenDigest("planner.trace.json");
 scanDuplicateKeys("golden/trace", traceGolden.text);
-const traceDocument = canonicalForm(traceGolden.payload, "golden/trace");
+const traceDocument = JSON.parse(traceGolden.payload);
+if (canonicalTrace(traceDocument) !== traceGolden.payload) {
+  fail("golden/trace:canonical-form", "bytes violate the fixed trace contract order");
+}
+const traceReversed = Object.fromEntries(Object.entries(traceDocument).reverse());
+if (JSON.stringify(traceReversed) === canonicalTrace(traceReversed)) {
+  fail("control/trace-key-order", "reordered trace was accepted");
+}
+const traceNodesReversed = structuredClone(traceDocument);
+traceNodesReversed.nodes.reverse();
+if (JSON.stringify(traceNodesReversed) === canonicalTrace(traceNodesReversed)) {
+  fail("control/trace-node-order", "reordered trace nodes were accepted");
+}
 if (!validateTrace(traceDocument)) {
   fail("golden/trace:schema", JSON.stringify(validateTrace.errors));
 }
@@ -218,6 +279,17 @@ if (
 }
 if (reportDocument.sourceRevision !== traceDocument.sourceRevision) {
   fail("golden:source-revision", "trace manifest revision drifts from report");
+}
+
+for (const [name, change] of [
+  ["root-length", r => { r.providers[0].root = "a".repeat(513); }],
+  ["requirement-id-length", r => { r.requirements[0].id = `${"a".repeat(63)}.REQ-${"b".repeat(64)}`; }],
+  ["capability-count", r => { r.providers[0].capabilityCount = 257; }],
+  ["aggregate-rows", r => { r.requirements = Array(10001).fill(r.requirements[0]); }],
+  ["conflict-privacy", r => { r.conflicts = [{source:"openspec",capability:"planner",title:"raw text",detail:"duplicate-title"}]; }],
+]) {
+  const invalid = structuredClone(reportDocument); change(invalid);
+  if (validateReport(invalid)) fail(`control/schema-${name}`, "invalid report was accepted");
 }
 
 if (failures.length > 0) {

@@ -27,6 +27,7 @@
 //! diagnostic and no partial result.
 
 pub mod diagnostic;
+mod json;
 pub(crate) mod provider;
 pub mod report;
 pub mod trace;
@@ -179,8 +180,7 @@ impl RequirementsAttachment {
         }
         let text =
             std::str::from_utf8(bytes).map_err(|_| diagnostic::io_failure("invalid-encoding"))?;
-        let json: serde_json::Value =
-            serde_json::from_str(text).map_err(|_| diagnostic::io_failure("malformed-json"))?;
+        let json = json::parse(text)?;
         Self::from_value(&json)
     }
 
@@ -323,7 +323,19 @@ impl RequirementsAttachment {
             }
         }
 
+        let requirements: usize = snapshots.iter().map(|s| s.entries.len()).sum();
+        let conflicts: usize = snapshots.iter().map(|s| s.conflicts.len()).sum();
+        if requirements > version::MAX_REQUIREMENTS || conflicts > version::MAX_REQUIREMENTS {
+            return Err(DomainResult::invalid(diagnostic::export_limit(
+                "aggregate-rows",
+                "max=10000",
+            )));
+        }
         let resolution = report::build(self, &compilation, snapshots);
+        resolution
+            .report
+            .canonical_bytes()
+            .map_err(DomainResult::invalid)?;
         Ok(resolution)
     }
 }
@@ -467,7 +479,19 @@ pub(crate) fn is_requirement_id(text: &str) -> bool {
                 .iter()
                 .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
     };
-    text.len() <= 128 && ok_part(capability.as_bytes()) && ok_part(slug.as_bytes())
+    text.len() <= 128
+        && capability.len() <= 63
+        && slug.len() <= 64
+        && capability
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && slug
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && ok_part(capability.as_bytes())
+        && ok_part(slug.as_bytes())
 }
 
 /// The stable slug of one requirement title: lowercased ASCII, every

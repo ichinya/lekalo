@@ -59,14 +59,15 @@ records that "#36 owns any later provider resolution".
    yields the same ids and digests, so fresh references stay fresh across
    an archive. Conflicts — two active changes touching one requirement,
    adds of existing titles, modifications or removals of absent titles,
-   duplicate titles — remove the disputed requirement from the effective
+   duplicate titles, colliding public ids, contradictory operations — remove the disputed requirement from the effective
    set and deny the gate. A conflict is a question for the OpenSpec owner,
    never a silent last-writer win.
 5. **Freshness is mandatory.** Every reference pins the exact `sha256:` body
    revision it was authored against; `validate` denies on any drift, and the
-   report's impact section classifies each drift as `changed`, `removed`,
-   `renamed` (same body under a new id), or `conflict`, listing the affected
-   symbols.
+   report's impact section classifies drift as `changed`, `removed`,
+   `renamed` (explicit active FROM/TO evidence), or `conflict`, listing the
+   affected symbols. Equal bodies alone yield `rename-candidate` or
+   `ambiguous-rename` with all candidate ids and no asserted rename target.
 6. **Neutrality through #22.** The integration adds no OpenSpec-specific
    wire for consumers: `lekalo requirements trace` projects the resolution
    into the accepted trace manifest (requirement nodes with verbatim
@@ -99,6 +100,37 @@ records that "#36 owns any later provider resolution".
   removes disputed requirements and denies.
 
 ## Consequences
+
+The correction of the unpublished issue #36 candidate keeps product 0.2.1,
+diagnostic allocation 1.11.0 and this ADR number. It replaces the report's
+free-form conflict title with `subjectId` (SHA-256 of the public requirement
+id), adds required `renameCandidates`, and distinguishes inferred hints
+from explicit renames. Native removal bullets and rename plus modification
+are read without invoking the OpenSpec CLI; fenced examples remain part of
+the revision. Operation history and slug ownership survive deletions.
+Provider namespace prefixes are retained in neutral `requirementId` while
+original ids remain in external refs. Unreferenced conflicts survive as
+explicit neutral gaps, and the published trace field order is unchanged.
+
+The agreed limits apply before success: 512 ASCII characters per logical
+root, 128 per requirement id (capability at most 63, slug at most 64), 256
+distinct capabilities across accepted and active specs per provider,
+10000 distinct encountered requirement ids per provider, 10000 operations
+per delta, and 10000 aggregate catalog/coverage/conflict rows across
+providers. References and impact rows remain capped at 4096. JSON member
+uniqueness is checked on decoded keys before object construction. Raw
+unknown keys and rejected paths never enter diagnostics; other subjects
+use opaque SHA-256 tokens. These changes repair the unpublished contract
+candidate; published Model/IR/neutral trace contracts are untouched.
+
+Final registry integration still depends on the actual accepted #27 source,
+which is unavailable while that work is paused. Neither its dirty WIP nor
+an assumed predecessor-rule count constitutes accepted integration.
+
+Native syntax was checked against the official
+[OpenSpec conventions](https://github.com/Fission-AI/OpenSpec/blob/main/openspec/specs/openspec-conventions/spec.md),
+[requirement parser](https://github.com/Fission-AI/OpenSpec/blob/main/src/core/parsers/requirement-blocks.ts),
+and [delta application](https://github.com/Fission-AI/OpenSpec/blob/main/src/core/specs-apply.ts).
 
 - Lekalo gains requirement traceability with zero Model/IR/schema churn and
   zero writes to OpenSpec-owned paths.

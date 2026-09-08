@@ -42,13 +42,12 @@ pub const MAX_REFERENCES: usize = 4096;
 /// it).
 pub const MAX_CAPABILITIES: usize = 256;
 
-/// The maximum number of requirements one provider may resolve (fatal
-/// beyond it).
+/// The maximum distinct requirement ids encountered in one provider and
+/// the aggregate catalog, coverage or conflict rows across all providers.
 pub const MAX_REQUIREMENTS: usize = 10_000;
 
 /// The maximum number of active change directories one provider may apply
-/// (fatal beyond it); the archive subtree is diagnostic-only and shares this
-/// bound.
+/// (fatal beyond it); the archive subtree is not read.
 pub const MAX_CHANGES: usize = 256;
 
 /// The maximum requirement title length in Unicode scalars.
