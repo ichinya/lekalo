@@ -442,6 +442,37 @@ fn resolve_program(program: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Qualification-only evidence from fixed code and owned synthetic data.
+    // Product diagnostics must continue to discard raw backend/provider stderr.
+    #[cfg(unix)]
+    #[test]
+    fn unix_confined_runtime_qualification() {
+        let root = tempfile::tempdir().unwrap();
+        let sandbox = Sandbox::new(root.path(), &[], &[], false).unwrap();
+        let command = transport::AdapterCommand {
+            program: "node".into(),
+            args: vec![
+                "-e".into(),
+                "process.stdout.write('lekalo-confined-node-ok')".into(),
+            ],
+        };
+        let limits = transport::TransportLimits {
+            timeout_ms: 5_000,
+            max_output_bytes: 1_024,
+            max_stderr_bytes: 8_192,
+            ..Default::default()
+        };
+        let result = sandbox.run(&command, b"", &limits, false, None).unwrap();
+        assert_eq!(
+            result.exit_code,
+            0,
+            "private synthetic launch evidence: stderr={:?}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"lekalo-confined-node-ok");
+    }
+
     #[test]
     fn isolated_node_handshake_has_a_working_positive_control() {
         let root = tempfile::tempdir().unwrap();

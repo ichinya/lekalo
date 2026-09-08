@@ -129,6 +129,11 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
+      - name: Diagnose the confined Unix runtime with bounded synthetic evidence
+        if: runner.os != 'Windows'
+        continue-on-error: true
+        timeout-minutes: 3
+        run: cargo test -p lekalo-core --lib unix_confined_runtime_qualification --locked -- --nocapture
       - run: cargo test --workspace --locked --no-fail-fast
       - name: Qualify bounded Unix process and request-file lifecycle
         if: runner.os != 'Windows'
