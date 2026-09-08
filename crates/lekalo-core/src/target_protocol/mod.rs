@@ -518,13 +518,12 @@ impl TargetClient {
         }
         // A well-formed error envelope is an operation failure for every
         // operation, describe included; the pairing is part of the shape.
-        let pairing_ok = match (&response.status, &response.error) {
-            (ResponseStatus::Ok, None) => true,
-            (ResponseStatus::Error, Some(error)) => {
-                !error.code.is_empty() && error.code.len() <= 128 && !error.message.is_empty()
-            }
-            _ => false,
-        };
+        // decode_response already enforces nonempty strings and the schema's
+        // Unicode character bounds. This check enforces only status pairing.
+        let pairing_ok = matches!(
+            (&response.status, &response.error),
+            (ResponseStatus::Ok, None) | (ResponseStatus::Error, Some(_))
+        );
         if !pairing_ok {
             return Err(TargetFailure::ResponseInvalid {
                 detail: ResponseInvalidity::ErrorPairing,
@@ -559,11 +558,9 @@ impl TargetClient {
                     .unwrap_or(&[]);
                 wire::validate_writes(writes, scopes)?;
             }
-            let mut code = error.code.clone();
-            code.truncate(128);
             return Err(TargetFailure::OperationFailed {
                 class: error.class,
-                code,
+                code: error.code.clone(),
                 partial: error.partial.unwrap_or(false),
             });
         }

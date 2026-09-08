@@ -410,3 +410,42 @@ fn cancellable_refresh_revokes_authority_on_success_failure_and_cancellation() {
         p.unchanged();
     }
 }
+
+#[test]
+fn unicode_error_codes_preserve_classification_and_public_redaction() {
+    let vectors: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/target-protocol/error-code-vectors.json"
+    ))
+    .unwrap();
+    for vector in vectors {
+        let p = Project::new();
+        let mut cmd = p.command("unicode-error");
+        cmd.args.extend([
+            "--error-unit".into(),
+            vector["unit"].as_str().unwrap().into(),
+            "--error-repeat".into(),
+            vector["repeat"].to_string(),
+        ]);
+        let mut c = client();
+        c.describe(&cmd, p.root()).unwrap();
+        let failure = call(&mut c, &cmd, &p, request(Operation::Validate, None, None)).unwrap_err();
+        let valid = vector["valid"].as_bool().unwrap();
+        assert_eq!(
+            matches!(failure, TargetFailure::OperationFailed { .. }),
+            valid,
+            "{vector}"
+        );
+        let public = lekalo_core::DomainResult::from(&failure).to_json_string();
+        if valid {
+            let code = vector["unit"]
+                .as_str()
+                .unwrap()
+                .repeat(vector["repeat"].as_u64().unwrap() as usize);
+            assert!(!public.contains(&code));
+            assert!(public.contains("adapter-error"));
+        } else {
+            assert!(matches!(failure, TargetFailure::ResponseInvalid { .. }));
+        }
+        p.unchanged();
+    }
+}

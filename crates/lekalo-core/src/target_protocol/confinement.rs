@@ -473,31 +473,44 @@ mod tests {
         if result.exit_code != 0 {
             let staged = sandbox.command(&command).unwrap();
             let canonical = std::fs::canonicalize(sandbox.owned.path()).unwrap();
-            for (name, extra, canonicalize) in [
-                ("canonical-only", "", true),
+            let mut metadata = String::from("(allow file-read-metadata");
+            for ancestor in canonical.ancestors() {
+                metadata.push_str(&format!(
+                    " (literal {})",
+                    serde_json::to_string(&ancestor.to_string_lossy()).unwrap()
+                ));
+            }
+            metadata.push(')');
+            let map = format!(
+                "(allow file-map-executable (subpath {}) (subpath \"/System\") (subpath \"/usr/lib\"))",
+                serde_json::to_string(&canonical.join("runtime").to_string_lossy()).unwrap()
+            );
+            for (name, extra) in [
+                ("map", map.clone()),
+                ("ancestor-metadata", metadata.clone()),
+                ("map-and-ancestors", format!("{map}{metadata}")),
                 (
-                    "root-metadata",
-                    "(allow file-read-metadata (literal \"/\"))",
-                    true,
-                ),
-                ("root-read", "(allow file-read* (literal \"/\"))", true),
-                (
-                    "root-read-original-paths",
-                    "(allow file-read* (literal \"/\"))",
-                    false,
+                    "map-ancestors-root",
+                    format!("{map}{metadata}(allow file-read* (literal \"/\"))"),
                 ),
             ] {
                 let mut wrapper = sandbox.macos_command(&staged);
-                if canonicalize {
-                    wrapper.args[1] = wrapper.args[1].replace(
-                        sandbox.owned.path().to_str().unwrap(),
-                        canonical.to_str().unwrap(),
-                    );
-                }
-                wrapper.args[1].push_str(extra);
+                wrapper.args[1] = wrapper.args[1].replace(
+                    sandbox.owned.path().to_str().unwrap(),
+                    canonical.to_str().unwrap(),
+                );
+                wrapper.args[1].push_str(&extra);
+                wrapper.args[1].push_str("(debug deny)");
                 let variant =
                     transport::run_private(&wrapper, b"", &limits, &sandbox.project, None);
-                eprintln!("private synthetic macOS variant {name}: {variant:?}");
+                let evidence = variant.as_ref().map(|v| {
+                    (
+                        v.exit_code,
+                        String::from_utf8_lossy(&v.stdout),
+                        String::from_utf8_lossy(&v.stderr),
+                    )
+                });
+                eprintln!("private synthetic macOS variant {name}: {evidence:?}");
             }
         }
         assert_eq!(

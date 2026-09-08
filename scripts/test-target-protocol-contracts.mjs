@@ -82,6 +82,16 @@ try {
 
 const ROOT = "../tests/fixtures/target-protocol/";
 
+for (const vector of JSON.parse(read(ROOT + "error-code-vectors.json"))) {
+  const response = JSON.parse(read(ROOT + "valid/describe-response.json"));
+  delete response.capabilities;
+  response.status = "error";
+  response.error = {
+    class: "invalid", code: vector.unit.repeat(vector.repeat), message: "owned synthetic error",
+  };
+  if (validate(response) !== vector.valid) failEarly("error-code-parity", vector.name);
+}
+
 for (const field of ["path", "scope"]) {
   const definition = schema.$defs[field === "path" ? "logicalPath" : "scope"];
   const check = ajv.compile(definition);

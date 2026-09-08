@@ -265,7 +265,7 @@
       "required": ["class", "code", "message"],
       "properties": {
         "class": { "$ref": "#/$defs/errorClass" },
-        "code": { "$ref": "#/$defs/detailToken" },
+        "code": { "type": "string", "minLength": 1, "maxLength": 128 },
         "message": { "type": "string", "minLength": 1, "maxLength": 256 },
         "retryable": { "type": "boolean" },
         "partial": { "type": "boolean" },

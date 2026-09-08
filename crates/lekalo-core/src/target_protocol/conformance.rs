@@ -5,6 +5,68 @@ use super::*;
 use std::path::Path;
 
 #[test]
+fn target_protocol_conformance_error_codes_count_unicode_characters() {
+    let vectors: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/target-protocol/error-code-vectors.json"
+    ))
+    .unwrap();
+    let base: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/target-protocol/valid/describe-response.json"
+    ))
+    .unwrap();
+    for vector in vectors {
+        let code = vector["unit"]
+            .as_str()
+            .unwrap()
+            .repeat(vector["repeat"].as_u64().unwrap() as usize);
+        let valid = vector["valid"].as_bool().unwrap();
+        let mut response = base.clone();
+        response.as_object_mut().unwrap().remove("capabilities");
+        response["status"] = "error".into();
+        response["error"] = serde_json::json!({
+            "class": "invalid", "code": code, "message": "owned synthetic error"
+        });
+        let bytes = serde_json::to_vec(&response).unwrap();
+        assert_eq!(wire::decode_response(&bytes).is_ok(), valid, "{vector}");
+        let typed: ResponseEnvelope = serde_json::from_value(response).unwrap();
+        let request = response_request(&typed);
+        let exchange = transport::TransportSuccess {
+            exit_code: 0,
+            stdout: bytes,
+            stderr: vec![],
+            stdout_truncated: false,
+            stderr_truncated: false,
+        };
+        let failure = TargetClient::default()
+            .interpret(Ok(exchange), &request)
+            .unwrap_err();
+        assert_eq!(
+            matches!(failure, TargetFailure::OperationFailed { .. }),
+            valid,
+            "{vector}: {failure:?}"
+        );
+        if !valid {
+            assert!(matches!(
+                failure,
+                TargetFailure::ResponseInvalid {
+                    detail: ResponseInvalidity::Shape
+                }
+            ));
+        } else if let TargetFailure::OperationFailed { code: actual, .. } = &failure {
+            assert_eq!(
+                actual, &code,
+                "validated internal evidence must stay intact"
+            );
+        }
+        let public = crate::DomainResult::from(&failure).to_json_string();
+        if valid {
+            assert!(public.contains("adapter-error"));
+            assert!(!public.contains(&code));
+        }
+    }
+}
+
+#[test]
 fn target_protocol_conformance_shares_portable_path_vectors_with_ajv() {
     let vectors: Vec<serde_json::Value> = serde_json::from_str(include_str!(
         "../../../../tests/fixtures/target-protocol/scope-grammar.json"

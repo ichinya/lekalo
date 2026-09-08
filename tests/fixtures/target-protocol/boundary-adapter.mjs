@@ -31,6 +31,9 @@ else if (mode === 'descendant' && req.operation !== 'describe') {
       if (attempt(()=>put(join(host,'other/new.txt'))) !== 'denied') throw new Error('describe-write-escaped');
     }
     res.capabilities=caps;
+  } else if (mode === 'unicode-error') {
+    res.status='error';
+    res.error={class:'invalid',code:arg('--error-unit').repeat(Number(arg('--error-repeat'))),message:'owned synthetic error'};
   } else if (req.operation === 'scan') {
     const entries=[];
     if (mode === 'scope-probes') {
