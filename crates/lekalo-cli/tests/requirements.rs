@@ -377,6 +377,99 @@ fn directory_link(target: &Path, link: &Path) {
 }
 
 #[test]
+fn native_fence_eof_refuses_lossy_inputs_and_preserves_closed_archive_traces() {
+    // These rebuilt bytes were returned by the pinned original buildUpdatedSpec,
+    // including its lossy rebuilds for the four deliberately unsupported inputs.
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/requirements/native-fence-eof-vectors.json"
+    ))
+    .unwrap();
+    for vector in vectors["vectors"].as_array().unwrap() {
+        let name = vector["name"].as_str().unwrap();
+        let temp = scratch();
+        let dir = temp.path();
+        let spec = dir.join("openspec/specs/planner/spec.md");
+        let active = dir.join("openspec/changes/2026-09-01-archive-focus");
+        fs::write(&spec, vector["accepted"].as_str().unwrap()).unwrap();
+        fs::write(
+            active.join("specs/planner/spec.md"),
+            vector["delta"].as_str().unwrap(),
+        )
+        .unwrap();
+        let mut value = attachment(dir);
+        value["references"] = vector["expectedEntries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| {
+                json!({
+                    "symbol":"planner.focus_task", "relation":"implements", "source":"openspec",
+                    "requirement":entry["id"], "revision":entry["revision"]
+                })
+            })
+            .collect::<Vec<_>>()
+            .into();
+        save_attachment(dir, &value);
+        let mut active_trace = None;
+        for archived in [false, true] {
+            if archived {
+                fs::write(&spec, vector["archiveAccepted"].as_str().unwrap()).unwrap();
+                fs::create_dir_all(dir.join("openspec/changes/archive")).unwrap();
+                fs::rename(&active, dir.join("openspec/changes/archive/eof")).unwrap();
+            }
+            for op in ["report", "validate", "trace"] {
+                let before = tree_bytes(dir);
+                let output = lekalo_in(
+                    dir,
+                    &[
+                        "--json",
+                        "requirements",
+                        op,
+                        "requirements.attachment.json",
+                        "--project",
+                        ".",
+                    ],
+                );
+                assert_eq!(tree_bytes(dir), before, "{name}/{op}/{archived} no writes");
+                if vector["unsupported"] == true {
+                    assert_eq!(exit_code(&output), 1, "{name}/{op}/{archived}");
+                    assert!(output.stdout.is_empty(), "{name}/{op} partial success");
+                    assert!(stderr_text(&output).contains("requirements.provider-invalid"));
+                    assert!(stderr_text(&output).contains("unsupported-native-grammar"));
+                    continue;
+                }
+                assert_eq!(
+                    exit_code(&output),
+                    0,
+                    "{name}/{op}: {}",
+                    stderr_text(&output)
+                );
+                let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+                if op == "report" {
+                    let entries: Vec<_> = result["report"]["requirements"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|r| json!({"id":r["id"], "revision":r["digest"]}))
+                        .collect();
+                    assert_eq!(Value::from(entries), vector["expectedEntries"], "{name}");
+                } else if op == "trace" {
+                    lekalo_core::trace::TraceManifest::parse(
+                        &serde_json::to_vec(&result["trace"]).unwrap(),
+                    )
+                    .unwrap();
+                    if archived {
+                        assert_eq!(active_trace.as_ref(), Some(&output.stdout), "{name}");
+                    } else {
+                        active_trace = Some(output.stdout);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 #[cfg(any(unix, windows))]
 fn provider_directory_links_fail_closed_even_when_empty_or_missing_children() {
     for kind in ["root", "specs", "changes", "change", "ancestor"] {

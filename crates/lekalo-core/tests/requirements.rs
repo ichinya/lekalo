@@ -229,6 +229,62 @@ fn public_id_collisions_and_all_contradictory_histories_deny() {
 }
 
 #[test]
+fn unterminated_fences_refuse_whole_documents_even_outside_requirement_bodies() {
+    for marker in ["`", "~"] {
+        let opener = marker.repeat(4);
+        let other = if marker == "`" { "~~~~" } else { "````" };
+        // Short, mismatched, and info-bearing lines do not close a fence.
+        // A valid earlier close does not excuse a later unclosed opener.
+        for tail in [
+            String::new(),
+            "\n".into(),
+            format!("\n{}", marker.repeat(3)),
+            format!("\n{other}"),
+            format!("\n{opener}info"),
+            format!("\n{opener}\n{opener}"),
+        ] {
+            for delta_input in [false, true] {
+                let project = temp_project();
+                let text = format!(
+                    "## {}Requirements\n### Requirement: Focus task\nSHALL work.\n\t{opener}example\nprivate example{tail}",
+                    if delta_input { "MODIFIED " } else { "" }
+                );
+                if delta_input {
+                    delta(&project, "unclosed", &text);
+                } else {
+                    fs::write(project.root.join("openspec/specs/planner/spec.md"), text).unwrap();
+                }
+                let before = snapshot(&project.root);
+                assert_provider_refuses(
+                    &project,
+                    &attachment_json(|j| j["references"] = serde_json::json!([])),
+                );
+                assert_eq!(snapshot(&project.root), before);
+            }
+        }
+        for (delta_input, prefix) in [
+            (false, "## Purpose\n"),
+            (false, "## Requirements\n### Requirement: Focus task\nSHALL work.\n## Appendix\n"),
+            (true, "## Purpose\n"),
+            (true, "## ADDED Requirements\n### Requirement: New task\nSHALL work.\n"),
+            (true, "## REMOVED Requirements\n- ### Requirement: Focus task\n"),
+            (true, "## RENAMED Requirements\n- FROM: ### Requirement: Focus task\n- TO: ### Requirement: Moved task\n"),
+        ] {
+            let project = temp_project();
+            let text = format!("{prefix}{opener}\nprivate example");
+            if delta_input {
+                delta(&project, "unclosed", &text);
+            } else {
+                fs::write(project.root.join("openspec/specs/planner/spec.md"), text).unwrap();
+            }
+            let before = snapshot(&project.root);
+            assert_provider_refuses(&project, &attachment_json(|j| j["references"] = serde_json::json!([])));
+            assert_eq!(snapshot(&project.root), before);
+        }
+    }
+}
+
+#[test]
 fn native_removal_bullets_deny_and_keep_impact_after_archive() {
     for header in [
         "- `### Requirement: Focus task`",

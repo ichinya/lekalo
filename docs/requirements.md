@@ -105,6 +105,13 @@ four spaces or tabs) and any info suffix (including backticks). Closers use
 the same marker, at least the opener length, and only ECMAScript whitespace
 afterward; their indentation is unrestricted. All example content and later
 requirement prose remain in the revision.
+Every fence must close before the end of its accepted spec or active delta,
+including fences in preambles and outside requirement sections. Unterminated
+fences reject the whole provider with `requirements.provider-invalid`
+(`unsupported-native-grammar`): validate/report/trace exit 1 and emit no
+successful catalog, gate result, or confirmed trace. Native rebuilding can
+append later requirements inside an unterminated fence; accepting those inputs
+would certify revisions and links that do not survive rebuilding.
 Accepted specs expose requirements only inside the first unfenced
 `## Requirements` section (case-insensitive), ending at the next unfenced
 H2. Requirement headings before it, in appendices, in later Requirements
@@ -213,7 +220,7 @@ lekalo requirements validate ATTACHMENT --project DIR
 
 lekalo requirements report ATTACHMENT --project DIR > report.json
 lekalo --json requirements report ATTACHMENT --project DIR
-# {"status":"valid","report":{...},"reportDigest":"sha256:..."} (canonical bytes embedded)
+# {"status":"valid","report":{...},"reportDigest":"<64 lowercase hex characters>"} (canonical bytes embedded)
 
 lekalo requirements query ATTACHMENT coverage-gaps --project DIR
 lekalo requirements query ATTACHMENT impact --project DIR
@@ -222,6 +229,9 @@ lekalo requirements query ATTACHMENT requirement:openspec:planner.REQ-focus-task
 
 lekalo requirements trace ATTACHMENT --project DIR > trace-manifest.json
 ```
+
+`reportDigest` is a bare lowercase SHA-256 hex digest over the embedded
+canonical report bytes; requirement revision pins retain their `sha256:` prefix.
 
 `report` and `query` are informational and exit 0 whenever resolution
 completes (the report itself documents staleness); `validate` is the gate.

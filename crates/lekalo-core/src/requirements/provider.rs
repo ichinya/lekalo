@@ -648,6 +648,13 @@ fn parse_text(text: &str, capability: &str, delta: bool) -> Result<Document, Tre
             body.push(native::trim_end(line).to_owned());
         }
     }
+    // Native rebuilding concatenates blocks parsed from separate documents.
+    // An unclosed fence can absorb later requirements after that concatenation,
+    // invalidating revisions and confirmed trace edges. Refuse the whole input,
+    // including fences outside requirement sections, before returning a catalog.
+    if fence.is_some() {
+        return Err(TreeError::UnsupportedGrammar);
+    }
     if rename_from.is_some() {
         return Err(TreeError::Shape);
     }
