@@ -67,20 +67,27 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
 const schemas = {
   "1.0.0": JSON.parse(read("../contracts/target-protocol.schema.v1.0.0.json")),
   "1.1.0": JSON.parse(read("../contracts/target-protocol.schema.v1.1.0.json")),
+  "1.2.0": JSON.parse(read("../contracts/target-protocol.schema.v1.2.0.json")),
 };
-// Fixtures whose name carries the v1_1 marker live on the 1.1.0 contract;
-// every other fixture stays on the frozen published 1.0.0 document.
-const schemaFor = (name) => (name.includes("v1_1") ? schemas["1.1.0"] : schemas["1.0.0"]);
+// Fixtures whose name carries the v1_1 marker live on the 1.1.0 contract
+// and those with v1_2 on the 1.2.0 contract; every other fixture stays on
+// the frozen published 1.0.0 document.
+const schemaFor = (name) =>
+  name.includes("v1_2") ? schemas["1.2.0"] : name.includes("v1_1") ? schemas["1.1.0"] : schemas["1.0.0"];
 const validators = Object.fromEntries(
   Object.entries(schemas).map(([version, schema]) => [version, ajv.compile(schema)]),
 );
+const keyFor = (name) =>
+  name.includes("v1_2") ? "1.2.0" : name.includes("v1_1") ? "1.1.0" : "1.0.0";
 // The extension members are additive: a 1.1.0 response carrying them must
-// be refused by the frozen 1.0.0 document, and the two documents must
-// still accept every legacy fixture.
+// be refused by the frozen 1.0.0 document, a 1.2.0 request carrying the
+// resolved-profile members must be refused by both frozen documents, and
+// the documents must still accept every legacy fixture.
 for (const name of ["describe-request.json", "describe-response.json"]) {
   const legacy = JSON.parse(read(`../tests/fixtures/target-protocol/valid/${name}`));
   if (!validators["1.0.0"](legacy)) failEarly("legacy-golden", `${name} must stay a 1.0.0 document`);
   if (!validators["1.1.0"](legacy)) failEarly("additive-golden", `${name} must validate under 1.1.0`);
+  if (!validators["1.2.0"](legacy)) failEarly("additive-golden", `${name} must validate under 1.2.0`);
 }
 const extensionGolden = JSON.parse(
   read("../tests/fixtures/target-protocol/valid/describe-response-v1_1.json"),
@@ -88,8 +95,25 @@ const extensionGolden = JSON.parse(
 if (!validators["1.1.0"](extensionGolden)) {
   failEarly("extension-golden", "the 1.1.0 extension golden must validate under 1.1.0");
 }
+if (!validators["1.2.0"](extensionGolden)) {
+  failEarly("extension-golden", "the 1.1.0 extension golden must validate under 1.2.0");
+}
 if (validators["1.0.0"](extensionGolden)) {
   failEarly("extension-not-additive", "the frozen 1.0.0 document must refuse extension members");
+}
+const resolvedProfileRequest = JSON.parse(
+  read("../tests/fixtures/target-protocol/valid/generate-request-v1_2.json"),
+);
+if (!validators["1.2.0"](resolvedProfileRequest)) {
+  failEarly("profile-golden", "the 1.2.0 resolved-profile request must validate under 1.2.0");
+}
+for (const frozen of ["1.0.0", "1.1.0"]) {
+  if (validators[frozen](resolvedProfileRequest)) {
+    failEarly(
+      "profile-not-additive",
+      `the frozen ${frozen} document must refuse the resolved-profile members`,
+    );
+  }
 }
 
 const ROOT = "../tests/fixtures/target-protocol/";
@@ -212,7 +236,7 @@ for (const entry of readdirSync(new URL(ROOT, import.meta.url))) {
     }
     if (entry === "valid") {
       goldens += 1;
-      const validator = validators[schemaFor(name).$id.endsWith("v1.1.0.json") ? "1.1.0" : "1.0.0"];
+      const validator = validators[keyFor(name)];
       if (!validator(parsed)) {
         failures.push({ case: caseName, detail: `schema: ${ajv.errorsText(validator.errors)}` });
         continue;
@@ -244,7 +268,7 @@ for (const entry of readdirSync(new URL(ROOT, import.meta.url))) {
       failures.push({ case: caseName, detail: `bad detail: ${JSON.stringify(detail)}` });
       continue;
     }
-    const rejected = !validators[schemaFor(name).$id.endsWith("v1.1.0.json") ? "1.1.0" : "1.0.0"](parsed);
+    const rejected = !validators[keyFor(name)](parsed);
     if (!rejected) schemaAcceptedContextualVectors += 1;
   }
 }

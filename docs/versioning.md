@@ -14,18 +14,21 @@ the product release:
 | --- | --- | --- | --- |
 | user-facing Lekalo Model schema | `model` | 1.0.0 | 0.1.0 (deprecated), 1.0.0 |
 | normalized Lekalo IR | `ir` | 0.1.0 | 0.1.0 |
-| target/provider process protocol | `protocol` | 1.1.0 | 1.0.0, 1.1.0 |
+| target/provider process protocol | `protocol` | 1.2.0 | 1.0.0, 1.1.0, 1.2.0 |
 
 The protocol family publishes the supported additive base `1.0.0`
-(issue #27) and the additive describe-response extension `1.1.0`
+(issue #27), the additive describe-response extension `1.1.0`
 (issue #28: declared IR contract versions, named capability support
-states, and optional declared constraints), with alias `v1 -> 1.0.0` and
-no migration edges. The Node versioning gate checks this inventory
-against the compiled protocol version/token, both wire schemas, and the
-compatibility golden. Its boundary controls retain the pre-publication
-family snapshot (`current: null`, empty versions, aliases, and
-migrations): that snapshot remains unpublished and cannot stand in for
-the shipped protocol. Product 0.2.2 does not change Model 1.0.0 or
+states, and optional declared constraints), and the additive
+resolved-profile request extension `1.2.0` (issue #29: a resolved
+profile digest plus capability snapshot on operations that carry a
+profile), with alias `v1 -> 1.0.0` and no migration edges. The Node
+versioning gate checks this inventory against the compiled protocol
+version/token, the three wire schemas, and the compatibility golden. Its
+boundary controls retain the pre-publication family snapshot
+(`current: null`, empty versions, aliases, and migrations): that
+snapshot remains unpublished and cannot stand in for the shipped
+protocol. Product 0.2.4 does not change Model 1.0.0 or
 IR 0.1.0.
 
 The compiled IR is never migrated: an IR transition is always produced by

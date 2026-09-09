@@ -41,7 +41,7 @@ const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf
 
 const itemSchema = read("contracts/diagnostic.schema.v1.0.0.json");
 const registrySchema = read("contracts/diagnostic-registry.schema.v1.0.0.json");
-const registry = read("contracts/diagnostic-registry.v1.12.0.json");
+const registry = read("contracts/diagnostic-registry.v1.14.0.json");
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateItem = ajv.compile(itemSchema);
@@ -58,9 +58,12 @@ if (!validateRegistry(registry)) {
 }
 
 // Registry chain custody: 1.10.0 -> 1.11.0 (issue #36 requirements rules)
-// -> 1.12.0 (issue #28 target.ir-unsupported). Each successor is additive to
-// its exact frozen predecessor: every predecessor entry and its semantics
-// survive verbatim, and each step adds exactly its own family.
+// -> 1.12.0 (issue #28 target.ir-unsupported) -> 1.14.0 (issue #29
+// target-profile.* rules; 1.13.0 is reserved by the parallel #38
+// candidate and is intentionally absent from this integrated line). Each
+// successor is additive to its exact frozen predecessor: every
+// predecessor entry and its semantics survive verbatim, and each step
+// adds exactly its own family.
 // Normalize checkout line endings only.
 const registry110Text = readFileSync(resolve(root, "contracts/diagnostic-registry.v1.10.0.json"), "utf8").replace(/\r\n/g, "\n");
 const registry111Text = readFileSync(resolve(root, "contracts/diagnostic-registry.v1.11.0.json"), "utf8").replace(/\r\n/g, "\n");
@@ -72,6 +75,11 @@ if (createHash("sha256").update(registry111Text).digest("hex") !== "140d389824a7
 }
 const registry110 = JSON.parse(registry110Text);
 const registry111 = JSON.parse(registry111Text);
+const registry112Text = readFileSync(resolve(root, "contracts/diagnostic-registry.v1.12.0.json"), "utf8").replace(/\r\n/g, "\n");
+if (createHash("sha256").update(registry112Text).digest("hex") !== "421d07a8838a0728a29cb96ff8c89d0e4da5a72d5609ac0ad1439d81da308a73") {
+  fail("predecessor-custody");
+}
+const registry114 = JSON.parse(registry112Text);
 const isAdditive = (candidate, predecessorRegistry) => {
   const entries = new Map(candidate.entries.map((entry) => [entry.id, entry]));
   return predecessorRegistry.entries.every((entry) => isDeepStrictEqual(entries.get(entry.id), entry));
@@ -83,18 +91,27 @@ if (requirementsAdditions.length !== 10 || requirementsAdditions.some((entry) =>
   fail("requirement-additions", requirementsAdditions.map((entry) => entry.id));
 }
 // 1.12.0 added exactly the one target.* rule over 1.11.0.
-if (!isAdditive(registry, registry111)) fail("predecessor-entry-drift");
-const targetAdditions = registry.entries.filter((entry) => !registry111.entries.some((old) => old.id === entry.id));
+if (!isAdditive(registry114, registry111)) fail("predecessor-entry-drift");
+const targetAdditions = registry114.entries.filter((entry) => !registry111.entries.some((old) => old.id === entry.id));
 if (targetAdditions.length !== 1 || !targetAdditions[0].id.startsWith("target.") || !targetAdditions[0].code.startsWith("LEK-TGT-")) {
   fail("target-additions", targetAdditions.map((entry) => entry.id));
 }
+// 1.14.0 added exactly the six target-profile.* rules over frozen 1.12.0.
+if (!isAdditive(registry, registry114)) fail("predecessor-entry-drift");
+const profileAdditions = registry.entries.filter((entry) => !registry114.entries.some((old) => old.id === entry.id));
+if (
+  profileAdditions.length !== 6 ||
+  profileAdditions.some((entry) => !entry.id.startsWith("target-profile.") || !entry.code.startsWith("LEK-TPF-"))
+) {
+  fail("profile-additions", profileAdditions.map((entry) => entry.id));
+}
 // A missing predecessor entry or changed classification must actually fail the gate.
-const target = registry111.entries.find((entry) => entry.code.startsWith("LEK-TGT-"));
+const target = registry114.entries.find((entry) => entry.code.startsWith("LEK-TGT-"));
 const missing = structuredClone(registry);
 missing.entries = missing.entries.filter((entry) => entry.id !== target.id);
 const changed = structuredClone(registry);
 changed.entries.find((entry) => entry.id === target.id).allowed_statuses = ["valid"];
-if (isAdditive(missing, registry111) || isAdditive(changed, registry111)) fail("additive-negative-control");
+if (isAdditive(missing, registry114) || isAdditive(changed, registry114)) fail("additive-negative-control");
 
 // 2. Registry invariants that JSON Schema cannot express.
 const ids = registry.entries.map((entry) => entry.id);

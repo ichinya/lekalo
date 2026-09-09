@@ -20,6 +20,7 @@ pub mod project_fs;
 pub mod requirements;
 pub mod result;
 pub mod scenario;
+pub mod target_profile;
 pub mod target_protocol;
 pub mod trace;
 pub mod transaction_concurrency;

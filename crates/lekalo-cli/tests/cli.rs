@@ -29,7 +29,7 @@ fn diagnostic_item_json(
     message: &str,
 ) -> String {
     format!(
-        "{{\n      \"schema_version\": \"lekalo/diagnostic/v1.0.0\",\n      \"registry_version\": \"1.12.0\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
+        "{{\n      \"schema_version\": \"lekalo/diagnostic/v1.0.0\",\n      \"registry_version\": \"1.14.0\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
     )
 }
 
@@ -324,7 +324,7 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
 
     let root_manifest =
         std::fs::read_to_string(workspace.join("Cargo.toml")).expect("read workspace Cargo.toml");
-    assert_eq!(root_manifest.matches("version = \"0.2.2\"").count(), 1);
+    assert_eq!(root_manifest.matches("version = \"0.2.4\"").count(), 1);
     for member in [
         "crates/lekalo-core/Cargo.toml",
         "crates/lekalo-cli/Cargo.toml",
@@ -334,6 +334,7 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
         assert!(!manifest.contains("0.2.0"));
         assert!(!manifest.contains("0.2.1"));
         assert!(!manifest.contains("0.2.2"));
+        assert!(!manifest.contains("0.2.3"));
         assert!(manifest.contains("version.workspace = true"));
     }
 }

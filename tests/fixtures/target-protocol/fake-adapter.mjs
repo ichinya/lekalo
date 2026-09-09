@@ -131,7 +131,7 @@ function planId(writes) {
 function capabilities(requestedVersion) {
   const declared = {
     adapter: ADAPTER,
-    protocol_versions: FLUENT ? ["1.0.0", "1.1.0"] : ["1.0.0"],
+    protocol_versions: FLUENT ? ["1.0.0", "1.1.0", "1.2.0"] : ["1.0.0"],
     operations: [
       "describe",
       "scan",
@@ -149,9 +149,9 @@ function capabilities(requestedVersion) {
     transports: ["stdin", "file"],
     progress: true,
   };
-  // The 1.1.0 extension members exist only on a 1.1.0 describe: a base
+  // The 1.1.0 extension members exist only on a 1.1.0+ describe: a base
   // response keeps the exact published 1.0.0 shape.
-  if (FLUENT && requestedVersion === "1.1.0") {
+  if (FLUENT && requestedVersion !== "1.0.0") {
     declared.ir_versions = VARIANT === "incompatible" ? ["0.2.0"] : ["0.1.0"];
     declared.capabilities = CAPABILITY_PROFILES[VARIANT] ?? CAPABILITY_PROFILES.fluent;
     declared.constraints = { max_entries: 10000 };

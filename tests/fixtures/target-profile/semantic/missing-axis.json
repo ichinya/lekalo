@@ -1,0 +1,12 @@
+{
+  "schema_version": "lekalo/target-profile/v1.0.0",
+  "profiles": [
+    {
+      "id": "short",
+      "version": "1.0.0",
+      "components": {
+        "runtime": "node-typescript"
+      }
+    }
+  ]
+}

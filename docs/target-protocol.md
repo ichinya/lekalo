@@ -1,12 +1,13 @@
 # Target adapter process protocol
 
-`lekalo.target/v1`, contract 1.0.0 with the additive 1.1.0 extension,
-connects core to separate executables. Adapters may be written in any
-language; core loads no native plugin ABI. The operations are describe,
-scan, bind, validate, generate, verify, plan-clean and clean. Product
-0.2.2, Model 1.0.0, IR 0.1.0 and diagnostic registry 1.12.0 remain
-independent version lines. Registry 1.12.0 retains the target entries
-introduced in 1.10.0 and the requirements entries introduced in 1.11.0.
+`lekalo.target/v1`, contract 1.0.0 with the additive 1.1.0 and 1.2.0
+extensions, connects core to separate executables. Adapters may be
+written in any language; core loads no native plugin ABI. The operations
+are describe, scan, bind, validate, generate, verify, plan-clean and
+clean. Product 0.2.4, Model 1.0.0, IR 0.1.0 and diagnostic registry
+1.14.0 remain independent version lines. Registry 1.14.0 retains the
+target entries introduced in 1.10.0, the requirements entries introduced
+in 1.11.0, and the `target-profile.*` entries introduced in 1.14.0.
 
 ## Version negotiation and capability discovery (issue #28)
 
@@ -66,6 +67,28 @@ protocol, IR version, capability-definition registry, capability
 digest); any change misses. The resolved capability snapshot lands in
 the committed `lekalo.lock` through the #10 resolver, with each entry
 bound to its capability definition version.
+
+## Resolved profile request extension (issue #29)
+
+The 1.2.0 contract is additive to the request side only: an operation
+that already carries a `profile` token may also carry
+`profile_digest` (`sha256:…`) and `profile_capabilities` (a bounded,
+id-sorted list of `{id, support}` pairs). Both members are legal only
+together, only with a profile token, and only on a session negotiated
+at exactly 1.2.0; the frozen 1.0.0 and 1.1.0 documents refuse them, so
+their published meanings are unchanged. The members carry the resolved
+target profile — the digest over the canonical resolved snapshot bytes
+(the lock's `profiles.digest` domain) plus the capability set the whole
+profile guarantees — so an adapter receives negotiated capabilities
+instead of arbitrary YAML. The digest also binds the plan context, so
+every planned and applied exchange is bound to the exact profile
+snapshot it was planned against. A caller supplying a resolution on an
+older session is refused with `target.capability-unsupported` before
+any launch; the resolution is never silently dropped. Resolution,
+inheritance, compatibility constraints, and the digests themselves are
+owned by the target profile contract (see
+[target profiles](target-profile.md)); the protocol only transports the
+projected snapshot.
 
 ## Requests and identities
 

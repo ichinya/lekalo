@@ -385,6 +385,27 @@ yes — and reports the selected and excluded candidates with stable
 reasons. The resolved capability snapshot resolves into the committed
 `lekalo.lock`.
 
+Issue #29 introduces composable target profiles and the additive 1.2.0
+request extension: a profile composes one component per closed axis
+(`runtime`, `storage`, `transport`, `testing`, `analysis`,
+`deployment`) from an embedded, versioned component registry, so
+storage, transport, and deployment components are reused unchanged
+between Node, PHP, and Go runtimes. Components declare capability
+contracts, exact sibling requirements, capability requirements, and
+conflicts; resolution is deterministic, composes capabilities at the
+weakest provided state, and refuses incompatible combinations with
+sorted reasons. Profile inheritance follows explicit precedence and
+may never silently weaken a base guarantee — weaker resolutions need an
+override acknowledging exactly that state, and removal is never
+overridable. Each profile resolves into an immutable machine-readable
+snapshot whose declared and resolved digests land in the committed
+lock; per-axis portability reports name exactly which components
+change between two profiles; and on a 1.2.0 session the adapter
+receives the resolved capabilities instead of arbitrary YAML. See
+[docs/target-profile.md](docs/target-profile.md),
+[ADR-0029](docs/adr/0029-composable-target-profiles.md), and
+`contracts/target-profile.schema.v1.0.0.json`.
+
 ## OpenSpec requirement traceability
 
 Issue #36 links semantic symbols to canonical requirements without owning
@@ -414,8 +435,8 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #28 carries prospective product
-0.2.2 (issue #63 published product 0.1.31 (annotated tag `v0.1.31` on
+independent of product releases; issue #29 carries prospective product
+0.2.4 (issue #28 carried prospective product 0.2.2; issue #63 published product 0.1.31 (annotated tag `v0.1.31` on
 `9cdd8c1`); issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
 `9020558`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on
 `de6f8a7`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on

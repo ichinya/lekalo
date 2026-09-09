@@ -64,6 +64,7 @@ fn request(operation: Operation, dry: Option<bool>, id: Option<&str>) -> CallReq
         operation,
         target: Some("test"),
         profile: Some("default"),
+        profile_resolution: None,
         ir_path: Some(".lekalo/ir/input.json"),
         dry_run: dry,
         plan_id: id,

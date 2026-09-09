@@ -1,11 +1,11 @@
 //! The identity, wire, and bound constants of the target protocol
-//! (issues #27 and #28).
+//! (issues #27, #28, and #29).
 //!
 //! The wire token `lekalo.target/v1` names the protocol line. The line
-//! carries two exact contract versions: the base `1.0.0` envelope every
-//! v1-line adapter accepts, and the current `1.1.0` whose describe
-//! response additively extends the negotiated capabilities. The client
-//! probes at the base version and upgrades only to a version the adapter
+//! carries three exact contract versions: the base `1.0.0` envelope every
+//! v1-line adapter accepts, the `1.1.0` describe-response extension, and
+//! the `1.2.0` resolved-profile request extension. The client probes at
+//! the base version and upgrades only to a version the adapter
 //! explicitly declared, so the session always runs on a version both
 //! sides named. The identity follows the house
 //! `dev.lekalo.<topic>@<version>` spelling. Every bound here has a
@@ -18,22 +18,23 @@ pub const PROTOCOL_TOKEN: &str = "lekalo.target/v1";
 /// v1-line adapter accepts, and the frozen published contract document.
 pub const BASE_VERSION: &str = "1.0.0";
 
-/// The current protocol contract version (`dev.lekalo.protocol@1.1.0`):
-/// the additive describe-response extension negotiated by issue #28.
-pub const VERSION: &str = "1.1.0";
+/// The current protocol contract version
+/// (`dev.lekalo.protocol@1.2.0`): the additive resolved-profile request
+/// extension negotiated by issue #29.
+pub const VERSION: &str = "1.2.0";
 
 /// The closed, ascending set of protocol versions this core decodes and
 /// negotiates. The registry may only publish versions from this set;
 /// anything else is a registry/decoder drift refused as a developer
 /// fault before any adapter is launched.
-pub const SUPPORTED_VERSIONS: [&str; 2] = ["1.0.0", "1.1.0"];
+pub const SUPPORTED_VERSIONS: [&str; 3] = ["1.0.0", "1.1.0", "1.2.0"];
 
 /// The identity of the schema artifact for the current protocol version.
-pub const IDENTITY: &str = "dev.lekalo.target-protocol@1.1.0";
+pub const IDENTITY: &str = "dev.lekalo.target-protocol@1.2.0";
 
 /// The schema identity of the current wire contract
-/// (`lekalo/target-protocol/v1.1.0`).
-pub const SCHEMA_VERSION: &str = "lekalo/target-protocol/v1.1.0";
+/// (`lekalo/target-protocol/v1.2.0`).
+pub const SCHEMA_VERSION: &str = "lekalo/target-protocol/v1.2.0";
 
 /// Whether one exact spelling is in the supported negotiation set.
 pub fn is_supported_version(value: &str) -> bool {
@@ -101,9 +102,9 @@ mod tests {
     fn identity_is_the_published_contract_version() {
         assert_eq!(PROTOCOL_TOKEN, "lekalo.target/v1");
         assert_eq!(BASE_VERSION, "1.0.0");
-        assert_eq!(VERSION, "1.1.0");
-        assert_eq!(IDENTITY, "dev.lekalo.target-protocol@1.1.0");
-        assert_eq!(SCHEMA_VERSION, "lekalo/target-protocol/v1.1.0");
+        assert_eq!(VERSION, "1.2.0");
+        assert_eq!(IDENTITY, "dev.lekalo.target-protocol@1.2.0");
+        assert_eq!(SCHEMA_VERSION, "lekalo/target-protocol/v1.2.0");
     }
 
     #[test]
@@ -125,12 +126,17 @@ mod tests {
         );
         assert_eq!(declared(&["1.0.0"]).as_deref(), Some("1.0.0"));
         assert_eq!(declared(&["1.1.0"]).as_deref(), Some("1.1.0"));
+        assert_eq!(declared(&["1.2.0"]).as_deref(), Some("1.2.0"));
         assert_eq!(
-            declared(&["1.1.0", "1.0.0"]).as_deref(),
-            Some("1.1.0"),
+            declared(&["1.1.0", "1.2.0", "1.0.0"]).as_deref(),
+            Some("1.2.0"),
             "declaration order never decides the negotiated version"
         );
-        assert!(is_supported_version("1.0.0") && is_supported_version("1.1.0"));
+        assert!(
+            is_supported_version("1.0.0")
+                && is_supported_version("1.1.0")
+                && is_supported_version("1.2.0")
+        );
         assert!(!is_supported_version("1.0.1") && !is_supported_version("0.9.0"));
     }
 

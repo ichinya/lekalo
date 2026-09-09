@@ -110,9 +110,66 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
         return invalid("profile");
     }
     if request.operation == Operation::Describe
-        && (request.target.is_some() || request.profile.is_some() || request.ir_path.is_some())
+        && (request.target.is_some()
+            || request.profile.is_some()
+            || request.profile_digest.is_some()
+            || request.profile_capabilities.is_some()
+            || request.ir_path.is_some())
     {
         return invalid("member");
+    }
+    let profile_resolution =
+        request.profile_digest.is_some() || request.profile_capabilities.is_some();
+    if profile_resolution
+        && (request.profile_digest.is_none() || request.profile_capabilities.is_none())
+    {
+        return invalid("profile-capabilities");
+    }
+    if profile_resolution {
+        if request.protocol_version != super::version::VERSION {
+            return invalid("member");
+        }
+        if request.profile.is_none() {
+            return invalid("profile");
+        }
+        if !request
+            .profile_digest
+            .as_ref()
+            .is_some_and(|digest| is_sha256_digest(digest))
+        {
+            return invalid("profile-digest");
+        }
+    }
+    if let Some(capabilities) = &request.profile_capabilities {
+        let mut sorted_unique = !capabilities.is_empty();
+        let mut previous: Option<&str> = None;
+        for capability in capabilities {
+            if !is_capability_id(&capability.id) {
+                sorted_unique = false;
+                break;
+            }
+            if let Some(previous) = previous {
+                if capability.id.as_bytes() <= previous.as_bytes() {
+                    sorted_unique = false;
+                    break;
+                }
+            }
+            previous = Some(&capability.id);
+        }
+        if !sorted_unique || capabilities.len() > MAX_DECLARED_CAPABILITIES {
+            return invalid("profile-capabilities");
+        }
+    }
+    if let Some(limits) = request.limits {
+        if !limits
+            .timeout_ms
+            .is_some_and(|v| (1..=3600000).contains(&v))
+            || !limits
+                .max_output_bytes
+                .is_some_and(|v| (1..=1073741824).contains(&v))
+        {
+            return invalid("shape");
+        }
     }
     Ok(())
 }
@@ -397,6 +454,25 @@ pub struct RequestEnvelope {
         skip_serializing_if = "Option::is_none"
     )]
     pub profile: Option<String>,
+    /// The resolved profile snapshot digest (`sha256:…`, issue #29,
+    /// protocol 1.2.0). Legal only on a 1.2.0 request and only together
+    /// with `profile_capabilities`; a 1.0.0 or 1.1.0 request carrying it
+    /// is refused so the frozen documents keep their exact meanings.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub profile_digest: Option<String>,
+    /// The resolved profile capability snapshot (issue #29, protocol
+    /// 1.2.0), sorted strictly by capability id: the negotiated
+    /// capabilities an adapter receives instead of arbitrary YAML.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub profile_capabilities: Option<Vec<ProfileCapability>>,
     #[serde(
         default,
         deserialize_with = "present",
@@ -499,6 +575,29 @@ pub struct AdapterConstraints {
     pub max_entries: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_writes: Option<u64>,
+}
+
+/// One resolved profile capability carried on a 1.2.0 request (issue
+/// #29): the support state the whole profile guarantees for the id.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileCapability {
+    /// The stable dotted capability id.
+    pub id: String,
+    /// The support state the resolved profile guarantees.
+    pub support: SupportState,
+}
+
+/// The resolved profile snapshot a caller binds to an operation (issue
+/// #29): the digest over the canonical resolved profile bytes plus the
+/// capability snapshot the adapter receives. Built from
+/// `target_profile::ResolvedProfile`; never from raw YAML.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProfileResolution {
+    /// The canonical resolved profile snapshot digest (`sha256:…`).
+    pub digest: String,
+    /// The resolved capabilities, sorted strictly by id.
+    pub capabilities: Vec<ProfileCapability>,
 }
 
 /// Whether one string is a capability identifier: the closed lowercase
@@ -976,6 +1075,8 @@ mod tests {
             ir_path: None,
             target: None,
             profile: None,
+            profile_digest: None,
+            profile_capabilities: None,
             dry_run: None,
             limits: None,
             plan_id: None,
@@ -1046,6 +1147,118 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&Operation::PlanClean).unwrap(),
             "\"plan-clean\""
+        );
+    }
+
+    use crate::target_protocol::TargetFailure;
+
+    #[test]
+    fn resolved_profile_members_are_1_2_0_only_and_paired() {
+        let resolution = ProfileResolution {
+            digest: format!("sha256:{}", "a".repeat(64)),
+            capabilities: vec![ProfileCapability {
+                id: "runtime.async".to_owned(),
+                support: SupportState::Full,
+            }],
+        };
+        let mut request = base_request();
+        request.request_id = format!("req-{}", "0".repeat(64));
+        request.operation = Operation::Validate;
+        request.ir_path = Some(".lekalo/ir/planner.json".to_owned());
+        request.profile = Some("default".to_owned());
+        request.profile_digest = Some(resolution.digest.clone());
+        request.profile_capabilities = Some(resolution.capabilities.clone());
+        assert!(
+            validate_request(&request).is_ok(),
+            "legal on a 1.2.0 request"
+        );
+
+        // Older sessions refuse the members: the frozen documents keep
+        // their exact published meanings.
+        for version in ["1.0.0", "1.1.0"] {
+            request.protocol_version = version.to_owned();
+            assert_eq!(
+                validate_request(&request),
+                Err(TargetFailure::RequestInvalid { detail: "member" }),
+                "refused on {version}"
+            );
+        }
+
+        // Pair rule: one member without the other is invalid.
+        request.protocol_version = VERSION.to_owned();
+        request.profile_capabilities = None;
+        assert_eq!(
+            validate_request(&request),
+            Err(TargetFailure::RequestInvalid {
+                detail: "profile-capabilities"
+            })
+        );
+        request.profile_capabilities = Some(resolution.capabilities.clone());
+        request.profile_digest = None;
+        assert_eq!(
+            validate_request(&request),
+            Err(TargetFailure::RequestInvalid {
+                detail: "profile-capabilities"
+            })
+        );
+
+        // A profile token is required and the digest spelling is exact.
+        request.profile_digest = Some(resolution.digest.clone());
+        request.profile = None;
+        assert_eq!(
+            validate_request(&request),
+            Err(TargetFailure::RequestInvalid { detail: "profile" })
+        );
+        request.profile = Some("default".to_owned());
+        request.profile_digest = Some("sha256:short".to_owned());
+        assert_eq!(
+            validate_request(&request),
+            Err(TargetFailure::RequestInvalid {
+                detail: "profile-digest"
+            })
+        );
+
+        // Capability pairs are sorted strictly by id and bounded.
+        request.profile_digest = Some(resolution.digest.clone());
+        request.profile_capabilities = Some(vec![
+            ProfileCapability {
+                id: "zeta.capability".to_owned(),
+                support: SupportState::Partial,
+            },
+            ProfileCapability {
+                id: "alpha.capability".to_owned(),
+                support: SupportState::Full,
+            },
+        ]);
+        assert_eq!(
+            validate_request(&request),
+            Err(TargetFailure::RequestInvalid {
+                detail: "profile-capabilities"
+            })
+        );
+        request.profile_capabilities = Some(
+            (0..MAX_DECLARED_CAPABILITIES + 1)
+                .map(|index| ProfileCapability {
+                    id: format!("cap.a{:02}.x", index),
+                    support: SupportState::Full,
+                })
+                .collect(),
+        );
+        assert_eq!(
+            validate_request(&request),
+            Err(TargetFailure::RequestInvalid {
+                detail: "profile-capabilities"
+            })
+        );
+
+        // Describe never carries a profile or a resolution.
+        let mut describe = base_request();
+        describe.request_id = format!("req-{}", "0".repeat(64));
+        describe.profile_digest = Some(resolution.digest.clone());
+        describe.profile_capabilities = Some(resolution.capabilities.clone());
+        assert_eq!(
+            validate_request(&describe),
+            Err(TargetFailure::RequestInvalid { detail: "member" })
         );
     }
 }

@@ -90,7 +90,7 @@ fn discovery_negotiates_the_extension_and_records_provenance() {
     let mut client = TargetClient::default();
     let discovered = Discovery::run(&mut client, &variant_command("fluent"), &sandbox.dir)
         .expect("fluent discovery");
-    assert_eq!(discovered.negotiated_version, "1.1.0");
+    assert_eq!(discovered.negotiated_version, "1.2.0");
     assert_eq!(discovered.ir_versions, vec!["0.1.0".to_owned()]);
     assert!(discovered.ir_compatible("0.1.0"));
     assert_eq!(discovered.adapter.id, "node-typescript");
@@ -139,6 +139,7 @@ fn legacy_adapter_stays_on_the_frozen_base_contract() {
                 operation: Operation::Scan,
                 target: None,
                 profile: None,
+                profile_resolution: None,
                 ir_path: None,
                 dry_run: None,
                 plan_id: None,
@@ -170,6 +171,7 @@ fn incompatible_adapter_is_filtered_before_any_ir_is_transferred() {
                 operation: Operation::Validate,
                 target: None,
                 profile: None,
+                profile_resolution: None,
                 ir_path: Some(IR),
                 dry_run: None,
                 plan_id: None,
@@ -333,7 +335,7 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
 
     let registry = VersionRegistry::embedded().expect("embedded registry");
     let model = ContractVersion::parse_canonical("1.0.0").unwrap();
-    let core = lekalo_core::lockfile::SemVer::parse("0.2.2").unwrap();
+    let core = lekalo_core::lockfile::SemVer::parse("0.2.4").unwrap();
     let request = ResolutionRequest::new(registry, &model, core)
         .with_adapter(ComponentId::parse("node-typescript").unwrap())
         .with_profile(ComponentId::parse("default").unwrap())
@@ -358,7 +360,7 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
         ContractVersion::parse_canonical("0.1.0").unwrap(),
         Some(ProtocolBounds {
             min: ContractVersion::parse_canonical("1.0.0").unwrap(),
-            max: ContractVersion::parse_canonical("1.1.0").unwrap(),
+            max: ContractVersion::parse_canonical("1.2.0").unwrap(),
         }),
         vec![],
         vec![],
@@ -458,6 +460,87 @@ fn selection_reason_and_warning_tokens_are_stable() {
     assert_eq!(warnings::PARTIAL_ACCEPTED, "partial-accepted");
     assert_eq!(warnings::UNKNOWN_TOLERATED, "unknown-tolerated");
     assert_eq!(reasons::IR_UNDECLARED, "ir-undeclared");
+}
+
+#[test]
+fn resolved_profiles_reach_1_2_0_adapters_and_refuse_legacy_sessions() {
+    use lekalo_core::target_profile::document;
+    use lekalo_core::target_profile::resolution::resolve;
+
+    // The fluent adapter declares the full v1 line, so the session
+    // negotiates 1.2.0 and accepts the resolved profile members.
+    let sandbox = Sandbox::new("profile-1-2");
+    let command = variant_command("fluent");
+    let mut client = TargetClient::default();
+    let discovered = Discovery::run(&mut client, &command, &sandbox.dir).expect("discovery");
+    assert_eq!(discovered.negotiated_version, "1.2.0");
+
+    // Resolve the issue's Node profile through the production seam and
+    // project it onto the wire shape.
+    let document_bytes = std::fs::read(format!(
+        "{}/../../tests/fixtures/target-profile/valid/node.json",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("profile fixture");
+    let document = document::decode(&document_bytes).expect("decodes");
+    let resolved = resolve(&document).expect("resolves").remove(0);
+    let resolution = resolved.wire_resolution();
+    assert_eq!(
+        resolution.digest, resolved.digest,
+        "the wire digest is the resolved snapshot digest"
+    );
+
+    let fs = lekalo_core::project_fs::Fs::open(&sandbox.dir).unwrap();
+    let outcome = client
+        .call(
+            &command,
+            CallRequest {
+                operation: Operation::Scan,
+                target: Some("node-typescript"),
+                profile: Some("default"),
+                profile_resolution: Some(&resolution),
+                ir_path: None,
+                dry_run: None,
+                plan_id: None,
+            },
+            &sandbox.dir,
+            &fs,
+            None,
+        )
+        .expect("a 1.2.0 adapter receives the resolved capabilities");
+    assert_eq!(outcome.response.operation, Operation::Scan);
+
+    // A legacy base-only session refuses the resolution instead of
+    // silently dropping it: an adapter never receives arbitrary YAML.
+    let legacy_sandbox = Sandbox::new("profile-legacy");
+    let legacy_command = variant_command("legacy");
+    let mut legacy_client = TargetClient::default();
+    legacy_client
+        .describe(&legacy_command, &legacy_sandbox.dir)
+        .expect("legacy handshake");
+    let legacy_fs = lekalo_core::project_fs::Fs::open(&legacy_sandbox.dir).unwrap();
+    let failure = legacy_client
+        .call(
+            &legacy_command,
+            CallRequest {
+                operation: Operation::Scan,
+                target: Some("node-typescript"),
+                profile: Some("default"),
+                profile_resolution: Some(&resolution),
+                ir_path: None,
+                dry_run: None,
+                plan_id: None,
+            },
+            &legacy_sandbox.dir,
+            &legacy_fs,
+            None,
+        )
+        .expect_err("legacy sessions refuse resolutions");
+    assert!(matches!(
+        failure,
+        TargetFailure::CapabilityUnsupported { .. }
+    ));
+    assert_eq!(failure.rule().0, "target.capability-unsupported");
 }
 
 #[allow(unused)]

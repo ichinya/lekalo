@@ -75,6 +75,12 @@ pub struct CallRequest<'a> {
     pub operation: Operation,
     pub target: Option<&'a str>,
     pub profile: Option<&'a str>,
+    /// The resolved profile snapshot the operation binds to (issue #29).
+    /// Only a session negotiated at protocol 1.2.0 accepts it; on older
+    /// sessions the caller is refused instead of silently dropping the
+    /// resolution, so an adapter always receives negotiated capabilities
+    /// or nothing.
+    pub profile_resolution: Option<&'a wire::ProfileResolution>,
     pub ir_path: Option<&'a str>,
     /// Required (as a boolean) for `generate`, refused elsewhere.
     pub dry_run: Option<bool>,
@@ -365,20 +371,30 @@ impl TargetClient {
             });
         }
         let capabilities = described.capabilities.clone();
-        // An adapter that negotiated the 1.1.0 extension and did not
-        // declare the core IR contract version never receives an
-        // IR-carrying operation: the incompatible adapter is filtered
-        // before any project IR could be disclosed (issue #28). A legacy
-        // 1.0.0 session keeps the #27 contract: its IR compatibility is
-        // governed upstream by the #9 compatibility preflight and lock.
+        // An adapter that negotiated any capability-carrying extension
+        // (1.1.0+) and did not declare the core IR contract version never
+        // receives an IR-carrying operation: the incompatible adapter is
+        // filtered before any project IR could be disclosed (issue #28).
+        // A legacy 1.0.0 session keeps the #27 contract: its IR
+        // compatibility is governed upstream by the #9 compatibility
+        // preflight and lock.
         if request.operation.requires_ir()
-            && described.negotiated_version == version::VERSION
+            && described.negotiated_version != version::BASE_VERSION
             && !capabilities
                 .ir_versions
                 .iter()
                 .any(|declared| declared == crate::ir::version::VERSION)
         {
             return Err(TargetFailure::IrUnsupported);
+        }
+        // A resolved profile (issue #29) is bound to 1.2.0 sessions only:
+        // an older session refuses the caller rather than silently
+        // dropping the resolution.
+        if request.profile_resolution.is_some() && described.negotiated_version != version::VERSION
+        {
+            return Err(TargetFailure::CapabilityUnsupported {
+                detail: "profile-resolution",
+            });
         }
         self.validate_call_request(&request, &capabilities)?;
         if applying && pending.is_none() {
@@ -403,6 +419,9 @@ impl TargetClient {
             &root,
             request.target,
             request.profile,
+            request
+                .profile_resolution
+                .map(|resolution| resolution.digest.as_str()),
             request.ir_path,
             &inputs,
             &described.capability_digest,
@@ -446,6 +465,10 @@ impl TargetClient {
         envelope.profile = request.profile.map(str::to_owned);
         envelope.dry_run = dry_run;
         envelope.plan_id = plan_request;
+        if let Some(resolution) = request.profile_resolution {
+            envelope.profile_digest = Some(resolution.digest.clone());
+            envelope.profile_capabilities = Some(resolution.capabilities.clone());
+        }
         envelope.request_id = format!(
             "req-{}",
             plan::sha256_hex(&canonical_bytes(&(
@@ -697,6 +720,8 @@ impl TargetClient {
             {
                 return Err(TargetFailure::CapabilityUnsupported { detail: "profile" });
             }
+        } else if request.profile_resolution.is_some() {
+            return invalid("profile");
         }
         if let Some(ir_path) = request.ir_path {
             if !scopes::is_logical_path(ir_path) {
@@ -850,6 +875,8 @@ fn base_envelope(
         ir_path: None,
         target: None,
         profile: None,
+        profile_digest: None,
+        profile_capabilities: None,
         dry_run: None,
         limits: Some(limits),
         plan_id: None,

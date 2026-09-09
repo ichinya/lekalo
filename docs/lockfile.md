@@ -59,7 +59,12 @@ Top-level keys, in wire (byte-sorted) order: `adapters`, `capabilities`,
   never exists on the wire; an unversioned profile fails
   `lock.profile-unversioned`), `source_digest` over the canonical declared
   input, `digest` over the fully resolved, inheritance-applied, path-free
-  snapshot, and sorted component references.
+  snapshot, and sorted component references. Since issue #29 both digests
+  are produced by the target-profile contract
+  (`dev.lekalo.target-profile@1.0.0`, see
+  [target profiles](target-profile.md)): the declared bytes are the
+  canonical JSON of the closed declaration, the resolved bytes are the
+  canonical JSON of `{id, version, components, capabilities}`.
 - `capabilities` is the one resolved snapshot sorted by
   `target/profile/id/version/provider`; `support ∈ {full, partial,
   unsupported, unknown}`; `unknown`/`unsupported` never satisfies a required

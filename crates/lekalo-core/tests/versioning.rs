@@ -168,7 +168,7 @@ mod embedded_registry {
     #[test]
     fn embedded_bytes_parse_and_validate() {
         let registry = VersionRegistry::embedded().expect("shipped registry is valid");
-        assert_eq!(registry.registry_version().as_str(), "1.1.0");
+        assert_eq!(registry.registry_version().as_str(), "1.2.0");
     }
 
     #[test]
@@ -219,9 +219,9 @@ mod embedded_registry {
         let protocol_family = registry.protocol();
         assert_eq!(
             protocol_family.current().map(|v| v.to_string()),
-            Some("1.1.0".to_owned())
+            Some("1.2.0".to_owned())
         );
-        assert_eq!(protocol_family.versions().len(), 2);
+        assert_eq!(protocol_family.versions().len(), 3);
         assert_eq!(protocol_family.aliases().len(), 1);
         assert_eq!(protocol_family.aliases()[0].0.as_str(), "v1");
         assert_eq!(protocol_family.aliases()[0].1.as_str(), "1.0.0");
@@ -668,7 +668,7 @@ mod compatibility {
         let registry = VersionRegistry::embedded().expect("valid");
         let report = CompatibilityReport::from_registry(registry);
         assert_eq!(report.status, "valid");
-        assert_eq!(report.registry_version, "1.1.0");
+        assert_eq!(report.registry_version, "1.2.0");
         let names: Vec<&str> = report.families.iter().map(|f| f.family).collect();
         assert_eq!(names, ["model", "ir", "protocol"]);
         let model_family: &CompatibilityReportFamilyAlias = &report.families[0];

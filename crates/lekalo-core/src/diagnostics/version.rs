@@ -14,10 +14,10 @@ pub const SCHEMA_VERSION: &str = "lekalo/diagnostic/v1.0.0";
 pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v1.0.0";
 
 /// The embedded diagnostic registry identity.
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@1.12.0";
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@1.14.0";
 
 /// The current diagnostic registry version.
-pub const REGISTRY_VERSION: &str = "1.12.0";
+pub const REGISTRY_VERSION: &str = "1.14.0";
 
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

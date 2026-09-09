@@ -95,6 +95,7 @@ fn call_request<'a>(
         operation,
         target,
         profile,
+        profile_resolution: None,
         ir_path,
         dry_run,
         plan_id,
