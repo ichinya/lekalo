@@ -67,9 +67,11 @@ Top-level keys, in wire (byte-sorted) order: `adapters`, `capabilities`,
   Since issue #28 the candidate supply for this snapshot may come from
   live capability discovery over the target protocol: each entry's
   version is then the capability definition version its support state
-  was read under, and each support state carries the provenance
-  (`declared`/`probed`/`verified`) recorded by discovery and surfaced in
-  the selection report.
+  was read under. Provenance (`declared`/`probed`/`verified`) belongs
+  to discovery and selection — it is recorded there and surfaced in the
+  selection report; the lock snapshot itself stores no provenance. Its
+  capability entries are exactly `{target, profile, id, version,
+  support, provider}`.
 
 ## Digest domains
 
