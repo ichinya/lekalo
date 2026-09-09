@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "lekalo/requirements/v1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:85f19258888456d40fffecb8a1cf5dbc43f8abea308203fc55a993939dce3daa"
+  },
+  "providers": [
+    {
+      "source": "openspec",
+      "kind": "openspec",
+      "root": "openspec"
+    }
+  ],
+  "references": [
+    {
+      "symbol": "planner.archive_task",
+      "relation": "implements",
+      "source": "openspec",
+      "requirement": "planner.REQ-archive-notification",
+      "revision": "sha256:dcd2b013400ee1c69e965e8943993118fa2f7fcd1faf121226d6dda8a6915839"
+    },
+    {
+      "symbol": "planner.focus_task",
+      "relation": "derived_from",
+      "source": "openspec",
+      "requirement": "planner.REQ-focus-task",
+      "revision": "sha256:c58037e2b222bbce134ab4c43e881215629892672d0c34c845f23f77a1ff560c"
+    },
+    {
+      "symbol": "planner.focus_task",
+      "relation": "implements",
+      "source": "openspec",
+      "requirement": "planner.REQ-restore-focus",
+      "revision": "sha256:bfc560ff0dbd615e2e14f1c1f56c12bf599d238e778e60feef17de40cc471657"
+    }
+  ]
+}

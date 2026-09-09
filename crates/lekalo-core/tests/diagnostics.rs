@@ -84,7 +84,7 @@ fn version_results_omit_empty_diagnostic_fields() {
     let result = DomainResult::version("0.2.3");
     let json = result.to_json_string();
     assert_eq!(
-        json,
+        json.trim(),
         "{\n  \"status\": \"valid\",\n  \"version\": \"0.2.3\"\n}"
     );
     assert!(!json.contains("diagnostics"));

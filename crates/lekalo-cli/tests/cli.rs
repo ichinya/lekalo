@@ -331,6 +331,9 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
     ] {
         let manifest =
             std::fs::read_to_string(workspace.join(member)).expect("read member manifest");
+        assert!(!manifest.contains("0.2.0"));
+        assert!(!manifest.contains("0.2.1"));
+        assert!(!manifest.contains("0.2.2"));
         assert!(!manifest.contains("0.2.3"));
         assert!(manifest.contains("version.workspace = true"));
     }

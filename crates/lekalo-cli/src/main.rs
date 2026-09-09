@@ -228,6 +228,12 @@ enum Commands {
         #[command(subcommand)]
         command: TraceCommands,
     },
+    /// Resolve one requirements attachment against its project: the
+    /// read-only OpenSpec requirement traceability integration.
+    Requirements {
+        #[command(subcommand)]
+        command: RequirementsCommands,
+    },
     /// Check generated-artifact ownership and drift, or plan and apply a
     /// confirmed clean of orphaned generated files.
     Generate {
@@ -299,6 +305,53 @@ enum TraceCommands {
         /// `artifacts-for:ID`, `tests-for:ID`, `gates-for:ID`,
         /// `diagnostics-for:ID`, or `gaps`.
         selector: String,
+    },
+}
+
+/// The `requirements` subcommands: a thin handoff to the core
+/// requirements resolver. The attachment document is read at the given
+/// path and every decision — wire validation, Model pin custody,
+/// provider resolution, coverage, impact, trace projection — lives in
+/// the core. Nothing is ever written.
+#[derive(Debug, Subcommand)]
+enum RequirementsCommands {
+    /// Validate the attachment and gate every requirement reference:
+    /// stale, missing, or conflicted references deny the gate.
+    Validate {
+        /// Path to the requirements attachment JSON document.
+        path: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Emit the canonical resolution report: catalog, coverage gaps,
+    /// conflicts, and changed-requirement impact.
+    Report {
+        /// Path to the requirements attachment JSON document.
+        path: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Run one closed query over the resolution report.
+    Query {
+        /// Path to the requirements attachment JSON document.
+        path: String,
+        /// The closed selector: `report`, `coverage-gaps`, `impact`,
+        /// `symbol:ID`, or `requirement:SOURCE:ID`.
+        selector: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Emit the neutral #22 trace-manifest projection of the resolved
+    /// requirements.
+    Trace {
+        /// Path to the requirements attachment JSON document.
+        path: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
     },
 }
 
@@ -493,6 +546,7 @@ fn main() -> ExitCode {
             Commands::Graph { command } => run_graph(command, cli.no_cache),
             Commands::Effects { command } => run_effects(command, cli.no_cache),
             Commands::Trace { command } => run_trace(command),
+            Commands::Requirements { command } => run_requirements(command),
             Commands::Generate {
                 project,
                 check,
@@ -1869,6 +1923,289 @@ fn matched_kind_label(selection: &lekalo_core::trace::QuerySelection) -> &'stati
         lekalo_core::trace::QuerySelection::GatesFor(_) => "gate",
         lekalo_core::trace::QuerySelection::DiagnosticsFor(_) => "diagnostic",
         lekalo_core::trace::QuerySelection::Gaps => "gap",
+    }
+}
+
+/// The selected requirements operation, resolved before the attachment
+/// is read.
+enum RequirementsStep {
+    Validate,
+    Report,
+    Query(String),
+    Trace,
+}
+
+/// Run one `lekalo requirements` operation: parse the attachment,
+/// resolve it against the selected project (loader and IR failures pass
+/// through unchanged), and project the requested view. The core owns
+/// every decision; this binary only selects, renders, and maps exits.
+fn run_requirements(command: RequirementsCommands) -> DomainResult {
+    let (path, project, step) = match command {
+        RequirementsCommands::Validate { path, project } => {
+            (path, project, RequirementsStep::Validate)
+        }
+        RequirementsCommands::Report { path, project } => (path, project, RequirementsStep::Report),
+        RequirementsCommands::Query {
+            path,
+            selector,
+            project,
+        } => (path, project, RequirementsStep::Query(selector)),
+        RequirementsCommands::Trace { path, project } => (path, project, RequirementsStep::Trace),
+    };
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                io::ErrorKind::NotFound => "file-missing",
+                _ => "file-unreadable",
+            };
+            return DomainResult::invalid(lekalo_core::requirements::io_failure(detail));
+        }
+    };
+    let attachment = match lekalo_core::requirements::RequirementsAttachment::parse(&bytes) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let selection = selection_for(&project);
+    let resolution = match attachment.resolve(&selection) {
+        Ok(resolution) => resolution,
+        Err(result) => return result,
+    };
+    match step {
+        RequirementsStep::Validate => requirements_validate(&resolution),
+        RequirementsStep::Report => requirements_report(&resolution.report),
+        RequirementsStep::Query(selector) => requirements_query(&resolution.report, &selector),
+        RequirementsStep::Trace => requirements_trace(&resolution.report),
+    }
+}
+
+/// `lekalo requirements validate`: the accepted summary envelope carries
+/// the resolution counts; the gate denies on any stale, missing, or
+/// conflicted reference.
+fn requirements_validate(resolution: &lekalo_core::requirements::Resolution) -> DomainResult {
+    use lekalo_core::requirements::ResolutionVerdict;
+    let report = &resolution.report;
+    let fresh = report
+        .references
+        .iter()
+        .filter(|row| row.status == "fresh")
+        .count();
+    let stale = report
+        .references
+        .iter()
+        .filter(|row| row.status == "stale")
+        .count();
+    let missing = report
+        .references
+        .iter()
+        .filter(|row| row.status == "missing")
+        .count();
+    let conflicted = report
+        .references
+        .iter()
+        .filter(|row| row.status == "conflict")
+        .count();
+    let json = format!(
+        "{{\"status\":\"valid\",\"requirements\":{{\"projectId\":\"{}\",\"sourceRevision\":\"{}\",\"requirementCount\":{},\"referenceCount\":{},\"fresh\":{},\"stale\":{},\"missing\":{},\"conflict\":{},\"coverageGaps\":{},\"conflicts\":{}}}}}",
+        report.project_id,
+        report.source_revision,
+        report.requirements.len(),
+        report.references.len(),
+        fresh,
+        stale,
+        missing,
+        conflicted,
+        report.coverage_gaps.len(),
+        report.conflicts.len(),
+    );
+    let human = format!(
+        "requirements {}\n#   requirements {}; references {}; fresh {}; stale {}; \
+         missing {}; conflict {}; coverage gaps {}; conflicts {}",
+        report.project_id,
+        report.requirements.len(),
+        report.references.len(),
+        fresh,
+        stale,
+        missing,
+        conflicted,
+        report.coverage_gaps.len(),
+        report.conflicts.len(),
+    );
+    match &resolution.verdict {
+        ResolutionVerdict::Pass => DomainResult::graph(json, human, Vec::new()),
+        ResolutionVerdict::Denied(diagnostics) => DomainResult::denied(diagnostics.clone()),
+    }
+}
+
+/// `lekalo requirements report`: the canonical report bytes are the
+/// export; JSON output embeds the same bytes as a value plus the digest.
+fn requirements_report(report: &lekalo_core::requirements::Report) -> DomainResult {
+    let canonical = match report.canonical_bytes() {
+        Ok(canonical) => canonical,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let digest = match report.digest() {
+        Ok(digest) => digest,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let json =
+        format!("{{\"status\":\"valid\",\"report\":{canonical},\"reportDigest\":\"{digest}\"}}");
+    DomainResult::graph(json, canonical, Vec::new())
+}
+
+/// `lekalo requirements trace`: the neutral #22 trace-manifest
+/// projection, validated by the accepted trace validator and emitted as
+/// canonical bytes with their digest.
+fn requirements_trace(report: &lekalo_core::requirements::Report) -> DomainResult {
+    let manifest = match report.trace_manifest() {
+        Ok(manifest) => manifest,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let canonical = match manifest.canonical_bytes() {
+        Ok(canonical) => canonical,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let digest = match manifest.digest() {
+        Ok(digest) => digest,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let json =
+        format!("{{\"status\":\"valid\",\"trace\":{canonical},\"manifestDigest\":\"{digest}\"}}");
+    DomainResult::graph(json, canonical, Vec::new())
+}
+
+/// One closed requirements query selector.
+enum RequirementsSelection {
+    /// The whole report.
+    Report,
+    /// Requirements no symbol links.
+    CoverageGaps,
+    /// The changed-requirement impact rows.
+    Impact,
+    /// Every reference of one symbol (the reverse lookup).
+    Symbol(String),
+    /// One catalog requirement and its references.
+    Requirement(String, String),
+}
+
+/// Parse one closed requirements query selector.
+fn requirements_selection(selector: &str) -> Option<RequirementsSelection> {
+    if selector == "report" {
+        return Some(RequirementsSelection::Report);
+    }
+    if selector == "coverage-gaps" {
+        return Some(RequirementsSelection::CoverageGaps);
+    }
+    if selector == "impact" {
+        return Some(RequirementsSelection::Impact);
+    }
+    if let Some(symbol) = selector.strip_prefix("symbol:") {
+        return Some(RequirementsSelection::Symbol(symbol.to_owned()));
+    }
+    if let Some(rest) = selector.strip_prefix("requirement:") {
+        let (source, requirement) = rest.split_once(':')?;
+        return Some(RequirementsSelection::Requirement(
+            source.to_owned(),
+            requirement.to_owned(),
+        ));
+    }
+    None
+}
+
+/// `lekalo requirements query`: the closed selectors answered from the
+/// resolved report; an unknown selector or subject is the stable usage
+/// or unknown failure, never an empty success.
+fn requirements_query(report: &lekalo_core::requirements::Report, selector: &str) -> DomainResult {
+    let selection = match requirements_selection(selector) {
+        Some(selection) => selection,
+        None => return DomainResult::usage_error(),
+    };
+    let render = |rows: serde_json::Value, human: String| {
+        let json = format!(
+            "{{\"status\":\"valid\",\"requirements\":{}}}",
+            serde_json::to_string(&rows).unwrap_or_else(|_| "null".to_owned())
+        );
+        DomainResult::graph(json, human, Vec::new())
+    };
+    match selection {
+        RequirementsSelection::Report => requirements_report(report),
+        RequirementsSelection::CoverageGaps => {
+            let human = report
+                .coverage_gaps
+                .iter()
+                .map(|row| format!("gap {}:{} {}", row.source, row.id, row.digest))
+                .collect::<Vec<_>>()
+                .join("\n");
+            render(
+                serde_json::json!({ "coverageGaps": report.coverage_gaps }),
+                human,
+            )
+        }
+        RequirementsSelection::Impact => {
+            let human = report
+                .impact
+                .iter()
+                .map(|row| {
+                    let renamed = row
+                        .renamed_to
+                        .as_deref()
+                        .map(|id| format!(" -> {id}"))
+                        .unwrap_or_default();
+                    format!(
+                        "impact {}:{} {}{} ({} symbol(s))",
+                        row.source,
+                        row.requirement,
+                        row.change,
+                        renamed,
+                        row.symbols.len()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            render(serde_json::json!({ "impact": report.impact }), human)
+        }
+        RequirementsSelection::Symbol(symbol) => {
+            let rows: Vec<&lekalo_core::requirements::ReferenceRow> = report
+                .references
+                .iter()
+                .filter(|row| row.symbol == symbol)
+                .collect();
+            if rows.is_empty() {
+                return DomainResult::invalid(lekalo_core::requirements::io_failure(
+                    "unknown-subject",
+                ));
+            }
+            let human = rows
+                .iter()
+                .map(|row| {
+                    format!(
+                        "requirement {}:{} {} {}",
+                        row.source, row.requirement, row.relation, row.status
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            render(serde_json::json!({ "references": rows }), human)
+        }
+        RequirementsSelection::Requirement(source, requirement) => {
+            let Some(row) = report
+                .requirements
+                .iter()
+                .find(|row| row.source == source && row.id == requirement)
+            else {
+                return DomainResult::invalid(lekalo_core::requirements::io_failure(
+                    "unknown-subject",
+                ));
+            };
+            let human = format!(
+                "requirement {}:{} {} symbols {}",
+                row.source,
+                row.id,
+                row.digest,
+                row.symbols.len()
+            );
+            render(serde_json::json!({ "requirement": row }), human)
+        }
     }
 }
 

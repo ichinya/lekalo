@@ -223,7 +223,7 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.10.0.json` (issue #12 extended it with the
+`contracts/diagnostic-registry.v1.13.0.json` (issue #12 extended it with the
 `semantic.*`/`validate.*` families and issue #13 added the `graph.*`
 family, each as a minor increment; issue #15 added the `inspect.*` family
 the same way; issue #16 added the `impact.*` family issue #18 adds the
@@ -231,8 +231,9 @@ the same way; issue #16 added the `impact.*` family issue #18 adds the
 issue #62 adds the `error.*` family, and issue #26 adds the
 `extended.*`, `event.*`, `job.*`, `call.*`, `cache.*`,
 `publication.*`, `contract.*`, and `case.*` families, and issue #63 adds
-the `invariant.*` family, and issue #27 adds the `target.*` family, each as a
-wire-shape-preserving minor increment).
+the `invariant.*` family, issue #27 adds the `target.*` family, issue #36
+adds the `requirements.*` family, and issue #38 adds the `init.*` family,
+each as a wire-shape-preserving minor increment).
 
 ## Generated-artifact ownership and drift detection
 
@@ -360,12 +361,50 @@ declare read/write scopes; canonical Lekalo/OpenSpec homes are
 unwritable; `generate` requires a dry-run write plan whose declared
 paths, actions, and digests are verified against the observed project
 state, with every deviation classified (`target.*` family, registry
-v1.10.0). The contract, transport rules, and error taxonomy live in
+v1.13.0). The contract, transport rules, and error taxonomy live in
 [docs/target-protocol.md](docs/target-protocol.md) and
-[ADR-0025](docs/adr/0025-target-protocol.md); the wire schema is
-`contracts/target-protocol.schema.v1.0.0.json`; the language-neutral
-fake adapter and hermetic fixtures are under
-`tests/fixtures/target-protocol/`.
+[ADR-0025](docs/adr/0025-target-protocol.md); the wire schemas are
+`contracts/target-protocol.schema.v1.0.0.json` (frozen base) and
+`contracts/target-protocol.schema.v1.1.0.json` (additive describe
+extension, issue #28); the language-neutral fake adapter and hermetic
+fixtures are under `tests/fixtures/target-protocol/`.
+
+Issue #28 adds capability discovery and version negotiation over the
+same wire: the describe handshake probes at the base version and
+upgrades only to a protocol version the adapter declared
+(1.0.0/1.1.0); the 1.1.0 describe response additively declares accepted
+IR contract versions, named capability support states
+(`full`/`partial`/`unsupported`/`unknown`), and optional constraints.
+Discovery is safe (describe only: no IR, no writes), distinguishes the
+declared digest from the verified executable digest, records per-
+capability provenance (`declared`/`probed`/`verified`), and caches
+verdicts under exact version/digest keys. Deterministic selection
+filters incompatible adapters before any project IR is transferred —
+`partial` requires the explicit policy, `unknown` is never an optimistic
+yes — and reports the selected and excluded candidates with stable
+reasons. The resolved capability snapshot resolves into the committed
+`lekalo.lock`.
+
+## OpenSpec requirement traceability
+
+Issue #36 links semantic symbols to canonical requirements without owning
+them: one closed requirements attachment
+(`lekalo/requirements/v1.0.0`) binds symbols through `derived_from`/
+`implements` references to namespaced requirement ids pinned to exact
+`sha256:` body revisions, and the read-only `openspec` provider resolves
+them straight from `openspec/specs/**` and `openspec/changes/**` — no
+OpenSpec CLI, no writes, no requirement text copied into the model, and
+conflicting active changes resolved by a gate, never silently. The derived
+report (`lekalo/requirements-report/v1.0.0`) carries the catalog, per-
+reference `fresh`/`stale`/`missing`/`conflict` statuses, coverage gaps,
+and changed-requirement impact; `lekalo requirements trace` projects the
+resolution into the neutral #22 trace manifest. Archiving a change is
+traceability-neutral by construction. The thin
+`lekalo requirements validate | report | query | trace` handoff keeps
+every decision in the core; the contract, guarantees, and limits live in
+[docs/requirements.md](docs/requirements.md),
+[ADR-0026](docs/adr/0026-requirements-traceability.md), and the hermetic
+fixtures under `tests/fixtures/requirements/`.
 
 ## Adoption: `lekalo init --adopt`
 

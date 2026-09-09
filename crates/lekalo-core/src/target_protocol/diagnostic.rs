@@ -41,6 +41,7 @@ pub fn rule_for(failure: &TargetFailure) -> (&'static str, Status) {
         TargetFailure::CapabilityUnsupported { .. } => {
             ("target.capability-unsupported", Status::Unsupported)
         }
+        TargetFailure::IrUnsupported => ("target.ir-unsupported", Status::Unsupported),
         TargetFailure::ScopeViolation { .. } => ("target.scope-violation", Status::Denied),
         TargetFailure::ProtectedPath { .. } => ("target.protected-path", Status::Denied),
         TargetFailure::DryRunMutation { .. } => ("target.dry-run-mutation", Status::Denied),
@@ -72,6 +73,9 @@ impl From<&TargetFailure> for DomainResult {
             }
             TargetFailure::CapabilityUnsupported { detail } => {
                 data.insert("detail".to_owned(), token_value(detail));
+            }
+            TargetFailure::IrUnsupported => {
+                data.insert("detail".to_owned(), token_value("ir-version"));
             }
             TargetFailure::ScopeViolation { path, detail } => {
                 if let Some(path) = path {

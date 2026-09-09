@@ -6,6 +6,8 @@
 // on Node 18 and 24) and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +56,63 @@ const fail = (reason, detail) => {
 if (!validateRegistry(registry)) {
   fail("registry-instance-invalid", validateRegistry.errors);
 }
+
+// Registry chain custody: 1.10.0 -> 1.11.0 (issue #36 requirements rules)
+// -> 1.12.0 (issue #28 target.ir-unsupported) -> 1.13.0 (issue #38 init
+// adoption rules). Each successor is additive to its exact frozen
+// predecessor: every predecessor entry and its semantics survive verbatim,
+// and each step adds exactly its own family.
+// Normalize checkout line endings only.
+const registry110Text = readFileSync(resolve(root, "contracts/diagnostic-registry.v1.10.0.json"), "utf8").replace(/\r\n/g, "\n");
+const registry111Text = readFileSync(resolve(root, "contracts/diagnostic-registry.v1.11.0.json"), "utf8").replace(/\r\n/g, "\n");
+const registry112Text = readFileSync(resolve(root, "contracts/diagnostic-registry.v1.12.0.json"), "utf8").replace(/\r\n/g, "\n");
+if (createHash("sha256").update(registry110Text).digest("hex") !== "e043f45e3f46e3de6170f06118b57fea78c3063ba7ee3646ebd8522cce20eebd") {
+  fail("predecessor-custody");
+}
+if (createHash("sha256").update(registry111Text).digest("hex") !== "140d389824a72d4bf9a85b62a096b09052de8d40df4d9117bdf439d8f589598e") {
+  fail("predecessor-custody");
+}
+if (createHash("sha256").update(registry112Text).digest("hex") !== "421d07a8838a0728a29cb96ff8c89d0e4da5a72d5609ac0ad1439d81da308a73") {
+  fail("predecessor-custody");
+}
+const registry110 = JSON.parse(registry110Text);
+const registry111 = JSON.parse(registry111Text);
+const registry112 = JSON.parse(registry112Text);
+const isAdditive = (candidate, predecessorRegistry) => {
+  const entries = new Map(candidate.entries.map((entry) => [entry.id, entry]));
+  return predecessorRegistry.entries.every((entry) => isDeepStrictEqual(entries.get(entry.id), entry));
+};
+// 1.11.0 added exactly the ten requirements.* rules over frozen 1.10.0.
+if (!isAdditive(registry111, registry110)) fail("predecessor-entry-drift");
+const requirementsAdditions = registry111.entries.filter((entry) => !registry110.entries.some((old) => old.id === entry.id));
+if (requirementsAdditions.length !== 10 || requirementsAdditions.some((entry) => !entry.id.startsWith("requirements.") || !entry.code.startsWith("LEK-REQ-"))) {
+  fail("requirement-additions", requirementsAdditions.map((entry) => entry.id));
+}
+// 1.12.0 added exactly the one target.* rule over 1.11.0.
+if (!isAdditive(registry112, registry111)) fail("predecessor-entry-drift");
+const targetAdditions = registry112.entries.filter((entry) => !registry111.entries.some((old) => old.id === entry.id));
+if (targetAdditions.length !== 1 || !targetAdditions[0].id.startsWith("target.") || !targetAdditions[0].code.startsWith("LEK-TGT-")) {
+  fail("target-additions", targetAdditions.map((entry) => entry.id));
+}
+// 1.13.0 added exactly the five init.adopt-* rules over 1.12.0.
+if (!isAdditive(registry, registry112)) fail("predecessor-entry-drift");
+const initAdditions = registry.entries.filter((entry) => !registry112.entries.some((old) => old.id === entry.id));
+if (initAdditions.length !== 5 || initAdditions.some((entry) => !entry.id.startsWith("init.adopt-") || !entry.code.startsWith("LEK-INIT-"))) {
+  fail("init-additions", initAdditions.map((entry) => entry.id));
+}
+// A missing predecessor entry or changed classification must actually fail the gate.
+const target = registry111.entries.find((entry) => entry.code.startsWith("LEK-TGT-"));
+const missing = structuredClone(registry);
+missing.entries = missing.entries.filter((entry) => entry.id !== target.id);
+const changed = structuredClone(registry);
+changed.entries.find((entry) => entry.id === target.id).allowed_statuses = ["valid"];
+if (isAdditive(missing, registry111) || isAdditive(changed, registry111)) fail("additive-negative-control");
+const unsupported = registry112.entries.find((entry) => entry.id === "target.ir-unsupported");
+const missing112 = structuredClone(registry);
+missing112.entries = missing112.entries.filter((entry) => entry.id !== unsupported.id);
+const changed112 = structuredClone(registry);
+changed112.entries.find((entry) => entry.id === unsupported.id).allowed_statuses = ["valid"];
+if (isAdditive(missing112, registry112) || isAdditive(changed112, registry112)) fail("additive-negative-control");
 
 // 2. Registry invariants that JSON Schema cannot express.
 const ids = registry.entries.map((entry) => entry.id);

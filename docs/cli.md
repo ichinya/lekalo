@@ -491,6 +491,38 @@ lekalo generate --clean --confirm sha256:973d6dd3ef84df5e286622a796e542f9dac2097
 generate applied plan sha256:973d... (-1)
 ```
 
+## Requirements
+
+The `lekalo requirements` handoff resolves one requirements attachment
+(`lekalo/requirements/v1.0.0`) against its project: the read-only OpenSpec
+provider walks `specs/**` and `changes/**`, projects the effective
+requirement set, and pins every reference to an exact body revision. All
+decisions live in the core; the binary selects, renders, and maps exits,
+and nothing is ever written.
+
+```sh
+lekalo requirements validate tests/fixtures/requirements/planner/requirements.attachment.json --project tests/fixtures/requirements/planner
+# requirements planner
+#   requirements 3; references 3; fresh 3; stale 0; missing 0; conflict 0; coverage gaps 0; conflicts 0
+
+lekalo requirements report ... > report.json     # canonical report bytes
+lekalo requirements query ... coverage-gaps      # requirements no symbol links
+lekalo requirements query ... impact             # changed/removed/renamed/conflict rows
+lekalo requirements query ... symbol:planner.focus_task
+lekalo requirements query ... requirement:openspec:planner.REQ-focus-task
+lekalo requirements trace ... > trace.json       # neutral #22 trace projection
+```
+
+Exit protocol: `0` valid (validate: every reference fresh, no conflict),
+`1` malformed attachment, unknown symbol or source, invalid provider tree,
+unknown query selector or subject; `3` denied — stale, missing, or
+conflicted references, any conflict in a resolved tree, or a Model
+pin/project custody mismatch; `4` an absent provider tree that references
+depend on. Human and JSON are projections of the same result; the report
+and trace exports emit canonical bytes with pinned digests. See
+[docs/requirements.md](requirements.md) and
+[ADR-0026](adr/0026-requirements-traceability.md).
+
 ## Impact
 
 Issue #16 answers the change-radius question through one command with two
