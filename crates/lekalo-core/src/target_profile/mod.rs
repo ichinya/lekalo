@@ -21,10 +21,6 @@
 //! - the immutable, machine-readable resolved snapshot whose canonical
 //!   bytes are the lock's `profiles.digest` domain — one digest per
 //!   profile, so a monorepo may carry several profiles;
-//! 4. identity constraints — exact sibling requirements and conflicts
-//!    (`combination-incompatible`, with all violations and reasons);
-//! 5. capability requirements — every component requirement must be
-//!    satisfied by the composed support (`capability-unsatisfied`);
 //!
 //! Every refusal is deterministic and explainable; nothing here launches
 //! a process, reads the filesystem, or depends on the adapter protocol.

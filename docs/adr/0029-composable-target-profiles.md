@@ -66,8 +66,10 @@ Rejected alternatives:
    snapshot digest plus id-sorted capability pairs; older sessions
    refuse rather than drop the resolution.
 8. Six registered `target-profile.*` rules (`LEK-TPF-001..006`) close
-   the taxonomy as diagnostic registry 1.14.0, additive over frozen
-   1.12.0 (1.13.0 stays reserved for #38).
+   the taxonomy as diagnostic registry 1.14.0, additive over the
+   accepted frozen 1.13.0 (the integrated chain 1.12.0 → 1.13.0 →
+   1.14.0; 1.13.0 carries the five `init.*` adoption rules of #38 and
+   ships byte-identical to the accepted artifact).
 
 ## Consequences
 

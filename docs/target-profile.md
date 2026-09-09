@@ -123,6 +123,9 @@ Every refusal maps onto one registered rule via the shared envelope:
 | `target-profile.capability-unsatisfied` | `LEK-TPF-001` | composed support below a requirement |
 | `target-profile.inheritance-weakening` | `LEK-TPF-005` | unacknowledged weaker resolution or removal |
 
-These rules were added by diagnostic registry 1.14.0, additive over the
-frozen 1.12.0 (1.13.0 is reserved by the parallel #38 candidate and is
-intentionally absent from this integrated line).
+These rules ship in diagnostic registry 1.14.0, additive over the
+accepted frozen 1.13.0 — the direct predecessor of this line, which
+carries the five `init.adopt-*` adoption rules of #38. The integrated
+registry chain is 1.12.0 (the #28 `target.ir-unsupported` rule) →
+1.13.0 (the `init.*` rules) → 1.14.0 (the `target-profile.*` rules),
+with every predecessor preserved verbatim and custody-checked.
