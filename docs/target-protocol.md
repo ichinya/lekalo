@@ -7,7 +7,8 @@ are describe, scan, bind, validate, generate, verify, plan-clean and
 clean. Product 0.2.4, Model 1.0.0, IR 0.1.0 and diagnostic registry
 1.14.0 remain independent version lines. Registry 1.14.0 retains the
 target entries introduced in 1.10.0, the requirements entries introduced
-in 1.11.0, and the `target-profile.*` entries introduced in 1.14.0.
+in 1.11.0, and the `target-profile.*` entries introduced in 1.14.0, and
+carries the `init.*` adoption entries introduced in 1.13.0.
 
 ## Version negotiation and capability discovery (issue #28)
 

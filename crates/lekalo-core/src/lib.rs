@@ -11,6 +11,7 @@ pub mod error_contract;
 pub mod extended_effects;
 pub mod graph;
 pub mod impact;
+pub mod init;
 pub mod inspect;
 pub mod invariant_transition;
 pub mod ir;

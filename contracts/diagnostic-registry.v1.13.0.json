@@ -1,7 +1,7 @@
 {
   "schema_version": "lekalo/diagnostic-registry/v1.0.0",
-  "identity": "dev.lekalo.diagnostic-registry@1.14.0",
-  "registry_version": "1.14.0",
+  "identity": "dev.lekalo.diagnostic-registry@1.13.0",
+  "registry_version": "1.13.0",
   "closed": true,
   "entries": [
     {
@@ -4111,138 +4111,6 @@
       "default_message": "Project path policy refusal.",
       "location_requirement": "none",
       "data_fields": [],
-      "allowed_fix_ids": [],
-      "lifecycle": "active"
-    },
-    {
-      "id": "target-profile.capability-unsatisfied",
-      "code": "LEK-TPF-001",
-      "category": "compatibility",
-      "default_severity": "error",
-      "allowed_statuses": [
-        "invalid"
-      ],
-      "message_id": "target-profile.capability-unsatisfied",
-      "default_message": "A profile capability requirement is not satisfied by the resolved components.",
-      "location_requirement": "none",
-      "data_fields": [
-        {
-          "name": "capability",
-          "type": "token"
-        },
-        {
-          "name": "required",
-          "type": "token"
-        },
-        {
-          "name": "actual",
-          "type": "token"
-        }
-      ],
-      "allowed_fix_ids": [],
-      "lifecycle": "active"
-    },
-    {
-      "id": "target-profile.combination-incompatible",
-      "code": "LEK-TPF-002",
-      "category": "compatibility",
-      "default_severity": "error",
-      "allowed_statuses": [
-        "invalid"
-      ],
-      "message_id": "target-profile.combination-incompatible",
-      "default_message": "The resolved component combination violates a registered compatibility constraint.",
-      "location_requirement": "none",
-      "data_fields": [
-        {
-          "name": "reasons",
-          "type": "list"
-        }
-      ],
-      "allowed_fix_ids": [],
-      "lifecycle": "active"
-    },
-    {
-      "id": "target-profile.component-unknown",
-      "code": "LEK-TPF-003",
-      "category": "model",
-      "default_severity": "error",
-      "allowed_statuses": [
-        "invalid"
-      ],
-      "message_id": "target-profile.component-unknown",
-      "default_message": "A declared profile component is unknown to the embedded component registry.",
-      "location_requirement": "none",
-      "data_fields": [
-        {
-          "name": "component",
-          "type": "token"
-        },
-        {
-          "name": "axis",
-          "type": "token"
-        }
-      ],
-      "allowed_fix_ids": [],
-      "lifecycle": "active"
-    },
-    {
-      "id": "target-profile.document-invalid",
-      "code": "LEK-TPF-004",
-      "category": "model",
-      "default_severity": "error",
-      "allowed_statuses": [
-        "invalid"
-      ],
-      "message_id": "target-profile.document-invalid",
-      "default_message": "A target profile document violates the closed declaration contract.",
-      "location_requirement": "none",
-      "data_fields": [
-        {
-          "name": "reason",
-          "type": "token"
-        }
-      ],
-      "allowed_fix_ids": [],
-      "lifecycle": "active"
-    },
-    {
-      "id": "target-profile.inheritance-weakening",
-      "code": "LEK-TPF-005",
-      "category": "semantic",
-      "default_severity": "error",
-      "allowed_statuses": [
-        "invalid"
-      ],
-      "message_id": "target-profile.inheritance-weakening",
-      "default_message": "Profile inheritance would weaken a capability guarantee without an explicit override.",
-      "location_requirement": "none",
-      "data_fields": [
-        {
-          "name": "capabilities",
-          "type": "list"
-        }
-      ],
-      "allowed_fix_ids": [],
-      "lifecycle": "active"
-    },
-    {
-      "id": "target-profile.reference-invalid",
-      "code": "LEK-TPF-006",
-      "category": "semantic",
-      "default_severity": "error",
-      "allowed_statuses": [
-        "invalid"
-      ],
-      "message_id": "target-profile.reference-invalid",
-      "default_message": "A profile inheritance reference is unknown or cyclic.",
-      "location_requirement": "none",
-      "data_fields": [
-        {
-          "name": "reason",
-          "type": "token"
-        }
-      ],
       "allowed_fix_ids": [],
       "lifecycle": "active"
     },

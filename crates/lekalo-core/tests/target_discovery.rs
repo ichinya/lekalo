@@ -335,7 +335,8 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
 
     let registry = VersionRegistry::embedded().expect("embedded registry");
     let model = ContractVersion::parse_canonical("1.0.0").unwrap();
-    let core = lekalo_core::lockfile::SemVer::parse("0.2.4").unwrap();
+    let core =
+        lekalo_core::lockfile::SemVer::parse(lekalo_core::lockfile::PRODUCT_VERSION).unwrap();
     let request = ResolutionRequest::new(registry, &model, core)
         .with_adapter(ComponentId::parse("node-typescript").unwrap())
         .with_profile(ComponentId::parse("default").unwrap())

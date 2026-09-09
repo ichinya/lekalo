@@ -289,10 +289,11 @@ This correction revises the still-unpublished report candidate: consumers
 of the earlier candidate replace conflict `title` with `subjectId`, read
 the required `renameCandidates` array, and handle the two new impact
 labels. No published Model, IR, or neutral trace contract changes. The
-integrated candidate publishes diagnostic registry 1.12.0: it retains all
+integrated candidate publishes diagnostic registry 1.13.0: it retains all
 222 entries from the frozen #27 registry 1.10.0, the ten `requirements.*`
-entries added by 1.11.0, and the one `target.ir-unsupported` entry added
-by issue #28, for 233 entries. The #27 base was accepted at exactly the
+entries added by 1.11.0, the one `target.ir-unsupported` entry added by
+1.12.0, and the five `init.adopt-*` entries added by issue #38, for 238
+entries. The #27 base was accepted at exactly the
 frozen base this integration merged (`23a19ba`), and the integration
 conflict reconciliation was requalified on the merged tree.
 

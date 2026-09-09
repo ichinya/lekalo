@@ -223,7 +223,7 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.12.0.json` (issue #12 extended it with the
+`contracts/diagnostic-registry.v1.14.0.json` (issue #12 extended it with the
 `semantic.*`/`validate.*` families and issue #13 added the `graph.*`
 family, each as a minor increment; issue #15 added the `inspect.*` family
 the same way; issue #16 added the `impact.*` family issue #18 adds the
@@ -360,13 +360,15 @@ enforces deadline, cancellation, request and output caps. Adapters
 declare read/write scopes; canonical Lekalo/OpenSpec homes are
 unwritable; `generate` requires a dry-run write plan whose declared
 paths, actions, and digests are verified against the observed project
-state, with every deviation classified (`target.*` family, registry
-v1.12.0). The contract, transport rules, and error taxonomy live in
+state, with every deviation classified (`target.*` family, integrated
+registry 1.14.0). The contract, transport rules, and error taxonomy live in
 [docs/target-protocol.md](docs/target-protocol.md) and
 [ADR-0025](docs/adr/0025-target-protocol.md); the wire schemas are
 `contracts/target-protocol.schema.v1.0.0.json` (frozen base) and
 `contracts/target-protocol.schema.v1.1.0.json` (additive describe
-extension, issue #28); the language-neutral fake adapter and hermetic
+extension, issue #28) and
+`contracts/target-protocol.schema.v1.2.0.json` (additive resolved-profile
+request extension, issue #29); the language-neutral fake adapter and hermetic
 fixtures are under `tests/fixtures/target-protocol/`.
 
 Issue #28 adds capability discovery and version negotiation over the
@@ -406,6 +408,23 @@ receives the resolved capabilities instead of arbitrary YAML. See
 [ADR-0029](docs/adr/0029-composable-target-profiles.md), and
 `contracts/target-profile.schema.v1.0.0.json`.
 
+## Adoption: `lekalo init --adopt`
+
+Issue #38 connects Lekalo to an existing repository without moving
+sources or generating extra code: bounded read-only detection with
+provenance and confidence (manifests, package managers, language and
+framework hints, workspace roots, source and test directories, OpenAPI
+files, existing OpenSpec/AI Factory/HLV layouts, native gate command
+proposals, installed target adapters, observed modules), the minimal
+canonical skeleton (`lekalo/project.yaml`), atomic no-overwrite writes
+with journal and rollback, an idempotent re-run, and an in-process
+load+validate gate. `--target` (with the optional `--profile`, recorded
+in the target document and the receipt, never executed or checked
+against an adapter) and `--dry-run` print every planned write without
+touching the tree. The contract and the closed `init.*` diagnostics live
+in [docs/adopt.md](docs/adopt.md) and
+[ADR-0028](docs/adr/0028-init-adopt.md).
+
 ## OpenSpec requirement traceability
 
 Issue #36 links semantic symbols to canonical requirements without owning
@@ -436,7 +455,7 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
 independent of product releases; issue #29 carries prospective product
-0.2.4 (issue #28 carried prospective product 0.2.2; issue #63 published product 0.1.31 (annotated tag `v0.1.31` on
+0.2.4 (issue #38 carried prospective product 0.2.3; issue #63 published product 0.1.31 (annotated tag `v0.1.31` on
 `9cdd8c1`); issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
 `9020558`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on
 `de6f8a7`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on
