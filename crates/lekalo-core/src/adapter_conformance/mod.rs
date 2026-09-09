@@ -160,7 +160,7 @@ pub struct SuiteError {
 }
 
 /// Project a suite infrastructure failure onto its domain result: the
-/// registered `adapter.run-failure` rule at the unavailable class.
+/// registered `adapter.process-failure` rule at the unavailable class.
 pub fn infrastructure_result(error: SuiteError) -> DomainResult {
     let mut data = crate::diagnostics::DataObject::new();
     data.insert(
@@ -175,8 +175,9 @@ pub fn infrastructure_result(error: SuiteError) -> DomainResult {
         "detail".to_owned(),
         crate::diagnostics::types::token_value(error.detail),
     );
-    let diagnostic = crate::diagnostics::normalize::build("adapter.run-failure", None, None, data)
-        .expect("adapter.run-failure is registered");
+    let diagnostic =
+        crate::diagnostics::normalize::build("adapter.process-failure", None, None, data)
+            .expect("adapter.process-failure is registered");
     let diagnostics =
         crate::diagnostics::DiagnosticSet::try_from_unsorted(vec![diagnostic], Status::Unavailable)
             .unwrap_or_else(|_| crate::diagnostics::DiagnosticSet::empty());

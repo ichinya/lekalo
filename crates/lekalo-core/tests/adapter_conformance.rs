@@ -241,3 +241,51 @@ fn every_failed_check_projects_a_registered_diagnostic() {
     );
     assert_eq!(outcome.domain_result().exit_code(), 1);
 }
+
+#[test]
+fn a_process_failure_projects_the_registered_process_failure_rule() {
+    let outcome = run_fault("crash");
+    assert_eq!(outcome.status, lekalo_core::result::Status::Unavailable);
+    assert_eq!(
+        outcome.diagnostics.reason_ids(),
+        vec!["adapter.process-failure".to_owned()]
+    );
+    let diagnostic = outcome
+        .diagnostics
+        .as_slice()
+        .first()
+        .expect("the process failure carries its diagnostic");
+    assert_eq!(diagnostic.code(), "LEK-ADP-003");
+    assert_eq!(
+        diagnostic.data().get("check"),
+        Some(&lekalo_core::diagnostics::DataValue::Token(
+            "describe.handshake".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn infrastructure_failure_projects_the_registered_rule_not_a_panic() {
+    let error = lekalo_core::adapter_conformance::SuiteError {
+        detail: "fixture-root",
+    };
+    let domain = lekalo_core::adapter_conformance::infrastructure_result(error);
+    assert_eq!(domain.status(), lekalo_core::result::Status::Unavailable);
+    assert_eq!(domain.exit_code(), 4);
+    assert_eq!(
+        domain
+            .reason_codes()
+            .iter()
+            .map(|code| code.as_str())
+            .collect::<Vec<_>>(),
+        vec!["adapter.process-failure"]
+    );
+    let diagnostic = domain.diagnostics().first().expect("one diagnostic");
+    assert_eq!(diagnostic.code(), "LEK-ADP-003");
+    assert_eq!(
+        diagnostic.data().get("detail"),
+        Some(&lekalo_core::diagnostics::DataValue::Token(
+            "fixture-root".to_owned()
+        ))
+    );
+}

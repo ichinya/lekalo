@@ -59,7 +59,7 @@ failure:
 | --- | ---: | --- | --- |
 | `pass` | 0 | `valid` | battery held |
 | `feature` | 1 | `invalid` | feature/determinism failure (`adapter.check-failed`) |
-| `process` | 4 | `unavailable` | exchange could not complete (`adapter.run-failure`) |
+| `process` | 4 | `unavailable` | exchange could not complete (`adapter.process-failure`) |
 | `protocol` | 4 | `unsupported` | protocol conformance unproven (`adapter.protocol-failure`) |
 | `security` | 3 | `denied` | confinement/redaction violation (`adapter.security-failure`) |
 
@@ -125,7 +125,7 @@ The suite spawns the adapter only through the confined `TargetClient`
 transport; it never runs an adapter outside confinement and never
 falls back to an unconfined launch. A suite infrastructure failure
 (fixture custody, temp root) is `unavailable` with
-`adapter.run-failure`, never a silent pass. The suite owns neutral
-fixture evidence and normalization assertions; scenario execution
+`adapter.process-failure`, never a silent pass.
+The suite owns neutral fixture evidence and normalization assertions; scenario execution
 backends stay with their own issues, and no persisted cross-session
 plan authority exists.

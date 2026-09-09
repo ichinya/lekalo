@@ -16,7 +16,7 @@ fn rule_for(class: CheckClass) -> &'static str {
     match class {
         CheckClass::Security => "adapter.security-failure",
         CheckClass::Protocol => "adapter.protocol-failure",
-        CheckClass::Process => "adapter.run-failure",
+        CheckClass::Process => "adapter.process-failure",
         CheckClass::Feature | CheckClass::Determinism => "adapter.check-failed",
     }
 }
