@@ -25,6 +25,22 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// The canonicalized, alias-free spelling of `path`, including junction
+/// and 8.3 TEMP aliases. Production selection guards intentionally
+/// reject those aliases; strips the `\\?\` verbatim prefix `canonicalize`
+/// produces on Windows drive paths.
+fn alias_free(path: &Path) -> PathBuf {
+    let canonical = path.canonicalize().expect("sandbox path must exist");
+    #[cfg(windows)]
+    match canonical.to_string_lossy().strip_prefix(r"\\?\") {
+        // `\\?\C:\...` -> `C:\...`; UNC (`\\?\UNC\...`) stays verbatim.
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => canonical,
+    }
+    #[cfg(not(windows))]
+    canonical
+}
+
 fn copy_dir(source: &Path, target: &Path) {
     std::fs::create_dir_all(target).expect("create target dir");
     for entry in std::fs::read_dir(source).expect("read source") {
@@ -54,7 +70,14 @@ impl Sandbox {
         std::env::set_current_dir(workspace_root()).expect("enter workspace root");
         copy_dir(Path::new(TASK_DOMAIN), &dir);
         std::env::set_current_dir(original).expect("restore cwd");
-        Self { root: dir }
+        Self {
+            // Hosted Windows %TEMP% can arrive as an 8.3 or junction
+            // alias of the physical tree and the selection policy denies
+            // those spellings; build the sandbox from the resolved
+            // spelling so the test exercises observed behavior, never
+            // the alias refusal.
+            root: alias_free(&dir),
+        }
     }
 
     fn context(&self) -> lekalo_core::observed::ObservedContext {
