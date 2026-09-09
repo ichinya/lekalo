@@ -3,7 +3,7 @@
 //!
 //! Every observed failure or finding is one registered `observed.*` rule
 //! assembled through the shared registry-backed constructor and finalized
-//! into a normalized [`DiagnosticSet`] (registry 1.10.0 added the family
+//! into a normalized [`DiagnosticSet`] (the integrated registry 1.16.0 carries the family
 //! as a wire-shape-preserving additive minor increment). Echoed tokens
 //! are bounded after grammar validation; raw input never scales or
 //! shapes the envelope.

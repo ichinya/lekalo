@@ -1,0 +1,21 @@
+[
+  {"value":".lekalo/ir/input.json","path":true,"scope":true},
+  {"value":"out/**","path":false,"scope":true},
+  {"value":"**","path":false,"scope":false},
+  {"value":"./lekalo/model.yaml","path":false,"scope":false},
+  {"value":"./lekalo/**","path":false,"scope":false},
+  {"value":"lekalo./model.yaml","path":false,"scope":false},
+  {"value":"out/../lekalo/model.yaml","path":false,"scope":false},
+  {"value":"out/con.txt","path":false,"scope":false},
+  {"value":"out/com1","path":false,"scope":false},
+  {"value":"out/com0","path":true,"scope":true},
+  {"value":"out/.con","path":true,"scope":true},
+  {"value":"C:/Users/private","path":false,"scope":false},
+  {"value":"out\\file.txt","path":false,"scope":false},
+  {"value":"Out/file.txt","path":false,"scope":false},
+  {"value":"out//file.txt","path":false,"scope":false},
+  {"value":"out/file.txt ","path":false,"scope":false},
+  {"value":"out/file.txt:stream","path":false,"scope":false},
+  {"value":"out/SHORT~1","path":false,"scope":false},
+  {"value":"out/file.txt","path":true,"scope":true}
+]

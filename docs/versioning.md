@@ -14,7 +14,22 @@ the product release:
 | --- | --- | --- | --- |
 | user-facing Lekalo Model schema | `model` | 1.0.0 | 0.1.0 (deprecated), 1.0.0 |
 | normalized Lekalo IR | `ir` | 0.1.0 | 0.1.0 |
-| target/provider process protocol | `protocol` | — | unpublished |
+| target/provider process protocol | `protocol` | 1.2.0 | 1.0.0, 1.1.0, 1.2.0 |
+
+The protocol family publishes the supported additive base `1.0.0`
+(issue #27), the additive describe-response extension `1.1.0`
+(issue #28: declared IR contract versions, named capability support
+states, and optional declared constraints), and the additive
+resolved-profile request extension `1.2.0` (issue #29: a resolved
+profile digest plus capability snapshot on operations that carry a
+profile), with alias `v1 -> 1.0.0` and no migration edges. The Node
+versioning gate checks this inventory against the compiled protocol
+version/token, the three wire schemas, and the compatibility golden. Its
+boundary controls retain the pre-publication family snapshot
+(`current: null`, empty versions, aliases, and migrations): that
+snapshot remains unpublished and cannot stand in for the shipped
+protocol. Product 0.2.4 does not change Model 1.0.0 or
+IR 0.1.0.
 
 The compiled IR is never migrated: an IR transition is always produced by
 rebuilding from migrated Model source, and the receipt proves the semantic
@@ -43,7 +58,7 @@ states:
   `retirement_not_before`, and names the replacement when one exists.
 
 The registry is embedded in `lekalo-core`
-(`versioning/contracts/version-registry.v1.0.0.json`), parsed once, and
+(`versioning/contracts/version-registry.v1.1.0.json`), parsed once, and
 fully validated before use. Violating invariants is a developer fault
 rendered as `versioning.registry-invalid`, never guessed policy. Selectors
 accept `model/<canonical-semver>` or a declared alias (`model/v1`);
@@ -100,16 +115,14 @@ semantic edits. When the preconditions hold, only the parsed
 CRLF/LF, multibyte content, and the final-newline state are preserved
 byte for byte, and the declared loss list is empty.
 
-### Compatibility preflight
-
-`lekalo compatibility` prints the embedded registry. Adapters declare
-compatibility through a typed manifest (`irMin`/`irMax`,
+Adapters declare compatibility through a typed manifest (`irMin`/`irMax`,
 `protocolMin`/`protocolMax`, required extensions). The preflight decides
 in one fixed order — manifest schema/version, current IR support, current
 protocol support, inclusive IR range, inclusive protocol range, required
 extensions — and no generation may start on a non-compatible verdict.
-While the protocol family is unpublished, no external adapter can be
-compatible (`versioning.protocol-unpublished`).
+The protocol family publishes 1.0.0 and 1.1.0 (`lekalo.target/v1`), so
+adapters can be compatible; a registry that does not publish the family
+still refuses every external adapter (`versioning.protocol-unpublished`).
 
 ## Transaction, backups, rollback, recovery
 

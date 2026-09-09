@@ -8,7 +8,7 @@
 //! though it lies between registered entries.
 //!
 //! The canonical bytes live in
-//! `versioning/contracts/version-registry.v1.0.0.json`, are embedded with
+//! `versioning/contracts/version-registry.v1.2.0.json`, are embedded with
 //! [`include_bytes`], parsed once, and fully validated before use. A
 //! registry that violates its own invariants is a developer fault:
 //! [`VersionRegistry::embedded`] fails closed and the CLI renders
@@ -29,7 +29,7 @@ use super::version::{ContractVersion, VersionParseError};
 pub const REGISTRY_IDENTITY: &str = "dev.lekalo.version-registry";
 
 /// The exact embedded registry bytes.
-pub const REGISTRY_BYTES: &[u8] = include_bytes!("contracts/version-registry.v1.0.0.json");
+pub const REGISTRY_BYTES: &[u8] = include_bytes!("contracts/version-registry.v1.2.0.json");
 
 /// Why the embedded registry data was rejected.
 ///
@@ -587,7 +587,7 @@ impl VersionRegistry {
         &self.ir
     }
 
-    /// The protocol family registry (unpublished).
+    /// The protocol family registry (`lekalo.target/v1` since issue #27).
     pub fn protocol(&self) -> &FamilyRegistry<ProtocolContract> {
         &self.protocol
     }

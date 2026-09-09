@@ -1,0 +1,13 @@
+[
+  { "name": "empty", "unit": "x", "repeat": 0, "valid": false },
+  { "name": "ascii-limit", "unit": "x", "repeat": 128, "valid": true },
+  { "name": "ascii-over", "unit": "x", "repeat": 129, "valid": false },
+  { "name": "cyrillic-byte-limit", "unit": "я", "repeat": 64, "valid": true },
+  { "name": "cyrillic-byte-over", "unit": "я", "repeat": 65, "valid": true },
+  { "name": "cyrillic-limit", "unit": "я", "repeat": 128, "valid": true },
+  { "name": "cyrillic-over", "unit": "я", "repeat": 129, "valid": false },
+  { "name": "astral-limit", "unit": "😀", "repeat": 128, "valid": true },
+  { "name": "astral-over", "unit": "😀", "repeat": 129, "valid": false },
+  { "name": "combining-limit", "unit": "é", "repeat": 64, "valid": true },
+  { "name": "combining-over", "unit": "é", "repeat": 65, "valid": false }
+]

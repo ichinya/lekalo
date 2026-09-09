@@ -320,11 +320,16 @@ pub(crate) fn run_check(prepared: &Prepared) -> Result<CheckReceipt, ArtifactFai
     for entry in manifest.artifacts() {
         counts.artifacts += 1;
         // Adapter identity binds exactly when the lock pins a published
-        // target protocol: an adapter ref under an unpublished protocol is
-        // unverifiable, and a published protocol without an adapter ref is
-        // an unbound artifact. Both are staleness, never a silent pass.
-        let protocol_published = prepared.lock.target_protocol().is_some();
-        let verdict = match (entry.adapter(), protocol_published) {
+        // target protocol AND names locked adapters: an adapter ref under
+        // an unpublished protocol is unverifiable, a published protocol
+        // without an adapter ref is an unbound artifact, and an entry that
+        // names no adapter while the lock names adapters is unbound too.
+        // All of these are staleness, never a silent pass. A lock that
+        // names no adapters (the only kind the catalog can produce before
+        // #91) keeps the v1 byte-drift semantics.
+        let adapter_binding_required =
+            prepared.lock.target_protocol().is_some() && !prepared.lock.adapters().is_empty();
+        let verdict = match (entry.adapter(), adapter_binding_required) {
             (Some(adapter), true) if inventory.matches(adapter).is_ok() => {
                 match observe(&prepared.fs, entry.key().path().as_str())? {
                     None => DriftVerdict::Missing,
