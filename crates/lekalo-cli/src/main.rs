@@ -4,8 +4,6 @@
 
 use clap::{error::ErrorKind, Args, ColorChoice, Parser, Subcommand};
 use lekalo_core::artifacts::{ArtifactFailure, CheckReceipt, GenerateService};
-
-mod git_input;
 use lekalo_core::loader::LoadSelection;
 use lekalo_core::lockfile::plan::LockService;
 use lekalo_core::lockfile::resolution::CandidateSet;
@@ -17,6 +15,9 @@ use lekalo_core::DomainResult;
 use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::process::ExitCode;
+
+mod doctor_git;
+mod git_input;
 
 const PROGRAM_NAME: &str = "lekalo";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -255,6 +256,73 @@ enum Commands {
         #[command(subcommand)]
         command: CacheCommands,
     },
+    /// Diagnose project, model, adapters, artifacts, and integrations in
+    /// one read-only readiness report.
+    Doctor {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Preview the closed safe-fix recipes for every finding; nothing
+        /// is ever repaired, installed, updated, or written.
+        #[arg(long)]
+        fix: bool,
+        /// Optional trace manifests supplying HLV/OpenSpec/AI Factory
+        /// gate evidence (repeatable).
+        #[arg(long = "trace", value_name = "PATH")]
+        traces: Vec<String>,
+    },
+    /// Report the freshness panel — lock, cache, bindings, artifacts —
+    /// plus the exact git/model/lock revisions.
+    Status {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Report phase readiness with required and optional checks.
+    Readiness {
+        /// The readiness phase: model, implement, generate, verify, or
+        /// release (alias: done).
+        #[arg(long, value_enum)]
+        phase: DoctorPhase,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Optional trace manifests supplying HLV/OpenSpec/AI Factory
+        /// gate evidence (repeatable).
+        #[arg(long = "trace", value_name = "PATH")]
+        traces: Vec<String>,
+    },
+}
+
+/// The closed readiness-phase vocabulary for the CLI surface; `done` is
+/// an accepted alias of `release`.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum DoctorPhase {
+    /// Model loads and validates.
+    Model,
+    /// Implementation against pinned inputs.
+    Implement,
+    /// Generation against resolved adapters and profiles.
+    Generate,
+    /// Verification with available tools and clean artifacts.
+    Verify,
+    /// Release: the full gate.
+    Release,
+    /// The `done` alias of `release`.
+    Done,
+}
+
+impl DoctorPhase {
+    /// The canonical core phase.
+    fn phase(self) -> lekalo_core::doctor::model::Phase {
+        match self {
+            Self::Model => lekalo_core::doctor::model::Phase::Model,
+            Self::Implement => lekalo_core::doctor::model::Phase::Implement,
+            Self::Generate => lekalo_core::doctor::model::Phase::Generate,
+            Self::Verify => lekalo_core::doctor::model::Phase::Verify,
+            Self::Release | Self::Done => lekalo_core::doctor::model::Phase::Release,
+        }
+    }
 }
 
 /// The `trace` subcommands: a thin handoff to the core trace validator.
@@ -482,6 +550,17 @@ fn main() -> ExitCode {
                 dry_run,
                 confirm,
             } => run_generate(project, check, clean, dry_run, confirm),
+            Commands::Doctor {
+                project,
+                fix,
+                traces,
+            } => run_doctor(project, fix, traces),
+            Commands::Status { project } => run_status(project),
+            Commands::Readiness {
+                phase,
+                project,
+                traces,
+            } => run_readiness(phase.phase(), project, traces),
             Commands::Cache { command } => run_cache(command),
         },
         Err(error) => match error.kind() {
@@ -1086,6 +1165,110 @@ fn run_cache(command: CacheCommands) -> DomainResult {
             lekalo_core::cache::clear(&selection_for(&project))
         }
     }
+}
+
+/// Parse the supplied `--trace` manifests into the typed evidence
+/// handoff. The files are read here (the same seam `lekalo trace` owns)
+/// and every parse decision stays in the core; paths never cross.
+fn doctor_traces(paths: &[String]) -> Vec<lekalo_core::doctor::TraceManifestEvidence> {
+    paths
+        .iter()
+        .map(|path| {
+            let evidence = match std::fs::read(path) {
+                Err(_) => lekalo_core::doctor::TraceManifestEvidence {
+                    reason_ids: vec!["loader.io".to_owned()],
+                    gaps: 0,
+                    external_refs: Vec::new(),
+                },
+                Ok(bytes) => match lekalo_core::trace::TraceManifest::parse(&bytes) {
+                    Err(diagnostics) => lekalo_core::doctor::TraceManifestEvidence {
+                        reason_ids: diagnostics
+                            .reason_ids()
+                            .into_iter()
+                            .map(str::to_owned)
+                            .collect(),
+                        gaps: 0,
+                        external_refs: Vec::new(),
+                    },
+                    Ok(manifest) => {
+                        let report = manifest.report();
+                        let mut refs: Vec<String> = manifest
+                            .manifest()
+                            .nodes
+                            .iter()
+                            .flat_map(|node| node.external_refs.iter())
+                            .map(|reference| reference.system.as_str().to_owned())
+                            .collect();
+                        refs.sort();
+                        refs.dedup();
+                        lekalo_core::doctor::TraceManifestEvidence {
+                            reason_ids: Vec::new(),
+                            gaps: report.gap_count,
+                            external_refs: refs,
+                        }
+                    }
+                },
+            };
+            evidence
+        })
+        .collect()
+}
+
+/// The Git facts of one selection: unavailable when the project root
+/// itself cannot be resolved, otherwise the read-only adapter handoff.
+fn doctor_git_facts(selection: &LoadSelection) -> lekalo_core::doctor::GitFacts {
+    match lekalo_core::doctor::project_root(selection) {
+        Err(_) => lekalo_core::doctor::GitFacts {
+            state: lekalo_core::doctor::GitState::Unavailable,
+            commit: None,
+            dirty: None,
+        },
+        Ok(root) => doctor_git::git_facts(&root),
+    }
+}
+
+/// `lekalo doctor`: the full read-only readiness report. `--fix` only
+/// previews the closed safe-fix recipes; nothing is ever written.
+fn run_doctor(project: Option<String>, fix: bool, traces: Vec<String>) -> DomainResult {
+    let selection = selection_for(&project);
+    let git = doctor_git_facts(&selection);
+    let evidence = doctor_traces(&traces);
+    let options = lekalo_core::doctor::Options {
+        kind: lekalo_core::doctor::model::ReportKind::Doctor,
+        phase: None,
+        fix,
+        traces: evidence,
+    };
+    lekalo_core::doctor::report(&selection, &git, &options)
+}
+
+/// `lekalo status`: the freshness panel plus the exact revisions.
+fn run_status(project: Option<String>) -> DomainResult {
+    let selection = selection_for(&project);
+    let git = doctor_git_facts(&selection);
+    let options = lekalo_core::doctor::Options {
+        kind: lekalo_core::doctor::model::ReportKind::Status,
+        ..lekalo_core::doctor::Options::default()
+    };
+    lekalo_core::doctor::report(&selection, &git, &options)
+}
+
+/// `lekalo readiness --phase PHASE`: the phase-gated readiness report.
+fn run_readiness(
+    phase: lekalo_core::doctor::model::Phase,
+    project: Option<String>,
+    traces: Vec<String>,
+) -> DomainResult {
+    let selection = selection_for(&project);
+    let git = doctor_git_facts(&selection);
+    let evidence = doctor_traces(&traces);
+    let options = lekalo_core::doctor::Options {
+        kind: lekalo_core::doctor::model::ReportKind::Readiness,
+        phase: Some(phase),
+        fix: false,
+        traces: evidence,
+    };
+    lekalo_core::doctor::report(&selection, &git, &options)
 }
 
 /// Load and compile the selected project, build the effect graph, and run

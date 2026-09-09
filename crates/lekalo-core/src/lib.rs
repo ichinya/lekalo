@@ -6,6 +6,7 @@ pub mod cache;
 pub mod context;
 pub mod diagnostics;
 pub mod diff;
+pub mod doctor;
 pub mod effects;
 pub mod error_contract;
 pub mod extended_effects;

@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.31. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.2.7. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -37,11 +37,15 @@ lekalo impact SYMBOL [--depth N] [--relation KIND] [--profile default|strict] [-
 lekalo impact --changed [--base REF] [--head REF] [--worktree] [--project DIR]
 lekalo context SYMBOL --budget TOKENS [--spans] [--project DIR]
 lekalo context --changed SYMBOLS --budget TOKENS [--spans] [--project DIR]
+lekalo cache status [--project DIR]
+lekalo doctor [--project DIR] [--trace PATH]... [--fix]
+lekalo status [--project DIR]
+lekalo readiness --phase model|implement|generate|verify|release [--project DIR] [--trace PATH]...
 ```
 
 `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
-`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, and
-`context` are implemented; none remains a recognized stub. `SYMBOL` is an
+`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, `context`,
+`cache`, `doctor`, `status`, and `readiness` are implemented; none remains a recognized stub. `SYMBOL` is an
 opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic
 ID rules, validation, and graph construction bind every implemented
 command. Every implemented capability is bound by
@@ -229,14 +233,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.31"
+  "version": "0.2.7"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.31`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.2.7`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -506,6 +510,25 @@ denies with `{"status":"denied",...}` when a required gate rests on
 unknown or stale evidence. The contract, guarantees, limits, and the
 closed risk/gate vocabularies are documented in
 [docs/impact.md](impact.md) and [ADR-0017](adr/0017-impact.md).
+`--fix` renders the closed safe-fix recipe preview (advice only, nothing is
+executed) and the optional `--trace PATH` manifests supply OpenSpec/HLV/
+AI Factory gate evidence; unsupplied evidence degrades. The report is the
+product: it exits 0 on stdout whenever it was produced, whatever verdict it
+records. The contract, the closed check vocabulary, the verdict rule, and
+the safe-fix recipes are documented in [docs/doctor.md](doctor.md) and
+[ADR-0032](adr/0032-doctor-readiness.md).
+
+```sh
+lekalo doctor
+# doctor degraded : 13 checks (12 ok, 1 degraded, 0 blocked)
+
+lekalo status
+# status ready : lock fresh, cache missing, bindings none-required, artifacts clean
+
+lekalo readiness --phase generate
+# readiness generate blocked : 13 checks (10 ok, 2 degraded, 1 blocked)
+```
+
 ## Development checks
 ```sh
 cargo fmt --all -- --check

@@ -1,0 +1,108 @@
+{
+  "status": "valid",
+  "schemaVersion": "lekalo/doctor/v1.0.0",
+  "identity": "dev.lekalo.doctor@1.0.0",
+  "report": "doctor",
+  "productVersion": "0.2.7",
+  "verdict": "degraded",
+  "revisions": {
+    "git": {
+      "state": "unavailable"
+    },
+    "model": {
+      "state": "ok",
+      "version": "1.0.0"
+    },
+    "lock": {
+      "state": "fresh",
+      "digest": "sha256:cdd3469834fd5eb821f138ca0cbf1cc39999de7f934dcfc9e2328bf753397d72"
+    }
+  },
+  "checks": [
+    {
+      "id": "adapters.inventory",
+      "state": "ok",
+      "required": true,
+      "reason": "none-required"
+    },
+    {
+      "id": "artifacts.drift",
+      "state": "ok",
+      "required": true,
+      "reason": "clean"
+    },
+    {
+      "id": "bindings.freshness",
+      "state": "ok",
+      "required": true,
+      "reason": "none-required"
+    },
+    {
+      "id": "cache.health",
+      "state": "ok",
+      "required": false,
+      "reason": "missing"
+    },
+    {
+      "id": "capabilities.profiles",
+      "state": "ok",
+      "required": true,
+      "reason": "none-declared"
+    },
+    {
+      "id": "fs.confinement",
+      "state": "ok",
+      "required": true,
+      "reason": "confined"
+    },
+    {
+      "id": "integrations.hlv",
+      "state": "degraded",
+      "required": false,
+      "reason": "not-supplied",
+      "nextAction": "trace-validate"
+    },
+    {
+      "id": "lock.freshness",
+      "state": "ok",
+      "required": true,
+      "reason": "fresh"
+    },
+    {
+      "id": "model.references",
+      "state": "ok",
+      "required": true,
+      "reason": "resolved"
+    },
+    {
+      "id": "model.version",
+      "state": "ok",
+      "required": true,
+      "reason": "accepted"
+    },
+    {
+      "id": "platform.limits",
+      "state": "ok",
+      "required": false,
+      "reason": "informational",
+      "notes": [
+        "case-insensitive-filesystem",
+        "symlink-privilege-required",
+        "windows-path-syntax"
+      ]
+    },
+    {
+      "id": "project.root",
+      "state": "ok",
+      "required": true,
+      "reason": "valid"
+    },
+    {
+      "id": "tools.gates",
+      "state": "ok",
+      "required": true,
+      "reason": "available"
+    }
+  ],
+  "host": "windows-11"
+}
