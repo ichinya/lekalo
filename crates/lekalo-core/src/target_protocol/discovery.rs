@@ -235,18 +235,32 @@ impl Discovery {
 }
 
 /// SHA-256 over the adapter entry's exact bytes, bounded like every file
-/// read. Following the #27 runtime convention, the entry is the launched
-/// executable, or its first argument when that names an existing regular
-/// file (the interpreter-script convention). `None` records an unreadable
-/// entry: verification evidence is missing, never forged.
+/// read at [`super::version::MAX_FILE_BYTES`]. Following the #27 runtime
+/// convention, the entry is the launched executable, or its first
+/// argument when that names an existing regular file (the
+/// interpreter-script convention). `None` records an unreadable or
+/// over-limit entry: verification evidence is missing, never forged. The
+/// bound is enforced on the bytes actually read — never on trusted
+/// metadata, which a concurrently grown file would invalidate. The
+/// project-view read helper is not used here: it is scoped to the
+/// privacy-rooted project tree, while an adapter entry is an
+/// operator-configured path that may legitimately live outside it.
 fn executable_digest(command: &AdapterCommand) -> Option<String> {
+    use std::io::Read;
     let script = command
         .args
         .first()
         .map(std::path::Path::new)
         .filter(|path| path.is_file());
     let entry = script.unwrap_or(command.program.as_path());
-    let bytes = std::fs::read(entry).ok()?;
+    let file = std::fs::File::open(entry).ok()?;
+    let mut bytes = Vec::new();
+    file.take((super::version::MAX_FILE_BYTES as u64) + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() > super::version::MAX_FILE_BYTES {
+        return None;
+    }
     Some(format!("sha256:{}", super::plan::sha256_hex(&bytes)))
 }
 
@@ -432,5 +446,79 @@ mod tests {
         changed_executable.executable_digest = Some("sha256:cc".to_owned());
         let key4 = Cache::key(&changed_executable, crate::ir::version::VERSION);
         assert!(cache.get(&key4).is_none(), "changed executable bytes miss");
+    }
+    #[test]
+    fn executable_digest_is_exact_bounded_and_never_forged() {
+        use super::super::plan;
+        use super::super::version::MAX_FILE_BYTES;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // The ordinary executable: the digest is the exact entry bytes.
+        let program = dir.path().join("adapter-run");
+        std::fs::write(&program, b"#!/usr/bin/env node\n").expect("write");
+        let plain = AdapterCommand {
+            program: program.clone(),
+            args: Vec::new(),
+        };
+        let expected = format!("sha256:{}", plan::sha256_hex(b"#!/usr/bin/env node\n"));
+        assert_eq!(
+            executable_digest(&plain).as_deref(),
+            Some(expected.as_str())
+        );
+
+        // The interpreter-script convention: the first argument names
+        // the entry.
+        let script = dir.path().join("adapter.mjs");
+        std::fs::write(&script, b"export const ready = true;\n").expect("write");
+        let interpreted = AdapterCommand {
+            program: "node".into(),
+            args: vec![script.to_string_lossy().into_owned()],
+        };
+        let expected = format!(
+            "sha256:{}",
+            plan::sha256_hex(b"export const ready = true;\n")
+        );
+        assert_eq!(
+            executable_digest(&interpreted).as_deref(),
+            Some(expected.as_str())
+        );
+
+        // An unreadable entry is missing evidence, never forged.
+        let missing = AdapterCommand {
+            program: dir.path().join("absent-adapter"),
+            args: Vec::new(),
+        };
+        assert_eq!(executable_digest(&missing), None);
+
+        // Exactly at the read bound: hashed in full.
+        let bounded_bytes = vec![7u8; MAX_FILE_BYTES];
+        let bounded = dir.path().join("bounded-adapter");
+        std::fs::write(&bounded, &bounded_bytes).expect("write");
+        let expected = format!("sha256:{}", plan::sha256_hex(&bounded_bytes));
+        assert_eq!(
+            executable_digest(&AdapterCommand {
+                program: bounded,
+                args: Vec::new()
+            })
+            .as_deref(),
+            Some(expected.as_str()),
+            "a file at the exact bound hashes completely"
+        );
+
+        // One byte over the bound: missing evidence, never a partial or
+        // forged digest.
+        let mut oversized_bytes = bounded_bytes;
+        oversized_bytes.push(7);
+        let oversized = dir.path().join("oversized-adapter");
+        std::fs::write(&oversized, &oversized_bytes).expect("write");
+        assert_eq!(
+            executable_digest(&AdapterCommand {
+                program: oversized,
+                args: Vec::new()
+            }),
+            None,
+            "an over-limit entry yields None, never unbounded evidence"
+        );
     }
 }

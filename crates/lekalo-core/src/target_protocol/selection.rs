@@ -14,7 +14,9 @@
 //! and only the explicit non-strict policy may proceed past it, with a
 //! recorded warning. `partial` proceeds only with the explicit
 //! `allow_partial` policy, likewise recorded. Survivors are ordered by
-//! (adapter id ascending, version descending, selected profile), and the
+//! adapter id ascending, version descending, selected profile, then every
+//! remaining projected member, so distinct identities resolve
+//! deterministically and only identical projections may tie — and the
 //! first survivor is selected — every other survivor is reported as
 //! `ordering`, never silently dropped.
 
@@ -125,7 +127,7 @@ pub struct SelectionReport {
     pub required: Vec<String>,
     /// The selection, or `None` when every candidate was excluded.
     pub selected: Option<SelectionChoice>,
-    /// Every excluded candidate, sorted by (adapter, version).
+    /// Every excluded candidate, sorted by (adapter, version, reasons).
     pub excluded: Vec<ExcludedAdapter>,
 }
 
@@ -197,23 +199,15 @@ pub fn select(
     }
 
     // Deterministic survivor order: adapter id ascending, version
-    // descending (newest first), selected profile. Ties are impossible
-    // for distinct identities and resolved deterministically otherwise.
-    survivors.sort_by(|left, right| {
-        left.0
-            .adapter
-            .id
-            .cmp(&right.0.adapter.id)
-            .then_with(|| version_desc(&left.0.adapter.version, &right.0.adapter.version))
-            .then_with(|| {
-                left.0
-                    .selected_profile(request.preferred_profile)
-                    .cmp(&right.0.selected_profile(request.preferred_profile))
-            })
-    });
+    // descending (newest first), selected profile, then every remaining
+    // member the choice projects. Distinct identities must not leave the
+    // chosen output dependent on caller input order; only byte-identical
+    // projections compare Equal and may tie, because their outputs are
+    // indistinguishable.
+    survivors.sort_by(|left, right| projected_order(left.0, right.0, request.preferred_profile));
 
     let Some((chosen, warnings)) = survivors.first() else {
-        excluded.sort_by(|left, right| left.adapter.cmp(&right.adapter));
+        excluded.sort_by(exclusion_order);
         return SelectionReport {
             policy: request.policy,
             required,
@@ -230,11 +224,7 @@ pub fn select(
             reasons: vec![reasons::ORDERING],
         });
     }
-    excluded.sort_by(|left, right| {
-        left.adapter
-            .cmp(&right.adapter)
-            .then_with(|| left.version.cmp(&right.version))
-    });
+    excluded.sort_by(exclusion_order);
 
     let mut warnings = warnings.clone();
     warnings.sort_unstable();
@@ -264,6 +254,62 @@ pub fn select(
         }),
         excluded,
     }
+}
+
+/// The total projected order over candidates: the identity precedence
+/// (adapter id ascending, version descending, selected profile) and then
+/// every remaining member the selection choice projects — declared
+/// digest, negotiated version, capability digest, executable digest, IR
+/// declarations, capability records. Candidates that differ in any
+/// projected member resolve deterministically, so the chosen output
+/// never depends on caller input order; only byte-identical projections
+/// compare Equal and may tie.
+fn projected_order(
+    left: &DiscoveredAdapter,
+    right: &DiscoveredAdapter,
+    preferred_profile: Option<&str>,
+) -> std::cmp::Ordering {
+    left.adapter
+        .id
+        .cmp(&right.adapter.id)
+        .then_with(|| version_desc(&left.adapter.version, &right.adapter.version))
+        .then_with(|| {
+            left.selected_profile(preferred_profile)
+                .cmp(&right.selected_profile(preferred_profile))
+        })
+        .then_with(|| left.adapter.digest.cmp(&right.adapter.digest))
+        .then_with(|| left.negotiated_version.cmp(right.negotiated_version))
+        .then_with(|| left.capability_digest.cmp(&right.capability_digest))
+        .then_with(|| left.executable_digest.cmp(&right.executable_digest))
+        .then_with(|| left.ir_versions.cmp(&right.ir_versions))
+        .then_with(|| capability_records(left).cmp(capability_records(right)))
+}
+
+/// The projected capability-record order of one candidate. The records
+/// are already sorted by id, so the tuple comparison is lexicographic by
+/// (id, state, definition version, provenance).
+fn capability_records(
+    candidate: &DiscoveredAdapter,
+) -> impl Iterator<Item = (&str, wire::SupportState, &'static str, Provenance)> + '_ {
+    candidate.capabilities.iter().map(|entry| {
+        (
+            entry.id.as_str(),
+            entry.state,
+            entry.definition_version,
+            entry.provenance,
+        )
+    })
+}
+
+/// The canonical exclusion order: adapter, version, then the sorted
+/// reason tokens. Two rejected candidates that share an adapter and
+/// version still serialize identically when their input order flips,
+/// in every branch of the selection.
+fn exclusion_order(left: &ExcludedAdapter, right: &ExcludedAdapter) -> std::cmp::Ordering {
+    left.adapter
+        .cmp(&right.adapter)
+        .then_with(|| left.version.cmp(&right.version))
+        .then_with(|| left.reasons.cmp(&right.reasons))
 }
 
 /// Descending exact-version comparator over the canonical
@@ -485,6 +531,153 @@ mod tests {
             .unwrap();
         assert_eq!(zeta.reasons, vec![reasons::ORDERING]);
         assert_eq!(selected.capabilities[0].provenance, Provenance::Declared);
+    }
+
+    #[test]
+    fn no_survivor_exclusions_canonically_order_shared_ids() {
+        // Two rejected candidates share the adapter id with distinct
+        // valid versions; another pair shares id and version but carries
+        // distinct reasons. Flipping the caller's input order must not
+        // flip the serialized exclusion list.
+        let newest_ir = adapter(
+            "adapter-a",
+            "0.2.0",
+            &[],
+            &[("scan.symbols", wire::SupportState::Full)],
+        );
+        let older_ir = adapter(
+            "adapter-a",
+            "0.1.0",
+            &[],
+            &[("scan.symbols", wire::SupportState::Full)],
+        );
+        let unknown = adapter(
+            "adapter-a",
+            "0.1.0",
+            &["0.1.0"],
+            &[("scan.symbols", wire::SupportState::Unknown)],
+        );
+        let forward = report(
+            &[newest_ir.clone(), older_ir.clone(), unknown.clone()],
+            &required(&["scan.symbols"]),
+        );
+        let reversed = report(
+            &[unknown, older_ir, newest_ir],
+            &required(&["scan.symbols"]),
+        );
+        assert_eq!(
+            forward.excluded, reversed.excluded,
+            "the serialized exclusion list is canonical, not input-ordered"
+        );
+        assert_eq!(
+            forward.excluded,
+            vec![
+                ExcludedAdapter {
+                    adapter: "adapter-a".to_owned(),
+                    version: "0.1.0".to_owned(),
+                    reasons: vec![reasons::CAPABILITY_UNKNOWN],
+                },
+                ExcludedAdapter {
+                    adapter: "adapter-a".to_owned(),
+                    version: "0.1.0".to_owned(),
+                    reasons: vec![reasons::IR_UNDECLARED],
+                },
+                ExcludedAdapter {
+                    adapter: "adapter-a".to_owned(),
+                    version: "0.2.0".to_owned(),
+                    reasons: vec![reasons::IR_UNDECLARED],
+                },
+            ],
+            "the canonical exclusion order is id, version, reasons"
+        );
+    }
+
+    #[test]
+    fn survivor_ties_resolve_without_caller_input_order() {
+        // Same id, version, and profile; each pair differs in exactly one
+        // other projected member. The chosen projection must not depend
+        // on the caller's input order.
+        let variant = |digest: &str, executable: Option<&str>, capability: &str, ir: &[&str]| {
+            let mut candidate = adapter(
+                "adapter-a",
+                "0.1.0",
+                ir,
+                &[("scan.symbols", wire::SupportState::Full)],
+            );
+            candidate.adapter.digest = digest.to_owned();
+            candidate.capability_digest = capability.to_owned();
+            candidate.executable_digest = executable.map(str::to_owned);
+            candidate
+        };
+        let mut with_partial = adapter(
+            "adapter-a",
+            "0.1.0",
+            &["0.1.0"],
+            &[("scan.symbols", wire::SupportState::Partial)],
+        );
+        with_partial.adapter.digest = "sha256:aa".to_owned();
+        with_partial.capability_digest = "sha256:cc".to_owned();
+        // Full and Partial records differ while both proceed under the
+        // explicit partial policy, projecting distinct capability
+        // records and warnings.
+        let pairs = [
+            (
+                variant("sha256:aa", None, "sha256:cc", &["0.1.0"]),
+                variant("sha256:bb", None, "sha256:cc", &["0.1.0"]),
+                SelectionPolicy::default(),
+                "declared digest",
+            ),
+            (
+                variant("sha256:aa", Some("sha256:11"), "sha256:cc", &["0.1.0"]),
+                variant("sha256:aa", Some("sha256:22"), "sha256:cc", &["0.1.0"]),
+                SelectionPolicy::default(),
+                "executable digest",
+            ),
+            (
+                variant("sha256:aa", None, "sha256:cc", &["0.1.0"]),
+                variant("sha256:aa", None, "sha256:dd", &["0.1.0"]),
+                SelectionPolicy::default(),
+                "capability digest",
+            ),
+            (
+                variant("sha256:aa", None, "sha256:cc", &["0.1.0", "0.2.0"]),
+                variant("sha256:aa", None, "sha256:cc", &["0.2.0", "0.1.0"]),
+                SelectionPolicy::default(),
+                "ir declaration order",
+            ),
+            (
+                variant("sha256:aa", None, "sha256:cc", &["0.1.0"]),
+                with_partial.clone(),
+                SelectionPolicy {
+                    allow_partial: true,
+                    tolerate_unknown: false,
+                },
+                "capability record",
+            ),
+        ];
+        for (first, second, policy, label) in pairs {
+            let run = |candidates: &[DiscoveredAdapter]| {
+                select(
+                    candidates,
+                    SelectionRequest {
+                        required: &required(&["scan.symbols"]),
+                        preferred_profile: None,
+                        policy,
+                    },
+                    "0.1.0",
+                )
+            };
+            let forward = run(&[first.clone(), second.clone()]);
+            let reversed = run(&[second.clone(), first.clone()]);
+            assert_eq!(
+                forward.selected, reversed.selected,
+                "the chosen projection is input-order-independent ({label})"
+            );
+            assert_eq!(
+                forward.excluded, reversed.excluded,
+                "the ordering exclusions are input-order-independent ({label})"
+            );
+        }
     }
 
     #[test]
