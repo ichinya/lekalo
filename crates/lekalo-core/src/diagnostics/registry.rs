@@ -17,7 +17,7 @@ use crate::result::Status;
 
 /// The exact embedded registry bytes.
 pub const REGISTRY_BYTES: &[u8] =
-    include_bytes!("../../../../contracts/diagnostic-registry.v1.9.0.json");
+    include_bytes!("../../../../contracts/diagnostic-registry.v1.10.0.json");
 
 /// Why the embedded registry could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]

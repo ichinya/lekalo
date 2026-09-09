@@ -1,0 +1,6 @@
+schema_version: "1.0.0"
+definitions:
+  - id: taskboard
+    kind: module
+    version: 1
+    description: "Existing task board implementation (observed, never generated)"

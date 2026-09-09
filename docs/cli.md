@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.1.31. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.2.6. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -229,14 +229,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.1.31"
+  "version": "0.2.6"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.1.31`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.2.6`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -506,6 +506,35 @@ denies with `{"status":"denied",...}` when a required gate rests on
 unknown or stale evidence. The contract, guarantees, limits, and the
 closed risk/gate vocabularies are documented in
 [docs/impact.md](impact.md) and [ADR-0017](adr/0017-impact.md).
+## Observe (observed mode)
+
+Issue #39 records, binds, verifies, and promotes existing code without
+generating or overwriting implementation. The thin subcommands hand every
+decision to the core observed engine; receipts are pretty two-space JSON
+with fixed key order, and failures carry the registered `observed.*`
+rules:
+
+```sh
+lekalo observe update --scan adapter-scan.json
+lekalo observe bind taskboard.task --path src/tasks.ts --key src/tasks.ts#Task
+lekalo observe confirm taskboard.create_task
+lekalo observe check
+lekalo observe attach taskboard.create_task --native-test "npm test -- createTask"
+lekalo observe inspect taskboard.task
+lekalo observe impact taskboard.task
+lekalo observe promote --module taskboard --dry-run
+lekalo observe promote --module taskboard --confirm sha256:<64 lowercase hex>
+```
+
+`observe update` merges one adapter scan into the derived index at
+`.lekalo/import/observed/index.json`; a binding recorded under a
+stable key survives a source move, dropped records go stale, and a scan
+never downgrades an explicit or confirmed fact. `observe check` is
+the staleness gate (exit 0 current, exit 1 with
+`observed.stale-binding` per finding). `observe promote` is the
+only path into the canonical (contracted) model: inferred facts refuse,
+unknown evidence refuses, and the exact plan identity must be confirmed.
+
 ## Development checks
 ```sh
 cargo fmt --all -- --check

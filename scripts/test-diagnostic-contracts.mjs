@@ -39,7 +39,22 @@ const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf
 
 const itemSchema = read("contracts/diagnostic.schema.v1.0.0.json");
 const registrySchema = read("contracts/diagnostic-registry.schema.v1.0.0.json");
-const registry = read("contracts/diagnostic-registry.v1.9.0.json");
+const registry = read("contracts/diagnostic-registry.v1.10.0.json");
+// Predecessor custody: every accepted 1.9.0 rule must survive unchanged
+// in the successor; the observed family is purely additive.
+const predecessor = read("contracts/diagnostic-registry.v1.9.0.json");
+const current = new Map(registry.entries.map((entry) => [entry.id, entry]));
+for (const entry of predecessor.entries) {
+  const successor = current.get(entry.id);
+  if (!successor) fail("predecessor-rule-missing", entry.id);
+  if (JSON.stringify(successor) !== JSON.stringify(entry)) {
+    fail("predecessor-rule-changed", entry.id);
+  }
+}
+for (const entry of registry.entries) {
+  if (!entry.id.startsWith("observed.")) continue;
+  if (!entry.code.startsWith("LEK-OBS-")) fail("observed-code-family", entry.id);
+}
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateItem = ajv.compile(itemSchema);

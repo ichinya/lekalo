@@ -18,6 +18,7 @@ Rust workspace and provider implementations are introduced.
 - [ADR-0009: the committed lekalo.lock and reproducible resolution](docs/adr/0009-lockfile.md)
 - [The stable machine-readable diagnostic contract](docs/diagnostics.md)
 - [ADR-0010: the stable machine-readable diagnostic contract](docs/adr/0010-diagnostics.md)
+- [Observed mode for existing code](docs/observed-mode.md)
 
 Validate the contract and its allowed/forbidden/malformed fixtures, then verify
 the documented CLI exit-code protocol with Node.js, without installing
@@ -231,7 +232,7 @@ the same way; issue #16 added the `impact.*` family issue #18 adds the
 issue #62 adds the `error.*` family, and issue #26 adds the
 `extended.*`, `event.*`, `job.*`, `call.*`, `cache.*`,
 `publication.*`, `contract.*`, and `case.*` families, and issue #63 adds
-the `invariant.*` family, each as a
+the `invariant.*` family, and issue #39 adds the `observed.*` family, each as a
 wire-shape-preserving minor increment).
 
 ## Generated-artifact ownership and drift detection
@@ -345,6 +346,26 @@ evidence. See [docs/invariant-transition.md](docs/invariant-transition.md),
 [ADR-0024](docs/adr/0024-invariant-transition.md), and the hermetic
 fixtures under `tests/fixtures/invariant-transition/`.
 
+## Observed mode for existing code
+
+Issue #39 lets Lekalo index, bind, and analyze existing code without
+declaring the semantic model the owner of the implementation. Adapters
+produce typed scan documents (symbols, endpoints, schema digests with
+confidence and provenance); the core merges them into one derived index
+under `.lekalo/import/**`, distinguishes explicit/confirmed/inferred
+facts, detects stale bindings through fingerprints and stable keys that
+survive file moves, attaches native tests and gates, and promotes
+individual symbols or whole modules into the canonical model only through
+a planned and explicitly confirmed workflow — never silently, and never
+by generating or overwriting implementation. `lekalo impact` reports
+the incompleteness of the observed graph, and `lekalo clean` can
+never delete observed files. The contract, guarantees, and limits live
+in [docs/observed-mode.md](docs/observed-mode.md),
+[ADR-0031](docs/adr/0031-observed-mode.md), and
+`contracts/observed-index.schema.v1.0.0.json` with
+`contracts/observed-scan.schema.v1.0.0.json`; the hermetic
+task-domain fixture is under `tests/fixtures/observed/`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -353,14 +374,15 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #63 carries prospective product
-0.1.31 (issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
-`9020558`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on
-`de6f8a7`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on
-`967bf52`); issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
-`ef7680d`); issue #18 published product 0.1.26 (annotated tag `v0.1.26` on
-`3710179`); issue #17 published product 0.1.25 (annotated tag `v0.1.25` on
-`e627fe5`); issue #16 published product 0.1.24 (annotated tag `v0.1.24` on
+independent of product releases; issue #39 carries prospective product 0.2.6
+(issue #63 carried prospective product 0.1.31; issue #26 published product
+0.1.30 (annotated tag `v0.1.30` on `9020558`); issue #62 published product
+0.1.29 (annotated tag `v0.1.29` on `de6f8a7`); issue #25 published product
+0.1.28 (annotated tag `v0.1.28` on `967bf52`); issue #24 published product
+0.1.27 (annotated tag `v0.1.27` on `ef7680d`); issue #18 published product
+0.1.26 (annotated tag `v0.1.26` on `3710179`); issue #17 published product
+0.1.25 (annotated tag `v0.1.25` on `e627fe5`); issue #16 published product
+0.1.24 (annotated tag `v0.1.24` on
 `b4109e5`); issue #20 published product 0.1.23 (annotated tag `v0.1.23` on
 `15be55a`); issue #21 published product 0.1.22 at `2dab70e`; issue #15
 published product 0.1.21 at `9ab5b07`; issue #23

@@ -16,6 +16,7 @@ pub mod invariant_transition;
 pub mod ir;
 pub mod loader;
 pub mod lockfile;
+pub mod observed;
 pub mod project_fs;
 pub mod result;
 pub mod scenario;

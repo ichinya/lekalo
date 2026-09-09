@@ -526,12 +526,12 @@ mod tests {
 
     #[test]
     fn version_payload_matches_the_published_bytes() {
-        let result = DomainResult::version("0.1.31");
+        let result = DomainResult::version("0.2.6");
         assert_eq!(
             result.to_json_string(),
-            "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.31\"\n}"
+            "{\n  \"status\": \"valid\",\n  \"version\": \"0.2.6\"\n}"
         );
-        assert_eq!(result.to_human_string("lekalo"), "lekalo 0.1.31");
+        assert_eq!(result.to_human_string("lekalo"), "lekalo 0.2.6");
     }
 
     #[test]
