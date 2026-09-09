@@ -17,6 +17,7 @@ with filesystem access and it never writes.
 
 ```text
 lekalo --version
+lekalo init --adopt [--target TARGET [--profile PROFILE]] [--project-id ID] [--project DIR] [--dry-run]
 lekalo load [--project DIR] [--spans] [--ir]
 lekalo lock [--check] [--offline] [--project DIR]
 lekalo update --dry-run [--offline] [--project DIR]
@@ -43,9 +44,9 @@ lekalo status [--project DIR]
 lekalo readiness --phase model|implement|generate|verify|release [--project DIR] [--trace PATH]...
 ```
 
-`--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
-`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, `context`,
-`cache`, `doctor`, `status`, and `readiness` are implemented; none remains a recognized stub. `SYMBOL` is an
+`init --adopt`, `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
+`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, `context`, `cache`,
+`doctor`, `status`, and `readiness` are implemented; none remains a recognized stub. `SYMBOL` is an
 opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic
 ID rules, validation, and graph construction bind every implemented
 command. Every implemented capability is bound by
@@ -57,6 +58,22 @@ and impact engines resolve them through the kind-qualified node identity.
 `--json` is global and may appear before or after a subcommand. Both
 `lekalo --json --version` and `lekalo --version --json` select JSON output.
 Root and per-command help remain clap help text rather than a domain failure.
+
+### `lekalo init --adopt`
+
+`init --adopt` connects Lekalo to an existing repository (issue #38):
+read-only detection with provenance and confidence, the minimal canonical
+skeleton (`lekalo/project.yaml`, plus `lekalo/targets/<id>.yaml` only for
+an explicit `--target`), atomic no-overwrite writes with journal and
+rollback, and an in-process load+validate gate over the result. An
+explicit `--profile` (requires `--target`, #28 token grammar) is
+recorded in the target document and the receipt's `adapterProfile`;
+never executed or checked against an adapter. `--dry-run`
+prints the full plan and writes nothing; a repeated init is idempotent.
+Observed modules stay observations in the receipt — the Model contract has
+no module-mode field, so none is emitted. `init` without `--adopt` is the
+stable usage failure until greenfield creation lands. The normative
+contract is [adopt.md](adopt.md) and [ADR-0028](adr/0028-init-adopt.md).
 
 ### `lekalo load`
 
@@ -480,6 +497,38 @@ lekalo generate --clean --dry-run
 lekalo generate --clean --confirm sha256:973d6dd3ef84df5e286622a796e542f9dac20974047f21ec0a1a095501949734
 generate applied plan sha256:973d... (-1)
 ```
+
+## Requirements
+
+The `lekalo requirements` handoff resolves one requirements attachment
+(`lekalo/requirements/v1.0.0`) against its project: the read-only OpenSpec
+provider walks `specs/**` and `changes/**`, projects the effective
+requirement set, and pins every reference to an exact body revision. All
+decisions live in the core; the binary selects, renders, and maps exits,
+and nothing is ever written.
+
+```sh
+lekalo requirements validate tests/fixtures/requirements/planner/requirements.attachment.json --project tests/fixtures/requirements/planner
+# requirements planner
+#   requirements 3; references 3; fresh 3; stale 0; missing 0; conflict 0; coverage gaps 0; conflicts 0
+
+lekalo requirements report ... > report.json     # canonical report bytes
+lekalo requirements query ... coverage-gaps      # requirements no symbol links
+lekalo requirements query ... impact             # changed/removed/renamed/conflict rows
+lekalo requirements query ... symbol:planner.focus_task
+lekalo requirements query ... requirement:openspec:planner.REQ-focus-task
+lekalo requirements trace ... > trace.json       # neutral #22 trace projection
+```
+
+Exit protocol: `0` valid (validate: every reference fresh, no conflict),
+`1` malformed attachment, unknown symbol or source, invalid provider tree,
+unknown query selector or subject; `3` denied — stale, missing, or
+conflicted references, any conflict in a resolved tree, or a Model
+pin/project custody mismatch; `4` an absent provider tree that references
+depend on. Human and JSON are projections of the same result; the report
+and trace exports emit canonical bytes with pinned digests. See
+[docs/requirements.md](requirements.md) and
+[ADR-0026](adr/0026-requirements-traceability.md).
 
 ## Impact
 

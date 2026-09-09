@@ -1,0 +1,17 @@
+{
+  "schema_version": "lekalo/target-profile/v1.0.0",
+  "profiles": [
+    {
+      "id": "laravel-grpc",
+      "version": "1.0.0",
+      "components": {
+        "runtime": "php-laravel",
+        "storage": "postgres-sql",
+        "transport": "grpc-proto",
+        "testing": "laratesto",
+        "analysis": "mago",
+        "deployment": "container"
+      }
+    }
+  ]
+}

@@ -21,6 +21,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@stable
       - name: Provision exact Ajv 8.17.1 outside the checkout
         run: |
           set -euo pipefail
@@ -51,6 +52,11 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-error-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-extended-effects-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-invariant-transition-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-target-protocol-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-target-profile-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-requirements-contracts.mjs
+      - name: Execute protocol semantic vectors through production Rust decoding
+        run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites
         run: |
           node scripts/check-authority.mjs
@@ -118,5 +124,42 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - name: Provision the Linux process confinement backend
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
-      - run: cargo test --workspace --locked
+      - name: Load the CI-only AppArmor launcher prerequisite
+        if: runner.os == 'Linux'
+        id: apparmor
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
+            exit 1
+          fi
+          sudo apparmor_parser --skip-cache --add .github/ci/bwrap.apparmor
+      - name: Qualify confined Unix execution and denied host paths
+        if: runner.os != 'Windows'
+        timeout-minutes: 3
+        run: cargo test -p lekalo-core --lib unix_confined_runtime_qualification --locked -- --nocapture
+      - name: Qualify bounded Unix process and request-file lifecycle
+        if: runner.os != 'Windows'
+        timeout-minutes: 3
+        run: cargo test -p lekalo-core --test target_transport_unix --locked -- --test-threads=1
+      - run: cargo test --workspace --locked --no-fail-fast
+      - name: Remove the CI-only AppArmor launcher prerequisite
+        if: always() && runner.os == 'Linux' && steps.apparmor.outcome == 'success'
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          sudo apparmor_parser --skip-cache --remove .github/ci/bwrap.apparmor
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
+            exit 1
+          fi

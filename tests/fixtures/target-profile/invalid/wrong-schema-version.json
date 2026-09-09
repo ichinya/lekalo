@@ -1,0 +1,17 @@
+{
+  "schema_version": "lekalo/target-profile/v2.0.0",
+  "profiles": [
+    {
+      "id": "node-postgres-http",
+      "version": "1.0.0",
+      "components": {
+        "runtime": "node-typescript",
+        "storage": "postgres-sql",
+        "transport": "http-json",
+        "testing": "node-native",
+        "analysis": "typescript-native",
+        "deployment": "container"
+      }
+    }
+  ]
+}

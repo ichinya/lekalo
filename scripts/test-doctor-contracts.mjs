@@ -38,7 +38,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
 const schema = read("contracts/doctor.schema.v1.0.0.json");
-const registry = read("contracts/diagnostic-registry.v1.9.0.json");
+const registry = read("contracts/diagnostic-registry.v1.14.0.json");
 const registryIds = new Set(registry.entries.map((entry) => entry.id));
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });

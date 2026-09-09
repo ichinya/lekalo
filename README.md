@@ -223,7 +223,7 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.9.0.json` (issue #12 extended it with the
+`contracts/diagnostic-registry.v1.14.0.json` (issue #12 extended it with the
 `semantic.*`/`validate.*` families and issue #13 added the `graph.*`
 family, each as a minor increment; issue #15 added the `inspect.*` family
 the same way; issue #16 added the `impact.*` family issue #18 adds the
@@ -231,8 +231,9 @@ the same way; issue #16 added the `impact.*` family issue #18 adds the
 issue #62 adds the `error.*` family, and issue #26 adds the
 `extended.*`, `event.*`, `job.*`, `call.*`, `cache.*`,
 `publication.*`, `contract.*`, and `case.*` families, and issue #63 adds
-the `invariant.*` family, each as a
-wire-shape-preserving minor increment).
+the `invariant.*` family, issue #27 adds the `target.*` family, and issue #36
+adds the `requirements.*` family, each as a wire-shape-preserving minor
+increment).
 
 ## Generated-artifact ownership and drift detection
 
@@ -344,6 +345,106 @@ method enforcement, and no enforcement claim without target
 evidence. See [docs/invariant-transition.md](docs/invariant-transition.md),
 [ADR-0024](docs/adr/0024-invariant-transition.md), and the hermetic
 fixtures under `tests/fixtures/invariant-transition/`.
+## Target protocol
+
+Issue #27 publishes the target process protocol (`lekalo.target/v1`,
+`dev.lekalo.protocol@1.0.0` in the version registry): target adapters are
+separate executables in any language — never Rust ABI plugins, never
+internal dependencies. Eight operations (`describe`, `scan`, `bind`,
+`validate`, `generate`, `verify`, `plan-clean`, `clean`) run over closed
+JSON envelopes: `describe` is the mandatory capability handshake,
+protocol or version mismatch is refused `unsupported` before any
+generation, requests carry deterministic identifiers and evidence
+bindings, and stderr stays diagnostics-only. The direct argv transport
+enforces deadline, cancellation, request and output caps. Adapters
+declare read/write scopes; canonical Lekalo/OpenSpec homes are
+unwritable; `generate` requires a dry-run write plan whose declared
+paths, actions, and digests are verified against the observed project
+state, with every deviation classified (`target.*` family, integrated
+registry 1.14.0). The contract, transport rules, and error taxonomy live in
+[docs/target-protocol.md](docs/target-protocol.md) and
+[ADR-0025](docs/adr/0025-target-protocol.md); the wire schemas are
+`contracts/target-protocol.schema.v1.0.0.json` (frozen base) and
+`contracts/target-protocol.schema.v1.1.0.json` (additive describe
+extension, issue #28) and
+`contracts/target-protocol.schema.v1.2.0.json` (additive resolved-profile
+request extension, issue #29); the language-neutral fake adapter and hermetic
+fixtures are under `tests/fixtures/target-protocol/`.
+
+Issue #28 adds capability discovery and version negotiation over the
+same wire: the describe handshake probes at the base version and
+upgrades only to a protocol version the adapter declared
+(1.0.0/1.1.0); the 1.1.0 describe response additively declares accepted
+IR contract versions, named capability support states
+(`full`/`partial`/`unsupported`/`unknown`), and optional constraints.
+Discovery is safe (describe only: no IR, no writes), distinguishes the
+declared digest from the verified executable digest, records per-
+capability provenance (`declared`/`probed`/`verified`), and caches
+verdicts under exact version/digest keys. Deterministic selection
+filters incompatible adapters before any project IR is transferred —
+`partial` requires the explicit policy, `unknown` is never an optimistic
+yes — and reports the selected and excluded candidates with stable
+reasons. The resolved capability snapshot resolves into the committed
+`lekalo.lock`.
+
+Issue #29 introduces composable target profiles and the additive 1.2.0
+request extension: a profile composes one component per closed axis
+(`runtime`, `storage`, `transport`, `testing`, `analysis`,
+`deployment`) from an embedded, versioned component registry, so
+storage, transport, and deployment components are reused unchanged
+between Node, PHP, and Go runtimes. Components declare capability
+contracts, exact sibling requirements, capability requirements, and
+conflicts; resolution is deterministic, composes capabilities at the
+weakest provided state, and refuses incompatible combinations with
+sorted reasons. Profile inheritance follows explicit precedence and
+may never silently weaken a base guarantee — weaker resolutions need an
+override acknowledging exactly that state, and removal is never
+overridable. Each profile resolves into an immutable machine-readable
+snapshot whose declared and resolved digests land in the committed
+lock; per-axis portability reports name exactly which components
+change between two profiles; and on a 1.2.0 session the adapter
+receives the resolved capabilities instead of arbitrary YAML. See
+[docs/target-profile.md](docs/target-profile.md),
+[ADR-0029](docs/adr/0029-composable-target-profiles.md), and
+`contracts/target-profile.schema.v1.0.0.json`.
+
+## Adoption: `lekalo init --adopt`
+
+Issue #38 connects Lekalo to an existing repository without moving
+sources or generating extra code: bounded read-only detection with
+provenance and confidence (manifests, package managers, language and
+framework hints, workspace roots, source and test directories, OpenAPI
+files, existing OpenSpec/AI Factory/HLV layouts, native gate command
+proposals, installed target adapters, observed modules), the minimal
+canonical skeleton (`lekalo/project.yaml`), atomic no-overwrite writes
+with journal and rollback, an idempotent re-run, and an in-process
+load+validate gate. `--target` (with the optional `--profile`, recorded
+in the target document and the receipt, never executed or checked
+against an adapter) and `--dry-run` print every planned write without
+touching the tree. The contract and the closed `init.*` diagnostics live
+in [docs/adopt.md](docs/adopt.md) and
+[ADR-0028](docs/adr/0028-init-adopt.md).
+
+## OpenSpec requirement traceability
+
+Issue #36 links semantic symbols to canonical requirements without owning
+them: one closed requirements attachment
+(`lekalo/requirements/v1.0.0`) binds symbols through `derived_from`/
+`implements` references to namespaced requirement ids pinned to exact
+`sha256:` body revisions, and the read-only `openspec` provider resolves
+them straight from `openspec/specs/**` and `openspec/changes/**` — no
+OpenSpec CLI, no writes, no requirement text copied into the model, and
+conflicting active changes resolved by a gate, never silently. The derived
+report (`lekalo/requirements-report/v1.0.0`) carries the catalog, per-
+reference `fresh`/`stale`/`missing`/`conflict` statuses, coverage gaps,
+and changed-requirement impact; `lekalo requirements trace` projects the
+resolution into the neutral #22 trace manifest. Archiving a change is
+traceability-neutral by construction. The thin
+`lekalo requirements validate | report | query | trace` handoff keeps
+every decision in the core; the contract, guarantees, and limits live in
+[docs/requirements.md](docs/requirements.md),
+[ADR-0026](docs/adr/0026-requirements-traceability.md), and the hermetic
+fixtures under `tests/fixtures/requirements/`.
 
 ## Doctor, status, and readiness
 
@@ -377,7 +478,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
 independent of product releases; issue #92 carries prospective product
-0.2.7; issue #63 carried product 0.1.31 (issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
+0.2.7; issue #29 carries prospective product
+0.2.4 (issue #38 carried prospective product 0.2.3; issue #63 published product 0.1.31 (annotated tag `v0.1.31` on
+`9cdd8c1`); issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
 `9020558`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on
 `de6f8a7`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on
 `967bf52`); issue #24 published product 0.1.27 (annotated tag `v0.1.27` on

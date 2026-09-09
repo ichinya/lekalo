@@ -224,9 +224,9 @@ for (const name of [
 // 4. Contract parity with the Rust side.
 // ---------------------------------------------------------------------------
 const registry = JSON.parse(
-  readText("crates/lekalo-core/src/versioning/contracts/version-registry.v1.0.0.json"),
+  readText("crates/lekalo-core/src/versioning/contracts/version-registry.v1.2.0.json"),
 );
-if (registry.registryVersion !== "1.0.0") {
+if (registry.registryVersion !== "1.2.0") {
   fail("parity:registry", "the version registry artifact moved");
 }
 const golden = JSON.parse(readText(`${validDir}/contract-only.lock.json`));

@@ -34,7 +34,7 @@ use lekalo_core::versioning::{ContractVersion, VersionRegistry};
 const GOLDEN: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:cdd3469834fd5eb821f138ca0cbf1cc39999de7f934dcfc9e2328bf753397d72";
+    "sha256:a7d9178f099094629e1e1ac00284bfef32d6894e4b416853d8af1ac08a7689f5";
 const MULTI: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/multi-adapter.lock.json");
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/lockfile/project";
@@ -47,20 +47,16 @@ fn model_1_0() -> ContractVersion<ModelContract> {
     ContractVersion::<ModelContract>::parse_canonical("1.0.0").expect("1.0.0 is canonical")
 }
 
+/// The synthetic published-protocol world's current version: the
+/// candidate-resolution tests below declare manifest bounds inside it.
 fn protocol_version() -> ContractVersion<ProtocolContract> {
-    ContractVersion::<ProtocolContract>::parse_canonical("1.0.0").expect("1.0.0 is canonical")
-}
-
-fn registry_version() -> ContractVersion<RegistryContract> {
-    VersionRegistry::embedded()
-        .expect("embedded registry")
-        .registry_version()
-        .clone()
+    ContractVersion::<ProtocolContract>::parse_canonical("1.1.0").expect("1.1.0 is canonical")
 }
 
 /// A synthetic registry identical to the embedded one except that the
-/// protocol family publishes 1.0.0 — the published-protocol world the
-/// multi-adapter resolver tests run in.
+/// protocol family publishes the base 1.0.0 and the #28 extension 1.1.0
+/// (current) — the published-protocol world the multi-adapter resolver
+/// tests run in.
 fn published_protocol_registry() -> VersionRegistry {
     const JSON: &str = r#"
 {
@@ -89,11 +85,13 @@ fn published_protocol_registry() -> VersionRegistry {
       "migrations": []
     },
     "protocol": {
-      "current": "1.0.0",
+      "current": "1.1.0",
       "aliases": [],
       "versions": [
         {"version": "1.0.0", "state": "supported", "classification": "additive",
-         "reason": "Synthetic published protocol for issue #10 hermetic tests."}
+         "reason": "Synthetic published protocol for issue #10 hermetic tests."},
+        {"version": "1.1.0", "state": "supported", "classification": "additive",
+         "reason": "Synthetic protocol extension for the capability discovery issue."}
       ],
       "migrations": []
     }
@@ -113,7 +111,10 @@ fn request(registry: &VersionRegistry) -> ResolutionRequest {
 
 fn manifest_for(adapter: &str) -> AdapterCompatibilityManifest {
     AdapterCompatibilityManifest::new(
-        registry_version(),
+        ContractVersion::<RegistryContract>::parse_canonical(
+            lekalo_core::versioning::compatibility::MANIFEST_SCHEMA_VERSION,
+        )
+        .expect("manifest schema version is canonical"),
         adapter,
         ContractVersion::<IrContract>::parse_canonical("0.1.0").expect("ir min"),
         ContractVersion::<IrContract>::parse_canonical("0.1.0").expect("ir max"),
@@ -264,7 +265,8 @@ fn golden_contract_only_lock_parses_and_matches_its_independent_digest() {
     assert_eq!(lock.digest().as_str(), GOLDEN_DIGEST);
     assert_eq!(lock.resolver_version().as_str(), RESOLVER_VERSION);
     assert_eq!(lock.core_version().as_str(), "0.2.7");
-    assert_eq!(lock.target_protocol(), None);
+    let protocol = lock.target_protocol().expect("published protocol");
+    assert_eq!(protocol.version().as_str(), "1.2.0");
     // Round-trip: canonical bytes are byte-identical to the committed file.
     assert_eq!(lock.canonical_bytes().as_ref(), GOLDEN);
 }
@@ -380,7 +382,7 @@ fn multi_adapter_wire_document_parses_with_references_resolved() {
     assert_eq!(lock.profiles().len(), 1);
     assert_eq!(lock.capabilities().len(), 2);
     let protocol = lock.target_protocol().expect("published protocol");
-    assert_eq!(protocol.version().as_str(), "1.0.0");
+    assert_eq!(protocol.version().as_str(), "1.1.0");
 }
 
 #[test]
@@ -474,14 +476,52 @@ fn contract_only_resolution_is_deterministic() {
     );
 }
 
+/// A synthetic registry whose protocol family stays unpublished — the
+/// pre-#27 world, kept alive so the publication gate stays tested.
+fn unpublished_protocol_registry() -> VersionRegistry {
+    const JSON: &str = r#"
+{
+  "registry": "dev.lekalo.version-registry",
+  "registryVersion": "1.0.0",
+  "families": {
+    "model": {
+      "current": "1.0.0",
+      "aliases": [],
+      "versions": [
+        {"version": "1.0.0", "state": "supported", "classification": "additive",
+         "reason": "Synthetic published model for issue #10 hermetic tests."}
+      ],
+      "migrations": []
+    },
+    "ir": {
+      "current": "0.1.0",
+      "aliases": [],
+      "versions": [
+        {"version": "0.1.0", "state": "supported", "classification": "additive",
+         "reason": "Synthetic published IR for issue #10 hermetic tests."}
+      ],
+      "migrations": []
+    },
+    "protocol": {
+      "current": null,
+      "aliases": [],
+      "versions": [],
+      "migrations": []
+    }
+  }
+}
+"#;
+    VersionRegistry::from_bytes(JSON.as_bytes()).expect("synthetic registry is valid")
+}
+
 #[test]
 fn executable_candidates_with_unpublished_protocol_are_refused() {
-    let registry = VersionRegistry::embedded().expect("embedded registry");
+    let registry = unpublished_protocol_registry();
     let candidates =
         CandidateSet::empty().with_adapter(adapter_candidate("node-typescript", "0.1.2", 1, "any"));
     let request =
-        request(registry).with_adapter(ComponentId::parse("node-typescript").expect("id"));
-    let error = LockResolver::resolve(&request, &candidates, registry)
+        request(&registry).with_adapter(ComponentId::parse("node-typescript").expect("id"));
+    let error = LockResolver::resolve(&request, &candidates, &registry)
         .map(|_: Lockfile| ())
         .expect_err("unpublished protocol");
     assert_eq!(reason(&error), "versioning.protocol-unpublished");
@@ -582,7 +622,10 @@ fn duplicate_identities_and_missing_platforms_and_incompatible_manifests_classif
             Sha256Digest::from_hex(&hex64(3)),
         )],
         AdapterCompatibilityManifest::new(
-            registry_version(),
+            ContractVersion::<RegistryContract>::parse_canonical(
+                lekalo_core::versioning::compatibility::MANIFEST_SCHEMA_VERSION,
+            )
+            .expect("manifest schema version is canonical"),
             "node-typescript",
             ir_version(),
             ir_version(),

@@ -37,9 +37,9 @@ use std::borrow::Cow;
 use serde::Serialize;
 
 pub use types::{
-    CapabilityId, CatalogRef, ComponentId, ComponentRef, ContractPin, LockDigest, Lockfile,
-    Platform, ProviderKind, ProviderRef, ResolvedAdapter, ResolvedCapability, ResolvedGenerator,
-    ResolvedProfile, SemVer, Sha256Digest, SourceKind, SourceRef, Support,
+    ArtifactPin, CapabilityId, CatalogRef, ComponentId, ComponentRef, ContractPin, LockDigest,
+    Lockfile, Platform, ProviderKind, ProviderRef, ResolvedAdapter, ResolvedCapability,
+    ResolvedGenerator, ResolvedProfile, SemVer, Sha256Digest, SourceKind, SourceRef, Support,
 };
 
 /// The prospective product version this workspace carries (custody rule of
