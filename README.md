@@ -231,8 +231,9 @@ the same way; issue #16 added the `impact.*` family issue #18 adds the
 issue #62 adds the `error.*` family, and issue #26 adds the
 `extended.*`, `event.*`, `job.*`, `call.*`, `cache.*`,
 `publication.*`, `contract.*`, and `case.*` families, and issue #63 adds
-the `invariant.*` family, and issue #27 adds the `target.*` family, each as a
-wire-shape-preserving minor increment).
+the `invariant.*` family, issue #27 adds the `target.*` family, and issue #36
+adds the `requirements.*` family, each as a wire-shape-preserving minor
+increment).
 
 ## Generated-artifact ownership and drift detection
 
@@ -383,6 +384,27 @@ filters incompatible adapters before any project IR is transferred —
 yes — and reports the selected and excluded candidates with stable
 reasons. The resolved capability snapshot resolves into the committed
 `lekalo.lock`.
+
+## OpenSpec requirement traceability
+
+Issue #36 links semantic symbols to canonical requirements without owning
+them: one closed requirements attachment
+(`lekalo/requirements/v1.0.0`) binds symbols through `derived_from`/
+`implements` references to namespaced requirement ids pinned to exact
+`sha256:` body revisions, and the read-only `openspec` provider resolves
+them straight from `openspec/specs/**` and `openspec/changes/**` — no
+OpenSpec CLI, no writes, no requirement text copied into the model, and
+conflicting active changes resolved by a gate, never silently. The derived
+report (`lekalo/requirements-report/v1.0.0`) carries the catalog, per-
+reference `fresh`/`stale`/`missing`/`conflict` statuses, coverage gaps,
+and changed-requirement impact; `lekalo requirements trace` projects the
+resolution into the neutral #22 trace manifest. Archiving a change is
+traceability-neutral by construction. The thin
+`lekalo requirements validate | report | query | trace` handoff keeps
+every decision in the core; the contract, guarantees, and limits live in
+[docs/requirements.md](docs/requirements.md),
+[ADR-0026](docs/adr/0026-requirements-traceability.md), and the hermetic
+fixtures under `tests/fixtures/requirements/`.
 
 ## Lekalo Model contracts and semantic IDs
 

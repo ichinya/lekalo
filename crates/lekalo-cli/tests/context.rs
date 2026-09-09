@@ -394,7 +394,7 @@ fn output_streams_and_privacy_stay_on_the_accepted_contract() {
     assert!(!failure.stderr.is_empty());
 }
 
-/// The version custody probe: the binary is exactly 0.2.0.
+/// The version custody probe: the binary is exactly 0.2.2.
 #[test]
 fn the_version_is_the_prospective_product_version() {
     let project = fixture_path();

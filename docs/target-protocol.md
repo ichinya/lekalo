@@ -5,7 +5,8 @@ connects core to separate executables. Adapters may be written in any
 language; core loads no native plugin ABI. The operations are describe,
 scan, bind, validate, generate, verify, plan-clean and clean. Product
 0.2.2, Model 1.0.0, IR 0.1.0 and diagnostic registry 1.12.0 remain
-independent version lines.
+independent version lines. Registry 1.12.0 retains the target entries
+introduced in 1.10.0 and the requirements entries introduced in 1.11.0.
 
 ## Version negotiation and capability discovery (issue #28)
 

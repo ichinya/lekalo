@@ -1,7 +1,7 @@
 //! Issue #16 CLI tests for the `lekalo impact` handoff: the symbol mode
 //! over the hermetic planner fixture, the typed `--changed` Git adapter in
 //! committed and worktree modes, the selector grammar, the strict-profile
-//! denial, canonical byte stability, and the 0.2.0 version custody probe.
+//! denial, canonical byte stability, and the 0.2.2 version custody probe.
 //!
 //! Every child chdir runs through the alias-free temp spelling: GitHub's
 //! Windows runners export `%TEMP%` with the 8.3 profile alias and the

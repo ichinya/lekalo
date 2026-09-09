@@ -17,6 +17,7 @@ pub mod ir;
 pub mod loader;
 pub mod lockfile;
 pub mod project_fs;
+pub mod requirements;
 pub mod result;
 pub mod scenario;
 pub mod target_protocol;

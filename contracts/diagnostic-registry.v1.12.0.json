@@ -2758,6 +2758,238 @@
       "lifecycle": "active"
     },
     {
+      "id": "requirements.document-invalid",
+      "code": "LEK-REQ-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "requirements.document-invalid",
+      "default_message": "The requirements attachment violates its closed wire or semantic contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.export-limit",
+      "code": "LEK-REQ-009",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "requirements.export-limit",
+      "default_message": "The requirements document or its canonical export exceeds a recorded bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.model-ref-mismatch",
+      "code": "LEK-REQ-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "requirements.model-ref-mismatch",
+      "default_message": "The requirements attachment binds a different project or Model state.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.projection-empty",
+      "code": "LEK-REQ-010",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "requirements.projection-empty",
+      "default_message": "The requested requirements projection would carry no requirement rows.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.provider-invalid",
+      "code": "LEK-REQ-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "requirements.provider-invalid",
+      "default_message": "A requirement provider declaration or its on-disk tree is invalid.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.provider-unavailable",
+      "code": "LEK-REQ-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "requirements.provider-unavailable",
+      "default_message": "A declared requirement provider tree is absent or unreadable.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.ref-unknown",
+      "code": "LEK-REQ-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "requirements.ref-unknown",
+      "default_message": "A requirement reference names an undeclared source or an unknown symbol.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.requirement-conflict",
+      "code": "LEK-REQ-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "requirements.requirement-conflict",
+      "default_message": "Conflicting active changes or duplicate requirement identities block resolution.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.requirement-missing",
+      "code": "LEK-REQ-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "requirements.requirement-missing",
+      "default_message": "A referenced requirement does not exist in the resolved requirement set.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.requirement-stale",
+      "code": "LEK-REQ-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "requirements.requirement-stale",
+      "default_message": "A referenced requirement no longer matches its pinned revision.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "semantic.command-effect-kind-mismatch",
       "code": "LEK-SEM-001",
       "category": "semantic",

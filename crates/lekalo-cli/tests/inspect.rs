@@ -290,7 +290,7 @@ fn snapshot(root: &Path) -> Vec<(String, u64)> {
     entries
 }
 
-/// Version custody: the binary reports the prospective 0.2.0.
+/// Version custody: the binary reports the prospective 0.2.2.
 #[test]
 fn version_probe_reports_the_prospective_release() {
     let project = fixture_path();
