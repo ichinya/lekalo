@@ -384,6 +384,93 @@ fn promotion_is_planned_and_confirmed_never_silent() {
     assert!(card["promotion"].is_object());
 }
 
+/// A symbol whose canonical definition cannot be rendered (an entity
+/// field references a type that is neither canonical nor in the plan)
+/// never promotes: the module plan refuses with its ineligible reason,
+/// the confirmed apply of any partial plan id writes nothing, and the
+/// index keeps every symbol unpromoted without an adoption receipt.
+#[test]
+fn promotion_refuses_when_rendering_fails_instead_of_promoting_silently() {
+    let sandbox = Sandbox::new("promote-unresolved");
+    sandbox.update(INITIAL_SCAN);
+    // Confirm the entity and one of its field types; the other field
+    // type (task_state) stays inferred, so the entity renders only when
+    // the plan contains the type — and a scalar-only plan does not.
+    for symbol in ["taskboard.task_id", "taskboard.task"] {
+        let output = sandbox.run(&["observe", "confirm", symbol, "--project", "proj"]);
+        assert_eq!(exit_code(&output), 0, "{symbol}");
+    }
+
+    // Single-symbol plan: the confirmed entity is eligible, but its
+    // `state` field references the unconfirmed, unplanned enum, so the
+    // plan refuses with the registered diagnostic and the failure
+    // reason instead of advertising an empty-entries plan.
+    let output = sandbox.run(&[
+        "--json",
+        "observe",
+        "promote",
+        "--symbol",
+        "taskboard.task",
+        "--dry-run",
+        "--project",
+        "proj",
+    ]);
+    assert_eq!(exit_code(&output), 1);
+    let refused: Value =
+        serde_json::from_str(stderr_text(&output).trim()).expect("refusal envelope");
+    assert_eq!(refused["status"], "invalid");
+    assert_eq!(refused["reasonCodes"][0], "observed.promotion-refused");
+
+    // Module plan: the confirmed scalar plans and renders normally;
+    // the unrenderable entity is excluded and reported only as
+    // ineligible with its reason — never advertised as planned.
+    let plan = sandbox.json(&[
+        "observe",
+        "promote",
+        "--module",
+        "taskboard",
+        "--dry-run",
+        "--project",
+        "proj",
+    ]);
+    assert_eq!(plan["symbols"], serde_json::json!(["taskboard.task_id"]));
+    assert_eq!(plan["entries"].as_array().map(Vec::len), Some(1));
+    let ineligible: Vec<&Value> = plan["ineligible"]
+        .as_array()
+        .expect("ineligible list")
+        .iter()
+        .filter(|item| item["symbol"] == "taskboard.task")
+        .collect();
+    assert_eq!(ineligible.len(), 1);
+    assert_eq!(ineligible[0]["detail"], "unresolved-reference");
+    // The confirmed path refuses a plan whose id does not match a
+    // currently-valid plan, so nothing can be resurrected after the
+    // fact and nothing is marked promoted.
+    let output = sandbox.run(&[
+        "observe",
+        "promote",
+        "--symbol",
+        "taskboard.task",
+        "--confirm",
+        &format!("sha256:{}", "b".repeat(64)),
+        "--project",
+        "proj",
+    ]);
+    assert_eq!(exit_code(&output), 1);
+    assert!(stderr_text(&output).contains("observed.promotion-refused"));
+
+    // No canonical definition document was written (the fixture ships
+    // only the module skeleton) and the index carries no promotion
+    // receipt for the refused symbol.
+    assert!(!sandbox
+        .root
+        .join("proj/lekalo/modules/taskboard/entities.yaml")
+        .exists());
+    let card = sandbox.json(&["observe", "inspect", "taskboard.task", "--project", "proj"]);
+    assert_eq!(card["promoted"], false);
+    assert!(card["promotion"].is_null());
+}
+
 #[test]
 fn clean_never_deletes_observed_files() {
     let sandbox = Sandbox::new("clean");

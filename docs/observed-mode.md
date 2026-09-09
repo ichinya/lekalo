@@ -57,7 +57,13 @@ registry version.
   canonical Model definitions from confirmed evidence, per symbol or per
   module. Inferred facts refuse; unknown evidence refuses; policy
   definitions refuse (their semantics cannot come from scan evidence
-  without over-inference); silent promotion does not exist.
+  without over-inference); silent promotion does not exist. A symbol
+  whose canonical definition cannot be rendered (an unresolved reference
+  to neither the canonical model nor the plan) is excluded from the plan
+  and recorded only as ineligible with its reason — it is never
+  advertised as planned. `--confirm` marks only symbols with a written
+  canonical entry as promoted; a plan whose symbols and written entries
+  diverge is a refusal, never a success receipt.
 
 ## The command surface
 

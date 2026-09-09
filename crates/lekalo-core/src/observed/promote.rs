@@ -100,8 +100,12 @@ pub fn plan(
         eligible.push(record);
     }
     // Pass two: rendering against canonical ids plus the full plan set.
+    // A rendering failure removes the symbol from the plan entirely: it
+    // is recorded only as ineligible, so the plan never advertises a
+    // symbol that would write nothing.
     for record in eligible {
         let Some(yaml) = render_definition(record, &index, &canonical_ids, &symbols) else {
+            symbols.retain(|id| id != &record.id);
             ineligible.push(Ineligible {
                 symbol: record.id.clone(),
                 detail: "unresolved-reference",
@@ -114,7 +118,11 @@ pub fn plan(
             yaml,
         });
     }
-    if symbols.is_empty() {
+    // The planned symbol set must be exactly the rendered set — never
+    // empty, and never a symbol that failed rendering — so a
+    // partially-written plan (symbols without entries, or an
+    // all-ineligible plan) cannot exist.
+    if symbols.is_empty() || symbols.len() != entries.len() {
         return Err(diagnostic::promotion_refused_set(
             selection_label(selection),
             "no-eligible-symbols",
@@ -162,6 +170,20 @@ pub fn apply(
     paths.sort();
     for path in paths {
         append_document(ctx, path, &documents[path.as_str()])?;
+    }
+    // Defense in depth: a confirmed apply must never claim success for a
+    // plan that writes nothing. Every promoted symbol must have exactly
+    // one written canonical entry behind it.
+    let written: BTreeSet<&str> = expected
+        .entries
+        .iter()
+        .map(|entry| entry.symbol.as_str())
+        .collect();
+    if written.len() != expected.symbols.len() {
+        return Err(diagnostic::promotion_refused_set(
+            selection_label(selection),
+            "nothing-written",
+        ));
     }
     for symbol in &expected.symbols {
         let record = index
