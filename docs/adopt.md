@@ -147,10 +147,14 @@ identical bytes, writes nothing, and exits 0.
 After writing, adoption loads the skeleton through the normal loader and
 validates it under the default profile, in process. The receipt carries
 the gate outcome (`gate.modelVersion`). If the gate ever fails, adoption
-first rolls every created file back, then returns the gate's failure
-envelope unchanged — the same failure `lekalo load`/`lekalo validate`
-would print. An idempotent re-run with nothing to write skips the gate:
-the repository may have legitimately grown beyond the skeleton.
+first rolls every created file back — using the exact mutation journal
+the apply produced, so only genuinely created paths are removed and
+pre-existing directories are never inferred into ownership — then
+returns the gate's failure envelope unchanged — the same failure
+`lekalo load`/`lekalo validate` would print. A successful gate never
+rolls anything back. An idempotent re-run with nothing to write skips
+the gate: the repository may have legitimately grown beyond the
+skeleton.
 
 ## Exit and output protocol
 

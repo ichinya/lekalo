@@ -402,3 +402,115 @@ fn explicit_profile_control_records_exact_bytes_idempotence_and_conflict() {
         target_bytes
     );
 }
+
+/// The exact preserved-tree assertion for a gate-failure rollback: only
+/// the user-owned directory and file remain, byte-identical.
+fn assert_user_tree_preserved(probe: &Probe, user_bytes: &[u8]) {
+    assert_eq!(
+        snapshot(probe.outer()),
+        vec![
+            ("probe1".to_owned(), true),
+            ("probe1/lekalo".to_owned(), true),
+            ("probe1/lekalo/user-notes.txt".to_owned(), false),
+        ],
+        "exactly the user-owned directory and file must survive"
+    );
+    assert_eq!(
+        std::fs::read(probe.root.join("lekalo").join("user-notes.txt"))
+            .expect("user file readable"),
+        user_bytes,
+        "the user file must stay byte-identical"
+    );
+}
+
+/// A post-write gate failure over a pre-existing user-owned `lekalo`
+/// directory preserves the directory and the unrelated user file,
+/// removes only what this adoption created, and reports the original
+/// gate failure — never a spurious `init.adopt-recovery-required` for a
+/// directory the adoption never owned.
+#[test]
+fn gate_failure_preserves_the_user_directory_and_reports_the_gate_error() {
+    let probe = Probe::new();
+    let user_bytes = b"the user owned this directory first\n".to_vec();
+    std::fs::create_dir(probe.root.join("lekalo")).expect("pre-existing user dir");
+    std::fs::write(
+        probe.root.join("lekalo").join("user-notes.txt"),
+        &user_bytes,
+    )
+    .expect("pre-existing user file");
+
+    let result = adopt_at(&probe.root, AdoptRequest::default());
+
+    // The gate's own failure passes through unchanged; a policy
+    // structure code is classified `denied`, exit 3, exactly as the
+    // loader maps it.
+    assert_eq!(
+        result.status(),
+        Status::Denied,
+        "{}",
+        result.to_json_string()
+    );
+    assert_eq!(result.exit_code(), 3);
+    assert_eq!(
+        reasons(&result),
+        vec!["structure.canonical-unexpected-entry".to_owned()],
+        "the original gate failure must not be masked"
+    );
+    let wire = result.to_json_string();
+    assert!(
+        !wire.contains("init.adopt-recovery-required"),
+        "no false recovery-required: {wire}"
+    );
+    assert!(!wire.contains(&probe.outer().to_string_lossy().into_owned()));
+
+    // Exactly the created file was rolled back; the user-owned directory
+    // and its file survive byte-identically.
+    assert_user_tree_preserved(&probe, &user_bytes);
+}
+
+/// Several planned files sharing the pre-existing parent produce no
+/// duplicate or spurious cleanup: each created entry is removed exactly
+/// once, the shared user-owned parent survives, and the gate failure is
+/// still the reported outcome.
+#[test]
+fn gate_failure_with_shared_parents_removes_each_created_entry_once() {
+    let probe = Probe::new();
+    let user_bytes = b"the user owned this directory first\n".to_vec();
+    std::fs::create_dir(probe.root.join("lekalo")).expect("pre-existing user dir");
+    std::fs::write(
+        probe.root.join("lekalo").join("user-notes.txt"),
+        &user_bytes,
+    )
+    .expect("pre-existing user file");
+
+    let result = adopt_at(
+        &probe.root,
+        AdoptRequest {
+            target: Some("node-typescript".to_owned()),
+            profile: Some("strict".to_owned()),
+            ..AdoptRequest::default()
+        },
+    );
+
+    assert_eq!(
+        result.status(),
+        Status::Denied,
+        "{}",
+        result.to_json_string()
+    );
+    assert_eq!(result.exit_code(), 3);
+    assert_eq!(
+        reasons(&result),
+        vec!["structure.canonical-unexpected-entry".to_owned()],
+        "the original gate failure must not be masked"
+    );
+    let wire = result.to_json_string();
+    assert!(
+        !wire.contains("init.adopt-recovery-required"),
+        "no false recovery-required from the shared parent: {wire}"
+    );
+
+    // Both created files and the created `lekalo/targets` directory are
+    // gone exactly once; the user-owned directory and file survive.
+    assert_user_tree_preserved(&probe, &user_bytes);
+}

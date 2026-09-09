@@ -523,23 +523,27 @@ pub fn adopt(request: &AdoptRequest) -> DomainResult {
     }
 
     // 8. Apply: journaled create_new writes with rollback on failure.
-    let create_paths: Vec<String> = state.creates.iter().map(|file| file.path.clone()).collect();
-    match plan::apply(&root, &state.creates) {
-        plan::ApplyOutcome::Applied => {}
+    // The exact mutation journal flows into post-write validation:
+    // rollback removes only what this apply genuinely created, in
+    // reverse creation order — pre-existing user directories are never
+    // inferred into ownership.
+    let journal = match plan::apply(&root, &state.creates) {
+        plan::ApplyOutcome::Applied(journal) => journal,
         plan::ApplyOutcome::WriteFailed { path, detail } => {
             return DomainResult::invalid(diagnostic::write_failed_set(&path, detail));
         }
         plan::ApplyOutcome::RecoveryRequired { paths } => {
             return DomainResult::invalid(diagnostic::recovery_required_set(&paths));
         }
-    }
+    };
 
     // 9. Post-write gate: the skeleton must load and validate. A gate
-    // failure rolls every created file back first.
+    // failure rolls exactly the journaled creations back first; a
+    // complete rollback passes the original gate failure through, and a
+    // successful apply never rolls back.
     let model_version = match adoption_gate(&root) {
         Ok(model_version) => model_version,
         Err(result) => {
-            let journal = plan::Journal::from_created(&root, &create_paths);
             let remaining = journal.rollback(&root);
             if !remaining.is_empty() {
                 return DomainResult::invalid(diagnostic::recovery_required_set(&remaining));

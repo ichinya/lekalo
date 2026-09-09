@@ -102,39 +102,21 @@ pub(crate) fn build(
 }
 
 /// One journaled filesystem mutation.
+#[derive(Debug)]
 enum JournalEntry {
     File(std::path::PathBuf),
     Dir(std::path::PathBuf),
 }
 
-/// The created-path journal of one adoption apply.
+/// The created-path journal of one adoption apply: every entry this
+/// apply genuinely created, in creation order. Nothing pre-existing
+/// ever enters the journal.
+#[derive(Debug)]
 pub(crate) struct Journal(Vec<JournalEntry>);
 
 impl Journal {
     fn new() -> Journal {
         Journal(Vec::new())
-    }
-
-    /// Rebuild a journal from on-disk created entries: the directory
-    /// chain (outermost to innermost) then the file, exactly the order
-    /// `apply` journals them in. Recovery tooling and tests use this to
-    /// operate on exactly the entries apply would have journaled.
-    pub(crate) fn from_created(root: &Path, created: &[String]) -> Journal {
-        let mut entries = Vec::new();
-        for relative in created {
-            let mut current = root.to_path_buf();
-            for segment in relative.split('/') {
-                current.push(segment);
-                if current.is_dir() {
-                    entries.push(JournalEntry::Dir(current.clone()));
-                }
-            }
-            let path = root.join(relative);
-            if path.is_file() {
-                entries.push(JournalEntry::File(path));
-            }
-        }
-        Journal(entries)
     }
 
     /// Remove every journaled entry in reverse order.
@@ -169,11 +151,14 @@ impl Journal {
 ///
 /// Intermediate directories are created with no-follow checks. The journal
 /// records every created entry so a later failure removes exactly what
-/// this call added.
+/// this call added. The file is journaled the moment `create_new` owns
+/// it — before the first fallible byte write — so a partial write leaves
+/// the created path inside the journal, never outside it.
 fn create_new(
     root: &Path,
     relative: &str,
     bytes: &[u8],
+    write: impl Fn(&mut std::fs::File, &[u8]) -> Result<(), std::io::Error>,
     journal: &mut Journal,
 ) -> Result<(), std::io::Error> {
     let mut current = root.to_path_buf();
@@ -211,9 +196,15 @@ fn create_new(
         options.mode(0o644);
     }
     let mut file = options.open(&current)?;
-    file.write_all(bytes)?;
+    // Journal ownership immediately after the successful create: the
+    // entry is now a real mutation even if the byte write below fails,
+    // so every later rollback removes exactly it.
     journal.0.push(JournalEntry::File(current.clone()));
-    Ok(())
+    let written = write(&mut file, bytes);
+    // Release the OS handle before the error can reach any rollback: on
+    // Windows a file with an open handle cannot be removed.
+    drop(file);
+    written
 }
 
 /// Windows reparse-point check for created-path parents.
@@ -231,9 +222,12 @@ fn is_reparse(metadata: &std::fs::Metadata) -> bool {
 }
 
 /// What applying the plan produced.
+#[derive(Debug)]
 pub(crate) enum ApplyOutcome {
-    /// Every planned write happened.
-    Applied,
+    /// Every planned write happened; the journal holds exactly what this
+    /// apply created, in creation order — the only authoritative rollback
+    /// set for anything that fails afterwards.
+    Applied(Journal),
     /// A planned write failed and the rollback removed every created path.
     WriteFailed { path: String, detail: &'static str },
     /// A rollback could not remove every created file.
@@ -245,11 +239,25 @@ pub(crate) enum ApplyOutcome {
 /// The caller has already refused conflicts and skipped identical paths,
 /// so `create_new` is expected to succeed; any failure rolls the journal
 /// back before returning, and an incomplete rollback is reported
-/// explicitly.
+/// explicitly. On success the exact mutation journal is returned so a
+/// later failure rolls back only what this apply genuinely created, in
+/// reverse creation order — never an inferred reconstruction.
 pub(crate) fn apply(root: &Path, files: &[PlannedFile]) -> ApplyOutcome {
+    apply_with(root, files, |file, bytes| file.write_all(bytes))
+}
+
+/// The apply seam with an injected byte writer: production passes
+/// `File::write_all`; the fault-path tests pass a deterministic failing
+/// writer to prove failure-after-create without touching real storage
+/// limits.
+fn apply_with(
+    root: &Path,
+    files: &[PlannedFile],
+    write: impl Fn(&mut std::fs::File, &[u8]) -> Result<(), std::io::Error>,
+) -> ApplyOutcome {
     let mut journal = Journal::new();
     for file in files {
-        if let Err(error) = create_new(root, &file.path, &file.bytes, &mut journal) {
+        if let Err(error) = create_new(root, &file.path, &file.bytes, &write, &mut journal) {
             let detail: &'static str = match error.kind() {
                 std::io::ErrorKind::PermissionDenied => "create-parent",
                 std::io::ErrorKind::AlreadyExists => "already-exists",
@@ -265,7 +273,7 @@ pub(crate) fn apply(root: &Path, files: &[PlannedFile]) -> ApplyOutcome {
             return ApplyOutcome::RecoveryRequired { paths: remaining };
         }
     }
-    ApplyOutcome::Applied
+    ApplyOutcome::Applied(journal)
 }
 
 /// Read one planned path's current bytes for the preflight comparison.
@@ -283,13 +291,18 @@ mod tests {
     use super::*;
 
     /// A rollback that cannot remove a created file is reported with the
-    /// logical paths that remain, never silently repaired.
+    /// logical paths that remain, never silently repaired. The journal is
+    /// the exact one a real apply returned, and the blocked file genuinely
+    /// stays owned by this apply.
     #[test]
     fn rollback_failure_lists_the_remaining_paths() {
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path();
-        std::fs::create_dir(root.join("lekalo")).expect("create canonical dir");
-        std::fs::write(root.join("lekalo").join("project.yaml"), b"{}\n").expect("create file");
+        let files = build("probe", None, None).expect("grammar-clean plan");
+        let journal = match apply(root, &files) {
+            ApplyOutcome::Applied(journal) => journal,
+            outcome => panic!("unexpected apply outcome: {outcome:?}"),
+        };
 
         #[cfg(unix)]
         {
@@ -308,11 +321,10 @@ mod tests {
                 .expect("exclusive handle")
         };
 
-        let journal = Journal::from_created(root, &["lekalo/project.yaml".to_owned()]);
         let remaining = journal.rollback(root);
 
-        // Reverse-order removal fails on the frozen directory and on the
-        // blocked file; both remain and are reported.
+        // Reverse-order removal fails on the blocked file and then on the
+        // directory that still holds it; both remain and are reported.
         assert_eq!(
             remaining,
             vec!["lekalo".to_owned(), "lekalo/project.yaml".to_owned()]
@@ -327,17 +339,126 @@ mod tests {
         assert!(root.join("lekalo").join("project.yaml").is_file());
     }
 
-    /// A clean rollback removes exactly the journaled entries.
+    /// A clean rollback removes exactly the journaled entries: the
+    /// journal `apply` returns, not an on-disk reconstruction.
     #[test]
     fn rollback_removes_exactly_the_journaled_entries() {
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path();
         let files = build("probe", None, None).expect("grammar-clean plan");
-        assert!(matches!(apply(root, &files), ApplyOutcome::Applied));
+        let journal = match apply(root, &files) {
+            ApplyOutcome::Applied(journal) => journal,
+            outcome => panic!("unexpected apply outcome: {outcome:?}"),
+        };
+        assert_eq!(journal.0.len(), 2, "the created dir and the created file");
         assert!(root.join("lekalo").join("project.yaml").is_file());
-        let journal = Journal::from_created(root, &["lekalo/project.yaml".to_owned()]);
         assert!(journal.rollback(root).is_empty());
         assert!(!root.join("lekalo").exists());
+    }
+
+    /// A write that fails after the create leaves the created file inside
+    /// the journal: the rollback removes exactly it, and nothing created
+    /// survives outside the journal (deterministic injected fault — no
+    /// full disk, no global setup).
+    #[test]
+    fn partial_write_failure_removes_the_created_file() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let files = build("probe", None, None).expect("grammar-clean plan");
+        let outcome = apply_with(root, &files, |file, bytes| {
+            // A deterministic partial write: half the bytes land, then the
+            // injected fault fires.
+            file.write_all(&bytes[..bytes.len() / 2])?;
+            Err(std::io::Error::new(
+                std::io::ErrorKind::WriteZero,
+                "injected-fault",
+            ))
+        });
+        match outcome {
+            ApplyOutcome::WriteFailed { path, detail } => {
+                assert_eq!(path, "lekalo/project.yaml");
+                assert_eq!(detail, "create-file");
+            }
+            outcome => panic!("expected a write failure, got {outcome:?}"),
+        }
+        // The created file and its created parent directory are gone:
+        // ownership was journaled before the fallible byte write.
+        assert!(!root.join("lekalo").join("project.yaml").exists());
+        assert!(!root.join("lekalo").exists());
+        assert_eq!(snapshot_paths(root), Vec::<String>::new());
+    }
+
+    /// The returned journal owns exactly what this apply created: a
+    /// pre-existing user directory is never journaled, and parents shared
+    /// by several planned files are journaled exactly once, in creation
+    /// order.
+    #[test]
+    fn journal_owns_exactly_what_apply_created() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let user_bytes = b"the user owned this directory first\n".to_vec();
+        std::fs::create_dir(root.join("lekalo")).expect("pre-existing user dir");
+        std::fs::write(root.join("lekalo").join("user-notes.txt"), &user_bytes)
+            .expect("pre-existing user file");
+
+        let files =
+            build("probe", Some("node-typescript"), Some("strict")).expect("grammar-clean plan");
+        let journal = match apply(root, &files) {
+            ApplyOutcome::Applied(journal) => journal,
+            outcome => panic!("unexpected apply outcome: {outcome:?}"),
+        };
+
+        // Exactly the three created entries: the pre-existing `lekalo`
+        // never appears, and `lekalo/targets` is journaled once.
+        assert_eq!(journal.0.len(), 3);
+        assert!(
+            matches!(&journal.0[0], JournalEntry::File(path) if path.ends_with("lekalo/project.yaml"))
+        );
+        assert!(
+            matches!(&journal.0[1], JournalEntry::Dir(path) if path.ends_with("lekalo/targets"))
+        );
+        assert!(
+            matches!(&journal.0[2], JournalEntry::File(path) if path.ends_with("lekalo/targets/node-typescript.yaml"))
+        );
+
+        // The rollback removes exactly those three; the user-owned
+        // directory and file stay byte-identical.
+        assert!(journal.rollback(root).is_empty());
+        assert_eq!(
+            snapshot_paths(root),
+            vec!["lekalo".to_owned(), "lekalo/user-notes.txt".to_owned()]
+        );
+        assert_eq!(
+            std::fs::read(root.join("lekalo").join("user-notes.txt")).expect("user file"),
+            user_bytes
+        );
+    }
+
+    /// `(relative path, is_dir)`-free helper: relative paths of every
+    /// entry under `root`, deterministic order.
+    fn snapshot_paths(root: &Path) -> Vec<String> {
+        fn walk(current: &Path, prefix: &str, out: &mut Vec<String>) {
+            let mut entries: Vec<std::fs::DirEntry> = std::fs::read_dir(current)
+                .expect("entries readable")
+                .filter_map(|entry| entry.ok())
+                .collect();
+            entries.sort_by_key(|entry| entry.file_name());
+            for entry in entries {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let relative = if prefix.is_empty() {
+                    name
+                } else {
+                    format!("{prefix}/{name}")
+                };
+                out.push(relative.clone());
+                if entry.file_type().expect("entry type").is_dir() {
+                    walk(&entry.path(), &relative, out);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(root, "", &mut out);
+        out
     }
 
     /// The writer seam fails closed on every value outside its closed
