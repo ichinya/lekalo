@@ -428,6 +428,22 @@ fn receipt_human(receipt: &AdoptReceipt) -> String {
 
 /// Run `lekalo init --adopt` to completion.
 pub fn adopt(request: &AdoptRequest) -> DomainResult {
+    // 0. Request grammar at the public core boundary: the identical
+    // closed grammars every CLI invocation must already satisfy,
+    // enforced here before any root discovery, detection walk, read
+    // probe, or write. A violation is the registered `cli.usage`
+    // failure; the wire never echoes the rejected value.
+    if let Some(target) = request.target.as_deref() {
+        if !detect::valid_target_id(target) {
+            return DomainResult::usage_error();
+        }
+    }
+    if let Some(profile) = request.profile.as_deref() {
+        if request.target.is_none() || !crate::target_protocol::scopes::is_token(profile) {
+            return DomainResult::usage_error();
+        }
+    }
+
     // 1. Root selection and ambiguity resolution.
     let (root, basis, candidates) = match resolve_root(request.project.as_deref()) {
         Ok(resolved) => resolved,
@@ -446,12 +462,17 @@ pub fn adopt(request: &AdoptRequest) -> DomainResult {
     detection.candidates = candidates;
 
     // 4. Plan and preflight: identical bytes skip, any other existing
-    // path is a no-overwrite conflict.
-    let files = plan::build(
+    // path is a no-overwrite conflict. The writer seam independently
+    // refuses any value outside its closed grammar (defense in depth
+    // for future in-crate consumers of the #28 bootstrap seam).
+    let files = match plan::build(
         &project.id,
         request.target.as_deref(),
         request.profile.as_deref(),
-    );
+    ) {
+        Ok(files) => files,
+        Err(set) => return DomainResult::invalid(set),
+    };
     let state = preflight(&root, &files);
 
     // 5. Dry-run: the full plan without writing anything.

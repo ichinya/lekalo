@@ -15,6 +15,7 @@ use std::path::Path;
 pub(crate) const PROJECT_PATH: &str = "lekalo/project.yaml";
 
 /// One planned file: logical project-relative POSIX path plus exact bytes.
+#[derive(Debug)]
 pub(crate) struct PlannedFile {
     pub path: String,
     pub bytes: Vec<u8>,
@@ -22,48 +23,82 @@ pub(crate) struct PlannedFile {
 
 /// The minimal `lekalo/project.yaml`: the project definition and nothing
 /// else. No module, target, or unpublished field is emitted.
-pub(crate) fn project_document(project_id: &str) -> PlannedFile {
-    debug_assert!(super::valid_project_id(project_id));
+///
+/// Fails closed: a project id outside the closed one-segment grammar
+/// yields `None` instead of a guessed or interpolated document.
+pub(crate) fn project_document(project_id: &str) -> Option<PlannedFile> {
+    if !super::valid_project_id(project_id) {
+        return None;
+    }
     let bytes = format!(
         "{{\"schema_version\":\"1.0.0\",\"definitions\":[{{\"id\":\"{project_id}\",\"kind\":\"project\",\"version\":1,\"description\":\"Adopted existing project.\"}}]}}\n"
     )
     .into_bytes();
-    PlannedFile {
+    Some(PlannedFile {
         path: PROJECT_PATH.to_owned(),
         bytes,
-    }
+    })
 }
 
 /// The minimal `lekalo/targets/<id>.yaml`, written only for an explicit
 /// `--target`. Target documents stay opaque to the loader; an explicit
 /// `--profile` selection is recorded verbatim in the same opaque document.
-pub(crate) fn target_document(target: &str, profile: Option<&str>) -> PlannedFile {
-    debug_assert!(super::detect::valid_target_id(target));
-    debug_assert!(profile
-        .map(crate::target_protocol::scopes::is_token)
-        .unwrap_or(true));
+///
+/// Fails closed: both persisted values must satisfy their closed
+/// grammars, so the path stays inside `lekalo/targets/` and the bytes
+/// stay structurally valid JSON in debug and release alike.
+pub(crate) fn target_document(target: &str, profile: Option<&str>) -> Option<PlannedFile> {
+    if !super::detect::valid_target_id(target) {
+        return None;
+    }
+    if let Some(profile) = profile {
+        if !crate::target_protocol::scopes::is_token(profile) {
+            return None;
+        }
+    }
     let bytes = match profile {
         Some(profile) => format!("{{\"target\":\"{target}\",\"profile\":\"{profile}\",\"note\":\"Adopted target selection.\"}}\n"),
         None => format!("{{\"target\":\"{target}\",\"note\":\"Adopted target selection.\"}}\n"),
     }
     .into_bytes();
-    PlannedFile {
+    Some(PlannedFile {
         path: format!("lekalo/targets/{target}.yaml"),
         bytes,
-    }
+    })
+}
+
+/// The registered `cli.usage` set for a planned value outside its closed
+/// grammar: the writer seam refuses the plan instead of writing it.
+fn request_refusal() -> crate::diagnostics::DiagnosticSet {
+    crate::result::singleton_set(crate::result::CLI_USAGE)
 }
 
 /// The ordered write plan of one adoption.
+///
+/// Fails closed at the writer seam: the project id, the explicit target,
+/// and any explicit profile must satisfy their closed grammars, a
+/// profile requires an explicit target, and any violation refuses the
+/// whole plan with the registered `cli.usage` set before a single path
+/// or byte is planned.
 pub(crate) fn build(
     project_id: &str,
     target: Option<&str>,
     profile: Option<&str>,
-) -> Vec<PlannedFile> {
-    let mut files = vec![project_document(project_id)];
-    if let Some(target) = target {
-        files.push(target_document(target, profile));
+) -> Result<Vec<PlannedFile>, crate::diagnostics::DiagnosticSet> {
+    let mut files = Vec::new();
+    match project_document(project_id) {
+        Some(file) => files.push(file),
+        None => return Err(request_refusal()),
     }
-    files
+    match target {
+        Some(target) => match target_document(target, profile) {
+            Some(file) => files.push(file),
+            None => return Err(request_refusal()),
+        },
+        None if profile.is_some() => return Err(request_refusal()),
+        None => {}
+    }
+    Ok(files)
 }
 
 /// One journaled filesystem mutation.
@@ -297,11 +332,46 @@ mod tests {
     fn rollback_removes_exactly_the_journaled_entries() {
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path();
-        let files = build("probe", None, None);
+        let files = build("probe", None, None).expect("grammar-clean plan");
         assert!(matches!(apply(root, &files), ApplyOutcome::Applied));
         assert!(root.join("lekalo").join("project.yaml").is_file());
         let journal = Journal::from_created(root, &["lekalo/project.yaml".to_owned()]);
         assert!(journal.rollback(root).is_empty());
         assert!(!root.join("lekalo").exists());
+    }
+
+    /// The writer seam fails closed on every value outside its closed
+    /// grammar, in debug and release builds alike.
+    #[test]
+    fn build_refuses_values_outside_the_closed_grammars() {
+        for (project_id, target, profile) in [
+            ("probe", Some("../../../escaped-outside"), None),
+            ("probe", Some("/abs-escape"), None),
+            ("probe", Some("back\\slash"), None),
+            ("probe", Some("Bad_Target"), None),
+            ("Bad_ID", Some("node-typescript"), None),
+            ("probe", Some("node-typescript"), Some("Default_Profile")),
+            (
+                "probe",
+                Some("node-typescript"),
+                Some("x\", \"injected\": true}"),
+            ),
+            ("probe", None, Some("default")),
+        ] {
+            let refusal = build(project_id, target, profile).expect_err("the seam must refuse");
+            assert_eq!(
+                refusal.as_slice()[0].id(),
+                crate::CLI_USAGE,
+                "{project_id:?} {target:?} {profile:?}"
+            );
+        }
+        // The accepted forms still plan exactly the canonical files.
+        assert_eq!(build("probe", None, None).expect("no profile").len(), 1);
+        assert_eq!(
+            build("probe", Some("node-typescript"), Some("strict"))
+                .expect("explicit profile")
+                .len(),
+            2
+        );
     }
 }

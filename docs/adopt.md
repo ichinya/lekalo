@@ -98,7 +98,12 @@ a persisted selection, and the wire protocol governs its use later. An
 orphan `--profile` without `--target` or a malformed token is the stable
 usage failure (`cli.usage`, exit 1) before any plan or write; the same
 target id re-adopted with a different profile plans different bytes and
-therefore denies with `init.adopt-conflict` instead of overwriting.
+therefore denies with `init.adopt-conflict` instead of overwriting. The
+core adoption entry (`lekalo_core::init::adopt`) enforces the same
+refusal for every library caller, before any root discovery, detection
+walk, read probe, or write — and the skeleton writer refuses values
+outside its closed grammars as well, so no consumer of the bootstrap
+seam can plan a path escape or a structurally broken document.
 
 No `.lekalo/**` runtime state is written, `lekalo.lock` stays the `lekalo
 lock` seam, and `.gitignore` is user-owned and never edited.
