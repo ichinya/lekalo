@@ -19,6 +19,22 @@ use lekalo_core::{DomainResult, Status};
 /// Serializes every test that changes the process working directory.
 static CWD_LOCK: Mutex<()> = Mutex::new(());
 
+/// The canonicalized, alias-free spelling of `path`, including junction
+/// and 8.3 TEMP aliases. Production selection guards intentionally
+/// reject those aliases; strips the `\\?\` verbatim prefix `canonicalize`
+/// produces on Windows drive paths.
+fn alias_free(path: &Path) -> PathBuf {
+    let canonical = path.canonicalize().expect("probe path must exist");
+    #[cfg(windows)]
+    match canonical.to_string_lossy().strip_prefix(r"\\?\") {
+        // `\\?\C:\...` -> `C:\...`; UNC (`\\?\UNC\...`) stays verbatim.
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => canonical,
+    }
+    #[cfg(not(windows))]
+    canonical
+}
+
 /// One unique externally owned probe. The adopted root is `probe1/`
 /// inside the temp tree, so the pre-fix `../../../` escape would have
 /// written one level above the adopted root — still inside this owned
@@ -35,7 +51,11 @@ impl Probe {
         std::fs::create_dir(&root).expect("adopted probe root");
         Self {
             _outer: outer,
-            root,
+            // Hosted Windows %TEMP% can arrive as an 8.3 or junction
+            // alias of the physical tree and the selection policy denies
+            // those spellings; adopt from the resolved spelling so the
+            // probe exercises adoption behavior, never the alias refusal.
+            root: alias_free(&root),
         }
     }
 
