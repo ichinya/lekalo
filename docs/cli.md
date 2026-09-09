@@ -17,6 +17,7 @@ with filesystem access and it never writes.
 
 ```text
 lekalo --version
+lekalo adapter test [--profile default|strict] [--report json|junit] [--repeats N] [--timeout-ms MS] PROGRAM [ARGS]...
 lekalo init --adopt [--target TARGET [--profile PROFILE]] [--project-id ID] [--project DIR] [--dry-run]
 lekalo load [--project DIR] [--spans] [--ir]
 lekalo lock [--check] [--offline] [--project DIR]
@@ -146,6 +147,25 @@ recovery contract. Unsupported contract versions exit 5 with the shared
 `compatibility` prints the embedded registry projection (families in
 fixed order `model`, `ir`, `protocol`); it performs no project or
 adapter discovery.
+
+
+### `lekalo adapter test`
+
+`adapter test` runs the issue #31 conformance battery against one
+adapter executable through the confined target-protocol client: the
+describe handshake and negotiation, capability declaration, deterministic
+repeats, the dry-run plan and its apply, confinement, cancellation,
+invalid-input handling, structured diagnostics, scenario
+normalization, artifact evidence, and redaction. `--profile strict`
+additionally requires the complete v1 operation surface; `--report
+json|junit` prints the deterministic report document on stdout for
+every completed run while the exit code stays verdict-owned
+(0 pass, 1 feature failure, 3 security, 4 process/protocol). A
+security or protocol failure is never compensated by passing feature
+tests, and the verified badge names the exact protocol/IR versions
+only. The normative contract is
+[adapter-conformance.md](adapter-conformance.md) and
+[ADR-0030](adr/0030-adapter-conformance.md).
 
 ## Exit and stream contract
 
