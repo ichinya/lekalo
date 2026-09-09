@@ -17,7 +17,7 @@ with filesystem access and it never writes.
 
 ```text
 lekalo --version
-lekalo init --adopt [--target TARGET] [--project-id ID] [--project DIR] [--dry-run]
+lekalo init --adopt [--target TARGET [--profile PROFILE]] [--project-id ID] [--project DIR] [--dry-run]
 lekalo load [--project DIR] [--spans] [--ir]
 lekalo lock [--check] [--offline] [--project DIR]
 lekalo update --dry-run [--offline] [--project DIR]
@@ -61,7 +61,10 @@ Root and per-command help remain clap help text rather than a domain failure.
 read-only detection with provenance and confidence, the minimal canonical
 skeleton (`lekalo/project.yaml`, plus `lekalo/targets/<id>.yaml` only for
 an explicit `--target`), atomic no-overwrite writes with journal and
-rollback, and an in-process load+validate gate over the result. `--dry-run`
+rollback, and an in-process load+validate gate over the result. An
+explicit `--profile` (requires `--target`, #28 token grammar) is
+recorded in the target document and the receipt's `adapterProfile`;
+never executed or checked against an adapter. `--dry-run`
 prints the full plan and writes nothing; a repeated init is idempotent.
 Observed modules stay observations in the receipt — the Model contract has
 no module-mode field, so none is emitted. `init` without `--adopt` is the

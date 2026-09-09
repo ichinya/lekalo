@@ -256,6 +256,147 @@ fn adopt_is_idempotent_on_a_second_run() {
     );
 }
 
+/// The explicit adapter profile (issue #38 target/profile selection):
+/// the recorded selection persists in the opaque target document and the
+/// receipt, an orphan or malformed profile is the stable usage failure
+/// before any write, an identical re-run is idempotent, and a changed
+/// selection never overwrites — it denies with `init.adopt-conflict`.
+#[test]
+fn adopt_records_the_explicit_adapter_profile() {
+    let (_temp, root) = materialize(NODE_MONOREPO);
+    // An orphan profile is refused before any plan or write.
+    let orphan = lekalo_in(&root, &["init", "--adopt", "--profile", "default"]);
+    assert_eq!(exit_code(&orphan), 1);
+    assert!(stdout_text(&orphan).is_empty());
+    assert!(stderr_text(&orphan).contains("cli.usage"));
+    assert!(!root.join("lekalo").exists(), "nothing is written");
+    // A malformed profile token never reaches the core.
+    let malformed = lekalo_in(
+        &root,
+        &[
+            "init",
+            "--adopt",
+            "--target",
+            "node-typescript",
+            "--profile",
+            "Default_Profile",
+        ],
+    );
+    assert_eq!(exit_code(&malformed), 1);
+    assert!(stderr_text(&malformed).contains("cli.usage"));
+    assert!(!root.join("lekalo").exists(), "nothing is written");
+    // The valid selection is recorded and persists.
+    let document = "{\"target\":\"node-typescript\",\"profile\":\"default\",\"note\":\"Adopted target selection.\"}\n";
+    let applied = lekalo_in(
+        &root,
+        &[
+            "--json",
+            "init",
+            "--adopt",
+            "--target",
+            "node-typescript",
+            "--profile",
+            "default",
+        ],
+    );
+    assert_eq!(exit_code(&applied), 0, "{}", stderr_text(&applied));
+    let envelope = stdout_json(&applied);
+    assert_eq!(envelope["target"], "node-typescript");
+    assert_eq!(envelope["adapterProfile"], "default");
+    assert_eq!(
+        envelope["gate"]["profile"], "default",
+        "the gate profile stays the validator profile"
+    );
+    assert_eq!(
+        fs::read_to_string(
+            root.join("lekalo")
+                .join("targets")
+                .join("node-typescript.yaml")
+        )
+        .expect("target document"),
+        document
+    );
+    // Dry-run over the adopted tree plans nothing and writes nothing.
+    let dry = lekalo_in(
+        &root,
+        &[
+            "--json",
+            "init",
+            "--adopt",
+            "--target",
+            "node-typescript",
+            "--profile",
+            "default",
+            "--dry-run",
+        ],
+    );
+    assert_eq!(exit_code(&dry), 0, "{}", stderr_text(&dry));
+    let dry_envelope = stdout_json(&dry);
+    assert_eq!(dry_envelope["mode"], "dry-run");
+    assert_eq!(dry_envelope["adapterProfile"], "default");
+    assert_eq!(dry_envelope["writes"][0]["disposition"], "already-present");
+    assert_eq!(
+        fs::read_to_string(
+            root.join("lekalo")
+                .join("targets")
+                .join("node-typescript.yaml")
+        )
+        .expect("target document"),
+        document
+    );
+    // An identical re-run is idempotent.
+    let repeat = lekalo_in(
+        &root,
+        &[
+            "--json",
+            "init",
+            "--adopt",
+            "--target",
+            "node-typescript",
+            "--profile",
+            "default",
+        ],
+    );
+    assert_eq!(exit_code(&repeat), 0, "{}", stderr_text(&repeat));
+    assert_eq!(stdout_json(&repeat)["changed"], false);
+    assert_eq!(
+        fs::read_to_string(
+            root.join("lekalo")
+                .join("targets")
+                .join("node-typescript.yaml")
+        )
+        .expect("target document"),
+        document
+    );
+    // A changed selection is different bytes: denied, never overwritten.
+    let changed = lekalo_in(
+        &root,
+        &[
+            "--json",
+            "init",
+            "--adopt",
+            "--target",
+            "node-typescript",
+            "--profile",
+            "strict",
+        ],
+    );
+    assert_eq!(exit_code(&changed), 3);
+    assert_eq!(
+        stdout_json(&changed)["reasonCodes"][0],
+        "init.adopt-conflict"
+    );
+    assert_eq!(
+        fs::read_to_string(
+            root.join("lekalo")
+                .join("targets")
+                .join("node-typescript.yaml")
+        )
+        .expect("target document survives"),
+        document
+    );
+}
+
 /// An existing file with different content denies the whole adoption with
 /// `init.adopt-conflict` and the conflicting bytes survive untouched.
 #[test]

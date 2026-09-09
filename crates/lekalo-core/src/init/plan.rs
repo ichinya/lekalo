@@ -35,11 +35,18 @@ pub(crate) fn project_document(project_id: &str) -> PlannedFile {
 }
 
 /// The minimal `lekalo/targets/<id>.yaml`, written only for an explicit
-/// `--target`. Target documents stay opaque to the loader.
-pub(crate) fn target_document(target: &str) -> PlannedFile {
+/// `--target`. Target documents stay opaque to the loader; an explicit
+/// `--profile` selection is recorded verbatim in the same opaque document.
+pub(crate) fn target_document(target: &str, profile: Option<&str>) -> PlannedFile {
     debug_assert!(super::detect::valid_target_id(target));
-    let bytes = format!("{{\"target\":\"{target}\",\"note\":\"Adopted target selection.\"}}\n")
-        .into_bytes();
+    debug_assert!(profile
+        .map(crate::target_protocol::scopes::is_token)
+        .unwrap_or(true));
+    let bytes = match profile {
+        Some(profile) => format!("{{\"target\":\"{target}\",\"profile\":\"{profile}\",\"note\":\"Adopted target selection.\"}}\n"),
+        None => format!("{{\"target\":\"{target}\",\"note\":\"Adopted target selection.\"}}\n"),
+    }
+    .into_bytes();
     PlannedFile {
         path: format!("lekalo/targets/{target}.yaml"),
         bytes,
@@ -47,10 +54,14 @@ pub(crate) fn target_document(target: &str) -> PlannedFile {
 }
 
 /// The ordered write plan of one adoption.
-pub(crate) fn build(project_id: &str, target: Option<&str>) -> Vec<PlannedFile> {
+pub(crate) fn build(
+    project_id: &str,
+    target: Option<&str>,
+    profile: Option<&str>,
+) -> Vec<PlannedFile> {
     let mut files = vec![project_document(project_id)];
     if let Some(target) = target {
-        files.push(target_document(target));
+        files.push(target_document(target, profile));
     }
     files
 }
@@ -286,7 +297,7 @@ mod tests {
     fn rollback_removes_exactly_the_journaled_entries() {
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path();
-        let files = build("probe", None);
+        let files = build("probe", None, None);
         assert!(matches!(apply(root, &files), ApplyOutcome::Applied));
         assert!(root.join("lekalo").join("project.yaml").is_file());
         let journal = Journal::from_created(root, &["lekalo/project.yaml".to_owned()]);

@@ -15,6 +15,7 @@ independent version lines.
 ```text
 lekalo init --adopt
 lekalo init --adopt --target node-typescript
+lekalo init --adopt --target node-typescript --profile default
 lekalo init --adopt --dry-run
 lekalo init --adopt --project DIR
 lekalo init --adopt --project-id ID
@@ -82,8 +83,22 @@ Adoption writes only what the accepted #4 structure contract requires:
 
 - `lekalo/project.yaml` — the single project definition
   (`{"schema_version":"1.0.0","definitions":[{"id":...,"kind":"project","version":1,"description":"Adopted existing project."}]}`),
-  written only when `--target` selected one explicitly. Target documents
-  stay opaque to the loader.
+  always written;
+- `lekalo/targets/<id>.yaml` — the explicit selection record, written
+  only when `--target` selected one. Target documents stay opaque to the
+  loader.
+
+The explicit adapter profile (`--profile PROFILE`) completes the issue's
+explicit target/profile selection: it requires `--target`, uses the #28
+token grammar (lowercase ASCII, digits, `-`, at most 64 bytes), and is
+recorded verbatim in the target document (`"profile"`) and in the
+receipt's `adapterProfile`. Adoption never executes an adapter, so a
+profile is never checked against an adapter's declared profiles — it is
+a persisted selection, and the wire protocol governs its use later. An
+orphan `--profile` without `--target` or a malformed token is the stable
+usage failure (`cli.usage`, exit 1) before any plan or write; the same
+target id re-adopted with a different profile plans different bytes and
+therefore denies with `init.adopt-conflict` instead of overwriting.
 
 No `.lekalo/**` runtime state is written, `lekalo.lock` stays the `lekalo
 lock` seam, and `.gitignore` is user-owned and never edited.

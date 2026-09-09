@@ -31,6 +31,9 @@ pub struct AdoptRequest {
     pub project: Option<String>,
     /// Explicit target selection (`--target`).
     pub target: Option<String>,
+    /// Explicit adapter profile selection (`--profile`; the CLI refuses an
+    /// orphan profile and enforces the #28 token grammar).
+    pub profile: Option<String>,
     /// Explicit project id (`--project-id`).
     pub project_id: Option<String>,
     /// Preview the plan without writing (`--dry-run`).
@@ -444,7 +447,11 @@ pub fn adopt(request: &AdoptRequest) -> DomainResult {
 
     // 4. Plan and preflight: identical bytes skip, any other existing
     // path is a no-overwrite conflict.
-    let files = plan::build(&project.id, request.target.as_deref());
+    let files = plan::build(
+        &project.id,
+        request.target.as_deref(),
+        request.profile.as_deref(),
+    );
     let state = preflight(&root, &files);
 
     // 5. Dry-run: the full plan without writing anything.
@@ -457,6 +464,7 @@ pub fn adopt(request: &AdoptRequest) -> DomainResult {
             project_id: project.id.clone(),
             project_id_source: project.provenance.clone(),
             target: request.target.clone(),
+            adapter_profile: request.profile.clone(),
             profile: "default",
             already_present: state.already_present,
             conflicts: state.conflicts.len(),
@@ -482,6 +490,7 @@ pub fn adopt(request: &AdoptRequest) -> DomainResult {
             project_id: project.id.clone(),
             project_id_source: project.provenance.clone(),
             target: request.target.clone(),
+            adapter_profile: request.profile.clone(),
             profile: "default",
             already_present: state.already_present,
             conflicts: 0,
@@ -528,6 +537,7 @@ pub fn adopt(request: &AdoptRequest) -> DomainResult {
         project_id: project.id.clone(),
         project_id_source: project.provenance.clone(),
         target: request.target.clone(),
+        adapter_profile: request.profile.clone(),
         profile: "default",
         already_present: state.already_present,
         conflicts: 0,

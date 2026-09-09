@@ -265,6 +265,10 @@ enum Commands {
         /// Explicit target selection; written to `lekalo/targets/`.
         #[arg(long, value_name = "TARGET")]
         target: Option<String>,
+        /// Explicit adapter profile selection; recorded with the target
+        /// document and receipt. Requires `--target`.
+        #[arg(long, value_name = "PROFILE")]
+        profile: Option<String>,
         /// Explicit canonical project id when derivation is ambiguous.
         #[arg(long, value_name = "ID")]
         project_id: Option<String>,
@@ -558,10 +562,11 @@ fn main() -> ExitCode {
             Commands::Init {
                 adopt,
                 target,
+                profile,
                 project_id,
                 project,
                 dry_run,
-            } => run_init(adopt, target, project_id, project, dry_run),
+            } => run_init(adopt, target, profile, project_id, project, dry_run),
         },
         Err(error) => match error.kind() {
             ErrorKind::DisplayHelp => {
@@ -896,6 +901,7 @@ fn run_lock(project: Option<String>, check: bool) -> DomainResult {
 fn run_init(
     adopt: bool,
     target: Option<String>,
+    profile: Option<String>,
     project_id: Option<String>,
     project: Option<String>,
     dry_run: bool,
@@ -908,6 +914,13 @@ fn run_init(
             return DomainResult::usage_error();
         }
     }
+    // A profile selects within one explicit target: an orphan or malformed
+    // profile is the stable usage failure before any plan or write.
+    if let Some(profile) = profile.as_deref() {
+        if target.is_none() || !lekalo_core::target_protocol::scopes::is_token(profile) {
+            return DomainResult::usage_error();
+        }
+    }
     if let Some(project_id) = project_id.as_deref() {
         if !lekalo_core::init::valid_project_id(project_id) {
             return DomainResult::usage_error();
@@ -916,6 +929,7 @@ fn run_init(
     lekalo_core::init::adopt(&lekalo_core::init::AdoptRequest {
         project,
         target,
+        profile,
         project_id,
         dry_run,
     })

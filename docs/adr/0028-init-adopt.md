@@ -18,9 +18,12 @@ semantics.
 1. **The skeleton is exactly the #4 requirement.** `lekalo/project.yaml`
    alone is a complete legal project (zero modules). Adoption writes it
    with deterministic compact JSON, one trailing LF, fixed key order.
-   `lekalo/targets/<id>.yaml` is written only for an explicit `--target`;
-   target documents stay opaque. No lock (`lekalo lock` owns it), no
-   `.lekalo/**` runtime writes, no `.gitignore` edits.
+   `lekalo/targets/<id>.yaml` is written only for an explicit `--target`
+   and records an explicit `--profile` (requires `--target`, the #28
+   token grammar) verbatim; target documents stay opaque, and a profile
+   is a persisted selection — never executed or checked against an
+   adapter, because adoption runs nothing. No lock (`lekalo lock` owns
+   it), no `.lekalo/**` runtime writes, no `.gitignore` edits.
 2. **Observed modules are receipt data, never canonical documents.** The
    Model contract has no module-mode field and the registry/policy forbid
    unpublished fields, so `mode: "observed"` lives in the adoption

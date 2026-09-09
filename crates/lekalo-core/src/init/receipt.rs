@@ -208,6 +208,10 @@ pub struct AdoptReceipt {
     pub project_id_source: ProjectIdProvenance,
     /// The explicitly selected target, when `--target` was passed.
     pub target: Option<String>,
+    /// The explicitly selected adapter profile, when `--profile` was
+    /// passed (requires `--target`; the #28 token grammar).
+    #[serde(rename = "adapterProfile")]
+    pub adapter_profile: Option<String>,
     /// The validation profile of the post-write gate (`default`).
     pub profile: &'static str,
     /// Planned writes already present with identical bytes.

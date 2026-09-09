@@ -416,7 +416,9 @@ files, existing OpenSpec/AI Factory/HLV layouts, native gate command
 proposals, installed target adapters, observed modules), the minimal
 canonical skeleton (`lekalo/project.yaml`), atomic no-overwrite writes
 with journal and rollback, an idempotent re-run, and an in-process
-load+validate gate. `--dry-run` prints every planned write without
+load+validate gate. `--target` (with the optional `--profile`, recorded
+in the target document and the receipt, never executed or checked
+against an adapter) and `--dry-run` print every planned write without
 touching the tree. The contract and the closed `init.*` diagnostics live
 in [docs/adopt.md](docs/adopt.md) and
 [ADR-0028](docs/adr/0028-init-adopt.md).
