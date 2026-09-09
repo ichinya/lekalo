@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.2.4. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.2.5. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -17,6 +17,7 @@ with filesystem access and it never writes.
 
 ```text
 lekalo --version
+lekalo adapter test [--profile default|strict] [--report json|junit] [--repeats N] [--timeout-ms MS] PROGRAM [ARGS]...
 lekalo init --adopt [--target TARGET [--profile PROFILE]] [--project-id ID] [--project DIR] [--dry-run]
 lekalo load [--project DIR] [--spans] [--ir]
 lekalo lock [--check] [--offline] [--project DIR]
@@ -147,6 +148,25 @@ recovery contract. Unsupported contract versions exit 5 with the shared
 fixed order `model`, `ir`, `protocol`); it performs no project or
 adapter discovery.
 
+
+### `lekalo adapter test`
+
+`adapter test` runs the issue #31 conformance battery against one
+adapter executable through the confined target-protocol client: the
+describe handshake and negotiation, capability declaration, deterministic
+repeats, the dry-run plan and its apply, confinement, cancellation,
+invalid-input handling, structured diagnostics, scenario
+normalization, artifact evidence, and redaction. `--profile strict`
+additionally requires the complete v1 operation surface; `--report
+json|junit` prints the deterministic report document on stdout for
+every completed run while the exit code stays verdict-owned
+(0 pass, 1 feature failure, 3 security, 4 process/protocol). A
+security or protocol failure is never compensated by passing feature
+tests, and the verified badge names the exact protocol/IR versions
+only. The normative contract is
+[adapter-conformance.md](adapter-conformance.md) and
+[ADR-0030](adr/0030-adapter-conformance.md).
+
 ## Exit and stream contract
 
 | Exit | Status | Stream | Meaning |
@@ -246,14 +266,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.2.4"
+  "version": "0.2.5"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.2.4`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.2.5`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph

@@ -279,10 +279,79 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Run the target adapter conformance suite (issue #31).
+    Adapter {
+        #[command(subcommand)]
+        command: AdapterCommands,
+    },
     Cache {
         #[command(subcommand)]
         command: CacheCommands,
     },
+}
+
+/// The `adapter` subcommands: the issue #31 conformance suite handoff.
+/// The core owns every decision; this layer selects, renders, and maps
+/// exits.
+#[derive(Debug, Subcommand)]
+enum AdapterCommands {
+    /// Run the conformance battery against one adapter executable.
+    ///
+    /// Everything after the program path is passed to the adapter
+    /// verbatim (no shell), so adapter flags come last.
+    Test {
+        /// The closed battery profile.
+        #[arg(long, value_name = "PROFILE", default_value = "default")]
+        profile: AdapterTestProfile,
+        /// Print this report document on stdout for every completed
+        /// run, regardless of the verdict.
+        #[arg(long, value_name = "FORMAT")]
+        report: Option<AdapterTestReport>,
+        /// Repetition count of every determinism probe.
+        #[arg(
+            long,
+            value_name = "N",
+            default_value_t = lekalo_core::adapter_conformance::DEFAULT_REPEATS
+        )]
+        repeats: u8,
+        /// Per-exchange adapter deadline in milliseconds.
+        #[arg(
+            long,
+            value_name = "MS",
+            default_value_t = lekalo_core::adapter_conformance::DEFAULT_TIMEOUT_MS
+        )]
+        timeout_ms: u64,
+        /// The adapter program and its arguments, spawned directly.
+        #[arg(trailing_var_arg = true)]
+        program_args: Vec<String>,
+    },
+}
+
+/// The closed conformance battery profile vocabulary.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum AdapterTestProfile {
+    /// The default battery.
+    Default,
+    /// The strict battery: the complete operation surface is required.
+    Strict,
+}
+
+impl From<AdapterTestProfile> for lekalo_core::adapter_conformance::Profile {
+    fn from(profile: AdapterTestProfile) -> Self {
+        match profile {
+            AdapterTestProfile::Default => Self::Default,
+            AdapterTestProfile::Strict => Self::Strict,
+        }
+    }
+}
+
+/// The closed report format vocabulary.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum AdapterTestReport {
+    /// The deterministic JSON envelope with the embedded report.
+    Json,
+    /// The deterministic JUnit XML document.
+    Junit,
 }
 
 /// The `trace` subcommands: a thin handoff to the core trace validator.
@@ -567,6 +636,24 @@ fn main() -> ExitCode {
                 project,
                 dry_run,
             } => run_init(adopt, target, profile, project_id, project, dry_run),
+            Commands::Adapter { command } => match run_adapter(command) {
+                AdapterRun::Envelope(result) => result,
+                AdapterRun::Document { document, result } => {
+                    // The requested report document owns stdout for
+                    // every completed run; a failing verdict still
+                    // renders its envelope on the status-owned stream.
+                    let exit = result.exit_code();
+                    let write_ok = write_stdout(&document);
+                    if result.writes_stderr() {
+                        let _ = write_stderr(&result.to_json_string());
+                    }
+                    return if write_ok {
+                        ExitCode::from(exit)
+                    } else {
+                        ExitCode::from(OUTPUT_FAILURE)
+                    };
+                }
+            },
         },
         Err(error) => match error.kind() {
             ErrorKind::DisplayHelp => {
@@ -933,6 +1020,90 @@ fn run_init(
         project_id,
         dry_run,
     })
+}
+
+/// The terminal output of `lekalo adapter test`: either the standard
+/// envelope, or an explicitly requested report document that owns
+/// stdout for every completed run.
+enum AdapterRun {
+    Envelope(DomainResult),
+    Document {
+        /// The exact report document bytes.
+        document: String,
+        /// The verdict result carrying the exit class.
+        result: DomainResult,
+    },
+}
+
+/// Run `lekalo adapter test`: the thin handoff to the issue #31
+/// conformance engine. The core owns every decision; this layer only
+/// selects the battery, renders the report, and maps exits.
+fn run_adapter(command: AdapterCommands) -> AdapterRun {
+    let AdapterCommands::Test {
+        profile,
+        report,
+        repeats,
+        timeout_ms,
+        program_args,
+    } = command;
+    let Some((program, args)) = program_args.split_first() else {
+        return AdapterRun::Envelope(DomainResult::usage_error());
+    };
+    if program.is_empty() {
+        return AdapterRun::Envelope(DomainResult::usage_error());
+    }
+    let command = lekalo_core::target_protocol::transport::AdapterCommand {
+        program: std::path::PathBuf::from(program),
+        args: args.to_vec(),
+    };
+    let options = lekalo_core::adapter_conformance::SuiteOptions {
+        profile: profile.into(),
+        repeats,
+        timeout_ms,
+    };
+    match lekalo_core::adapter_conformance::run(&command, &options) {
+        Ok(outcome) => match report {
+            None => AdapterRun::Envelope(outcome.domain_result()),
+            Some(AdapterTestReport::Json) => AdapterRun::Document {
+                document: outcome.envelope_json(),
+                result: outcome.domain_result(),
+            },
+            Some(AdapterTestReport::Junit) => AdapterRun::Document {
+                document: outcome.junit(),
+                result: outcome.domain_result(),
+            },
+        },
+        Err(error) => AdapterRun::Envelope(
+            lekalo_core::adapter_conformance::infrastructure_result(error),
+        ),
+    }
+}
+
+/// Write one document to stdout with the trailing newline protocol.
+fn write_stdout(document: &str) -> bool {
+    use std::io::Write;
+    let mut handle = io::stdout().lock();
+    handle
+        .write_all(document.as_bytes())
+        .and_then(|()| {
+            if document.ends_with('\n') {
+                handle.flush()
+            } else {
+                handle.write_all(b"\n").and_then(|()| handle.flush())
+            }
+        })
+        .is_ok()
+}
+
+/// Write one envelope to stderr with the trailing newline protocol.
+fn write_stderr(envelope: &str) -> bool {
+    use std::io::Write;
+    let mut handle = io::stderr().lock();
+    handle
+        .write_all(envelope.as_bytes())
+        .and_then(|()| handle.write_all(b"\n"))
+        .and_then(|()| handle.flush())
+        .is_ok()
 }
 
 /// Run `lekalo update`: `--dry-run` previews the plan, `--apply PLAN_ID`

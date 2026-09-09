@@ -232,11 +232,11 @@ fn version_custody_prints_the_prospective_candidate() {
     let root = workspace_root();
     let human = lekalo_in(&root, &["--version"]);
     assert_eq!(exit_code(&human), 0);
-    assert_eq!(stdout_text(&human).trim(), "lekalo 0.2.4");
+    assert_eq!(stdout_text(&human).trim(), "lekalo 0.2.5");
     let json = lekalo_in(&root, &["--json", "--version"]);
     assert_eq!(exit_code(&json), 0);
     assert_eq!(
         stdout_text(&json).trim(),
-        "{\n  \"status\": \"valid\",\n  \"version\": \"0.2.4\"\n}"
+        "{\n  \"status\": \"valid\",\n  \"version\": \"0.2.5\"\n}"
     );
 }
