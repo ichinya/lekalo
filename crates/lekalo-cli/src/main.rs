@@ -295,6 +295,15 @@ enum Commands {
         #[command(subcommand)]
         command: ObserveCommands,
     },
+    /// Record, verify, and govern AI-written implementation in
+    /// contracted mode (issue #40). The model is primary, the target
+    /// source is maintained code, and the adapter checks conformance
+    /// and may generate support artifacts only. The core owns every
+    /// decision; this binary only selects, renders, and maps exits.
+    Contract {
+        #[command(subcommand)]
+        command: ContractCommands,
+    },
 }
 
 /// The `adapter` subcommands: the issue #31 conformance suite handoff.
@@ -554,6 +563,73 @@ enum ObserveCommands {
     },
 }
 
+/// The `contract` subcommands: the contracted-mode surface (issue #40).
+/// The core owns every decision — declaration validation, conformance
+/// classification, attachment custody, and support-artifact ownership;
+/// this layer selects, renders, and maps exits.
+#[derive(Debug, Subcommand)]
+enum ContractCommands {
+    /// Merge one adapter declaration document into the conformed
+    /// registry; a binding recorded with a fingerprint is conformance
+    /// evidence until the source or the contract changes.
+    Update {
+        /// The adapter declaration document (JSON), relative to the
+        /// invocation directory.
+        #[arg(long, value_name = "FILE")]
+        declaration: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Run the conformance gate: re-fingerprint every binding,
+    /// recompute the canonical signatures and declared effects from the
+    /// typed IR, and re-digest every fingerprinted support artifact.
+    Check {
+        /// Restrict the gate to one module.
+        #[arg(long, value_name = "MODULE")]
+        module: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Attach verbatim native-test or gate ids to one recorded symbol.
+    Attach {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Comma-separated native test ids (verbatim external ids).
+        #[arg(long, value_name = "IDS")]
+        native_test: Option<String>,
+        /// Comma-separated gate ids (verbatim external ids).
+        #[arg(long, value_name = "IDS")]
+        gate: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Register one support artifact in the ownership manifest; the
+    /// path must stay inside the generated home, and maintained
+    /// implementation paths refuse by construction.
+    Support {
+        /// The owning semantic id.
+        symbol: String,
+        /// The closed support-artifact kind.
+        #[arg(long, value_name = "KIND")]
+        kind: String,
+        /// The exact logical path inside `.lekalo/generated/**`.
+        #[arg(long, value_name = "PATH")]
+        path: String,
+        /// The closed lifecycle (generated, scaffolded, checked).
+        #[arg(long, value_name = "LIFECYCLE", default_value = "generated")]
+        lifecycle: String,
+        /// The SHA-256 over the artifact's exact observed bytes.
+        #[arg(long, value_name = "SHA256")]
+        digest: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
+
 /// The closed diff output format vocabulary.
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 enum DiffFormat {
@@ -735,6 +811,7 @@ fn main() -> ExitCode {
             } => run_generate(project, check, clean, dry_run, confirm),
             Commands::Cache { command } => run_cache(command),
             Commands::Observe { command } => run_observe(command),
+            Commands::Contract { command } => run_contract(command),
             Commands::Init {
                 adopt,
                 target,
@@ -3088,5 +3165,185 @@ fn run_observe_promote(
             ),
             Err(set) => DomainResult::invalid(set),
         }
+    }
+}
+
+/// Read the declaration document bytes; the path is an
+/// invocation-relative input document, never a project file.
+fn declaration_bytes(path: &str) -> Result<Vec<u8>, DomainResult> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                std::io::ErrorKind::NotFound => "declaration-missing",
+                _ => "declaration-unreadable",
+            };
+            return Err(DomainResult::invalid(
+                lekalo_core::contracted::declaration_invalid_set(detail, None),
+            ));
+        }
+    };
+    if bytes.len() > lekalo_core::contracted::MAX_DECLARATION_BYTES {
+        return Err(DomainResult::invalid(
+            lekalo_core::contracted::declaration_limit_set("declaration-bytes", bytes.len()),
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Run one `contract` subcommand (issue #40): load the project through
+/// the accepted seam, hand everything to the core contracted engine,
+/// and project the result. Every contracted decision — declaration
+/// validation, conformance classification, attachment custody, and
+/// support-artifact ownership — lives in the core.
+fn run_contract(command: ContractCommands) -> DomainResult {
+    match command {
+        ContractCommands::Update {
+            declaration,
+            project,
+        } => run_contract_update(&declaration, &project),
+        ContractCommands::Check { module, project } => {
+            run_contract_check(module.as_deref(), &project)
+        }
+        ContractCommands::Attach {
+            symbol,
+            native_test,
+            gate,
+            project,
+        } => run_contract_attach(&symbol, native_test.as_deref(), gate.as_deref(), &project),
+        ContractCommands::Support {
+            symbol,
+            kind,
+            path,
+            lifecycle,
+            digest,
+            project,
+        } => run_contract_support(
+            &symbol,
+            &kind,
+            &path,
+            &lifecycle,
+            digest.as_deref(),
+            &project,
+        ),
+    }
+}
+
+fn run_contract_update(declaration: &str, project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let bytes = match declaration_bytes(declaration) {
+        Ok(bytes) => bytes,
+        Err(result) => return result,
+    };
+    let context = match lekalo_core::contracted::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::contracted::update_registry(&context, &bytes) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!(
+                "contract update {} symbols ({} recorded, {} artifacts)",
+                receipt.symbols,
+                receipt.recorded.len(),
+                receipt.artifacts
+            ),
+        ),
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+fn run_contract_check(module: Option<&str>, project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::contracted::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::contracted::check(&context, module) {
+        Ok(receipt) => {
+            let human = format!(
+                "contract check {} symbols ({} conformant, {} stale, {} unknown, {} artifacts, {} stale artifacts)",
+                receipt.symbols,
+                receipt.conformant,
+                receipt.stale,
+                receipt.unknown,
+                receipt.artifacts,
+                receipt.stale_artifacts
+            );
+            DomainResult::receipt(
+                serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                human,
+            )
+        }
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+fn run_contract_attach(
+    symbol: &str,
+    native_test: Option<&str>,
+    gate: Option<&str>,
+    project: &Option<String>,
+) -> DomainResult {
+    let tests = match external_ids(native_test) {
+        Ok(tests) => tests,
+        Err(result) => return result,
+    };
+    let gates = match external_ids(gate) {
+        Ok(gates) => gates,
+        Err(result) => return result,
+    };
+    if tests.is_empty() && gates.is_empty() {
+        return DomainResult::usage_error();
+    }
+    let selection = selection_for(project);
+    let context = match lekalo_core::contracted::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::contracted::attach(&context, symbol, &tests, &gates) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!(
+                "contract attach {} ({} native tests, {} gates)",
+                receipt.symbol,
+                receipt.native_tests.len(),
+                receipt.gates.len()
+            ),
+        ),
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+fn run_contract_support(
+    symbol: &str,
+    kind: &str,
+    path: &str,
+    lifecycle: &str,
+    digest: Option<&str>,
+    project: &Option<String>,
+) -> DomainResult {
+    let Some(kind) = lekalo_core::contracted::SupportKind::parse(kind) else {
+        return DomainResult::usage_error();
+    };
+    let Some(lifecycle) = lekalo_core::contracted::SupportLifecycle::parse(lifecycle) else {
+        return DomainResult::usage_error();
+    };
+    let selection = selection_for(project);
+    let context = match lekalo_core::contracted::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::contracted::support(&context, symbol, kind, path, lifecycle, digest) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!(
+                "contract support {} ({} {})",
+                receipt.path,
+                receipt.kind.key(),
+                receipt.lifecycle.key()
+            ),
+        ),
+        Err(set) => DomainResult::invalid(set),
     }
 }

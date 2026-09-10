@@ -5,6 +5,7 @@ pub mod artifacts;
 pub mod authorization;
 pub mod cache;
 pub mod context;
+pub mod contracted;
 pub mod diagnostics;
 pub mod diff;
 pub mod effects;

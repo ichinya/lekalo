@@ -51,7 +51,9 @@ registry version.
   deletions only inside `.lekalo/generated/**`, and the generated-artifact
   manifest cannot claim observed files at all — its path grammar refuses
   anything outside the managed root.
-- **Explicit promotion into `contracted`.** Promotion is the authority
+- **Explicit promotion into `contracted`.** (The contracted-mode
+  surface that consumes promoted symbols is issue #40; see
+  [docs/contracted-mode.md](contracted-mode.md).) Promotion is the authority
   brownfield-adoption action (`explicitAdoption`, `reviewed`, `provenance`):
   a planned, explicitly confirmed two-phase write that materializes
   canonical Model definitions from confirmed evidence, per symbol or per

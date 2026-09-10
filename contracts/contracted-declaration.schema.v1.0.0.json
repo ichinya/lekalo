@@ -1,0 +1,298 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/contracted-declaration.schema.v1.0.0.json",
+  "title": "Lekalo contracted declaration document",
+  "description": "Closed contract of one adapter declaration document (issue #40): the typed conformance evidence for maintained code in contracted mode — bound symbols with source locations and fingerprints, typed signature claims, declared effects, and the ownership records of generated support artifacts. The declaration is adapter-owned input; the Lekalo Model stays primary for the public contract, and the maintained implementation is never overwritten. This contract version is independent of the product release, of the Model/IR/protocol contract versions, of the observed-index family, and of the diagnostic registry version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "adapter",
+    "project",
+    "revision",
+    "symbols"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/contracted-declaration/v1.0.0"
+    },
+    "adapter": {
+      "$ref": "#/$defs/adapter"
+    },
+    "project": {
+      "$ref": "#/$defs/moduleId"
+    },
+    "revision": {
+      "$ref": "#/$defs/sha256"
+    },
+    "symbols": {
+      "$ref": "#/$defs/symbols"
+    },
+    "artifacts": {
+      "$ref": "#/$defs/artifacts"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,191}$"
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!lekalo/|\\.lekalo/)[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "typeExpression": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_.?()]+$"
+    },
+    "signatureInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "type": {
+          "$ref": "#/$defs/typeExpression"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "signature": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/signatureObject"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "subject"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "write-field",
+            "emit-event",
+            "enqueue-job",
+            "external-call",
+            "cache-read",
+            "cache-write",
+            "cache-invalidate",
+            "publish-output",
+            "audit-log",
+            "transaction-boundary"
+          ]
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,191}(\\.[a-z][a-z0-9_]{0,63})?$"
+        }
+      }
+    },
+    "supportKind": {
+      "enum": [
+        "openapi",
+        "types",
+        "test-skeleton",
+        "binding-manifest",
+        "conformance-metadata",
+        "migration-hint"
+      ]
+    },
+    "supportLifecycle": {
+      "enum": [
+        "generated",
+        "scaffolded",
+        "checked"
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "kind",
+        "path",
+        "lifecycle"
+      ],
+      "properties": {
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "$ref": "#/$defs/supportKind"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 1024,
+          "pattern": "^\\.lekalo/generated/[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/supportLifecycle"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "symbols": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "kind": {
+            "enum": [
+              "command",
+              "query",
+              "effect",
+              "endpoint",
+              "entity"
+            ]
+          },
+          "source": {
+            "$ref": "#/$defs/location"
+          },
+          "fingerprint": {
+            "$ref": "#/$defs/sha256"
+          },
+          "signature": {
+            "$ref": "#/$defs/signature"
+          },
+          "effects": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "$ref": "#/$defs/effect"
+            }
+          }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "signatureObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inputs"
+      ],
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/signatureInput"
+          }
+        },
+        "output": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/typeExpression"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reads": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        }
+      }
+    }
+  }
+}

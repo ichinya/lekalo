@@ -9,7 +9,7 @@
       "const": "lekalo/diagnostic-registry/v1.0.0"
     },
     "identity": {
-      "const": "dev.lekalo.diagnostic-registry@1.16.0"
+      "const": "dev.lekalo.diagnostic-registry@1.19.0"
     },
     "registry_version": {
       "type": "string",

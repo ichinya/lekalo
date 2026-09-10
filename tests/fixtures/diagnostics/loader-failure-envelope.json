@@ -3,7 +3,7 @@
   "diagnostics": [
     {
       "schema_version": "lekalo/diagnostic/v1.0.0",
-      "registry_version": "1.16.0",
+      "registry_version": "1.19.0",
       "id": "loader.duplicate-definition",
       "code": "LEK-LOAD-004",
       "severity": "error",

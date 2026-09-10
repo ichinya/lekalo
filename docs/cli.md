@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.2.6. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.2.9. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -39,11 +39,16 @@ lekalo impact SYMBOL [--depth N] [--relation KIND] [--profile default|strict] [-
 lekalo impact --changed [--base REF] [--head REF] [--worktree] [--project DIR]
 lekalo context SYMBOL --budget TOKENS [--spans] [--project DIR]
 lekalo context --changed SYMBOLS --budget TOKENS [--spans] [--project DIR]
+lekalo contract update --declaration FILE [--project DIR]
+lekalo contract check [--module MODULE] [--project DIR]
+lekalo contract attach SYMBOL [--native-test IDS] [--gate IDS] [--project DIR]
+lekalo contract support SYMBOL --kind KIND --path PATH [--digest SHA256] [--lifecycle LC]
+    [--project DIR]
 ```
 
 `init --adopt`, `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
-`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, and
-`context` are implemented; none remains a recognized stub. `SYMBOL` is an
+`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`,
+`context`, and `contract` are implemented; none remains a recognized stub. `SYMBOL` is an
 opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic
 ID rules, validation, and graph construction bind every implemented
 command. Every implemented capability is bound by
@@ -266,14 +271,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.2.6"
+  "version": "0.2.9"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.2.6`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.2.9`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -603,6 +608,34 @@ the staleness gate (exit 0 current, exit 1 with
 `observed.stale-binding` per finding). `observe promote` is the
 only path into the canonical (contracted) model: inferred facts refuse,
 unknown evidence refuses, and the exact plan identity must be confirmed.
+
+## Contract (contracted mode)
+
+Issue #40 records, verifies, and governs AI-written implementation. The
+model is primary for the public contract, effects, and invariants; the
+target source is maintained code; the adapter checks conformance and may
+generate support artifacts only. The thin subcommands hand every
+decision to the core contracted engine; receipts are pretty two-space
+JSON with fixed key order, and failures carry the registered
+`contracted.*` rules:
+
+```sh
+lekalo contract update --declaration adapter-declaration.json
+lekalo contract check --module planner
+lekalo contract attach planner.focus_task --native-test "npm test -- focusTask"
+lekalo contract support planner.focus_task --kind openapi --path .lekalo/generated/openapi/planner.json --digest sha256:<64 hex>
+```
+
+`contract update` merges one adapter declaration into the derived
+registry at `.lekalo/import/contracted/registry.json`; bindings pin the
+maintained source location and fingerprint, the typed signature claim,
+and the declared-effect claim. `contract check` is the conformance
+gate: it re-fingerprints the sources, recomputes the canonical
+signatures and declared effects from the typed IR, and re-digests every
+fingerprinted support artifact (exit 0 clean, exit 1 with registered
+findings). The mode semantics, guarantees, and limits live in
+[docs/contracted-mode.md](contracted-mode.md) and
+[ADR-0034](adr/0034-contracted-mode.md).
 
 ## Development checks
 ```sh

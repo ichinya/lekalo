@@ -483,6 +483,26 @@ in [docs/observed-mode.md](docs/observed-mode.md),
 `contracts/observed-scan.schema.v1.0.0.json`; the hermetic
 task-domain fixture is under `tests/fixtures/observed/`.
 
+## Contracted mode for AI-written implementation
+
+Issue #40 is the ownership mode for the maintained implementation: the
+Lekalo Model is primary for the public contract, effects, and
+invariants; the target source is maintained code; the adapter checks
+conformance and may generate support artifacts only. Adapter
+declarations bind canonical symbols to maintained sources with typed
+signature and declared-effect claims; the conformance gate
+re-fingerprints the sources, recomputes the canonical contract from the
+typed IR, and re-digests every fingerprinted support artifact, so
+signature, effect, and contract drift are registered findings — and the
+maintained implementation is never overwritten. Scenario coverage links
+native tests to semantic symbols, and a module moves from observed to
+contracted by promotion plus one declaration merge, without a rewrite.
+The mode lives in [docs/contracted-mode.md](docs/contracted-mode.md),
+[ADR-0034](docs/adr/0034-contracted-mode.md), and
+`contracts/contracted-declaration.schema.v1.0.0.json`; the planner
+reference module is the first contracted slice under
+`tests/fixtures/contracted/planner-slice/`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -491,7 +511,8 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #39 carries prospective product 0.2.6
+independent of product releases; issue #40 carries prospective product 0.2.9
+(issue #39 published product 0.2.6, annotated tag `0.2.6` on `80a815a`);
 (issue #31 published product 0.2.5; the accepted M2 line published products
 0.2.0 through 0.2.4 for issues #27, #36, #28, #38 and #29; issue #63
 published product 0.1.31 (annotated tag `v0.1.31` on `9cdd8c1`);

@@ -3,7 +3,7 @@
   "diagnostics": [
     {
       "schema_version": "lekalo/diagnostic/v1.0.0",
-      "registry_version": "1.16.0",
+      "registry_version": "1.19.0",
       "id": "target.protocol-mismatch",
       "code": "LEK-TGT-003",
       "severity": "error",
