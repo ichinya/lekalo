@@ -148,12 +148,15 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
 
 // The coverage the acceptance criteria pin: a ready fresh fixture, a
 // degraded-missing-optional-HLV fixture, a blocked missing-required
-// fixture with next actions, and the status panel.
+// fixture with next actions, the status panel, and the stale/invalid
+// lock states the issue #92 correction pins.
 for (const required of [
   "doctor.ready.golden.json",
   "doctor.degraded.golden.json",
   "readiness.blocked.golden.json",
   "status.golden.json",
+  "status.stale.golden.json",
+  "status.invalid.golden.json",
 ]) {
   if (!readdirSync(resolve(root, goldenDir)).includes(required)) {
     fail("coverage", `${required} must be pinned`);

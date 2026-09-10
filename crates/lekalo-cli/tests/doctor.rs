@@ -238,6 +238,48 @@ fn stale_states_are_distinguished_per_check() {
         .unwrap();
     assert_eq!(cache["state"], "ok");
     assert_eq!(cache["reason"], "missing", "an absent cache is healthy");
+    // A drifted request digest is stale: the revisions block and the
+    // status human line both spell `stale`, never `fresh`.
+    let dir = locked_fixture_copy("stale-lock");
+    let lock_path = dir.join("lekalo.lock");
+    let text = String::from_utf8(std::fs::read(&lock_path).expect("lock bytes")).expect("utf8");
+    const MARKER: &str = "\"request_digest\":\"sha256:";
+    let start = text.find(MARKER).expect("request digest field") + MARKER.len();
+    let stale = format!(
+        "{}{}{}",
+        &text[..start],
+        "0".repeat(64),
+        &text[start + 64..]
+    );
+    std::fs::write(&lock_path, stale).expect("drift written");
+    let output = lekalo_in(&dir, &["--json", "status", "--project", "."]);
+    assert_eq!(exit_code(&output), 0);
+    let document: serde_json::Value =
+        serde_json::from_str(&stdout_text(&output)).expect("document parses");
+    assert_eq!(document["verdict"], "degraded");
+    assert_eq!(document["revisions"]["lock"]["state"], "stale");
+    let checks = document["checks"].as_array().unwrap();
+    let lock = checks.iter().find(|c| c["id"] == "lock.freshness").unwrap();
+    assert_eq!(lock["state"], "degraded");
+    assert_eq!(lock["reason"], "stale");
+    assert_eq!(lock["nextAction"], "preview-lock-update");
+    assert_eq!(lock["diagnostics"][0], "lock.stale");
+
+    // A schema-invalid lock surface exists: the revisions block records
+    // `invalid` — never `absent` — and the check keeps the preserved
+    // lock rule.
+    let dir = locked_fixture_copy("invalid-lock");
+    std::fs::write(dir.join("lekalo.lock"), b"{}").expect("invalid lock written");
+    let output = lekalo_in(&dir, &["--json", "status", "--project", "."]);
+    assert_eq!(exit_code(&output), 0);
+    let document: serde_json::Value =
+        serde_json::from_str(&stdout_text(&output)).expect("document parses");
+    assert_eq!(document["verdict"], "blocked");
+    assert_eq!(document["revisions"]["lock"]["state"], "invalid");
+    let checks = document["checks"].as_array().unwrap();
+    let lock = checks.iter().find(|c| c["id"] == "lock.freshness").unwrap();
+    assert_eq!(lock["state"], "unknown");
+    assert_eq!(lock["diagnostics"][0], "lock.schema-invalid");
 }
 
 #[test]

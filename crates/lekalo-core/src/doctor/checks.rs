@@ -428,10 +428,37 @@ impl LockFacts {
     }
 }
 
-/// `lock.freshness`: absent, stale, invalid, or fresh — each state
-/// distinguished with its own reason and next action, never repaired.
-pub(crate) fn lock_facts(selection: &LoadSelection, root: &Path) -> LockFacts {
-    let failure = |ids: Vec<String>| LockFacts {
+/// The typed lock facts of a genuinely absent lock file.
+fn absent_lock_facts() -> LockFacts {
+    LockFacts {
+        revision: LockRevision {
+            state: "absent",
+            digest: None,
+        },
+        check: Check {
+            id: "lock.freshness",
+            state: CheckState::Degraded,
+            required: true,
+            reason: Some("absent"),
+            next_action: action("create-lock"),
+            diagnostics: ids_from_codes(&["lock.missing"]),
+            notes: Vec::new(),
+        },
+        ..LockFacts::none()
+    }
+}
+
+/// The typed lock facts of a lock that exists but could not be read,
+/// parsed, or request-matched structurally: the check stays unknown with
+/// the preserved registry rule ids of the underlying refusal (never a
+/// hardcoded stand-in), and the revision block records `invalid` — never
+/// `absent` for a lock surface that exists.
+fn refused_lock_facts(ids: Vec<String>) -> LockFacts {
+    LockFacts {
+        revision: LockRevision {
+            state: "invalid",
+            digest: None,
+        },
         check: Check {
             id: "lock.freshness",
             state: CheckState::Unknown,
@@ -442,33 +469,33 @@ pub(crate) fn lock_facts(selection: &LoadSelection, root: &Path) -> LockFacts {
             notes: Vec::new(),
         },
         ..LockFacts::none()
-    };
+    }
+}
+
+/// `lock.freshness`: absent, stale, invalid, or fresh — each state
+/// distinguished with its own reason and next action, never repaired.
+/// The revision block spells the same state the verifier reached:
+/// `absent` only for a genuinely missing lock, `fresh`/`stale`/`invalid`
+/// for a present one per the verification verdict.
+pub(crate) fn lock_facts(selection: &LoadSelection, root: &Path) -> LockFacts {
     let registry = match crate::versioning::VersionRegistry::embedded() {
-        Err(_) => return failure(ids_from_codes(&["versioning.registry-invalid"])),
+        Err(_) => return refused_lock_facts(ids_from_codes(&["versioning.registry-invalid"])),
         Ok(registry) => registry,
     };
     match crate::lockfile::plan::LockService::read_state_at(root) {
-        Err(_) => failure(ids_from_codes(&["structure.root-unreadable"])),
-        Ok(crate::lockfile::LockState::Absent) => LockFacts {
-            revision: LockRevision {
-                state: "absent",
-                digest: None,
-            },
-            check: Check {
-                id: "lock.freshness",
-                state: CheckState::Degraded,
-                required: true,
-                reason: Some("absent"),
-                next_action: action("create-lock"),
-                diagnostics: ids_from_codes(&["lock.missing"]),
-                notes: Vec::new(),
-            },
-            ..LockFacts::none()
-        },
+        // The documented absent race: the file vanished between the
+        // entry probe and the read. A genuinely missing lock, not a
+        // refusal.
+        Err(crate::lockfile::LockFailure::Missing) => absent_lock_facts(),
+        // Every other refusal keeps its real diagnostic identity; a
+        // lock that exists but is unreadable or invalid is `invalid`,
+        // never `absent`.
+        Err(failure) => refused_lock_facts(ids_of(&DomainResult::from(&failure))),
+        Ok(crate::lockfile::LockState::Absent) => absent_lock_facts(),
         Ok(crate::lockfile::LockState::Present(lock)) => {
             let request = match crate::lockfile::plan::LockService::load_request(selection) {
-                Err(_) => {
-                    return failure(ids_from_codes(&["lock.reference-invalid"]));
+                Err(failure) => {
+                    return refused_lock_facts(ids_of(&DomainResult::from(&failure)));
                 }
                 Ok(request) => request,
             };
@@ -488,49 +515,58 @@ pub(crate) fn lock_facts(selection: &LoadSelection, root: &Path) -> LockFacts {
                     | crate::lockfile::types::Support::Unknown => unsatisfied = true,
                 }
             }
-            let check = match crate::lockfile::verify::LockVerifier::verify(
+            let (check, revision_state) = match crate::lockfile::verify::LockVerifier::verify(
                 &lock,
                 &request,
                 &crate::lockfile::verify::RuntimeInventory::empty(),
                 registry,
                 crate::lockfile::verify::LockRequirement::Optional,
             ) {
-                crate::lockfile::verify::LockVerdict::Satisfied { .. } => Check {
-                    id: "lock.freshness",
-                    state: CheckState::Ok,
-                    required: true,
-                    reason: Some("fresh"),
-                    next_action: None,
-                    diagnostics: Vec::new(),
-                    notes: Vec::new(),
-                },
-                crate::lockfile::verify::LockVerdict::Refused(
-                    crate::lockfile::LockFailure::Stale,
-                ) => Check {
-                    id: "lock.freshness",
-                    state: CheckState::Degraded,
-                    required: true,
-                    reason: Some("stale"),
-                    next_action: action("preview-lock-update"),
-                    diagnostics: ids_from_codes(&["lock.stale"]),
-                    notes: Vec::new(),
-                },
-                crate::lockfile::verify::LockVerdict::Refused(other) => {
-                    let ids = ids_of(&DomainResult::from(&other));
+                crate::lockfile::verify::LockVerdict::Satisfied { .. } => (
                     Check {
                         id: "lock.freshness",
-                        state: CheckState::Blocked,
+                        state: CheckState::Ok,
                         required: true,
-                        reason: Some("invalid"),
-                        next_action: action("create-lock"),
-                        diagnostics: ids,
+                        reason: Some("fresh"),
+                        next_action: None,
+                        diagnostics: Vec::new(),
                         notes: Vec::new(),
-                    }
+                    },
+                    "fresh",
+                ),
+                crate::lockfile::verify::LockVerdict::Refused(
+                    crate::lockfile::LockFailure::Stale,
+                ) => (
+                    Check {
+                        id: "lock.freshness",
+                        state: CheckState::Degraded,
+                        required: true,
+                        reason: Some("stale"),
+                        next_action: action("preview-lock-update"),
+                        diagnostics: ids_from_codes(&["lock.stale"]),
+                        notes: Vec::new(),
+                    },
+                    "stale",
+                ),
+                crate::lockfile::verify::LockVerdict::Refused(other) => {
+                    let ids = ids_of(&DomainResult::from(&other));
+                    (
+                        Check {
+                            id: "lock.freshness",
+                            state: CheckState::Blocked,
+                            required: true,
+                            reason: Some("invalid"),
+                            next_action: action("create-lock"),
+                            diagnostics: ids,
+                            notes: Vec::new(),
+                        },
+                        "invalid",
+                    )
                 }
             };
             LockFacts {
                 revision: LockRevision {
-                    state: "fresh",
+                    state: revision_state,
                     digest: Some(digest),
                 },
                 check,

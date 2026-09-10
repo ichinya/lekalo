@@ -160,6 +160,147 @@ fn status_panel_is_the_freshness_quartet() {
     assert!(human.starts_with("status "));
 }
 
+/// Drifts the committed lock's request digest by exact value
+/// substitution: the canonical wire bytes stay canonical, so the lock
+/// parses and the verifier refuses with `Stale`.
+fn drift_lock_to_stale(selection: &str) {
+    let root = std::env::current_dir()
+        .expect("cwd")
+        .join(selection.replace('/', "\\"));
+    let path = root.join("lekalo.lock");
+    crate::lockfile::plan::LockService::lock(
+        &LoadSelection {
+            project: Some(selection.to_owned()),
+        },
+        crate::lockfile::resolution::CandidateSet::empty(),
+        crate::lockfile::LockRequirement::Optional,
+        true,
+    )
+    .expect("lock created");
+    let text = String::from_utf8(std::fs::read(&path).expect("lock bytes")).expect("utf8");
+    const MARKER: &str = "\"request_digest\":\"sha256:";
+    let start = text.find(MARKER).expect("request digest field") + MARKER.len();
+    let stale = format!(
+        "{}{}{}",
+        &text[..start],
+        "0".repeat(64),
+        &text[start + 64..]
+    );
+    std::fs::write(&path, stale).expect("drift written");
+}
+
+#[test]
+fn stale_lock_is_distinguished_in_the_revision_and_the_human_line() {
+    let selection = fixture_selection();
+    drift_lock_to_stale(&selection);
+    let sel = LoadSelection {
+        project: Some(selection),
+    };
+    let (report, _) = run(&sel, &git_available(), &doctor_options());
+    assert_eq!(
+        report.revisions.lock.state, "stale",
+        "a stale lock is never spelled fresh in the revisions block"
+    );
+    assert!(report.revisions.lock.digest.is_some());
+    let lock = check(&report, "lock.freshness");
+    assert_eq!(lock.state, CheckState::Degraded);
+    assert_eq!(lock.reason, Some("stale"));
+    assert_eq!(lock.next_action, Some("preview-lock-update"));
+    assert_eq!(lock.diagnostics, vec!["lock.stale".to_owned()]);
+    // The status human line reads the same revision state.
+    let status = Options {
+        kind: ReportKind::Status,
+        ..Options::default()
+    };
+    let (_, human) = run(&sel, &git_available(), &status);
+    assert!(
+        human.contains("lock stale"),
+        "the status human line says the lock is stale: {human}"
+    );
+}
+
+#[test]
+fn unreadable_and_invalid_locks_are_invalid_not_absent() {
+    // A lock surface that exists but is not a regular file: the check
+    // stays unknown with the preserved structure refusal, and the
+    // revisions block records `invalid` — never `absent`.
+    let selection = fixture_selection();
+    let root = std::env::current_dir()
+        .expect("cwd")
+        .join(selection.replace('/', "\\"));
+    std::fs::create_dir(root.join("lekalo.lock")).expect("lock path turned into a directory");
+    let sel = LoadSelection {
+        project: Some(selection),
+    };
+    let (report, _) = run(&sel, &git_available(), &doctor_options());
+    assert_eq!(report.revisions.lock.state, "invalid");
+    assert!(report.revisions.lock.digest.is_none());
+    let lock = check(&report, "lock.freshness");
+    assert_eq!(lock.state, CheckState::Unknown);
+    assert_eq!(lock.reason, Some("upstream-unavailable"));
+    assert!(lock
+        .diagnostics
+        .contains(&"structure.lock-not-file".to_owned()));
+
+    // A present but schema-invalid lock is refused at parse time: the
+    // check stays unknown with the preserved lock rule identity —
+    // never the generic root-unreadable stand-in, never `absent`.
+    let selection = fixture_selection();
+    let root = std::env::current_dir()
+        .expect("cwd")
+        .join(selection.replace('/', "\\"));
+    std::fs::write(root.join("lekalo.lock"), b"{}").expect("invalid lock written");
+    let sel = LoadSelection {
+        project: Some(selection),
+    };
+    let (report, _) = run(&sel, &git_available(), &doctor_options());
+    assert_eq!(report.revisions.lock.state, "invalid");
+    assert!(report.revisions.lock.digest.is_none());
+    let lock = check(&report, "lock.freshness");
+    assert_eq!(lock.state, CheckState::Unknown);
+    assert_eq!(lock.reason, Some("upstream-unavailable"));
+    assert_eq!(lock.diagnostics, vec!["lock.schema-invalid".to_owned()]);
+
+    // A canonical, parseable lock that the verifier refuses on a
+    // contract pin: blocked with the preserved digest-mismatch rule,
+    // and the revisions block spells `invalid` — with the payload
+    // digest it actually carries.
+    let selection = fixture_selection();
+    let root = std::env::current_dir()
+        .expect("cwd")
+        .join(selection.replace('/', "\\"));
+    crate::lockfile::plan::LockService::lock(
+        &LoadSelection {
+            project: Some(selection.clone()),
+        },
+        crate::lockfile::resolution::CandidateSet::empty(),
+        crate::lockfile::LockRequirement::Optional,
+        true,
+    )
+    .expect("lock created");
+    let path = root.join("lekalo.lock");
+    let text = String::from_utf8(std::fs::read(&path).expect("lock bytes")).expect("utf8");
+    const IR_PIN: &str = "\"ir\":{\"digest\":\"sha256:";
+    let start = text.find(IR_PIN).expect("ir pin field") + IR_PIN.len();
+    let flipped = if text.as_bytes()[start] == b'a' {
+        "b"
+    } else {
+        "a"
+    };
+    let corrupted = format!("{}{}{}", &text[..start], flipped, &text[start + 1..]);
+    std::fs::write(&path, corrupted).expect("pin drift written");
+    let sel = LoadSelection {
+        project: Some(selection),
+    };
+    let (report, _) = run(&sel, &git_available(), &doctor_options());
+    assert_eq!(report.revisions.lock.state, "invalid");
+    assert!(report.revisions.lock.digest.is_some());
+    let lock = check(&report, "lock.freshness");
+    assert_eq!(lock.state, CheckState::Blocked);
+    assert_eq!(lock.reason, Some("invalid"));
+    assert_eq!(lock.diagnostics, vec!["lock.digest-mismatch".to_owned()]);
+}
+
 #[test]
 fn readiness_phase_marks_required_and_degrades_on_optional() {
     let selection = LoadSelection {
