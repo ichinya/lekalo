@@ -1,4 +1,4 @@
-//! The typed observed-mode model (issue #39).
+//! The typed observed-mode model (issues #39 and #42).
 //!
 //! One project carries at most one observed index. Every fact it records
 //! is either **confirmed data** (an explicit or confirmed binding the user
@@ -6,6 +6,11 @@
 //! are never interchangeable: promotion requires the confirmed kinds,
 //! inferred facts never become canonical by themselves, and missing
 //! evidence is `unknown`, never the absence of behavior.
+//!
+//! Issue #42 adds the binding-registry surface: per-binding native
+//! candidate sets that keep an ambiguous mapping visible instead of
+//! silently resolved, the declared target/profile of the producing scan,
+//! and native test bindings with their own freshness state.
 
 use serde::{Deserialize, Serialize};
 
@@ -405,7 +410,7 @@ pub struct PromotionReceipt {
 }
 
 /// One observed symbol with its binding, evidence, provenance,
-/// attachments, and history.
+/// attachments, and history. The issue #42 wire adds `candidates`.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SymbolRecord {
     pub id: String,
@@ -422,9 +427,30 @@ pub struct SymbolRecord {
     pub native_tests: Vec<String>,
     pub gates: Vec<String>,
     pub history: Vec<HistoryEntry>,
+    /// Every plausible native symbol the adapter recorded for this
+    /// semantic id (issue #42): an ambiguous adapter names all of them
+    /// instead of silently picking one. Empty when the mapping was
+    /// unambiguous or the binding is user-owned.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<CandidateRecord>,
 }
 
-/// One observed endpoint bound to a symbol record.
+/// One native symbol candidate of one binding (issue #42): a plausible
+/// native identity the adapter saw, with the confidence it claims. The
+/// user resolves an ambiguous set by naming exactly one candidate.
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct CandidateRecord {
+    pub native: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
+    pub confidence: Confidence,
+}
+
+/// One observed endpoint bound to a symbol record. Endpoints are the
+/// `exposes` relation rows of the binding registry (issue #42).
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct EndpointRecord {
     pub id: String,
@@ -471,6 +497,19 @@ pub struct SchemaRecord {
     pub digest: Option<String>,
 }
 
+/// One native test binding (issue #42): the `verifies` relation rows of
+/// the binding registry. The id is the verbatim external test identity;
+/// freshness is re-fingerprinted by the audit like every binding.
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TestBindingRecord {
+    pub id: String,
+    pub symbol: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
+    pub state: BindingState,
+}
+
 /// The persisted observed index (canonical JSON, sorted records).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ObservedIndex {
@@ -483,6 +522,17 @@ pub struct ObservedIndex {
     pub symbols: Vec<SymbolRecord>,
     pub endpoints: Vec<EndpointRecord>,
     pub schemas: Vec<SchemaRecord>,
+    /// The target the producing scan declared (issue #42), if any. Set
+    /// once: a later scan naming a different target refuses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// The adapter profile the producing scan declared (issue #42).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    /// The native test bindings of the producing scan (issue #42),
+    /// sorted by id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub test_bindings: Vec<TestBindingRecord>,
 }
 
 impl ObservedIndex {
@@ -498,6 +548,9 @@ impl ObservedIndex {
             symbols: Vec::new(),
             endpoints: Vec::new(),
             schemas: Vec::new(),
+            target: None,
+            profile: None,
+            test_bindings: Vec::new(),
         }
     }
 
@@ -517,7 +570,8 @@ impl ObservedIndex {
 // Adapter scan input documents
 // ---------------------------------------------------------------------------
 
-/// One scanned symbol: the adapter's claim about existing code.
+/// One scanned symbol: the adapter's claim about existing code, with the
+/// optional candidate set issue #42 adds for ambiguous mappings.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScanSymbol {
     pub id: String,
@@ -527,6 +581,7 @@ pub struct ScanSymbol {
     pub fingerprint: Option<String>,
     pub mapping: Confidence,
     pub evidence: Evidence,
+    pub candidates: Vec<CandidateRecord>,
 }
 
 /// One scanned endpoint bound to a scanned symbol.
@@ -547,6 +602,15 @@ pub struct ScanSchema {
     pub digest: Option<String>,
 }
 
+/// One scanned native test binding (issue #42).
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct ScanTestBinding {
+    pub id: String,
+    pub symbol: String,
+    pub path: String,
+    pub fingerprint: Option<String>,
+}
+
 /// The validated adapter scan document.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScanDocument {
@@ -556,4 +620,7 @@ pub struct ScanDocument {
     pub symbols: Vec<ScanSymbol>,
     pub endpoints: Vec<ScanEndpoint>,
     pub schemas: Vec<ScanSchema>,
+    pub target: Option<String>,
+    pub profile: Option<String>,
+    pub test_bindings: Vec<ScanTestBinding>,
 }

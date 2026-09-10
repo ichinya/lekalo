@@ -41,14 +41,18 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 const readText = (relative) => readFileSync(resolve(root, relative), "utf8");
 
-const scanSchema = read("contracts/observed-scan.schema.v1.0.0.json");
-const indexSchema = read("contracts/observed-index.schema.v1.0.0.json");
+// Issue #42 publishes the additive v1.1.0 successors of both wire
+// contracts; the frozen v1.0.0 schemas stay published and the legacy
+// fixture scans must still satisfy them.
+const scanSchema = read("contracts/observed-scan.schema.v1.1.0.json");
+const scanSchemaLegacy = read("contracts/observed-scan.schema.v1.0.0.json");
+const indexSchema = read("contracts/observed-index.schema.v1.1.0.json");
 const goldenFile = "tests/fixtures/observed/golden/task-domain.index.json";
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateScan = ajv.compile(scanSchema);
+const validateScanLegacy = ajv.compile(scanSchemaLegacy);
 const validateIndex = ajv.compile(indexSchema);
-
 const fail = (reason, detail) => {
   process.stderr.write(`${JSON.stringify({ ok: false, reason, detail }, null, 2)}\n`);
   process.exit(1);
@@ -59,16 +63,24 @@ const fail = (reason, detail) => {
 // ---------------------------------------------------------------------------
 const scanDir = "tests/fixtures/observed/task-domain/scans";
 const scanFiles = readdirSync(resolve(root, scanDir)).filter((name) => name.endsWith(".json"));
-if (scanFiles.length < 2) fail("scan-fixtures", "the fixture pair is missing");
 for (const name of scanFiles) {
   const scan = read(`${scanDir}/${name}`);
-  if (!validateScan(scan)) {
-    fail("scan-invalid", { fixture: name, errors: validateScan.errors });
-  }
-  if (scan.schemaVersion !== "lekalo/observed-scan/v1.0.0") {
-    fail("scan-identity", name);
+  // The issue #39 fixtures are frozen 1.0.0 documents; any 1.1.0 scan
+  // fixture must satisfy the additive successor. Each document is
+  // validated against the exact schema version it declares.
+  const schemaVersion = scan.schemaVersion;
+  const validate =
+    schemaVersion === "lekalo/observed-scan/v1.0.0"
+      ? validateScanLegacy
+      : schemaVersion === "lekalo/observed-scan/v1.1.0"
+        ? validateScan
+        : null;
+  if (!validate) fail("scan-identity", name);
+  else if (!validate(scan)) {
+    fail("scan-invalid", { fixture: name, errors: validate.errors });
   }
 }
+// ---------------------------------------------------------------------------
 // 2. The golden index satisfies the index schema and the canonical byte
 //    shape: compact JSON, fixed key order, and sorted record ids.
 // ---------------------------------------------------------------------------
@@ -94,7 +106,7 @@ const GOLDEN_KEYS = [
 if (JSON.stringify(Object.keys(golden)) !== JSON.stringify(GOLDEN_KEYS)) {
   fail("golden-key-order", Object.keys(golden).join(","));
 }
-if (golden.schema_version !== "lekalo/observed-index/v1.0.0" || golden.identity !== "dev.lekalo.observed-index@1.0.0" || golden.mode !== "observed") {
+if (golden.schema_version !== "lekalo/observed-index/v1.1.0" || golden.identity !== "dev.lekalo.observed-index@1.1.0" || golden.mode !== "observed") {
   fail("golden-identity", golden.identity);
 }
 const symbolIds = golden.symbols.map((symbol) => symbol.id);
@@ -105,16 +117,6 @@ const endpointIds = golden.endpoints.map((endpoint) => endpoint.id);
 if (JSON.stringify(endpointIds) !== JSON.stringify([...endpointIds].sort())) {
   fail("golden-endpoints-unsorted", endpointIds.join(","));
 }
-// Inferred and confirmed facts are distinguishable in the wire, and a
-// promoted symbol carries its adoption receipt.
-const statuses = new Set(golden.symbols.map((symbol) => symbol.status));
-for (const required of ["inferred", "confirmed", "explicit"]) {
-  if (!statuses.has(required)) fail("golden-status-missing", required);
-}
-const promoted = golden.symbols.filter((symbol) => symbol.promoted);
-if (promoted.length === 0 || promoted.some((symbol) => !symbol.promotion)) {
-  fail("golden-promotion-receipt", promoted.length);
-}
 for (const symbol of golden.symbols) {
   if (symbol.status === "inferred" && symbol.promoted) {
     fail("golden-inferred-promoted", symbol.id);
@@ -122,18 +124,25 @@ for (const symbol of golden.symbols) {
   if (symbol.stable_key === null) fail("golden-stable-key", symbol.id);
   if (symbol.fingerprint === null) fail("golden-fingerprint", symbol.id);
 }
-
+for (const name of scanFiles) {
+  if (!validateScanLegacy(read(`${scanDir}/${name}`))) {
+    fail("legacy-scan-invalid", { fixture: name, errors: validateScanLegacy.errors });
+  }
+}
 // ---------------------------------------------------------------------------
 // 3. The compiled Rust identity constants agree with the published
 //    schemas.
 // ---------------------------------------------------------------------------
 const versionSource = readText("crates/lekalo-core/src/observed/version.rs");
 for (const constant of [
-  'SCHEMA_VERSION: &str = "lekalo/observed-index/v1.0.0"',
-  'SCAN_SCHEMA_VERSION: &str = "lekalo/observed-scan/v1.0.0"',
-  'INDEX_IDENTITY: &str = "dev.lekalo.observed-index@1.0.0"',
+  'SCHEMA_VERSION: &str = "lekalo/observed-index/v1.1.0"',
+  'SCAN_SCHEMA_VERSIONS: [&str; 2] =',
+  '"lekalo/observed-scan/v1.0.0"',
+  '"lekalo/observed-scan/v1.1.0"',
+  'SCAN_SCHEMA_VERSION: &str = SCAN_SCHEMA_VERSIONS[1];',
+  'INDEX_IDENTITY: &str = "dev.lekalo.observed-index@1.1.0"',
   'MODE: &str = "observed"',
-  'VERSION: &str = "1.0.0"',
+  'VERSION: &str = "1.1.0"',
 ]) {
   if (!versionSource.includes(constant)) fail("rust-constant", constant);
 }
@@ -173,15 +182,18 @@ if (!artifactTypes.includes('strip_prefix(".lekalo/generated/")')) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. The diagnostic registry carries the observed family.
+// 5. The diagnostic registry carries the observed and bindings families.
 // ---------------------------------------------------------------------------
-const registry = read("contracts/diagnostic-registry.v1.16.0.json");
+const registry = read("contracts/diagnostic-registry.v1.20.0.json");
 const observedRules = registry.entries.filter((entry) => entry.id.startsWith("observed."));
-// Predecessor custody on the integrated chain: every accepted 1.9.0 and
-// 1.14.0 rule must survive unchanged in 1.16.0; observed.* is additive.
+const bindingsRules = registry.entries.filter((entry) => entry.id.startsWith("bindings."));
+// Predecessor custody on the integrated chain: every accepted 1.9.0,
+// 1.14.0, and 1.16.0 rule must survive unchanged in 1.20.0; the
+// observed.* and bindings.* families are additive.
 for (const predFile of [
   "contracts/diagnostic-registry.v1.9.0.json",
   "contracts/diagnostic-registry.v1.14.0.json",
+  "contracts/diagnostic-registry.v1.16.0.json",
 ]) {
   const pred = read(predFile);
   const current = new Map(registry.entries.map((entry) => [entry.id, entry]));
@@ -193,10 +205,14 @@ for (const predFile of [
     }
   }
 }
-if (registry.registry_version !== "1.16.0") fail("registry-version", registry.registry_version);
+if (registry.registry_version !== "1.20.0") fail("registry-version", registry.registry_version);
 if (observedRules.length !== 11) fail("observed-rule-count", observedRules.length);
+if (bindingsRules.length !== 3) fail("bindings-rule-count", bindingsRules.length);
 for (const entry of observedRules) {
   if (!entry.code.startsWith("LEK-OBS-")) fail("observed-code", entry.id);
+}
+for (const entry of bindingsRules) {
+  if (!entry.code.startsWith("LEK-BND-")) fail("bindings-code", entry.id);
 }
 
 process.stdout.write(

@@ -22,7 +22,7 @@ use super::diagnostic;
 use super::types::{
     AdapterIdentity, BindingState, BindingStatus, Confidence, EndpointRecord, HistoryEntry,
     HistoryEvent, ObservedIndex, PromotionReceipt, Provenance, SchemaRecord, SourceLocation,
-    SymbolRecord,
+    SymbolRecord, TestBindingRecord,
 };
 use super::version;
 use super::wire;
@@ -220,6 +220,19 @@ pub fn update_index(
         if existing.project != scan.project {
             return Err(diagnostic::scan_invalid_set("project-mismatch", None));
         }
+        // The declared target (issue #42) is set once: a later scan
+        // naming a different target refuses instead of silently mixing
+        // bindings from two targets in one registry.
+        if let Some(target) = &scan.target {
+            if let Some(existing_target) = &existing.target {
+                if existing_target != target {
+                    return Err(diagnostic::scan_invalid_set("target-mismatch", None));
+                }
+            }
+        }
+    }
+    if scan.profile.is_some() && scan.target.is_none() {
+        return Err(diagnostic::scan_invalid_set("profile-without-target", None));
     }
 
     let mut index = ObservedIndex::empty(
@@ -269,6 +282,8 @@ pub fn update_index(
     }
     index.symbols.sort_by(|left, right| left.id.cmp(&right.id));
 
+    index.target = scan.target.clone();
+    index.profile = scan.profile.clone();
     index.endpoints = scan
         .endpoints
         .iter()
@@ -293,6 +308,28 @@ pub fn update_index(
         })
         .collect();
     index.schemas.sort_by(|left, right| left.id.cmp(&right.id));
+    // Native test bindings (issue #42) are replaced wholesale from the
+    // scan; every binding starts current when it carries a fingerprint
+    // and unknown when it carries none (missing evidence is unknown,
+    // never absence).
+    index.test_bindings = scan
+        .test_bindings
+        .iter()
+        .map(|binding| TestBindingRecord {
+            id: binding.id.clone(),
+            symbol: binding.symbol.clone(),
+            path: binding.path.clone(),
+            fingerprint: binding.fingerprint.clone(),
+            state: if binding.fingerprint.is_some() {
+                BindingState::Current
+            } else {
+                BindingState::Unknown
+            },
+        })
+        .collect();
+    index
+        .test_bindings
+        .sort_by(|left, right| (&left.id, &left.symbol).cmp(&(&right.id, &right.symbol)));
 
     save_index(ctx, &index)?;
     Ok(receipt_of(
@@ -327,7 +364,14 @@ fn merge_symbol(
             location: symbol.location.clone(),
             fingerprint: symbol.fingerprint.clone(),
             status: BindingStatus::Inferred,
-            state: BindingState::Current,
+            // An evidence-free record (an ambiguous adapter mapping
+            // with candidates only) has nothing to compare: unknown,
+            // never current.
+            state: if symbol.location.is_none() && symbol.fingerprint.is_none() {
+                BindingState::Unknown
+            } else {
+                BindingState::Current
+            },
             promoted: false,
             promotion: None,
             evidence,
@@ -340,6 +384,7 @@ fn merge_symbol(
                 from: None,
                 to: symbol.location.as_ref().map(|l| l.path.clone()),
             }],
+            candidates: symbol.candidates.clone(),
         };
     };
     let mut next = record.clone();
@@ -361,16 +406,45 @@ fn merge_symbol(
         });
     }
     next.kind = symbol.kind;
-    if symbol.stable_key.is_some() {
-        next.stable_key = symbol.stable_key.clone();
-    }
-    next.location = symbol.location.clone();
-    next.fingerprint = symbol.fingerprint.clone();
     next.evidence = evidence;
-    next.state = BindingState::Current;
-    // A scan never downgrades a user-owned binding status.
+    // A scan never downgrades a user-owned binding status, never erases
+    // a user-owned fact's recorded location (an ambiguous scan carries
+    // no single mapping at all), and never lets a user-owned fact gather
+    // candidate sets (issue #42): the adapter's ambiguity material is
+    // proposal material only.
     if next.status == BindingStatus::Inferred {
+        if symbol.stable_key.is_some() {
+            next.stable_key = symbol.stable_key.clone();
+        }
+        next.location = symbol.location.clone();
+        next.fingerprint = symbol.fingerprint.clone();
+        next.state = if next.location.is_none() && next.fingerprint.is_none() {
+            BindingState::Unknown
+        } else {
+            BindingState::Current
+        };
         next.provenance = provenance;
+        next.candidates = symbol.candidates.clone();
+    } else {
+        // Explicit and confirmed facts refresh only from a concrete
+        // mapping (the #39 stable-key move resolution); an ambiguous
+        // scan leaves the recorded evidence untouched for the audit to
+        // judge.
+        if symbol.location.is_some() {
+            if symbol.stable_key.is_some() {
+                next.stable_key = symbol.stable_key.clone();
+            }
+            next.location = symbol.location.clone();
+            next.fingerprint = symbol.fingerprint.clone();
+        }
+        next.state = if next.location.is_some() && next.fingerprint.is_some() {
+            BindingState::Current
+        } else if next.location.is_none() && next.fingerprint.is_none() {
+            BindingState::Unknown
+        } else {
+            next.state
+        };
+        next.candidates = Vec::new();
     }
     next
 }
@@ -607,7 +681,7 @@ fn require_index(ctx: &super::ObservedContext) -> Result<ObservedIndex, Diagnost
 
 /// The sha256 of one project source file, through the confined fs; a
 /// missing file is `None`, an over-large file is unknown (`None`).
-fn read_fingerprint(fs: &Fs, path: &str) -> Result<Option<String>, DiagnosticSet> {
+pub(crate) fn read_fingerprint(fs: &Fs, path: &str) -> Result<Option<String>, DiagnosticSet> {
     let (dir, name) = split_logical(path);
     match fs.read_file_opt(dir, name, MAX_SOURCE_BYTES) {
         Ok(Some(bytes)) => Ok(Some(sha256_hex(&bytes))),
@@ -632,7 +706,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Keep the bounded history tail (the oldest entries fall off).
-fn trim_history(record: &mut SymbolRecord) {
+pub(crate) fn trim_history(record: &mut SymbolRecord) {
     if record.history.len() > version::MAX_HISTORY {
         let excess = record.history.len() - version::MAX_HISTORY;
         record.history.drain(..excess);

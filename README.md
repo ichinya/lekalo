@@ -19,6 +19,7 @@ Rust workspace and provider implementations are introduced.
 - [The stable machine-readable diagnostic contract](docs/diagnostics.md)
 - [ADR-0010: the stable machine-readable diagnostic contract](docs/adr/0010-diagnostics.md)
 - [Observed mode for existing code](docs/observed-mode.md)
+- [Binding registry for existing code](docs/bindings.md)
 
 Validate the contract and its allowed/forbidden/malformed fixtures, then verify
 the documented CLI exit-code protocol with Node.js, without installing
@@ -483,6 +484,22 @@ in [docs/observed-mode.md](docs/observed-mode.md),
 `contracts/observed-scan.schema.v1.0.0.json`; the hermetic
 task-domain fixture is under `tests/fixtures/observed/`.
 
+## Binding registry for existing code
+
+Issue #42 adds the adoption loop: `lekalo scan --target node-typescript`
+runs a target adapter through the #27/#28 protocol (discovery, strict
+capability selection, the confined read-only `scan` exchange) and fills
+the observed registry; `lekalo bindings list/propose/confirm/audit`
+project, confirm, and gate it. Ambiguous mappings record their whole
+candidate set and pick nothing until the user names one; confirmation
+preserves provenance; batch confirmation is planned and confirmed; and
+the audit re-fingerprints symbols and native tests, so a changed
+signature or path is stale or correctly re-resolved, never silent. The
+contract, guarantees, and limits live in
+[docs/bindings.md](docs/bindings.md) and
+[ADR-0035](docs/adr/0035-bindings-registry.md); the reference
+node-typescript scanner is under `tests/fixtures/bindings/`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -491,8 +508,8 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #39 carries prospective product 0.2.6
-(issue #31 published product 0.2.5; the accepted M2 line published products
+independent of product releases; issue #42 carries prospective product 0.2.10
+(issue #39 published product 0.2.6; issue #31 published product 0.2.5; the accepted M2 line published products
 0.2.0 through 0.2.4 for issues #27, #36, #28, #38 and #29; issue #63
 published product 0.1.31 (annotated tag `v0.1.31` on `9cdd8c1`);
 issue #26 published product

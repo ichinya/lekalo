@@ -1,4 +1,4 @@
-//! Observed mode for existing code (issue #39).
+//! Observed mode for existing code (issues #39 and #42).
 //!
 //! Source code is primary. Lekalo records explicit semantic bindings and
 //! evidence; it never generates or overwrites implementation, and an
@@ -10,11 +10,16 @@
 //! inspect/impact projections with explicit incompleteness, and promotes
 //! individual symbols or whole modules into the canonical (`contracted`)
 //! model only through the planned and confirmed workflow in
-//! [`promote`].
+//! [`promote`]. Issue #42 turns the index into the full binding
+//! registry: adapter-driven [`scan_service`] runs, [`bindings`]
+//! propose/confirm/audit/list, candidate sets for ambiguous mappings,
+//! declared targets and profiles, and native test bindings.
 
+pub mod bindings;
 pub mod diagnostic;
 pub mod index;
 pub mod promote;
+pub mod scan_service;
 pub mod store;
 pub mod types;
 pub mod version;
@@ -38,7 +43,7 @@ pub use types::{
     SymbolRecord, ValueEvidence,
 };
 pub use version::{
-    FAMILY, INDEX_DIR, INDEX_IDENTITY, INDEX_NAME, MAX_SCAN_BYTES, MODE, SCAN_SCHEMA_VERSION,
+    FAMILY, INDEX_DIR, INDEX_IDENTITY, INDEX_NAME, MAX_SCAN_BYTES, MODE, SCAN_SCHEMA_VERSIONS,
     SCHEMA_VERSION, VERSION,
 };
 

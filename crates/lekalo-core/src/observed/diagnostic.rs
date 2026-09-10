@@ -135,6 +135,36 @@ fn bounded(symbol: &str) -> String {
     crate::diagnostics::types::bound_token(symbol)
 }
 
+/// The fatal set for a bindings confirmation naming no current proposal
+/// (issue #42).
+pub(crate) fn proposal_unknown_set(proposal: &str) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("proposal".to_owned(), token_value(&bounded(proposal)));
+    one("bindings.proposal-unknown", None, Status::Invalid, data)
+}
+
+/// The fatal set for a confirmation an ambiguous proposal cannot answer
+/// without naming exactly one candidate (issue #42).
+pub(crate) fn ambiguous_set(symbol: &str, detail: &'static str) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("symbol".to_owned(), token_value(&bounded(symbol)));
+    data.insert("detail".to_owned(), token_value(detail));
+    one(
+        "bindings.ambiguous",
+        Some(bounded(symbol)),
+        Status::Invalid,
+        data,
+    )
+}
+
+/// The fatal set for a batch confirmation whose preview no longer
+/// matches the recorded state (issue #42).
+pub(crate) fn plan_mismatch_set(detail: &'static str) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("detail".to_owned(), token_value(detail));
+    one("bindings.plan-mismatch", None, Status::Invalid, data)
+}
+
 /// The fatal set for an unreadable scan document file.
 pub fn scan_io_failure(detail: &'static str) -> DiagnosticSet {
     let mut data = DataObject::new();

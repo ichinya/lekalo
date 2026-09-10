@@ -91,6 +91,20 @@ project never modifies, generates, or rewrites a source file. On the
 integration line, `lekalo init --adopt` (issue #38) creates the canonical
 skeleton first; `observe` consumes that state and never duplicates it.
 
+## Binding registry (issue #42)
+
+Issue #42 turns this index into the full binding registry:
+`lekalo scan` fills it through a target adapter (discovery, strict
+capability selection, and the confined `scan` exchange of the #27/#28
+protocol), `lekalo bindings` proposes, confirms, and audits rows, and
+ambiguous adapter mappings record their whole candidate set and refuse
+confirmation until one candidate is named. Native test bindings are the
+registry's `verifies` rows, endpoint bindings its `exposes` rows, and
+the declared target and adapter profile are set once per registry. The
+normative contract is [bindings.md](bindings.md) and
+[ADR-0035](adr/0035-bindings-registry.md); the additive 1.1.0 wire is
+published next to the frozen 1.0.0 schemas.
+
 ## Limits
 
 - Lekalo does not refactor, rewrite, or regenerate implementation code.

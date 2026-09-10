@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.2.6. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.2.10. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -19,6 +19,12 @@ with filesystem access and it never writes.
 lekalo --version
 lekalo adapter test [--profile default|strict] [--report json|junit] [--repeats N] [--timeout-ms MS] PROGRAM [ARGS]...
 lekalo init --adopt [--target TARGET [--profile PROFILE]] [--project-id ID] [--project DIR] [--dry-run]
+lekalo scan --target TARGET [--profile PROFILE] [--timeout-ms MS] [--project DIR] PROGRAM [ARGS]...
+lekalo bindings list [--project DIR]
+lekalo bindings propose [--project DIR]
+lekalo bindings confirm PROPOSAL [--candidate NATIVE] [--project DIR]
+lekalo bindings confirm --batch (--preview | --confirm sha256:PLAN_ID) [--project DIR]
+lekalo bindings audit [--project DIR]
 lekalo load [--project DIR] [--spans] [--ir]
 lekalo lock [--check] [--offline] [--project DIR]
 lekalo update --dry-run [--offline] [--project DIR]
@@ -266,14 +272,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.2.6"
+  "version": "0.2.10"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.2.6`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.2.10`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -604,7 +610,35 @@ the staleness gate (exit 0 current, exit 1 with
 only path into the canonical (contracted) model: inferred facts refuse,
 unknown evidence refuses, and the exact plan identity must be confirmed.
 
-## Development checks
+## Scan and bindings (issue #42)
+
+Issue #42 fills the observed registry on demand and adds the binding
+workflow. The thin subcommands hand every decision to the core; the
+contract, the ambiguity policy, and the freshness rules live in
+[bindings.md](bindings.md) and [ADR-0035](adr/0035-bindings-registry.md):
+
+```sh
+lekalo scan --target node-typescript node tests/fixtures/bindings/ts-scanner.mjs
+lekalo bindings list
+lekalo bindings propose
+lekalo bindings confirm prop-<64 lowercase hex>
+lekalo bindings confirm prop-<64 lowercase hex> --candidate src/tasks.ts#createTask
+lekalo bindings confirm --batch --preview
+lekalo bindings confirm --batch --confirm sha256:<64 lowercase hex>
+lekalo bindings audit
+```
+
+`scan` discovers and selects the adapter through the #28 seam, runs the
+read-only `scan` exchange in the confined sandbox, and merges through the
+#39 merge rules; a refused scan never writes the registry.
+`bindings propose` derives one deterministic proposal per inferred
+binding; an ambiguous proposal lists every candidate and picks none until
+`--candidate` names one. `bindings confirm --batch` is the planned and
+confirmed preview of every unambiguous proposal. `bindings audit` is the
+staleness gate over symbols and native test bindings (exit 0 current,
+exit 1 with `observed.stale-binding` per finding).
+
+ ## Development checks
 ```sh
 cargo fmt --all -- --check
 cargo check --workspace --all-targets --locked

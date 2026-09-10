@@ -41,11 +41,12 @@ const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf
 
 const itemSchema = read("contracts/diagnostic.schema.v1.0.0.json");
 const registrySchema = read("contracts/diagnostic-registry.schema.v1.0.0.json");
-const registry = read("contracts/diagnostic-registry.v1.16.0.json");
-// Predecessor custody: every accepted 1.14.0 rule must survive unchanged
+const registry = read("contracts/diagnostic-registry.v1.20.0.json");
+// Predecessor custody: every accepted 1.15.0 rule must survive unchanged
 // in the successor; the integrated chain is additive end to end (issue #31
 // added the adapter conformance family as 1.15.0, issue #39 added the
-// observed family as 1.16.0).
+// observed family as 1.16.0, issue #42 adds the bindings family as
+// 1.20.0).
 const predecessor = read("contracts/diagnostic-registry.v1.15.0.json");
 const current = new Map(registry.entries.map((entry) => [entry.id, entry]));
 for (const entry of predecessor.entries) {
@@ -158,16 +159,39 @@ if (
 ) {
   fail("profile-additions", profileAdditions.map((entry) => entry.id));
 }
+const registry116Text = readFileSync(resolve(root, "contracts/diagnostic-registry.v1.16.0.json"), "utf8").replace(/\r\n/g, "\n");
+const registry116 = JSON.parse(registry116Text);
 // 1.16.0 (issue #39) added exactly the eleven observed.* rules over frozen
 // 1.15.0. The frozen accepted 1.15.0 instance is the reference for those
-// checks; the current registry (1.16.0) additionally carries the family.
-if (!isAdditive(registry, registry115)) fail("predecessor-entry-drift");
-const observedAdditions = registry.entries.filter((entry) => !registry115.entries.some((old) => old.id === entry.id));
+// checks; the current registry (1.20.0) additionally carries the observed
+// family and the bindings family.
+if (!isAdditive(registry116, registry115)) fail("predecessor-entry-drift");
+const observedAdditions = registry116.entries.filter((entry) => !registry115.entries.some((old) => old.id === entry.id));
 if (
   observedAdditions.length !== 11 ||
   observedAdditions.some((entry) => !entry.id.startsWith("observed.") || !entry.code.startsWith("LEK-OBS-"))
 ) {
   fail("observed-additions", observedAdditions.map((entry) => entry.id));
+}
+// 1.20.0 (issue #42) adds exactly the three bindings.* rules over frozen
+// 1.16.0: proposal-unknown, ambiguous, and plan-mismatch. Every accepted
+// 1.16.0 rule survives verbatim and nothing else changed.
+if (!isAdditive(registry, registry116)) fail("predecessor-entry-drift");
+const bindingsAdditions = registry.entries.filter((entry) => !registry116.entries.some((old) => old.id === entry.id));
+if (
+  bindingsAdditions.length !== 3 ||
+  bindingsAdditions.some((entry) => !entry.id.startsWith("bindings.") || !entry.code.startsWith("LEK-BND-"))
+) {
+  fail("bindings-additions", bindingsAdditions.map((entry) => entry.id));
+}
+// A missing or changed 1.16.0 rule must actually fail the additive check.
+const observedProbe = registry116.entries.find((entry) => entry.id === "observed.scan-invalid");
+const missing120 = structuredClone(registry);
+missing120.entries = missing120.entries.filter((entry) => entry.id !== observedProbe.id);
+const changed120 = structuredClone(registry);
+changed120.entries.find((entry) => entry.id === observedProbe.id).allowed_statuses = ["valid"];
+if (isAdditive(missing120, registry116) || isAdditive(changed120, registry116)) {
+  fail("additive-negative-control");
 }
 const profile = registry113.entries.find((entry) => entry.code.startsWith("LEK-TGT-"));
 const missing113 = structuredClone(registry114);

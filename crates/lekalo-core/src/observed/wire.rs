@@ -15,11 +15,13 @@ use serde_json::Value as Json;
 
 use super::diagnostic;
 use super::types::{
-    AdapterIdentity, Confidence, Evidence, FieldEvidence, ReferenceEvidence, ScanDocument,
-    ScanEndpoint, ScanSchema, ScanSymbol, SchemaKind, SourceLocation, SymbolKind, ValueEvidence,
+    AdapterIdentity, CandidateRecord, Confidence, Evidence, FieldEvidence, ReferenceEvidence,
+    ScanDocument, ScanEndpoint, ScanSchema, ScanSymbol, ScanTestBinding, SchemaKind,
+    SourceLocation, SymbolKind, ValueEvidence,
 };
 
-/// The closed top-level member set of a scan document.
+/// The closed top-level member set of a 1.0.0 scan document (the frozen
+/// issue #39 base).
 const TOP_LEVEL_KEYS: &[&str] = &[
     "schemaVersion",
     "adapter",
@@ -30,10 +32,26 @@ const TOP_LEVEL_KEYS: &[&str] = &[
     "schemas",
 ];
 
+/// The closed top-level member set of a 1.1.0 scan document (issue #42):
+/// the additive declared target, adapter profile, and native test
+/// bindings.
+const TOP_LEVEL_KEYS_V11: &[&str] = &[
+    "schemaVersion",
+    "adapter",
+    "project",
+    "revision",
+    "symbols",
+    "endpoints",
+    "schemas",
+    "target",
+    "profile",
+    "testBindings",
+];
+
 /// The closed adapter member set.
 const ADAPTER_KEYS: &[&str] = &["id", "version", "digest"];
-
-/// The closed symbol member set.
+/// The closed symbol member set of a 1.0.0 scan document (the frozen
+/// issue #39 base).
 const SYMBOL_KEYS: &[&str] = &[
     "id",
     "kind",
@@ -43,6 +61,25 @@ const SYMBOL_KEYS: &[&str] = &[
     "mappingConfidence",
     "evidence",
 ];
+
+/// The closed symbol member set of a 1.1.0 scan document (issue #42):
+/// the additive per-symbol candidate set.
+const SYMBOL_KEYS_V11: &[&str] = &[
+    "id",
+    "kind",
+    "stableKey",
+    "location",
+    "fingerprint",
+    "mappingConfidence",
+    "evidence",
+    "candidates",
+];
+
+/// The closed candidate member set (issue #42).
+const CANDIDATE_KEYS: &[&str] = &["native", "path", "line", "fingerprint", "confidence"];
+
+/// The closed native-test-binding member set (issue #42).
+const TEST_BINDING_KEYS: &[&str] = &["id", "symbol", "path", "fingerprint", "confidence"];
 
 /// The closed evidence member set.
 const EVIDENCE_KEYS: &[&str] = &[
@@ -93,11 +130,21 @@ pub(super) fn parse_scan(
     let value: Json = serde_json::from_str(text)
         .map_err(|_| diagnostic::scan_invalid_set("invalid-json", None))?;
     let map = as_object(&value, "document")?;
-    exact_keys(map, TOP_LEVEL_KEYS)?;
     let schema_version = string_member(map, "schemaVersion")?;
-    if schema_version != version::SCAN_SCHEMA_VERSION {
+    if !version::SCAN_SCHEMA_VERSIONS.contains(&schema_version.as_str()) {
         return Err(diagnostic::scan_invalid_set("schema-version", None));
     }
+    // The additive issue #42 members exist only on a 1.1.0 document; the
+    // frozen 1.0.0 key sets refuse them exactly as unknown members.
+    let extension = schema_version == version::SCAN_SCHEMA_VERSION;
+    exact_keys(
+        map,
+        if extension {
+            TOP_LEVEL_KEYS_V11
+        } else {
+            TOP_LEVEL_KEYS
+        },
+    )?;
     let adapter_map = as_object(
         map.get("adapter").ok_or_else(|| missing("adapter"))?,
         "adapter",
@@ -140,7 +187,7 @@ pub(super) fn parse_scan(
     let mut symbols = Vec::with_capacity(symbols_member.len());
     let mut seen_symbols = HashSet::new();
     for entry in symbols_member {
-        let symbol = parse_symbol(entry, model_version)?;
+        let symbol = parse_symbol(entry, model_version, extension)?;
         if !seen_symbols.insert(symbol.id.clone()) {
             return Err(diagnostic::scan_invalid_set(
                 "duplicate-id",
@@ -200,6 +247,62 @@ pub(super) fn parse_scan(
         schemas.push(schema);
     }
 
+    let target = match extension {
+        false => None,
+        true => match optional_string_member(map, "target")? {
+            None => None,
+            Some(target) => {
+                if !crate::init::detect::valid_target_id(&target) {
+                    return Err(diagnostic::scan_invalid_set("scan-target", Some(&target)));
+                }
+                Some(target)
+            }
+        },
+    };
+    let profile = match extension {
+        false => None,
+        true => match optional_string_member(map, "profile")? {
+            None => None,
+            Some(profile) => {
+                if !crate::target_protocol::scopes::is_token(&profile) {
+                    return Err(diagnostic::scan_invalid_set("scan-profile", None));
+                }
+                Some(profile)
+            }
+        },
+    };
+    if profile.is_some() && target.is_none() {
+        return Err(diagnostic::scan_invalid_set("profile-without-target", None));
+    }
+    let test_bindings_member = match extension {
+        false => [].as_slice(),
+        true => optional_array(map.get("testBindings"))?,
+    };
+    if test_bindings_member.len() > version::MAX_TEST_BINDINGS {
+        return Err(diagnostic::scan_limit_set(
+            "test-bindings",
+            test_bindings_member.len(),
+        ));
+    }
+    let mut test_bindings = Vec::with_capacity(test_bindings_member.len());
+    let mut seen_test_bindings = HashSet::new();
+    for entry in test_bindings_member {
+        let binding = parse_test_binding(entry)?;
+        if !seen_symbols.contains(&binding.symbol) {
+            return Err(diagnostic::scan_invalid_set(
+                "unresolved-test-symbol",
+                Some(&binding.symbol),
+            ));
+        }
+        if !seen_test_bindings.insert(binding.id.clone()) {
+            return Err(diagnostic::scan_invalid_set(
+                "duplicate-id",
+                Some(&binding.id),
+            ));
+        }
+        test_bindings.push(binding);
+    }
+
     Ok(ScanDocument {
         adapter: AdapterIdentity {
             id: adapter_id,
@@ -211,15 +314,26 @@ pub(super) fn parse_scan(
         symbols,
         endpoints,
         schemas,
+        target,
+        profile,
+        test_bindings,
     })
 }
 
 fn parse_symbol(
     value: &Json,
     model_version: ModelVersion,
+    extension: bool,
 ) -> Result<ScanSymbol, crate::diagnostics::DiagnosticSet> {
     let map = as_object(value, "symbol")?;
-    exact_keys(map, SYMBOL_KEYS)?;
+    exact_keys(
+        map,
+        if extension {
+            SYMBOL_KEYS_V11
+        } else {
+            SYMBOL_KEYS
+        },
+    )?;
     let id = string_member(map, "id")?;
     if !crate::trace::id::is_semantic_id(&id) {
         return Err(diagnostic::scan_invalid_set("symbol-id", Some(&id)));
@@ -274,6 +388,24 @@ fn parse_symbol(
     if !model_version.module_id_valid(module) {
         return Err(diagnostic::scan_invalid_set("symbol-module", Some(&id)));
     }
+    let candidates = match extension {
+        false => Vec::new(),
+        true => {
+            let member = optional_array(map.get("candidates"))?;
+            if member.len() > version::MAX_CANDIDATES {
+                return Err(diagnostic::scan_limit_set("candidates", member.len()));
+            }
+            let mut candidates = Vec::with_capacity(member.len());
+            for entry in member {
+                candidates.push(parse_candidate(entry, &id)?);
+            }
+            candidates.sort_by(|left, right| {
+                (&left.confidence, &left.native).cmp(&(&right.confidence, &right.native))
+            });
+            candidates.dedup();
+            candidates
+        }
+    };
     Ok(ScanSymbol {
         id,
         kind,
@@ -282,6 +414,91 @@ fn parse_symbol(
         fingerprint,
         mapping,
         evidence,
+        candidates,
+    })
+}
+
+/// One native symbol candidate (issue #42).
+fn parse_candidate(
+    value: &Json,
+    id: &str,
+) -> Result<CandidateRecord, crate::diagnostics::DiagnosticSet> {
+    let map = as_object(value, "candidate")?;
+    exact_keys(map, CANDIDATE_KEYS)?;
+    let native = string_member(map, "native")?;
+    if native.is_empty() || native.len() > 256 || native.chars().any(|c| c.is_control()) {
+        return Err(diagnostic::scan_invalid_set("candidate-native", Some(id)));
+    }
+    let path = string_member(map, "path")?;
+    if crate::project_fs::path_violation(&path).is_some() {
+        return Err(diagnostic::scan_invalid_set("candidate-path", Some(id)));
+    }
+    let line = match map.get("line") {
+        None | Some(Json::Null) => None,
+        Some(value) => {
+            let line = value
+                .as_u64()
+                .ok_or_else(|| diagnostic::scan_invalid_set("candidate-line", Some(id)))?;
+            if line == 0 || line > 1_000_000 {
+                return Err(diagnostic::scan_invalid_set("candidate-line", Some(id)));
+            }
+            Some(line)
+        }
+    };
+    let fingerprint = optional_string_member(map, "fingerprint")?;
+    if let Some(digest) = &fingerprint {
+        if !version::is_sha256(digest) {
+            return Err(diagnostic::scan_invalid_set(
+                "candidate-fingerprint",
+                Some(id),
+            ));
+        }
+    }
+    let confidence_text = string_member(map, "confidence")?;
+    let confidence = Confidence::parse(&confidence_text)
+        .ok_or_else(|| diagnostic::scan_invalid_set("candidate-confidence", Some(id)))?;
+    Ok(CandidateRecord {
+        native,
+        path,
+        line,
+        fingerprint,
+        confidence,
+    })
+}
+
+/// One native test binding (issue #42).
+fn parse_test_binding(value: &Json) -> Result<ScanTestBinding, crate::diagnostics::DiagnosticSet> {
+    let map = as_object(value, "testBinding")?;
+    exact_keys(map, TEST_BINDING_KEYS)?;
+    let id = string_member(map, "id")?;
+    if !version::is_external_id(&id) {
+        return Err(diagnostic::scan_invalid_set("test-binding-id", Some(&id)));
+    }
+    let symbol = string_member(map, "symbol")?;
+    if !crate::trace::id::is_semantic_id(&symbol) {
+        return Err(diagnostic::scan_invalid_set(
+            "test-binding-symbol",
+            Some(&id),
+        ));
+    }
+    let path = string_member(map, "path")?;
+    if crate::project_fs::path_violation(&path).is_some() {
+        return Err(diagnostic::scan_invalid_set("test-binding-path", Some(&id)));
+    }
+    let fingerprint = optional_string_member(map, "fingerprint")?;
+    if let Some(digest) = &fingerprint {
+        if !version::is_sha256(digest) {
+            return Err(diagnostic::scan_invalid_set(
+                "test-binding-fingerprint",
+                Some(&id),
+            ));
+        }
+    }
+    Ok(ScanTestBinding {
+        id,
+        symbol,
+        path,
+        fingerprint,
     })
 }
 

@@ -1,4 +1,4 @@
-//! Closed identity and bounds of the observed mode (issue #39).
+//! Closed identity and bounds of the observed mode (issues #39 and #42).
 //!
 //! The observed index and the adapter scan document are two independent
 //! wire identities. Versions evolve independently of the product release
@@ -8,16 +8,24 @@
 pub const FAMILY: &str = "observed";
 
 /// The observed index wire version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "1.1.0";
 
 /// The exact `schema_version` literal of a persisted observed index.
-pub const SCHEMA_VERSION: &str = "lekalo/observed-index/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/observed-index/v1.1.0";
 
-/// The exact `schema_version` literal of an adapter scan document.
-pub const SCAN_SCHEMA_VERSION: &str = "lekalo/observed-scan/v1.0.0";
+/// The exact `schema_version` literals of an adapter scan document: the
+/// frozen issue #39 base plus the additive issue #42 binding-registry
+/// extension. A scan in either spelling decodes; the additive members
+/// (target, profile, candidates, native test bindings) exist only on a
+/// 1.1.0 document.
+pub const SCAN_SCHEMA_VERSIONS: [&str; 2] =
+    ["lekalo/observed-scan/v1.0.0", "lekalo/observed-scan/v1.1.0"];
+
+/// The current scan spelling new documents advertise.
+pub const SCAN_SCHEMA_VERSION: &str = SCAN_SCHEMA_VERSIONS[1];
 
 /// The registry identity of the observed index wire.
-pub const INDEX_IDENTITY: &str = "dev.lekalo.observed-index@1.0.0";
+pub const INDEX_IDENTITY: &str = "dev.lekalo.observed-index@1.1.0";
 
 /// The single mode this issue records; `contracted` mode (issue #40) is a
 /// separate surface and never appears here.
@@ -59,6 +67,21 @@ pub const MAX_ATTACHMENTS: usize = 64;
 
 /// Maximum promoted symbols in one plan.
 pub const MAX_PLAN_SYMBOLS: usize = 1_000;
+
+/// Maximum candidates recorded on one binding (issue #42): an ambiguous
+/// adapter names every plausible native symbol instead of picking one.
+pub const MAX_CANDIDATES: usize = 64;
+
+/// Maximum native test bindings per scan or index (issue #42).
+pub const MAX_TEST_BINDINGS: usize = 2_000;
+
+/// The prefix of every deterministic proposal identifier (issue #42).
+pub const PROPOSAL_ID_PREFIX: &str = "prop-";
+
+/// The closed binding relation vocabulary (issue #42). The relation of a
+/// binding row follows from its section: symbol bindings implement,
+/// endpoint bindings expose, and native test bindings verify.
+pub const RELATIONS: [&str; 3] = ["implements", "verifies", "exposes"];
 
 /// The exact `sha256:<64 lowercase hex>` grammar.
 pub fn is_sha256(text: &str) -> bool {
