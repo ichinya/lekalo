@@ -425,6 +425,23 @@ touching the tree. The contract and the closed `init.*` diagnostics live
 in [docs/adopt.md](docs/adopt.md) and
 [ADR-0028](docs/adr/0028-init-adopt.md).
 
+## Adapter conformance suite
+
+Issue #31 defines the shared battery every target adapter must pass
+before it is recognized as compatible with an exact protocol/IR version
+pair: the describe handshake and negotiation, capability declaration
+and IR backing, deterministic output across repeated runs, the dry-run
+write plan and its apply, path confinement with canonical-home
+immutability, cancellation, invalid-input handling, structured
+diagnostics, scenario result normalization, artifact manifest
+evidence, and redaction of durable evidence. Security and protocol
+failures are never compensated by passing feature tests, the
+verified-compatibility badge names exact versions only, and results
+project to deterministic JSON and JUnit documents. The contract lives
+in [docs/adapter-conformance.md](docs/adapter-conformance.md) and
+[ADR-0030](docs/adr/0030-adapter-conformance.md); the fixture project
+is under `tests/fixtures/adapter-conformance/`.
+
 ## OpenSpec requirement traceability
 
 Issue #36 links semantic symbols to canonical requirements without owning
@@ -478,7 +495,7 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
 independent of product releases; issue #92 carries prospective product
-0.2.7; issue #29 carries prospective product
+0.2.7; issue #31 publishes product 0.2.5; issue #29 carried prospective product
 0.2.4 (issue #38 carried prospective product 0.2.3; issue #63 published product 0.1.31 (annotated tag `v0.1.31` on
 `9cdd8c1`); issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
 `9020558`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on

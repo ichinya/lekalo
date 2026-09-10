@@ -153,6 +153,9 @@ jobs:
         timeout-minutes: 3
         run: cargo test -p lekalo-core --test target_transport_unix --locked -- --test-threads=1
       - run: cargo test --workspace --locked --no-fail-fast
+      - name: Run the target adapter conformance suite against the reference adapter
+        timeout-minutes: 10
+        run: cargo run --locked -p lekalo-cli -- adapter test --profile strict --report junit --timeout-ms 60000 node tests/fixtures/target-protocol/fake-adapter.mjs --lekalo-adapter-variant fluent
       - name: Remove the CI-only AppArmor launcher prerequisite
         if: always() && runner.os == 'Linux' && steps.apparmor.outcome == 'success'
         timeout-minutes: 1
