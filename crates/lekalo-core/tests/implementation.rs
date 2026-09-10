@@ -307,8 +307,7 @@ fn wire_rejects_hostile_and_unbounded_documents() {
             ]
         }
     ]);
-    let set = ImplementationDocument::from_value(&hostile)
-        .expect_err("traversal refused");
+    let set = ImplementationDocument::from_value(&hostile).expect_err("traversal refused");
     assert!(!reason_codes(&set).is_empty());
     assert!(reason_codes(&set)
         .iter()
