@@ -7,8 +7,10 @@
   "verdict": "degraded",
   "revisions": {
     "git": {
-        "state": "unavailable"
-      },
+      "state": "ok",
+      "commit": "bd41fa6171f8ec7c2d104e21ba491bda331d0726",
+      "dirty": true
+    },
     "model": {
       "state": "ok",
       "version": "1.0.0"

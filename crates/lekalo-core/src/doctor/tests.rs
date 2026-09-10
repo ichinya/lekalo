@@ -164,9 +164,7 @@ fn status_panel_is_the_freshness_quartet() {
 /// substitution: the canonical wire bytes stay canonical, so the lock
 /// parses and the verifier refuses with `Stale`.
 fn drift_lock_to_stale(selection: &str) {
-    let root = std::env::current_dir()
-        .expect("cwd")
-        .join(selection.replace('/', "\\"));
+    let root = std::env::current_dir().expect("cwd").join(selection);
     let path = root.join("lekalo.lock");
     crate::lockfile::plan::LockService::lock(
         &LoadSelection {
@@ -225,9 +223,7 @@ fn unreadable_and_invalid_locks_are_invalid_not_absent() {
     // stays unknown with the preserved structure refusal, and the
     // revisions block records `invalid` — never `absent`.
     let selection = fixture_selection();
-    let root = std::env::current_dir()
-        .expect("cwd")
-        .join(selection.replace('/', "\\"));
+    let root = std::env::current_dir().expect("cwd").join(&selection);
     std::fs::create_dir(root.join("lekalo.lock")).expect("lock path turned into a directory");
     let sel = LoadSelection {
         project: Some(selection),
@@ -246,9 +242,7 @@ fn unreadable_and_invalid_locks_are_invalid_not_absent() {
     // check stays unknown with the preserved lock rule identity —
     // never the generic root-unreadable stand-in, never `absent`.
     let selection = fixture_selection();
-    let root = std::env::current_dir()
-        .expect("cwd")
-        .join(selection.replace('/', "\\"));
+    let root = std::env::current_dir().expect("cwd").join(&selection);
     std::fs::write(root.join("lekalo.lock"), b"{}").expect("invalid lock written");
     let sel = LoadSelection {
         project: Some(selection),
@@ -266,9 +260,7 @@ fn unreadable_and_invalid_locks_are_invalid_not_absent() {
     // and the revisions block spells `invalid` — with the payload
     // digest it actually carries.
     let selection = fixture_selection();
-    let root = std::env::current_dir()
-        .expect("cwd")
-        .join(selection.replace('/', "\\"));
+    let root = std::env::current_dir().expect("cwd").join(&selection);
     crate::lockfile::plan::LockService::lock(
         &LoadSelection {
             project: Some(selection.clone()),
@@ -350,9 +342,7 @@ fn fix_preview_lists_recipes_without_mutating() {
 #[test]
 fn doctor_never_writes_into_the_project() {
     let selection = fixture_selection();
-    let dir = std::env::current_dir()
-        .expect("cwd")
-        .join(selection.replace('/', "\\"));
+    let dir = std::env::current_dir().expect("cwd").join(&selection);
     let fingerprint = |dir: &std::path::Path| -> Vec<(String, u64)> {
         let mut entries = Vec::new();
         fn walk(dir: &std::path::Path, out: &mut Vec<(String, u64)>) {

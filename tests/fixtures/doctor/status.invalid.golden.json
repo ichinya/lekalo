@@ -7,8 +7,10 @@
   "verdict": "blocked",
   "revisions": {
     "git": {
-        "state": "unavailable"
-      },
+      "state": "ok",
+      "commit": "0ffc71aba1db0b5e3eea3e4ed0b87094d16ee38d",
+      "dirty": false
+    },
     "model": {
       "state": "ok",
       "version": "1.0.0"
