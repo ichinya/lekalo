@@ -3,7 +3,7 @@
   "identity": "dev.lekalo.validation-profile@1.0.0",
   "profile_id": "strict",
   "version": "1.0.0",
-  "diagnostic_registry_version": "1.16.0",
+  "diagnostic_registry_version": "1.18.0",
   "scope": "project",
   "rules": [
     {

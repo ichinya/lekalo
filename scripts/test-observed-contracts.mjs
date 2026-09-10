@@ -175,10 +175,10 @@ if (!artifactTypes.includes('strip_prefix(".lekalo/generated/")')) {
 // ---------------------------------------------------------------------------
 // 5. The diagnostic registry carries the observed family.
 // ---------------------------------------------------------------------------
-const registry = read("contracts/diagnostic-registry.v1.16.0.json");
+const registry = read("contracts/diagnostic-registry.v1.18.0.json");
 const observedRules = registry.entries.filter((entry) => entry.id.startsWith("observed."));
 // Predecessor custody on the integrated chain: every accepted 1.9.0 and
-// 1.14.0 rule must survive unchanged in 1.16.0; observed.* is additive.
+// 1.14.0 rule must survive unchanged in 1.18.0; observed.* is additive.
 for (const predFile of [
   "contracts/diagnostic-registry.v1.9.0.json",
   "contracts/diagnostic-registry.v1.14.0.json",
@@ -193,7 +193,7 @@ for (const predFile of [
     }
   }
 }
-if (registry.registry_version !== "1.16.0") fail("registry-version", registry.registry_version);
+if (registry.registry_version !== "1.18.0") fail("registry-version", registry.registry_version);
 if (observedRules.length !== 11) fail("observed-rule-count", observedRules.length);
 for (const entry of observedRules) {
   if (!entry.code.startsWith("LEK-OBS-")) fail("observed-code", entry.id);

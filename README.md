@@ -483,6 +483,32 @@ in [docs/observed-mode.md](docs/observed-mode.md),
 `contracts/observed-scan.schema.v1.0.0.json`; the hermetic
 task-domain fixture is under `tests/fixtures/observed/`.
 
+
+## Foreign and custom implementation escape hatches
+
+Issue #30 lets complex or target-specific logic stay ordinary code: one
+closed implementation attachment (`lekalo/implementation/v1.0.0`) binds a
+compiled operation to per-target implementations over the kinds
+`generated`, `custom`, `foreign` (an existing symbol such as
+`@example/core-domain#calculateSchedule` or
+`App\\Schedule\\CalculateSchedule::__invoke`), `external` (a service or
+port), and `unsupported` (a recorded decision). The canonical
+input/output/error/effect contract stays in the Model — acknowledged
+effects outside the declared surface reject, so a hook can never
+covertly extend it — binding existence and signature checking stays with
+the target adapter, and symbol grammar refuses every scheme spelling, so
+no setup script or command is representable. Multiple implementations on
+one target require exactly one explicit selection; missing target
+implementations surface as `implementation.target-missing` warnings in
+the deterministic portability projection together with the covering
+scenario ids (one suite for every implementation); custom files keep the
+never-overwritten, never-cleaned `custom` lifecycle of the ownership
+manifest. The contract lives in
+[docs/implementation.md](docs/implementation.md) and
+[ADR-0033](docs/adr/0033-foreign-implementation-escape-hatch.md); the
+schema is `contracts/implementation.schema.v1.0.0.json` and the fixtures
+are under `tests/fixtures/implementation/`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -491,9 +517,10 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #39 carries prospective product 0.2.6
-(issue #31 published product 0.2.5; the accepted M2 line published products
-0.2.0 through 0.2.4 for issues #27, #36, #28, #38 and #29; issue #63
+independent of product releases; issue #30 carries prospective product 0.2.8
+(issue #39 published product 0.2.6 at `80a815a`; issue #31 published product
+0.2.5; the accepted M2 line published products 0.2.0 through 0.2.4 for
+issues #27, #36, #28, #38 and #29; issue #63
 published product 0.1.31 (annotated tag `v0.1.31` on `9cdd8c1`);
 issue #26 published product
 0.1.30 (annotated tag `v0.1.30` on `9020558`); issue #62 published product
