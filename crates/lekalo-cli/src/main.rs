@@ -325,8 +325,113 @@ enum Commands {
         #[arg(long = "trace", value_name = "PATH")]
         traces: Vec<String>,
     },
+    /// Record, bind, verify, and promote existing code in observed mode
+    /// (issue #39). The core owns every decision; this binary only
+    /// selects, renders, and maps exits.
+    Observe {
+        #[command(subcommand)]
+        command: ObserveCommands,
+    },
 }
 
+/// The `observe` subcommands: the observed-mode surface (issue #39).
+#[derive(Debug, Subcommand)]
+enum ObserveCommands {
+    /// Merge one adapter scan document into the observed index; a
+    /// binding recorded under a stable key survives a source move.
+    Update {
+        /// The adapter scan document (JSON), relative to the invocation
+        /// directory.
+        #[arg(long, value_name = "FILE")]
+        scan: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Bind one recorded symbol to a source location explicitly.
+    Bind {
+        /// The recorded semantic id.
+        symbol: String,
+        /// The adapter stable key that survives file moves.
+        #[arg(long, value_name = "KEY")]
+        key: Option<String>,
+        /// The logical project-relative source path.
+        #[arg(long, value_name = "PATH")]
+        path: String,
+        /// The 1-based source line.
+        #[arg(long, value_name = "LINE")]
+        line: Option<u64>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Confirm one inferred binding; confirmed facts are user-owned.
+    Confirm {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Run the staleness gate over every recorded binding; any stale
+    /// binding fails with registered diagnostics.
+    Check {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Attach native tests and gates to one recorded symbol.
+    Attach {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Comma-separated native test ids (verbatim external ids).
+        #[arg(long, value_name = "IDS")]
+        native_test: Option<String>,
+        /// Comma-separated gate ids (verbatim external ids).
+        #[arg(long, value_name = "IDS")]
+        gate: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Project the observed card of one recorded symbol.
+    Inspect {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Project the observed impact of one recorded symbol; the recorded
+    /// graph always reports its own incompleteness.
+    Impact {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Plan (with --dry-run) or apply (with --confirm) the explicit
+    /// promotion of observed symbols into the canonical model.
+    Promote {
+        /// One semantic id to promote.
+        #[arg(long, value_name = "SYMBOL")]
+        symbol: Option<String>,
+        /// Every eligible symbol of one module.
+        #[arg(long, value_name = "MODULE")]
+        module: Option<String>,
+        /// Compute the plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the plan with this exact identity
+        /// (`sha256:<64 lowercase hex>`).
+        #[arg(long, value_name = "PLAN_ID")]
+        confirm: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
 /// The closed readiness-phase vocabulary for the CLI surface; `done` is
 /// an accepted alias of `release`.
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -715,6 +820,7 @@ fn main() -> ExitCode {
                 project,
                 dry_run,
             } => run_init(adopt, target, profile, project_id, project, dry_run),
+            Commands::Observe { command } => run_observe(command),
             Commands::Adapter { command } => match run_adapter(command) {
                 AdapterRun::Envelope(result) => result,
                 AdapterRun::Document { document, result } => {
@@ -2799,6 +2905,13 @@ fn run_impact(args: ImpactArgs) -> DomainResult {
     } else {
         None
     };
+    // The observed index, when the project records one; a present but
+    // unusable index fails closed instead of silently ignoring recorded
+    // code.
+    let observed = match observed_view(&project) {
+        Err(result) => return result,
+        Ok(observed) => observed,
+    };
 
     match lekalo_core::impact::analyze(
         &compilation.project,
@@ -2806,10 +2919,22 @@ fn run_impact(args: ImpactArgs) -> DomainResult {
         &effects,
         &request,
         changed_set.as_ref(),
+        observed.as_ref(),
     ) {
         Ok(result) => render_impact(&result),
         Err(lekalo_core::impact::ImpactFailure::Invalid(set)) => DomainResult::invalid(set),
         Err(lekalo_core::impact::ImpactFailure::Denied(set)) => DomainResult::denied(set),
+    }
+}
+fn observed_view(
+    project: &Option<String>,
+) -> Result<Option<lekalo_core::observed::view::ObservedView>, DomainResult> {
+    let selection = selection_for(project);
+    let context = lekalo_core::observed::context(&selection)?;
+    match lekalo_core::observed::load_index(&context) {
+        Ok(Some(index)) => Ok(Some(lekalo_core::observed::view::ObservedView::of(&index))),
+        Ok(None) => Ok(None),
+        Err(set) => Err(DomainResult::invalid(set)),
     }
 }
 
@@ -2845,4 +2970,300 @@ fn render_impact(result: &lekalo_core::impact::ImpactResult) -> DomainResult {
         result.completeness().state.key()
     ));
     DomainResult::impact(json, human.join("\n"), result.warnings().to_vec())
+}
+/// project the result. Every observed decision — scan normalization,
+/// merge, binding resolution, staleness, promotion — lives in the core;
+/// this binary only selects, renders, and maps exits.
+fn run_observe(command: ObserveCommands) -> DomainResult {
+    match command {
+        ObserveCommands::Update { scan, project } => run_observe_update(&scan, &project),
+        ObserveCommands::Bind {
+            symbol,
+            key,
+            path,
+            line,
+            project,
+        } => run_observe_bind(&symbol, key.as_deref(), &path, line, &project),
+        ObserveCommands::Confirm { symbol, project } => run_observe_confirm(&symbol, &project),
+        ObserveCommands::Check { project } => run_observe_check(&project),
+        ObserveCommands::Attach {
+            symbol,
+            native_test,
+            gate,
+            project,
+        } => run_observe_attach(&symbol, native_test.as_deref(), gate.as_deref(), &project),
+        ObserveCommands::Inspect { symbol, project } => run_observe_inspect(&symbol, &project),
+        ObserveCommands::Impact { symbol, project } => run_observe_impact(&symbol, &project),
+        ObserveCommands::Promote {
+            symbol,
+            module,
+            dry_run,
+            confirm,
+            project,
+        } => run_observe_promote(symbol, module, dry_run, confirm.as_deref(), &project),
+    }
+}
+
+/// Read the scan document bytes; the path is an invocation-relative
+/// input document, never a project file.
+fn scan_bytes(path: &str) -> Result<Vec<u8>, DomainResult> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                std::io::ErrorKind::NotFound => "scan-missing",
+                _ => "scan-unreadable",
+            };
+            return Err(DomainResult::invalid(
+                lekalo_core::observed::scan_io_failure(detail),
+            ));
+        }
+    };
+    if bytes.len() > lekalo_core::observed::MAX_SCAN_BYTES {
+        return Err(DomainResult::invalid(
+            lekalo_core::observed::scan_limit_set("scan-bytes", bytes.len()),
+        ));
+    }
+    Ok(bytes)
+}
+
+fn run_observe_update(scan: &str, project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let bytes = match scan_bytes(scan) {
+        Ok(bytes) => bytes,
+        Err(result) => return result,
+    };
+    let context = match lekalo_core::observed::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::observed::update_index(&context, &bytes) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!(
+                "observe update {} symbols ({} explicit, {} confirmed, {} inferred, {} stale)",
+                receipt.symbols,
+                receipt.explicit,
+                receipt.confirmed,
+                receipt.inferred,
+                receipt.stale
+            ),
+        ),
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+fn run_observe_bind(
+    symbol: &str,
+    key: Option<&str>,
+    path: &str,
+    line: Option<u64>,
+    project: &Option<String>,
+) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::observed::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::observed::bind_explicit(&context, symbol, key, path, line) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!(
+                "observe bind {} ({} {})",
+                receipt.symbol,
+                receipt.binding.key(),
+                receipt.state.key()
+            ),
+        ),
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+fn run_observe_confirm(symbol: &str, project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::observed::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::observed::confirm_binding(&context, symbol) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!("observe confirm {} (confirmed)", receipt.symbol),
+        ),
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+fn run_observe_check(project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::observed::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::observed::staleness(&context) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!(
+                "observe check {} symbols ({} current, {} unknown)",
+                receipt.symbols, receipt.current, receipt.unknown
+            ),
+        ),
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+/// Split one comma-separated external id list; empty members refuse.
+fn external_ids(value: Option<&str>) -> Result<Vec<String>, DomainResult> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let ids: Vec<String> = value.split(',').map(str::to_owned).collect();
+    if ids.iter().any(|id| id.is_empty()) {
+        return Err(DomainResult::usage_error());
+    }
+    Ok(ids)
+}
+
+fn run_observe_attach(
+    symbol: &str,
+    native_test: Option<&str>,
+    gate: Option<&str>,
+    project: &Option<String>,
+) -> DomainResult {
+    let tests = match external_ids(native_test) {
+        Ok(tests) => tests,
+        Err(result) => return result,
+    };
+    let gates = match external_ids(gate) {
+        Ok(gates) => gates,
+        Err(result) => return result,
+    };
+    if tests.is_empty() && gates.is_empty() {
+        return DomainResult::usage_error();
+    }
+    let selection = selection_for(project);
+    let context = match lekalo_core::observed::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::observed::attach(&context, symbol, &tests, &gates) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!(
+                "observe attach {} ({} tests, {} gates)",
+                receipt.symbol,
+                receipt.native_tests.len(),
+                receipt.gates.len()
+            ),
+        ),
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+fn run_observe_inspect(symbol: &str, project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::observed::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let index = match observed_index(&context) {
+        Ok(index) => index,
+        Err(result) => return result,
+    };
+    match lekalo_core::observed::view::inspect_card(&index, symbol) {
+        Ok(card) => DomainResult::receipt(card.to_json(), card.to_human()),
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+fn run_observe_impact(symbol: &str, project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::observed::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let index = match observed_index(&context) {
+        Ok(index) => index,
+        Err(result) => return result,
+    };
+    match lekalo_core::observed::view::impact_card(&index, symbol) {
+        Ok(impact) => DomainResult::receipt(impact.to_json(), impact.to_human()),
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+/// The recorded index of a loaded context; absence is a registered
+/// failure for every operation except `update`.
+fn observed_index(
+    context: &lekalo_core::observed::ObservedContext,
+) -> Result<lekalo_core::observed::ObservedIndex, DomainResult> {
+    match lekalo_core::observed::load_index(context) {
+        Ok(Some(index)) => Ok(index),
+        Ok(None) => Err(DomainResult::invalid(
+            lekalo_core::observed::missing_index_set(),
+        )),
+        Err(set) => Err(DomainResult::invalid(set)),
+    }
+}
+
+fn run_observe_promote(
+    symbol: Option<String>,
+    module: Option<String>,
+    dry_run: bool,
+    confirm: Option<&str>,
+    project: &Option<String>,
+) -> DomainResult {
+    // Exactly one of --symbol and --module; exactly one action.
+    if symbol.is_some() == module.is_some() {
+        return DomainResult::usage_error();
+    }
+    if dry_run == confirm.is_some() {
+        return DomainResult::usage_error();
+    }
+    if let Some(plan_id) = confirm {
+        if well_formed_plan_id(plan_id).is_none() {
+            return DomainResult::usage_error();
+        }
+    }
+    let selection = lekalo_core::loader::LoadSelection {
+        project: project
+            .clone()
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    let context = match lekalo_core::observed::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let target = match (symbol, module) {
+        (Some(symbol), _) => lekalo_core::observed::PromotionSelection::Symbol(symbol),
+        (_, Some(module)) => lekalo_core::observed::PromotionSelection::Module(module),
+        _ => return DomainResult::usage_error(),
+    };
+    if dry_run {
+        match lekalo_core::observed::promote::plan(&context, &target) {
+            Ok(receipt) => DomainResult::receipt(
+                serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                format!(
+                    "observe promote preview plan {} (-{} symbols, {} ineligible)",
+                    receipt.plan,
+                    receipt.symbols.len(),
+                    receipt.ineligible.len()
+                ),
+            ),
+            Err(set) => DomainResult::invalid(set),
+        }
+    } else {
+        let plan_id = confirm.expect("exclusivity checked above");
+        match lekalo_core::observed::promote::apply(&context, &target, plan_id) {
+            Ok(receipt) => DomainResult::receipt(
+                serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                format!(
+                    "observe promote applied plan {} ({} symbols)",
+                    receipt.plan,
+                    receipt.symbols.len()
+                ),
+            ),
+            Err(set) => DomainResult::invalid(set),
+        }
+    }
 }
