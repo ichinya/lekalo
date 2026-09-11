@@ -724,6 +724,186 @@
       "lifecycle": "active"
     },
     {
+      "id": "contracted.binding-drift",
+      "code": "LEK-CNT-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.binding-drift",
+      "default_message": "A conformed binding no longer matches the canonical contract or the maintained source.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.coverage-missing",
+      "code": "LEK-CNT-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.coverage-missing",
+      "default_message": "A conformed operation has no native test or scenario-skeleton evidence.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.declaration-invalid",
+      "code": "LEK-CNT-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.declaration-invalid",
+      "default_message": "The declaration document or one of its records was refused.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.declaration-limit",
+      "code": "LEK-CNT-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.declaration-limit",
+      "default_message": "The declaration or registry document exceeded its recorded bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "limit",
+          "type": "token"
+        },
+        {
+          "name": "found",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.registry-io",
+      "code": "LEK-CNT-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.registry-io",
+      "default_message": "The conformed registry could not be read, written, or verified.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.stale-artifact",
+      "code": "LEK-CNT-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.stale-artifact",
+      "default_message": "A support artifact no longer matches its recorded content digest.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "path",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.unknown-module",
+      "code": "LEK-CNT-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.unknown-module",
+      "default_message": "The declaration names a module the canonical model does not declare.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "module",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.unknown-symbol",
+      "code": "LEK-CNT-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.unknown-symbol",
+      "default_message": "The declaration names a symbol the canonical model does not declare.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "core.capability-unavailable",
       "code": "LEK-DIAG-001",
       "category": "infrastructure",
@@ -1656,6 +1836,175 @@
       "data_fields": [
         {
           "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.document-invalid",
+      "code": "LEK-IMPL-001",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "implementation.document-invalid",
+      "default_message": "The implementation attachment violates the closed declaration contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "reason",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.effect-mismatch",
+      "code": "LEK-IMPL-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "implementation.effect-mismatch",
+      "default_message": "An acknowledged effect is not part of the operation's declared effect surface.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.reference-unresolved",
+      "code": "LEK-IMPL-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "implementation.reference-unresolved",
+      "default_message": "A hook contract names an operation the bound IR does not declare as a command or query.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "contract",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.selection-ambiguous",
+      "code": "LEK-IMPL-004",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "implementation.selection-ambiguous",
+      "default_message": "Multiple implementations bind one target without exactly one explicit selection.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.selection-unknown",
+      "code": "LEK-IMPL-005",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "implementation.selection-unknown",
+      "default_message": "An explicit selection names a target with no competing implementation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.symbol-invalid",
+      "code": "LEK-IMPL-006",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "implementation.symbol-invalid",
+      "default_message": "A foreign symbol reference was refused by the closed binding grammar.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "target",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.target-missing",
+      "code": "LEK-IMPL-007",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "implementation.target-missing",
+      "default_message": "A project target binding has no implementation entry for an escape-hatched operation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "target",
           "type": "token"
         }
       ],

@@ -31,6 +31,14 @@ pub(crate) enum HomeFailure {
 }
 
 impl CacheHome {
+    /// The read-only existence probe of the governed cache home: true
+    /// when `.lekalo/cache` (or a link in its place) is present. Never
+    /// creates anything; the denial classification stays with
+    /// [`Self::resolve`].
+    pub(crate) fn home_present(project_root: &Path) -> bool {
+        std::fs::symlink_metadata(project_root.join(".lekalo").join("cache")).is_ok()
+    }
+
     /// Resolve and preflight the home for an already-validated absolute
     /// project root. Creates `.lekalo/cache` when absent.
     pub(crate) fn resolve(project_root: &Path) -> Result<Self, HomeFailure> {

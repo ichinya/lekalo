@@ -4,8 +4,6 @@
 
 use clap::{error::ErrorKind, Args, ColorChoice, Parser, Subcommand};
 use lekalo_core::artifacts::{ArtifactFailure, CheckReceipt, GenerateService};
-
-mod git_input;
 use lekalo_core::loader::LoadSelection;
 use lekalo_core::lockfile::plan::LockService;
 use lekalo_core::lockfile::resolution::CandidateSet;
@@ -17,6 +15,9 @@ use lekalo_core::DomainResult;
 use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::process::ExitCode;
+
+mod doctor_git;
+mod git_input;
 
 const PROGRAM_NAME: &str = "lekalo";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -288,6 +289,42 @@ enum Commands {
         #[command(subcommand)]
         command: CacheCommands,
     },
+    /// Diagnose project, model, adapters, artifacts, and integrations in
+    /// one read-only readiness report.
+    Doctor {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Preview the closed safe-fix recipes for every finding; nothing
+        /// is ever repaired, installed, updated, or written.
+        #[arg(long)]
+        fix: bool,
+        /// Optional trace manifests supplying HLV/OpenSpec/AI Factory
+        /// gate evidence (repeatable).
+        #[arg(long = "trace", value_name = "PATH")]
+        traces: Vec<String>,
+    },
+    /// Report the freshness panel — lock, cache, bindings, artifacts —
+    /// plus the exact git/model/lock revisions.
+    Status {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Report phase readiness with required and optional checks.
+    Readiness {
+        /// The readiness phase: model, implement, generate, verify, or
+        /// release (alias: done).
+        #[arg(long, value_enum)]
+        phase: DoctorPhase,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Optional trace manifests supplying HLV/OpenSpec/AI Factory
+        /// gate evidence (repeatable).
+        #[arg(long = "trace", value_name = "PATH")]
+        traces: Vec<String>,
+    },
     /// Record, bind, verify, and promote existing code in observed mode
     /// (issue #39). The core owns every decision; this binary only
     /// selects, renders, and maps exits.
@@ -321,6 +358,15 @@ enum Commands {
     Bindings {
         #[command(subcommand)]
         command: BindingsCommands,
+    },
+    /// Record, verify, and govern AI-written implementation in
+    /// contracted mode (issue #40). The model is primary, the target
+    /// source is maintained code, and the adapter checks conformance
+    /// and may generate support artifacts only. The core owns every
+    /// decision; this binary only selects, renders, and maps exits.
+    Contract {
+        #[command(subcommand)]
+        command: ContractCommands,
     },
 }
 
@@ -375,6 +421,135 @@ enum BindingsCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
+}
+
+/// The `observe` subcommands: the observed-mode surface (issue #39).
+#[derive(Debug, Subcommand)]
+enum ObserveCommands {
+    /// Merge one adapter scan document into the observed index; a
+    /// binding recorded under a stable key survives a source move.
+    Update {
+        /// The adapter scan document (JSON), relative to the invocation
+        /// directory.
+        #[arg(long, value_name = "FILE")]
+        scan: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Bind one recorded symbol to a source location explicitly.
+    Bind {
+        /// The recorded semantic id.
+        symbol: String,
+        /// The adapter stable key that survives file moves.
+        #[arg(long, value_name = "KEY")]
+        key: Option<String>,
+        /// The logical project-relative source path.
+        #[arg(long, value_name = "PATH")]
+        path: String,
+        /// The 1-based source line.
+        #[arg(long, value_name = "LINE")]
+        line: Option<u64>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Confirm one inferred binding; confirmed facts are user-owned.
+    Confirm {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Run the staleness gate over every recorded binding; any stale
+    /// binding fails with registered diagnostics.
+    Check {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Attach native tests and gates to one recorded symbol.
+    Attach {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Comma-separated native test ids (verbatim external ids).
+        #[arg(long, value_name = "IDS")]
+        native_test: Option<String>,
+        /// Comma-separated gate ids (verbatim external ids).
+        #[arg(long, value_name = "IDS")]
+        gate: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Project the observed card of one recorded symbol.
+    Inspect {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Project the observed impact of one recorded symbol; the recorded
+    /// graph always reports its own incompleteness.
+    Impact {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Plan (with --dry-run) or apply (with --confirm) the explicit
+    /// promotion of observed symbols into the canonical model.
+    Promote {
+        /// One semantic id to promote.
+        #[arg(long, value_name = "SYMBOL")]
+        symbol: Option<String>,
+        /// Every eligible symbol of one module.
+        #[arg(long, value_name = "MODULE")]
+        module: Option<String>,
+        /// Compute the plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the plan with this exact identity
+        /// (`sha256:<64 lowercase hex>`).
+        #[arg(long, value_name = "PLAN_ID")]
+        confirm: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
+/// The closed readiness-phase vocabulary for the CLI surface; `done` is
+/// an accepted alias of `release`.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum DoctorPhase {
+    /// Model loads and validates.
+    Model,
+    /// Implementation against pinned inputs.
+    Implement,
+    /// Generation against resolved adapters and profiles.
+    Generate,
+    /// Verification with available tools and clean artifacts.
+    Verify,
+    /// Release: the full gate.
+    Release,
+    /// The `done` alias of `release`.
+    Done,
+}
+
+impl DoctorPhase {
+    /// The canonical core phase.
+    fn phase(self) -> lekalo_core::doctor::model::Phase {
+        match self {
+            Self::Model => lekalo_core::doctor::model::Phase::Model,
+            Self::Implement => lekalo_core::doctor::model::Phase::Implement,
+            Self::Generate => lekalo_core::doctor::model::Phase::Generate,
+            Self::Verify => lekalo_core::doctor::model::Phase::Verify,
+            Self::Release | Self::Done => lekalo_core::doctor::model::Phase::Release,
+        }
+    }
 }
 
 /// The `adapter` subcommands: the issue #31 conformance suite handoff.
@@ -535,53 +710,36 @@ enum CacheCommands {
     },
 }
 
-/// The `observe` subcommands: the observed-mode surface (issue #39).
+/// The `contract` subcommands: the contracted-mode surface (issue #40).
+/// The core owns every decision — declaration validation, conformance
+/// classification, attachment custody, and support-artifact ownership;
+/// this layer selects, renders, and maps exits.
 #[derive(Debug, Subcommand)]
-enum ObserveCommands {
-    /// Merge one adapter scan document into the observed index; a
-    /// binding recorded under a stable key survives a source move.
+enum ContractCommands {
+    /// Merge one adapter declaration document into the conformed
+    /// registry; a binding recorded with a fingerprint is conformance
+    /// evidence until the source or the contract changes.
     Update {
-        /// The adapter scan document (JSON), relative to the invocation
-        /// directory.
+        /// The adapter declaration document (JSON), relative to the
+        /// invocation directory.
         #[arg(long, value_name = "FILE")]
-        scan: String,
+        declaration: String,
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
-    /// Bind one recorded symbol to a source location explicitly.
-    Bind {
-        /// The recorded semantic id.
-        symbol: String,
-        /// The adapter stable key that survives file moves.
-        #[arg(long, value_name = "KEY")]
-        key: Option<String>,
-        /// The logical project-relative source path.
-        #[arg(long, value_name = "PATH")]
-        path: String,
-        /// The 1-based source line.
-        #[arg(long, value_name = "LINE")]
-        line: Option<u64>,
-        /// Project root selector, relative to the invocation directory.
-        #[arg(long, value_name = "DIR")]
-        project: Option<String>,
-    },
-    /// Confirm one inferred binding; confirmed facts are user-owned.
-    Confirm {
-        /// The recorded semantic id.
-        symbol: String,
-        /// Project root selector, relative to the invocation directory.
-        #[arg(long, value_name = "DIR")]
-        project: Option<String>,
-    },
-    /// Run the staleness gate over every recorded binding; any stale
-    /// binding fails with registered diagnostics.
+    /// Run the conformance gate: re-fingerprint every binding,
+    /// recompute the canonical signatures and declared effects from the
+    /// typed IR, and re-digest every fingerprinted support artifact.
     Check {
+        /// Restrict the gate to one module.
+        #[arg(long, value_name = "MODULE")]
+        module: Option<String>,
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
-    /// Attach native tests and gates to one recorded symbol.
+    /// Attach verbatim native-test or gate ids to one recorded symbol.
     Attach {
         /// The recorded semantic id.
         symbol: String,
@@ -595,39 +753,24 @@ enum ObserveCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
-    /// Project the observed card of one recorded symbol.
-    Inspect {
-        /// The recorded semantic id.
+    /// Register one support artifact in the ownership manifest; the
+    /// path must stay inside the generated home, and maintained
+    /// implementation paths refuse by construction.
+    Support {
+        /// The owning semantic id.
         symbol: String,
-        /// Project root selector, relative to the invocation directory.
-        #[arg(long, value_name = "DIR")]
-        project: Option<String>,
-    },
-    /// Project the observed impact of one recorded symbol; the recorded
-    /// graph always reports its own incompleteness.
-    Impact {
-        /// The recorded semantic id.
-        symbol: String,
-        /// Project root selector, relative to the invocation directory.
-        #[arg(long, value_name = "DIR")]
-        project: Option<String>,
-    },
-    /// Plan (with --dry-run) or apply (with --confirm) the explicit
-    /// promotion of observed symbols into the canonical model.
-    Promote {
-        /// One semantic id to promote.
-        #[arg(long, value_name = "SYMBOL")]
-        symbol: Option<String>,
-        /// Every eligible symbol of one module.
-        #[arg(long, value_name = "MODULE")]
-        module: Option<String>,
-        /// Compute the plan without writing anything.
-        #[arg(long)]
-        dry_run: bool,
-        /// Apply the plan with this exact identity
-        /// (`sha256:<64 lowercase hex>`).
-        #[arg(long, value_name = "PLAN_ID")]
-        confirm: Option<String>,
+        /// The closed support-artifact kind.
+        #[arg(long, value_name = "KIND")]
+        kind: String,
+        /// The exact logical path inside `.lekalo/generated/**`.
+        #[arg(long, value_name = "PATH")]
+        path: String,
+        /// The closed lifecycle (generated, scaffolded, checked).
+        #[arg(long, value_name = "LIFECYCLE", default_value = "generated")]
+        lifecycle: String,
+        /// The SHA-256 over the artifact's exact observed bytes.
+        #[arg(long, value_name = "SHA256")]
+        digest: Option<String>,
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
@@ -813,8 +956,18 @@ fn main() -> ExitCode {
                 dry_run,
                 confirm,
             } => run_generate(project, check, clean, dry_run, confirm),
+            Commands::Doctor {
+                project,
+                fix,
+                traces,
+            } => run_doctor(project, fix, traces),
+            Commands::Status { project } => run_status(project),
+            Commands::Readiness {
+                phase,
+                project,
+                traces,
+            } => run_readiness(phase.phase(), project, traces),
             Commands::Cache { command } => run_cache(command),
-            Commands::Observe { command } => run_observe(command),
             Commands::Scan {
                 target,
                 profile,
@@ -829,6 +982,7 @@ fn main() -> ExitCode {
                 program_args,
             ),
             Commands::Bindings { command } => run_bindings(command),
+            Commands::Contract { command } => run_contract(command),
             Commands::Init {
                 adopt,
                 target,
@@ -837,6 +991,7 @@ fn main() -> ExitCode {
                 project,
                 dry_run,
             } => run_init(adopt, target, profile, project_id, project, dry_run),
+            Commands::Observe { command } => run_observe(command),
             Commands::Adapter { command } => match run_adapter(command) {
                 AdapterRun::Envelope(result) => result,
                 AdapterRun::Document { document, result } => {
@@ -1582,6 +1737,110 @@ fn run_cache(command: CacheCommands) -> DomainResult {
             lekalo_core::cache::clear(&selection_for(&project))
         }
     }
+}
+
+/// Parse the supplied `--trace` manifests into the typed evidence
+/// handoff. The files are read here (the same seam `lekalo trace` owns)
+/// and every parse decision stays in the core; paths never cross.
+fn doctor_traces(paths: &[String]) -> Vec<lekalo_core::doctor::TraceManifestEvidence> {
+    paths
+        .iter()
+        .map(|path| {
+            let evidence = match std::fs::read(path) {
+                Err(_) => lekalo_core::doctor::TraceManifestEvidence {
+                    reason_ids: vec!["loader.io".to_owned()],
+                    gaps: 0,
+                    external_refs: Vec::new(),
+                },
+                Ok(bytes) => match lekalo_core::trace::TraceManifest::parse(&bytes) {
+                    Err(diagnostics) => lekalo_core::doctor::TraceManifestEvidence {
+                        reason_ids: diagnostics
+                            .reason_ids()
+                            .into_iter()
+                            .map(str::to_owned)
+                            .collect(),
+                        gaps: 0,
+                        external_refs: Vec::new(),
+                    },
+                    Ok(manifest) => {
+                        let report = manifest.report();
+                        let mut refs: Vec<String> = manifest
+                            .manifest()
+                            .nodes
+                            .iter()
+                            .flat_map(|node| node.external_refs.iter())
+                            .map(|reference| reference.system.as_str().to_owned())
+                            .collect();
+                        refs.sort();
+                        refs.dedup();
+                        lekalo_core::doctor::TraceManifestEvidence {
+                            reason_ids: Vec::new(),
+                            gaps: report.gap_count,
+                            external_refs: refs,
+                        }
+                    }
+                },
+            };
+            evidence
+        })
+        .collect()
+}
+
+/// The Git facts of one selection: unavailable when the project root
+/// itself cannot be resolved, otherwise the read-only adapter handoff.
+fn doctor_git_facts(selection: &LoadSelection) -> lekalo_core::doctor::GitFacts {
+    match lekalo_core::doctor::project_root(selection) {
+        Err(_) => lekalo_core::doctor::GitFacts {
+            state: lekalo_core::doctor::GitState::Unavailable,
+            commit: None,
+            dirty: None,
+        },
+        Ok(root) => doctor_git::git_facts(&root),
+    }
+}
+
+/// `lekalo doctor`: the full read-only readiness report. `--fix` only
+/// previews the closed safe-fix recipes; nothing is ever written.
+fn run_doctor(project: Option<String>, fix: bool, traces: Vec<String>) -> DomainResult {
+    let selection = selection_for(&project);
+    let git = doctor_git_facts(&selection);
+    let evidence = doctor_traces(&traces);
+    let options = lekalo_core::doctor::Options {
+        kind: lekalo_core::doctor::model::ReportKind::Doctor,
+        phase: None,
+        fix,
+        traces: evidence,
+    };
+    lekalo_core::doctor::report(&selection, &git, &options)
+}
+
+/// `lekalo status`: the freshness panel plus the exact revisions.
+fn run_status(project: Option<String>) -> DomainResult {
+    let selection = selection_for(&project);
+    let git = doctor_git_facts(&selection);
+    let options = lekalo_core::doctor::Options {
+        kind: lekalo_core::doctor::model::ReportKind::Status,
+        ..lekalo_core::doctor::Options::default()
+    };
+    lekalo_core::doctor::report(&selection, &git, &options)
+}
+
+/// `lekalo readiness --phase PHASE`: the phase-gated readiness report.
+fn run_readiness(
+    phase: lekalo_core::doctor::model::Phase,
+    project: Option<String>,
+    traces: Vec<String>,
+) -> DomainResult {
+    let selection = selection_for(&project);
+    let git = doctor_git_facts(&selection);
+    let evidence = doctor_traces(&traces);
+    let options = lekalo_core::doctor::Options {
+        kind: lekalo_core::doctor::model::ReportKind::Readiness,
+        phase: Some(phase),
+        fix: false,
+        traces: evidence,
+    };
+    lekalo_core::doctor::report(&selection, &git, &options)
 }
 
 /// Load and compile the selected project, build the effect graph, and run
@@ -2824,6 +3083,7 @@ fn run_impact(args: ImpactArgs) -> DomainResult {
         Err(result) => return result,
         Ok(observed) => observed,
     };
+
     match lekalo_core::impact::analyze(
         &compilation.project,
         &graph,
@@ -2837,9 +3097,6 @@ fn run_impact(args: ImpactArgs) -> DomainResult {
         Err(lekalo_core::impact::ImpactFailure::Denied(set)) => DomainResult::denied(set),
     }
 }
-
-/// The observed view of one selection: `Ok(None)` when the project
-/// records no index, the analyzer view when it does.
 fn observed_view(
     project: &Option<String>,
 ) -> Result<Option<lekalo_core::observed::view::ObservedView>, DomainResult> {
@@ -2885,9 +3142,6 @@ fn render_impact(result: &lekalo_core::impact::ImpactResult) -> DomainResult {
     ));
     DomainResult::impact(json, human.join("\n"), result.warnings().to_vec())
 }
-
-/// Run one `observe` subcommand (issue #39): load the project through the
-/// accepted seam, hand everything to the core observed engine, and
 /// project the result. Every observed decision — scan normalization,
 /// merge, binding resolution, staleness, promotion — lives in the core;
 /// this binary only selects, renders, and maps exits.
@@ -3447,4 +3701,183 @@ fn observed_context(
 ) -> Result<lekalo_core::observed::ObservedContext, DomainResult> {
     let selection = selection_for(project);
     lekalo_core::observed::context(&selection)
+}
+/// Read the declaration document bytes; the path is an
+/// invocation-relative input document, never a project file.
+fn declaration_bytes(path: &str) -> Result<Vec<u8>, DomainResult> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                std::io::ErrorKind::NotFound => "declaration-missing",
+                _ => "declaration-unreadable",
+            };
+            return Err(DomainResult::invalid(
+                lekalo_core::contracted::declaration_invalid_set(detail, None),
+            ));
+        }
+    };
+    if bytes.len() > lekalo_core::contracted::MAX_DECLARATION_BYTES {
+        return Err(DomainResult::invalid(
+            lekalo_core::contracted::declaration_limit_set("declaration-bytes", bytes.len()),
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Run one `contract` subcommand (issue #40): load the project through
+/// the accepted seam, hand everything to the core contracted engine,
+/// and project the result. Every contracted decision — declaration
+/// validation, conformance classification, attachment custody, and
+/// support-artifact ownership — lives in the core.
+fn run_contract(command: ContractCommands) -> DomainResult {
+    match command {
+        ContractCommands::Update {
+            declaration,
+            project,
+        } => run_contract_update(&declaration, &project),
+        ContractCommands::Check { module, project } => {
+            run_contract_check(module.as_deref(), &project)
+        }
+        ContractCommands::Attach {
+            symbol,
+            native_test,
+            gate,
+            project,
+        } => run_contract_attach(&symbol, native_test.as_deref(), gate.as_deref(), &project),
+        ContractCommands::Support {
+            symbol,
+            kind,
+            path,
+            lifecycle,
+            digest,
+            project,
+        } => run_contract_support(
+            &symbol,
+            &kind,
+            &path,
+            &lifecycle,
+            digest.as_deref(),
+            &project,
+        ),
+    }
+}
+
+fn run_contract_update(declaration: &str, project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let bytes = match declaration_bytes(declaration) {
+        Ok(bytes) => bytes,
+        Err(result) => return result,
+    };
+    let context = match lekalo_core::contracted::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::contracted::update_registry(&context, &bytes) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!(
+                "contract update {} symbols ({} recorded, {} artifacts)",
+                receipt.symbols,
+                receipt.recorded.len(),
+                receipt.artifacts
+            ),
+        ),
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+fn run_contract_check(module: Option<&str>, project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::contracted::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::contracted::check(&context, module) {
+        Ok(receipt) => {
+            let human = format!(
+                "contract check {} symbols ({} conformant, {} stale, {} unknown, {} artifacts, {} stale artifacts)",
+                receipt.symbols,
+                receipt.conformant,
+                receipt.stale,
+                receipt.unknown,
+                receipt.artifacts,
+                receipt.stale_artifacts
+            );
+            DomainResult::receipt(
+                serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                human,
+            )
+        }
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+fn run_contract_attach(
+    symbol: &str,
+    native_test: Option<&str>,
+    gate: Option<&str>,
+    project: &Option<String>,
+) -> DomainResult {
+    let tests = match external_ids(native_test) {
+        Ok(tests) => tests,
+        Err(result) => return result,
+    };
+    let gates = match external_ids(gate) {
+        Ok(gates) => gates,
+        Err(result) => return result,
+    };
+    if tests.is_empty() && gates.is_empty() {
+        return DomainResult::usage_error();
+    }
+    let selection = selection_for(project);
+    let context = match lekalo_core::contracted::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::contracted::attach(&context, symbol, &tests, &gates) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!(
+                "contract attach {} ({} native tests, {} gates)",
+                receipt.symbol,
+                receipt.native_tests.len(),
+                receipt.gates.len()
+            ),
+        ),
+        Err(set) => DomainResult::invalid(set),
+    }
+}
+
+fn run_contract_support(
+    symbol: &str,
+    kind: &str,
+    path: &str,
+    lifecycle: &str,
+    digest: Option<&str>,
+    project: &Option<String>,
+) -> DomainResult {
+    let Some(kind) = lekalo_core::contracted::SupportKind::parse(kind) else {
+        return DomainResult::usage_error();
+    };
+    let Some(lifecycle) = lekalo_core::contracted::SupportLifecycle::parse(lifecycle) else {
+        return DomainResult::usage_error();
+    };
+    let selection = selection_for(project);
+    let context = match lekalo_core::contracted::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::contracted::support(&context, symbol, kind, path, lifecycle, digest) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!(
+                "contract support {} ({} {})",
+                receipt.path,
+                receipt.kind.key(),
+                receipt.lifecycle.key()
+            ),
+        ),
+        Err(set) => DomainResult::invalid(set),
+    }
 }

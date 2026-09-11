@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/implementation.schema.v1.0.0.json",
+  "title": "Lekalo foreign/custom implementation attachment",
+  "description": "Closed declaration contract for foreign, custom, external, generated, and unsupported-for-target operation implementations (issue #30). The attachment binds existing target-local implementations to compiled operation symbols without restating any canonical contract: input, output, error, and effect contracts stay in the Model, and a target hook can never covertly extend a declared effect surface. Pure declaration and validation data: no source paths, no commands, no setup scripts, no runtime values, no host data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "contracts"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/implementation/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.implementation@1.0.0"
+    },
+    "projectId": {
+      "$ref": "#/$defs/projectId"
+    },
+    "modelRef": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "$ref": "#/$defs/irRef"
+    },
+    "contracts": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/hookContract"
+      }
+    }
+  },
+  "$defs": {
+    "projectId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+      "not": {
+        "enum": [
+          "lekalo",
+          "dev"
+        ]
+      }
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "enum": [
+            "0.1.0",
+            "1.0.0"
+          ]
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.1.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "hookContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "contract",
+        "targets"
+      ],
+      "properties": {
+        "symbol": {
+          "$ref": "#/$defs/operationSymbol"
+        },
+        "contract": {
+          "$ref": "#/$defs/hookName"
+        },
+        "effects": {
+          "$ref": "#/$defs/effectAcknowledgment"
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/targetBinding"
+          }
+        }
+      }
+    },
+    "operationSymbol": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}\\.[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$",
+      "minLength": 3,
+      "maxLength": 191
+    },
+    "hookName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,7}/v[0-9]{1,9}$",
+      "maxLength": 191
+    },
+    "effectAcknowledgment": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/operationSymbol"
+      }
+    },
+    "targetBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "kind"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/targetName"
+        },
+        "kind": {
+          "enum": [
+            "generated",
+            "custom",
+            "foreign",
+            "external",
+            "unsupported"
+          ]
+        },
+        "symbol": {
+          "$ref": "#/$defs/targetSymbol"
+        },
+        "port": {
+          "$ref": "#/$defs/portName"
+        },
+        "selected": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "foreign"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "symbol"
+            ],
+            "properties": {
+              "symbol": {
+                "$ref": "#/$defs/targetSymbol"
+              },
+              "port": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "external"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "port"
+            ],
+            "properties": {
+              "port": {
+                "$ref": "#/$defs/portName"
+              },
+              "symbol": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "generated",
+                  "custom",
+                  "unsupported"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "symbol": false,
+              "port": false
+            }
+          }
+        }
+      ]
+    },
+    "targetName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+    },
+    "targetSymbol": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9_@#][A-Za-z0-9_@#.:()/\\\\-]*$"
+    },
+    "portName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}$"
+    }
+  }
+}

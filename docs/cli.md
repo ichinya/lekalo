@@ -45,11 +45,20 @@ lekalo impact SYMBOL [--depth N] [--relation KIND] [--profile default|strict] [-
 lekalo impact --changed [--base REF] [--head REF] [--worktree] [--project DIR]
 lekalo context SYMBOL --budget TOKENS [--spans] [--project DIR]
 lekalo context --changed SYMBOLS --budget TOKENS [--spans] [--project DIR]
+lekalo contract update --declaration FILE [--project DIR]
+lekalo contract check [--module MODULE] [--project DIR]
+lekalo contract attach SYMBOL [--native-test IDS] [--gate IDS] [--project DIR]
+lekalo contract support SYMBOL --kind KIND --path PATH [--digest SHA256] [--lifecycle LC]
+    [--project DIR]
+lekalo cache status [--project DIR]
+lekalo doctor [--project DIR] [--trace PATH]... [--fix]
+lekalo status [--project DIR]
+lekalo readiness --phase model|implement|generate|verify|release [--project DIR] [--trace PATH]...
 ```
 
 `init --adopt`, `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
-`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, and
-`context` are implemented; none remains a recognized stub. `SYMBOL` is an
+`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, `context`, `cache`,
+`doctor`, `status`, `readiness`, and `contract` are implemented; none remains a recognized stub. `SYMBOL` is an
 opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic
 ID rules, validation, and graph construction bind every implemented
 command. Every implemented capability is bound by
@@ -581,34 +590,52 @@ denies with `{"status":"denied",...}` when a required gate rests on
 unknown or stale evidence. The contract, guarantees, limits, and the
 closed risk/gate vocabularies are documented in
 [docs/impact.md](impact.md) and [ADR-0017](adr/0017-impact.md).
-## Observe (observed mode)
-
-Issue #39 records, binds, verifies, and promotes existing code without
-generating or overwriting implementation. The thin subcommands hand every
-decision to the core observed engine; receipts are pretty two-space JSON
-with fixed key order, and failures carry the registered `observed.*`
-rules:
+`--fix` renders the closed safe-fix recipe preview (advice only, nothing is
+executed) and the optional `--trace PATH` manifests supply OpenSpec/HLV/
+AI Factory gate evidence; unsupplied evidence degrades. The report is the
+product: it exits 0 on stdout whenever it was produced, whatever verdict it
+records. The contract, the closed check vocabulary, the verdict rule, and
+the safe-fix recipes are documented in [docs/doctor.md](doctor.md) and
+[ADR-0032](adr/0032-doctor-readiness.md).
 
 ```sh
-lekalo observe update --scan adapter-scan.json
-lekalo observe bind taskboard.task --path src/tasks.ts --key src/tasks.ts#Task
-lekalo observe confirm taskboard.create_task
-lekalo observe check
-lekalo observe attach taskboard.create_task --native-test "npm test -- createTask"
-lekalo observe inspect taskboard.task
-lekalo observe impact taskboard.task
-lekalo observe promote --module taskboard --dry-run
-lekalo observe promote --module taskboard --confirm sha256:<64 lowercase hex>
+lekalo doctor
+# doctor degraded : 13 checks (12 ok, 1 degraded, 0 blocked)
+
+lekalo status
+# status ready : lock fresh, cache missing, bindings none-required, artifacts clean
+
+lekalo readiness --phase generate
+# readiness generate blocked : 13 checks (10 ok, 2 degraded, 1 blocked)
 ```
 
-`observe update` merges one adapter scan into the derived index at
-`.lekalo/import/observed/index.json`; a binding recorded under a
-stable key survives a source move, dropped records go stale, and a scan
-never downgrades an explicit or confirmed fact. `observe check` is
-the staleness gate (exit 0 current, exit 1 with
-`observed.stale-binding` per finding). `observe promote` is the
-only path into the canonical (contracted) model: inferred facts refuse,
-unknown evidence refuses, and the exact plan identity must be confirmed.
+## Contract (contracted mode)
+
+Issue #40 records, verifies, and governs AI-written implementation. The
+model is primary for the public contract, effects, and invariants; the
+target source is maintained code; the adapter checks conformance and may
+generate support artifacts only. The thin subcommands hand every
+decision to the core contracted engine; receipts are pretty two-space
+JSON with fixed key order, and failures carry the registered
+`contracted.*` rules:
+
+```sh
+lekalo contract update --declaration adapter-declaration.json
+lekalo contract check --module planner
+lekalo contract attach planner.focus_task --native-test "npm test -- focusTask"
+lekalo contract support planner.focus_task --kind openapi --path .lekalo/generated/openapi/planner.json --digest sha256:<64 hex>
+```
+
+`contract update` merges one adapter declaration into the derived
+registry at `.lekalo/import/contracted/registry.json`; bindings pin the
+maintained source location and fingerprint, the typed signature claim,
+and the declared-effect claim. `contract check` is the conformance
+gate: it re-fingerprints the sources, recomputes the canonical
+signatures and declared effects from the typed IR, and re-digests every
+fingerprinted support artifact (exit 0 clean, exit 1 with registered
+findings). The mode semantics, guarantees, and limits live in
+[docs/contracted-mode.md](contracted-mode.md) and
+[ADR-0034](adr/0034-contracted-mode.md).
 
 ## Scan and bindings (issue #42)
 

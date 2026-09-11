@@ -426,3 +426,104 @@ fn the_vacuous_clean_is_an_unchanged_receipt() {
         assert!(stdout_text(&apply).starts_with("generate unchanged plan"));
     });
 }
+
+// ---------------------------------------------------------------------------
+// Issue #30: the custom implementation lifecycle is never overwritten or
+// deleted. A custom entry whose bytes drift is reported without blocking,
+// and the claimed path can never enter a clean plan.
+// ---------------------------------------------------------------------------
+
+fn custom_value(owner: &str, path: &str, content: &str) -> Value {
+    json!({
+        "semantic_owner": owner,
+        "path": path,
+        "artifact_kind": "source",
+        "lifecycle": "custom",
+        "content": {
+            "algorithm": "sha256",
+            "digest": format!("sha256:{}", sha256_hex(content.as_bytes())),
+            "canonicalization": "exact-file-bytes",
+        },
+        "input_refs": [owner],
+        "regeneration_policy": "manual-only",
+    })
+}
+
+#[test]
+fn drifted_custom_files_are_reported_without_blocking_and_never_rewritten() {
+    with_sandbox("custom-drift", |sandbox| {
+        sandbox.create_lock();
+        sandbox.write_artifact(ARTIFACT_NAME, ARTIFACT_CONTENT);
+        sandbox.author_manifest(vec![
+            custom_value(
+                "planner.focus_task",
+                "apps/api/src/planner/focus-hook.ts",
+                "export function focusHook() {\n  return planner.focusTask();\n}\n",
+            ),
+            artifact_value(
+                "planner.focus_task",
+                "apps/api/src/planner/focus-task.ts",
+                ARTIFACT_CONTENT,
+            ),
+        ]);
+        // The custom file drifts after the manifest recorded it.
+        sandbox.write_artifact(
+            "focus-hook.ts",
+            "export function focusHook() {\n  return 'drifted';\n}\n",
+        );
+        let before = sandbox.snapshot();
+        let output = lekalo_in(&sandbox.root, &["--json", "generate", "--check"]);
+        assert_eq!(
+            exit_code(&output),
+            0,
+            "custom drift never blocks: {}",
+            stderr_text(&output)
+        );
+        let document: Value =
+            serde_json::from_str(stdout_text(&output).trim()).expect("check wire");
+        assert_eq!(document["verdict"], "reported");
+        assert_eq!(document["counts"]["manualDrift"], 1);
+        assert_eq!(document["counts"]["reported"], 1);
+        assert_eq!(document["findings"][0]["lifecycle"], "custom");
+        assert_eq!(document["findings"][0]["verdict"], "manual-drift");
+        // The read-only gate rewrote nothing: the drifted custom bytes
+        // are still on disk.
+        assert_eq!(sandbox.snapshot(), before, "check never rewrites");
+    });
+}
+
+#[test]
+fn a_manifest_claimed_custom_path_never_enters_a_clean_plan() {
+    with_sandbox("custom-clean", |sandbox| {
+        sandbox.create_lock();
+        sandbox.write_artifact(ARTIFACT_NAME, ARTIFACT_CONTENT);
+        // The claimed custom file exists on disk.
+        sandbox.write_artifact(
+            "focus-hook.ts",
+            "export function focusHook() {\n  return planner.focusTask();\n}\n",
+        );
+        sandbox.author_manifest(vec![custom_value(
+            "planner.focus_task",
+            "apps/api/src/planner/focus-hook.ts",
+            "export function focusHook() {\n  return planner.focusTask();\n}\n",
+        )]);
+        // The claimed custom path exists but is outside the managed
+        // root, so the clean plan is empty and confirms the vacuous
+        // no-deletes receipt.
+        let preview = lekalo_in(
+            &sandbox.root,
+            &["--json", "generate", "--clean", "--dry-run"],
+        );
+        assert_eq!(exit_code(&preview), 0, "{}", stderr_text(&preview));
+        let document: Value =
+            serde_json::from_str(stdout_text(&preview).trim()).expect("plan wire");
+        assert_eq!(document["count"], 0, "custom files are never clean targets");
+        assert!(
+            sandbox
+                .root
+                .join("apps/api/src/planner/focus-hook.ts")
+                .is_file(),
+            "custom file survives"
+        );
+    });
+}

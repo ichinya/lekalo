@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "lekalo/implementation/v1.0.0",
+  "identity": "dev.lekalo.implementation@1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:cda74a4d726341fffebb7e1cd25e88fb6fa8cc2a00d4ef19893ec16c9b2e4f30"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.1.0",
+    "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "contracts": [
+    {
+      "symbol": "notify.notify_user",
+      "contract": "notify.delivery/v1",
+      "targets": [
+        {
+          "target": "php-laravel",
+          "kind": "custom"
+        }
+      ]
+    },
+    {
+      "symbol": "planner.count_focused",
+      "contract": "planner.focus_query/v2",
+      "targets": [
+        {
+          "target": "node-typescript",
+          "kind": "external",
+          "port": "planner-read-model"
+        }
+      ]
+    },
+    {
+      "symbol": "planner.focus_task",
+      "contract": "planner.focus/v1",
+      "targets": [
+        {
+          "target": "go-service",
+          "kind": "unsupported"
+        },
+        {
+          "target": "node-typescript",
+          "kind": "foreign",
+          "symbol": "@app/planner#focusTask"
+        },
+        {
+          "target": "php-laravel",
+          "kind": "foreign",
+          "symbol": "App\\Planner\\FocusTask::__invoke"
+        }
+      ]
+    }
+  ]
+}
