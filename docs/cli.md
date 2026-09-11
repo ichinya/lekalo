@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.2.10. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.2.11. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -281,14 +281,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.2.10"
+  "version": "0.2.11"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.2.10`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.2.11`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -560,6 +560,36 @@ depend on. Human and JSON are projections of the same result; the report
 and trace exports emit canonical bytes with pinned digests. See
 [docs/requirements.md](requirements.md) and
 [ADR-0026](adr/0026-requirements-traceability.md).
+
+## Query Model
+
+Issue #64 adds the `lekalo query-model` handoff for the declarative query
+model (`lekalo/query-model/v1.0.0`): validate one attachment against its
+project, or compare two same-family attachments. The core owns every
+decision — wire normalization, the semantic self-check, Model custody,
+parameter/filter/sort/pagination typing, the visibility boundary, the
+strict tenant gate, the foreign escape, and the deterministic plan
+projection. Nothing is executed and nothing is ever written.
+
+```sh
+lekalo query-model validate tests/fixtures/query-model/valid/planner.queries.json --project tests/fixtures/query-model/project
+# query model planner: 4 queries (1 foreign), 2 tenancy scopes, 4 plans
+
+lekalo query-model validate ... --strict   # diagnose tenant filter omissions
+lekalo query-model diff base.json candidate.json
+# query model diff: equal false; breaking 1; non-breaking 0; policy-change 1
+```
+
+Exit protocol: `0` valid (validate: the attachment resolves; diff: the
+verdict stays data, never an exit code), `1` malformed attachment, custody
+mismatch, or any registered `query.*` refusal (strict tenant omission,
+write surface, nondeterministic sort, filter/sort/pagination conflicts,
+visibility boundary, unresolved references). The JSON validate envelope
+embeds the deterministic plan of every managed query — the single closed
+operator contract every target projection consumes, so pagination is
+identical for Node and PHP by construction. See
+[docs/query-model.md](query-model.md) and
+[ADR-0036](adr/0036-query-model.md).
 
 ## Impact
 

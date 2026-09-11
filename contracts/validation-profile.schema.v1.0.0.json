@@ -28,7 +28,7 @@
       "const": "1.0.0"
     },
     "diagnostic_registry_version": {
-      "const": "1.20.0"
+      "const": "1.21.0"
     },
     "scope": {
       "enum": [

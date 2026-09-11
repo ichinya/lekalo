@@ -20,6 +20,7 @@ Rust workspace and provider implementations are introduced.
 - [ADR-0010: the stable machine-readable diagnostic contract](docs/adr/0010-diagnostics.md)
 - [Observed mode for existing code](docs/observed-mode.md)
 - [Binding registry for existing code](docs/bindings.md)
+- [Declarative query model for filters, sort, pagination, and projections](docs/query-model.md)
 
 Validate the contract and its allowed/forbidden/malformed fixtures, then verify
 the documented CLI exit-code protocol with Node.js, without installing
@@ -523,6 +524,26 @@ contract, guarantees, and limits live in
 [docs/bindings.md](docs/bindings.md) and
 [ADR-0035](docs/adr/0035-bindings-registry.md); the reference
 node-typescript scanner is under `tests/fixtures/bindings/`.
+
+## Declarative query model
+
+Issue #64 makes read operations first-class, machine-checkable
+contract data: one closed, versioned attachment
+(`lekalo/query-model/v1.0.0`) binds a project to its Model pin and
+declares, per query, the source entity, result cardinality,
+parameters, a bounded filter grammar (equality/range/null/set over
+`and`/`or`/`not`), deterministic sort with the identity tie-breaker,
+the single limit/offset/cursor pagination contract shared by every
+target projection, semantic-link includes, tenant scopes with a
+strict-profile tenant gate, consistency profiles, bounded cost
+hints, and the foreign escape hatch. The read-only guarantee is
+structural — a command or effect can never occupy a read slot — and
+`lekalo query-model validate` emits the deterministic plan every
+target maps, so pagination is identical for Node and PHP by
+construction. See [docs/query-model.md](docs/query-model.md),
+[ADR-0036](docs/adr/0036-query-model.md), and the fixtures under
+`tests/fixtures/query-model/`.
+
 ## Foreign and custom implementation escape hatches
 
 Issue #30 lets complex or target-specific logic stay ordinary code: one
@@ -576,8 +597,8 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #42 carries prospective product 0.2.10
-(issue #40 carried prospective product 0.2.9; issue #30 carried prospective
+independent of product releases; issue #64 carries prospective product 0.2.11 (issue #42 carried prospective
+product 0.2.10; issue #40 carried prospective product 0.2.9; issue #30 carried prospective
 product 0.2.8; issue #92 carried prospective product 0.2.7; issue #39
 published product 0.2.6, annotated tag `0.2.6` on `80a815a`); (issue #31
 published product 0.2.5; the accepted M2 line published products 0.2.0

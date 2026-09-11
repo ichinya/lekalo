@@ -235,6 +235,12 @@ enum Commands {
         #[command(subcommand)]
         command: RequirementsCommands,
     },
+    /// Validate one declarative query-model attachment against the
+    /// project, or compare two attachments of the same family.
+    QueryModel {
+        #[command(subcommand)]
+        command: QueryModelCommands,
+    },
     /// Check generated-artifact ownership and drift, or plan and apply a
     /// confirmed clean of orphaned generated files.
     Generate {
@@ -690,6 +696,35 @@ enum RequirementsCommands {
     },
 }
 
+/// The `query-model` subcommands: a thin handoff to the core query-model
+/// resolver (issue #64). The attachment document is read at the given
+/// path and every decision — wire validation, semantic self-check,
+/// Model custody, reference resolution, the strict tenant gate, and
+/// the plan projection — lives in the core. Nothing is ever written.
+#[derive(Debug, Subcommand)]
+enum QueryModelCommands {
+    /// Validate the attachment against the selected project and emit
+    /// the deterministic plan summary of every declared query.
+    Validate {
+        /// Path to the query-model attachment JSON document.
+        path: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Enforce the strict tenant-filter requirement.
+        #[arg(long)]
+        strict: bool,
+    },
+    /// Compare two same-family attachments and classify every changed
+    /// path; the verdict stays data, never an exit code.
+    Diff {
+        /// Path to the base attachment JSON document.
+        base: String,
+        /// Path to the candidate attachment JSON document.
+        candidate: String,
+    },
+}
+
 /// The `cache` subcommands: the thin status/clear handoff (issue #20).
 #[derive(Debug, Subcommand)]
 enum CacheCommands {
@@ -945,6 +980,7 @@ fn main() -> ExitCode {
                 profiles,
                 format: DiffFormat::Json,
             } => run_diff(first, second, base, profiles),
+            Commands::QueryModel { command } => run_query_model(command),
             Commands::Graph { command } => run_graph(command, cli.no_cache),
             Commands::Effects { command } => run_effects(command, cli.no_cache),
             Commands::Trace { command } => run_trace(command),
@@ -2623,7 +2659,152 @@ fn run_requirements(command: RequirementsCommands) -> DomainResult {
         RequirementsStep::Trace => requirements_trace(&resolution.report),
     }
 }
+/// Run one `lekalo query-model` operation. The core owns every
+/// decision; this binary only reads the document, selects, renders,
+/// and maps exits.
+fn run_query_model(command: QueryModelCommands) -> DomainResult {
+    match command {
+        QueryModelCommands::Validate {
+            path,
+            project,
+            strict,
+        } => query_model_validate(&path, &project, strict),
+        QueryModelCommands::Diff { base, candidate } => query_model_diff(&base, &candidate),
+    }
+}
 
+/// Read one attachment document from disk with a classified read-only
+/// failure.
+fn read_attachment_document(path: &str) -> Result<serde_json::Value, DomainResult> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                io::ErrorKind::NotFound => "file-missing",
+                _ => "file-unreadable",
+            };
+            return Err(DomainResult::invalid(lekalo_core::query_model::io_failure(
+                detail,
+            )));
+        }
+    };
+    serde_json::from_slice(&bytes)
+        .map_err(|_| DomainResult::invalid(lekalo_core::query_model::io_failure("invalid-json")))
+}
+
+/// `lekalo query-model validate`: resolve the attachment against the
+/// selected project (custody, references, strict tenant gate) and emit
+/// the canonical plan summary.
+fn query_model_validate(path: &str, project: &Option<String>, strict: bool) -> DomainResult {
+    let document = match read_attachment_document(path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let attachment = match lekalo_core::query_model::QueryModelAttachment::from_value(&document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let selection = selection_for(project);
+    let profile = lekalo_core::query_model::Profile::from_strict(strict);
+    let resolution = match lekalo_core::query_model::resolve(&attachment, &selection, profile) {
+        Ok(resolution) => resolution,
+        Err(result) => return result,
+    };
+    let foreign = attachment
+        .queries()
+        .iter()
+        .filter(|decl| decl.foreign.is_some())
+        .count();
+    let json = format!(
+        "{{\"status\":\"valid\",\"queryModel\":{{\"projectId\":\"{}\",\"queryCount\":{},\"foreignQueries\":{},\"tenancyScopes\":{}}},\"plans\":{}}}",
+        attachment.project_id().as_str(),
+        attachment.queries().len(),
+        foreign,
+        attachment.tenancy().len(),
+        plans_json(&resolution),
+    );
+    let human = format!(
+        "query model {}: {} queries ({} foreign), {} tenancy scopes, {} plans",
+        attachment.project_id().as_str(),
+        attachment.queries().len(),
+        foreign,
+        attachment.tenancy().len(),
+        resolution.plans().len(),
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// The canonical plan array of one resolution, as JSON text.
+fn plans_json(resolution: &lekalo_core::query_model::Resolution) -> String {
+    let plans: Vec<String> = resolution
+        .plans()
+        .iter()
+        .map(|plan| plan.canonical_bytes())
+        .collect();
+    format!("[{}]", plans.join(","))
+}
+
+/// `lekalo query-model diff`: the pure semantic comparison of two
+/// same-family attachments; the verdict stays data.
+fn query_model_diff(base_path: &str, candidate_path: &str) -> DomainResult {
+    let base_document = match read_attachment_document(base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let candidate_document = match read_attachment_document(candidate_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let base = match lekalo_core::query_model::QueryModelAttachment::from_value(&base_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let candidate =
+        match lekalo_core::query_model::QueryModelAttachment::from_value(&candidate_document) {
+            Ok(attachment) => attachment,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let diff = match lekalo_core::query_model::compare(&base, &candidate) {
+        Ok(diff) => diff,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let count = |class| -> usize {
+        diff.paths()
+            .iter()
+            .filter(|path| path.class() == class)
+            .count()
+    };
+    let breaking = count(lekalo_core::query_model::DiffClass::Breaking);
+    let non_breaking = count(lekalo_core::query_model::DiffClass::NonBreaking);
+    let policy_change = count(lekalo_core::query_model::DiffClass::PolicyChange);
+    let paths: Vec<String> = diff
+        .paths()
+        .iter()
+        .map(|path| {
+            format!(
+                "{{\"path\":\"{}\",\"class\":\"{}\"}}",
+                path.path(),
+                path.class().key()
+            )
+        })
+        .collect();
+    let json = format!(
+        "{{\"status\":\"valid\",\"queryModelDiff\":{{\"equal\":{},\"breaking\":{},\"nonBreaking\":{},\"policyChange\":{},\"paths\":[{}]}}}}",
+        diff.equal(),
+        breaking,
+        non_breaking,
+        policy_change,
+        paths.join(","),
+    );
+    let human = format!(
+        "query model diff: equal {}; breaking {}; non-breaking {}; policy-change {}",
+        diff.equal(),
+        breaking,
+        non_breaking,
+        policy_change,
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
 /// `lekalo requirements validate`: the accepted summary envelope carries
 /// the resolution counts; the gate denies on any stale, missing, or
 /// conflicted reference.

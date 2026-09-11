@@ -41,14 +41,14 @@ const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf
 
 const itemSchema = read("contracts/diagnostic.schema.v1.0.0.json");
 const registrySchema = read("contracts/diagnostic-registry.schema.v1.0.0.json");
-const registry = read("contracts/diagnostic-registry.v1.20.0.json");
+const registry = read("contracts/diagnostic-registry.v1.21.0.json");
 // Predecessor custody: every accepted 1.16.0 rule must survive unchanged
 // in the successor; the integrated chain is additive end to end (issue #31
 // added the adapter conformance family as 1.15.0, issue #39 added the
 // observed family as 1.16.0, issue #30 added the implementation family as
 // 1.18.0 (1.17.0 stays reserved by its parallel owner), issue #40 added
-// the contracted family as 1.19.0, and issue #42 adds the bindings family
-// as the current 1.20.0).
+// the contracted family as 1.19.0, issue #42 added the bindings family
+// as 1.20.0, and issue #64 adds the query family as the current 1.21.0).
 const predecessor = read("contracts/diagnostic-registry.v1.16.0.json");
 const current = new Map(registry.entries.map((entry) => [entry.id, entry]));
 for (const entry of predecessor.entries) {
@@ -97,6 +97,7 @@ const registry119Text = readFileSync(resolve(root, "contracts/diagnostic-registr
 if (createHash("sha256").update(registry110Text).digest("hex") !== "e043f45e3f46e3de6170f06118b57fea78c3063ba7ee3646ebd8522cce20eebd") {
   fail("predecessor-custody");
 }
+const registry120Text = readFileSync(resolve(root, "contracts/diagnostic-registry.v1.20.0.json"), "utf8").replace(/\r\n/g, "\n");
 if (createHash("sha256").update(registry111Text).digest("hex") !== "140d389824a72d4bf9a85b62a096b09052de8d40df4d9117bdf439d8f589598e") {
   fail("predecessor-custody");
 }
@@ -121,6 +122,9 @@ if (createHash("sha256").update(registry118Text).digest("hex") !== "bcf0feb107f7
 if (createHash("sha256").update(registry119Text).digest("hex") !== "9bc03d612352ef441b33c6fe926df0876c7c68a2e8b9ccb21603292d052bd5c5") {
   fail("predecessor-custody");
 }
+if (createHash("sha256").update(registry120Text).digest("hex") !== "3b1edf6f953ea3126d2c6d93a720fa0b2a3c3dbefac98eb5be52a857b86fa429") {
+  fail("predecessor-custody");
+}
 const registry110 = JSON.parse(registry110Text);
 const registry111 = JSON.parse(registry111Text);
 const registry112 = JSON.parse(registry112Text);
@@ -134,6 +138,7 @@ const isAdditive = (candidate, predecessorRegistry) => {
   const entries = new Map(candidate.entries.map((entry) => [entry.id, entry]));
   return predecessorRegistry.entries.every((entry) => isDeepStrictEqual(entries.get(entry.id), entry));
 };
+const registry120 = JSON.parse(registry120Text);
 // 1.11.0 added exactly the ten requirements.* rules over frozen 1.10.0.
 if (!isAdditive(registry111, registry110)) fail("predecessor-entry-drift");
 const requirementsAdditions = registry111.entries.filter((entry) => !registry110.entries.some((old) => old.id === entry.id));
@@ -191,8 +196,8 @@ if (
 // 1.20.0 (issue #42) adds exactly the three bindings.* rules over frozen
 // 1.19.0: proposal-unknown, ambiguous, and plan-mismatch. Every accepted
 // 1.19.0 rule survives verbatim and nothing else changed.
-if (!isAdditive(registry, registry119)) fail("predecessor-entry-drift");
-const bindingsAdditions = registry.entries.filter((entry) => !registry119.entries.some((old) => old.id === entry.id));
+if (!isAdditive(registry120, registry119)) fail("predecessor-entry-drift");
+const bindingsAdditions = registry120.entries.filter((entry) => !registry119.entries.some((old) => old.id === entry.id));
 if (
   bindingsAdditions.length !== 3 ||
   bindingsAdditions.some((entry) => !entry.id.startsWith("bindings.") || !entry.code.startsWith("LEK-BND-"))
@@ -201,11 +206,41 @@ if (
 }
 // A missing or changed 1.19.0 rule must actually fail the additive check.
 const inheritedProbe = registry119.entries.find((entry) => entry.id === "contracted.unknown-symbol");
-const missing120 = structuredClone(registry);
+const missing120 = structuredClone(registry120);
 missing120.entries = missing120.entries.filter((entry) => entry.id !== inheritedProbe.id);
-const changed120 = structuredClone(registry);
+const changed120 = structuredClone(registry120);
 changed120.entries.find((entry) => entry.id === inheritedProbe.id).allowed_statuses = ["valid"];
 if (isAdditive(missing120, registry119) || isAdditive(changed120, registry119)) {
+  fail("additive-negative-control");
+}
+// 1.21.0 (issue #64) adds exactly the ten query.* rules over frozen
+// 1.20.0: the closed refusals of the declarative query model. Every
+// accepted 1.20.0 rule survives verbatim and nothing else changed.
+if (!isAdditive(registry, registry120)) fail("predecessor-entry-drift");
+const queryAdditions = registry.entries.filter((entry) => !registry120.entries.some((old) => old.id === entry.id));
+if (
+  queryAdditions.length !== 10 ||
+  queryAdditions.some((entry) => !entry.id.startsWith("query.") || !entry.code.startsWith("LEK-QRY-")) ||
+  !queryAdditions.some((entry) => entry.id === "query.input-invalid") ||
+  !queryAdditions.some((entry) => entry.id === "query.contract-invalid") ||
+  !queryAdditions.some((entry) => entry.id === "query.source-invalid") ||
+  !queryAdditions.some((entry) => entry.id === "query.filter-invalid") ||
+  !queryAdditions.some((entry) => entry.id === "query.sort-invalid") ||
+  !queryAdditions.some((entry) => entry.id === "query.pagination-invalid") ||
+  !queryAdditions.some((entry) => entry.id === "query.tenant-filter-missing") ||
+  !queryAdditions.some((entry) => entry.id === "query.visibility-boundary") ||
+  !queryAdditions.some((entry) => entry.id === "query.reference-invalid") ||
+  !queryAdditions.some((entry) => entry.id === "query.export-limit")
+) {
+  fail("query-additions", queryAdditions.map((entry) => entry.id));
+}
+// A missing or changed 1.20.0 rule must actually fail the additive check.
+const bindingsProbe = registry120.entries.find((entry) => entry.id === "bindings.ambiguous");
+const missing121 = structuredClone(registry);
+missing121.entries = missing121.entries.filter((entry) => entry.id !== bindingsProbe.id);
+const changed121 = structuredClone(registry);
+changed121.entries.find((entry) => entry.id === bindingsProbe.id).allowed_statuses = ["valid"];
+if (isAdditive(missing121, registry120) || isAdditive(changed121, registry120)) {
   fail("additive-negative-control");
 }
 const profile = registry113.entries.find((entry) => entry.code.startsWith("LEK-TGT-"));

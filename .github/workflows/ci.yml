@@ -54,6 +54,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-invariant-transition-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-observed-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-bindings-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-query-model-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-contracted-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-target-protocol-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-target-profile-contracts.mjs

@@ -23,6 +23,7 @@ pub mod loader;
 pub mod lockfile;
 pub mod observed;
 pub mod project_fs;
+pub mod query_model;
 pub mod requirements;
 pub mod result;
 pub mod scenario;

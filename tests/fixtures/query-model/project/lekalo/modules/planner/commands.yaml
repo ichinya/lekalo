@@ -1,0 +1,16 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.focus_task
+    kind: command
+    version: 1
+    description: Focus one task for a user
+    input:
+      - name: id
+        type: "planner.task_id"
+        required: true
+  - id: planner.write_surface
+    kind: effect
+    version: 1
+    description: A write surface that can never back a query
+    operation: update
+    entity: "planner.task"
