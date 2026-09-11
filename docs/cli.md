@@ -39,11 +39,15 @@ lekalo impact SYMBOL [--depth N] [--relation KIND] [--profile default|strict] [-
 lekalo impact --changed [--base REF] [--head REF] [--worktree] [--project DIR]
 lekalo context SYMBOL --budget TOKENS [--spans] [--project DIR]
 lekalo context --changed SYMBOLS --budget TOKENS [--spans] [--project DIR]
+lekalo cache status [--project DIR]
+lekalo doctor [--project DIR] [--trace PATH]... [--fix]
+lekalo status [--project DIR]
+lekalo readiness --phase model|implement|generate|verify|release [--project DIR] [--trace PATH]...
 ```
 
 `init --adopt`, `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
-`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, and
-`context` are implemented; none remains a recognized stub. `SYMBOL` is an
+`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, `context`, `cache`,
+`doctor`, `status`, and `readiness` are implemented; none remains a recognized stub. `SYMBOL` is an
 opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic
 ID rules, validation, and graph construction bind every implemented
 command. Every implemented capability is bound by
@@ -575,34 +579,24 @@ denies with `{"status":"denied",...}` when a required gate rests on
 unknown or stale evidence. The contract, guarantees, limits, and the
 closed risk/gate vocabularies are documented in
 [docs/impact.md](impact.md) and [ADR-0017](adr/0017-impact.md).
-## Observe (observed mode)
-
-Issue #39 records, binds, verifies, and promotes existing code without
-generating or overwriting implementation. The thin subcommands hand every
-decision to the core observed engine; receipts are pretty two-space JSON
-with fixed key order, and failures carry the registered `observed.*`
-rules:
+`--fix` renders the closed safe-fix recipe preview (advice only, nothing is
+executed) and the optional `--trace PATH` manifests supply OpenSpec/HLV/
+AI Factory gate evidence; unsupplied evidence degrades. The report is the
+product: it exits 0 on stdout whenever it was produced, whatever verdict it
+records. The contract, the closed check vocabulary, the verdict rule, and
+the safe-fix recipes are documented in [docs/doctor.md](doctor.md) and
+[ADR-0032](adr/0032-doctor-readiness.md).
 
 ```sh
-lekalo observe update --scan adapter-scan.json
-lekalo observe bind taskboard.task --path src/tasks.ts --key src/tasks.ts#Task
-lekalo observe confirm taskboard.create_task
-lekalo observe check
-lekalo observe attach taskboard.create_task --native-test "npm test -- createTask"
-lekalo observe inspect taskboard.task
-lekalo observe impact taskboard.task
-lekalo observe promote --module taskboard --dry-run
-lekalo observe promote --module taskboard --confirm sha256:<64 lowercase hex>
-```
+lekalo doctor
+# doctor degraded : 13 checks (12 ok, 1 degraded, 0 blocked)
 
-`observe update` merges one adapter scan into the derived index at
-`.lekalo/import/observed/index.json`; a binding recorded under a
-stable key survives a source move, dropped records go stale, and a scan
-never downgrades an explicit or confirmed fact. `observe check` is
-the staleness gate (exit 0 current, exit 1 with
-`observed.stale-binding` per finding). `observe promote` is the
-only path into the canonical (contracted) model: inferred facts refuse,
-unknown evidence refuses, and the exact plan identity must be confirmed.
+lekalo status
+# status ready : lock fresh, cache missing, bindings none-required, artifacts clean
+
+lekalo readiness --phase generate
+# readiness generate blocked : 13 checks (10 ok, 2 degraded, 1 blocked)
+```
 
 ## Development checks
 ```sh

@@ -86,21 +86,44 @@ pub fn load_compiled(
     session.load_compiled(selection)
 }
 
-/// `lekalo cache status`: the read-only bounded health projection.
-pub fn status(selection: &LoadSelection) -> DomainResult {
-    let root = match crate::loader::root_for_selection(selection) {
-        Err(result) => return result,
-        Ok(root) => root,
-    };
-    let home = match path::CacheHome::resolve(&root) {
+/// The typed health facts behind `lekalo cache status`, shared with the
+/// issue #92 doctor: the same states, one source of truth.
+pub(crate) enum CacheHealth {
+    /// The governed cache home refused access (fail-closed denial).
+    Denied { code: &'static str, logical: String },
+    /// The bounded health projection facts.
+    Facts(Health),
+}
+
+/// The bounded health facts of one status run.
+pub(crate) struct Health {
+    pub state: &'static str,
+    pub records: Vec<(String, u64)>,
+    pub dependency_edges: u64,
+    pub total_bytes: u64,
+}
+
+/// Collect the cache health facts of one project root, read-only.
+///
+/// An absent governed home is reported `missing` without creating it:
+/// the health projection never creates the cache home, so a bare
+/// `status`/doctor run mutates nothing (the load pipeline owns
+/// creation).
+pub(crate) fn health_facts(root: &std::path::Path) -> CacheHealth {
+    if !path::CacheHome::home_present(root) {
+        return CacheHealth::Facts(Health {
+            state: "missing",
+            records: Vec::new(),
+            dependency_edges: 0,
+            total_bytes: 0,
+        });
+    }
+    let home = match path::CacheHome::resolve(root) {
         Err(path::HomeFailure::Denied { code, logical }) => {
-            return crate::loader::diagnostic::failure(
-                Status::Denied,
-                vec![Diagnostic::new(code).with_path(logical)],
-            );
+            return CacheHealth::Denied { code, logical }
         }
         Err(path::HomeFailure::Io) => {
-            return health_result(Health {
+            return CacheHealth::Facts(Health {
                 state: "unreadable",
                 records: Vec::new(),
                 dependency_edges: 0,
@@ -111,7 +134,7 @@ pub fn status(selection: &LoadSelection) -> DomainResult {
     };
     let exists = match home.database_exists() {
         Err(_) => {
-            return health_result(Health {
+            return CacheHealth::Facts(Health {
                 state: "unreadable",
                 records: Vec::new(),
                 dependency_edges: 0,
@@ -122,7 +145,7 @@ pub fn status(selection: &LoadSelection) -> DomainResult {
     };
     let total_bytes = home.total_bytes().unwrap_or(0);
     if !exists {
-        return health_result(Health {
+        return CacheHealth::Facts(Health {
             state: "missing",
             records: Vec::new(),
             dependency_edges: 0,
@@ -130,7 +153,7 @@ pub fn status(selection: &LoadSelection) -> DomainResult {
         });
     }
     let Ok(db_path) = home.database_path() else {
-        return health_result(Health {
+        return CacheHealth::Facts(Health {
             state: "unreadable",
             records: Vec::new(),
             dependency_edges: 0,
@@ -138,13 +161,15 @@ pub fn status(selection: &LoadSelection) -> DomainResult {
         });
     };
     match sqlite::SqliteStore::open_read_only(&db_path) {
-        Err(StoreError::Corrupt) | Err(StoreError::UnsupportedVersion) => health_result(Health {
-            state: "corrupt",
-            records: Vec::new(),
-            dependency_edges: 0,
-            total_bytes,
-        }),
-        Err(_) => health_result(Health {
+        Err(StoreError::Corrupt) | Err(StoreError::UnsupportedVersion) => {
+            CacheHealth::Facts(Health {
+                state: "corrupt",
+                records: Vec::new(),
+                dependency_edges: 0,
+                total_bytes,
+            })
+        }
+        Err(_) => CacheHealth::Facts(Health {
             state: "unreadable",
             records: Vec::new(),
             dependency_edges: 0,
@@ -152,7 +177,7 @@ pub fn status(selection: &LoadSelection) -> DomainResult {
         }),
         Ok(store) => {
             if !store.integrity_ok() {
-                return health_result(Health {
+                return CacheHealth::Facts(Health {
                     state: "corrupt",
                     records: Vec::new(),
                     dependency_edges: 0,
@@ -171,13 +196,28 @@ pub fn status(selection: &LoadSelection) -> DomainResult {
             } else {
                 "ok"
             };
-            health_result(Health {
+            CacheHealth::Facts(Health {
                 state,
                 records,
                 dependency_edges,
                 total_bytes,
             })
         }
+    }
+}
+
+/// `lekalo cache status`: the read-only bounded health projection.
+pub fn status(selection: &LoadSelection) -> DomainResult {
+    let root = match crate::loader::root_for_selection(selection) {
+        Err(result) => return result,
+        Ok(root) => root,
+    };
+    match health_facts(&root) {
+        CacheHealth::Denied { code, logical } => crate::loader::diagnostic::failure(
+            Status::Denied,
+            vec![Diagnostic::new(code).with_path(logical)],
+        ),
+        CacheHealth::Facts(health) => health_result(health),
     }
 }
 
@@ -225,14 +265,6 @@ pub fn clear(selection: &LoadSelection) -> DomainResult {
             DomainResult::receipt(json, human)
         }
     }
-}
-
-/// The bounded health facts of one status run.
-struct Health {
-    state: &'static str,
-    records: Vec<(String, u64)>,
-    dependency_edges: u64,
-    total_bytes: u64,
 }
 
 /// Render the health projection as the accepted envelope: the fixed key

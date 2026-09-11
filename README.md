@@ -18,7 +18,6 @@ Rust workspace and provider implementations are introduced.
 - [ADR-0009: the committed lekalo.lock and reproducible resolution](docs/adr/0009-lockfile.md)
 - [The stable machine-readable diagnostic contract](docs/diagnostics.md)
 - [ADR-0010: the stable machine-readable diagnostic contract](docs/adr/0010-diagnostics.md)
-- [Observed mode for existing code](docs/observed-mode.md)
 
 Validate the contract and its allowed/forbidden/malformed fixtures, then verify
 the documented CLI exit-code protocol with Node.js, without installing
@@ -232,8 +231,9 @@ the same way; issue #16 added the `impact.*` family issue #18 adds the
 issue #62 adds the `error.*` family, and issue #26 adds the
 `extended.*`, `event.*`, `job.*`, `call.*`, `cache.*`,
 `publication.*`, `contract.*`, and `case.*` families, and issue #63 adds
-the `invariant.*` family, and issue #39 adds the `observed.*` family, each as a
-wire-shape-preserving minor increment).
+the `invariant.*` family, issue #27 adds the `target.*` family, and issue #36
+adds the `requirements.*` family, each as a wire-shape-preserving minor
+increment).
 
 ## Generated-artifact ownership and drift detection
 
@@ -463,6 +463,29 @@ every decision in the core; the contract, guarantees, and limits live in
 [ADR-0026](docs/adr/0026-requirements-traceability.md), and the hermetic
 fixtures under `tests/fixtures/requirements/`.
 
+## Doctor, status, and readiness
+
+Issue #92 adds one read-only readiness family: `lekalo doctor` diagnoses
+the project root and layout, Model/schema/IR version compatibility,
+imports and references, lockfile freshness, installed adapter versions
+and digests, capability/profile resolution, cache health, binding
+freshness, generated artifact drift, native tool availability, optional
+OpenSpec/HLV/AI Factory evidence, filesystem permissions and path
+confinement, and platform limitations in one versioned document
+(`lekalo/doctor/v1.0.0`). `lekalo status` reports the freshness quartet
+plus the exact git/model/lock revisions, and `lekalo readiness --phase
+model|implement|generate|verify|release` marks the required and
+optional checks per phase with derived ready/degraded/blocked verdicts.
+Doctor is read-only forever: internal loads bypass the cache, a missing
+cache home is reported without being created, `--fix` only previews the
+closed safe-fix recipes, and a produced report always exits 0 with the
+JSON an AIFHub Extension consumes. Missing optional HLV evidence
+degrades and is never a core failure; missing required adapters or
+profiles are blockers with a next action. See
+[docs/doctor.md](docs/doctor.md),
+[ADR-0032](docs/adr/0032-doctor-readiness.md), and the pinned fixtures
+under `tests/fixtures/doctor/`.
+
 ## Observed mode for existing code
 
 Issue #39 lets Lekalo index, bind, and analyze existing code without
@@ -482,7 +505,6 @@ in [docs/observed-mode.md](docs/observed-mode.md),
 `contracts/observed-index.schema.v1.0.0.json` with
 `contracts/observed-scan.schema.v1.0.0.json`; the hermetic
 task-domain fixture is under `tests/fixtures/observed/`.
-
 
 ## Foreign and custom implementation escape hatches
 
@@ -518,7 +540,8 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
 independent of product releases; issue #30 carries prospective product 0.2.8
-(issue #39 published product 0.2.6 at `80a815a`; issue #31 published product
+(issue #92 carried prospective product 0.2.7; issue #39 published product
+0.2.6 at `80a815a`; issue #31 published product
 0.2.5; the accepted M2 line published products 0.2.0 through 0.2.4 for
 issues #27, #36, #28, #38 and #29; issue #63
 published product 0.1.31 (annotated tag `v0.1.31` on `9cdd8c1`);

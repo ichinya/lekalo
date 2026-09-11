@@ -1,0 +1,114 @@
+{
+  "status": "valid",
+  "schemaVersion": "lekalo/doctor/v1.0.0",
+  "identity": "dev.lekalo.doctor@1.0.0",
+  "report": "doctor",
+  "productVersion": "0.2.7",
+  "verdict": "ready",
+  "revisions": {
+    "git": {
+      "state": "ok",
+      "commit": "73324d0637190e7ad5e50ea3bbd98237c616c759",
+      "dirty": false
+    },
+    "model": {
+      "state": "ok",
+      "version": "1.0.0"
+    },
+    "lock": {
+      "state": "fresh",
+      "digest": "sha256:a7d9178f099094629e1e1ac00284bfef32d6894e4b416853d8af1ac08a7689f5"
+    }
+  },
+  "checks": [
+    {
+      "id": "adapters.inventory",
+      "state": "ok",
+      "required": true,
+      "reason": "none-required"
+    },
+    {
+      "id": "artifacts.drift",
+      "state": "ok",
+      "required": true,
+      "reason": "clean"
+    },
+    {
+      "id": "bindings.freshness",
+      "state": "ok",
+      "required": true,
+      "reason": "none-required"
+    },
+    {
+      "id": "cache.health",
+      "state": "ok",
+      "required": false,
+      "reason": "missing"
+    },
+    {
+      "id": "capabilities.profiles",
+      "state": "ok",
+      "required": true,
+      "reason": "none-declared"
+    },
+    {
+      "id": "fs.confinement",
+      "state": "ok",
+      "required": true,
+      "reason": "confined"
+    },
+    {
+      "id": "integrations.hlv",
+      "state": "ok",
+      "required": false,
+      "reason": "evidence-current",
+      "notes": [
+        "ref-aifhub",
+        "ref-hlv",
+        "ref-openspec",
+        "ref-source-native"
+      ]
+    },
+    {
+      "id": "lock.freshness",
+      "state": "ok",
+      "required": true,
+      "reason": "fresh"
+    },
+    {
+      "id": "model.references",
+      "state": "ok",
+      "required": true,
+      "reason": "resolved"
+    },
+    {
+      "id": "model.version",
+      "state": "ok",
+      "required": true,
+      "reason": "accepted"
+    },
+    {
+      "id": "platform.limits",
+      "state": "ok",
+      "required": false,
+      "reason": "informational",
+      "notes": [
+        "case-insensitive-filesystem",
+        "symlink-privilege-required",
+        "windows-path-syntax"
+      ]
+    },
+    {
+      "id": "project.root",
+      "state": "ok",
+      "required": true,
+      "reason": "valid"
+    },
+    {
+      "id": "tools.gates",
+      "state": "ok",
+      "required": true,
+      "reason": "available"
+    }
+  ]
+}
