@@ -168,7 +168,7 @@ mod embedded_registry {
     #[test]
     fn embedded_bytes_parse_and_validate() {
         let registry = VersionRegistry::embedded().expect("shipped registry is valid");
-        assert_eq!(registry.registry_version().as_str(), "1.0.0");
+        assert_eq!(registry.registry_version().as_str(), "1.2.0");
     }
 
     #[test]
@@ -217,8 +217,15 @@ mod embedded_registry {
         assert!(ir_family.edges().is_empty());
 
         let protocol_family = registry.protocol();
-        assert!(protocol_family.current().is_none());
-        assert!(protocol_family.versions().is_empty());
+        assert_eq!(
+            protocol_family.current().map(|v| v.to_string()),
+            Some("1.2.0".to_owned())
+        );
+        assert_eq!(protocol_family.versions().len(), 3);
+        assert_eq!(protocol_family.aliases().len(), 1);
+        assert_eq!(protocol_family.aliases()[0].0.as_str(), "v1");
+        assert_eq!(protocol_family.aliases()[0].1.as_str(), "1.0.0");
+        assert!(protocol_family.edges().is_empty());
     }
 
     #[test]
@@ -543,6 +550,41 @@ mod compatibility {
     }
 
     #[test]
+    fn historical_protocol_snapshot_does_not_inherit_publication() {
+        let mut snapshot: serde_json::Value =
+            serde_json::from_slice(lekalo_core::versioning::REGISTRY_BYTES).unwrap();
+        snapshot["families"]["protocol"] = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/versioning/protocol-unpublished.family.json"
+        ))
+        .unwrap();
+        let historical =
+            VersionRegistry::from_bytes(&serde_json::to_vec(&snapshot).unwrap()).unwrap();
+        let published = VersionRegistry::embedded().unwrap();
+        assert!(historical.protocol().current().is_none());
+        assert!(historical.protocol().resolve_alias("v1").is_none());
+        assert_eq!(
+            published.protocol().resolve_alias("v1"),
+            Some(&protocol("1.0.0"))
+        );
+        let selected = protocol("1.0.0");
+        for (registry, version, expected) in [
+            (&historical, None, &["versioning.protocol-unpublished"][..]),
+            (
+                &historical,
+                Some(&selected),
+                &["versioning.unsupported-version"][..],
+            ),
+            (published, None, &["versioning.protocol-unpublished"][..]),
+            (published, Some(&selected), &[][..]),
+        ] {
+            let verdict =
+                CompatibilityPreflight::check(registry, &ir("0.1.0"), version, &manifest());
+            assert_eq!(verdict.reasons(), expected);
+            assert_eq!(verdict.is_compatible(), expected.is_empty());
+        }
+    }
+
+    #[test]
     fn required_extensions_are_never_satisfied_by_the_accepted_ir() {
         let registry = VersionRegistry::embedded().expect("valid");
         let mut extended = manifest();
@@ -561,7 +603,7 @@ mod compatibility {
     #[test]
     fn unregistered_protocol_and_inverted_ranges_refuse() {
         let registry = VersionRegistry::embedded().expect("valid");
-        // A protocol version outside the (empty) registry: unsupported.
+        // A protocol version outside the published exact set: unsupported.
         let verdict = CompatibilityPreflight::check(
             registry,
             &ir("0.1.0"),
@@ -626,7 +668,7 @@ mod compatibility {
         let registry = VersionRegistry::embedded().expect("valid");
         let report = CompatibilityReport::from_registry(registry);
         assert_eq!(report.status, "valid");
-        assert_eq!(report.registry_version, "1.0.0");
+        assert_eq!(report.registry_version, "1.2.0");
         let names: Vec<&str> = report.families.iter().map(|f| f.family).collect();
         assert_eq!(names, ["model", "ir", "protocol"]);
         let model_family: &CompatibilityReportFamilyAlias = &report.families[0];

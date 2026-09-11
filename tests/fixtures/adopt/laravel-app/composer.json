@@ -1,0 +1,1 @@
+{"name":"acme/shop","type":"project","require":{"laravel/framework":"^11.0"},"scripts":{"test":["php artisan test"]}}

@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "lekalo/observed-scan/v1.1.0",
+  "adapter": {
+    "id": "lekalo-target-node-typescript",
+    "version": "1.0.0",
+    "digest": null
+  },
+  "project": "taskboard",
+  "revision": "sha256:1b4f0e98ba6d3c8a76f9ac1b0e4f2d5c8a7b6e5d4c3b2a190f8e7d6c5b4a3928",
+  "target": "node-typescript",
+  "profile": "default",
+  "symbols": [
+    {
+      "id": "taskboard.create_task",
+      "kind": "command",
+      "stableKey": "src/tasks.ts#createTask",
+      "location": { "path": "src/tasks.ts", "line": 9 },
+      "fingerprint": "sha256:9ebe8634565beda8e8cd8a9fefe8aaa09dea23bae42567ab5758032825b0b0a6",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "src/tasks.ts#createTask",
+          "path": "src/tasks.ts",
+          "line": 9,
+          "fingerprint": "sha256:9ebe8634565beda8e8cd8a9fefe8aaa09dea23bae42567ab5758032825b0b0a6",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskboard.focus_task",
+      "kind": "command",
+      "stableKey": "src/tasks.ts#focusTask",
+      "location": { "path": "src/tasks.ts", "line": 13 },
+      "fingerprint": "sha256:9ebe8634565beda8e8cd8a9fefe8aaa09dea23bae42567ab5758032825b0b0a6",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "src/tasks.ts#focusTask",
+          "path": "src/tasks.ts",
+          "line": 13,
+          "fingerprint": "sha256:9ebe8634565beda8e8cd8a9fefe8aaa09dea23bae42567ab5758032825b0b0a6",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskboard.max_tasks",
+      "kind": "scalar",
+      "stableKey": "src/ids.ts#MAX_TASKS",
+      "location": { "path": "src/ids.ts", "line": 2 },
+      "fingerprint": "sha256:fceceb4b9f7c084c9653e950a4ddd06c53f33842fb36d8e29b8644035c8a40f4",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "src/ids.ts#MAX_TASKS",
+          "path": "src/ids.ts",
+          "line": 2,
+          "fingerprint": "sha256:fceceb4b9f7c084c9653e950a4ddd06c53f33842fb36d8e29b8644035c8a40f4",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskboard.task",
+      "kind": "value-object",
+      "stableKey": "src/tasks.ts#Task",
+      "location": { "path": "src/tasks.ts", "line": 3 },
+      "fingerprint": "sha256:9ebe8634565beda8e8cd8a9fefe8aaa09dea23bae42567ab5758032825b0b0a6",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "src/tasks.ts#Task",
+          "path": "src/tasks.ts",
+          "line": 3,
+          "fingerprint": "sha256:9ebe8634565beda8e8cd8a9fefe8aaa09dea23bae42567ab5758032825b0b0a6",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskboard.task_id",
+      "kind": "scalar",
+      "stableKey": "src/ids.ts#TaskId",
+      "location": { "path": "src/ids.ts", "line": 1 },
+      "fingerprint": "sha256:fceceb4b9f7c084c9653e950a4ddd06c53f33842fb36d8e29b8644035c8a40f4",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "src/ids.ts#TaskId",
+          "path": "src/ids.ts",
+          "line": 1,
+          "fingerprint": "sha256:fceceb4b9f7c084c9653e950a4ddd06c53f33842fb36d8e29b8644035c8a40f4",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskboard.task_state",
+      "kind": "enum",
+      "stableKey": "src/ids.ts#TaskState",
+      "location": { "path": "src/ids.ts", "line": 3 },
+      "fingerprint": "sha256:fceceb4b9f7c084c9653e950a4ddd06c53f33842fb36d8e29b8644035c8a40f4",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "src/ids.ts#TaskState",
+          "path": "src/ids.ts",
+          "line": 3,
+          "fingerprint": "sha256:fceceb4b9f7c084c9653e950a4ddd06c53f33842fb36d8e29b8644035c8a40f4",
+          "confidence": "medium"
+        }
+      ]
+    }
+  ],
+  "testBindings": [
+    {
+      "id": "src/tasks.test.ts#createTask",
+      "symbol": "taskboard.create_task",
+      "path": "src/tasks.test.ts",
+      "fingerprint": "sha256:ebeb699f2b2ea3f6e99642af06e0998a05bf1e583550d2ea48eb6c265dcbe1a9",
+      "confidence": "medium"
+    },
+    {
+      "id": "src/tasks.test.ts#focusTask",
+      "symbol": "taskboard.focus_task",
+      "path": "src/tasks.test.ts",
+      "fingerprint": "sha256:ebeb699f2b2ea3f6e99642af06e0998a05bf1e583550d2ea48eb6c265dcbe1a9",
+      "confidence": "medium"
+    },
+    {
+      "id": "src/tasks.test.ts#Task",
+      "symbol": "taskboard.task",
+      "path": "src/tasks.test.ts",
+      "fingerprint": "sha256:ebeb699f2b2ea3f6e99642af06e0998a05bf1e583550d2ea48eb6c265dcbe1a9",
+      "confidence": "medium"
+    }
+  ]
+}

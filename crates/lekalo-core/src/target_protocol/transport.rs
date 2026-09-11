@@ -1,0 +1,507 @@
+//! The bounded process transport of the target protocol (issue #27).
+//!
+//! The adapter executable is spawned directly from an argv vector — never
+//! through a shell, never with interpolation — in the project root. The
+//! request is delivered over stdin (or, when the adapter declared only the
+//! `file` transport, through a bounded temporary file whose path is appended
+//! to the argv as `--lekalo-request-file <PATH>`). The response envelope is
+//! read from stdout with a hard byte cap; stderr is captured only as
+//! bounded diagnostics evidence and never parsed as protocol. The wait loop
+//! enforces the deadline and a caller cancel flag, killing the child on
+//! either; every refusal is classified infrastructure.
+
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+#[cfg(test)]
+thread_local! { static LAUNCHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+#[cfg(test)]
+pub(super) fn record_launch() {
+    LAUNCHES.with(|count| count.set(count.get() + 1));
+}
+#[cfg(test)]
+pub(super) fn launches() -> usize {
+    LAUNCHES.with(std::cell::Cell::get)
+}
+
+/// The direct adapter invocation: program plus argv vector.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdapterCommand {
+    /// The executable; spawned directly, PATH lookup included, no shell.
+    pub program: PathBuf,
+    /// Extra adapter arguments (never containing the request itself).
+    pub args: Vec<String>,
+}
+
+/// The transport limits of one exchange.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TransportLimits {
+    /// Operation deadline in milliseconds.
+    pub timeout_ms: u64,
+    /// Hard cap for the stdout envelope.
+    pub max_output_bytes: usize,
+    /// Hard cap for the captured stderr stream.
+    pub max_stderr_bytes: usize,
+    /// Hard cap for the serialized request.
+    pub max_request_bytes: usize,
+}
+
+impl Default for TransportLimits {
+    fn default() -> Self {
+        Self {
+            timeout_ms: super::version::DEFAULT_TIMEOUT_MS,
+            max_output_bytes: super::version::DEFAULT_MAX_OUTPUT_BYTES as usize,
+            max_stderr_bytes: super::version::MAX_STDERR_BYTES,
+            max_request_bytes: super::version::MAX_REQUEST_BYTES,
+        }
+    }
+}
+
+/// Why the transport refused or aborted the exchange.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransportFailure {
+    /// The executable could not be spawned.
+    Spawn,
+    /// The request could not be delivered (broken pipe, oversize).
+    RequestWrite,
+    /// The deadline elapsed; the child was killed.
+    Timeout,
+    /// The caller cancelled; the child was killed.
+    Cancelled,
+    /// A response stream exceeded its cap; the child was killed.
+    OutputLimit { stream: Stream },
+}
+
+impl TransportFailure {
+    /// The bounded wire token carried in diagnostic data.
+    pub fn detail(self) -> &'static str {
+        match self {
+            Self::Spawn => "spawn",
+            Self::RequestWrite => "request-write",
+            Self::Timeout => "deadline",
+            Self::Cancelled => "caller",
+            Self::OutputLimit { .. } => "output-limit",
+        }
+    }
+}
+
+/// The stream that exceeded its cap.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Stream {
+    Stdout,
+    Stderr,
+}
+
+impl Stream {
+    /// The bounded wire token carried in diagnostic data.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stdout => "stdout",
+            Self::Stderr => "stderr",
+        }
+    }
+}
+
+/// One completed exchange: bounded output streams and the child exit code.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransportSuccess {
+    /// The child's exit code (platform-specific for abnormal terminations).
+    pub exit_code: i32,
+    /// The stdout bytes up to the cap.
+    pub stdout: Vec<u8>,
+    /// The stderr bytes up to the cap, diagnostics evidence only.
+    pub stderr: Vec<u8>,
+    /// Whether stdout exceeded its cap (the exchange is still refused).
+    pub stdout_truncated: bool,
+    /// Whether stderr was cut at the cap (evidence only).
+    pub stderr_truncated: bool,
+}
+
+/// Run one raw process exchange to completion. This primitive does not
+/// enforce project scopes; TargetClient always uses its confined runner.
+///
+/// `request` is the serialized request envelope; `file_transport` switches
+/// delivery from stdin to the temporary-file convention.
+pub fn run(
+    command: &AdapterCommand,
+    request: &[u8],
+    limits: &TransportLimits,
+    cwd: &Path,
+    file_transport: bool,
+    cancel: Option<&AtomicBool>,
+) -> Result<TransportSuccess, TransportFailure> {
+    run_impl(command, request, limits, cwd, file_transport, cancel, false)
+}
+
+#[cfg(unix)]
+pub(super) fn run_private(
+    command: &AdapterCommand,
+    request: &[u8],
+    limits: &TransportLimits,
+    cwd: &Path,
+    cancel: Option<&AtomicBool>,
+) -> Result<TransportSuccess, TransportFailure> {
+    run_impl(command, request, limits, cwd, false, cancel, true)
+}
+
+fn run_impl(
+    command: &AdapterCommand,
+    request: &[u8],
+    limits: &TransportLimits,
+    cwd: &Path,
+    file_transport: bool,
+    cancel: Option<&AtomicBool>,
+    clear_env: bool,
+) -> Result<TransportSuccess, TransportFailure> {
+    if request.len() > limits.max_request_bytes {
+        return Err(TransportFailure::RequestWrite);
+    }
+    let mut argv: Vec<String> = Vec::new();
+    let mut temp_file = None;
+    if file_transport {
+        let file = write_request_file(request)?;
+        argv.push("--lekalo-request-file".to_owned());
+        argv.push(file.path().display().to_string());
+        temp_file = Some(file);
+    }
+    if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return Err(TransportFailure::Cancelled);
+    }
+    let mut process = std::process::Command::new(&command.program);
+    if clear_env {
+        process.env_clear();
+    }
+    process
+        .args(&command.args)
+        .args(&argv)
+        .current_dir(cwd)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        process.process_group(0);
+    }
+    #[cfg(test)]
+    record_launch();
+    let mut child = process.spawn().map_err(|_| TransportFailure::Spawn)?;
+
+    let result = pump(&mut child, request, limits, cancel);
+    terminate(&mut child);
+    let _ = child.wait();
+    drop(temp_file);
+    result
+}
+
+/// Deliver stdin, collect bounded output, and enforce deadline/cancel while
+/// the child runs.
+pub(super) trait Process {
+    fn stdin(&mut self) -> Option<Box<dyn Write + Send>>;
+    fn stdout(&mut self) -> Option<Box<dyn Read + Send>>;
+    fn stderr(&mut self) -> Option<Box<dyn Read + Send>>;
+    fn poll(&mut self) -> std::io::Result<Option<i32>>;
+    fn terminate(&mut self);
+    fn reap(&mut self);
+}
+
+impl Process for std::process::Child {
+    fn stdin(&mut self) -> Option<Box<dyn Write + Send>> {
+        self.stdin.take().map(|v| Box::new(v) as _)
+    }
+    fn stdout(&mut self) -> Option<Box<dyn Read + Send>> {
+        self.stdout.take().map(|v| Box::new(v) as _)
+    }
+    fn stderr(&mut self) -> Option<Box<dyn Read + Send>> {
+        self.stderr.take().map(|v| Box::new(v) as _)
+    }
+    fn poll(&mut self) -> std::io::Result<Option<i32>> {
+        self.try_wait().map(|v| v.map(|s| s.code().unwrap_or(-1)))
+    }
+    fn terminate(&mut self) {
+        terminate(self);
+    }
+    fn reap(&mut self) {
+        let _ = self.wait();
+    }
+}
+
+pub(super) fn pump(
+    child: &mut impl Process,
+    request: &[u8],
+    limits: &TransportLimits,
+    cancel: Option<&AtomicBool>,
+) -> Result<TransportSuccess, TransportFailure> {
+    let mut stdin = child.stdin().ok_or(TransportFailure::Spawn)?;
+    let stdout = child.stdout().ok_or(TransportFailure::Spawn)?;
+    let stderr = child.stderr().ok_or(TransportFailure::Spawn)?;
+
+    // The threads own copied bounds and bytes: no borrowed data escapes.
+    let request: Vec<u8> = request.to_vec();
+    let max_output_bytes = limits.max_output_bytes;
+    let max_stderr_bytes = limits.max_stderr_bytes;
+
+    let (stdin_tx, stdin_rx) = mpsc::channel::<Result<(), std::io::ErrorKind>>();
+    let stdin_handle = std::thread::spawn(move || {
+        let result = stdin.write_all(&request).and_then(|()| stdin.flush());
+        // Dropping stdin closes the pipe so the child sees EOF.
+        let _ = stdin_tx.send(result.map_err(|e| e.kind()));
+    });
+    let (stdout_tx, stdout_rx) = mpsc::channel::<(Vec<u8>, bool)>();
+    let stdout_handle = std::thread::spawn(move || {
+        let (bytes, truncated) = read_bounded(stdout, max_output_bytes);
+        let _ = stdout_tx.send((bytes, truncated));
+    });
+    let (stderr_tx, stderr_rx) = mpsc::channel::<(Vec<u8>, bool)>();
+    let stderr_handle = std::thread::spawn(move || {
+        let (bytes, truncated) = read_bounded(stderr, max_stderr_bytes);
+        let _ = stderr_tx.send((bytes, truncated));
+    });
+
+    let deadline = Instant::now()
+        .checked_add(Duration::from_millis(limits.timeout_ms))
+        .ok_or(TransportFailure::RequestWrite)?;
+    let mut stdout_result: Option<(Vec<u8>, bool)> = None;
+    let mut stderr_result: Option<(Vec<u8>, bool)> = None;
+    let mut stdin_result: Option<Result<(), std::io::ErrorKind>> = None;
+    let mut status: Option<i32> = None;
+    let refusal: TransportFailure;
+
+    loop {
+        if let Some(flag) = cancel {
+            if flag.load(Ordering::Relaxed) {
+                refusal = TransportFailure::Cancelled;
+                break;
+            }
+        }
+        if Instant::now() >= deadline {
+            refusal = TransportFailure::Timeout;
+            break;
+        }
+        if stdin_result.is_none() {
+            if let Ok(result) = stdin_rx.try_recv() {
+                stdin_result = Some(result);
+            } else if stdin_handle.is_finished() {
+                // The writer exited without a delivery: broken pipe.
+                stdin_result = Some(Err(std::io::ErrorKind::BrokenPipe));
+            }
+        }
+        if stdout_result.is_none() {
+            if let Ok(payload) = stdout_rx.try_recv() {
+                stdout_result = Some(payload);
+            } else if stdout_handle.is_finished() {
+                stdout_result = Some((Vec::new(), false));
+            }
+        }
+        if stdout_result
+            .as_ref()
+            .is_some_and(|(_, truncated)| *truncated)
+        {
+            refusal = TransportFailure::OutputLimit {
+                stream: Stream::Stdout,
+            };
+            break;
+        }
+        if stderr_result.is_none() {
+            if let Ok(payload) = stderr_rx.try_recv() {
+                stderr_result = Some(payload);
+            } else if stderr_handle.is_finished() {
+                stderr_result = Some((Vec::new(), false));
+            }
+        }
+        if stderr_result
+            .as_ref()
+            .is_some_and(|(_, truncated)| *truncated)
+        {
+            refusal = TransportFailure::OutputLimit {
+                stream: Stream::Stderr,
+            };
+            break;
+        }
+        if status.is_none() {
+            status = child.poll().map_err(|_| TransportFailure::Spawn)?;
+        }
+        if let (Some(status), Some(stdin), Some(stdout_result), Some(stderr_result)) = (
+            status.as_ref(),
+            stdin_result.as_ref(),
+            stdout_result.as_ref(),
+            stderr_result.as_ref(),
+        ) {
+            let exit_code = *status;
+            if exit_code != 0 && *stdin == Err(std::io::ErrorKind::BrokenPipe) {
+                return Err(TransportFailure::RequestWrite);
+            }
+            let (stdout_bytes, stdout_truncated) = stdout_result.clone();
+            let (stderr_bytes, stderr_truncated) = stderr_result.clone();
+            return Ok(TransportSuccess {
+                exit_code,
+                stdout: stdout_bytes,
+                stderr: stderr_bytes,
+                stdout_truncated,
+                stderr_truncated,
+            });
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    // A deadline/cancel/output-limit refusal: kill the child, then drain the
+    // channels so their writer threads can exit and be joined.
+    child.terminate();
+    child.reap();
+    let _ = stdin_rx.recv_timeout(Duration::from_secs(1));
+    let _ = stdout_rx.recv_timeout(Duration::from_secs(1));
+    let _ = stderr_rx.recv_timeout(Duration::from_secs(1));
+    // Never unconditionally join a pipe inherited by an escaped descendant.
+    // The confined runner prevents escape; the low-level raw transport also
+    // preserves its deadline if the caller runs an uncooperative process.
+    if stdin_handle.is_finished() {
+        let _ = stdin_handle.join();
+    }
+    if stdout_handle.is_finished() {
+        let _ = stdout_handle.join();
+    }
+    if stderr_handle.is_finished() {
+        let _ = stderr_handle.join();
+    }
+    Err(refusal)
+}
+
+/// Read one stream to EOF or the cap, reporting whether the cap was hit.
+fn read_bounded(mut stream: impl Read, cap: usize) -> (Vec<u8>, bool) {
+    let mut bytes = Vec::new();
+    let mut truncated = false;
+    let mut chunk = [0u8; 8192];
+    loop {
+        match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                let room = cap.saturating_sub(bytes.len());
+                if room == 0 {
+                    truncated = true;
+                    break;
+                }
+                let take = n.min(room);
+                bytes.extend_from_slice(&chunk[..take]);
+                if take < n {
+                    truncated = true;
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    (bytes, truncated)
+}
+
+/// Write the request to one bounded temporary file outside the project.
+fn write_request_file(request: &[u8]) -> Result<tempfile::NamedTempFile, TransportFailure> {
+    let mut file = tempfile::Builder::new()
+        .prefix("lekalo-target-request-")
+        .suffix(".json")
+        .tempfile()
+        .map_err(|_| TransportFailure::RequestWrite)?;
+    file.write_all(request)
+        .map_err(|_| TransportFailure::RequestWrite)?;
+    file.flush().map_err(|_| TransportFailure::RequestWrite)?;
+    Ok(file)
+}
+
+fn terminate(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    if let Some(pid) = rustix::process::Pid::from_raw(child.id() as i32) {
+        if pid != rustix::process::Pid::INIT {
+            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+        }
+    }
+    let _ = child.kill();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_files_are_exclusive_and_owned_across_spawn_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let victim = root.path().join("victim");
+        std::fs::write(&victim, b"KEEP").unwrap();
+        // Occupying an obsolete predictable name must confer no custody on
+        // the transport and cannot cause either overwrite or cleanup.
+        let old = std::env::temp_dir().join(format!(
+            "lekalo-target-request-{}-0.json",
+            std::process::id()
+        ));
+        let link = std::fs::hard_link(&victim, &old).is_ok();
+        let owned = write_request_file(b"private-request").unwrap();
+        let path = owned.path().to_path_buf();
+        assert_ne!(path, old);
+        assert!(std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .is_err());
+        drop(owned);
+        assert!(!path.exists());
+        let command = AdapterCommand {
+            program: "lekalo-nonexistent-adapter".into(),
+            args: vec![],
+        };
+        assert_eq!(
+            run(
+                &command,
+                b"private-request",
+                &TransportLimits::default(),
+                root.path(),
+                true,
+                None
+            ),
+            Err(TransportFailure::Spawn)
+        );
+        assert_eq!(std::fs::read(&victim).unwrap(), b"KEEP");
+        if link {
+            assert_eq!(std::fs::read(&old).unwrap(), b"KEEP");
+            std::fs::remove_file(old).unwrap();
+        }
+    }
+
+    #[test]
+    fn bounded_reader_stops_at_the_cap() {
+        let payload = vec![7u8; 100];
+        let (bytes, truncated) = read_bounded(payload.as_slice(), 64);
+        assert_eq!(bytes.len(), 64);
+        assert!(truncated);
+        let (bytes, truncated) = read_bounded(payload.as_slice(), 128);
+        assert_eq!(bytes.len(), 100);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn oversize_requests_are_refused_before_spawn() {
+        let limits = TransportLimits {
+            max_request_bytes: 4,
+            ..TransportLimits::default()
+        };
+        let command = AdapterCommand {
+            program: PathBuf::from("lekalo-definitely-not-an-executable"),
+            args: Vec::new(),
+        };
+        let error =
+            run(&command, b"12345", &limits, Path::new("."), false, None).expect_err("refused");
+        assert_eq!(error, TransportFailure::RequestWrite);
+    }
+
+    #[test]
+    fn spawn_failures_classify_as_spawn() {
+        let limits = TransportLimits::default();
+        let command = AdapterCommand {
+            program: PathBuf::from("lekalo-definitely-not-an-executable"),
+            args: Vec::new(),
+        };
+        let error =
+            run(&command, b"{}", &limits, Path::new("."), false, None).expect_err("refused");
+        assert_eq!(error, TransportFailure::Spawn);
+    }
+}

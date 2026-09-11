@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "lekalo/contracted-declaration/v1.0.0",
+  "adapter": {
+    "id": "lekalo-target-node-typescript",
+    "version": "1.0.0",
+    "digest": null
+  },
+  "project": "planner",
+  "revision": "sha256:5422d12a9997260a8a427f1294b98874fba5b863240c7bf165b053491f574c98",
+  "symbols": [
+    {
+      "id": "planner.focus_task",
+      "kind": "command",
+      "source": {
+        "path": "src/focus.ts",
+        "line": 13
+      },
+      "fingerprint": "sha256:b29a08d08b87bcf0af417371ec746c71bb54140dece0a0637d1c04e085f77166",
+      "signature": {
+        "inputs": [
+          {
+            "name": "task_id",
+            "type": "planner.task_id",
+            "required": true
+          }
+        ],
+        "output": null,
+        "reads": []
+      },
+      "effects": [
+        {
+          "kind": "create",
+          "subject": "planner.task"
+        }
+      ]
+    },
+    {
+      "id": "planner.list_tasks",
+      "kind": "query",
+      "source": {
+        "path": "src/queries.ts",
+        "line": 14
+      },
+      "fingerprint": "sha256:0c77dee9b423df65aab9f6c6e97ca2014ad4ea2e3553cce0d89befeb353c436a",
+      "signature": {
+        "inputs": [],
+        "output": "list(planner.task)",
+        "reads": [
+          "planner.task"
+        ]
+      },
+      "effects": []
+    },
+    {
+      "id": "planner.task",
+      "kind": "entity",
+      "source": {
+        "path": "src/ids.ts",
+        "line": 3
+      },
+      "fingerprint": "sha256:c2f13e81d2cac25ab44a37ed97c73d2964216aef3f87cb33077bca06437e9e08",
+      "signature": null,
+      "effects": []
+    }
+  ],
+  "artifacts": [
+    {
+      "symbol": "planner.focus_task",
+      "kind": "openapi",
+      "path": ".lekalo/generated/openapi/planner.json",
+      "lifecycle": "generated",
+      "digest": "sha256:4c40646761a65fa27b2a61b76bed9dd40b986249a6e27d64499e109222bd22d7"
+    }
+  ]
+}

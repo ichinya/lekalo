@@ -1,0 +1,6 @@
+schema_version: "1.0.0"
+definitions:
+  - id: taskboard
+    kind: project
+    version: 1
+    description: "Observed task-domain fixture"

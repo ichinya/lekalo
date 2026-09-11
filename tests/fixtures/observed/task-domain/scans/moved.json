@@ -1,0 +1,150 @@
+{
+  "schemaVersion": "lekalo/observed-scan/v1.0.0",
+  "adapter": {
+    "id": "lekalo-target-node-typescript",
+    "version": "1.0.0",
+    "digest": null
+  },
+  "project": "taskboard",
+  "revision": "sha256:a8ee44aa5aeb53e7de00c40a4dd72d8fb9d3f97b5c18a57b362424c15f3c641c",
+  "symbols": [
+    {
+      "id": "taskboard.task_id",
+      "kind": "scalar",
+      "stableKey": "src/ids.ts#TASK_ID",
+      "location": {
+        "path": "src/todo/ids.ts",
+        "line": 3
+      },
+      "fingerprint": "sha256:2907bd7516cb374210b19f0e0b2e271d7d5c11494ed7fd722f4c339ffb5d3b92",
+      "mappingConfidence": "high",
+      "evidence": {
+        "base": "string"
+      }
+    },
+    {
+      "id": "taskboard.task_state",
+      "kind": "enum",
+      "stableKey": "src/ids.ts#TASK_STATE",
+      "location": {
+        "path": "src/todo/ids.ts",
+        "line": 4
+      },
+      "fingerprint": "sha256:2907bd7516cb374210b19f0e0b2e271d7d5c11494ed7fd722f4c339ffb5d3b92",
+      "mappingConfidence": "high",
+      "evidence": {
+        "values": [
+          {
+            "value": "backlog",
+            "description": "Not started"
+          },
+          {
+            "value": "focused"
+          },
+          {
+            "value": "done"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskboard.task",
+      "kind": "entity",
+      "stableKey": "src/tasks.ts#Task",
+      "location": {
+        "path": "src/todo/tasks.ts",
+        "line": 6
+      },
+      "fingerprint": "sha256:7312265249e638d2b00b5bb9ff406bef0ed1c2ee5283e483c632cca84d5f2258",
+      "mappingConfidence": "high",
+      "evidence": {
+        "fields": [
+          {
+            "name": "task_id",
+            "type": "taskboard.task_id",
+            "required": true
+          },
+          {
+            "name": "state",
+            "type": "taskboard.task_state",
+            "required": true
+          }
+        ],
+        "identityFields": [
+          "task_id"
+        ],
+        "references": []
+      }
+    },
+    {
+      "id": "taskboard.task_title",
+      "kind": "scalar",
+      "stableKey": "src/tasks.ts#title",
+      "location": {
+        "path": "src/todo/tasks.ts",
+        "line": 12
+      },
+      "fingerprint": "sha256:7312265249e638d2b00b5bb9ff406bef0ed1c2ee5283e483c632cca84d5f2258",
+      "mappingConfidence": "medium",
+      "evidence": {
+        "base": "string"
+      }
+    },
+    {
+      "id": "taskboard.create_task",
+      "kind": "command",
+      "stableKey": "src/tasks.ts#createTask",
+      "location": {
+        "path": "src/todo/tasks.ts",
+        "line": 14
+      },
+      "fingerprint": "sha256:7312265249e638d2b00b5bb9ff406bef0ed1c2ee5283e483c632cca84d5f2258",
+      "mappingConfidence": "high",
+      "evidence": {
+        "references": [
+          {
+            "target": "taskboard.task",
+            "role": "create",
+            "confidence": "high"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskboard.list_tasks",
+      "kind": "query",
+      "stableKey": "src/tasks.ts#listTasks",
+      "location": {
+        "path": "src/todo/tasks.ts",
+        "line": 18
+      },
+      "fingerprint": "sha256:7312265249e638d2b00b5bb9ff406bef0ed1c2ee5283e483c632cca84d5f2258",
+      "mappingConfidence": "high",
+      "evidence": {
+        "references": [
+          {
+            "target": "taskboard.task",
+            "role": "read",
+            "confidence": "high"
+          }
+        ]
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "id": "taskboard.tasks_route",
+      "method": "POST",
+      "path": "/tasks",
+      "symbol": "taskboard.create_task"
+    }
+  ],
+  "schemas": [
+    {
+      "id": "taskboard.create_task_input",
+      "kind": "input",
+      "symbol": "taskboard.create_task",
+      "digest": "sha256:622fde87159c23f780a4f9801ad0b30f825b18a308fde56cf90849028ea97e75"
+    }
+  ]
+}

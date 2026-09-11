@@ -31,7 +31,9 @@
       "const": "1.22.0"
     },
     "scope": {
-      "enum": ["project"]
+      "enum": [
+        "project"
+      ]
     },
     "rules": {
       "type": "array",
@@ -63,7 +65,10 @@
           "type": "boolean"
         },
         "severity_override": {
-          "enum": ["info", "warning"]
+          "enum": [
+            "info",
+            "warning"
+          ]
         }
       }
     }

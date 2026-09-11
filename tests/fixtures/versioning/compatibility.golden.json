@@ -1,6 +1,6 @@
 {
   "status": "valid",
-  "registryVersion": "1.0.0",
+  "registryVersion": "1.2.0",
   "families": [
     {
       "family": "model",
@@ -51,11 +51,32 @@
     },
     {
       "family": "protocol",
-      "current": null,
-      "min": null,
-      "max": null,
-      "aliases": [],
-      "versions": [],
+      "current": "1.2.0",
+      "min": "1.0.0",
+      "max": "1.2.0",
+      "aliases": [
+        {
+          "alias": "v1",
+          "version": "1.0.0"
+        }
+      ],
+      "versions": [
+        {
+          "version": "1.0.0",
+          "state": "supported",
+          "classification": "additive"
+        },
+        {
+          "version": "1.1.0",
+          "state": "supported",
+          "classification": "additive"
+        },
+        {
+          "version": "1.2.0",
+          "state": "supported",
+          "classification": "additive"
+        }
+      ],
       "migrations": []
     }
   ]

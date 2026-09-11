@@ -1,0 +1,504 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/observed-scan.schema.v1.1.0.json",
+  "title": "Lekalo observed scan document (v1.1.0)",
+  "description": "Closed contract of one adapter scan document (issues #39 and #42): the typed inventory of existing code — symbols, endpoints, schema digests, and native test bindings — an adapter records for the observed index. The scan is adapter-owned input; Lekalo never parses source code itself, never canonicalizes the scan, and never treats an inferred mapping as canonical without confirmation. Confidence is the closed word vocabulary (exact/high/medium/low/unknown), never a number. Version 1.1.0 is the additive issue #42 extension of the frozen 1.0.0 contract: an optional declared target and adapter profile, optional per-symbol candidate sets (an ambiguous adapter names every plausible native symbol instead of silently picking one), and optional native test bindings. This contract version is independent of the product release, of the Model/IR/protocol contract versions, of the observed-index contract version, and of the diagnostic registry version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "adapter",
+    "project",
+    "revision",
+    "symbols"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/observed-scan/v1.1.0"
+    },
+    "adapter": {
+      "$ref": "#/$defs/adapter"
+    },
+    "project": {
+      "$ref": "#/$defs/moduleId"
+    },
+    "revision": {
+      "$ref": "#/$defs/sha256"
+    },
+    "symbols": {
+      "$ref": "#/$defs/symbols"
+    },
+    "endpoints": {
+      "$ref": "#/$defs/endpoints"
+    },
+    "schemas": {
+      "$ref": "#/$defs/schemas"
+    },
+    "target": {
+      "$ref": "#/$defs/targetId"
+    },
+    "profile": {
+      "$ref": "#/$defs/profileToken"
+    },
+    "testBindings": {
+      "$ref": "#/$defs/testBindings"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,191}$"
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "externalId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "confidence": {
+      "enum": [
+        "exact",
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    },
+    "role": {
+      "enum": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "emit",
+        "call",
+        "reference"
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "role",
+        "confidence"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "role": {
+          "$ref": "#/$defs/role"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9_.?<>]{1,192}$"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "description": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\"\\\\\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "signature": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "references": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/reference"
+          }
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "identityFields": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          }
+        },
+        "base": {
+          "oneOf": [
+            {
+              "enum": [
+                "string",
+                "number",
+                "boolean",
+                "date",
+                "datetime",
+                "uuid",
+                "uri"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "values": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/value"
+          }
+        }
+      }
+    },
+    "symbolKind": {
+      "enum": [
+        "scalar",
+        "enum",
+        "value-object",
+        "entity",
+        "command",
+        "query",
+        "event",
+        "policy",
+        "effect",
+        "endpoint"
+      ]
+    },
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "mappingConfidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "$ref": "#/$defs/symbolKind"
+        },
+        "stableKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "mappingConfidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "candidates": {
+          "$ref": "#/$defs/candidates"
+        }
+      }
+    },
+    "symbols": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/symbol"
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "method",
+        "path",
+        "symbol"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(/[a-z0-9:_{}-]+)+$"
+        },
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        }
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "$ref": "#/$defs/endpoint"
+      }
+    },
+    "schemaKind": {
+      "enum": [
+        "input",
+        "output",
+        "payload"
+      ]
+    },
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "symbol"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "$ref": "#/$defs/schemaKind"
+        },
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "schemas": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": {
+        "$ref": "#/$defs/schema"
+      }
+    },
+    "targetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+    },
+    "profileToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "native",
+        "path",
+        "confidence"
+      ],
+      "properties": {
+        "native": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/candidate"
+      }
+    },
+    "testBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "symbol",
+        "path"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/externalId"
+        },
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "testBindings": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "$ref": "#/$defs/testBinding"
+      }
+    }
+  }
+}

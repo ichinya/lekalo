@@ -1,0 +1,706 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/observed-index.schema.v1.1.0.json",
+  "title": "Lekalo observed index (v1.1.0)",
+  "description": "Closed contract of one persisted observed index (issues #39 and #42): Lekalo's derived registry of existing code — symbols with explicit/confirmed/inferred bindings, evidence, provenance, staleness, native-test and gate attachments, and promotion receipts. The index lives under the accepted lekalo.observed-model-draft authority home (.lekalo/import/**), is never the canonical semantic model, and never claims observed source files as generated artifacts. Canonical bytes are compact JSON with fixed key order and sorted records. This contract version is independent of the product release, of the Model/IR/protocol contract versions, of the observed-scan contract version, and of the diagnostic registry version. Version 1.1.0 is the additive issue #42 binding-registry extension of the frozen 1.0.0 contract: the declared target and adapter profile of the producing scan, optional per-symbol candidate sets that keep an ambiguous mapping visible instead of silently resolved, and native test bindings with their own freshness state. Canonical bytes stay compact JSON with fixed key order and sorted records; this contract version is independent of the product release, of the Model/IR/protocol contract versions, of the observed-scan contract version, and of the diagnostic registry version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "project",
+    "mode",
+    "adapter",
+    "revision",
+    "symbols",
+    "endpoints",
+    "schemas"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/observed-index/v1.1.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.observed-index@1.1.0"
+    },
+    "project": {
+      "$ref": "#/$defs/moduleId"
+    },
+    "mode": {
+      "const": "observed"
+    },
+    "adapter": {
+      "$ref": "#/$defs/adapter"
+    },
+    "revision": {
+      "$ref": "#/$defs/sha256"
+    },
+    "symbols": {
+      "$ref": "#/$defs/symbols"
+    },
+    "endpoints": {
+      "$ref": "#/$defs/endpoints"
+    },
+    "schemas": {
+      "$ref": "#/$defs/schemas"
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+    },
+    "profile": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "test_bindings": {
+      "$ref": "#/$defs/testBindings"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "confidence": {
+      "enum": [
+        "exact",
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    },
+    "origin": {
+      "enum": [
+        "declared",
+        "observed",
+        "inferred"
+      ]
+    },
+    "bindingStatus": {
+      "enum": [
+        "explicit",
+        "confirmed",
+        "inferred"
+      ]
+    },
+    "bindingState": {
+      "enum": [
+        "current",
+        "stale",
+        "unknown"
+      ]
+    },
+    "symbolKind": {
+      "enum": [
+        "scalar",
+        "enum",
+        "value-object",
+        "entity",
+        "command",
+        "query",
+        "event",
+        "policy",
+        "effect",
+        "endpoint"
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "role",
+        "confidence"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "role": {
+          "$ref": "#/$defs/role"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "role": {
+      "enum": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "emit",
+        "call",
+        "reference"
+      ]
+    },
+    "semanticId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,191}$"
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9_.?<>]{1,192}$"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "description": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\"\\\\\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "signature": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "references": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/reference"
+          }
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "base": {
+          "oneOf": [
+            {
+              "enum": [
+                "string",
+                "number",
+                "boolean",
+                "date",
+                "datetime",
+                "uuid",
+                "uri"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "values": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/value"
+          }
+        },
+        "identity_fields": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "confidence",
+        "adapter",
+        "revision"
+      ],
+      "properties": {
+        "origin": {
+          "$ref": "#/$defs/origin"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "revision": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "historyEvent": {
+      "enum": [
+        "recorded",
+        "bound",
+        "confirmed",
+        "moved",
+        "staled",
+        "promoted",
+        "attached"
+      ]
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan",
+        "revision",
+        "adapter"
+      ],
+      "properties": {
+        "plan": {
+          "$ref": "#/$defs/sha256"
+        },
+        "revision": {
+          "$ref": "#/$defs/sha256"
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        }
+      }
+    },
+    "externalId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "stable_key",
+        "location",
+        "fingerprint",
+        "status",
+        "state",
+        "promoted",
+        "promotion",
+        "evidence",
+        "provenance",
+        "native_tests",
+        "gates",
+        "history"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "$ref": "#/$defs/symbolKind"
+        },
+        "location": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000000
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "state": {
+          "$ref": "#/$defs/bindingState"
+        },
+        "promoted": {
+          "type": "boolean"
+        },
+        "promotion": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/promotion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "gates": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/externalId"
+          }
+        },
+        "history": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/historyEntry"
+          }
+        },
+        "stable_key": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\"\\\\\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "native_tests": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/externalId"
+          }
+        },
+        "status": {
+          "$ref": "#/$defs/bindingStatus"
+        },
+        "candidates": {
+          "$ref": "#/$defs/candidates"
+        }
+      }
+    },
+    "symbols": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/symbol"
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "method",
+        "path",
+        "symbol"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(/[a-z0-9:_{}-]+)+$"
+        },
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        }
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "$ref": "#/$defs/endpoint"
+      }
+    },
+    "schemaKind": {
+      "enum": [
+        "input",
+        "output",
+        "payload"
+      ]
+    },
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "symbol"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "$ref": "#/$defs/schemaKind"
+        },
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "schemas": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": {
+        "$ref": "#/$defs/schema"
+      }
+    },
+    "historyEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "revision"
+      ],
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/historyEvent"
+        },
+        "revision": {
+          "$ref": "#/$defs/sha256"
+        },
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "native",
+        "path",
+        "confidence"
+      ],
+      "properties": {
+        "native": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/candidate"
+      }
+    },
+    "testBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "symbol",
+        "path"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/externalId"
+        },
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "testBindings": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "$ref": "#/$defs/testBinding"
+      }
+    }
+  }
+}

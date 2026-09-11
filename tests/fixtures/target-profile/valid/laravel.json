@@ -1,0 +1,17 @@
+{
+  "schema_version": "lekalo/target-profile/v1.0.0",
+  "profiles": [
+    {
+      "id": "laravel-postgres-http",
+      "version": "1.0.0",
+      "components": {
+        "runtime": "php-laravel",
+        "storage": "postgres-sql",
+        "transport": "http-json",
+        "testing": "laratesto",
+        "analysis": "mago",
+        "deployment": "container"
+      }
+    }
+  ]
+}

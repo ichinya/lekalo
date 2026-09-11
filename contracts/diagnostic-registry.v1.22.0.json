@@ -5,6 +5,34 @@
   "closed": true,
   "entries": [
     {
+      "id": "adapter.check-failed",
+      "code": "LEK-ADP-002",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "adapter.check-failed",
+      "default_message": "A conformance check failed for the target adapter.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "check",
+          "type": "token"
+        },
+        {
+          "name": "class",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "adapter.diagnostic-invalid",
       "code": "LEK-ADP-001",
       "category": "adapter",
@@ -18,6 +46,90 @@
       "data_fields": [
         {
           "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.process-failure",
+      "code": "LEK-ADP-003",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "adapter.process-failure",
+      "default_message": "The conformance run could not complete an exchange with the target adapter.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "check",
+          "type": "token"
+        },
+        {
+          "name": "class",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.protocol-failure",
+      "code": "LEK-ADP-004",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported"
+      ],
+      "message_id": "adapter.protocol-failure",
+      "default_message": "The target adapter cannot prove it speaks the published target protocol.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "check",
+          "type": "token"
+        },
+        {
+          "name": "class",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.security-failure",
+      "code": "LEK-ADP-005",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adapter.security-failure",
+      "default_message": "The target adapter violated a confinement or redaction guarantee.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "check",
+          "type": "token"
+        },
+        {
+          "name": "class",
+          "type": "token"
+        },
+        {
+          "name": "detail",
           "type": "token"
         }
       ],
@@ -313,6 +425,70 @@
       "lifecycle": "active"
     },
     {
+      "id": "bindings.ambiguous",
+      "code": "LEK-BND-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "bindings.ambiguous",
+      "default_message": "The proposal lists several candidates; name the exact candidate or disambiguate first.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "bindings.plan-mismatch",
+      "code": "LEK-BND-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "bindings.plan-mismatch",
+      "default_message": "The recorded state changed after this batch preview; request a fresh one.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "bindings.proposal-unknown",
+      "code": "LEK-BND-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "bindings.proposal-unknown",
+      "default_message": "No current proposal matches this id; re-run bindings propose.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "proposal",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "cache.contract-invalid",
       "code": "LEK-XE-005",
       "category": "compatibility",
@@ -541,6 +717,186 @@
       "data_fields": [
         {
           "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.binding-drift",
+      "code": "LEK-CNT-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.binding-drift",
+      "default_message": "A conformed binding no longer matches the canonical contract or the maintained source.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.coverage-missing",
+      "code": "LEK-CNT-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.coverage-missing",
+      "default_message": "A conformed operation has no native test or scenario-skeleton evidence.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.declaration-invalid",
+      "code": "LEK-CNT-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.declaration-invalid",
+      "default_message": "The declaration document or one of its records was refused.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.declaration-limit",
+      "code": "LEK-CNT-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.declaration-limit",
+      "default_message": "The declaration or registry document exceeded its recorded bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "limit",
+          "type": "token"
+        },
+        {
+          "name": "found",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.registry-io",
+      "code": "LEK-CNT-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.registry-io",
+      "default_message": "The conformed registry could not be read, written, or verified.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.stale-artifact",
+      "code": "LEK-CNT-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.stale-artifact",
+      "default_message": "A support artifact no longer matches its recorded content digest.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "path",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.unknown-module",
+      "code": "LEK-CNT-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.unknown-module",
+      "default_message": "The declaration names a module the canonical model does not declare.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "module",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "contracted.unknown-symbol",
+      "code": "LEK-CNT-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "contracted.unknown-symbol",
+      "default_message": "The declaration names a symbol the canonical model does not declare.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
           "type": "token"
         }
       ],
@@ -1478,6 +1834,279 @@
       "default_message": "The impact traversal exceeded its recorded bound.",
       "location_requirement": "none",
       "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.document-invalid",
+      "code": "LEK-IMPL-001",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "implementation.document-invalid",
+      "default_message": "The implementation attachment violates the closed declaration contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "reason",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.effect-mismatch",
+      "code": "LEK-IMPL-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "implementation.effect-mismatch",
+      "default_message": "An acknowledged effect is not part of the operation's declared effect surface.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "reference",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.reference-unresolved",
+      "code": "LEK-IMPL-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "implementation.reference-unresolved",
+      "default_message": "A hook contract names an operation the bound IR does not declare as a command or query.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "contract",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.selection-ambiguous",
+      "code": "LEK-IMPL-004",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "implementation.selection-ambiguous",
+      "default_message": "Multiple implementations bind one target without exactly one explicit selection.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.selection-unknown",
+      "code": "LEK-IMPL-005",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "implementation.selection-unknown",
+      "default_message": "An explicit selection names a target with no competing implementation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.symbol-invalid",
+      "code": "LEK-IMPL-006",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "implementation.symbol-invalid",
+      "default_message": "A foreign symbol reference was refused by the closed binding grammar.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "target",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "implementation.target-missing",
+      "code": "LEK-IMPL-007",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "implementation.target-missing",
+      "default_message": "A project target binding has no implementation entry for an escape-hatched operation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "init.adopt-ambiguous-root",
+      "code": "LEK-INIT-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "init.adopt-ambiguous-root",
+      "default_message": "Adoption found more than one candidate project root; pass an explicit --project selector.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "candidates",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "init.adopt-conflict",
+      "code": "LEK-INIT-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "init.adopt-conflict",
+      "default_message": "Adoption would have to overwrite an existing file; nothing was written.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "path",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "init.adopt-id-required",
+      "code": "LEK-INIT-003",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "init.adopt-id-required",
+      "default_message": "Adoption cannot derive a canonical project id from this repository; pass an explicit --project-id.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "init.adopt-recovery-required",
+      "code": "LEK-INIT-005",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "init.adopt-recovery-required",
+      "default_message": "Adoption rolled back incompletely; remove the listed files before retrying.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "paths",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "init.adopt-write-failed",
+      "code": "LEK-INIT-004",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "init.adopt-write-failed",
+      "default_message": "Adoption failed while writing the planned skeleton; created files were rolled back.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "path",
+          "type": "token"
+        },
         {
           "name": "detail",
           "type": "token"
@@ -2738,6 +3367,246 @@
       "lifecycle": "active"
     },
     {
+      "id": "observed.confirm-refused",
+      "code": "LEK-OBS-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "observed.confirm-refused",
+      "default_message": "Only an inferred binding can be confirmed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "status",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "observed.incomplete-graph",
+      "code": "LEK-OBS-009",
+      "category": "semantic",
+      "default_severity": "info",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "observed.incomplete-graph",
+      "default_message": "The observed graph is incomplete; impact results exclude unrecorded code.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "observed.index-io",
+      "code": "LEK-OBS-005",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "observed.index-io",
+      "default_message": "The observed index could not be read or written.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "observed.index-missing",
+      "code": "LEK-OBS-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "observed.index-missing",
+      "default_message": "The operation requires a recorded observed index; none exists.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "operation",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "observed.promotion-plan-mismatch",
+      "code": "LEK-OBS-011",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "observed.promotion-plan-mismatch",
+      "default_message": "The confirmed promotion plan does not match the current recorded state.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "observed.promotion-refused",
+      "code": "LEK-OBS-010",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "observed.promotion-refused",
+      "default_message": "Promotion requires current explicit or confirmed evidence; unknown evidence refuses.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "observed.scan-invalid",
+      "code": "LEK-OBS-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "observed.scan-invalid",
+      "default_message": "The adapter scan document was refused.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "observed.scan-limit",
+      "code": "LEK-OBS-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "observed.scan-limit",
+      "default_message": "The scan document or one of its sections exceeded its recorded bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "limit",
+          "type": "count"
+        },
+        {
+          "name": "found",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "observed.stale-binding",
+      "code": "LEK-OBS-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "observed.stale-binding",
+      "default_message": "The staleness gate found bindings that no longer match the observed source.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "observed.unknown-module",
+      "code": "LEK-OBS-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "observed.unknown-module",
+      "default_message": "The scan names a module the canonical model does not declare.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "module",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "observed.unknown-symbol",
+      "code": "LEK-OBS-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "observed.unknown-symbol",
+      "default_message": "The observed index does not record the named symbol.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "symbol",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "publication.consent-missing",
       "code": "LEK-XE-006",
       "category": "compatibility",
@@ -2751,6 +3620,238 @@
       "data_fields": [
         {
           "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.document-invalid",
+      "code": "LEK-REQ-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "requirements.document-invalid",
+      "default_message": "The requirements attachment violates its closed wire or semantic contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.export-limit",
+      "code": "LEK-REQ-009",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "requirements.export-limit",
+      "default_message": "The requirements document or its canonical export exceeds a recorded bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.model-ref-mismatch",
+      "code": "LEK-REQ-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "requirements.model-ref-mismatch",
+      "default_message": "The requirements attachment binds a different project or Model state.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.projection-empty",
+      "code": "LEK-REQ-010",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "requirements.projection-empty",
+      "default_message": "The requested requirements projection would carry no requirement rows.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.provider-invalid",
+      "code": "LEK-REQ-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "requirements.provider-invalid",
+      "default_message": "A requirement provider declaration or its on-disk tree is invalid.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.provider-unavailable",
+      "code": "LEK-REQ-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "requirements.provider-unavailable",
+      "default_message": "A declared requirement provider tree is absent or unreadable.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.ref-unknown",
+      "code": "LEK-REQ-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "requirements.ref-unknown",
+      "default_message": "A requirement reference names an undeclared source or an unknown symbol.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.requirement-conflict",
+      "code": "LEK-REQ-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "requirements.requirement-conflict",
+      "default_message": "Conflicting active changes or duplicate requirement identities block resolution.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.requirement-missing",
+      "code": "LEK-REQ-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "requirements.requirement-missing",
+      "default_message": "A referenced requirement does not exist in the resolved requirement set.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "requirements.requirement-stale",
+      "code": "LEK-REQ-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "requirements.requirement-stale",
+      "default_message": "A referenced requirement no longer matches its pinned revision.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
           "type": "token"
         }
       ],
@@ -3935,6 +5036,478 @@
       "default_message": "Project path policy refusal.",
       "location_requirement": "none",
       "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target-profile.capability-unsatisfied",
+      "code": "LEK-TPF-001",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "target-profile.capability-unsatisfied",
+      "default_message": "A profile capability requirement is not satisfied by the resolved components.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "capability",
+          "type": "token"
+        },
+        {
+          "name": "required",
+          "type": "token"
+        },
+        {
+          "name": "actual",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target-profile.combination-incompatible",
+      "code": "LEK-TPF-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "target-profile.combination-incompatible",
+      "default_message": "The resolved component combination violates a registered compatibility constraint.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "reasons",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target-profile.component-unknown",
+      "code": "LEK-TPF-003",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "target-profile.component-unknown",
+      "default_message": "A declared profile component is unknown to the embedded component registry.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "component",
+          "type": "token"
+        },
+        {
+          "name": "axis",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target-profile.document-invalid",
+      "code": "LEK-TPF-004",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "target-profile.document-invalid",
+      "default_message": "A target profile document violates the closed declaration contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target-profile.inheritance-weakening",
+      "code": "LEK-TPF-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "target-profile.inheritance-weakening",
+      "default_message": "Profile inheritance would weaken a capability guarantee without an explicit override.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "capabilities",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target-profile.reference-invalid",
+      "code": "LEK-TPF-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "target-profile.reference-invalid",
+      "default_message": "A profile inheritance reference is unknown or cyclic.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.cancelled",
+      "code": "LEK-TGT-015",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "target.cancelled",
+      "default_message": "The adapter operation was cancelled before it completed; the child process was terminated.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.capability-unsupported",
+      "code": "LEK-TGT-004",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported"
+      ],
+      "message_id": "target.capability-unsupported",
+      "default_message": "The target adapter does not offer the requested operation, target, or profile.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.crash",
+      "code": "LEK-TGT-013",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "target.crash",
+      "default_message": "The adapter process exited abnormally without a usable response envelope.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.dry-run-mutation",
+      "code": "LEK-TGT-007",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "target.dry-run-mutation",
+      "default_message": "The adapter changed the project during a dry-run operation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "path",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.handshake-required",
+      "code": "LEK-TGT-002",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "target.handshake-required",
+      "default_message": "A destructive adapter operation was requested before a successful describe handshake.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "operation",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.ir-unsupported",
+      "code": "LEK-TGT-016",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported"
+      ],
+      "message_id": "target.ir-unsupported",
+      "default_message": "The target adapter did not declare the IR contract version required to receive project IR.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.operation-failed",
+      "code": "LEK-TGT-009",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "target.operation-failed",
+      "default_message": "The adapter reported an operation error in a well-formed response envelope.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "class",
+          "type": "token"
+        },
+        {
+          "name": "code",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.output-limit",
+      "code": "LEK-TGT-014",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "target.output-limit",
+      "default_message": "The adapter exceeded the declared response size limit.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "stream",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.plan-mismatch",
+      "code": "LEK-TGT-008",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "target.plan-mismatch",
+      "default_message": "The observed writes or deletions disagree with the declared output plan.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "path",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.protected-path",
+      "code": "LEK-TGT-006",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "target.protected-path",
+      "default_message": "The declared plan or scope touches a canonical Lekalo or OpenSpec home that adapters may never write.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "path",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.protocol-mismatch",
+      "code": "LEK-TGT-003",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported"
+      ],
+      "message_id": "target.protocol-mismatch",
+      "default_message": "The adapter speaks a different protocol token or an unsupported exact protocol version.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.request-invalid",
+      "code": "LEK-TGT-001",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "target.request-invalid",
+      "default_message": "The target-protocol request could not be assembled from the given inputs.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.response-invalid",
+      "code": "LEK-TGT-010",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "target.response-invalid",
+      "default_message": "The adapter response is not a valid protocol envelope.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.scope-violation",
+      "code": "LEK-TGT-005",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "target.scope-violation",
+      "default_message": "The adapter declared a scope that violates the scope grammar or cannot be verified.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "path",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.timeout",
+      "code": "LEK-TGT-012",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "target.timeout",
+      "default_message": "The adapter operation exceeded its deadline and the child process was killed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "target.transport-failed",
+      "code": "LEK-TGT-011",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "target.transport-failed",
+      "default_message": "The adapter process could not be started or the request could not be delivered.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
       "allowed_fix_ids": [],
       "lifecycle": "active"
     },

@@ -1,0 +1,19 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner
+    kind: project
+    version: 1
+    description: "Focus planner example model for Lekalo IR"
+    derived_from:
+      - "PLANNER-REQ-001"
+    id_registry:
+      rename_history:
+        - from: "planner.legacy_task"
+          to: "planner.task"
+          definition_version: 1
+          same_identity: true
+          note: "Renamed during the Model 1.0 migration."
+      tombstones:
+        - id: "planner.removed_feature"
+          reason: "deleted"
+          since: 1

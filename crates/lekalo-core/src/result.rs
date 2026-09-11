@@ -174,6 +174,11 @@ pub enum DomainResult {
         capability: Capability,
         diagnostics: DiagnosticSet,
     },
+    /// A negotiated external operation is unsupported, without inventing a
+    /// foundation CLI capability on its behalf.
+    UnsupportedOperation {
+        diagnostics: DiagnosticSet,
+    },
     UnsupportedVersion {
         diagnostics: DiagnosticSet,
     },
@@ -313,7 +318,7 @@ impl DomainResult {
             Self::Invalid { .. } => Status::Invalid,
             Self::Denied { .. } => Status::Denied,
             Self::Unavailable { .. } => Status::Unavailable,
-            Self::Unsupported { .. } => Status::Unsupported,
+            Self::Unsupported { .. } | Self::UnsupportedOperation { .. } => Status::Unsupported,
             Self::UnsupportedVersion { .. } => Status::UnsupportedVersion,
         }
     }
@@ -341,6 +346,7 @@ impl DomainResult {
             Self::Invalid { diagnostics }
             | Self::Denied { diagnostics }
             | Self::Unavailable { diagnostics }
+            | Self::UnsupportedOperation { diagnostics }
             | Self::UnsupportedVersion { diagnostics } => diagnostics.as_slice(),
             Self::Unsupported { diagnostics, .. } => diagnostics.as_slice(),
         }
@@ -401,6 +407,7 @@ impl DomainResult {
             | Self::Denied { .. }
             | Self::Unavailable { .. }
             | Self::Unsupported { .. }
+            | Self::UnsupportedOperation { .. }
             | Self::UnsupportedVersion { .. } => {
                 #[derive(Serialize)]
                 struct FailureEnvelope<'a> {

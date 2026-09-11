@@ -17,6 +17,14 @@ with filesystem access and it never writes.
 
 ```text
 lekalo --version
+lekalo adapter test [--profile default|strict] [--report json|junit] [--repeats N] [--timeout-ms MS] PROGRAM [ARGS]...
+lekalo init --adopt [--target TARGET [--profile PROFILE]] [--project-id ID] [--project DIR] [--dry-run]
+lekalo scan --target TARGET [--profile PROFILE] [--timeout-ms MS] [--project DIR] PROGRAM [ARGS]...
+lekalo bindings list [--project DIR]
+lekalo bindings propose [--project DIR]
+lekalo bindings confirm PROPOSAL [--candidate NATIVE] [--project DIR]
+lekalo bindings confirm --batch (--preview | --confirm sha256:PLAN_ID) [--project DIR]
+lekalo bindings audit [--project DIR]
 lekalo load [--project DIR] [--spans] [--ir]
 lekalo lock [--check] [--offline] [--project DIR]
 lekalo update --dry-run [--offline] [--project DIR]
@@ -37,11 +45,20 @@ lekalo impact SYMBOL [--depth N] [--relation KIND] [--profile default|strict] [-
 lekalo impact --changed [--base REF] [--head REF] [--worktree] [--project DIR]
 lekalo context SYMBOL --budget TOKENS [--spans] [--project DIR]
 lekalo context --changed SYMBOLS --budget TOKENS [--spans] [--project DIR]
+lekalo contract update --declaration FILE [--project DIR]
+lekalo contract check [--module MODULE] [--project DIR]
+lekalo contract attach SYMBOL [--native-test IDS] [--gate IDS] [--project DIR]
+lekalo contract support SYMBOL --kind KIND --path PATH [--digest SHA256] [--lifecycle LC]
+    [--project DIR]
+lekalo cache status [--project DIR]
+lekalo doctor [--project DIR] [--trace PATH]... [--fix]
+lekalo status [--project DIR]
+lekalo readiness --phase model|implement|generate|verify|release [--project DIR] [--trace PATH]...
 ```
 
-`--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
-`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, and
-`context` are implemented; none remains a recognized stub. `SYMBOL` is an
+`init --adopt`, `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
+`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, `context`, `cache`,
+`doctor`, `status`, `readiness`, and `contract` are implemented; none remains a recognized stub. `SYMBOL` is an
 opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic
 ID rules, validation, and graph construction bind every implemented
 command. Every implemented capability is bound by
@@ -53,6 +70,22 @@ and impact engines resolve them through the kind-qualified node identity.
 `--json` is global and may appear before or after a subcommand. Both
 `lekalo --json --version` and `lekalo --version --json` select JSON output.
 Root and per-command help remain clap help text rather than a domain failure.
+
+### `lekalo init --adopt`
+
+`init --adopt` connects Lekalo to an existing repository (issue #38):
+read-only detection with provenance and confidence, the minimal canonical
+skeleton (`lekalo/project.yaml`, plus `lekalo/targets/<id>.yaml` only for
+an explicit `--target`), atomic no-overwrite writes with journal and
+rollback, and an in-process load+validate gate over the result. An
+explicit `--profile` (requires `--target`, #28 token grammar) is
+recorded in the target document and the receipt's `adapterProfile`;
+never executed or checked against an adapter. `--dry-run`
+prints the full plan and writes nothing; a repeated init is idempotent.
+Observed modules stay observations in the receipt — the Model contract has
+no module-mode field, so none is emitted. `init` without `--adopt` is the
+stable usage failure until greenfield creation lands. The normative
+contract is [adopt.md](adopt.md) and [ADR-0028](adr/0028-init-adopt.md).
 
 ### `lekalo load`
 
@@ -129,6 +162,25 @@ recovery contract. Unsupported contract versions exit 5 with the shared
 `compatibility` prints the embedded registry projection (families in
 fixed order `model`, `ir`, `protocol`); it performs no project or
 adapter discovery.
+
+
+### `lekalo adapter test`
+
+`adapter test` runs the issue #31 conformance battery against one
+adapter executable through the confined target-protocol client: the
+describe handshake and negotiation, capability declaration, deterministic
+repeats, the dry-run plan and its apply, confinement, cancellation,
+invalid-input handling, structured diagnostics, scenario
+normalization, artifact evidence, and redaction. `--profile strict`
+additionally requires the complete v1 operation surface; `--report
+json|junit` prints the deterministic report document on stdout for
+every completed run while the exit code stays verdict-owned
+(0 pass, 1 feature failure, 3 security, 4 process/protocol). A
+security or protocol failure is never compensated by passing feature
+tests, and the verified badge names the exact protocol/IR versions
+only. The normative contract is
+[adapter-conformance.md](adapter-conformance.md) and
+[ADR-0030](adr/0030-adapter-conformance.md).
 
 ## Exit and stream contract
 
@@ -477,6 +529,38 @@ lekalo generate --clean --confirm sha256:973d6dd3ef84df5e286622a796e542f9dac2097
 generate applied plan sha256:973d... (-1)
 ```
 
+## Requirements
+
+The `lekalo requirements` handoff resolves one requirements attachment
+(`lekalo/requirements/v1.0.0`) against its project: the read-only OpenSpec
+provider walks `specs/**` and `changes/**`, projects the effective
+requirement set, and pins every reference to an exact body revision. All
+decisions live in the core; the binary selects, renders, and maps exits,
+and nothing is ever written.
+
+```sh
+lekalo requirements validate tests/fixtures/requirements/planner/requirements.attachment.json --project tests/fixtures/requirements/planner
+# requirements planner
+#   requirements 3; references 3; fresh 3; stale 0; missing 0; conflict 0; coverage gaps 0; conflicts 0
+
+lekalo requirements report ... > report.json     # canonical report bytes
+lekalo requirements query ... coverage-gaps      # requirements no symbol links
+lekalo requirements query ... impact             # changed/removed/renamed/conflict rows
+lekalo requirements query ... symbol:planner.focus_task
+lekalo requirements query ... requirement:openspec:planner.REQ-focus-task
+lekalo requirements trace ... > trace.json       # neutral #22 trace projection
+```
+
+Exit protocol: `0` valid (validate: every reference fresh, no conflict),
+`1` malformed attachment, unknown symbol or source, invalid provider tree,
+unknown query selector or subject; `3` denied — stale, missing, or
+conflicted references, any conflict in a resolved tree, or a Model
+pin/project custody mismatch; `4` an absent provider tree that references
+depend on. Human and JSON are projections of the same result; the report
+and trace exports emit canonical bytes with pinned digests. See
+[docs/requirements.md](requirements.md) and
+[ADR-0026](adr/0026-requirements-traceability.md).
+
 ## Impact
 
 Issue #16 answers the change-radius question through one command with two
@@ -506,7 +590,82 @@ denies with `{"status":"denied",...}` when a required gate rests on
 unknown or stale evidence. The contract, guarantees, limits, and the
 closed risk/gate vocabularies are documented in
 [docs/impact.md](impact.md) and [ADR-0017](adr/0017-impact.md).
-## Development checks
+`--fix` renders the closed safe-fix recipe preview (advice only, nothing is
+executed) and the optional `--trace PATH` manifests supply OpenSpec/HLV/
+AI Factory gate evidence; unsupplied evidence degrades. The report is the
+product: it exits 0 on stdout whenever it was produced, whatever verdict it
+records. The contract, the closed check vocabulary, the verdict rule, and
+the safe-fix recipes are documented in [docs/doctor.md](doctor.md) and
+[ADR-0032](adr/0032-doctor-readiness.md).
+
+```sh
+lekalo doctor
+# doctor degraded : 13 checks (12 ok, 1 degraded, 0 blocked)
+
+lekalo status
+# status ready : lock fresh, cache missing, bindings none-required, artifacts clean
+
+lekalo readiness --phase generate
+# readiness generate blocked : 13 checks (10 ok, 2 degraded, 1 blocked)
+```
+
+## Contract (contracted mode)
+
+Issue #40 records, verifies, and governs AI-written implementation. The
+model is primary for the public contract, effects, and invariants; the
+target source is maintained code; the adapter checks conformance and may
+generate support artifacts only. The thin subcommands hand every
+decision to the core contracted engine; receipts are pretty two-space
+JSON with fixed key order, and failures carry the registered
+`contracted.*` rules:
+
+```sh
+lekalo contract update --declaration adapter-declaration.json
+lekalo contract check --module planner
+lekalo contract attach planner.focus_task --native-test "npm test -- focusTask"
+lekalo contract support planner.focus_task --kind openapi --path .lekalo/generated/openapi/planner.json --digest sha256:<64 hex>
+```
+
+`contract update` merges one adapter declaration into the derived
+registry at `.lekalo/import/contracted/registry.json`; bindings pin the
+maintained source location and fingerprint, the typed signature claim,
+and the declared-effect claim. `contract check` is the conformance
+gate: it re-fingerprints the sources, recomputes the canonical
+signatures and declared effects from the typed IR, and re-digests every
+fingerprinted support artifact (exit 0 clean, exit 1 with registered
+findings). The mode semantics, guarantees, and limits live in
+[docs/contracted-mode.md](contracted-mode.md) and
+[ADR-0034](adr/0034-contracted-mode.md).
+
+## Scan and bindings (issue #42)
+
+Issue #42 fills the observed registry on demand and adds the binding
+workflow. The thin subcommands hand every decision to the core; the
+contract, the ambiguity policy, and the freshness rules live in
+[bindings.md](bindings.md) and [ADR-0035](adr/0035-bindings-registry.md):
+
+```sh
+lekalo scan --target node-typescript node tests/fixtures/bindings/ts-scanner.mjs
+lekalo bindings list
+lekalo bindings propose
+lekalo bindings confirm prop-<64 lowercase hex>
+lekalo bindings confirm prop-<64 lowercase hex> --candidate src/tasks.ts#createTask
+lekalo bindings confirm --batch --preview
+lekalo bindings confirm --batch --confirm sha256:<64 lowercase hex>
+lekalo bindings audit
+```
+
+`scan` discovers and selects the adapter through the #28 seam, runs the
+read-only `scan` exchange in the confined sandbox, and merges through the
+#39 merge rules; a refused scan never writes the registry.
+`bindings propose` derives one deterministic proposal per inferred
+binding; an ambiguous proposal lists every candidate and picks none until
+`--candidate` names one. `bindings confirm --batch` is the planned and
+confirmed preview of every unambiguous proposal. `bindings audit` is the
+staleness gate over symbols and native test bindings (exit 0 current,
+exit 1 with `observed.stale-binding` per finding).
+
+ ## Development checks
 ```sh
 cargo fmt --all -- --check
 cargo check --workspace --all-targets --locked
