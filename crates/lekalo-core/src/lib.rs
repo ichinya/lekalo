@@ -19,6 +19,7 @@ pub mod lockfile;
 pub mod project_fs;
 pub mod result;
 pub mod scenario;
+pub mod storage_projection;
 pub mod trace;
 pub mod transaction_concurrency;
 pub mod validator;

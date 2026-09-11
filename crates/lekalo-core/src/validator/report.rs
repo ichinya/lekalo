@@ -173,7 +173,7 @@ mod tests {
             report.to_json(),
             concat!(
                 "{\"profile\":\"default\",\"profileVersion\":\"1.0.0\",",
-                "\"registryVersion\":\"1.9.0\",\"moduleScope\":\"planner\",",
+                "\"registryVersion\":\"1.22.0\",\"moduleScope\":\"planner\",",
                 "\"rulesEnabled\":25,\"counts\":{\"error\":0,\"warning\":1,\"info\":2}}"
             )
         );
