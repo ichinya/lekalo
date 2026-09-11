@@ -18,7 +18,10 @@ pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@1.19.0";
 
 /// The current diagnostic registry version. The integrated chain is
 /// additive end to end: 1.14.0 (issue #29) -> 1.16.0 (issue #39, the
-/// reserved observed.* family on the integrated M2 line).
+/// reserved observed.* family on the integrated M2 line) -> 1.18.0
+/// (issue #30, the reserved `implementation.*` family; 1.17.0 stays
+/// reserved by its parallel owner and is not part of this line) ->
+/// 1.19.0 (issue #40, the contracted.* family).
 pub const REGISTRY_VERSION: &str = "1.19.0";
 
 /// The closed diagnostic schema version.

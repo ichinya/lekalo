@@ -4,8 +4,6 @@
 
 use clap::{error::ErrorKind, Args, ColorChoice, Parser, Subcommand};
 use lekalo_core::artifacts::{ArtifactFailure, CheckReceipt, GenerateService};
-
-mod git_input;
 use lekalo_core::loader::LoadSelection;
 use lekalo_core::lockfile::plan::LockService;
 use lekalo_core::lockfile::resolution::CandidateSet;
@@ -17,6 +15,9 @@ use lekalo_core::DomainResult;
 use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::process::ExitCode;
+
+mod doctor_git;
+mod git_input;
 
 const PROGRAM_NAME: &str = "lekalo";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -288,6 +289,42 @@ enum Commands {
         #[command(subcommand)]
         command: CacheCommands,
     },
+    /// Diagnose project, model, adapters, artifacts, and integrations in
+    /// one read-only readiness report.
+    Doctor {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Preview the closed safe-fix recipes for every finding; nothing
+        /// is ever repaired, installed, updated, or written.
+        #[arg(long)]
+        fix: bool,
+        /// Optional trace manifests supplying HLV/OpenSpec/AI Factory
+        /// gate evidence (repeatable).
+        #[arg(long = "trace", value_name = "PATH")]
+        traces: Vec<String>,
+    },
+    /// Report the freshness panel — lock, cache, bindings, artifacts —
+    /// plus the exact git/model/lock revisions.
+    Status {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Report phase readiness with required and optional checks.
+    Readiness {
+        /// The readiness phase: model, implement, generate, verify, or
+        /// release (alias: done).
+        #[arg(long, value_enum)]
+        phase: DoctorPhase,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Optional trace manifests supplying HLV/OpenSpec/AI Factory
+        /// gate evidence (repeatable).
+        #[arg(long = "trace", value_name = "PATH")]
+        traces: Vec<String>,
+    },
     /// Record, bind, verify, and promote existing code in observed mode
     /// (issue #39). The core owns every decision; this binary only
     /// selects, renders, and maps exits.
@@ -304,6 +341,135 @@ enum Commands {
         #[command(subcommand)]
         command: ContractCommands,
     },
+}
+
+/// The `observe` subcommands: the observed-mode surface (issue #39).
+#[derive(Debug, Subcommand)]
+enum ObserveCommands {
+    /// Merge one adapter scan document into the observed index; a
+    /// binding recorded under a stable key survives a source move.
+    Update {
+        /// The adapter scan document (JSON), relative to the invocation
+        /// directory.
+        #[arg(long, value_name = "FILE")]
+        scan: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Bind one recorded symbol to a source location explicitly.
+    Bind {
+        /// The recorded semantic id.
+        symbol: String,
+        /// The adapter stable key that survives file moves.
+        #[arg(long, value_name = "KEY")]
+        key: Option<String>,
+        /// The logical project-relative source path.
+        #[arg(long, value_name = "PATH")]
+        path: String,
+        /// The 1-based source line.
+        #[arg(long, value_name = "LINE")]
+        line: Option<u64>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Confirm one inferred binding; confirmed facts are user-owned.
+    Confirm {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Run the staleness gate over every recorded binding; any stale
+    /// binding fails with registered diagnostics.
+    Check {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Attach native tests and gates to one recorded symbol.
+    Attach {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Comma-separated native test ids (verbatim external ids).
+        #[arg(long, value_name = "IDS")]
+        native_test: Option<String>,
+        /// Comma-separated gate ids (verbatim external ids).
+        #[arg(long, value_name = "IDS")]
+        gate: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Project the observed card of one recorded symbol.
+    Inspect {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Project the observed impact of one recorded symbol; the recorded
+    /// graph always reports its own incompleteness.
+    Impact {
+        /// The recorded semantic id.
+        symbol: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Plan (with --dry-run) or apply (with --confirm) the explicit
+    /// promotion of observed symbols into the canonical model.
+    Promote {
+        /// One semantic id to promote.
+        #[arg(long, value_name = "SYMBOL")]
+        symbol: Option<String>,
+        /// Every eligible symbol of one module.
+        #[arg(long, value_name = "MODULE")]
+        module: Option<String>,
+        /// Compute the plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the plan with this exact identity
+        /// (`sha256:<64 lowercase hex>`).
+        #[arg(long, value_name = "PLAN_ID")]
+        confirm: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
+/// The closed readiness-phase vocabulary for the CLI surface; `done` is
+/// an accepted alias of `release`.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum DoctorPhase {
+    /// Model loads and validates.
+    Model,
+    /// Implementation against pinned inputs.
+    Implement,
+    /// Generation against resolved adapters and profiles.
+    Generate,
+    /// Verification with available tools and clean artifacts.
+    Verify,
+    /// Release: the full gate.
+    Release,
+    /// The `done` alias of `release`.
+    Done,
+}
+
+impl DoctorPhase {
+    /// The canonical core phase.
+    fn phase(self) -> lekalo_core::doctor::model::Phase {
+        match self {
+            Self::Model => lekalo_core::doctor::model::Phase::Model,
+            Self::Implement => lekalo_core::doctor::model::Phase::Implement,
+            Self::Generate => lekalo_core::doctor::model::Phase::Generate,
+            Self::Verify => lekalo_core::doctor::model::Phase::Verify,
+            Self::Release | Self::Done => lekalo_core::doctor::model::Phase::Release,
+        }
+    }
 }
 
 /// The `adapter` subcommands: the issue #31 conformance suite handoff.
@@ -458,105 +624,6 @@ enum CacheCommands {
         /// Required explicit confirmation; the CI-safe invocation form.
         #[arg(long)]
         yes: bool,
-        /// Project root selector, relative to the invocation directory.
-        #[arg(long, value_name = "DIR")]
-        project: Option<String>,
-    },
-}
-
-/// The `observe` subcommands: the observed-mode surface (issue #39).
-#[derive(Debug, Subcommand)]
-enum ObserveCommands {
-    /// Merge one adapter scan document into the observed index; a
-    /// binding recorded under a stable key survives a source move.
-    Update {
-        /// The adapter scan document (JSON), relative to the invocation
-        /// directory.
-        #[arg(long, value_name = "FILE")]
-        scan: String,
-        /// Project root selector, relative to the invocation directory.
-        #[arg(long, value_name = "DIR")]
-        project: Option<String>,
-    },
-    /// Bind one recorded symbol to a source location explicitly.
-    Bind {
-        /// The recorded semantic id.
-        symbol: String,
-        /// The adapter stable key that survives file moves.
-        #[arg(long, value_name = "KEY")]
-        key: Option<String>,
-        /// The logical project-relative source path.
-        #[arg(long, value_name = "PATH")]
-        path: String,
-        /// The 1-based source line.
-        #[arg(long, value_name = "LINE")]
-        line: Option<u64>,
-        /// Project root selector, relative to the invocation directory.
-        #[arg(long, value_name = "DIR")]
-        project: Option<String>,
-    },
-    /// Confirm one inferred binding; confirmed facts are user-owned.
-    Confirm {
-        /// The recorded semantic id.
-        symbol: String,
-        /// Project root selector, relative to the invocation directory.
-        #[arg(long, value_name = "DIR")]
-        project: Option<String>,
-    },
-    /// Run the staleness gate over every recorded binding; any stale
-    /// binding fails with registered diagnostics.
-    Check {
-        /// Project root selector, relative to the invocation directory.
-        #[arg(long, value_name = "DIR")]
-        project: Option<String>,
-    },
-    /// Attach native tests and gates to one recorded symbol.
-    Attach {
-        /// The recorded semantic id.
-        symbol: String,
-        /// Comma-separated native test ids (verbatim external ids).
-        #[arg(long, value_name = "IDS")]
-        native_test: Option<String>,
-        /// Comma-separated gate ids (verbatim external ids).
-        #[arg(long, value_name = "IDS")]
-        gate: Option<String>,
-        /// Project root selector, relative to the invocation directory.
-        #[arg(long, value_name = "DIR")]
-        project: Option<String>,
-    },
-    /// Project the observed card of one recorded symbol.
-    Inspect {
-        /// The recorded semantic id.
-        symbol: String,
-        /// Project root selector, relative to the invocation directory.
-        #[arg(long, value_name = "DIR")]
-        project: Option<String>,
-    },
-    /// Project the observed impact of one recorded symbol; the recorded
-    /// graph always reports its own incompleteness.
-    Impact {
-        /// The recorded semantic id.
-        symbol: String,
-        /// Project root selector, relative to the invocation directory.
-        #[arg(long, value_name = "DIR")]
-        project: Option<String>,
-    },
-    /// Plan (with --dry-run) or apply (with --confirm) the explicit
-    /// promotion of observed symbols into the canonical model.
-    Promote {
-        /// One semantic id to promote.
-        #[arg(long, value_name = "SYMBOL")]
-        symbol: Option<String>,
-        /// Every eligible symbol of one module.
-        #[arg(long, value_name = "MODULE")]
-        module: Option<String>,
-        /// Compute the plan without writing anything.
-        #[arg(long)]
-        dry_run: bool,
-        /// Apply the plan with this exact identity
-        /// (`sha256:<64 lowercase hex>`).
-        #[arg(long, value_name = "PLAN_ID")]
-        confirm: Option<String>,
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
@@ -809,8 +876,18 @@ fn main() -> ExitCode {
                 dry_run,
                 confirm,
             } => run_generate(project, check, clean, dry_run, confirm),
+            Commands::Doctor {
+                project,
+                fix,
+                traces,
+            } => run_doctor(project, fix, traces),
+            Commands::Status { project } => run_status(project),
+            Commands::Readiness {
+                phase,
+                project,
+                traces,
+            } => run_readiness(phase.phase(), project, traces),
             Commands::Cache { command } => run_cache(command),
-            Commands::Observe { command } => run_observe(command),
             Commands::Contract { command } => run_contract(command),
             Commands::Init {
                 adopt,
@@ -820,6 +897,7 @@ fn main() -> ExitCode {
                 project,
                 dry_run,
             } => run_init(adopt, target, profile, project_id, project, dry_run),
+            Commands::Observe { command } => run_observe(command),
             Commands::Adapter { command } => match run_adapter(command) {
                 AdapterRun::Envelope(result) => result,
                 AdapterRun::Document { document, result } => {
@@ -1565,6 +1643,110 @@ fn run_cache(command: CacheCommands) -> DomainResult {
             lekalo_core::cache::clear(&selection_for(&project))
         }
     }
+}
+
+/// Parse the supplied `--trace` manifests into the typed evidence
+/// handoff. The files are read here (the same seam `lekalo trace` owns)
+/// and every parse decision stays in the core; paths never cross.
+fn doctor_traces(paths: &[String]) -> Vec<lekalo_core::doctor::TraceManifestEvidence> {
+    paths
+        .iter()
+        .map(|path| {
+            let evidence = match std::fs::read(path) {
+                Err(_) => lekalo_core::doctor::TraceManifestEvidence {
+                    reason_ids: vec!["loader.io".to_owned()],
+                    gaps: 0,
+                    external_refs: Vec::new(),
+                },
+                Ok(bytes) => match lekalo_core::trace::TraceManifest::parse(&bytes) {
+                    Err(diagnostics) => lekalo_core::doctor::TraceManifestEvidence {
+                        reason_ids: diagnostics
+                            .reason_ids()
+                            .into_iter()
+                            .map(str::to_owned)
+                            .collect(),
+                        gaps: 0,
+                        external_refs: Vec::new(),
+                    },
+                    Ok(manifest) => {
+                        let report = manifest.report();
+                        let mut refs: Vec<String> = manifest
+                            .manifest()
+                            .nodes
+                            .iter()
+                            .flat_map(|node| node.external_refs.iter())
+                            .map(|reference| reference.system.as_str().to_owned())
+                            .collect();
+                        refs.sort();
+                        refs.dedup();
+                        lekalo_core::doctor::TraceManifestEvidence {
+                            reason_ids: Vec::new(),
+                            gaps: report.gap_count,
+                            external_refs: refs,
+                        }
+                    }
+                },
+            };
+            evidence
+        })
+        .collect()
+}
+
+/// The Git facts of one selection: unavailable when the project root
+/// itself cannot be resolved, otherwise the read-only adapter handoff.
+fn doctor_git_facts(selection: &LoadSelection) -> lekalo_core::doctor::GitFacts {
+    match lekalo_core::doctor::project_root(selection) {
+        Err(_) => lekalo_core::doctor::GitFacts {
+            state: lekalo_core::doctor::GitState::Unavailable,
+            commit: None,
+            dirty: None,
+        },
+        Ok(root) => doctor_git::git_facts(&root),
+    }
+}
+
+/// `lekalo doctor`: the full read-only readiness report. `--fix` only
+/// previews the closed safe-fix recipes; nothing is ever written.
+fn run_doctor(project: Option<String>, fix: bool, traces: Vec<String>) -> DomainResult {
+    let selection = selection_for(&project);
+    let git = doctor_git_facts(&selection);
+    let evidence = doctor_traces(&traces);
+    let options = lekalo_core::doctor::Options {
+        kind: lekalo_core::doctor::model::ReportKind::Doctor,
+        phase: None,
+        fix,
+        traces: evidence,
+    };
+    lekalo_core::doctor::report(&selection, &git, &options)
+}
+
+/// `lekalo status`: the freshness panel plus the exact revisions.
+fn run_status(project: Option<String>) -> DomainResult {
+    let selection = selection_for(&project);
+    let git = doctor_git_facts(&selection);
+    let options = lekalo_core::doctor::Options {
+        kind: lekalo_core::doctor::model::ReportKind::Status,
+        ..lekalo_core::doctor::Options::default()
+    };
+    lekalo_core::doctor::report(&selection, &git, &options)
+}
+
+/// `lekalo readiness --phase PHASE`: the phase-gated readiness report.
+fn run_readiness(
+    phase: lekalo_core::doctor::model::Phase,
+    project: Option<String>,
+    traces: Vec<String>,
+) -> DomainResult {
+    let selection = selection_for(&project);
+    let git = doctor_git_facts(&selection);
+    let evidence = doctor_traces(&traces);
+    let options = lekalo_core::doctor::Options {
+        kind: lekalo_core::doctor::model::ReportKind::Readiness,
+        phase: Some(phase),
+        fix: false,
+        traces: evidence,
+    };
+    lekalo_core::doctor::report(&selection, &git, &options)
 }
 
 /// Load and compile the selected project, build the effect graph, and run
@@ -2807,6 +2989,7 @@ fn run_impact(args: ImpactArgs) -> DomainResult {
         Err(result) => return result,
         Ok(observed) => observed,
     };
+
     match lekalo_core::impact::analyze(
         &compilation.project,
         &graph,
@@ -2820,9 +3003,6 @@ fn run_impact(args: ImpactArgs) -> DomainResult {
         Err(lekalo_core::impact::ImpactFailure::Denied(set)) => DomainResult::denied(set),
     }
 }
-
-/// The observed view of one selection: `Ok(None)` when the project
-/// records no index, the analyzer view when it does.
 fn observed_view(
     project: &Option<String>,
 ) -> Result<Option<lekalo_core::observed::view::ObservedView>, DomainResult> {
@@ -2868,9 +3048,6 @@ fn render_impact(result: &lekalo_core::impact::ImpactResult) -> DomainResult {
     ));
     DomainResult::impact(json, human.join("\n"), result.warnings().to_vec())
 }
-
-/// Run one `observe` subcommand (issue #39): load the project through the
-/// accepted seam, hand everything to the core observed engine, and
 /// project the result. Every observed decision — scan normalization,
 /// merge, binding resolution, staleness, promotion — lives in the core;
 /// this binary only selects, renders, and maps exits.

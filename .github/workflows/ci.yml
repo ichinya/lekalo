@@ -43,6 +43,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-inspect-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-artifact-manifest-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-cache-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-doctor-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-impact-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-context-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-semantic-diff-contracts.mjs
@@ -56,6 +57,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-target-protocol-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-target-profile-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-requirements-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-implementation-contracts.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites

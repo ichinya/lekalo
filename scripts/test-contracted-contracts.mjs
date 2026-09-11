@@ -194,7 +194,7 @@ for (const rule of [
   if (!diagnosticRust.includes(rule)) fail("custody-rule", rule);
 }
 // The registry family rides the reserved 1.19.0 successor with full
-// predecessor custody; the frozen 1.16.0 bytes must never move.
+// predecessor custody; the frozen 1.16.0 and 1.18.0 bytes must never move.
 const registry116Text = readText(
   "contracts/diagnostic-registry.v1.16.0.json",
 ).replace(/\r\n/g, "\n");
@@ -204,8 +204,18 @@ if (
 ) {
   fail("custody-predecessor-registry", "diagnostic-registry.v1.16.0.json");
 }
+const registry118Text = readText(
+  "contracts/diagnostic-registry.v1.18.0.json",
+).replace(/\r\n/g, "\n");
+if (
+  createHash("sha256").update(registry118Text).digest("hex") !==
+  "bcf0feb107f7fd3bcd6f488044fabd2142c44e55e092b1691193eeafa7d95a89"
+) {
+  fail("custody-predecessor-registry", "diagnostic-registry.v1.18.0.json");
+}
 const registry119 = read("contracts/diagnostic-registry.v1.19.0.json");
 const registry116 = JSON.parse(registry116Text);
+const registry118 = JSON.parse(registry118Text);
 const current = new Map(registry119.entries.map((entry) => [entry.id, entry]));
 for (const entry of registry116.entries) {
   const successor = current.get(entry.id);
@@ -214,8 +224,19 @@ for (const entry of registry116.entries) {
     fail("predecessor-rule-changed", entry.id);
   }
 }
-const additions = registry119.entries.filter(
+const implementationAdditions = registry118.entries.filter(
   (entry) => !registry116.entries.some((old) => old.id === entry.id),
+);
+if (
+  implementationAdditions.length !== 7 ||
+  implementationAdditions.some(
+    (entry) => !entry.id.startsWith("implementation.") || !entry.code.startsWith("LEK-IMPL-"),
+  )
+) {
+  fail("implementation-additions", implementationAdditions.map((entry) => entry.id));
+}
+const additions = registry119.entries.filter(
+  (entry) => !registry118.entries.some((old) => old.id === entry.id),
 );
 if (
   additions.length !== 8 ||
