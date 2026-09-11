@@ -389,16 +389,40 @@ fn resolve_query(
     Ok(())
 }
 
-/// Whether the filter tree constrains the tenant field of one entity.
+/// Whether the filter tree constrains the tenant field of one entity:
+/// every row satisfying the filter must satisfy a tenant `eq`/`in`
+/// leaf. The decision follows the logical structure, not the leaf
+/// set: see [`constrains_tenant`].
 fn filter_constrains(filter: &FilterExpr, attachment: &QueryModelAttachment, entity: &str) -> bool {
     let Some(tenant_field) = attachment.tenant_field(entity) else {
         return false;
     };
-    filter.leaves().iter().any(|leaf| {
-        leaf.field == *tenant_field
-            && TENANT_CONSTRAINING_OPS.contains(&leaf.op)
-            && leaf.value.is_some()
-    })
+    constrains_tenant(filter, tenant_field)
+}
+
+/// The recursive tenant implication over one subtree. A conjunction
+/// constrains as soon as one conjunct constrains (`A and B` implies
+/// `C` whenever one operand implies `C`); a disjunction constrains
+/// only when every disjunct constrains (each `or` branch must scope
+/// its own satisfying rows to the tenant); a negation never
+/// constrains (the rows satisfying `not X` are not derivably scoped
+/// to the tenant, whatever `X` is). `and`/`or` are never empty: the
+/// wire grammar refuses empty operand lists.
+fn constrains_tenant(expr: &FilterExpr, tenant_field: &FieldName) -> bool {
+    match expr {
+        FilterExpr::Leaf(leaf) => {
+            leaf.field == *tenant_field
+                && TENANT_CONSTRAINING_OPS.contains(&leaf.op)
+                && leaf.value.is_some()
+        }
+        FilterExpr::And(operands) => operands
+            .iter()
+            .any(|operand| constrains_tenant(operand, tenant_field)),
+        FilterExpr::Or(operands) => operands
+            .iter()
+            .all(|operand| constrains_tenant(operand, tenant_field)),
+        FilterExpr::Not(_) => false,
+    }
 }
 
 /// The terminal entity id of one include path.
@@ -787,5 +811,184 @@ fn as_entity(definition: &Definition) -> Option<&crate::ir::EntityDef> {
     match definition {
         Definition::Entity(entity) => Some(entity),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::id::ParameterName;
+    use super::super::version;
+    use super::*;
+
+    fn attachment() -> QueryModelAttachment {
+        QueryModelAttachment::from_value(&serde_json::json!({
+            "schemaVersion": version::SCHEMA_VERSION,
+            "identity": version::IDENTITY,
+            "attachmentRevision": "1.0.0",
+            "projectId": "planner",
+            "modelRef": {
+                "modelVersion": "1.0.0",
+                "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "irRef": {
+                "identity": version::IR_IDENTITY,
+                "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "tenancy": [{ "entity": "planner.task", "field": "tenant" }],
+            "queries": [{
+                "query": "planner.q",
+                "source": "planner.task",
+                "cardinality": "one",
+                "consistency": "strong"
+            }]
+        }))
+        .expect("attachment")
+    }
+
+    fn leaf(field: &str, op: FilterOp) -> FilterExpr {
+        FilterExpr::Leaf(FilterLeaf {
+            field: FieldName::parse(field).expect("field"),
+            op,
+            value: None,
+        })
+    }
+
+    fn tenant_eq() -> FilterExpr {
+        FilterExpr::Leaf(FilterLeaf {
+            field: FieldName::parse("tenant").expect("field"),
+            op: FilterOp::Eq,
+            value: Some(FilterValue::Param(
+                ParameterName::parse("tenant_id").expect("param"),
+            )),
+        })
+    }
+
+    fn tenant_in_set() -> FilterExpr {
+        FilterExpr::Leaf(FilterLeaf {
+            field: FieldName::parse("tenant").expect("field"),
+            op: FilterOp::In,
+            value: Some(FilterValue::Literal(Literal::Set(vec![
+                Literal::Str("t1".to_owned()),
+                Literal::Str("t2".to_owned()),
+            ]))),
+        })
+    }
+
+    fn and(operands: Vec<FilterExpr>) -> FilterExpr {
+        FilterExpr::And(operands)
+    }
+
+    fn or(operands: Vec<FilterExpr>) -> FilterExpr {
+        FilterExpr::Or(operands)
+    }
+
+    fn not(operand: FilterExpr) -> FilterExpr {
+        FilterExpr::Not(Box::new(operand))
+    }
+
+    fn constrains(filter: &FilterExpr) -> bool {
+        filter_constrains(filter, &attachment(), "planner.task")
+    }
+
+    #[test]
+    fn tenant_eq_and_in_leaves_constrain() {
+        assert!(constrains(&tenant_eq()));
+        assert!(constrains(&tenant_in_set()));
+        assert!(constrains(&and(vec![
+            leaf("state", FilterOp::Eq),
+            tenant_eq()
+        ])));
+    }
+
+    #[test]
+    fn non_constraining_tenant_operators_refuse() {
+        for op in [FilterOp::Ne, FilterOp::NotIn, FilterOp::Le] {
+            let leaf = FilterExpr::Leaf(FilterLeaf {
+                field: FieldName::parse("tenant").expect("field"),
+                op,
+                value: Some(FilterValue::Literal(Literal::Str("t1".to_owned()))),
+            });
+            assert!(!constrains(&leaf), "{op:?} must not constrain");
+        }
+        for op in [FilterOp::IsNull, FilterOp::IsNotNull] {
+            assert!(
+                !constrains(&leaf("tenant", op)),
+                "{op:?} must not constrain"
+            );
+        }
+    }
+
+    #[test]
+    fn not_wrapped_tenant_leaf_refuses() {
+        assert!(!constrains(&not(tenant_eq())));
+        assert!(!constrains(&not(tenant_in_set())));
+        assert!(!constrains(&and(vec![
+            leaf("state", FilterOp::Eq),
+            not(tenant_eq())
+        ])));
+        // A negation never proves a tenant bound, even over a tenant
+        // comparison; negating an unrelated leaf taints nothing.
+        assert!(!constrains(&not(leaf("tenant", FilterOp::Eq))));
+        assert!(constrains(&and(vec![
+            not(leaf("state", FilterOp::Eq)),
+            tenant_eq()
+        ])));
+    }
+
+    #[test]
+    fn or_requires_every_branch_constrained() {
+        assert!(!constrains(&or(vec![
+            leaf("state", FilterOp::Eq),
+            tenant_eq()
+        ])));
+        assert!(!constrains(&or(vec![tenant_eq(), not(tenant_eq())])));
+        assert!(constrains(&or(vec![tenant_eq(), tenant_in_set()])));
+    }
+
+    #[test]
+    fn nested_or_and_not_mixes_judge_every_branch() {
+        // Each disjunct carries its own tenant conjunct: sound.
+        assert!(constrains(&or(vec![
+            and(vec![tenant_eq(), leaf("state", FilterOp::Eq)]),
+            and(vec![tenant_eq(), leaf("due", FilterOp::Le)]),
+        ])));
+        // One unconstrained disjunct admits foreign-tenant rows.
+        assert!(!constrains(&or(vec![
+            and(vec![tenant_eq(), leaf("state", FilterOp::Eq)]),
+            leaf("state", FilterOp::Eq),
+        ])));
+        // A factored tenant conjunct covers the whole disjunction.
+        assert!(constrains(&and(vec![
+            or(vec![
+                leaf("state", FilterOp::Eq),
+                leaf("rank", FilterOp::Le)
+            ]),
+            tenant_eq(),
+        ])));
+        // The tenant leaf buried in one unsound `or` branch constrains
+        // nothing.
+        assert!(!constrains(&and(vec![
+            or(vec![leaf("state", FilterOp::Eq), tenant_eq()]),
+            leaf("due", FilterOp::IsNotNull),
+        ])));
+        // Negation swallows every nested tenant leaf.
+        assert!(!constrains(&not(or(vec![
+            tenant_eq(),
+            and(vec![tenant_eq(), leaf("state", FilterOp::Eq)]),
+        ]))));
+        // A tenant conjunct survives an unrelated negated sibling.
+        assert!(constrains(&or(vec![
+            and(vec![tenant_eq(), not(leaf("state", FilterOp::Eq))]),
+            tenant_in_set(),
+        ])));
+    }
+
+    #[test]
+    fn entity_without_tenancy_never_constrains() {
+        assert!(!filter_constrains(
+            &tenant_eq(),
+            &attachment(),
+            "planner.project"
+        ));
     }
 }

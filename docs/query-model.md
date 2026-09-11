@@ -81,7 +81,12 @@ path segment is kind-checked against the bound Model.
 The attachment declares which entities are tenant-scoped and which
 field carries the tenant key. Under the strict profile, a query over
 a tenant-scoped source must constrain that field with `eq`/`in` in
-its filter (`query.tenant-filter-missing`, `LEK-QRY-007`), and an
+the logical sense: every row satisfying the filter must satisfy a
+tenant `eq`/`in` leaf. The check follows the filter structure — a
+tenant leaf under `not` constrains nothing, and every `or` branch
+must be tenant-constrained on its own, while one constraining
+`and` conjunct (for example a factored tenant leaf) covers the whole
+conjunction (`query.tenant-filter-missing`, `LEK-QRY-007`). An
 include whose terminal entity is tenant-scoped is refused unless the
 grammar can constrain it — the default profile stays silent.
 

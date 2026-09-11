@@ -240,6 +240,71 @@ fn strict_refuses_the_tenant_filter_omission() {
 }
 
 #[test]
+fn strict_refuses_the_not_wrapped_tenant_leaf() {
+    // `not(eq(tenant, ...))` selects rows outside the tenant: the
+    // leaf exists, but the negation unscopes it.
+    let temp = scratch_with_attachment("invalid/tenant-filter-not.json");
+    let dir = temp.path();
+    let mut value = attachment_value(dir);
+    repin_model(dir, &mut value);
+    save_attachment(dir, &value);
+
+    let strict = validate_err(dir, true);
+    assert!(strict.contains("query.tenant-filter-missing"), "{strict}");
+
+    let envelope = validate(dir, false);
+    assert_eq!(envelope["status"], "valid");
+}
+
+#[test]
+fn strict_refuses_the_or_branch_tenant_leaf() {
+    // One unconstrained disjunct admits rows from any tenant.
+    let temp = scratch_with_attachment("invalid/tenant-filter-or-branch.json");
+    let dir = temp.path();
+    let mut value = attachment_value(dir);
+    repin_model(dir, &mut value);
+    save_attachment(dir, &value);
+
+    let strict = validate_err(dir, true);
+    assert!(strict.contains("query.tenant-filter-missing"), "{strict}");
+
+    let envelope = validate(dir, false);
+    assert_eq!(envelope["status"], "valid");
+}
+
+#[test]
+fn strict_refuses_the_nested_unsound_or_branch() {
+    // A tenant leaf buried in one `or` branch of an `and` conjunct
+    // constrains nothing.
+    let temp = scratch_with_attachment("invalid/tenant-filter-nested.json");
+    let dir = temp.path();
+    let mut value = attachment_value(dir);
+    repin_model(dir, &mut value);
+    save_attachment(dir, &value);
+
+    let strict = validate_err(dir, true);
+    assert!(strict.contains("query.tenant-filter-missing"), "{strict}");
+
+    let envelope = validate(dir, false);
+    assert_eq!(envelope["status"], "valid");
+}
+
+#[test]
+fn strict_accepts_nested_sound_tenant_constraints() {
+    // Every `or` branch carries its own tenant conjunct, and the
+    // page query factors one tenant conjunct over its `or`.
+    let temp = scratch_with_attachment("valid/planner.queries.strict-safe-nested.json");
+    let dir = temp.path();
+    let mut value = attachment_value(dir);
+    repin_model(dir, &mut value);
+    save_attachment(dir, &value);
+
+    let envelope = validate(dir, true);
+    assert_eq!(envelope["status"], "valid");
+    assert_eq!(envelope["queryModel"]["queryCount"], 2);
+}
+
+#[test]
 fn strict_refuses_tenant_scoped_includes_without_a_path_filter() {
     let temp = scratch_with_attachment("valid/planner.queries.includes.json");
     let dir = temp.path();
