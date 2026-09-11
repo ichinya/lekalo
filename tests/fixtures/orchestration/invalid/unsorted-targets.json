@@ -1,0 +1,73 @@
+{
+  "schema_version": "lekalo/orchestration/v1.0.0",
+  "operation": "generate",
+  "mode": "apply",
+  "identity": "dev.lekalo.orchestration-report@1.0.0",
+  "project": "planner",
+  "lockDigest": "sha256:e03c96b2d58e715176dce3b91c80137ee5b819174384410bf336f9f89e893bed",
+  "locked": false,
+  "inputs": {
+    "modelVersion": "1.0.0",
+    "modelDigest": "sha256:2b1327521551a943c98c15afe91a503b18218aee9b877ba96dfe0f9e6e52d15c",
+    "irVersion": "0.1.0",
+    "irDigest": "sha256:e6dacf5c29a09141d4a9105648553ed875292d8ea8adfb39ddf7030ae383224d",
+    "revision": "sha256:fee2c3d841a0b65522696e3a17b493367bad3c1fc4a40d8f005428b81c713f6b"
+  },
+  "irEvidence": {
+    "path": ".lekalo/cache/ir/planner.json",
+    "digest": "sha256:e6dacf5c29a09141d4a9105648553ed875292d8ea8adfb39ddf7030ae383224d"
+  },
+  "scope": {
+    "modules": [],
+    "allModules": true
+  },
+  "targets": [
+    {
+      "target": "aa-fastapi",
+      "profile": "default",
+      "adapter": {
+        "id": "node-typescript",
+        "version": "0.1.0",
+        "digest": "sha256:54cefcd21a3a876db2aa8ea62ffc9e239dbf7902d543bb0cdeb91770aaaed85c"
+      },
+      "state": "applied",
+      "reasonCode": null,
+      "planId": "plan-8ddd476b29dbe718243224883944bd8bc8c684c6020ef30ac0821c025fdef8c0",
+      "writes": [
+        {
+          "path": "src/generated/node-typescript/planner.ts",
+          "action": "create",
+          "sha256": "sha256:f75e9087543d7b855037cd4ae9858cb9a5d987f910ff50acdfe0fa502c95a907"
+        }
+      ],
+      "manifestDigest": "sha256:0cb7f032684197e4874304ece6304573d7ce067ed5682dcca163c41f7d9f6f8c"
+    },
+    {
+      "target": "node-typescript",
+      "profile": "default",
+      "adapter": {
+        "id": "node-typescript",
+        "version": "0.1.0",
+        "digest": "sha256:54cefcd21a3a876db2aa8ea62ffc9e239dbf7902d543bb0cdeb91770aaaed85c"
+      },
+      "state": "applied",
+      "reasonCode": null,
+      "planId": "plan-8ddd476b29dbe718243224883944bd8bc8c684c6020ef30ac0821c025fdef8c0",
+      "writes": [
+        {
+          "path": "src/generated/node-typescript/planner.ts",
+          "action": "create",
+          "sha256": "sha256:f75e9087543d7b855037cd4ae9858cb9a5d987f910ff50acdfe0fa502c95a907"
+        }
+      ],
+      "manifestDigest": "sha256:0cb7f032684197e4874304ece6304573d7ce067ed5682dcca163c41f7d9f6f8c"
+    }
+  ],
+  "counts": {
+    "targets": 2,
+    "planned": 0,
+    "applied": 1,
+    "failed": 0
+  },
+  "verdict": "ready"
+}

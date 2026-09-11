@@ -324,7 +324,7 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
 
     let root_manifest =
         std::fs::read_to_string(workspace.join("Cargo.toml")).expect("read workspace Cargo.toml");
-    assert_eq!(root_manifest.matches("version = \"0.2.10\"").count(), 1);
+    assert_eq!(root_manifest.matches("version = \"0.2.13\"").count(), 1);
     for member in [
         "crates/lekalo-core/Cargo.toml",
         "crates/lekalo-cli/Cargo.toml",
@@ -341,7 +341,7 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
         assert!(!manifest.contains("0.2.7"));
         assert!(!manifest.contains("0.2.8"));
         assert!(!manifest.contains("0.2.9"));
-        assert!(!manifest.contains("0.2.10"));
+        assert!(!manifest.contains("0.2.13"));
         assert!(manifest.contains("version.workspace = true"));
     }
 }

@@ -180,6 +180,12 @@ enum Commands {
         /// Forbid any non-local candidate supply at the provider seam.
         #[arg(long)]
         offline: bool,
+        /// Discover this adapter program through the safe describe
+        /// handshake and pin it into the created lock (issue #91
+        /// catalog seam); the program vector follows `--`. Refused on
+        /// an existing lock as stale.
+        #[arg(trailing_var_arg = true)]
+        program_args: Vec<String>,
     },
     /// Preview a deterministic lock update, or apply one exact plan.
     Update {
@@ -245,17 +251,67 @@ enum Commands {
         /// the exact lock, inputs, adapters, and bytes; writes nothing.
         #[arg(long)]
         check: bool,
+        /// Demand the full locked inventory before any work (`--check`
+        /// and generation modes).
+        #[arg(long)]
+        locked: bool,
         /// Plan (with --dry-run) or apply (with --confirm) the
         /// deterministic clean of orphaned generated files.
         #[arg(long)]
         clean: bool,
-        /// Compute the clean plan without writing anything.
+        /// Compute the clean plan or the generation plan without
+        /// applying it.
         #[arg(long)]
         dry_run: bool,
         /// Apply the clean plan with this exact identity
         /// (`sha256:<64 lowercase hex>`).
         #[arg(long, value_name = "PLAN_ID")]
         confirm: Option<String>,
+        /// Absent with an adapter program selects every declared target.
+        #[arg(long, value_name = "TARGET")]
+        target: Vec<String>,
+        /// Scope the generation attribution to one module.
+        #[arg(long, value_name = "MODULE")]
+        module: Option<String>,
+        /// The adapter program and its arguments, spawned directly;
+        /// the vector follows `--` and its entry bytes must equal the
+        /// locked pins exactly.
+        #[arg(trailing_var_arg = true)]
+        program_args: Vec<String>,
+        /// Per-exchange adapter deadline in milliseconds.
+        #[arg(long, value_name = "MS", default_value_t = DEFAULT_SCAN_TIMEOUT_MS * 10)]
+        timeout_ms: u64,
+    },
+    /// Run the read-only verification pipeline over a validated project:
+    /// core validation, drift, per-target adapter validation, portable
+    Verify {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Verify this target id through its adapter; repeat for several
+        /// targets. Absent verifies every locked adapter.
+        #[arg(long, value_name = "TARGET")]
+        target: Vec<String>,
+        /// Scope the reported binding and scenario views to one module.
+        #[arg(long, value_name = "MODULE")]
+        module: Option<String>,
+        /// Resolve the affected scope from the working-tree changes.
+        #[arg(long)]
+        changed: bool,
+        /// Demand the full locked inventory before any work.
+        #[arg(long)]
+        locked: bool,
+        /// Summarize this project-relative trace manifest.
+        #[arg(long, value_name = "PATH")]
+        trace: Option<String>,
+        /// The adapter program and its arguments, spawned directly;
+        /// the vector follows `--` and is required for adapter
+        /// validation.
+        #[arg(trailing_var_arg = true)]
+        program_args: Vec<String>,
+        /// Per-exchange adapter deadline in milliseconds.
+        #[arg(long, value_name = "MS", default_value_t = DEFAULT_SCAN_TIMEOUT_MS * 10)]
+        timeout_ms: u64,
     },
     /// Adopt an existing repository: detection, a minimal canonical
     /// skeleton, and the no-overwrite adoption plan (issue #38).
@@ -910,7 +966,8 @@ fn main() -> ExitCode {
                 project,
                 check,
                 offline: _,
-            } => run_lock(project, check),
+                program_args,
+            } => run_lock(project, check, program_args),
             Commands::Update {
                 project,
                 dry_run,
@@ -952,10 +1009,45 @@ fn main() -> ExitCode {
             Commands::Generate {
                 project,
                 check,
+                locked,
                 clean,
                 dry_run,
                 confirm,
-            } => run_generate(project, check, clean, dry_run, confirm),
+                target,
+                module,
+                program_args,
+                timeout_ms,
+            } => run_generate(
+                project,
+                check,
+                locked,
+                clean,
+                dry_run,
+                confirm,
+                target,
+                module,
+                program_args,
+                timeout_ms,
+            ),
+            Commands::Verify {
+                project,
+                target,
+                module,
+                changed,
+                locked,
+                trace,
+                program_args,
+                timeout_ms,
+            } => run_verify(
+                project,
+                target,
+                module,
+                changed,
+                locked,
+                trace,
+                program_args,
+                timeout_ms,
+            ),
             Commands::Doctor {
                 project,
                 fix,
@@ -1322,11 +1414,69 @@ fn selection_for(project: &Option<String>) -> LoadSelection {
 
 /// Run `lekalo lock`: create a missing lock, or check an existing one and
 /// never update it. `--check` is the headless CI gate.
-fn run_lock(project: Option<String>, check: bool) -> DomainResult {
+fn run_lock(project: Option<String>, check: bool, program_args: Vec<String>) -> DomainResult {
     let selection = selection_for(&project);
-    match LockService::lock(
+    // The issue #91 catalog seam: an explicit adapter supply is
+    // discovered describe-only, resolved into the created lock through
+    // a request that names the discovered adapter id, and never touches
+    // an existing lock.
+    let supply = match program_args.split_first() {
+        Some((program, adapter_args)) => {
+            let root = match lekalo_core::orchestration::project_root(&selection) {
+                Ok(root) => root,
+                Err(result) => return result,
+            };
+            match lekalo_core::orchestration::AdapterSupply::new(
+                &root,
+                program,
+                adapter_args.to_vec(),
+            ) {
+                Ok(supply) => Some(supply),
+                Err(failure) => return DomainResult::from(&failure),
+            }
+        }
+        None => None,
+    };
+    let candidates;
+    let request = match supply.as_ref() {
+        Some(supply) => {
+            let root =
+                lekalo_core::orchestration::project_root(&selection).expect("root resolved above");
+            let mut client = lekalo_core::target_protocol::TargetClient::default();
+            let discovered = match lekalo_core::target_protocol::discovery::Discovery::run(
+                &mut client,
+                &supply.command,
+                &root,
+            ) {
+                Ok(discovered) => discovered,
+                Err(failure) => return DomainResult::from(&failure),
+            };
+            candidates = match lekalo_core::orchestration::candidate_supply(&discovered, supply) {
+                Ok(candidates) => candidates,
+                Err(failure) => return DomainResult::from(&failure),
+            };
+            match LockService::load_request(&selection) {
+                Ok(request) => request,
+                Err(failure) => return DomainResult::from(&failure),
+            }
+            .with_adapter(
+                lekalo_core::lockfile::types::ComponentId::parse(&discovered.adapter.id)
+                    .map_err(|failure| DomainResult::from(&failure))
+                    .expect("discovered adapter id is a valid component id"),
+            )
+        }
+        None => {
+            candidates = CandidateSet::empty();
+            match LockService::load_request(&selection) {
+                Ok(request) => request,
+                Err(failure) => return DomainResult::from(&failure),
+            }
+        }
+    };
+    match LockService::lock_with_request(
         &selection,
-        CandidateSet::empty(),
+        request,
+        candidates,
         LockRequirement::Optional,
         !check,
     ) {
@@ -2854,27 +3004,40 @@ fn requirements_query(report: &lekalo_core::requirements::Report, selector: &str
     }
 }
 
-/// Run `lekalo generate`: `--check` is the read-only drift gate,
-/// `--clean --dry-run` previews the deterministic clean plan, and
-/// `--clean --confirm sha256:<planId>` applies exactly that plan.
+/// Run `lekalo generate`: `--check` is the read-only drift gate (with
+/// the optional `--locked` inventory preflight), `--clean` previews and
+/// applies the deterministic orphan clean, and `--adapter` runs the
+/// issue #91 generation pipeline: bind the exact lock and inputs, plan
+/// through the target protocol, and — only without `--dry-run` —
+/// publish verified writes and replace the ownership manifest.
+#[allow(clippy::too_many_arguments)]
 fn run_generate(
     project: Option<String>,
     check: bool,
+    locked: bool,
     clean: bool,
     dry_run: bool,
     confirm: Option<String>,
+    targets: Vec<String>,
+    module: Option<String>,
+    program_args: Vec<String>,
+    timeout_ms: u64,
 ) -> DomainResult {
     // Exactly one mode; the clean modifiers belong to --clean only; a
     // mutating clean needs a bound preview identity, never a bare run.
-    if check == clean || (!clean && (dry_run || confirm.is_some())) {
-        return DomainResult::usage_error();
-    }
-    if clean {
-        if dry_run == confirm.is_some() {
+    let with_adapter = !program_args.is_empty();
+    if check {
+        // The drift gate takes no generation or clean modifiers.
+        if clean || dry_run || with_adapter || !targets.is_empty() || module.is_some() {
+            return DomainResult::usage_error();
+        }
+    } else if clean {
+        if with_adapter || !targets.is_empty() || module.is_some() || dry_run == confirm.is_some() {
             if dry_run {
                 return DomainResult::usage_error();
             }
-            // A mutating clean without a bound preview never ships by accident.
+            // A mutating clean without a bound preview never ships by
+            // accident.
             return DomainResult::from(&ArtifactFailure::PreviewRequired);
         }
         if let Some(plan_id) = &confirm {
@@ -2882,27 +3045,42 @@ fn run_generate(
                 return DomainResult::usage_error();
             }
         }
+    } else {
+        // The generation pipeline: the adapter program vector is the
+        // mandatory generation operand.
+        if !with_adapter && targets.is_empty() && module.is_none() && !dry_run {
+            return DomainResult::usage_error();
+        }
     }
     let selection = selection_for(&project);
     if check {
-        match GenerateService::check(&selection) {
+        if locked {
+            // The `--locked` drift gate refuses an inventory that does
+            // not carry every locked component before reading bytes.
+            if let Err(result) = lekalo_core::orchestration::locked_check(&selection) {
+                return result;
+            }
+        }
+        return match GenerateService::check(&selection) {
             Ok(receipt) => DomainResult::receipt(
                 serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
                 check_human(&receipt),
             ),
             Err(failure) => DomainResult::from(&failure),
+        };
+    }
+    if clean {
+        if dry_run {
+            return match GenerateService::clean_plan(&selection) {
+                Ok(receipt) => DomainResult::receipt(
+                    serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+                    clean_human("preview", &receipt.plan_id, receipt.count),
+                ),
+                Err(failure) => DomainResult::from(&failure),
+            };
         }
-    } else if dry_run {
-        match GenerateService::clean_plan(&selection) {
-            Ok(receipt) => DomainResult::receipt(
-                serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
-                clean_human("preview", &receipt.plan_id, receipt.count),
-            ),
-            Err(failure) => DomainResult::from(&failure),
-        }
-    } else {
         let plan_id = confirm.as_deref().expect("exclusivity checked above");
-        match GenerateService::clean_apply(&selection, plan_id) {
+        return match GenerateService::clean_apply(&selection, plan_id) {
             Ok(receipt) => {
                 let verb = if receipt.changed {
                     "applied"
@@ -2915,8 +3093,110 @@ fn run_generate(
                 )
             }
             Err(failure) => DomainResult::from(&failure),
-        }
+        };
     }
+    // The generation pipeline: an adapter program is mandatory.
+    let Some((program, adapter_args)) = program_args.split_first() else {
+        return DomainResult::usage_error();
+    };
+    let root = match lekalo_core::orchestration::project_root(&selection) {
+        Ok(root) => root,
+        Err(result) => return result,
+    };
+    let supply =
+        match lekalo_core::orchestration::AdapterSupply::new(&root, program, adapter_args.to_vec())
+        {
+            Ok(supply) => supply,
+            Err(failure) => return DomainResult::from(&failure),
+        };
+    lekalo_core::orchestration::generate(lekalo_core::orchestration::GenerateRequest {
+        selection: &selection,
+        targets,
+        module,
+        dry_run,
+        locked,
+        supply: Some(supply),
+        timeout_ms,
+    })
+}
+
+/// Run `lekalo verify` (issue #91): the read-only aggregation of the
+/// core validation, the drift gate, the per-target adapter validation,
+/// and the optional binding, scenario, and trace summaries. Nothing is
+/// ever written; the exit class distinguishes fail, degraded, and
+/// infrastructure/config errors.
+#[allow(clippy::too_many_arguments)]
+fn run_verify(
+    project: Option<String>,
+    targets: Vec<String>,
+    module: Option<String>,
+    changed: bool,
+    locked: bool,
+    trace: Option<String>,
+    program_args: Vec<String>,
+    timeout_ms: u64,
+) -> DomainResult {
+    let selection = selection_for(&project);
+    // The affected scope of a `--changed` run: resolved here through the
+    // accepted Git handoff, consumed as plain module ids by the core.
+    let mut changed_modules = Vec::new();
+    if changed {
+        let root = match lekalo_core::orchestration::project_root(&selection) {
+            Ok(root) => root,
+            Err(result) => return result,
+        };
+        let compilation = match compile_selection(&selection) {
+            Ok(compilation) => compilation,
+            Err(result) => return result,
+        };
+        let set = match git_input::changed_input_set(
+            &root,
+            None,
+            None,
+            true,
+            &source_paths_of(&compilation),
+        ) {
+            Ok(set) => set,
+            Err(failure) => return DomainResult::invalid(failure.diagnostic_set()),
+        };
+        for entry in set.entries() {
+            for symbol in entry.symbol_ids() {
+                if let Some(module) = symbol.split('.').next() {
+                    if !changed_modules.iter().any(|known| known == module) {
+                        changed_modules.push(module.to_owned());
+                    }
+                }
+            }
+        }
+        changed_modules.sort();
+    }
+    let supply = match program_args.split_first() {
+        Some((program, adapter_args)) => {
+            let root = match lekalo_core::orchestration::project_root(&selection) {
+                Ok(root) => root,
+                Err(result) => return result,
+            };
+            match lekalo_core::orchestration::AdapterSupply::new(
+                &root,
+                program,
+                adapter_args.to_vec(),
+            ) {
+                Ok(supply) => Some(supply),
+                Err(failure) => return DomainResult::from(&failure),
+            }
+        }
+        None => None,
+    };
+    lekalo_core::orchestration::verify(lekalo_core::orchestration::VerifyRequest {
+        selection: &selection,
+        targets,
+        module,
+        changed_modules,
+        locked,
+        trace,
+        supply,
+        timeout_ms,
+    })
 }
 
 /// The stable human summary of a drift check.

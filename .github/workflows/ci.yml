@@ -59,6 +59,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-target-profile-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-requirements-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-implementation-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-orchestration-contracts.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites

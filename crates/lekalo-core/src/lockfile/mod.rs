@@ -30,7 +30,7 @@ pub mod resolution;
 pub mod types;
 pub mod verify;
 
-pub use verify::{LockRequirement, LockVerdict, RuntimeInventory};
+pub use verify::{LockRequirement, LockVerdict, LockVerifier, RuntimeInventory};
 
 use std::borrow::Cow;
 

@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.2.10. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.2.13. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -37,9 +37,13 @@ lekalo graph show SYMBOL [--project DIR]
 lekalo graph callers SYMBOL [--transitive] [--project DIR]
 lekalo graph path FROM TO [--project DIR]
 lekalo graph export [--format json] [--spans] [--project DIR]
-lekalo generate --check [--project DIR]
+lekalo generate --check [--locked] [--project DIR]
 lekalo generate --clean --dry-run [--project DIR]
 lekalo generate --clean --confirm sha256:PLAN_ID [--project DIR]
+lekalo generate [--target TARGET]... [--module MODULE] [--dry-run] [--locked]
+                -- PROGRAM [ARGS...] [--project DIR]
+lekalo verify [--target TARGET]... [--module MODULE] [--changed] [--locked]
+              [--trace PATH] [-- PROGRAM [ARGS...]] [--project DIR]
 lekalo inspect SYMBOL [--include SECTIONS] [--project DIR]
 lekalo impact SYMBOL [--depth N] [--relation KIND] [--profile default|strict] [--project DIR]
 lekalo impact --changed [--base REF] [--head REF] [--worktree] [--project DIR]
@@ -281,14 +285,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.2.10"
+  "version": "0.2.13"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.2.10`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.2.13`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph

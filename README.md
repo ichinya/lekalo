@@ -254,6 +254,26 @@ traceability bound to the exact inputs revision. See
 [ADR-0015](docs/adr/0015-artifact-ownership-manifest.md), and
 `contracts/artifact-manifest.schema.v1.0.0.json`.
 
+## Generate and verify orchestration
+
+Issue #91 unifies the M2 seams into two core commands. `lekalo generate
+--adapter PROGRAM` binds the exact lock, inputs, and adapter, plans
+every write through the `lekalo.target/v1` protocol, and — only on an
+explicit apply — publishes protocol-verified writes and replaces the
+ownership manifest atomically; `lekalo verify` aggregates the read-only
+validation, drift, per-target adapter validation, and the optional
+binding, scenario, and trace summaries into one receipt where required
+and optional components stay distinguished and partial success is never
+full success. The receipts are published as
+`contracts/orchestration-report.schema.v1.0.0.json`; the details live
+in [docs/orchestration.md](docs/orchestration.md),
+[ADR-0038](docs/adr/0038-generate-verify-orchestration.md), and the
+hermetic fixtures under `tests/fixtures/orchestration/`.
+
+```sh
+node scripts/test-orchestration-contracts.mjs
+```
+
 ## Semantic validation
 
 Issue #12 implements `lekalo validate` over the typed IR: phase-ordered
@@ -576,8 +596,8 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #42 carries prospective product 0.2.10
-(issue #40 carried prospective product 0.2.9; issue #30 carried prospective
+independent of product releases; issue #91 carries prospective product 0.2.13 (issue #42 carried
+prospective product 0.2.10; issue #40 carried prospective product 0.2.9; issue #30 carried prospective
 product 0.2.8; issue #92 carried prospective product 0.2.7; issue #39
 published product 0.2.6, annotated tag `0.2.6` on `80a815a`); (issue #31
 published product 0.2.5; the accepted M2 line published products 0.2.0

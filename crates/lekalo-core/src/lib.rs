@@ -22,6 +22,7 @@ pub mod ir;
 pub mod loader;
 pub mod lockfile;
 pub mod observed;
+pub mod orchestration;
 pub mod project_fs;
 pub mod requirements;
 pub mod result;
