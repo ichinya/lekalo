@@ -9,6 +9,7 @@ through the shared `DomainResult` envelope. Issue #42 adds the three `bindings.*
 - [`contracts/diagnostic.schema.v1.0.0.json`](../contracts/diagnostic.schema.v1.0.0.json) — one diagnostic item,
 - [`contracts/diagnostic-registry.schema.v1.0.0.json`](../contracts/diagnostic-registry.schema.v1.0.0.json) — the registry schema,
 - [`contracts/diagnostic-registry.v1.22.0.json`](../contracts/diagnostic-registry.v1.22.0.json) — the current registry instance,
+- [`contracts/diagnostic-registry.v1.21.0.json`](../contracts/diagnostic-registry.v1.21.0.json) — the accepted predecessor instance (issue #64),
 - [`contracts/diagnostic-registry.v1.20.0.json`](../contracts/diagnostic-registry.v1.20.0.json) — the accepted predecessor instance (issue #42),
 - [`contracts/diagnostic-registry.v1.19.0.json`](../contracts/diagnostic-registry.v1.19.0.json) — the accepted predecessor instance (issue #40),
 - [`contracts/diagnostic-registry.v1.18.0.json`](../contracts/diagnostic-registry.v1.18.0.json) — the accepted predecessor instance (issue #30),

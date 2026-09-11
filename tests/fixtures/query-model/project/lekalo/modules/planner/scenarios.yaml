@@ -1,0 +1,9 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.today_page_scenario
+    kind: scenario
+    version: 1
+    description: Pins the paged today listing behavior
+    summary: Page through today's tasks and assert stable order.
+    covers:
+      - "planner.tasks_today"

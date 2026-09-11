@@ -1,0 +1,152 @@
+{
+  "schemaVersion": "lekalo/query-model/v1.0.0",
+  "identity": "dev.lekalo.query-model@1.0.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.1.0",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "tenancy": [
+    {
+      "entity": "planner.project",
+      "field": "tenant"
+    },
+    {
+      "entity": "planner.task",
+      "field": "tenant"
+    }
+  ],
+  "queries": [
+    {
+      "query": "planner.count_focused",
+      "source": "planner.task",
+      "cardinality": "one",
+      "consistency": "strong",
+      "filter": {
+        "or": [
+          {
+            "and": [
+              {
+                "field": "state",
+                "op": "eq",
+                "value": {
+                  "literal": { "kind": "enum-member", "value": "focused" }
+                }
+              },
+              {
+                "field": "tenant",
+                "op": "eq",
+                "value": { "param": "tenant_id" }
+              }
+            ]
+          },
+          {
+            "and": [
+              { "field": "due", "op": "is-not-null" },
+              {
+                "field": "tenant",
+                "op": "eq",
+                "value": { "param": "tenant_id" }
+              }
+            ]
+          }
+        ]
+      },
+      "cost": {
+        "maxRows": 1
+      },
+      "parameters": [
+        {
+          "name": "tenant_id",
+          "type": "planner.tenant_id"
+        }
+      ]
+    },
+    {
+      "query": "planner.tasks_today",
+      "source": "planner.task",
+      "cardinality": "page",
+      "consistency": "bounded",
+      "maxStaleness": 60,
+      "parameters": [
+        {
+          "name": "cursor_key",
+          "type": "planner.task_id"
+        },
+        {
+          "name": "tenant_id",
+          "type": "planner.tenant_id"
+        },
+        {
+          "name": "today",
+          "type": "planner.due_date"
+        }
+      ],
+      "filter": {
+        "and": [
+          {
+            "or": [
+              { "field": "due", "op": "is-not-null" },
+              {
+                "field": "state",
+                "op": "eq",
+                "value": {
+                  "literal": { "kind": "enum-member", "value": "focused" }
+                }
+              }
+            ]
+          },
+          {
+            "field": "due",
+            "op": "le",
+            "value": { "param": "today" }
+          },
+          {
+            "field": "tenant",
+            "op": "eq",
+            "value": { "param": "tenant_id" }
+          }
+        ]
+      },
+      "sort": [
+        {
+          "field": "due",
+          "direction": "asc"
+        },
+        {
+          "field": "task_id",
+          "direction": "asc"
+        }
+      ],
+      "pagination": {
+        "strategy": "cursor",
+        "limit": 50,
+        "keyParameter": "cursor_key"
+      },
+      "selection": [
+        {
+          "field": "state"
+        },
+        {
+          "field": "due",
+          "as": "due_at"
+        }
+      ],
+      "policies": [
+        "planner.task_read"
+      ],
+      "scenarios": [
+        "planner.today_page_scenario"
+      ],
+      "cost": {
+        "maxRows": 10000,
+        "expensive": false
+      }
+    }
+  ]
+}

@@ -22,10 +22,10 @@ pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@1.22.0";
 /// (issue #30, the reserved `implementation.*` family; 1.17.0 stays
 /// reserved by its parallel owner and is not part of this line) ->
 /// 1.19.0 (issue #40, the contracted.* family) -> 1.20.0 (issue #42,
-/// the reserved bindings.* family: proposal-unknown, ambiguous, and
-/// plan-mismatch) -> 1.22.0 (issue #65, the reserved storage.* family
-/// LEK-STO-001..007; 1.21.0 stays reserved by its parallel owner and
-/// is not part of this line).
+/// the reserved `bindings.*` family: proposal-unknown, ambiguous, and
+/// plan-mismatch) -> 1.21.0 (issue #64, the reserved `query.*` family
+/// for the declarative query model) -> 1.22.0 (issue #65, the reserved
+/// `storage.*` family LEK-STO-001..007).
 pub const REGISTRY_VERSION: &str = "1.22.0";
 
 /// The closed diagnostic schema version.

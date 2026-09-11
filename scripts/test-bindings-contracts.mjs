@@ -179,9 +179,9 @@ for (const required of [
 // 5. The diagnostic registry carries the bindings family over the
 //    accepted 1.16.0 predecessor.
 // ---------------------------------------------------------------------------
-const registry = read("contracts/diagnostic-registry.v1.20.0.json");
+const registry = read("contracts/diagnostic-registry.v1.21.0.json");
 const registry116 = read("contracts/diagnostic-registry.v1.16.0.json");
-if (registry.registry_version !== "1.20.0") fail("registry-version", registry.registry_version);
+if (registry.registry_version !== "1.21.0") fail("registry-version", registry.registry_version);
 const bindingsRules = registry.entries.filter((entry) => entry.id.startsWith("bindings."));
 if (bindingsRules.length !== 3) fail("bindings-rule-count", bindingsRules.length);
 for (const entry of bindingsRules) {

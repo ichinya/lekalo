@@ -1,0 +1,9 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.task_read
+    kind: policy
+    version: 1
+    description: Task reads stay inside the actor tenant
+    applies_to:
+      - "planner.focus_task"
+    decision: allow
