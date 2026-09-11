@@ -106,8 +106,11 @@ fn is_symbol_byte(byte: u8) -> bool {
 
 /// The closed target-symbol reference grammar: bounded, printable, no
 /// whitespace or shell metacharacters, no traversal dots, and no
-/// scheme-like prefix (`exec:`, `file:`, `https:`, ...). The returned
-/// tag is a fixed refusal reason.
+/// scheme-like prefix (`exec:`, `file:`, `https:`, ...). The prefix
+/// before the first `:` counts as scheme-shaped when it is a run of
+/// ASCII alphanumerics; it is refused when that run lowercased matches
+/// one of the reserved spellings, in any casing.
+/// The returned tag is a fixed refusal reason.
 pub(crate) fn check_target_symbol(text: &str) -> Result<(), &'static str> {
     let bytes = text.as_bytes();
     if !(3..=256).contains(&bytes.len()) {
@@ -127,8 +130,15 @@ pub(crate) fn check_target_symbol(text: &str) -> Result<(), &'static str> {
         let prefix = &text[..colon];
         let scheme_shaped = !prefix.is_empty()
             && prefix.len() <= 11
-            && prefix.bytes().all(|byte| byte.is_ascii_lowercase());
-        if scheme_shaped && REFUSED_SCHEMES.contains(&prefix) {
+            && prefix.bytes().all(|byte| byte.is_ascii_alphanumeric());
+        if scheme_shaped
+            && REFUSED_SCHEMES.iter().any(|scheme| {
+                scheme.len() == prefix.len()
+                    && scheme
+                        .bytes()
+                        .eq(prefix.bytes().map(|byte| byte.to_ascii_lowercase()))
+            })
+        {
             return Err("scheme");
         }
     }
