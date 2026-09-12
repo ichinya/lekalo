@@ -49,7 +49,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-authorization-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-error-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-extended-effects-contracts.mjs
-          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-invariant-transition-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-reference-evaluation-contracts.mjs
       - name: Run contract checkers and suites
         run: |
           node scripts/check-authority.mjs

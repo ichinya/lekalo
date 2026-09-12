@@ -1,0 +1,4 @@
+{"schema_version":"1.0.0","definitions":[
+{"id":"board.effect_focus_set","kind":"effect","version":1,"description":"Update the focused planning row","operation":"update","entity":"board.user_task_planning","emits":["board.event.focus_changed"]},
+{"id":"board.command.focus_task","kind":"command","version":1,"description":"Focus one task for a user","input":[{"name":"task_id","type":{"ref":"board.task_id"},"required":true},{"name":"user_id","type":{"ref":"board.user_name"},"required":true}],"effects":["board.effect_focus_set"]}
+]}

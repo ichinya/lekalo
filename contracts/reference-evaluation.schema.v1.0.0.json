@@ -1,0 +1,317 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/reference-evaluation.schema.v1.0.0.json",
+  "title": "Lekalo Reference Evaluation Trace",
+  "description": "One deterministic in-memory reference evaluation of one validated Scenario IR against one exact pinned compiled IR, one pinned invariant-transition attachment, and one pinned error registry (issue #107). The trace is a conformance oracle artifact for Node/PHP/Go adapters: it never claims production equivalence and never carries host, wall-clock, or randomness values. Canonical form is compact UTF-8 JSON with byte-sorted object keys and no trailing newline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "semantics",
+    "scenario",
+    "modelVersion",
+    "irDigest",
+    "attachmentRevision",
+    "capabilities",
+    "status",
+    "steps",
+    "effects",
+    "effectDigest",
+    "state",
+    "stateDigest",
+    "assertions"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "lekalo/reference-evaluation/v1.0.0" },
+    "identity": { "const": "dev.lekalo.reference-evaluation@1.0.0" },
+    "semantics": { "const": "dev.lekalo.reference-semantics@1.0.0" },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "id", "version"],
+      "properties": {
+        "digest": { "$ref": "#/$defs/sha256" },
+        "id": { "$ref": "#/$defs/semanticId" },
+        "version": { "$ref": "#/$defs/semVer" }
+      }
+    },
+    "modelVersion": { "enum": ["0.1.0", "1.0.0"] },
+    "irDigest": { "$ref": "#/$defs/sha256" },
+    "attachmentRevision": { "$ref": "#/$defs/semVer" },
+    "refusal": {
+      "description": "Present exactly when the pinned inputs disagree and no step ran.",
+      "enum": [
+        "ir-pin-mismatch",
+        "attachment-ir-mismatch",
+        "model-pin-mismatch"
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["absent", "supported"],
+      "properties": {
+        "absent": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 9,
+          "maxItems": 9,
+          "items": {
+            "enum": [
+              "reference.core/authorization",
+              "reference.core/contract-match",
+              "reference.core/expression",
+              "reference.core/fixture",
+              "reference.core/fixture-digest",
+              "reference.core/job-execution",
+              "reference.core/pagination",
+              "reference.core/query-filter",
+              "reference.core/race-schedule"
+            ]
+          }
+        },
+        "supported": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "enum": [
+              "reference.core/command-transition",
+              "reference.core/effect-log",
+              "reference.core/given-state",
+              "reference.core/id-source",
+              "reference.core/idempotency",
+              "reference.core/invariants",
+              "reference.core/query-read",
+              "reference.core/rollback"
+            ]
+          }
+        }
+      }
+    },
+    "status": { "enum": ["pass", "fail", "unsupported"] },
+    "steps": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/givenRecord" },
+          { "$ref": "#/$defs/whenRecord" }
+        ]
+      }
+    },
+    "effects": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/effectRecord" }
+    },
+    "effectDigest": { "$ref": "#/$defs/sha256" },
+    "state": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/rowSnapshot" }
+    },
+    "stateDigest": { "$ref": "#/$defs/sha256" },
+    "assertions": {
+      "type": "array",
+      "maxItems": 512,
+      "items": { "$ref": "#/$defs/assertionRecord" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "refusal": { "type": "string" } },
+        "required": ["refusal"]
+      },
+      "then": {
+        "properties": { "status": { "const": "unsupported" } }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semVer": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "semanticId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,2}$"
+    },
+    "fieldName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "stepId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "typedValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": {
+          "enum": [
+            "null",
+            "boolean",
+            "integer",
+            "string",
+            "decimal",
+            "date",
+            "datetime",
+            "uuid",
+            "uri",
+            "list",
+            "object"
+          ]
+        },
+        "value": {}
+      }
+    },
+    "givenRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stepId", "kind", "status"],
+      "properties": {
+        "stepId": { "$ref": "#/$defs/stepId" },
+        "kind": { "enum": ["state", "fixture", "actor", "clock", "id-source"] },
+        "status": {
+          "description": "established, or the fixed unsupported reason.",
+          "enum": ["established", "fixture", "entity-unknown", "identity-incomplete"]
+        },
+        "entity": { "$ref": "#/$defs/semanticId" },
+        "row": { "type": "string", "minLength": 2 }
+      }
+    },
+    "whenRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stepId",
+        "role",
+        "operation",
+        "outcome",
+        "clock",
+        "effects",
+        "derivedIds"
+      ],
+      "properties": {
+        "stepId": { "$ref": "#/$defs/stepId" },
+        "role": { "const": "when" },
+        "operation": { "$ref": "#/$defs/semanticId" },
+        "outcome": { "enum": ["ok", "error", "unsupported"] },
+        "output": { "$ref": "#/$defs/typedValue" },
+        "token": {
+          "enum": [
+            "row-not-found",
+            "precondition-failed",
+            "invariant-violated",
+            "query-empty",
+            "query-ambiguous"
+          ]
+        },
+        "reason": { "type": "string", "pattern": "^[a-z0-9-]{3,64}$" },
+        "declared": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_./-]*[a-z0-9_-]$"
+          }
+        },
+        "violations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/semanticId" }
+        },
+        "transition": { "$ref": "#/$defs/semanticId" },
+        "stateSpace": { "$ref": "#/$defs/semanticId" },
+        "clock": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+        },
+        "replayOf": { "$ref": "#/$defs/stepId" },
+        "effects": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "derivedIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/typedValue" }
+        }
+      }
+    },
+    "effectRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "step", "kind", "fields"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "step": { "$ref": "#/$defs/stepId" },
+        "kind": { "enum": ["entity_write", "event_intent", "job_intent"] },
+        "entity": { "$ref": "#/$defs/semanticId" },
+        "operation": { "enum": ["create", "update", "delete"] },
+        "row": { "type": "string", "minLength": 2 },
+        "fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/fieldName" }
+        },
+        "target": { "$ref": "#/$defs/semanticId" }
+      }
+    },
+    "rowSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity", "fields", "key"],
+      "properties": {
+        "entity": { "$ref": "#/$defs/semanticId" },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "value"],
+            "properties": {
+              "field": { "$ref": "#/$defs/fieldName" },
+              "value": { "$ref": "#/$defs/typedValue" }
+            }
+          }
+        },
+        "key": { "type": "string", "minLength": 2 }
+      }
+    },
+    "assertionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "observes", "stepId", "verdict"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "result",
+            "error",
+            "entity_state",
+            "emitted",
+            "forbidden_effect",
+            "authorization",
+            "idempotency",
+            "contract_match",
+            "deterministic_fixture",
+            "unsupported"
+          ]
+        },
+        "observes": { "$ref": "#/$defs/stepId" },
+        "stepId": { "$ref": "#/$defs/stepId" },
+        "verdict": { "enum": ["pass", "fail", "unsupported"] },
+        "reason": { "type": "string", "pattern": "^[a-z0-9-]{3,64}$" }
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{"schema_version":"1.0.0","definitions":[
+{"id":"board.task_id","kind":"scalar","version":1,"description":"Stable task identifier","base":"uuid"},
+{"id":"board.user_name","kind":"scalar","version":1,"description":"User identifier text","base":"string"},
+{"id":"board.timestamp","kind":"scalar","version":1,"description":"UTC event instant","base":"datetime"},
+{"id":"board.user_task_planning","kind":"entity","version":1,"description":"Per-user task focus row","fields":[{"name":"task_id","type":{"ref":"board.task_id"},"required":true},{"name":"user_id","type":{"ref":"board.user_name"},"required":true},{"name":"focused_at","type":{"optional":{"ref":"board.timestamp"}}}],"identity":["task_id","user_id"]}
+]}

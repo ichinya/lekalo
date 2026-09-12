@@ -345,6 +345,28 @@ evidence. See [docs/invariant-transition.md](docs/invariant-transition.md),
 [ADR-0024](docs/adr/0024-invariant-transition.md), and the hermetic
 fixtures under `tests/fixtures/invariant-transition/`.
 
+## The in-memory reference evaluator
+
+Issue #107 implements the deterministic reference evaluation of one
+validated Scenario IR against the exact pinned compiled IR, the pinned
+#63 invariant-transition attachment, and the pinned #62 error registry:
+`given` state, deterministic clocks and ID sources in memory, `when`
+invocations as staged all-or-nothing transactions with preconditions,
+assignments, post-write invariant enforcement and rollback, declared
+event-intent capture, durable-key idempotent replay, reference reads
+with exact-match filters, and closed typed assertions over results,
+errors, state, the effect log, and explicit `unsupported` semantics.
+Every trace pins the scenario digest, Model version, IR digest, and
+attachment revision it interpreted plus the separate reference-semantics
+identity, serializes canonically (byte-sorted keys, behavioral order,
+no host or wall-clock values), and never claims production equivalence.
+The contract, guarantees, and limits live in
+[docs/reference-evaluation.md](docs/reference-evaluation.md),
+[ADR-0041](docs/adr/0041-reference-evaluation.md), and the hermetic
+fixtures under `tests/fixtures/reference-evaluation/`; the independent
+Node gate `scripts/test-reference-evaluation-contracts.mjs` runs in the
+CI pinned-Ajv list.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -353,8 +375,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #63 carries prospective product
-0.1.31 (issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
+independent of product releases; issue #107 carries prospective product
+0.2.16 (issue #63 carried prospective product
+0.1.31; issue #26 published product 0.1.30 (annotated tag `v0.1.30` on
 `9020558`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on
 `de6f8a7`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on
 `967bf52`); issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
