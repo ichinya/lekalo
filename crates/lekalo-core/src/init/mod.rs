@@ -11,6 +11,7 @@
 //! skeleton must pass the normal load and validation path; a gate failure
 //! rolls every created file back before the gate's failure passes through.
 
+pub mod bootstrap;
 pub mod detect;
 pub mod diagnostic;
 pub mod plan;
@@ -308,11 +309,13 @@ fn derive_project_id(root: &Path, explicit: Option<&str>) -> Result<ProjectId, &
     Err("derive-project-id")
 }
 
-/// The post-write gate: the normal load and validation path, in process.
+/// The post-write gate of every init-family apply (adoption and
+/// greenfield bootstrap): the normal load and validation path, in
+/// process.
 ///
 /// Returns the loaded Model contract version on success. Any failure is
 /// the exact envelope `lekalo load`/`lekalo validate` would produce.
-fn adoption_gate(root: &Path) -> Result<String, DomainResult> {
+fn post_write_gate(root: &Path) -> Result<String, DomainResult> {
     match crate::project_fs::Fs::validate_project(root) {
         crate::project_fs::StructureOutcome::Valid(_) => {}
         outcome => return Err(structure_failure(outcome)),
@@ -541,7 +544,7 @@ pub fn adopt(request: &AdoptRequest) -> DomainResult {
     // failure rolls exactly the journaled creations back first; a
     // complete rollback passes the original gate failure through, and a
     // successful apply never rolls back.
-    let model_version = match adoption_gate(&root) {
+    let model_version = match post_write_gate(&root) {
         Ok(model_version) => model_version,
         Err(result) => {
             let remaining = journal.rollback(&root);

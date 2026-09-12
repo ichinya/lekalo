@@ -87,6 +87,26 @@ pub struct ProjectIdProvenance {
     pub confidence: Confidence,
 }
 
+impl ProjectIdProvenance {
+    /// The provenance of an explicit `--project-id`.
+    pub fn explicit() -> Self {
+        Self {
+            source: "--project-id".to_owned(),
+            original: None,
+            confidence: Confidence::High,
+        }
+    }
+
+    /// The provenance of a sanitized bootstrap directory name.
+    pub fn directory_name(original: String) -> Self {
+        Self {
+            source: "directory-name".to_owned(),
+            original: Some(original),
+            confidence: Confidence::Medium,
+        }
+    }
+}
+
 /// One externally owned layout detected at the adopted root.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Layout {
@@ -226,4 +246,193 @@ pub struct AdoptReceipt {
     /// The post-write gate outcome; `None` when nothing was written.
     pub gate: Option<Gate>,
     pub detection: Detection,
+}
+
+/// One template-version record: which in-code bootstrap template
+/// produced an artifact, and which product version that template
+/// ships as. The templates version with the product; the receipt is
+/// the durable record of what generated the tree.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TemplateRecord {
+    /// The closed artifact family (`project`, `module`, `target`,
+    /// `gitignore`, `editor-hints`).
+    pub artifact: &'static str,
+    /// The template identity (`lekalo/init/<artifact>`).
+    pub template: &'static str,
+    /// The product version the template ships as.
+    pub version: &'static str,
+}
+
+impl TemplateRecord {
+    /// The `lekalo/init/project` record.
+    pub const fn project(version: &'static str) -> Self {
+        Self {
+            artifact: "project",
+            template: "lekalo/init/project",
+            version,
+        }
+    }
+
+    /// The `lekalo/init/module` record.
+    pub const fn module(version: &'static str) -> Self {
+        Self {
+            artifact: "module",
+            template: "lekalo/init/module",
+            version,
+        }
+    }
+
+    /// The `lekalo/init/target` record.
+    pub const fn target(version: &'static str) -> Self {
+        Self {
+            artifact: "target",
+            template: "lekalo/init/target",
+            version,
+        }
+    }
+
+    /// The `lekalo/init/gitignore` record.
+    pub const fn gitignore(version: &'static str) -> Self {
+        Self {
+            artifact: "gitignore",
+            template: "lekalo/init/gitignore",
+            version,
+        }
+    }
+
+    /// The `lekalo/init/editor-hints` record.
+    pub const fn editor_hints(version: &'static str) -> Self {
+        Self {
+            artifact: "editor-hints",
+            template: "lekalo/init/editor-hints",
+            version,
+        }
+    }
+}
+
+/// The closed success wire object of greenfield `lekalo init`.
+/// Field order is normative.
+#[derive(Clone, Debug, Serialize)]
+pub struct BootstrapReceipt {
+    /// Always `valid`.
+    pub status: &'static str,
+    /// Always `init`.
+    pub operation: &'static str,
+    /// `dry-run` or `apply`.
+    pub mode: &'static str,
+    /// Whether this invocation wrote any bytes.
+    pub changed: bool,
+    /// The closed root basis (`explicit`, `invocation-directory`).
+    #[serde(rename = "rootBasis")]
+    pub root_basis: &'static str,
+    /// The bootstrap project's canonical project id.
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    /// Where that id came from.
+    #[serde(rename = "projectIdSource")]
+    pub project_id_source: ProjectIdProvenance,
+    /// The semantic id of the first module.
+    pub module: String,
+    /// The canonical model frontend of the generated documents
+    /// (`yaml` or `json`).
+    pub frontend: &'static str,
+    /// The explicitly selected target, when `--target` was passed.
+    pub target: Option<String>,
+    /// The explicitly selected adapter profile, when `--profile` was
+    /// passed (requires `--target`; the #28 token grammar). Recorded
+    /// only — never executed or resolved against an adapter.
+    #[serde(rename = "adapterProfile")]
+    pub adapter_profile: Option<String>,
+    /// Whether the opt-in editor/schema hints were planned.
+    #[serde(rename = "editorHints")]
+    pub editor_hints: bool,
+    /// Artifacts this invocation added (creates plus appends).
+    pub added: usize,
+    /// Planned artifacts already present with identical bytes.
+    pub unchanged: usize,
+    /// Planned artifacts blocked by the no-overwrite policy.
+    pub conflicting: usize,
+    /// Every planned artifact in canonical plan order.
+    pub writes: Vec<WriteEntry>,
+    /// The post-write gate outcome; `None` when nothing was written.
+    pub gate: Option<Gate>,
+    /// The template-version record of every planned artifact.
+    pub templates: Vec<TemplateRecord>,
+}
+
+impl BootstrapReceipt {
+    /// The stable one-line human summary.
+    pub fn human_summary(&self) -> String {
+        match self.mode {
+            "dry-run" => format!(
+                "init dry-run: {} planned write(s), {} unchanged, {} conflicting",
+                self.added, self.unchanged, self.conflicting
+            ),
+            _ => {
+                let gate = self
+                    .gate
+                    .as_ref()
+                    .map(|gate| format!("gate {}", gate.status))
+                    .unwrap_or_else(|| "no writes".to_owned());
+                format!(
+                    "init apply: {} added, {} unchanged, {} conflicting; {gate}",
+                    self.added, self.unchanged, self.conflicting
+                )
+            }
+        }
+    }
+}
+
+/// The closed success wire object of `lekalo module new`.
+/// Field order is normative.
+#[derive(Clone, Debug, Serialize)]
+pub struct ModuleReceipt {
+    /// Always `valid`.
+    pub status: &'static str,
+    /// Always `module`.
+    pub operation: &'static str,
+    /// `dry-run` or `apply`.
+    pub mode: &'static str,
+    /// Whether this invocation wrote any bytes.
+    pub changed: bool,
+    /// The new module's semantic id.
+    #[serde(rename = "moduleId")]
+    pub module_id: String,
+    /// The canonical model frontend of the generated document.
+    pub frontend: &'static str,
+    /// Documents this invocation added.
+    pub added: usize,
+    /// Planned documents already present with identical bytes.
+    pub unchanged: usize,
+    /// Planned documents blocked by the no-overwrite policy.
+    pub conflicting: usize,
+    /// Every planned write in canonical plan order.
+    pub writes: Vec<WriteEntry>,
+    /// The post-write gate outcome; `None` when nothing was written.
+    pub gate: Option<Gate>,
+    /// The template-version record of the planned artifact.
+    pub templates: Vec<TemplateRecord>,
+}
+
+impl ModuleReceipt {
+    /// The stable one-line human summary.
+    pub fn human_summary(&self) -> String {
+        match self.mode {
+            "dry-run" => format!(
+                "module new dry-run: {} planned write(s), {} unchanged, {} conflicting",
+                self.added, self.unchanged, self.conflicting
+            ),
+            _ => {
+                let gate = self
+                    .gate
+                    .as_ref()
+                    .map(|gate| format!("gate {}", gate.status))
+                    .unwrap_or_else(|| "no writes".to_owned());
+                format!(
+                    "module new apply: {} added, {} unchanged, {} conflicting; {gate}",
+                    self.added, self.unchanged, self.conflicting
+                )
+            }
+        }
+    }
 }

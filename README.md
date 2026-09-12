@@ -430,6 +430,26 @@ receives the resolved capabilities instead of arbitrary YAML. See
 [ADR-0029](docs/adr/0029-composable-target-profiles.md), and
 `contracts/target-profile.schema.v1.0.0.json`.
 
+## Bootstrap: `lekalo init` and `lekalo module new`
+
+Issue #97 creates a minimal greenfield Lekalo project in the
+invocation directory: the canonical skeleton (`lekalo/project.yaml`,
+the first empty module `lekalo/modules/<id>/module.yaml`, the optional
+`lekalo/targets/<id>.yaml` for an explicit `--target`, the managed
+`/.lekalo/` `.gitignore` line, and the opt-in `--editor-hints`
+schema mapping) and nothing else — no application code, no package or
+tool installation, no adapter execution, and no lock before explicit
+`lekalo lock` resolution. Every wizard decision with a contract home
+is a non-interactive flag (`--project-id`, `--module`,
+`--frontend yaml|json`, `--target`/`--profile`); `--dry-run` prints
+the machine-readable plan; a re-run reports
+unchanged/added/conflicting artifacts; existing files are never
+overwritten (the `.gitignore` line merges into user content). The
+applied skeleton passes the normal load/validate/doctor surfaces, and
+greenfield shares the adoption configuration semantics of issue #38
+verbatim. See [docs/bootstrap.md](docs/bootstrap.md) and
+[ADR-0039](docs/adr/0039-greenfield-init-bootstrap.md).
+
 ## Adoption: `lekalo init --adopt`
 
 Issue #38 connects Lekalo to an existing repository without moving
@@ -620,7 +640,8 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #91 carries prospective product 0.2.13
+independent of product releases; issue #97 carries prospective product 0.2.14
+(issue #91 carried prospective product 0.2.13
 (issue #65 carried prospective product 0.2.12; issue #64 carried prospective
 product 0.2.11; issue #42 carried prospective product 0.2.9; issue #30 carried prospective
 product 0.2.8; issue #92 carried prospective product 0.2.7; issue #39

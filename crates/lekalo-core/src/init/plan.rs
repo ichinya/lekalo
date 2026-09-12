@@ -106,6 +106,12 @@ pub(crate) fn build(
 enum JournalEntry {
     File(std::path::PathBuf),
     Dir(std::path::PathBuf),
+    /// A suffix appended to a pre-existing regular file; rollback
+    /// restores the exact original length by truncation.
+    Truncated {
+        path: std::path::PathBuf,
+        original_len: u64,
+    },
 }
 
 /// The created-path journal of one adoption apply: every entry this
@@ -126,18 +132,14 @@ impl Journal {
     pub(crate) fn rollback(&self, root: &Path) -> Vec<String> {
         let mut remaining = Vec::new();
         for entry in self.0.iter().rev() {
-            let (path, is_file) = match entry {
-                JournalEntry::File(path) => (path, true),
-                JournalEntry::Dir(path) => (path, false),
-            };
-            let result = if is_file {
-                std::fs::remove_file(path)
-            } else {
-                std::fs::remove_dir(path)
+            let result = match entry {
+                JournalEntry::File(path) => std::fs::remove_file(path),
+                JournalEntry::Dir(path) => std::fs::remove_dir(path),
+                JournalEntry::Truncated { path, original_len } => restore_len(path, *original_len),
             };
             if result.is_err() {
-                if let Ok(relative) = path.strip_prefix(root) {
-                    remaining.push(relative.to_string_lossy().replace('\\', "/"));
+                if let Some(relative) = logical_spelling(entry, root) {
+                    remaining.push(relative);
                 }
             }
         }
@@ -145,6 +147,40 @@ impl Journal {
         remaining.dedup();
         remaining
     }
+}
+
+/// The logical project-relative POSIX spelling of one journal entry's
+/// path, or `None` when the path does not live below `root`.
+fn logical_spelling(entry: &JournalEntry, root: &Path) -> Option<String> {
+    let path = match entry {
+        JournalEntry::File(path) | JournalEntry::Dir(path) => path,
+        JournalEntry::Truncated { path, .. } => path,
+    };
+    path.strip_prefix(root)
+        .ok()
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+}
+
+/// Restore a truncated journal entry to its exact pre-append length.
+///
+/// Truncation is the only safe rollback of an append: the file predates
+/// the apply, so its bytes are restored by cutting exactly what the
+/// append added. A file that is currently shorter than the recorded
+/// original length was replaced concurrently and fails closed instead
+/// of being zero-extended.
+fn restore_len(path: &Path, original_len: u64) -> Result<(), std::io::Error> {
+    let file = std::fs::OpenOptions::new().write(true).open(path)?;
+    let current = file.metadata()?.len();
+    if current < original_len {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "restore-length",
+        ));
+    }
+    if current > original_len {
+        file.set_len(original_len)?;
+    }
+    Ok(())
 }
 
 /// Create `relative` under `root` as a new file with exact bytes.
@@ -274,6 +310,99 @@ fn apply_with(
         }
     }
     ApplyOutcome::Applied(journal)
+}
+
+/// One planned append to a pre-existing regular file: logical
+/// project-relative POSIX path plus the exact suffix bytes to add.
+///
+/// The suffix is computed from the observed current bytes during
+/// preflight, so the append is deterministic for a given tree state and
+/// byte-stable on re-evaluation.
+#[derive(Debug)]
+pub(crate) struct PlannedAppend {
+    pub path: String,
+    pub suffix: Vec<u8>,
+}
+
+/// Append the planned suffix to the pre-existing file under `root`.
+///
+/// The caller has already classified the path as an append (a regular
+/// file exists and lacks the managed lines). Ownership is journaled the
+/// moment the append handle opens — before the first fallible byte
+/// write — with the exact original length, so any later failure
+/// restores the file by truncation, never by rewriting its bytes.
+fn append_with(
+    root: &Path,
+    planned: &PlannedAppend,
+    write: impl Fn(&mut std::fs::File, &[u8]) -> Result<(), std::io::Error>,
+    journal: &mut Journal,
+) -> Result<(), std::io::Error> {
+    let path = root.join(&planned.path);
+    let metadata = std::fs::symlink_metadata(&path)?;
+    if !metadata.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "append-target",
+        ));
+    }
+    let original_len = metadata.len();
+    let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
+    // Journal ownership immediately after the successful open: the
+    // entry is now a real mutation even if the byte write below fails,
+    // and the recorded length is the only exact rollback target.
+    journal.0.push(JournalEntry::Truncated {
+        path: path.clone(),
+        original_len,
+    });
+    let written = write(&mut file, &planned.suffix);
+    // Release the OS handle before the error can reach any rollback.
+    drop(file);
+    written
+}
+
+/// The bootstrap apply: every planned create first, then the planned
+/// append, all inside one exact mutation journal. A failure rolls the
+/// whole journal back in reverse order — the append is truncated away
+/// before any created path is removed.
+pub(crate) fn apply_bootstrap(
+    root: &Path,
+    files: &[PlannedFile],
+    append: Option<&PlannedAppend>,
+) -> ApplyOutcome {
+    let mut journal = Journal::new();
+    // A shared reference to the writer keeps one callable across the
+    // create loop and the append without moving it.
+    let write = &|file: &mut std::fs::File, bytes: &[u8]| file.write_all(bytes);
+    for file in files {
+        if let Err(error) = create_new(root, &file.path, &file.bytes, write, &mut journal) {
+            let detail: &'static str = match error.kind() {
+                std::io::ErrorKind::PermissionDenied => "create-parent",
+                std::io::ErrorKind::AlreadyExists => "already-exists",
+                _ => "create-file",
+            };
+            return failed_apply(root, journal, file.path.clone(), detail);
+        }
+    }
+    if let Some(planned) = append {
+        if let Err(error) = append_with(root, planned, write, &mut journal) {
+            let detail: &'static str = match error.kind() {
+                std::io::ErrorKind::PermissionDenied => "append-open",
+                std::io::ErrorKind::InvalidInput => "append-target",
+                _ => "append-file",
+            };
+            return failed_apply(root, journal, planned.path.clone(), detail);
+        }
+    }
+    ApplyOutcome::Applied(journal)
+}
+
+/// Roll the journal back and classify the outcome of one failed apply.
+fn failed_apply(root: &Path, journal: Journal, path: String, detail: &'static str) -> ApplyOutcome {
+    let remaining = journal.rollback(root);
+    if remaining.is_empty() {
+        return ApplyOutcome::WriteFailed { path, detail };
+    }
+    ApplyOutcome::RecoveryRequired { paths: remaining }
 }
 
 /// Read one planned path's current bytes for the preflight comparison.

@@ -41,15 +41,17 @@ const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf
 
 const itemSchema = read("contracts/diagnostic.schema.v1.0.0.json");
 const registrySchema = read("contracts/diagnostic-registry.schema.v1.0.0.json");
-const registry = read("contracts/diagnostic-registry.v1.22.0.json");
+const registry = read("contracts/diagnostic-registry.v1.24.0.json");
 // Predecessor custody: every accepted 1.16.0 rule must survive unchanged
 // in the successor; the integrated chain is additive end to end (issue #31
 // added the adapter conformance family as 1.15.0, issue #39 added the
-// observed family as 1.16.0, issue #30 added the implementation family as
-// 1.18.0 (1.17.0 stays reserved by its parallel owner), issue #40 added
+// observed family as 1.16.0, issue #30 added the implementation family
+// as 1.18.0 (1.17.0 stays reserved by its parallel owner), issue #40 added
 // the contracted family as 1.19.0, issue #42 added the bindings family
-// as 1.20.0, issue #64 adds the query family as 1.21.0, and issue #65
-// adds the storage family as the current 1.22.0).
+// as 1.20.0, issue #64 adds the query family as 1.21.0, issue #65
+// adds the storage family as 1.22.0, and issue #97 adds the greenfield
+// bootstrap family as the current 1.24.0 (1.23.0 stays reserved by its
+// parallel owner).
 const predecessor = read("contracts/diagnostic-registry.v1.16.0.json");
 const current = new Map(registry.entries.map((entry) => [entry.id, entry]));
 for (const entry of predecessor.entries) {
@@ -133,6 +135,11 @@ if (createHash("sha256").update(registry121Text).digest("hex") !== "13d1ce43b390
 const registry110 = JSON.parse(registry110Text);
 const registry111 = JSON.parse(registry111Text);
 const registry112 = JSON.parse(registry112Text);
+const registry122Text = readFileSync(resolve(root, "contracts/diagnostic-registry.v1.22.0.json"), "utf8").replace(/\r\n/g, "\n");
+if (createHash("sha256").update(registry122Text).digest("hex") !== "c1b5e27b3f3f7ecc23e3132ef4e771c1171232b77617dffd0846e2462d5ed5fd") {
+  fail("predecessor-custody");
+}
+const registry122 = JSON.parse(registry122Text);
 const registry113 = JSON.parse(registry113Text);
 const registry114 = JSON.parse(registry114Text);
 const registry115 = JSON.parse(registry115Text);
@@ -210,17 +217,45 @@ if (
 ) {
   fail("bindings-additions", bindingsAdditions.map((entry) => entry.id));
 }
-// 1.22.0 (issue #65) adds exactly the seven storage.* rules over frozen
+// 1.22.0 (issue #65) added exactly the seven storage.* rules over frozen
 // 1.21.0: input-invalid, domain-invalid, relation-invalid,
 // projection-invalid, mapping-invalid, diff-invalid, and export-limit.
-// Every accepted 1.21.0 rule survives verbatim and nothing else changed.
-if (!isAdditive(registry, registry121)) fail("predecessor-entry-drift");
-const storageAdditions = registry.entries.filter((entry) => !registry121.entries.some((old) => old.id === entry.id));
+// The frozen accepted 1.22.0 instance is the reference for those
+// checks; the current registry (1.24.0) additionally carries the
+// greenfield bootstrap family.
+if (!isAdditive(registry122, registry121)) fail("predecessor-entry-drift");
+const storageAdditions = registry122.entries.filter((entry) => !registry121.entries.some((old) => old.id === entry.id));
 if (
   storageAdditions.length !== 7 ||
   storageAdditions.some((entry) => !entry.id.startsWith("storage.") || !entry.code.startsWith("LEK-STO-"))
 ) {
   fail("storage-additions", storageAdditions.map((entry) => entry.id));
+}
+// 1.24.0 (issue #97) adds exactly the four init.bootstrap.* rules over
+// frozen 1.22.0: conflict, id-required, write-failed, and
+// recovery-required (1.23.0 stays reserved by its parallel owner).
+// Every accepted 1.22.0 rule survives verbatim and nothing else
+// changed.
+if (!isAdditive(registry, registry122)) fail("predecessor-entry-drift");
+const bootstrapAdditions = registry.entries.filter((entry) => !registry122.entries.some((old) => old.id === entry.id));
+if (
+  bootstrapAdditions.length !== 4 ||
+  bootstrapAdditions.some((entry) => !entry.id.startsWith("init.bootstrap-") || !entry.code.startsWith("LEK-INIT-")) ||
+  !bootstrapAdditions.some((entry) => entry.id === "init.bootstrap-conflict") ||
+  !bootstrapAdditions.some((entry) => entry.id === "init.bootstrap-id-required") ||
+  !bootstrapAdditions.some((entry) => entry.id === "init.bootstrap-write-failed") ||
+  !bootstrapAdditions.some((entry) => entry.id === "init.bootstrap-recovery-required")
+) {
+  fail("bootstrap-additions", bootstrapAdditions.map((entry) => entry.id));
+}
+// A missing or changed 1.22.0 rule must actually fail the additive check.
+const storageProbe = registry122.entries.find((entry) => entry.id === "storage.input-invalid");
+const missing124 = structuredClone(registry);
+missing124.entries = missing124.entries.filter((entry) => entry.id !== storageProbe.id);
+const changed124 = structuredClone(registry);
+changed124.entries.find((entry) => entry.id === storageProbe.id).allowed_statuses = ["valid"];
+if (isAdditive(missing124, registry122) || isAdditive(changed124, registry122)) {
+  fail("additive-negative-control");
 }
 // A missing or changed 1.19.0 rule must actually fail the additive check.
 const inheritedProbe = registry119.entries.find((entry) => entry.id === "contracted.unknown-symbol");

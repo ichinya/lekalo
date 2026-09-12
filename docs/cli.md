@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.2.13. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.2.14. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -17,7 +17,9 @@ with filesystem access and it never writes.
 
 ```text
 lekalo --version
-lekalo adapter test [--profile default|strict] [--report json|junit] [--repeats N] [--timeout-ms MS] PROGRAM [ARGS]...
+lekalo init [--project-id ID] [--module MODULE] [--frontend yaml|json] [--target TARGET [--profile PROFILE]]
+            [--editor-hints] [--project DIR] [--dry-run]
+lekalo module new ID [--frontend yaml|json] [--project DIR] [--dry-run]
 lekalo init --adopt [--target TARGET [--profile PROFILE]] [--project-id ID] [--project DIR] [--dry-run]
 lekalo scan --target TARGET [--profile PROFILE] [--timeout-ms MS] [--project DIR] PROGRAM [ARGS]...
 lekalo bindings list [--project DIR]
@@ -60,7 +62,7 @@ lekalo status [--project DIR]
 lekalo readiness --phase model|implement|generate|verify|release [--project DIR] [--trace PATH]...
 ```
 
-`init --adopt`, `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
+`init`, `init --adopt`, `module new`, `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
 `validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, `context`, `cache`,
 `doctor`, `status`, `readiness`, and `contract` are implemented; none remains a recognized stub. `SYMBOL` is an
 opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic
@@ -75,6 +77,25 @@ and impact engines resolve them through the kind-qualified node identity.
 `lekalo --json --version` and `lekalo --version --json` select JSON output.
 Root and per-command help remain clap help text rather than a domain failure.
 
+### `lekalo init`
+
+`init` bootstraps a new greenfield Lekalo project (issue #97) in the
+invocation directory: the minimal canonical skeleton (`lekalo/project.yaml`,
+the first empty module `lekalo/modules/<module>/module.yaml`,
+`lekalo/targets/<id>.yaml` only for an explicit `--target`, the managed
+`/.lekalo/` `.gitignore` line, and `.vscode/settings.json` only for the
+opt-in `--editor-hints`) — no application code, no installation, no
+adapter execution, no lock. `--module` names the first module
+(default `app`), `--frontend yaml|json` selects the document syntax
+(default block YAML), and `--project-id` overrides the sanitized
+directory-name derivation. `--dry-run` prints the machine-readable plan
+without writing; a repeated init is idempotent and re-runs report
+unchanged/added/conflicting artifacts; the `.gitignore` line merges
+into user content, every other artifact never overwrites. The applied
+skeleton passes the normal load-and-validate gate before the receipt.
+The normative contract is [bootstrap.md](bootstrap.md) and
+[ADR-0039](adr/0039-greenfield-init-bootstrap.md).
+
 ### `lekalo init --adopt`
 
 `init --adopt` connects Lekalo to an existing repository (issue #38):
@@ -87,9 +108,17 @@ recorded in the target document and the receipt's `adapterProfile`;
 never executed or checked against an adapter. `--dry-run`
 prints the full plan and writes nothing; a repeated init is idempotent.
 Observed modules stay observations in the receipt — the Model contract has
-no module-mode field, so none is emitted. `init` without `--adopt` is the
-stable usage failure until greenfield creation lands. The normative
+no module-mode field, so none is emitted. The normative
 contract is [adopt.md](adopt.md) and [ADR-0028](adr/0028-init-adopt.md).
+
+### `lekalo module new`
+
+`module new ID` creates one additional empty module
+(`lekalo/modules/<ID>/module.yaml`) in an existing project (issue #97),
+sharing the bootstrap semantics: the closed one-segment id grammar,
+`--dry-run`, no-overwrite conflicts, identical-bytes skip, the journaled
+writer, and the post-write load-and-validate gate. Outside a Lekalo
+project it is the normal root-not-found failure and nothing is written.
 
 ### `lekalo load`
 
@@ -285,14 +314,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.2.13"
+  "version": "0.2.14"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.2.13`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.2.14`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph

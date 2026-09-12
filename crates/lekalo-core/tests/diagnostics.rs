@@ -9,7 +9,7 @@ use lekalo_core::result::DomainResult;
 #[test]
 fn embedded_registry_parses_and_is_closed() {
     let registry = DiagnosticRegistry::embedded().expect("embedded registry is valid");
-    assert_eq!(registry.registry_version(), "1.22.0");
+    assert_eq!(registry.registry_version(), "1.24.0");
     assert!(registry.len() >= 100, "the core rule inventory is present");
     // A second parse of the exact bytes yields the same table (pure data).
     let again = DiagnosticRegistry::from_bytes(REGISTRY_BYTES).expect("registry bytes re-validate");

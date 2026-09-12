@@ -2,7 +2,7 @@
 //! owns every decision; this binary selects, renders, and maps exits. Since
 //! #11 both renderers project the exact same `DomainResult`.
 
-use clap::{error::ErrorKind, Args, ColorChoice, Parser, Subcommand};
+use clap::{error::ErrorKind, Args, ColorChoice, Parser, Subcommand, ValueEnum};
 use lekalo_core::artifacts::{ArtifactFailure, CheckReceipt, GenerateService};
 use lekalo_core::loader::LoadSelection;
 use lekalo_core::lockfile::plan::LockService;
@@ -319,8 +319,9 @@ enum Commands {
         #[arg(long, value_name = "MS", default_value_t = DEFAULT_SCAN_TIMEOUT_MS * 10)]
         timeout_ms: u64,
     },
-    /// Adopt an existing repository: detection, a minimal canonical
-    /// skeleton, and the no-overwrite adoption plan (issue #38).
+    /// Bootstrap a new greenfield Lekalo project in the invocation
+    /// directory (issue #97), or adopt an existing repository with
+    /// `--adopt` (issue #38).
     Init {
         /// Adopt the existing repository at the adoption root.
         #[arg(long)]
@@ -335,12 +336,30 @@ enum Commands {
         /// Explicit canonical project id when derivation is ambiguous.
         #[arg(long, value_name = "ID")]
         project_id: Option<String>,
-        /// Adoption root selector, relative to the invocation directory.
+        /// Greenfield: the semantic id of the first module.
+        #[arg(long, value_name = "MODULE", default_value = "app")]
+        module: String,
+        /// Greenfield: the canonical model frontend of the generated
+        /// documents.
+        #[arg(long, value_enum, default_value_t)]
+        frontend: InitFrontend,
+        /// Greenfield: write the opt-in editor/schema hints
+        /// (`.vscode/settings.json`).
+        #[arg(long)]
+        editor_hints: bool,
+        /// Bootstrap-root / adoption-root selector, relative to the
+        /// invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
-        /// Print the full adoption plan without writing anything.
+        /// Print the full bootstrap plan without writing anything.
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Create one additional empty module in an initialized project
+    /// (issue #97).
+    Module {
+        #[command(subcommand)]
+        command: ModuleCommands,
     },
     /// Run the target adapter conformance suite (issue #31).
     Adapter {
@@ -434,6 +453,47 @@ enum Commands {
 
 /// The per-exchange scan deadline default (issue #42).
 const DEFAULT_SCAN_TIMEOUT_MS: u64 = 60_000;
+
+/// The `module` subcommands: the module-authoring surface (issue #97).
+#[derive(Debug, Subcommand)]
+enum ModuleCommands {
+    /// Create one additional empty module: the module manifest and
+    /// nothing else, no-overwrite, gated by the normal load and
+    /// validation path.
+    New {
+        /// The semantic id (and directory name) of the new module.
+        id: String,
+        /// The canonical model frontend of the generated document.
+        #[arg(long, value_enum, default_value_t)]
+        frontend: InitFrontend,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Print the plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+/// The canonical model frontend of greenfield bootstrap documents.
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+enum InitFrontend {
+    /// Human-friendly block YAML in the fixed `.yaml` homes.
+    #[default]
+    Yaml,
+    /// Compact JSON bytes in the same homes (the adoption spelling).
+    Json,
+}
+
+impl InitFrontend {
+    /// The core frontend value.
+    const fn core(self) -> lekalo_core::init::bootstrap::Frontend {
+        match self {
+            Self::Yaml => lekalo_core::init::bootstrap::Frontend::Yaml,
+            Self::Json => lekalo_core::init::bootstrap::Frontend::Json,
+        }
+    }
+}
 
 /// The `bindings` subcommands: the binding registry surface (issue #42).
 #[derive(Debug, Subcommand)]
@@ -1116,9 +1176,23 @@ fn main() -> ExitCode {
                 target,
                 profile,
                 project_id,
+                module,
+                frontend,
+                editor_hints,
                 project,
                 dry_run,
-            } => run_init(adopt, target, profile, project_id, project, dry_run),
+            } => run_init(
+                adopt,
+                target,
+                profile,
+                project_id,
+                module,
+                frontend,
+                editor_hints,
+                project,
+                dry_run,
+            ),
+            Commands::Module { command } => run_module(command),
             Commands::Observe { command } => run_observe(command),
             Commands::Adapter { command } => match run_adapter(command) {
                 AdapterRun::Envelope(result) => result,
@@ -1524,27 +1598,31 @@ fn run_lock(project: Option<String>, check: bool, program_args: Vec<String>) -> 
     }
 }
 
-/// Run `lekalo init --adopt`: the thin handoff to the core adoption
-/// service. Greenfield `init` is not part of issue #38 and stays the
-/// stable usage failure until its own issue lands.
+/// Run `lekalo init`: the thin handoff to the core adoption service
+/// (`--adopt`, issue #38) or the core greenfield bootstrap service
+/// (issue #97). The core owns every decision; this layer only checks
+/// the closed request grammars and maps them onto the stable
+/// `cli.usage` failure.
+#[allow(clippy::too_many_arguments)]
 fn run_init(
     adopt: bool,
     target: Option<String>,
     profile: Option<String>,
     project_id: Option<String>,
+    module: String,
+    frontend: InitFrontend,
+    editor_hints: bool,
     project: Option<String>,
     dry_run: bool,
 ) -> DomainResult {
-    if !adopt {
-        return DomainResult::usage_error();
-    }
     if let Some(target) = target.as_deref() {
         if !lekalo_core::init::detect::valid_target_id(target) {
             return DomainResult::usage_error();
         }
     }
-    // A profile selects within one explicit target: an orphan or malformed
-    // profile is the stable usage failure before any plan or write.
+    // A profile selects within one explicit target: an orphan or
+    // malformed profile is the stable usage failure before any plan
+    // or write.
     if let Some(profile) = profile.as_deref() {
         if target.is_none() || !lekalo_core::target_protocol::scopes::is_token(profile) {
             return DomainResult::usage_error();
@@ -1555,11 +1633,40 @@ fn run_init(
             return DomainResult::usage_error();
         }
     }
-    lekalo_core::init::adopt(&lekalo_core::init::AdoptRequest {
+    if adopt {
+        return lekalo_core::init::adopt(&lekalo_core::init::AdoptRequest {
+            project,
+            target,
+            profile,
+            project_id,
+            dry_run,
+        });
+    }
+    lekalo_core::init::bootstrap::bootstrap(&lekalo_core::init::bootstrap::BootstrapRequest {
         project,
+        project_id,
+        module,
+        frontend: frontend.core(),
         target,
         profile,
-        project_id,
+        editor_hints,
+        dry_run,
+    })
+}
+
+/// Run `lekalo module new`: the thin handoff to the core module
+/// creation service (issue #97).
+fn run_module(command: ModuleCommands) -> DomainResult {
+    let ModuleCommands::New {
+        id,
+        frontend,
+        project,
+        dry_run,
+    } = command;
+    lekalo_core::init::bootstrap::module_new(&lekalo_core::init::bootstrap::ModuleNewRequest {
+        project,
+        id,
+        frontend: frontend.core(),
         dry_run,
     })
 }

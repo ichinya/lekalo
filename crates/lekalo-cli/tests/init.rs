@@ -457,18 +457,17 @@ fn adopt_ambiguous_roots_require_explicit_resolution() {
     assert_eq!(exit_code(&explicit), 0, "{}", stderr_text(&explicit));
     assert_eq!(stdout_json(&explicit)["detection"]["basis"], "explicit");
 }
-
-/// `init` without `--adopt` stays the stable usage failure (greenfield is
-/// issue #97), and a malformed target id never reaches the core.
+/// A malformed target id never reaches the core: the stable usage
+/// failure before any plan or write (greenfield `init` without
+/// `--adopt` is issue #97's bootstrap surface, covered in
+/// `bootstrap.rs`).
 #[test]
 fn init_usage_failures_stay_stable() {
     let (_temp, root) = materialize(NODE_MONOREPO);
-    let plain = lekalo_in(&root, &["init"]);
-    assert_eq!(exit_code(&plain), 1);
-    assert!(stdout_text(&plain).is_empty());
-    assert!(stderr_text(&plain).contains("cli.usage"));
     let bad_target = lekalo_in(&root, &["init", "--adopt", "--target", "Bad_Target"]);
     assert!(!root.join("lekalo").exists(), "nothing is written");
+    assert_eq!(exit_code(&bad_target), 1);
+    assert!(stdout_text(&bad_target).is_empty());
     assert!(stderr_text(&bad_target).contains("cli.usage"));
 }
 

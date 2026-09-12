@@ -14,7 +14,7 @@ pub const SCHEMA_VERSION: &str = "lekalo/diagnostic/v1.0.0";
 pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v1.0.0";
 
 /// The embedded diagnostic registry identity.
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@1.22.0";
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@1.24.0";
 
 /// The current diagnostic registry version. The integrated chain is
 /// additive end to end: 1.14.0 (issue #29) -> 1.16.0 (issue #39, the
@@ -25,8 +25,10 @@ pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@1.22.0";
 /// the reserved `bindings.*` family: proposal-unknown, ambiguous, and
 /// plan-mismatch) -> 1.21.0 (issue #64, the reserved `query.*` family
 /// for the declarative query model) -> 1.22.0 (issue #65, the reserved
-/// `storage.*` family LEK-STO-001..007).
-pub const REGISTRY_VERSION: &str = "1.22.0";
+/// `storage.*` family LEK-STO-001..007) -> 1.24.0 (issue #97, the
+/// reserved `init.bootstrap.*` family LEK-INIT-006..009; 1.23.0 stays
+/// reserved by its parallel owner and is not part of this line).
+pub const REGISTRY_VERSION: &str = "1.24.0";
 
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

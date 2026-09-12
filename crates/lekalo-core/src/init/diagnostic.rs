@@ -1,11 +1,15 @@
-//! Adoption diagnostics routed through the accepted #11 contract.
+//! Adoption and greenfield-bootstrap diagnostics routed through the
+//! accepted #11 contract.
 //!
-//! Every `lekalo init --adopt` failure is one registered `init.*` rule
-//! (`LEK-INIT-NNN`, diagnostic registry 1.13.0) assembled through the
-//! shared registry-backed constructor. Policy refusals (no-overwrite
-//! conflicts, ambiguous roots, underivable project ids) are `denied`;
-//! physical write and rollback failures are `invalid`. Severity never
-//! computes the exit; [`DomainResult`] alone owns status, stream, and exit.
+//! Every `lekalo init --adopt` failure is one registered `init.adopt-*`
+//! rule (`LEK-INIT-NNN`, diagnostic registry 1.13.0) and every greenfield
+//! `lekalo init` / `lekalo module new` failure is one registered
+//! `init.bootstrap-*` rule (`LEK-INIT-006..009`, diagnostic registry
+//! 1.24.0), both assembled through the shared registry-backed
+//! constructor. Policy refusals (no-overwrite conflicts, underivable
+//! project ids) are `denied`; physical write and rollback failures are
+//! `invalid`. Severity never computes the exit; [`DomainResult`] alone
+//! owns status, stream, and exit.
 
 use crate::diagnostics::normalize::build;
 use crate::diagnostics::types::{bound_token, token_value, DataObject, DataValue, Scalar};
@@ -22,6 +26,16 @@ pub const ADOPT_ID_REQUIRED: &str = "init.adopt-id-required";
 pub const ADOPT_WRITE_FAILED: &str = "init.adopt-write-failed";
 /// The rollback itself failed and created files remain.
 pub const ADOPT_RECOVERY_REQUIRED: &str = "init.adopt-recovery-required";
+/// A planned bootstrap write path exists with different content.
+pub const BOOTSTRAP_CONFLICT: &str = "init.bootstrap-conflict";
+/// No canonical project id is derivable for the greenfield root and
+/// none was passed explicitly.
+pub const BOOTSTRAP_ID_REQUIRED: &str = "init.bootstrap-id-required";
+/// A planned bootstrap write failed after earlier writes succeeded
+/// (rolled back).
+pub const BOOTSTRAP_WRITE_FAILED: &str = "init.bootstrap-write-failed";
+/// The bootstrap rollback itself failed and created files remain.
+pub const BOOTSTRAP_RECOVERY_REQUIRED: &str = "init.bootstrap-recovery-required";
 
 /// The registry-invariant rule id used when the registry itself is broken.
 const REGISTRY_INVALID: &str = "diagnostics.registry-invalid";
@@ -107,6 +121,63 @@ pub fn recovery_required_set(paths: &[String]) -> DiagnosticSet {
         ),
     );
     match one(ADOPT_RECOVERY_REQUIRED, data) {
+        Ok(diagnostic) => set_of(Status::Invalid, vec![diagnostic]),
+        Err(fallback) => fallback,
+    }
+}
+
+/// The `denied` set for every no-overwrite bootstrap conflict, one per
+/// path. Shared by greenfield `lekalo init` and `lekalo module new`.
+pub fn bootstrap_conflict_set(paths: &[String]) -> DiagnosticSet {
+    let mut diagnostics = Vec::with_capacity(paths.len());
+    for path in paths {
+        let mut data = DataObject::new();
+        data.insert("path".to_owned(), token_value(&bound_token(path)));
+        match one(BOOTSTRAP_CONFLICT, data) {
+            Ok(diagnostic) => diagnostics.push(diagnostic),
+            Err(fallback) => return fallback,
+        }
+    }
+    set_of(Status::Denied, diagnostics)
+}
+
+/// The `denied` set for an underivable greenfield project id without an
+/// explicit one.
+pub fn bootstrap_id_required_set(detail: &str) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("detail".to_owned(), token_value(detail));
+    match one(BOOTSTRAP_ID_REQUIRED, data) {
+        Ok(diagnostic) => set_of(Status::Denied, vec![diagnostic]),
+        Err(fallback) => fallback,
+    }
+}
+
+/// The `invalid` set for a failed planned bootstrap write (rollback
+/// already done).
+pub fn bootstrap_write_failed_set(path: &str, detail: &str) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("path".to_owned(), token_value(&bound_token(path)));
+    data.insert("detail".to_owned(), token_value(detail));
+    match one(BOOTSTRAP_WRITE_FAILED, data) {
+        Ok(diagnostic) => set_of(Status::Invalid, vec![diagnostic]),
+        Err(fallback) => fallback,
+    }
+}
+
+/// The `invalid` set for an incomplete bootstrap rollback; lists what
+/// remains.
+pub fn bootstrap_recovery_required_set(paths: &[String]) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert(
+        "paths".to_owned(),
+        DataValue::List(
+            paths
+                .iter()
+                .map(|path| Scalar::Token(bound_token(path)))
+                .collect(),
+        ),
+    );
+    match one(BOOTSTRAP_RECOVERY_REQUIRED, data) {
         Ok(diagnostic) => set_of(Status::Invalid, vec![diagnostic]),
         Err(fallback) => fallback,
     }
