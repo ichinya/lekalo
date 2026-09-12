@@ -60,6 +60,10 @@ fn exit_code(output: &Output) -> u8 {
     output.status.code().expect("exit code") as u8
 }
 
+fn stderr(output: &Output) -> String {
+    String::from_utf8(output.stderr.clone()).expect("stderr utf8")
+}
+
 fn copy_dir(source: &Path, target: &Path) {
     std::fs::create_dir_all(target).expect("create target dir");
     for entry in std::fs::read_dir(source).expect("read source") {
@@ -226,28 +230,10 @@ fn verify_aggregates_components_and_never_writes() {
         let apply = generate(root, false, false);
         assert_eq!(exit_code(&apply), 0);
 
-        let fingerprint = |root: &Path| -> Vec<(String, Vec<u8>)> {
-            fn walk(dir: &Path, out: &mut Vec<(String, Vec<u8>)>) {
-                for entry in std::fs::read_dir(dir).expect("read dir") {
-                    let entry = entry.expect("read entry");
-                    let path = entry.path();
-                    if path.is_dir() {
-                        walk(&path, out);
-                    } else {
-                        let bytes = std::fs::read(&path).expect("read file");
-                        out.push((path.to_string_lossy().to_string(), bytes));
-                    }
-                }
-            }
-            let mut out = Vec::new();
-            walk(root, &mut out);
-            out.sort();
-            out
-        };
-        let before = fingerprint(root);
+        let before = project_fingerprint(root);
         let verify = verify(root);
         assert_eq!(exit_code(&verify), 0);
-        assert_eq!(fingerprint(root), before, "verify wrote nothing");
+        assert_eq!(project_fingerprint(root), before, "verify wrote nothing");
         let receipt: serde_json::Value = serde_json::from_str(&stdout(&verify)).expect("json");
         assert_eq!(receipt["verdict"], "ready");
         let components = receipt["components"].as_array().expect("components");
@@ -338,5 +324,209 @@ fn verify_refuses_stale_ir_evidence_without_writing() {
             "degraded verification is exit 4, never a silent success"
         );
         assert!(!root.join(".lekalo/cache/ir/planner.json").exists());
+    });
+}
+
+/// Walk every file under `root` into a sorted (path, bytes) vector: the
+/// rollback evidence of the hostile-write probes.
+fn project_fingerprint(root: &Path) -> Vec<(String, Vec<u8>)> {
+    fn walk(dir: &Path, out: &mut Vec<(String, Vec<u8>)>) {
+        for entry in std::fs::read_dir(dir).expect("read dir") {
+            let entry = entry.expect("read entry");
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else {
+                let bytes = std::fs::read(&path).expect("read file");
+                out.push((path.to_string_lossy().to_string(), bytes));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, &mut out);
+    out.sort();
+    out
+}
+
+/// Copy the hermetic fake adapter into the project copy so the lock can
+/// pin it exactly like the reference implementation.
+fn with_fake_adapter(root: &Path) {
+    let home = root.join("adapters/node-typescript");
+    std::fs::create_dir_all(&home).expect("adapter home");
+    std::fs::copy(
+        workspace_path("tests/fixtures/target-protocol/fake-adapter.mjs"),
+        home.join("fake-adapter.mjs"),
+    )
+    .expect("copy the fake adapter");
+}
+
+/// Run the real binary with the fake adapter vector — negotiated past the
+/// legacy base so the lock preflight sees its IR compatibility, and
+/// writing to an artifact-legal home — with an optional fault knob.
+fn fake_lekalo_in(root: &Path, head: &[&str], fault: Option<&str>) -> Output {
+    let mut args: Vec<&str> = head.to_vec();
+    args.push("--");
+    args.extend_from_slice(&[
+        "node",
+        "adapters/node-typescript/fake-adapter.mjs",
+        "--lekalo-adapter-variant",
+        "fluent",
+        "--lekalo-write-root",
+        "src/generated",
+    ]);
+    if let Some(fault) = fault {
+        args.extend_from_slice(&["--lekalo-fault", fault]);
+    }
+    Command::new(env!("CARGO_BIN_EXE_lekalo"))
+        .args(&args)
+        .current_dir(alias_free_path(root))
+        .output()
+        .expect("run the real lekalo binary")
+}
+
+/// Multi-target aggregation with distinct results: one run over a
+/// declared and an undeclared target applies the declared one through the
+/// manifest while the aggregate envelope preserves the other target's
+/// isolated refusal.
+#[test]
+fn multi_target_run_applies_the_declared_target_and_aggregates_the_other() {
+    with_project(|root| {
+        lock_with_adapter(root);
+        let run = lekalo_in(
+            root,
+            &[
+                "--json",
+                "generate",
+                "--target",
+                "node-typescript",
+                "--target",
+                "ghost-target",
+            ],
+            true,
+        );
+        assert_eq!(exit_code(&run), 4, "stdout={}", stdout(&run));
+        let envelope: serde_json::Value = serde_json::from_str(&stdout(&run)).expect("json");
+        assert_eq!(envelope["status"], "unsupported");
+        let diagnostics = envelope["diagnostics"].as_array().expect("diagnostics");
+        assert_eq!(
+            diagnostics.len(),
+            1,
+            "exactly the undeclared target refusal"
+        );
+        assert_eq!(diagnostics[0]["id"], "target.capability-unsupported");
+        assert_eq!(diagnostics[0]["data"]["target"], "ghost-target");
+        // Isolation: the declared target's writes and manifest landed even
+        // though its sibling refused.
+        assert!(root
+            .join("src/generated/node-typescript/planner.ts")
+            .exists());
+        assert!(root
+            .join(".lekalo/generated/manifests/ownership.json")
+            .exists());
+    });
+}
+
+/// A hostile dry-run write faces a private view without any writable
+/// mount: the interpreter dies, the run refuses as unavailable, and the
+/// real project stays byte-identical.
+#[test]
+fn a_hostile_dry_run_write_is_refused_and_the_project_rolls_back() {
+    with_project(|root| {
+        with_fake_adapter(root);
+        let lock = fake_lekalo_in(root, &["lock"], None);
+        assert_eq!(exit_code(&lock), 0, "stdout={}", stdout(&lock));
+        assert!(stdout(&lock).contains("adapters 1"));
+        // Positive control: the same vector without the fault plans
+        // cleanly and writes nothing but the reserved evidence home.
+        let planned = fake_lekalo_in(
+            root,
+            &[
+                "--json",
+                "generate",
+                "--target",
+                "node-typescript",
+                "--dry-run",
+            ],
+            None,
+        );
+        assert_eq!(exit_code(&planned), 0, "stdout={}", stdout(&planned));
+        let receipt: serde_json::Value = serde_json::from_str(&stdout(&planned)).expect("json");
+        assert_eq!(
+            receipt["targets"][0]["writes"][0]["path"],
+            "src/generated/node-typescript/model.ts"
+        );
+        let before = project_fingerprint(root);
+        let hostile = fake_lekalo_in(
+            root,
+            &[
+                "--json",
+                "generate",
+                "--target",
+                "node-typescript",
+                "--dry-run",
+            ],
+            Some("mutate-dry"),
+        );
+        assert_eq!(exit_code(&hostile), 4, "stdout={}", stdout(&hostile));
+        let envelope: serde_json::Value = serde_json::from_str(&stdout(&hostile)).expect("json");
+        assert_eq!(envelope["status"], "unavailable");
+        assert_eq!(envelope["diagnostics"][0]["id"], "target.crash");
+        assert_eq!(
+            envelope["diagnostics"][0]["data"]["detail"],
+            "abnormal-exit"
+        );
+        // Rollback verification: every project byte is unchanged and no
+        // generated output exists.
+        assert_eq!(
+            project_fingerprint(root),
+            before,
+            "the hostile dry run mutated the project"
+        );
+        assert!(!root.join("src/generated").exists());
+    });
+}
+
+/// An undeclared staged write disagrees with the bound plan: the run
+/// refuses as invalid and publication never starts, so the declared
+/// output, the undeclared file, and the manifest never reach the real
+/// project.
+#[test]
+fn an_undeclared_apply_write_is_caught_and_never_published() {
+    with_project(|root| {
+        with_fake_adapter(root);
+        let lock = fake_lekalo_in(root, &["lock"], None);
+        assert_eq!(exit_code(&lock), 0, "stdout={}", stdout(&lock));
+        // Positive control: the fault-free plan names exactly one write.
+        let planned = fake_lekalo_in(
+            root,
+            &[
+                "--json",
+                "generate",
+                "--target",
+                "node-typescript",
+                "--dry-run",
+            ],
+            None,
+        );
+        assert_eq!(exit_code(&planned), 0, "stdout={}", stdout(&planned));
+        let before = project_fingerprint(root);
+        let hostile = fake_lekalo_in(
+            root,
+            &["--json", "generate", "--target", "node-typescript"],
+            Some("extra-write"),
+        );
+        assert_eq!(exit_code(&hostile), 1, "stderr={}", stderr(&hostile));
+        let envelope: serde_json::Value = serde_json::from_str(&stderr(&hostile)).expect("json");
+        assert_eq!(envelope["status"], "invalid");
+        assert_eq!(envelope["diagnostics"][0]["id"], "target.plan-mismatch");
+        assert_eq!(envelope["diagnostics"][0]["data"]["detail"], "undeclared");
+        // Rollback verification: the real project never saw the declared
+        // write, the undeclared file, or a manifest.
+        assert_eq!(
+            project_fingerprint(root),
+            before,
+            "the hostile apply mutated the project"
+        );
+        assert!(!root.join("src/generated").exists());
     });
 }

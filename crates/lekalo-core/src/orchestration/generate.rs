@@ -534,7 +534,7 @@ fn scope_inputs(compilation: &Compilation, scope: &ScopeReceipt) -> Vec<String> 
 /// Write the canonical IR evidence under the reserved runtime home:
 /// same-directory staging, an atomic rename, and a read-back check.
 fn write_evidence(root: &Path, logical: &str, bytes: &[u8]) -> Result<(), DomainResult> {
-    let physical = root.join(logical.replace('/', "\\"));
+    let physical = root.join(logical);
     if let Ok(existing) = std::fs::read(&physical) {
         if existing == bytes {
             return Ok(());
@@ -735,7 +735,7 @@ fn update_manifest(
 }
 
 fn write_manifest_atomic(root: &Path, bytes: &[u8]) -> Result<(), ArtifactFailure> {
-    let dir = root.join(MANIFEST_DIR.replace('/', "\\"));
+    let dir = root.join(MANIFEST_DIR);
     std::fs::create_dir_all(&dir).map_err(|_| ArtifactFailure::Io("manifest-write"))?;
     let physical = dir.join(MANIFEST_NAME);
     let stage = dir.join("ownership.json.tmp");
