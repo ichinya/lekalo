@@ -29,7 +29,7 @@ fn diagnostic_item_json(
     message: &str,
 ) -> String {
     format!(
-        "{{\n      \"schema_version\": \"lekalo/diagnostic/v1.0.0\",\n      \"registry_version\": \"1.20.0\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
+        "{{\n      \"schema_version\": \"lekalo/diagnostic/v1.0.0\",\n      \"registry_version\": \"1.22.0\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
     )
 }
 
@@ -341,6 +341,8 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
         assert!(!manifest.contains("0.2.7"));
         assert!(!manifest.contains("0.2.8"));
         assert!(!manifest.contains("0.2.9"));
+        assert!(!manifest.contains("0.2.10"));
+        assert!(!manifest.contains("0.2.12"));
         assert!(!manifest.contains("0.2.13"));
         assert!(manifest.contains("version.workspace = true"));
     }

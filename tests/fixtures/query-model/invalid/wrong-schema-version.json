@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "lekalo/query-model/v0.9.0",
+  "identity": "dev.lekalo.query-model@0.9.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.1.0",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "tenancy": [],
+  "queries": []
+}

@@ -225,7 +225,7 @@ projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.14.0.json` (issue #12 extended it with the
+`contracts/diagnostic-registry.v1.22.0.json` (issue #12 extended it with the
 `semantic.*`/`validate.*` families and issue #13 added the `graph.*`
 family, each as a minor increment; issue #15 added the `inspect.*` family
 the same way; issue #16 added the `impact.*` family issue #18 adds the
@@ -234,8 +234,8 @@ issue #62 adds the `error.*` family, and issue #26 adds the
 `extended.*`, `event.*`, `job.*`, `call.*`, `cache.*`,
 `publication.*`, `contract.*`, and `case.*` families, and issue #63 adds
 the `invariant.*` family, issue #27 adds the `target.*` family, and issue #36
-adds the `requirements.*` family, each as a wire-shape-preserving minor
-increment).
+adds the `requirements.*` family, and issue #65 adds the `storage.*` family,
+each as a wire-shape-preserving minor increment).
 
 ## Generated-artifact ownership and drift detection
 
@@ -588,6 +588,30 @@ The mode lives in [docs/contracted-mode.md](docs/contracted-mode.md),
 reference module is the first contracted slice under
 `tests/fixtures/contracted/planner-slice/`.
 
+## Domain relations and storage projections
+
+Issue #65 separates the target-neutral domain model from target-
+namespaced storage projections: the closed domain-storage attachment
+(`lekalo/storage-projection/v1.0.0`) declares stable entity keys
+independent of both the Model symbol id and every table name, closed
+value types, aggregate ownership, visibility, opaque invariant and
+lifecycle references, and seven relation kinds with explicit
+cardinality, explicit delete behavior, and mandatory scenario or
+constraint coverage; beside it, namespaced `postgres` and `laravel`
+projections declare tables, technical and generated columns,
+soft-delete and tenant policies, timestamps, indexes, join tables,
+explicit polymorphic materializations, and migration history with
+visible data risk. The core derives both projections from the same
+domain model through the published type tables, derives the public
+DTO from the domain only (storage-only technical columns can never
+leak), and classifies every diff path as domain, wire, or storage
+with a visible data risk — a domain rename never implies a table
+rename. Pure declaration and validation: no runtime storage, no SQL
+emission, no adapter. See
+[docs/storage-projection.md](docs/storage-projection.md),
+[ADR-0025](docs/adr/0025-storage-projection.md), and the hermetic
+fixtures under `tests/fixtures/storage-projection/`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -596,8 +620,9 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #91 carries prospective product 0.2.13 (issue #42 carried
-prospective product 0.2.10; issue #40 carried prospective product 0.2.9; issue #30 carried prospective
+independent of product releases; issue #91 carries prospective product 0.2.13
+(issue #65 carried prospective product 0.2.12; issue #64 carried prospective
+product 0.2.11; issue #42 carried prospective product 0.2.9; issue #30 carried prospective
 product 0.2.8; issue #92 carried prospective product 0.2.7; issue #39
 published product 0.2.6, annotated tag `0.2.6` on `80a815a`); (issue #31
 published product 0.2.5; the accepted M2 line published products 0.2.0
