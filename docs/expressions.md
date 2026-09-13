@@ -78,26 +78,39 @@ self-contained program per target — Node (BigInt), PHP, and Go —
 that reads the shared
 [evaluation-vector document](../contracts/expressions-vectors.schema.v1.0.0.json)
 (`lekalo/expressions/vectors/v1.0.0`) on stdin and writes the
-computed results to stdout. The clock is a per-vector field: a
-vector that omits it reads the shared epoch default
-(`1970-01-01T00:00:00Z`) in the reference and in every generated
-target, while a present-but-malformed clock refuses with
-`clock-invalid`, so the
+computed results to stdout. The clock is a per-vector field, and
+omission is the only epoch form: a vector that omits the clock
+reads the shared epoch default (`1970-01-01T00:00:00Z`) in the
+reference and in every generated target, while an explicit `null`,
+a non-string value, or a present-but-malformed clock refuses with
+`clock-invalid` in every generated target — eagerly, even when the
+body never reads `now` — and refuses the whole document at the
+reference decode, so the
 shared fixtures prove semantic equivalence by execution:
 [`tests/fixtures/expressions/vectors.json`](../tests/fixtures/expressions/vectors.json)
 drives the reference evaluator, the CI assertions, and every
 generated program over the same cases. Before evaluating any row,
 every generated program runs the same eager binding validation as
-the reference: scope/field shape, unknown scopes and fields,
+the reference, in the reference pass order — all scope names and
+shapes, then all field names, then all declared values — covering
 presence of every declared reference (nullable included),
 nullability, exact JSON scalar types, the family value-domain
 bounds, canonical datetimes, and set size/sorting/duplicates —
-including values on branches the body never takes. Binding-stage
+including values on branches the body never takes. The binding
+root itself is exact: an absent or null `bindings` member refuses
+like the reference decode, and only `{}` is the empty root. The
+typed getters accept only canonical integer spellings: a
+fractional (`42.0`), exponent (`1e2`), or negative-zero (`-0`)
+number spelling refuses like the reference parse instead of
+normalizing to a value. Binding-stage
 refusals beyond those vectors and clock validation cannot appear in
 that document; the executed
 projection gate (`tests/expressions_projection.rs`) runs every
-generated program against those exact shapes and requires the same
-closed tokens the reference refuses with.
+generated program against those exact shapes and requires the
+reference outcome — the same closed row token where the target
+model is row-level, a document-level refusal where the target
+decode refuses outright — and no garbage value reaches stdout in
+any target.
 
 ## Managed mode: capability snapshots
 
@@ -145,7 +158,7 @@ classification.
 - [`contracts/expressions.schema.v1.0.0.json`](../contracts/expressions.schema.v1.0.0.json) — the attachment contract,
 - [`contracts/expressions-vectors.schema.v1.0.0.json`](../contracts/expressions-vectors.schema.v1.0.0.json) — the shared evaluation-vector contract,
 - [`contracts/expressions-builtin-support.schema.v1.0.0.json`](../contracts/expressions-builtin-support.schema.v1.0.0.json) — the capability-snapshot contract,
-- [`tests/fixtures/expressions/`](../tests/fixtures/expressions/) — the shared fixtures (valid planner, 87 vectors, 28 invalid refusals, capability snapshots, diff pair),
+- [`tests/fixtures/expressions/`](../tests/fixtures/expressions/) — the shared fixtures (valid planner, 91 vectors, 28 invalid refusals, capability snapshots, diff pair),
 - `scripts/test-expressions-contracts.mjs` — the independent Node release gate (pinned Ajv 8.17.1).
 
 Failures emit the accepted #11 diagnostic contract with the

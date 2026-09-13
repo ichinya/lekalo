@@ -1189,6 +1189,46 @@
       "expect": {
         "value": "1970-01-01T00:00:00Z"
       }
+    },
+    {
+      "id": "set-order-operand-div",
+      "expression": "expr.planner/set-order-operand",
+      "bindings": {},
+      "expect": {
+        "error": "divide-by-zero"
+      }
+    },
+    {
+      "id": "set-order-operand-mod",
+      "expression": "expr.planner/set-order-operand-rev",
+      "bindings": {},
+      "expect": {
+        "error": "modulo-by-zero"
+      }
+    },
+    {
+      "id": "ctor-present",
+      "expression": "expr.planner/ctor-guard",
+      "bindings": {
+        "input": {
+          "constructor": 7
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "ctor-null",
+      "expression": "expr.planner/ctor-guard",
+      "bindings": {
+        "input": {
+          "constructor": null
+        }
+      },
+      "expect": {
+        "value": true
+      }
     }
   ]
 }

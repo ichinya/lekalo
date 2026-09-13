@@ -219,7 +219,9 @@ for (const name of ["full.json", "core-only.json"]) {
 // expression and ids are unique. A now-reading vector either injects
 // its canonical deterministic clock (the schema pattern above) or
 // omits the clock and is evaluated at the shared epoch default
-// (1970-01-01T00:00:00Z) by the reference and every generated target.
+// (1970-01-01T00:00:00Z) by the reference and every generated
+// target. Omission is the only epoch form: an explicit null or
+// noncanonical clock member is wire-illegal and refuses.
 const declared = new Map(planner.expressions.map((record) => [record.id, record]));
 const bodyHasNow = (node) => {
   if (!node || typeof node !== "object") return false;

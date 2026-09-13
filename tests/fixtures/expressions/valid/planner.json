@@ -1676,6 +1676,82 @@
           "field": "age"
         }
       }
+    },
+    {
+      "id": "expr.planner/set-order-operand",
+      "kind": "condition",
+      "description": "Membership evaluates the operand before the set: both children fail, the operand token wins.",
+      "params": [],
+      "result": "bool",
+      "body": {
+        "op": "in-set",
+        "operand": {
+          "op": "div",
+          "left": {"op": "lit-int", "value": 1},
+          "right": {"op": "lit-int", "value": 0}
+        },
+        "set": {
+          "op": "if",
+          "condition": {
+            "op": "eq",
+            "left": {
+              "op": "mod",
+              "left": {"op": "lit-int", "value": 1},
+              "right": {"op": "lit-int", "value": 0}
+            },
+            "right": {"op": "lit-int", "value": 0}
+          },
+          "then": {"op": "lit-set", "items": [{"kind": "int", "value": 1}]},
+          "else": {"op": "lit-set", "items": [{"kind": "int", "value": 1}]}
+        }
+      }
+    },
+    {
+      "id": "expr.planner/set-order-operand-rev",
+      "kind": "condition",
+      "description": "Membership evaluates the operand before the set in the reversed token direction too.",
+      "params": [],
+      "result": "bool",
+      "body": {
+        "op": "in-set",
+        "operand": {
+          "op": "mod",
+          "left": {"op": "lit-int", "value": 1},
+          "right": {"op": "lit-int", "value": 0}
+        },
+        "set": {
+          "op": "if",
+          "condition": {
+            "op": "eq",
+            "left": {
+              "op": "div",
+              "left": {"op": "lit-int", "value": 1},
+              "right": {"op": "lit-int", "value": 0}
+            },
+            "right": {"op": "lit-int", "value": 0}
+          },
+          "then": {"op": "lit-set", "items": [{"kind": "int", "value": 1}]},
+          "else": {"op": "lit-set", "items": [{"kind": "int", "value": 1}]}
+        }
+      }
+    },
+    {
+      "id": "expr.planner/ctor-guard",
+      "kind": "condition",
+      "description": "A field legally named constructor is an ordinary declared reference.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "constructor",
+          "type": "int",
+          "nullable": true
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "is-null",
+        "operand": {"op": "ref", "scope": "input", "field": "constructor"}
+      }
     }
   ]
 }
