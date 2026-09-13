@@ -41,7 +41,7 @@ const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf
 
 const itemSchema = read("contracts/diagnostic.schema.v1.0.0.json");
 const registrySchema = read("contracts/diagnostic-registry.schema.v1.0.0.json");
-const registry = read("contracts/diagnostic-registry.v1.24.0.json");
+const registry = read("contracts/diagnostic-registry.v1.25.0.json");
 // Predecessor custody: every accepted 1.16.0 rule must survive unchanged
 // in the successor; the integrated chain is additive end to end (issue #31
 // added the adapter conformance family as 1.15.0, issue #39 added the
@@ -49,9 +49,9 @@ const registry = read("contracts/diagnostic-registry.v1.24.0.json");
 // as 1.18.0 (1.17.0 stays reserved by its parallel owner), issue #40 added
 // the contracted family as 1.19.0, issue #42 added the bindings family
 // as 1.20.0, issue #64 adds the query family as 1.21.0, issue #65
-// adds the storage family as 1.22.0, and issue #97 adds the greenfield
-// bootstrap family as the current 1.24.0 (1.23.0 stays reserved by its
-// parallel owner).
+// adds the storage family as 1.22.0, issue #97 adds the greenfield
+// bootstrap family as 1.24.0 (1.23.0 stays reserved by its parallel
+// owner), and issue #66 adds the expression family as the current 1.25.0.
 const predecessor = read("contracts/diagnostic-registry.v1.16.0.json");
 const current = new Map(registry.entries.map((entry) => [entry.id, entry]));
 for (const entry of predecessor.entries) {
@@ -139,7 +139,12 @@ const registry122Text = readFileSync(resolve(root, "contracts/diagnostic-registr
 if (createHash("sha256").update(registry122Text).digest("hex") !== "c1b5e27b3f3f7ecc23e3132ef4e771c1171232b77617dffd0846e2462d5ed5fd") {
   fail("predecessor-custody");
 }
+const registry124Text = readFileSync(resolve(root, "contracts/diagnostic-registry.v1.24.0.json"), "utf8").replace(/\r\n/g, "\n");
+if (createHash("sha256").update(registry124Text).digest("hex") !== "e07cdfbf8b7e497d135545069e68aac891119cff027510a8e67277eb4fbd223b") {
+  fail("predecessor-custody");
+}
 const registry122 = JSON.parse(registry122Text);
+const registry124 = JSON.parse(registry124Text);
 const registry113 = JSON.parse(registry113Text);
 const registry114 = JSON.parse(registry114Text);
 const registry115 = JSON.parse(registry115Text);
@@ -236,8 +241,8 @@ if (
 // recovery-required (1.23.0 stays reserved by its parallel owner).
 // Every accepted 1.22.0 rule survives verbatim and nothing else
 // changed.
-if (!isAdditive(registry, registry122)) fail("predecessor-entry-drift");
-const bootstrapAdditions = registry.entries.filter((entry) => !registry122.entries.some((old) => old.id === entry.id));
+if (!isAdditive(registry124, registry122)) fail("predecessor-entry-drift");
+const bootstrapAdditions = registry124.entries.filter((entry) => !registry122.entries.some((old) => old.id === entry.id));
 if (
   bootstrapAdditions.length !== 4 ||
   bootstrapAdditions.some((entry) => !entry.id.startsWith("init.bootstrap-") || !entry.code.startsWith("LEK-INIT-")) ||
@@ -250,11 +255,43 @@ if (
 }
 // A missing or changed 1.22.0 rule must actually fail the additive check.
 const storageProbe = registry122.entries.find((entry) => entry.id === "storage.input-invalid");
+const missingStorage = structuredClone(registry124);
+missingStorage.entries = missingStorage.entries.filter((entry) => entry.id !== storageProbe.id);
+const changedStorage = structuredClone(registry124);
+changedStorage.entries.find((entry) => entry.id === storageProbe.id).allowed_statuses = ["valid"];
+if (isAdditive(missingStorage, registry122) || isAdditive(changedStorage, registry122)) {
+  fail("additive-negative-control");
+}
+// 1.25.0 (issue #66) adds exactly the nine expression.* rules over
+// frozen 1.24.0: the closed refusals of the typed-expression family
+// (input-invalid, contract-invalid, type-invalid, complexity-limit,
+// builtin-unsupported, eval-invalid, binding-invalid, diff-invalid,
+// and export-limit). Every accepted 1.24.0 rule survives verbatim
+// and nothing else changed.
+if (!isAdditive(registry, registry124)) fail("predecessor-entry-drift");
+const expressionAdditions = registry.entries.filter((entry) => !registry124.entries.some((old) => old.id === entry.id));
+if (
+  expressionAdditions.length !== 9 ||
+  expressionAdditions.some((entry) => !entry.id.startsWith("expression.") || !entry.code.startsWith("LEK-EXPR-")) ||
+  !expressionAdditions.some((entry) => entry.id === "expression.input-invalid") ||
+  !expressionAdditions.some((entry) => entry.id === "expression.contract-invalid") ||
+  !expressionAdditions.some((entry) => entry.id === "expression.type-invalid") ||
+  !expressionAdditions.some((entry) => entry.id === "expression.complexity-limit") ||
+  !expressionAdditions.some((entry) => entry.id === "expression.builtin-unsupported") ||
+  !expressionAdditions.some((entry) => entry.id === "expression.eval-invalid") ||
+  !expressionAdditions.some((entry) => entry.id === "expression.binding-invalid") ||
+  !expressionAdditions.some((entry) => entry.id === "expression.diff-invalid") ||
+  !expressionAdditions.some((entry) => entry.id === "expression.export-limit")
+) {
+  fail("expression-additions", expressionAdditions.map((entry) => entry.id));
+}
+// A missing or changed 1.24.0 rule must actually fail the additive check.
+const bootstrapProbe = registry124.entries.find((entry) => entry.id === "init.bootstrap-conflict");
 const missing124 = structuredClone(registry);
-missing124.entries = missing124.entries.filter((entry) => entry.id !== storageProbe.id);
+missing124.entries = missing124.entries.filter((entry) => entry.id !== bootstrapProbe.id);
 const changed124 = structuredClone(registry);
-changed124.entries.find((entry) => entry.id === storageProbe.id).allowed_statuses = ["valid"];
-if (isAdditive(missing124, registry122) || isAdditive(changed124, registry122)) {
+changed124.entries.find((entry) => entry.id === bootstrapProbe.id).allowed_statuses = ["valid"];
+if (isAdditive(missing124, registry124) || isAdditive(changed124, registry124)) {
   fail("additive-negative-control");
 }
 // A missing or changed 1.19.0 rule must actually fail the additive check.

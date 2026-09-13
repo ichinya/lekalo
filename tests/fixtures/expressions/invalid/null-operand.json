@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "lekalo/expressions/v1.0.0",
+  "identity": "dev.lekalo.expressions@1.0.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.1.0",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "builtinSemantics": "1.0.0",
+  "expressions": [
+    {
+      "id": "expr.planner/overdue-check",
+      "kind": "condition",
+      "description": "A started task with a due date in the past is overdue.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "due",
+          "type": "datetime",
+          "nullable": true
+        },
+        {
+          "scope": "input",
+          "field": "state",
+          "type": "string"
+        }
+      ],
+      "result": "bool",
+      "span": {
+        "file": "modules/planner/expressions.yaml",
+        "startByte": 128,
+        "startLine": 12,
+        "startColumn": 9,
+        "endByte": 512,
+        "endLine": 18,
+        "endColumn": 22
+      },
+      "body": {
+        "op": "not-null",
+        "operand": {
+          "op": "ref",
+          "scope": "input",
+          "field": "state"
+        }
+      }
+    }
+  ]
+}

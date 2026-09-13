@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ichinya/lekalo/contracts/expressions-vectors.schema.v1.0.0.json",
+  "title": "Lekalo expression evaluation vectors (v1.0.0)",
+  "description": "Issue #66: the shared cross-target fixtures. One document names evaluation cases for the expressions of one attachment; the Rust reference evaluator and every generated Node/PHP/Go program compute the same results over the same document, proving semantic equivalence by execution. The clock is injected per vector: no expression reads a wall clock.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "vectors"],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/expressions/vectors/v1.0.0"
+    },
+    "vectors": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/vectorCase"
+      }
+    }
+  },
+  "$defs": {
+    "vectorCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "expression", "bindings", "expect"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expression": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 191,
+          "pattern": "^expr\\.[a-z0-9-]+(\\.[a-z0-9-]+)*/[a-z0-9-]+$"
+        },
+        "clock": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+          "description": "The injected deterministic clock; required exactly when the body uses now."
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 0,
+          "maxProperties": 4,
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/scopeValues"
+            },
+            "actor": {
+              "$ref": "#/$defs/scopeValues"
+            },
+            "entity": {
+              "$ref": "#/$defs/scopeValues"
+            },
+            "result": {
+              "$ref": "#/$defs/scopeValues"
+            }
+          }
+        },
+        "expect": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value"],
+              "properties": {
+                "value": {
+                  "$ref": "#/$defs/jsonValue"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["error"],
+              "properties": {
+                "error": {
+                  "enum": [
+                    "int-overflow",
+                    "duration-overflow",
+                    "datetime-overflow",
+                    "divide-by-zero",
+                    "modulo-by-zero",
+                    "cast-invalid",
+                    "concat-overflow"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "scopeValues": {
+      "type": "object",
+      "minProperties": 0,
+      "maxProperties": 64,
+      "additionalProperties": {
+        "$ref": "#/$defs/jsonValue"
+      }
+    },
+    "jsonValue": {
+      "description": "The typed wire encoding: booleans, bounded integers (durations are integer seconds), BMP-only strings, canonical datetime strings, and sorted homogeneous arrays for sets; null only for nullable references.",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

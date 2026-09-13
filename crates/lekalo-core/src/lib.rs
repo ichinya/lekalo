@@ -11,6 +11,7 @@ pub mod diff;
 pub mod doctor;
 pub mod effects;
 pub mod error_contract;
+pub mod expressions;
 pub mod extended_effects;
 pub mod graph;
 pub mod impact;

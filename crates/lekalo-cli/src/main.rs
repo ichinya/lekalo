@@ -247,6 +247,13 @@ enum Commands {
         #[command(subcommand)]
         command: QueryModelCommands,
     },
+    /// Validate, evaluate, render, or compare typed-expression
+    /// attachments (issue #66). The core owns every decision; this
+    /// binary only selects, renders, and maps exits.
+    Expressions {
+        #[command(subcommand)]
+        command: ExpressionsCommands,
+    },
     /// Check generated-artifact ownership and drift, or plan and apply a
     /// confirmed clean of orphaned generated files.
     Generate {
@@ -841,6 +848,65 @@ enum QueryModelCommands {
     },
 }
 
+/// The `expressions` subcommands (issue #66): the thin
+/// validate/eval/render/diff handoff over the core family.
+#[derive(Debug, Subcommand)]
+enum ExpressionsCommands {
+    /// Validate one attachment: exhaustive static typing, canonical
+    /// bytes, and the required capability set.
+    Validate {
+        /// Path to the expressions attachment JSON document.
+        path: String,
+        /// Path to a built-in capability snapshot; a required token
+        /// missing from the snapshot blocks managed mode.
+        #[arg(long, value_name = "FILE")]
+        builtin_support: Option<String>,
+    },
+    /// Evaluate the shared vectors of one attachment against the
+    /// deterministic reference evaluator with the injected clock.
+    Eval {
+        /// Path to the expressions attachment JSON document.
+        path: String,
+        /// Path to the evaluation-vector document.
+        #[arg(long, value_name = "FILE")]
+        vectors: String,
+        /// Path to a built-in capability snapshot (managed mode).
+        #[arg(long, value_name = "FILE")]
+        builtin_support: Option<String>,
+    },
+    /// Render one complete cross-target program (node, php, or go)
+    /// that computes the shared vectors.
+    Render {
+        /// Path to the expressions attachment JSON document.
+        path: String,
+        /// The closed target vocabulary.
+        #[arg(long, value_enum)]
+        target: ExpressionTarget,
+        /// Path to a built-in capability snapshot (managed mode).
+        #[arg(long, value_name = "FILE")]
+        builtin_support: Option<String>,
+    },
+    /// Compare two same-family attachments and classify every
+    /// changed path; the verdict stays data, never an exit code.
+    Diff {
+        /// Path to the base attachment JSON document.
+        base: String,
+        /// Path to the candidate attachment JSON document.
+        candidate: String,
+    },
+}
+
+/// The closed expression render target vocabulary.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ExpressionTarget {
+    /// Node (ECMAScript).
+    Node,
+    /// PHP.
+    Php,
+    /// Go.
+    Go,
+}
+
 /// The `cache` subcommands: the thin status/clear handoff (issue #20).
 #[derive(Debug, Subcommand)]
 enum CacheCommands {
@@ -1098,6 +1164,7 @@ fn main() -> ExitCode {
                 format: DiffFormat::Json,
             } => run_diff(first, second, base, profiles),
             Commands::QueryModel { command } => run_query_model(command),
+            Commands::Expressions { command } => run_expressions(command),
             Commands::Graph { command } => run_graph(command, cli.no_cache),
             Commands::Effects { command } => run_effects(command, cli.no_cache),
             Commands::Trace { command } => run_trace(command),
@@ -3062,6 +3129,280 @@ fn query_model_diff(base_path: &str, candidate_path: &str) -> DomainResult {
     );
     DomainResult::graph(json, human, Vec::new())
 }
+
+/// The `lekalo expressions` subcommands: thin selection and
+/// rendering over the core family (issue #66).
+fn run_expressions(command: ExpressionsCommands) -> DomainResult {
+    match command {
+        ExpressionsCommands::Validate {
+            path,
+            builtin_support,
+        } => expressions_validate(&path, builtin_support.as_deref()),
+        ExpressionsCommands::Eval {
+            path,
+            vectors,
+            builtin_support,
+        } => expressions_eval(&path, &vectors, builtin_support.as_deref()),
+        ExpressionsCommands::Render {
+            path,
+            target,
+            builtin_support,
+        } => expressions_render(&path, target, builtin_support.as_deref()),
+        ExpressionsCommands::Diff { base, candidate } => expressions_diff(&base, &candidate),
+    }
+}
+
+/// Read one JSON document from a path with typed failures.
+fn read_expressions_document(path: &str) -> Result<serde_json::Value, DomainResult> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = if error.kind() == std::io::ErrorKind::NotFound {
+                "document-missing"
+            } else {
+                "document-unreadable"
+            };
+            return Err(DomainResult::invalid(lekalo_core::expressions::io_failure(
+                detail,
+            )));
+        }
+    };
+    serde_json::from_slice(&bytes)
+        .map_err(|_| DomainResult::invalid(lekalo_core::expressions::io_failure("invalid-json")))
+}
+
+/// Load and validate the attachment, then gate the declared
+/// capability snapshot when one is supplied.
+fn expressions_attachment(
+    path: &str,
+    support_path: Option<&str>,
+) -> Result<lekalo_core::expressions::ExpressionsAttachment, DomainResult> {
+    let document = read_expressions_document(path)?;
+    let attachment = match lekalo_core::expressions::ExpressionsAttachment::from_value(&document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return Err(DomainResult::invalid(diagnostics)),
+    };
+    if let Some(support_path) = support_path {
+        let support_document = read_expressions_document(support_path)?;
+        let support = match lekalo_core::expressions::BuiltinSupport::from_value(&support_document)
+        {
+            Ok(support) => support,
+            Err(diagnostics) => return Err(DomainResult::invalid(diagnostics)),
+        };
+        if let Err(diagnostics) =
+            lekalo_core::expressions::check_builtin_support(&attachment, &support)
+        {
+            return Err(DomainResult::invalid(diagnostics));
+        }
+    }
+    Ok(attachment)
+}
+
+/// `lekalo expressions validate`.
+fn expressions_validate(path: &str, support: Option<&str>) -> DomainResult {
+    let attachment = match expressions_attachment(path, support) {
+        Ok(attachment) => attachment,
+        Err(result) => return result,
+    };
+    let conditions = attachment
+        .expressions()
+        .iter()
+        .filter(|record| record.kind().key() == "condition")
+        .count();
+    let assignments = attachment.expressions().len() - conditions;
+    let digest = match attachment.canonical_digest() {
+        Ok(digest) => digest,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let capabilities: Vec<String> = attachment
+        .required_capabilities()
+        .iter()
+        .map(|token| format!("\"{token}\""))
+        .collect();
+    let json = format!(
+        "{{\"status\":\"valid\",\"expressions\":{{\"projectId\":\"{}\",\"expressionCount\":{},\"conditions\":{},\"assignments\":{},\"builtinSemantics\":\"{}\",\"requiredCapabilities\":[{}],\"digest\":\"sha256:{}\"}}}}",
+        attachment.project_id().as_str(),
+        attachment.expressions().len(),
+        conditions,
+        assignments,
+        attachment.builtin_semantics(),
+        capabilities.join(","),
+        digest,
+    );
+    let human = format!(
+        "expressions {}: {} records ({} conditions, {} assignments), {} required capabilities",
+        attachment.project_id().as_str(),
+        attachment.expressions().len(),
+        conditions,
+        assignments,
+        attachment.required_capabilities().len(),
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo expressions eval`: the deterministic reference evaluator
+/// over the shared vectors; every expectation must hold.
+fn expressions_eval(path: &str, vectors_path: &str, support: Option<&str>) -> DomainResult {
+    let attachment = match expressions_attachment(path, support) {
+        Ok(attachment) => attachment,
+        Err(result) => return result,
+    };
+    let vectors_document = match read_expressions_document(vectors_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let vectors = match lekalo_core::expressions::VectorsDocument::from_value(&vectors_document) {
+        Ok(vectors) => vectors,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    use lekalo_core::expressions::{evaluate, Clock, VectorExpect};
+    let mut rows: Vec<String> = Vec::with_capacity(vectors.vectors.len());
+    let mut failures = 0usize;
+    for vector in &vectors.vectors {
+        let Some(record) = attachment.expression(&vector.expression) else {
+            return DomainResult::invalid(lekalo_core::expressions::vector_expression_unknown(
+                &vector.id,
+            ));
+        };
+        let bindings = match lekalo_core::expressions::Bindings::from_json(record, &vector.bindings)
+        {
+            Ok(bindings) => bindings,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+        let clock = vector
+            .clock
+            .map(Clock::from_seconds)
+            .unwrap_or_else(|| Clock::from_datetime("1970-01-01T00:00:00Z").expect("epoch"));
+        match evaluate(record, &bindings, &clock) {
+            Ok(value) => {
+                let expected_ok = match &vector.expect {
+                    VectorExpect::Value(expected) => expected.to_json() == value.to_json(),
+                    VectorExpect::Error(_) => false,
+                };
+                if !expected_ok {
+                    failures += 1;
+                }
+                rows.push(format!(
+                    "{{\"id\":\"{}\",\"value\":{}}}",
+                    vector.id,
+                    value.to_json()
+                ));
+            }
+            Err(diagnostics) => {
+                let token = diagnostics
+                    .as_slice()
+                    .iter()
+                    .find(|d| d.id() == "expression.eval-invalid")
+                    .and_then(|d| d.data().get("detail"))
+                    .and_then(|value| serde_json::to_string(value).ok())
+                    .unwrap_or_else(|| "\"eval-failed\"".to_owned());
+                let expected_ok = match &vector.expect {
+                    VectorExpect::Error(expected) => token.contains(expected.key()),
+                    VectorExpect::Value(_) => false,
+                };
+                if !expected_ok {
+                    failures += 1;
+                }
+                rows.push(format!("{{\"id\":\"{}\",\"error\":{}}}", vector.id, token));
+            }
+        }
+    }
+    let json = format!(
+        "{{\"status\":\"valid\",\"expressionEval\":{{\"vectors\":{},\"failures\":{},\"results\":[{}]}}}}",
+        vectors.vectors.len(),
+        failures,
+        rows.join(","),
+    );
+    let human = format!(
+        "expression eval: {} vectors, {} mismatched expectations",
+        vectors.vectors.len(),
+        failures,
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo expressions render`: the complete cross-target program.
+fn expressions_render(path: &str, target: ExpressionTarget, support: Option<&str>) -> DomainResult {
+    let attachment = match expressions_attachment(path, support) {
+        Ok(attachment) => attachment,
+        Err(result) => return result,
+    };
+    let core_target = match target {
+        ExpressionTarget::Node => lekalo_core::expressions::Target::Node,
+        ExpressionTarget::Php => lekalo_core::expressions::Target::Php,
+        ExpressionTarget::Go => lekalo_core::expressions::Target::Go,
+    };
+    let program = lekalo_core::expressions::render_program(&attachment, core_target);
+    let json = format!(
+        "{{\"status\":\"valid\",\"expressionRender\":{{\"target\":\"{}\",\"program\":{}}}}}",
+        core_target.key(),
+        serde_json::to_string(&program).unwrap_or_default(),
+    );
+    let human = program;
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo expressions diff`.
+fn expressions_diff(base_path: &str, candidate_path: &str) -> DomainResult {
+    let base_document = match read_expressions_document(base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let candidate_document = match read_expressions_document(candidate_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let base = match lekalo_core::expressions::ExpressionsAttachment::from_value(&base_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let candidate =
+        match lekalo_core::expressions::ExpressionsAttachment::from_value(&candidate_document) {
+            Ok(attachment) => attachment,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let diff = match lekalo_core::expressions::compare(&base, &candidate) {
+        Ok(diff) => diff,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let count = |class| -> usize {
+        diff.paths()
+            .iter()
+            .filter(|path| path.class() == class)
+            .count()
+    };
+    let breaking = count(lekalo_core::expressions::DiffClass::Breaking);
+    let non_breaking = count(lekalo_core::expressions::DiffClass::NonBreaking);
+    let policy_change = count(lekalo_core::expressions::DiffClass::PolicyChange);
+    let paths: Vec<String> = diff
+        .paths()
+        .iter()
+        .map(|path| {
+            format!(
+                "{{\"path\":\"{}\",\"class\":\"{}\"}}",
+                path.path(),
+                path.class().key()
+            )
+        })
+        .collect();
+    let json = format!(
+        "{{\"status\":\"valid\",\"expressionsDiff\":{{\"equal\":{},\"breaking\":{},\"nonBreaking\":{},\"policyChange\":{},\"paths\":[{}]}}}}",
+        diff.equal(),
+        breaking,
+        non_breaking,
+        policy_change,
+        paths.join(","),
+    );
+    let human = format!(
+        "expressions diff: equal {}; breaking {}; non-breaking {}; policy-change {}",
+        diff.equal(),
+        breaking,
+        non_breaking,
+        policy_change,
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
 /// `lekalo requirements validate`: the accepted summary envelope carries
 /// the resolution counts; the gate denies on any stale, missing, or
 /// conflicted reference.

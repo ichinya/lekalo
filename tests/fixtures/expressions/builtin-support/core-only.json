@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "lekalo/expressions/builtin-support/v1.0.0",
+  "supported": [
+    "expression.core"
+  ]
+}

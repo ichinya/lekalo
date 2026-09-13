@@ -1,0 +1,614 @@
+{
+  "schemaVersion": "lekalo/expressions/vectors/v1.0.0",
+  "vectors": [
+    {
+      "id": "overdue-past-open",
+      "expression": "expr.planner/overdue-check",
+      "clock": "2026-09-12T00:00:00Z",
+      "bindings": {
+        "input": {
+          "due": "2026-09-10T00:00:00Z",
+          "state": "todo"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "overdue-future",
+      "expression": "expr.planner/overdue-check",
+      "clock": "2026-09-12T00:00:00Z",
+      "bindings": {
+        "input": {
+          "due": "2026-09-20T00:00:00Z",
+          "state": "todo"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "overdue-null-due",
+      "expression": "expr.planner/overdue-check",
+      "clock": "2026-09-12T00:00:00Z",
+      "bindings": {
+        "input": {
+          "due": null,
+          "state": "todo"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "overdue-done",
+      "expression": "expr.planner/overdue-check",
+      "clock": "2026-09-12T00:00:00Z",
+      "bindings": {
+        "input": {
+          "due": "2026-09-10T00:00:00Z",
+          "state": "done"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "gate-automated",
+      "expression": "expr.planner/state-gate",
+      "bindings": {
+        "input": {
+          "state": "todo",
+          "project_tags": [
+            "backlog",
+            "todo"
+          ]
+        },
+        "actor": {
+          "role": "automation"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "gate-closed-state",
+      "expression": "expr.planner/state-gate",
+      "bindings": {
+        "input": {
+          "state": "doing",
+          "project_tags": [
+            "backlog",
+            "todo"
+          ]
+        },
+        "actor": {
+          "role": "automation"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "gate-null-role",
+      "expression": "expr.planner/state-gate",
+      "bindings": {
+        "input": {
+          "state": "todo",
+          "project_tags": [
+            "todo"
+          ]
+        },
+        "actor": {
+          "role": null
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "gate-human-role",
+      "expression": "expr.planner/state-gate",
+      "bindings": {
+        "input": {
+          "state": "todo",
+          "project_tags": [
+            "backlog"
+          ]
+        },
+        "actor": {
+          "role": "admin"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "burst-suspicious",
+      "expression": "expr.planner/burst-guard",
+      "bindings": {
+        "input": {
+          "count": 3005,
+          "day": "2026-09-07T00:00:00Z",
+          "kind": "feature"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "burst-legacy-kind",
+      "expression": "expr.planner/burst-guard",
+      "bindings": {
+        "input": {
+          "count": 3005,
+          "day": "2026-09-07T00:00:00Z",
+          "kind": "legacy"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "burst-internal-kind",
+      "expression": "expr.planner/burst-guard",
+      "bindings": {
+        "input": {
+          "count": 3005,
+          "day": "2026-09-07T00:00:00Z",
+          "kind": "draft"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "burst-not-monday",
+      "expression": "expr.planner/burst-guard",
+      "bindings": {
+        "input": {
+          "count": 3005,
+          "day": "2026-09-08T00:00:00Z",
+          "kind": "feature"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "burst-small-count",
+      "expression": "expr.planner/burst-guard",
+      "bindings": {
+        "input": {
+          "count": 500,
+          "day": "2026-09-07T00:00:00Z",
+          "kind": "feature"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "note-null",
+      "expression": "expr.planner/optional-note",
+      "bindings": {
+        "input": {
+          "note": null
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "note-urgent",
+      "expression": "expr.planner/optional-note",
+      "bindings": {
+        "input": {
+          "note": "urgent fix before release"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "note-minor",
+      "expression": "expr.planner/optional-note",
+      "bindings": {
+        "input": {
+          "note": "minor cleanup"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "title-bracketed",
+      "expression": "expr.planner/title-open",
+      "bindings": {
+        "entity": {
+          "title": "[review] plan"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "title-plain",
+      "expression": "expr.planner/title-open",
+      "bindings": {
+        "entity": {
+          "title": "plan"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "search-contains",
+      "expression": "expr.planner/search-match",
+      "bindings": {
+        "entity": {
+          "title": "Plan Review"
+        },
+        "input": {
+          "query": "review"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "search-miss",
+      "expression": "expr.planner/search-match",
+      "bindings": {
+        "entity": {
+          "title": "Plan Review"
+        },
+        "input": {
+          "query": "zzz"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "search-suffix",
+      "expression": "expr.planner/search-match",
+      "bindings": {
+        "entity": {
+          "title": "Final Plan"
+        },
+        "input": {
+          "query": "plan"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "period-old-enough",
+      "expression": "expr.planner/period-check",
+      "bindings": {
+        "entity": {
+          "age": 90000,
+          "created": "2026-05-04T10:20:30Z"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "period-too-fresh",
+      "expression": "expr.planner/period-check",
+      "bindings": {
+        "entity": {
+          "age": 100,
+          "created": "2026-05-04T00:00:00Z"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "period-wrong-year",
+      "expression": "expr.planner/period-check",
+      "bindings": {
+        "entity": {
+          "age": 90000,
+          "created": "2025-05-04T00:00:00Z"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "score-doubled",
+      "expression": "expr.planner/urgency-score",
+      "bindings": {
+        "input": {
+          "estimate": 10,
+          "penalty": 2
+        }
+      },
+      "expect": {
+        "value": 16
+      }
+    },
+    {
+      "id": "score-floor",
+      "expression": "expr.planner/urgency-score",
+      "bindings": {
+        "input": {
+          "estimate": 3,
+          "penalty": 2
+        }
+      },
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "id": "score-overflow-multiply",
+      "expression": "expr.planner/urgency-score",
+      "bindings": {
+        "input": {
+          "estimate": 9007199254740991,
+          "penalty": 0
+        }
+      },
+      "expect": {
+        "error": "int-overflow"
+      }
+    },
+    {
+      "id": "score-overflow-subtract",
+      "expression": "expr.planner/urgency-score",
+      "bindings": {
+        "input": {
+          "estimate": -9007199254740991,
+          "penalty": 9007199254740991
+        }
+      },
+      "expect": {
+        "error": "int-overflow"
+      }
+    },
+    {
+      "id": "label-plan",
+      "expression": "expr.planner/slug-label",
+      "bindings": {
+        "input": {
+          "title": "Plan"
+        }
+      },
+      "expect": {
+        "value": "plan4"
+      }
+    },
+    {
+      "id": "label-single",
+      "expression": "expr.planner/slug-label",
+      "bindings": {
+        "input": {
+          "title": "a"
+        }
+      },
+      "expect": {
+        "value": "a1"
+      }
+    },
+    {
+      "id": "label-concat-overflow",
+      "expression": "expr.planner/slug-label",
+      "bindings": {
+        "input": {
+          "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expect": {
+        "error": "concat-overflow"
+      }
+    },
+    {
+      "id": "tag-upper",
+      "expression": "expr.planner/copy-tag",
+      "bindings": {
+        "input": {
+          "kind": "feature"
+        }
+      },
+      "expect": {
+        "value": "FEATURE!"
+      }
+    },
+    {
+      "id": "review-null-uses-now",
+      "expression": "expr.planner/review-due",
+      "clock": "2026-09-12T00:00:00Z",
+      "bindings": {
+        "entity": {
+          "reviewed_at": null
+        }
+      },
+      "expect": {
+        "value": "2026-09-12T00:00:00Z"
+      }
+    },
+    {
+      "id": "review-week-later",
+      "expression": "expr.planner/review-due",
+      "clock": "2026-09-12T00:00:00Z",
+      "bindings": {
+        "entity": {
+          "reviewed_at": "2026-09-01T00:00:00Z"
+        }
+      },
+      "expect": {
+        "value": "2026-09-08T00:00:00Z"
+      }
+    },
+    {
+      "id": "review-year-bound",
+      "expression": "expr.planner/review-due",
+      "clock": "2026-09-12T00:00:00Z",
+      "bindings": {
+        "entity": {
+          "reviewed_at": "9999-12-31T00:00:00Z"
+        }
+      },
+      "expect": {
+        "error": "datetime-overflow"
+      }
+    },
+    {
+      "id": "limit-canonical",
+      "expression": "expr.planner/parsed-limit",
+      "bindings": {
+        "input": {
+          "raw_limit": "42"
+        }
+      },
+      "expect": {
+        "value": 42
+      }
+    },
+    {
+      "id": "limit-negative",
+      "expression": "expr.planner/parsed-limit",
+      "bindings": {
+        "input": {
+          "raw_limit": "-7"
+        }
+      },
+      "expect": {
+        "value": -7
+      }
+    },
+    {
+      "id": "limit-space-invalid",
+      "expression": "expr.planner/parsed-limit",
+      "bindings": {
+        "input": {
+          "raw_limit": " 42"
+        }
+      },
+      "expect": {
+        "error": "cast-invalid"
+      }
+    },
+    {
+      "id": "limit-bound-invalid",
+      "expression": "expr.planner/parsed-limit",
+      "bindings": {
+        "input": {
+          "raw_limit": "9007199254740992"
+        }
+      },
+      "expect": {
+        "error": "cast-invalid"
+      }
+    },
+    {
+      "id": "spread-truncated",
+      "expression": "expr.planner/spread",
+      "bindings": {
+        "input": {
+          "total": 7,
+          "parts": 3
+        }
+      },
+      "expect": {
+        "value": 2
+      }
+    },
+    {
+      "id": "spread-negative",
+      "expression": "expr.planner/spread",
+      "bindings": {
+        "input": {
+          "total": -7,
+          "parts": 3
+        }
+      },
+      "expect": {
+        "value": -2
+      }
+    },
+    {
+      "id": "spread-divide-by-zero",
+      "expression": "expr.planner/spread",
+      "bindings": {
+        "input": {
+          "total": 1,
+          "parts": 0
+        }
+      },
+      "expect": {
+        "error": "divide-by-zero"
+      }
+    },
+    {
+      "id": "rest-positive",
+      "expression": "expr.planner/spread-rest",
+      "bindings": {
+        "input": {
+          "total": 7,
+          "parts": 3
+        }
+      },
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "id": "rest-negative",
+      "expression": "expr.planner/spread-rest",
+      "bindings": {
+        "input": {
+          "total": -7,
+          "parts": 3
+        }
+      },
+      "expect": {
+        "value": -1
+      }
+    },
+    {
+      "id": "rest-modulo-by-zero",
+      "expression": "expr.planner/spread-rest",
+      "bindings": {
+        "input": {
+          "total": 1,
+          "parts": 0
+        }
+      },
+      "expect": {
+        "error": "modulo-by-zero"
+      }
+    }
+  ]
+}

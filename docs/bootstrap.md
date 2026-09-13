@@ -15,7 +15,7 @@ any-other-content conflict denial, the same target document bytes, and
 the same in-process load-and-validate gate. [ADR-0039](adr/0039-greenfield-init-bootstrap.md)
 records the greenfield decisions.
 
-Product 0.2.14, Model 1.0.0, IR 0.1.0 and diagnostic registry 1.24.0
+Product 0.2.15, Model 1.0.0, IR 0.1.0 and diagnostic registry 1.25.0
 remain independent version lines.
 
 ## Commands

@@ -2,7 +2,7 @@
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
-MSRV of Rust 1.80.0, and carries product candidate version 0.2.14. The product
+MSRV of Rust 1.80.0, and carries product candidate version 0.2.15. The product
 version is independent of every contract or model schema version.
 
 The core crate owns the result contracts, the issue #7 loader
@@ -35,6 +35,10 @@ lekalo migrate --to model/TARGET [--dry-run] [--project DIR]
 lekalo migrate --rollback PLAN_ID [--project DIR]
 lekalo compatibility
 lekalo validate [--project DIR] [--module MODULE] [--strict]
+lekalo expressions validate PATH [--builtin-support FILE]
+lekalo expressions eval PATH --vectors FILE [--builtin-support FILE]
+lekalo expressions render PATH --target node|php|go [--builtin-support FILE]
+lekalo expressions diff BASE CANDIDATE
 lekalo graph show SYMBOL [--project DIR]
 lekalo graph callers SYMBOL [--transitive] [--project DIR]
 lekalo graph path FROM TO [--project DIR]
@@ -314,14 +318,14 @@ Version:
 ```json
 {
   "status": "valid",
-  "version": "0.2.14"
+  "version": "0.2.15"
 }
 ```
 
 The corresponding human lines are
 `invalid error [LEK-CLI-001] cli.usage: Malformed command-line syntax.`,
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
-capability is not implemented yet.`, and `lekalo 0.2.14`. Human and JSON
+capability is not implemented yet.`, and `lekalo 0.2.15`. Human and JSON
 renderers consume the same `DomainResult`.
 
 ## Graph
@@ -697,6 +701,36 @@ binding; an ambiguous proposal lists every candidate and picks none until
 confirmed preview of every unambiguous proposal. `bindings audit` is the
 staleness gate over symbols and native test bindings (exit 0 current,
 exit 1 with `observed.stale-binding` per finding).
+
+## Expressions (issue #66)
+
+Issue #66 adds the typed-expression handoff: the thin
+validate/eval/render/diff subcommands over the closed
+`dev.lekalo.expressions@1.0.0` family. The core owns every decision
+(static typing, reference evaluation with the injected clock,
+projection, classification); the binary only selects, renders, and
+maps exits. The contract, the closed grammar, the managed-mode
+capability snapshots, and the cross-target fixtures live in
+[expressions.md](expressions.md) and
+[ADR-0040](adr/0040-typed-expressions.md):
+
+```sh
+lekalo expressions validate planner.json
+lekalo expressions validate planner.json --builtin-support support.json
+lekalo expressions eval planner.json --vectors vectors.json
+lekalo expressions render planner.json --target node
+lekalo expressions diff base.json candidate.json
+```
+
+`validate` emits the hermetic validity envelope with the capability
+summary and the canonical SHA-256 digest. `eval` runs the shared
+evaluation vectors through the deterministic reference evaluator;
+every vector of a `now`-reading expression injects its clock.
+`render` emits one complete self-contained Node, PHP, or Go program
+that recomputes the vectors; a capability snapshot missing a required
+token blocks managed mode (`expression.builtin-unsupported`).
+`diff` classifies every changed path as breaking, non-breaking, or
+policy-change; the verdict stays data, never an exit code.
 
  ## Development checks
 ```sh

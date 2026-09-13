@@ -632,6 +632,30 @@ emission, no adapter. See
 [ADR-0025](docs/adr/0025-storage-projection.md), and the hermetic
 fixtures under `tests/fixtures/storage-projection/`.
 
+## Typed expressions for conditions and assignments
+
+Issue #66 makes planner preconditions, filters, and field
+assignments first-class, machine-checkable contract data: the closed
+typed-expression attachment (`lekalo/expressions/v1.0.0`, identity
+`dev.lekalo.expressions@1.0.0`) declares named condition and
+assignment records over a small deterministic language — typed
+literals and scope references, equality/comparison/null/set-membership
+operators, checked arithmetic, bounded boolean combinators, the
+loop-free conditional, the injected-clock `now`, and fifteen
+target-neutral built-ins with versioned semantics. Static typing is
+exhaustive; the reference evaluator is pure and total; no arbitrary
+call, loop, reflection, eval, filesystem, or network access has any
+representation in the grammar, and computations that exceed the
+closed bounds route to the foreign implementation escape hatch
+instead of growing the DSL. One compiler renders complete Node, PHP,
+and Go programs that recompute the shared evaluation vectors, and
+managed mode is gated by per-target capability snapshots. Pure
+declaration, validation, evaluation, and projection: no runtime
+enforcement, no scenario execution, no adapter integration. See
+[docs/expressions.md](docs/expressions.md),
+[ADR-0040](docs/adr/0040-typed-expressions.md), and the hermetic
+fixtures under `tests/fixtures/expressions/`.
+
 ## Lekalo Model contracts and semantic IDs
 
 The published language-neutral Model 0.1.0 contract for issue #5 remains at
@@ -640,7 +664,8 @@ The published language-neutral Model 0.1.0 contract for issue #5 remains at
 [Model 1.0](docs/model-1.0.md), governed by the closed
 [semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
 and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #97 carries prospective product 0.2.14
+independent of product releases; issue #66 carries prospective product 0.2.15
+(issue #97 carried prospective product 0.2.14
 (issue #91 carried prospective product 0.2.13
 (issue #65 carried prospective product 0.2.12; issue #64 carried prospective
 product 0.2.11; issue #42 carried prospective product 0.2.9; issue #30 carried prospective
