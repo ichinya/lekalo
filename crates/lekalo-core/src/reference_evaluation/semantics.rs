@@ -164,12 +164,19 @@ pub(crate) fn evaluate(node: &PredicateNode, context: &Context<'_>) -> Result<bo
             Ok(set.contains(&operand))
         }
         PredicateNode::All { from, predicate } => {
-            // The #63 AST has no member-bound variable inside a
-            // quantified predicate: references keep resolving against
-            // input, prior row, and `now`. The rule is therefore the
-            // literal one — evaluate the member predicate in the same
-            // context; an empty collection is vacuously true.
-            let _ = resolve(from, context)?;
+            // As with `any`: the collection operand is validated
+            // through the common member helper, and the #63 AST has
+            // no member-bound variable inside a quantified predicate:
+            // references keep resolving against input, prior row, and
+            // `now`. The rule is therefore the literal one — an empty
+            // collection is vacuously true without evaluating the
+            // predicate, and a nonempty collection takes the member
+            // predicate decision in the same context (issue #107
+            // correction 2).
+            let collection = resolve(from, context)?;
+            if members(&collection)?.is_empty() {
+                return Ok(true);
+            }
             Ok(evaluate(predicate, context)?)
         }
         PredicateNode::Any { from, predicate } => {
@@ -407,9 +414,25 @@ pub(crate) fn normalize_datetime(text: &str) -> Result<String, Reason> {
 
 /// Structurally compare two canonical UTC datetimes.
 fn compare_datetime(left: &str, right: &str) -> Result<std::cmp::Ordering, Reason> {
-    let left = datetime_parts(left).ok_or(Reason::IncompatibleKind)?;
-    let right = datetime_parts(right).ok_or(Reason::IncompatibleKind)?;
-    Ok(left.cmp(&right))
+    let (left_days, left_second, left_fraction) =
+        datetime_parts(left).ok_or(Reason::IncompatibleKind)?;
+    let (right_days, right_second, right_fraction) =
+        datetime_parts(right).ok_or(Reason::IncompatibleKind)?;
+    let days = left_days.cmp(&right_days);
+    if days != std::cmp::Ordering::Equal {
+        return Ok(days);
+    }
+    let second = left_second.cmp(&right_second);
+    if second != std::cmp::Ordering::Equal {
+        return Ok(second);
+    }
+    // Fraction digits order numerically: right-pad the exact
+    // serialized spellings to a common width so `.5`, `.50`, an
+    // absent fraction, and `.0` denote one and the same instant,
+    // while unequal fractions keep their chronological order and
+    // every stored spelling keeps its exact precision (issue #107
+    // correction 2).
+    Ok(align(&left_fraction, &right_fraction, false))
 }
 
 /// The comparable tuple of one canonical UTC datetime: epoch days,
@@ -672,6 +695,47 @@ mod tests {
         assert_eq!(
             compare_datetime("2026-09-05T10:20:30Z", "2026-09-05T10:20:30.1Z").expect("comparable"),
             std::cmp::Ordering::Less
+        );
+    }
+
+    /// Equal instants spelled with different fraction widths compare
+    /// Equal: `.5`, `.50`, an absent fraction, and `.0` are one
+    /// instant, while unequal fractions keep their numeric order
+    /// (issue #107 correction 2).
+    #[test]
+    fn equal_instant_fraction_spellings_compare_equal() {
+        use std::cmp::Ordering;
+        let same_day = |left: &str, right: &str| {
+            compare_datetime(
+                &format!("2026-09-05T10:20:30{left}"),
+                &format!("2026-09-05T10:20:30{right}"),
+            )
+            .expect("comparable")
+        };
+        assert_eq!(same_day(".5Z", ".50Z"), Ordering::Equal);
+        assert_eq!(same_day(".50Z", ".5Z"), Ordering::Equal);
+        assert_eq!(same_day(".123Z", ".1230Z"), Ordering::Equal);
+        assert_eq!(same_day("Z", ".0Z"), Ordering::Equal);
+        assert_eq!(same_day("Z", ".000Z"), Ordering::Equal);
+        assert_eq!(same_day(".0Z", "Z"), Ordering::Equal);
+        // Unequal fractions keep their chronological order at the
+        // same second, in both directions.
+        assert_eq!(same_day(".5Z", ".51Z"), Ordering::Less);
+        assert_eq!(same_day(".51Z", ".5Z"), Ordering::Greater);
+        assert_eq!(same_day("Z", ".1Z"), Ordering::Less);
+        assert_eq!(same_day(".1Z", "Z"), Ordering::Greater);
+        assert_eq!(same_day(".1235Z", ".123Z"), Ordering::Greater);
+        assert_eq!(same_day(".123Z", ".1235Z"), Ordering::Less);
+        // Cross-day and cross-second orderings stay intact next to
+        // equal spellings.
+        assert_eq!(
+            compare_datetime("2026-09-05T10:20:30.5Z", "2026-09-06T10:20:30.4Z")
+                .expect("comparable"),
+            Ordering::Less
+        );
+        assert_eq!(
+            compare_datetime("2026-09-05T10:20:31Z", "2026-09-05T10:20:30.9Z").expect("comparable"),
+            Ordering::Greater
         );
     }
 

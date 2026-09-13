@@ -16,7 +16,7 @@ use lekalo_core::invariant_transition::InvariantTransitionAttachment;
 use lekalo_core::ir::CompiledProject;
 use lekalo_core::loader::{normalize_model, LoadSelection};
 use lekalo_core::reference_evaluation::{
-    trace_bytes, Outcome, ReferenceEvaluation, Status, Verdict,
+    trace_bytes, ErrorToken, Outcome, ReferenceEvaluation, ReferenceTrace, Status, Verdict,
 };
 use lekalo_core::scenario::ScenarioIr;
 use std::path::{Path, PathBuf};
@@ -119,6 +119,39 @@ const CORRECTION_SCENARIOS: &[(&str, &[u8], &[u8])] = &[
     ),
 ];
 
+/// The issue #107 correction round 2 fixtures: the exact public-API
+/// reproductions of the two reviewed semantic defects, each bound to
+/// its exact scenario, attachment-variant, and canonical golden trace
+/// bytes.
+type Correction2Fixture = (&'static str, &'static [u8], &'static [u8], &'static [u8]);
+
+const CORRECTION_2_FIXTURES: &[Correction2Fixture] = &[
+    (
+        "fraction-equal-before",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/fraction-equal-before.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/invariants-fraction-equal-before.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/fraction-equal-before.json.trace.json"
+        ),
+    ),
+    (
+        "all-empty-false",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/all-empty-false.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/invariants-all-empty-false.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/all-empty-false.json.trace.json"
+        ),
+    ),
+];
+
 /// Serializes every test that changes the process working directory.
 static CWD_LOCK: Mutex<()> = Mutex::new(());
 
@@ -190,6 +223,9 @@ fn reference_suite_runs_from_the_workspace_root() {
         early_unsupported_clocks_are_schema_valid();
         default_clock_is_the_first_declared_given_clock();
         fractional_datetime_literals_execute();
+        correction_2_goldens_match_committed_bytes();
+        equal_instant_fractions_stay_strictly_chronological();
+        all_quantifier_resolves_the_collection();
     });
     std::env::set_current_dir(original).expect("restore cwd");
     if let Err(payload) = result {
@@ -916,5 +952,342 @@ fn fractional_datetime_literals_execute() {
         );
         assert_eq!(trace.assertions()[1].verdict, Verdict::Pass);
         assert_eq!(trace.status(), Status::Pass);
+    }
+}
+
+/// Evaluates one correction-2 fixture: the exact scenario against the
+/// exact attachment variant over the committed board model.
+fn correction_2_execute(index: usize) -> ReferenceTrace {
+    let project = compile_board();
+    let (_, scenario_bytes, attachment_bytes, _) = &CORRECTION_2_FIXTURES[index];
+    let attachment_value: serde_json::Value =
+        serde_json::from_slice(attachment_bytes).expect("attachment JSON");
+    let attachment =
+        InvariantTransitionAttachment::from_value(&attachment_value).expect("attachment parses");
+    let registry =
+        lekalo_core::error_contract::ErrorRegistry::from_bytes(REGISTRY).expect("registry parses");
+    let scenario_wire: serde_json::Value =
+        serde_json::from_slice(scenario_bytes).expect("scenario JSON");
+    let scenario = ScenarioIr::from_value(&scenario_wire).expect("scenario parses");
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    evaluation.execute(&scenario).expect("trace")
+}
+
+/// Rebuilds one correction-2 evaluation with a mutated attachment
+/// precondition (and optional scenario mutation), as a public wire
+/// variant.
+fn correction_2_variant(
+    index: usize,
+    precondition: serde_json::Value,
+    scenario_mutation: impl FnOnce(&mut serde_json::Value),
+) -> ReferenceTrace {
+    let project = compile_board();
+    let (_, scenario_bytes, attachment_bytes, _) = &CORRECTION_2_FIXTURES[index];
+    let mut attachment_wire: serde_json::Value =
+        serde_json::from_slice(attachment_bytes).expect("attachment JSON");
+    attachment_wire["transitions"][0]["preconditions"] = serde_json::json!([precondition]);
+    let attachment =
+        InvariantTransitionAttachment::from_value(&attachment_wire).expect("attachment parses");
+    let registry =
+        lekalo_core::error_contract::ErrorRegistry::from_bytes(REGISTRY).expect("registry parses");
+    let mut scenario_wire: serde_json::Value =
+        serde_json::from_slice(scenario_bytes).expect("scenario JSON");
+    scenario_mutation(&mut scenario_wire);
+    let scenario = ScenarioIr::from_value(&scenario_wire).expect("scenario parses");
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    evaluation.execute(&scenario).expect("trace")
+}
+
+/// The declared errors of the focus transition, byte-sorted.
+fn focus_declared() -> Vec<String> {
+    vec![
+        String::from("errors.board/focus-conflict"),
+        String::from("errors.board/task-not-found"),
+    ]
+}
+
+/// Every correction-2 fixture matches its committed canonical golden
+/// byte for byte, and the exact repro outcomes hold: equal-instant
+/// fraction spellings refuse `before` with no effects, and `all`
+/// over an empty collection executes vacuously (correction 2,
+/// review B2.1/B2.2).
+fn correction_2_goldens_match_committed_bytes() {
+    let fraction_trace = correction_2_execute(0);
+    let canonical = trace_bytes(&fraction_trace).expect("canonical trace bytes");
+    assert_eq!(
+        canonical.as_bytes(),
+        CORRECTION_2_FIXTURES[0].3,
+        "fraction-equal-before: canonical trace diverges from the committed golden"
+    );
+    assert_eq!(fraction_trace.status(), Status::Fail);
+    for record in fraction_trace.when() {
+        match &record.outcome {
+            Outcome::Error {
+                token,
+                declared,
+                violations,
+            } => {
+                assert_eq!(*token, ErrorToken::PreconditionFailed);
+                assert_eq!(*declared, focus_declared());
+                assert!(violations.is_empty());
+            }
+            other => panic!("expected precondition-failed error, got {other:?}"),
+        }
+    }
+    assert_eq!(fraction_trace.when()[1].replay_of.as_deref(), Some("focus"));
+    assert!(fraction_trace.when()[1].effects.is_empty());
+    assert!(fraction_trace.effects().is_empty());
+    assert_eq!(
+        fraction_trace.assertions()[0].verdict,
+        Verdict::Fail("replay-error")
+    );
+    // The final state keeps the given row untouched: focused_at is
+    // still null and no event intent was emitted.
+    let snapshot = &fraction_trace.state()[0];
+    let focused_at = snapshot
+        .fields
+        .iter()
+        .find(|(field, _)| field == "focused_at")
+        .expect("focused_at field");
+    assert_eq!(focused_at.1, lekalo_core::scenario::TypedValue::Null);
+
+    let all_trace = correction_2_execute(1);
+    let canonical = trace_bytes(&all_trace).expect("canonical trace bytes");
+    assert_eq!(
+        canonical.as_bytes(),
+        CORRECTION_2_FIXTURES[1].3,
+        "all-empty-false: canonical trace diverges from the committed golden"
+    );
+    assert_eq!(all_trace.status(), Status::Pass);
+    assert!(matches!(all_trace.when()[0].outcome, Outcome::Ok { .. }));
+    assert_eq!(all_trace.when()[1].replay_of.as_deref(), Some("focus"));
+    // The replay adds no effects; the focus step wrote the row and
+    // emitted the declared event intent.
+    assert!(all_trace.when()[1].effects.is_empty());
+    assert_eq!(all_trace.effects().len(), 2);
+    for assertion in all_trace.assertions() {
+        assert_eq!(assertion.verdict, Verdict::Pass);
+    }
+}
+
+/// Chronological datetime ordering compares fraction digits
+/// numerically: `.5`, `.50`, an absent fraction, and `.0` denote one
+/// instant, so strict `before`/`after` over them refuses the command
+/// with `precondition-failed` and no effects, `within` accepts the
+/// boundary, and unequal fractions keep executing (correction 2,
+/// review B2.1/A-D1).
+fn equal_instant_fractions_stay_strictly_chronological() {
+    // after(.1230Z, .123Z): the symmetric strict probe refuses too.
+    let trace = correction_2_variant(
+        0,
+        serde_json::json!({
+            "op": "after",
+            "left": {"kind": "datetime", "value": "2026-09-08T12:00:00.1230Z"},
+            "right": {"kind": "datetime", "value": "2026-09-08T12:00:00.123Z"}
+        }),
+        |_| {},
+    );
+    assert_eq!(trace.status(), Status::Fail);
+    match &trace.when()[0].outcome {
+        Outcome::Error { token, .. } => assert_eq!(*token, ErrorToken::PreconditionFailed),
+        other => panic!("expected precondition-failed, got {other:?}"),
+    }
+    assert!(trace.effects().is_empty());
+
+    // before(absent fraction, .0): one instant, so the strict probe
+    // refuses as well.
+    let trace = correction_2_variant(
+        0,
+        serde_json::json!({
+            "op": "before",
+            "left": {"kind": "datetime", "value": "2026-09-08T12:00:00Z"},
+            "right": {"kind": "datetime", "value": "2026-09-08T12:00:00.0Z"}
+        }),
+        |_| {},
+    );
+    match &trace.when()[0].outcome {
+        Outcome::Error { token, .. } => assert_eq!(*token, ErrorToken::PreconditionFailed),
+        other => panic!("expected precondition-failed, got {other:?}"),
+    }
+
+    // before(same spelling): the control still refuses.
+    let trace = correction_2_variant(
+        0,
+        serde_json::json!({
+            "op": "before",
+            "left": {"kind": "datetime", "value": "2026-09-08T12:00:00.5Z"},
+            "right": {"kind": "datetime", "value": "2026-09-08T12:00:00.5Z"}
+        }),
+        |_| {},
+    );
+    match &trace.when()[0].outcome {
+        Outcome::Error { token, .. } => assert_eq!(*token, ErrorToken::PreconditionFailed),
+        other => panic!("expected precondition-failed, got {other:?}"),
+    }
+
+    // before(.1235Z, .123Z): unequal instants still order strictly
+    // and execute.
+    let trace = correction_2_variant(
+        0,
+        serde_json::json!({
+            "op": "before",
+            "left": {"kind": "datetime", "value": "2026-09-08T12:00:00.123Z"},
+            "right": {"kind": "datetime", "value": "2026-09-08T12:00:00.1235Z"}
+        }),
+        |_| {},
+    );
+    assert!(matches!(trace.when()[0].outcome, Outcome::Ok { .. }));
+    assert_eq!(trace.status(), Status::Pass);
+    assert_eq!(trace.effects().len(), 2);
+
+    // within(prior.focused_at, 1s) at the upper boundary: the row
+    // was given `12:00:01.00Z` against the `12:00:00Z` clock, which
+    // is the same instant as the span's upper bound, so it lies
+    // within and executes.
+    let trace = correction_2_variant(
+        0,
+        serde_json::json!({
+            "op": "within",
+            "left": {"kind": "field", "field": "focused_at"},
+            "duration": {"unit": "seconds", "amount": 1}
+        }),
+        |wire| {
+            wire["given"][0]["precondition"]["fields"]["focused_at"] = serde_json::json!({
+                "type": "datetime",
+                "value": "2026-09-08T12:00:01.00Z"
+            });
+        },
+    );
+    assert!(matches!(trace.when()[0].outcome, Outcome::Ok { .. }));
+    assert_eq!(trace.status(), Status::Pass);
+}
+
+/// `all` resolves and validates its collection operand through the
+/// common member helper: an empty collection is vacuously true
+/// without evaluating the predicate, a scalar operand is a typed
+/// `incompatible-kind`, and a nonempty collection takes the member
+/// predicate decision in the same context under the documented
+/// no-member-binding interpretation (correction 2, review
+/// B2.2).
+fn all_quantifier_resolves_the_collection() {
+    // Empty collection with a predicate that reads an unset input:
+    // vacuously true without evaluating it.
+    let trace = correction_2_variant(
+        1,
+        serde_json::json!({
+            "op": "all",
+            "from": {"kind": "list", "items": []},
+            "predicate": {"op": "not_null", "operand": {"kind": "input", "field": "missing"}}
+        }),
+        |_| {},
+    );
+    assert!(matches!(trace.when()[0].outcome, Outcome::Ok { .. }));
+    assert_eq!(trace.status(), Status::Pass);
+
+    // A null operand is the empty collection: vacuously true.
+    let trace = correction_2_variant(
+        1,
+        serde_json::json!({
+            "op": "all",
+            "from": {"kind": "null"},
+            "predicate": {"op": "is_null", "operand": {"kind": "input", "field": "task_id"}}
+        }),
+        |_| {},
+    );
+    assert!(matches!(trace.when()[0].outcome, Outcome::Ok { .. }));
+    assert_eq!(trace.status(), Status::Pass);
+
+    // Nonempty collection with a true member decision: executes.
+    let trace = correction_2_variant(
+        1,
+        serde_json::json!({
+            "op": "all",
+            "from": {"kind": "list", "items": [
+                {"kind": "string", "value": "a"},
+                {"kind": "string", "value": "b"}
+            ]},
+            "predicate": {"op": "not_null", "operand": {"kind": "input", "field": "task_id"}}
+        }),
+        |_| {},
+    );
+    assert!(matches!(trace.when()[0].outcome, Outcome::Ok { .. }));
+    assert_eq!(trace.status(), Status::Pass);
+    assert_eq!(trace.effects().len(), 2);
+
+    // Nonempty collection with a false member decision: refuses
+    // with precondition-failed and no effects.
+    let trace = correction_2_variant(
+        1,
+        serde_json::json!({
+            "op": "all",
+            "from": {"kind": "list", "items": [{"kind": "string", "value": "a"}]},
+            "predicate": {"op": "is_null", "operand": {"kind": "input", "field": "task_id"}}
+        }),
+        |_| {},
+    );
+    match &trace.when()[0].outcome {
+        Outcome::Error { token, .. } => assert_eq!(*token, ErrorToken::PreconditionFailed),
+        other => panic!("expected precondition-failed, got {other:?}"),
+    }
+    assert!(trace.effects().is_empty());
+    assert_eq!(trace.status(), Status::Fail);
+
+    // A scalar operand is not a collection: typed incompatible-kind,
+    // with no writes and no event intents. The scenario assertions
+    // are adjusted to expect exactly that reality (row untouched, no
+    // emission), so the overall status isolates the unsupported step.
+    let trace = correction_2_variant(
+        1,
+        serde_json::json!({
+            "op": "all",
+            "from": {"kind": "integer", "value": 7},
+            "predicate": {"op": "not_null", "operand": {"kind": "input", "field": "task_id"}}
+        }),
+        |wire| {
+            wire["then"][1]["assertion"]["fields"]["focused_at"] = serde_json::json!({
+                "value": {"type": "null", "value": null}
+            });
+            wire["then"]
+                .as_array_mut()
+                .expect("then array")
+                .pop()
+                .expect("emitted assertion");
+        },
+    );
+    assert_eq!(trace.status(), Status::Unsupported);
+    match &trace.when()[0].outcome {
+        Outcome::Unsupported { reason } => assert_eq!(*reason, "incompatible-kind"),
+        other => panic!("expected unsupported incompatible-kind, got {other:?}"),
+    }
+    assert_eq!(
+        trace.assertions()[0].verdict,
+        Verdict::Unsupported("incompatible-kind")
+    );
+    assert_eq!(trace.assertions()[1].verdict, Verdict::Pass);
+    assert_eq!(trace.assertions().len(), 2);
+    assert!(trace.when()[1].effects.is_empty());
+    assert!(trace.effects().is_empty());
+    let snapshot = &trace.state()[0];
+    let focused_at = snapshot
+        .fields
+        .iter()
+        .find(|(field, _)| field == "focused_at")
+        .expect("focused_at field");
+    assert_eq!(focused_at.1, lekalo_core::scenario::TypedValue::Null);
+
+    // Adjacent control: `any` over an empty collection stays false,
+    // so the same strict command refuses.
+    let trace = correction_2_variant(
+        1,
+        serde_json::json!({
+            "op": "any",
+            "from": {"kind": "list", "items": []},
+            "predicate": {"op": "not_null", "operand": {"kind": "input", "field": "task_id"}}
+        }),
+        |_| {},
+    );
+    match &trace.when()[0].outcome {
+        Outcome::Error { token, .. } => assert_eq!(*token, ErrorToken::PreconditionFailed),
+        other => panic!("expected precondition-failed, got {other:?}"),
     }
 }

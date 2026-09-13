@@ -94,7 +94,12 @@ Only the explicitly supported deterministic subset executes:
   in the pinned attachment (zero or several are `no-transition` /
   `multiple-transitions`); its state-space entity locates the target
   row by identity fields present in the input; entry preconditions
-  evaluate over input, prior row, and the evaluation clock; ordered
+  evaluate over input, prior row, and the evaluation clock
+  (chronological ordering compares fraction digits numerically, so
+  equal instants with different fraction spellings are neither before
+  nor after each other; `all`/`any` decide empty collections vacuously
+  without evaluating the member predicate, and a scalar collection is
+  a typed `incompatible-kind`); ordered
   assignments write literal, input, prior, or clock (`now`) sources;
   post-write, every invariant of the transition's state space is
   enforced (field-value, cross-field, temporal, conditional

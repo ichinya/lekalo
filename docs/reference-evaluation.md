@@ -45,7 +45,13 @@ nothing is written, read from disk, spawned, or fetched at any point.
   (`no-transition` / `multiple-transitions` otherwise); the row is
   located by identity fields in the input (`identity-incomplete`
   otherwise; `row-not-found` when absent); entry preconditions
-  evaluate over input, prior row, and the evaluation clock; ordered
+  evaluate over input, prior row, and the evaluation clock:
+  chronological ordering compares fraction digits numerically so one
+  instant spelled `.5`, `.50`, without a fraction, or `.0` is neither
+  before nor after itself, and the `all`/`any` quantifiers validate
+  their collection operand (a scalar is a typed `incompatible-kind`)
+  and decide empty collections vacuously (`all` true, `any` false)
+  without evaluating the member predicate; ordered
   assignments write literal, input, prior-field, or clock (`now`)
   sources; every invariant of the transition's state space is
   enforced post-write over the staged state (field-value, cross-field,
