@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "lekalo/query-model/v1.0.0",
+  "identity": "dev.lekalo.query-model@1.0.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.1.0",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "tenancy": [
+    {
+      "entity": "planner.project",
+      "field": "tenant"
+    },
+    {
+      "entity": "planner.task",
+      "field": "tenant"
+    }
+  ],
+  "queries": [
+    {
+      "query": "planner.tasks_by_project",
+      "source": "planner.task",
+      "cardinality": "list",
+      "consistency": "stale-ok",
+      "parameters": [
+        {
+          "name": "project_ref",
+          "type": "planner.project"
+        },
+        {
+          "name": "tenant_id",
+          "type": "planner.tenant_id"
+        }
+      ],
+      "filter": {
+        "and": [
+          {
+            "field": "project",
+            "op": "eq",
+            "value": {
+              "param": "project_ref"
+            }
+          },
+          {
+            "field": "tenant",
+            "op": "eq",
+            "value": {
+              "param": "tenant_id"
+            }
+          }
+        ]
+      },
+      "includes": [
+        {
+          "path": [
+            "project"
+          ]
+        }
+      ]
+    }
+  ]
+}

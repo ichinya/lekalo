@@ -1,0 +1,269 @@
+{
+  "nativeCommit": "e062b9572be933564ba3899d059377dfa1393e32",
+  "nativeEntryPoint": "buildUpdatedSpec",
+  "scope": "Original native application output; no full archive CLI execution. Unsupported inputs must fail closed.",
+  "vectors": [
+    {
+      "name": "accepted-backtick-unclosed",
+      "unsupported": true,
+      "accepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n```example\nopaque private prose\n",
+      "delta": "## ADDED Requirements\n### Requirement: Beta\nThe planner SHALL Beta.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Beta succeeds\n",
+      "archiveAccepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n```example\nopaque private prose\n\n### Requirement: Beta\nThe planner SHALL Beta.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Beta succeeds\n",
+      "nativeCounts": {
+        "added": 1,
+        "modified": 0,
+        "removed": 0,
+        "renamed": 0
+      },
+      "nativeArchivedTitles": [
+        "Alpha"
+      ],
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-alpha",
+          "revision": "sha256:c729bce34c5b8c0d35f7d1b312f6ecb1c6896497ffff5d1b6cbaf894ce9aaf9f"
+        },
+        {
+          "id": "planner.REQ-beta",
+          "revision": "sha256:b50514a17c2498b1c5d218b9c7630c93b225dd6403dd55f1539a7220fcf2fa9f"
+        }
+      ]
+    },
+    {
+      "name": "accepted-backtick-closed",
+      "unsupported": false,
+      "accepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n```example\nopaque private prose\n\t```` \n",
+      "delta": "## ADDED Requirements\n### Requirement: Beta\nThe planner SHALL Beta.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Beta succeeds\n",
+      "archiveAccepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n```example\nopaque private prose\n\t````\n\n### Requirement: Beta\nThe planner SHALL Beta.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Beta succeeds\n",
+      "nativeCounts": {
+        "added": 1,
+        "modified": 0,
+        "removed": 0,
+        "renamed": 0
+      },
+      "nativeArchivedTitles": [
+        "Alpha",
+        "Beta"
+      ],
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-alpha",
+          "revision": "sha256:3f082f0a82c95da7e3b7f089a542af7af6bfb05b1ea1b4c9d5ee703b70268cee"
+        },
+        {
+          "id": "planner.REQ-beta",
+          "revision": "sha256:b50514a17c2498b1c5d218b9c7630c93b225dd6403dd55f1539a7220fcf2fa9f"
+        }
+      ]
+    },
+    {
+      "name": "modified-backtick-unclosed",
+      "unsupported": true,
+      "accepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n### Requirement: Old\nThe planner SHALL Old.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Old succeeds\n\n### Requirement: Gone\nThe planner SHALL Gone.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Gone succeeds\n",
+      "delta": "## MODIFIED Requirements\n### Requirement: Alpha\nThe planner SHALL new behavior.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n```example\nopaque private prose\n",
+      "archiveAccepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n\n### Requirement: Alpha\nThe planner SHALL new behavior.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n```example\nopaque private prose\n\n### Requirement: Old\nThe planner SHALL Old.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Old succeeds\n\n### Requirement: Gone\nThe planner SHALL Gone.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Gone succeeds\n",
+      "nativeCounts": {
+        "added": 0,
+        "modified": 1,
+        "removed": 0,
+        "renamed": 0
+      },
+      "nativeArchivedTitles": [
+        "Alpha"
+      ],
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-alpha",
+          "revision": "sha256:d74be690b593d7b445b0600c6e7ed77103b8c72f5d237bde5b76a6f6e99441a7"
+        },
+        {
+          "id": "planner.REQ-gone",
+          "revision": "sha256:3df68d418c570f04b6ffd1f4bf88525dc4b2afd231945917f63f3022502c4b65"
+        },
+        {
+          "id": "planner.REQ-old",
+          "revision": "sha256:5225415069342adc5f3370eeb09ddfa33c4676d9ed89fa3ca8775f643b6e3a9c"
+        }
+      ]
+    },
+    {
+      "name": "modified-backtick-closed",
+      "unsupported": false,
+      "accepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n### Requirement: Old\nThe planner SHALL Old.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Old succeeds\n\n### Requirement: Gone\nThe planner SHALL Gone.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Gone succeeds\n",
+      "delta": "## MODIFIED Requirements\n### Requirement: Alpha\nThe planner SHALL new behavior.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n```example\nopaque private prose\n\t```` \n",
+      "archiveAccepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n\n### Requirement: Alpha\nThe planner SHALL new behavior.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n```example\nopaque private prose\n\t````\n\n### Requirement: Old\nThe planner SHALL Old.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Old succeeds\n\n### Requirement: Gone\nThe planner SHALL Gone.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Gone succeeds\n",
+      "nativeCounts": {
+        "added": 0,
+        "modified": 1,
+        "removed": 0,
+        "renamed": 0
+      },
+      "nativeArchivedTitles": [
+        "Alpha",
+        "Old",
+        "Gone"
+      ],
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-alpha",
+          "revision": "sha256:0666bc398573f314cd4da366dcf51a043f5db0b9a433152267d9494036b4820b"
+        },
+        {
+          "id": "planner.REQ-gone",
+          "revision": "sha256:3df68d418c570f04b6ffd1f4bf88525dc4b2afd231945917f63f3022502c4b65"
+        },
+        {
+          "id": "planner.REQ-old",
+          "revision": "sha256:5225415069342adc5f3370eeb09ddfa33c4676d9ed89fa3ca8775f643b6e3a9c"
+        }
+      ]
+    },
+    {
+      "name": "accepted-tilde-unclosed",
+      "unsupported": true,
+      "accepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n~~~example\nopaque private prose\n",
+      "delta": "## ADDED Requirements\n### Requirement: Beta\nThe planner SHALL Beta.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Beta succeeds\n",
+      "archiveAccepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n~~~example\nopaque private prose\n\n### Requirement: Beta\nThe planner SHALL Beta.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Beta succeeds\n",
+      "nativeCounts": {
+        "added": 1,
+        "modified": 0,
+        "removed": 0,
+        "renamed": 0
+      },
+      "nativeArchivedTitles": [
+        "Alpha"
+      ],
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-alpha",
+          "revision": "sha256:37300110867b09decc1094d0ca4e698600741a307724f36ebbdabae50a736025"
+        },
+        {
+          "id": "planner.REQ-beta",
+          "revision": "sha256:b50514a17c2498b1c5d218b9c7630c93b225dd6403dd55f1539a7220fcf2fa9f"
+        }
+      ]
+    },
+    {
+      "name": "accepted-tilde-closed",
+      "unsupported": false,
+      "accepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n~~~example\nopaque private prose\n\t~~~~ \n",
+      "delta": "## ADDED Requirements\n### Requirement: Beta\nThe planner SHALL Beta.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Beta succeeds\n",
+      "archiveAccepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n~~~example\nopaque private prose\n\t~~~~\n\n### Requirement: Beta\nThe planner SHALL Beta.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Beta succeeds\n",
+      "nativeCounts": {
+        "added": 1,
+        "modified": 0,
+        "removed": 0,
+        "renamed": 0
+      },
+      "nativeArchivedTitles": [
+        "Alpha",
+        "Beta"
+      ],
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-alpha",
+          "revision": "sha256:651c5ec84ab313e05f6e2c144733b94eebaa9c41770ce09b691300ad9b1fc046"
+        },
+        {
+          "id": "planner.REQ-beta",
+          "revision": "sha256:b50514a17c2498b1c5d218b9c7630c93b225dd6403dd55f1539a7220fcf2fa9f"
+        }
+      ]
+    },
+    {
+      "name": "modified-tilde-unclosed",
+      "unsupported": true,
+      "accepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n### Requirement: Old\nThe planner SHALL Old.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Old succeeds\n\n### Requirement: Gone\nThe planner SHALL Gone.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Gone succeeds\n",
+      "delta": "## MODIFIED Requirements\n### Requirement: Alpha\nThe planner SHALL new behavior.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n~~~example\nopaque private prose\n",
+      "archiveAccepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n\n### Requirement: Alpha\nThe planner SHALL new behavior.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n~~~example\nopaque private prose\n\n### Requirement: Old\nThe planner SHALL Old.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Old succeeds\n\n### Requirement: Gone\nThe planner SHALL Gone.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Gone succeeds\n",
+      "nativeCounts": {
+        "added": 0,
+        "modified": 1,
+        "removed": 0,
+        "renamed": 0
+      },
+      "nativeArchivedTitles": [
+        "Alpha"
+      ],
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-alpha",
+          "revision": "sha256:1e7669e8a7e88e67fe25ff9b4181a1228a690c8e4c67d4f85744cd7763aeb24f"
+        },
+        {
+          "id": "planner.REQ-gone",
+          "revision": "sha256:3df68d418c570f04b6ffd1f4bf88525dc4b2afd231945917f63f3022502c4b65"
+        },
+        {
+          "id": "planner.REQ-old",
+          "revision": "sha256:5225415069342adc5f3370eeb09ddfa33c4676d9ed89fa3ca8775f643b6e3a9c"
+        }
+      ]
+    },
+    {
+      "name": "modified-tilde-closed",
+      "unsupported": false,
+      "accepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n### Requirement: Old\nThe planner SHALL Old.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Old succeeds\n\n### Requirement: Gone\nThe planner SHALL Gone.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Gone succeeds\n",
+      "delta": "## MODIFIED Requirements\n### Requirement: Alpha\nThe planner SHALL new behavior.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n~~~example\nopaque private prose\n\t~~~~ \n",
+      "archiveAccepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n\n### Requirement: Alpha\nThe planner SHALL new behavior.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n~~~example\nopaque private prose\n\t~~~~\n\n### Requirement: Old\nThe planner SHALL Old.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Old succeeds\n\n### Requirement: Gone\nThe planner SHALL Gone.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Gone succeeds\n",
+      "nativeCounts": {
+        "added": 0,
+        "modified": 1,
+        "removed": 0,
+        "renamed": 0
+      },
+      "nativeArchivedTitles": [
+        "Alpha",
+        "Old",
+        "Gone"
+      ],
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-alpha",
+          "revision": "sha256:4df4c47b09d3fc4d38644a423a6deb1e676ff0a01c531319b5658cb4c99a85a7"
+        },
+        {
+          "id": "planner.REQ-gone",
+          "revision": "sha256:3df68d418c570f04b6ffd1f4bf88525dc4b2afd231945917f63f3022502c4b65"
+        },
+        {
+          "id": "planner.REQ-old",
+          "revision": "sha256:5225415069342adc5f3370eeb09ddfa33c4676d9ed89fa3ca8775f643b6e3a9c"
+        }
+      ]
+    },
+    {
+      "name": "all-four-reversed",
+      "unsupported": false,
+      "accepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n### Requirement: Old\nThe planner SHALL Old.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Old succeeds\n\n### Requirement: Gone\nThe planner SHALL Gone.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Gone succeeds\n",
+      "delta": "## ADDED Requirements\n### Requirement: Beta\nThe planner SHALL Beta.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Beta succeeds\n\n## MODIFIED Requirements\n### Requirement: Moved\nThe planner SHALL new behavior.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Moved succeeds\n\n## REMOVED Requirements\n- `### Requirement: Gone`\n\n## RENAMED Requirements\n- FROM: ### Requirement: Old\n- TO: ### Requirement: Moved\n",
+      "archiveAccepted": "# Planner\n\n## Purpose\nThe planner supports stable operations for every task.\n\n## Requirements\n\n### Requirement: Alpha\nThe planner SHALL Alpha.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Alpha succeeds\n\n### Requirement: Moved\nThe planner SHALL new behavior.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Moved succeeds\n\n### Requirement: Beta\nThe planner SHALL Beta.\n\n#### Scenario: basic\n- **WHEN** requested\n- **THEN** Beta succeeds\n",
+      "nativeCounts": {
+        "added": 1,
+        "modified": 1,
+        "removed": 1,
+        "renamed": 1
+      },
+      "nativeArchivedTitles": [
+        "Alpha",
+        "Moved",
+        "Beta"
+      ],
+      "expectedEntries": [
+        {
+          "id": "planner.REQ-alpha",
+          "revision": "sha256:b0dfcd399b8eaa41f67c69e89ef593019503c5c2765ed6835bf641c218ee9712"
+        },
+        {
+          "id": "planner.REQ-beta",
+          "revision": "sha256:b50514a17c2498b1c5d218b9c7630c93b225dd6403dd55f1539a7220fcf2fa9f"
+        },
+        {
+          "id": "planner.REQ-moved",
+          "revision": "sha256:047048b0c39684a50f35a95673efadaa862b3835d6eb19b7f72f7806778fa1e6"
+        }
+      ]
+    }
+  ]
+}

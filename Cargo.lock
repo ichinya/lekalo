@@ -291,6 +291,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "unicode-normalization",
+ "windows-sys",
 ]
 
 [[package]]

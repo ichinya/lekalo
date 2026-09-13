@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "lekalo/query-model/v1.0.0",
+  "identity": "dev.lekalo.query-model@1.0.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.1.0",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "tenancy": [
+    { "entity": "planner.task", "field": "tenant" }
+  ],
+  "queries": [
+    {
+      "query": "planner.count_focused",
+      "source": "planner.task",
+      "cardinality": "one",
+      "consistency": "strong",
+      "filter": {
+        "field": "state",
+        "op": "eq",
+        "value": { "literal": { "kind": "enum-member", "value": "focused" } }
+      }
+    },
+    {
+      "query": "planner.tasks_today",
+      "source": "planner.task",
+      "cardinality": "page",
+      "consistency": "strong",
+      "filter": {
+        "and": [
+          { "field": "state", "op": "eq", "value": { "literal": { "kind": "enum-member", "value": "backlog" } } },
+          { "field": "tenant", "op": "is-not-null" }
+        ]
+      },
+      "sort": [
+        { "field": "due", "direction": "asc" },
+        { "field": "task_id", "direction": "asc" }
+      ],
+      "pagination": { "strategy": "offset", "limit": 20 },
+      "scenarios": ["planner.today_page_scenario"]
+    }
+  ]
+}

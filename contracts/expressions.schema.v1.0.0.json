@@ -1,0 +1,574 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ichinya/lekalo/contracts/expressions.schema.v1.0.0.json",
+  "title": "Lekalo expressions attachment (v1.0.0)",
+  "description": "Issue #66: the closed, versioned typed-expression family. One attachment declares the bounded expression language of planner conditions and field assignments: literals (including homogeneous sets), input/actor/entity/result references, equality/comparison/null/set membership, boolean combinators, checked integer and temporal arithmetic, the branch-without-loop conditional, the deterministic clock now, and fifteen target-neutral built-ins with versioned semantics. No arbitrary calls, loops, recursion, reflection, filesystem or network access, target code snippets, or hidden mutable state have a representation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "builtinSemantics",
+    "expressions"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/expressions/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.expressions@1.0.0"
+    },
+    "attachmentRevision": {
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/rootSemanticId"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modelVersion", "digest"],
+      "properties": {
+        "modelVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "digest"],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.1.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "builtinSemantics": {
+      "const": "1.0.0"
+    },
+    "expressions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/expressionRecord"
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "rootSemanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 191,
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "expressionId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 191,
+      "pattern": "^expr\\.[a-z0-9-]+(\\.[a-z0-9-]+)*/[a-z0-9-]+$",
+      "description": "Resolvable by the issue #63 ExpressionRef grammar (`expr.planner/overdue-check`)."
+    },
+    "fieldName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "scalarType": {
+      "enum": ["bool", "int", "string", "datetime", "duration"]
+    },
+    "exprType": {
+      "type": "string",
+      "pattern": "^(bool|int|string|datetime|duration|set:(bool|int|string|datetime|duration))$"
+    },
+    "scope": {
+      "enum": ["input", "actor", "entity", "result"]
+    },
+    "boundedString": {
+      "type": "string",
+      "minLength": 0,
+      "maxLength": 256
+    },
+    "canonicalDatetime": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "description": "Canonical UTC, year 0001-9999, no offsets, no fractions, no leap seconds."
+    },
+    "expressionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "params", "result", "body"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/expressionId"
+        },
+        "kind": {
+          "enum": ["condition", "assignment"]
+        },
+        "description": {
+          "$ref": "#/$defs/boundedString"
+        },
+        "params": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["scope", "field", "type"],
+            "properties": {
+              "scope": {
+                "$ref": "#/$defs/scope"
+              },
+              "field": {
+                "$ref": "#/$defs/fieldName"
+              },
+              "type": {
+                "$ref": "#/$defs/exprType"
+              },
+              "nullable": {
+                "type": "boolean",
+                "default": false,
+                "description": "A nullable reference may only appear as the operand of is-null/not-null."
+              }
+            }
+          }
+        },
+        "result": {
+          "$ref": "#/$defs/exprType"
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scope", "field", "type"],
+          "properties": {
+            "scope": {
+              "enum": ["input", "entity"],
+              "description": "Assignments write input or entity fields only; actor and result are read-only contexts."
+            },
+            "field": {
+              "$ref": "#/$defs/fieldName"
+            },
+            "type": {
+              "$ref": "#/$defs/exprType"
+            }
+          }
+        },
+        "body": {
+          "$ref": "#/$defs/node"
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "file",
+            "startByte",
+            "startLine",
+            "startColumn",
+            "endByte",
+            "endLine",
+            "endColumn"
+          ],
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._/-]+$",
+              "description": "Relative, portable path into the authoring source; never absolute, never traversing."
+            },
+            "startByte": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "startLine": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "startColumn": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "endByte": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "endLine": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "endColumn": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          }
+        }
+      }
+    },
+    "scalarLiteral": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {
+              "const": "bool"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {
+              "const": "int"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {
+              "const": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/boundedString"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {
+              "const": "datetime"
+            },
+            "value": {
+              "$ref": "#/$defs/canonicalDatetime"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {
+              "const": "duration"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": -31536000000,
+              "maximum": 31536000000
+            }
+          }
+        }
+      ]
+    },
+    "node": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/literalNode"
+        },
+        {
+          "$ref": "#/$defs/refNode"
+        },
+        {
+          "$ref": "#/$defs/nowNode"
+        },
+        {
+          "$ref": "#/$defs/binaryNode"
+        },
+        {
+          "$ref": "#/$defs/unaryNode"
+        },
+        {
+          "$ref": "#/$defs/membershipNode"
+        },
+        {
+          "$ref": "#/$defs/combinatorNode"
+        },
+        {
+          "$ref": "#/$defs/ifNode"
+        },
+        {
+          "$ref": "#/$defs/builtinNode"
+        }
+      ]
+    },
+    "literalNode": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "value"],
+          "properties": {
+            "op": {
+              "const": "lit-bool"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "value"],
+          "properties": {
+            "op": {
+              "const": "lit-int"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "value"],
+          "properties": {
+            "op": {
+              "const": "lit-string"
+            },
+            "value": {
+              "$ref": "#/$defs/boundedString"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "value"],
+          "properties": {
+            "op": {
+              "const": "lit-datetime"
+            },
+            "value": {
+              "$ref": "#/$defs/canonicalDatetime"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "value"],
+          "properties": {
+            "op": {
+              "const": "lit-duration"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": -31536000000,
+              "maximum": 31536000000
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "items"],
+          "properties": {
+            "op": {
+              "const": "lit-set"
+            },
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/scalarLiteral"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "refNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "scope", "field"],
+      "properties": {
+        "op": {
+          "const": "ref"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "field": {
+          "$ref": "#/$defs/fieldName"
+        }
+      }
+    },
+    "nowNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op"],
+      "properties": {
+        "op": {
+          "const": "now"
+        }
+      }
+    },
+    "binaryNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "left", "right"],
+      "properties": {
+        "op": {
+          "enum": ["eq", "ne", "lt", "le", "gt", "ge", "add", "sub", "mul", "div", "mod"]
+        },
+        "left": {
+          "$ref": "#/$defs/node"
+        },
+        "right": {
+          "$ref": "#/$defs/node"
+        }
+      }
+    },
+    "unaryNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "operand"],
+      "properties": {
+        "op": {
+          "enum": ["is-null", "not-null", "not"]
+        },
+        "operand": {
+          "$ref": "#/$defs/node"
+        }
+      }
+    },
+    "membershipNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "operand", "set"],
+      "properties": {
+        "op": {
+          "enum": ["in-set", "not-in-set"]
+        },
+        "operand": {
+          "$ref": "#/$defs/node"
+        },
+        "set": {
+          "$ref": "#/$defs/node"
+        }
+      }
+    },
+    "combinatorNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "operands"],
+      "properties": {
+        "op": {
+          "enum": ["and", "or"]
+        },
+        "operands": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "ifNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "condition", "then", "else"],
+      "properties": {
+        "op": {
+          "const": "if"
+        },
+        "condition": {
+          "$ref": "#/$defs/node"
+        },
+        "then": {
+          "$ref": "#/$defs/node"
+        },
+        "else": {
+          "$ref": "#/$defs/node"
+        }
+      }
+    },
+    "builtinNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "name", "args"],
+      "properties": {
+        "op": {
+          "const": "builtin"
+        },
+        "name": {
+          "enum": [
+            "cast-int-to-string",
+            "cast-string-to-int",
+            "datetime-day",
+            "datetime-month",
+            "datetime-weekday",
+            "datetime-year",
+            "duration-seconds",
+            "int-abs",
+            "string-concat",
+            "string-contains",
+            "string-ends-with",
+            "string-length",
+            "string-lower",
+            "string-starts-with",
+            "string-upper"
+          ]
+        },
+        "args": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    }
+  }
+}

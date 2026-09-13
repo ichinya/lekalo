@@ -112,7 +112,7 @@ fn changed_entry(symbol: &str, path: &str) -> ChangedInput {
 fn entity_radius_covers_effects_queries_scenarios_and_bindings() {
     let (project, graph, effects) = planner();
     let request = symbol_request("planner.task");
-    let result = analyze(&project, &graph, &effects, &request, None).expect("impact");
+    let result = analyze(&project, &graph, &effects, &request, None, None).expect("impact");
 
     // Roots: the entity itself.
     assert_eq!(result.roots().len(), 1);
@@ -190,7 +190,7 @@ fn mandatory_public_closure_is_not_hidden_by_depth() {
     let request = symbol_request("planner.task")
         .with_depth(1)
         .expect("depth 1");
-    let result = analyze(&project, &graph, &effects, &request, None).expect("impact");
+    let result = analyze(&project, &graph, &effects, &request, None, None).expect("impact");
 
     // With depth 1 the transitive section stays empty.
     assert_eq!(result.transitive().items.len(), 0);
@@ -213,7 +213,7 @@ fn mandatory_public_closure_is_not_hidden_by_depth() {
 fn unknown_symbol_is_an_explicit_invalid_result() {
     let (project, graph, effects) = planner();
     let request = ImpactRequest::for_symbol("planner.nonexistent").expect("grammar ok");
-    let outcome = analyze(&project, &graph, &effects, &request, None);
+    let outcome = analyze(&project, &graph, &effects, &request, None, None);
     match outcome {
         Err(ImpactFailure::Invalid(set)) => {
             assert_eq!(set.reason_ids(), vec!["impact.symbol-unknown"]);
@@ -226,7 +226,7 @@ fn unknown_symbol_is_an_explicit_invalid_result() {
 fn rename_history_surfaces_migration_and_public_risks() {
     let (project, graph, effects) = rename();
     let request = symbol_request("planner.task");
-    let result = analyze(&project, &graph, &effects, &request, None).expect("impact");
+    let result = analyze(&project, &graph, &effects, &request, None, None).expect("impact");
 
     let migration = result
         .risks()
@@ -267,7 +267,7 @@ fn field_removal_member_seed_drives_migration_risk() {
     )
     .expect("valid set");
     let request = symbol_request("planner.task");
-    let result = analyze(&project, &graph, &effects, &request, Some(&set)).expect("impact");
+    let result = analyze(&project, &graph, &effects, &request, Some(&set), None).expect("impact");
     let migration = result
         .risks()
         .items
@@ -301,7 +301,7 @@ fn unresolvable_changed_entries_degrade_completeness() {
     )
     .expect("valid set");
     let request = symbol_request("planner.task");
-    let result = analyze(&project, &graph, &effects, &request, Some(&set)).expect("impact");
+    let result = analyze(&project, &graph, &effects, &request, Some(&set), None).expect("impact");
 
     assert_eq!(result.base_revision_ref(), Some("a".repeat(40).as_str()));
     assert!(!result.completeness().complete);
@@ -321,7 +321,7 @@ fn unresolvable_changed_entries_degrade_completeness() {
 fn effect_change_traverses_the_effect_radius() {
     let (project, graph, effects) = planner();
     let request = symbol_request("planner.create_task");
-    let result = analyze(&project, &graph, &effects, &request, None).expect("impact");
+    let result = analyze(&project, &graph, &effects, &request, None, None).expect("impact");
 
     // The command that owns the effect and the endpoint above it are in
     // the radius.
@@ -351,7 +351,7 @@ fn strict_profile_denies_when_required_authorization_evidence_is_unknown() {
     // The rename fixture's command has no policy mapping: authorization
     // evidence is unknown, so strict must deny and default must not.
     let request = symbol_request("planner.focus_task").with_profile(ImpactProfile::Strict);
-    let outcome = analyze(&project, &graph, &effects, &request, None);
+    let outcome = analyze(&project, &graph, &effects, &request, None, None);
     match outcome {
         Err(ImpactFailure::Denied(set)) => {
             assert_eq!(set.reason_ids(), vec!["impact.gate-blocked"]);
@@ -361,7 +361,8 @@ fn strict_profile_denies_when_required_authorization_evidence_is_unknown() {
 
     let (project, graph, effects) = rename();
     let request = symbol_request("planner.focus_task").with_profile(ImpactProfile::Default);
-    let result = analyze(&project, &graph, &effects, &request, None).expect("default profile");
+    let result =
+        analyze(&project, &graph, &effects, &request, None, None).expect("default profile");
     let authorization = result
         .gates()
         .items
@@ -375,8 +376,8 @@ fn strict_profile_denies_when_required_authorization_evidence_is_unknown() {
 fn canonical_bytes_and_digest_are_stable_and_repeatable() {
     let (project, graph, effects) = planner();
     let request = symbol_request("planner.task");
-    let first = analyze(&project, &graph, &effects, &request, None).expect("impact");
-    let second = analyze(&project, &graph, &effects, &request, None).expect("impact");
+    let first = analyze(&project, &graph, &effects, &request, None, None).expect("impact");
+    let second = analyze(&project, &graph, &effects, &request, None, None).expect("impact");
 
     let bytes_first = first.to_canonical_json().expect("canonical bytes");
     let bytes_second = second.to_canonical_json().expect("canonical bytes");
@@ -432,8 +433,8 @@ fn symbol_mode_result_determinism_survives_reordering() {
         ImpactRequest::for_symbols(&["planner.task", "planner.task_id"]).expect("valid roots");
     let backward =
         ImpactRequest::for_symbols(&["planner.task_id", "planner.task"]).expect("valid roots");
-    let forward = analyze(&project, &graph, &effects, &forward, None).expect("impact");
-    let backward = analyze(&project, &graph, &effects, &backward, None).expect("impact");
+    let forward = analyze(&project, &graph, &effects, &forward, None, None).expect("impact");
+    let backward = analyze(&project, &graph, &effects, &backward, None, None).expect("impact");
     assert_eq!(forward.digest(), backward.digest());
     assert_eq!(forward.roots(), backward.roots());
 }

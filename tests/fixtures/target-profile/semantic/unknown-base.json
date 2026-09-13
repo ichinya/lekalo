@@ -1,0 +1,13 @@
+{
+  "schema_version": "lekalo/target-profile/v1.0.0",
+  "profiles": [
+    {
+      "id": "derived",
+      "version": "1.0.0",
+      "components": {
+        "deployment": "container"
+      },
+      "extends": "missing-base"
+    }
+  ]
+}

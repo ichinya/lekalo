@@ -1,0 +1,685 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/query-model.schema.v1.0.0.json",
+  "title": "Lekalo Declarative Query Model",
+  "description": "Closed independent attachment contract declaring the portable read semantics of one project's queries (issue #64): source entities, result cardinality, declared parameters resolved from the query input, a closed equality/range/null/set filter grammar with bounded and/or/not combinators, deterministic sort with a mandatory identity tie-breaker, one closed limit/offset/cursor pagination contract shared by every target projection, semantic-link includes, tenant-scoped entity declarations with a strict-profile tenant filter requirement, consistency/freshness profiles, bounded read-cost hints, and the foreign/custom escape hatch. The attachment is pure declaration and validation data: it never executes, never generates SQL or ORM calls, never carries source text, physical paths, raw tokens, credentials, runtime values, timestamps, host data, or provider transcripts, and has no write surface. The contract version is independent of the product release, of the source Model and IR contract versions, of the Scenario IR, of the authorization and error-contract families, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "tenancy",
+    "queries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/query-model/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.query-model@1.0.0"
+    },
+    "attachmentRevision": {
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "modelRef": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "$ref": "#/$defs/irRef"
+    },
+    "sourceMapRef": {
+      "$ref": "#/$defs/namespacedId"
+    },
+    "tenancy": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/tenancyDecl"
+      }
+    },
+    "queries": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/queryDecl"
+      }
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "namespacedId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "field": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "parameter": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "safeText": {
+      "description": "Bounded declaration text. Never source text, paths, credentials, URLs, runtime values, or provider output.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;()/_-]*$"
+    },
+    "capabilityToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "typeExpression": {
+      "description": "A bounded Model type expression (symbol, nullable wrapper, or list wrapper); grammar and resolution are checked against the bound Model.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*((<[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*>)+\\??|\\?)?$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "enum": [
+            "0.1.0",
+            "1.0.0"
+          ]
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.1.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "tenancyDecl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entity",
+        "field"
+      ],
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "field": {
+          "$ref": "#/$defs/field"
+        }
+      }
+    },
+    "parameterDecl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/parameter"
+        },
+        "type": {
+          "$ref": "#/$defs/typeExpression"
+        }
+      }
+    },
+    "literalNode": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "boolean"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "integer"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "decimal"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 34,
+              "pattern": "^-?(0|[1-9][0-9]{0,19})(\\.[0-9]{1,12})?$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "string"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 256
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "date"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 10,
+              "maxLength": 10,
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "datetime"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 20,
+              "maxLength": 40,
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "uuid"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 36,
+              "maxLength": 36,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "uri"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "enum-member"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "set"
+            },
+            "value": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/literalNode"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "filterValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "literal"
+          ],
+          "properties": {
+            "literal": {
+              "$ref": "#/$defs/literalNode"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "param"
+          ],
+          "properties": {
+            "param": {
+              "$ref": "#/$defs/parameter"
+            }
+          }
+        }
+      ]
+    },
+    "filterLeaf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "op"
+      ],
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/field"
+        },
+        "op": {
+          "enum": [
+            "eq",
+            "ne",
+            "lt",
+            "le",
+            "gt",
+            "ge",
+            "in",
+            "not-in",
+            "is-null",
+            "is-not-null"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/filterValue"
+        }
+      }
+    },
+    "filterExpr": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/filterLeaf"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "and"
+          ],
+          "properties": {
+            "and": {
+              "$ref": "#/$defs/filterOperands"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "or"
+          ],
+          "properties": {
+            "or": {
+              "$ref": "#/$defs/filterOperands"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "not"
+          ],
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/filterExpr"
+            }
+          }
+        }
+      ]
+    },
+    "filterOperands": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/filterExpr"
+      }
+    },
+    "sortKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "direction"
+      ],
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/field"
+        },
+        "direction": {
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        }
+      }
+    },
+    "pagination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "limit"
+      ],
+      "properties": {
+        "strategy": {
+          "enum": [
+            "offset",
+            "cursor"
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "keyParameter": {
+          "$ref": "#/$defs/parameter"
+        }
+      }
+    },
+    "selectionField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field"
+      ],
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/field"
+        },
+        "as": {
+          "$ref": "#/$defs/field"
+        }
+      }
+    },
+    "include": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "as": {
+          "$ref": "#/$defs/field"
+        }
+      }
+    },
+    "costHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "maxRows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "expensive": {
+          "type": "boolean"
+        }
+      }
+    },
+    "foreignRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability",
+        "reason"
+      ],
+      "properties": {
+        "capability": {
+          "$ref": "#/$defs/capabilityToken"
+        },
+        "reason": {
+          "$ref": "#/$defs/safeText"
+        }
+      }
+    },
+    "queryDecl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "query",
+        "source",
+        "cardinality",
+        "consistency"
+      ],
+      "properties": {
+        "query": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "source": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "cardinality": {
+          "enum": [
+            "one",
+            "optional",
+            "list",
+            "page",
+            "stream"
+          ]
+        },
+        "consistency": {
+          "enum": [
+            "strong",
+            "bounded",
+            "stale-ok"
+          ]
+        },
+        "maxStaleness": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2592000
+        },
+        "parameters": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/parameterDecl"
+          }
+        },
+        "filter": {
+          "$ref": "#/$defs/filterExpr"
+        },
+        "sort": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/sortKey"
+          }
+        },
+        "pagination": {
+          "$ref": "#/$defs/pagination"
+        },
+        "selection": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/selectionField"
+          }
+        },
+        "includes": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/include"
+          }
+        },
+        "policies": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "cost": {
+          "$ref": "#/$defs/costHint"
+        },
+        "foreign": {
+          "$ref": "#/$defs/foreignRef"
+        }
+      }
+    }
+  }
+}

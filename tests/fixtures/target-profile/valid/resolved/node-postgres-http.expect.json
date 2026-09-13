@@ -1,0 +1,119 @@
+{
+  "id": "node-postgres-http",
+  "version": "1.0.0",
+  "components": [
+    {
+      "axis": "analysis",
+      "id": "typescript-native",
+      "definition_version": "1.0.0"
+    },
+    {
+      "axis": "deployment",
+      "id": "container",
+      "definition_version": "1.0.0"
+    },
+    {
+      "axis": "runtime",
+      "id": "node-typescript",
+      "definition_version": "1.0.0"
+    },
+    {
+      "axis": "storage",
+      "id": "postgres-sql",
+      "definition_version": "1.0.0"
+    },
+    {
+      "axis": "testing",
+      "id": "node-native",
+      "definition_version": "1.0.0"
+    },
+    {
+      "axis": "transport",
+      "id": "http-json",
+      "definition_version": "1.0.0"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "analysis.types",
+      "support": "full"
+    },
+    {
+      "id": "deployment.replicas",
+      "support": "full"
+    },
+    {
+      "id": "deployment.reproducible",
+      "support": "full"
+    },
+    {
+      "id": "runtime.async",
+      "support": "full"
+    },
+    {
+      "id": "runtime.typing",
+      "support": "full"
+    },
+    {
+      "id": "storage.migrations",
+      "support": "full"
+    },
+    {
+      "id": "storage.pooling",
+      "support": "full"
+    },
+    {
+      "id": "storage.sql",
+      "support": "full"
+    },
+    {
+      "id": "storage.transactions",
+      "support": "full"
+    },
+    {
+      "id": "testing.coverage",
+      "support": "full"
+    },
+    {
+      "id": "testing.parallel",
+      "support": "full"
+    },
+    {
+      "id": "transport.http",
+      "support": "full"
+    },
+    {
+      "id": "transport.streaming",
+      "support": "partial"
+    }
+  ],
+  "digest": "sha256:53bd2f4aa604575b0936a1f02a79ed7bd8b26d9871e199e2a5d7b1dbbfc7fe50",
+  "source_digest": "sha256:9e6ff88025964e2c9d31a769b33cfe424ae5042f35501b7cd12928c3dfba75c5",
+  "provenance": [
+    {
+      "axis": "analysis",
+      "origin": "declared"
+    },
+    {
+      "axis": "deployment",
+      "origin": "declared"
+    },
+    {
+      "axis": "runtime",
+      "origin": "declared"
+    },
+    {
+      "axis": "storage",
+      "origin": "declared"
+    },
+    {
+      "axis": "testing",
+      "origin": "declared"
+    },
+    {
+      "axis": "transport",
+      "origin": "declared"
+    }
+  ],
+  "overrides_applied": []
+}

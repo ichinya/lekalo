@@ -46,7 +46,7 @@ fn registry_failure() -> LockFailure {
     ))
 }
 
-fn embedded_registry() -> Result<&'static VersionRegistry, LockFailure> {
+pub(crate) fn embedded_registry() -> Result<&'static VersionRegistry, LockFailure> {
     VersionRegistry::embedded().map_err(|_| registry_failure())
 }
 
@@ -100,11 +100,40 @@ impl LockService {
         requirement: LockRequirement,
         create_if_absent: bool,
     ) -> Result<LockReceipt, LockFailure> {
+        let request = Self::load_request(selection)?;
+        Self::lock_with_request(
+            selection,
+            request,
+            candidates,
+            requirement,
+            create_if_absent,
+        )
+    }
+
+    /// `lekalo lock` against an explicit resolution request (the issue #91
+    /// catalog seam): the request names the adapters, generators, and
+    /// profiles to resolve, and the sealed candidates supply their exact
+    /// bytes. An existing lock is verified against this exact request — a
+    /// request that names components the committed lock does not pin is
+    /// `lock.stale`, never silently rewritten.
+    pub fn lock_with_request(
+        selection: &LoadSelection,
+        request: ResolutionRequest,
+        candidates: CandidateSet,
+        requirement: LockRequirement,
+        create_if_absent: bool,
+    ) -> Result<LockReceipt, LockFailure> {
         let root = crate::loader::root_for_selection(selection).map_err(LockFailure::Loader)?;
         match Self::read_state_at(&root)? {
             LockState::Present(lock) => {
-                let request = Self::request_at(&root)?;
                 let registry = embedded_registry()?;
+                // The verification request is the caller's request merged
+                // with the component identities the lock itself pins: a
+                // lock created through the #91 catalog seam stays
+                // request-current for every caller that names no (or the
+                // same) components, while a genuinely changed project
+                // request (Model or contract versions) still detects.
+                let request = Self::merge_locked_identities(&request, &lock);
                 let verdict = LockVerifier::verify(
                     &lock,
                     &request,
@@ -126,7 +155,6 @@ impl LockService {
                 }
             }
             LockState::Absent if create_if_absent => {
-                let request = Self::request_at(&root)?;
                 let registry = embedded_registry()?;
                 let resolved = LockResolver::resolve(&request, &candidates, registry)?;
                 let prepared = Self::prepare_at(&root, &request, resolved)?;
@@ -264,11 +292,31 @@ impl LockService {
         result
     }
 
-    fn request_at(root: &Path) -> Result<ResolutionRequest, LockFailure> {
+    pub(crate) fn request_at(root: &Path) -> Result<ResolutionRequest, LockFailure> {
         let registry = embedded_registry()?;
         let model =
             crate::loader::load_validated_root(root.to_path_buf()).map_err(LockFailure::Loader)?;
         Ok(request_for_model(registry, model.model.model_version))
+    }
+
+    /// The caller request extended with every component identity the
+    /// lock itself pins, in canonical id order. Verification against a
+    /// present lock is request-currency of the lock's own resolution.
+    pub(crate) fn merge_locked_identities(
+        request: &ResolutionRequest,
+        lock: &Lockfile,
+    ) -> ResolutionRequest {
+        let mut merged = request.clone();
+        for adapter in lock.adapters() {
+            merged = merged.with_adapter(adapter.id().clone());
+        }
+        for generator in lock.generators() {
+            merged = merged.with_generator(generator.id().clone());
+        }
+        for profile in lock.profiles() {
+            merged = merged.with_profile(profile.id().clone());
+        }
+        merged
     }
 
     fn prepare_at(

@@ -1,0 +1,1 @@
+{"ir_path":"/etc/leakalo.json","limits":{"max_output_bytes":8388608,"timeout_ms":600000},"operation":"describe","project_root":".","protocol":"lekalo.target/v1","protocol_version":"1.0.0","request_id":"req-b2bf1bbf392aeeb285faf2f028a055ca7ef9783368df2fca2ae3f9a42421ef02"}

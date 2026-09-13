@@ -1,0 +1,53 @@
+{
+  "schema_version": "lekalo/orchestration/v1.0.0",
+  "operation": "generate",
+  "mode": "apply",
+  "identity": "dev.lekalo.orchestration-report@1.0.0",
+  "project": "planner",
+  "lockDigest": "sha256:a260bc3d2e6ce433618b629b7e2bf8533f8b80d31c6f5af1d9f17749a6491c0d",
+  "locked": false,
+  "inputs": {
+    "modelVersion": "1.0.0",
+    "modelDigest": "sha256:2b1327521551a943c98c15afe91a503b18218aee9b877ba96dfe0f9e6e52d15c",
+    "irVersion": "0.1.0",
+    "irDigest": "sha256:e6dacf5c29a09141d4a9105648553ed875292d8ea8adfb39ddf7030ae383224d",
+    "revision": "sha256:fee2c3d841a0b65522696e3a17b493367bad3c1fc4a40d8f005428b81c713f6b"
+  },
+  "irEvidence": {
+    "path": ".lekalo/cache/ir/planner.json",
+    "digest": "sha256:e6dacf5c29a09141d4a9105648553ed875292d8ea8adfb39ddf7030ae383224d"
+  },
+  "scope": {
+    "modules": [],
+    "allModules": true
+  },
+  "targets": [
+    {
+      "target": "node-typescript",
+      "profile": "default",
+      "adapter": {
+        "id": "node-typescript",
+        "version": "0.1.0",
+        "digest": "sha256:54cefcd21a3a876db2aa8ea62ffc9e239dbf7902d543bb0cdeb91770aaaed85c"
+      },
+      "state": "applied",
+      "reasonCode": null,
+      "planId": "plan-184ae12f0d30f946ba6197a931a459ef0cc205e222ed4c11fa17bdbe2d2378ee",
+      "writes": [
+        {
+          "path": "src/generated/node-typescript/planner.ts",
+          "action": "create",
+          "sha256": "sha256:f75e9087543d7b855037cd4ae9858cb9a5d987f910ff50acdfe0fa502c95a907"
+        }
+      ],
+      "manifestDigest": "sha256:038350f42322f0399a4f38c0294abee2a02e0ecbd320aebcd5298802d9d29780"
+    }
+  ],
+  "counts": {
+    "targets": 1,
+    "planned": 0,
+    "applied": 1,
+    "failed": 0
+  },
+  "verdict": "ready"
+}

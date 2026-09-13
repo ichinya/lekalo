@@ -1,0 +1,17 @@
+{
+  "schema_version": "lekalo/target-profile/v1.0.0",
+  "profiles": [
+    {
+      "id": "ghost",
+      "version": "1.0.0",
+      "components": {
+        "runtime": "deno-typescript",
+        "storage": "postgres-sql",
+        "transport": "http-json",
+        "testing": "node-native",
+        "analysis": "typescript-native",
+        "deployment": "container"
+      }
+    }
+  ]
+}

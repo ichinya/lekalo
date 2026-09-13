@@ -37,7 +37,8 @@ pub struct IrContract;
 
 /// The target/provider process protocol family (`protocol`).
 ///
-/// Unpublished: the registry carries no version for it yet.
+/// Published by issue #27 as `lekalo.target/v1` (`dev.lekalo.protocol@1.0.0`,
+/// selector alias `protocol/v1`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProtocolContract;
 

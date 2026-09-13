@@ -1,0 +1,20 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.focus_task
+    kind: command
+    version: 1
+    derived_from:
+      - PLANNER-REQ-001
+    input:
+      - name: id
+        type:
+          ref: task_id
+        required: true
+  - id: planner.archive_task
+    kind: command
+    version: 1
+    input:
+      - name: id
+        type:
+          ref: task_id
+        required: true

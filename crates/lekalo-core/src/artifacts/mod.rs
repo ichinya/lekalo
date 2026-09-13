@@ -16,12 +16,12 @@
 //! verdicts are typed result data mapped onto registered rules with
 //! bounded tokens only.
 
-mod canonical;
-mod check;
+pub(crate) mod canonical;
+pub(crate) mod check;
 mod clean;
 mod diagnostic;
 mod source_map;
-mod types;
+pub(crate) mod types;
 
 pub use clean::{CleanFile, CleanPlanReceipt, CleanReceipt, CleanService};
 pub use types::{

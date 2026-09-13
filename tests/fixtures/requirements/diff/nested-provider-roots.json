@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "lekalo/requirements/v1.0.0",
+  "identity": "dev.lekalo.requirements@1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:85f19258888456d40fffecb8a1cf5dbc43f8abea308203fc55a993939dce3daa"
+  },
+  "providers": [
+    {
+      "source": "a",
+      "kind": "openspec",
+      "root": "openspec"
+    },
+    {
+      "source": "b",
+      "kind": "openspec",
+      "root": "openspec/changes"
+    }
+  ],
+  "references": [
+    {
+      "symbol": "planner.focus_task",
+      "relation": "implements",
+      "source": "b",
+      "requirement": "planner.REQ-focus-task",
+      "revision": "sha256:dcd2b013400ee1c69e965e8943993118fa2f7fcd1faf121226d6dda8a6915839"
+    }
+  ]
+}

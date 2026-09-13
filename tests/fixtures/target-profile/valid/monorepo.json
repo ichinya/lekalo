@@ -1,0 +1,61 @@
+{
+  "schema_version": "lekalo/target-profile/v1.0.0",
+  "profiles": [
+    {
+      "id": "node-postgres-http",
+      "version": "1.0.0",
+      "components": {
+        "runtime": "node-typescript",
+        "storage": "postgres-sql",
+        "transport": "http-json",
+        "testing": "node-native",
+        "analysis": "typescript-native",
+        "deployment": "container"
+      }
+    },
+    {
+      "id": "laravel-postgres-http",
+      "version": "1.0.0",
+      "components": {
+        "runtime": "php-laravel",
+        "storage": "postgres-sql",
+        "transport": "http-json",
+        "testing": "laratesto",
+        "analysis": "mago",
+        "deployment": "container"
+      }
+    },
+    {
+      "id": "node-edge",
+      "version": "1.0.0",
+      "extends": "node-postgres-http",
+      "components": {
+        "deployment": "serverless"
+      },
+      "overrides": [
+        {
+          "capability": "deployment.replicas",
+          "accept": "partial"
+        },
+        {
+          "capability": "deployment.reproducible",
+          "accept": "partial"
+        }
+      ]
+    },
+    {
+      "id": "node-mysql",
+      "version": "1.0.0",
+      "extends": "node-postgres-http",
+      "components": {
+        "storage": "mysql-sql"
+      },
+      "overrides": [
+        {
+          "capability": "storage.pooling",
+          "accept": "partial"
+        }
+      ]
+    }
+  ]
+}

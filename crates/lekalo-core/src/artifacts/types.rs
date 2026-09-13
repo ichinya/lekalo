@@ -129,6 +129,13 @@ impl ArtifactKind {
 pub struct GeneratedPath(String);
 
 impl GeneratedPath {
+    /// The public claim seam: a generated-artifact path must be rooted
+    /// at the managed root, so observed files can never be claimed (the
+    /// issue #39 ownership regression surface).
+    pub fn claim(text: &str) -> Option<Self> {
+        Self::parse(text)
+    }
+
     pub(crate) fn parse(text: &str) -> Option<Self> {
         let rest = text.strip_prefix(".lekalo/generated/")?;
         if rest.is_empty() {
