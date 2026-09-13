@@ -78,13 +78,23 @@ self-contained program per target — Node (BigInt), PHP, and Go —
 that reads the shared
 [evaluation-vector document](../contracts/expressions-vectors.schema.v1.0.0.json)
 (`lekalo/expressions/vectors/v1.0.0`) on stdin and writes the
-computed results to stdout. The clock is a per-vector field, so the
+computed results to stdout. The clock is a per-vector field: a
+vector that omits it reads the shared epoch default
+(`1970-01-01T00:00:00Z`) in the reference and in every generated
+target, while a present-but-malformed clock refuses with
+`clock-invalid`, so the
 shared fixtures prove semantic equivalence by execution:
 [`tests/fixtures/expressions/vectors.json`](../tests/fixtures/expressions/vectors.json)
 drives the reference evaluator, the CI assertions, and every
-generated program over the same cases. Binding-stage refusals
-(duplicate set members, malformed datetime calendar fields) and
-clock validation cannot appear in that document; the executed
+generated program over the same cases. Before evaluating any row,
+every generated program runs the same eager binding validation as
+the reference: scope/field shape, unknown scopes and fields,
+presence of every declared reference (nullable included),
+nullability, exact JSON scalar types, the family value-domain
+bounds, canonical datetimes, and set size/sorting/duplicates —
+including values on branches the body never takes. Binding-stage
+refusals beyond those vectors and clock validation cannot appear in
+that document; the executed
 projection gate (`tests/expressions_projection.rs`) runs every
 generated program against those exact shapes and requires the same
 closed tokens the reference refuses with.
@@ -135,7 +145,7 @@ classification.
 - [`contracts/expressions.schema.v1.0.0.json`](../contracts/expressions.schema.v1.0.0.json) — the attachment contract,
 - [`contracts/expressions-vectors.schema.v1.0.0.json`](../contracts/expressions-vectors.schema.v1.0.0.json) — the shared evaluation-vector contract,
 - [`contracts/expressions-builtin-support.schema.v1.0.0.json`](../contracts/expressions-builtin-support.schema.v1.0.0.json) — the capability-snapshot contract,
-- [`tests/fixtures/expressions/`](../tests/fixtures/expressions/) — the shared fixtures (valid planner, 66 vectors, 28 invalid refusals, capability snapshots, diff pair),
+- [`tests/fixtures/expressions/`](../tests/fixtures/expressions/) — the shared fixtures (valid planner, 87 vectors, 28 invalid refusals, capability snapshots, diff pair),
 - `scripts/test-expressions-contracts.mjs` — the independent Node release gate (pinned Ajv 8.17.1).
 
 Failures emit the accepted #11 diagnostic contract with the

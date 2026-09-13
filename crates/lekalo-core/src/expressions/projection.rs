@@ -26,7 +26,7 @@
 
 use super::ast::ExprNode;
 use super::types::{ExprType, Scalar, ScalarType};
-use super::typing::{conditional_then_type, node_type};
+use super::typing::{collect_guards, conditional_then_type, node_type_guards, Guard};
 use super::version::{BUILTIN_SEMANTICS_VERSION, FAMILY, VERSION};
 use super::ExpressionRecord;
 use super::ExpressionsAttachment;
@@ -130,8 +130,18 @@ enum BranchType {
 
 /// Compile one record body against its declared references.
 fn compile(record: &ExpressionRecord, node: &ExprNode) -> Code {
+    compile_guards(record, node, &[])
+}
+
+/// Compile one node under the not-null guards the enclosing branches
+/// have already established. The guards mirror exactly what the
+/// static checker established for this position, so every type query
+/// below answers with the node's real type — a guarded nullable
+/// reference compiles as its declared type instead of falling into
+/// an integer default.
+fn compile_guards(record: &ExpressionRecord, node: &ExprNode, guards: &[Guard]) -> Code {
     let ty = |node: &ExprNode| -> ExprType {
-        node_type(node, record).unwrap_or(ExprType::Scalar(ScalarType::Int))
+        node_type_guards(node, record, guards).unwrap_or(ExprType::Scalar(ScalarType::Int))
     };
     match node {
         ExprNode::Bool(value) => Code::Bool(*value),
@@ -145,7 +155,7 @@ fn compile(record: &ExpressionRecord, node: &ExprNode) -> Code {
         // All route through the typed literal maker with the wire
         // (already sorted, duplicate-free) items, so every target
         // computes the same concrete set.
-        ExprNode::Set(_) => set_operand(record, node),
+        ExprNode::Set(_) => set_operand(record, guards, node),
         ExprNode::Ref { scope, field } => {
             let declared = record
                 .params
@@ -160,39 +170,45 @@ fn compile(record: &ExpressionRecord, node: &ExprNode) -> Code {
         }
         ExprNode::Now => Code::Call("lekClock", Vec::new()),
         ExprNode::Equal { left, right } => {
-            if is_string(left, record) {
+            if is_string(record, guards, left) {
                 Code::Call(
                     "lekCmpStr",
-                    vec![compile(record, left), compile(record, right)],
+                    vec![
+                        compile_guards(record, left, guards),
+                        compile_guards(record, right, guards),
+                    ],
                 )
                 .compare_for_eq()
             } else {
                 Code::Equal(
                     false,
-                    Box::new(compile(record, left)),
-                    Box::new(compile(record, right)),
+                    Box::new(compile_guards(record, left, guards)),
+                    Box::new(compile_guards(record, right, guards)),
                 )
             }
         }
         ExprNode::NotEqual { left, right } => {
-            if is_string(left, record) {
+            if is_string(record, guards, left) {
                 Code::Call(
                     "lekCmpStr",
-                    vec![compile(record, left), compile(record, right)],
+                    vec![
+                        compile_guards(record, left, guards),
+                        compile_guards(record, right, guards),
+                    ],
                 )
                 .compare_for_ne()
             } else {
                 Code::Equal(
                     true,
-                    Box::new(compile(record, left)),
-                    Box::new(compile(record, right)),
+                    Box::new(compile_guards(record, left, guards)),
+                    Box::new(compile_guards(record, right, guards)),
                 )
             }
         }
-        ExprNode::Less { left, right } => compare(record, "<", left, right),
-        ExprNode::LessEqual { left, right } => compare(record, "<=", left, right),
-        ExprNode::Greater { left, right } => compare(record, ">", left, right),
-        ExprNode::GreaterEqual { left, right } => compare(record, ">=", left, right),
+        ExprNode::Less { left, right } => compare(record, guards, "<", left, right),
+        ExprNode::LessEqual { left, right } => compare(record, guards, "<=", left, right),
+        ExprNode::Greater { left, right } => compare(record, guards, ">", left, right),
+        ExprNode::GreaterEqual { left, right } => compare(record, guards, ">=", left, right),
         ExprNode::IsNull { operand } => match operand.as_ref() {
             ExprNode::Ref { scope, field } => Code::Call(
                 "lekIsNull",
@@ -208,67 +224,102 @@ fn compile(record: &ExpressionRecord, node: &ExprNode) -> Code {
             _ => Code::Bool(false),
         },
         ExprNode::InSet { operand, set } => Code::Call(
-            set_helper(record, set),
-            vec![set_operand(record, set), compile(record, operand)],
+            set_helper(record, guards, set),
+            vec![
+                set_operand(record, guards, set),
+                compile_guards(record, operand, guards),
+            ],
         ),
         ExprNode::NotInSet { operand, set } => Code::Not(Box::new(Code::Call(
-            set_helper(record, set),
-            vec![set_operand(record, set), compile(record, operand)],
+            set_helper(record, guards, set),
+            vec![
+                set_operand(record, guards, set),
+                compile_guards(record, operand, guards),
+            ],
         ))),
         ExprNode::And(operands) => Code::And(
             operands
                 .iter()
-                .map(|operand| compile(record, operand))
+                .map(|operand| compile_guards(record, operand, guards))
                 .collect(),
         ),
         ExprNode::Or(operands) => Code::Or(
             operands
                 .iter()
-                .map(|operand| compile(record, operand))
+                .map(|operand| compile_guards(record, operand, guards))
                 .collect(),
         ),
-        ExprNode::Not { operand } => Code::Not(Box::new(compile(record, operand))),
+        ExprNode::Not { operand } => Code::Not(Box::new(compile_guards(record, operand, guards))),
         ExprNode::Add { left, right } => Code::Call(
-            add_name(record, left, right),
-            vec![compile(record, left), compile(record, right)],
+            add_name(record, guards, left, right),
+            vec![
+                compile_guards(record, left, guards),
+                compile_guards(record, right, guards),
+            ],
         ),
         ExprNode::Subtract { left, right } => Code::Call(
-            sub_name(record, left, right),
-            vec![compile(record, left), compile(record, right)],
+            sub_name(record, guards, left, right),
+            vec![
+                compile_guards(record, left, guards),
+                compile_guards(record, right, guards),
+            ],
         ),
         ExprNode::Multiply { left, right } => Code::Call(
-            mul_name(record, left, right),
-            vec![compile(record, left), compile(record, right)],
+            mul_name(record, guards, left, right),
+            vec![
+                compile_guards(record, left, guards),
+                compile_guards(record, right, guards),
+            ],
         ),
         ExprNode::Divide { left, right } => Code::Call(
-            div_name(record, left),
-            vec![compile(record, left), compile(record, right)],
+            div_name(record, guards, left),
+            vec![
+                compile_guards(record, left, guards),
+                compile_guards(record, right, guards),
+            ],
         ),
         ExprNode::Modulo { left, right } => Code::Call(
             "lekMod",
-            vec![compile(record, left), compile(record, right)],
+            vec![
+                compile_guards(record, left, guards),
+                compile_guards(record, right, guards),
+            ],
         ),
         ExprNode::If {
             condition,
             then,
             otherwise,
         } => {
-            let branch = match conditional_then_type(record, condition, then) {
+            // The branches inherit exactly the guards the checker
+            // established: the then-branch gains the condition's
+            // not-null proofs, and the else branch of `if (is-null(x))`
+            // gains the guarded leaf.
+            let mut then_guards: Vec<Guard> = guards.to_vec();
+            collect_guards(condition, &mut then_guards);
+            let mut else_guards: Vec<Guard> = guards.to_vec();
+            if let ExprNode::IsNull { operand } = condition.as_ref() {
+                if let ExprNode::Ref { scope, field } = operand.as_ref() {
+                    else_guards.push((*scope, field.clone()));
+                }
+            }
+            let branch = match conditional_then_type(record, guards, condition, then) {
                 ExprType::Scalar(ScalarType::Str) => BranchType::Str,
                 ExprType::Scalar(ScalarType::Bool) => BranchType::Bool,
                 ExprType::Scalar(_) => BranchType::Int,
                 ExprType::Set(inner) => BranchType::Set(inner),
             };
             Code::If(
-                Box::new(compile(record, condition)),
-                Box::new(compile(record, then)),
-                Box::new(compile(record, otherwise)),
+                Box::new(compile_guards(record, condition, guards)),
+                Box::new(compile_guards(record, then, &then_guards)),
+                Box::new(compile_guards(record, otherwise, &else_guards)),
                 branch,
             )
         }
         ExprNode::Builtin { name, args } => Code::Call(
             builtin_name(name),
-            args.iter().map(|arg| compile(record, arg)).collect(),
+            args.iter()
+                .map(|arg| compile_guards(record, arg, guards))
+                .collect(),
         ),
     }
 }
@@ -276,28 +327,38 @@ fn compile(record: &ExpressionRecord, node: &ExprNode) -> Code {
 /// One ordered comparison; string operands compare through the
 /// prelude byte-order helper so PHP never applies numeric-string
 /// comparison.
-fn compare(record: &ExpressionRecord, op: &'static str, left: &ExprNode, right: &ExprNode) -> Code {
-    if is_string(left, record) {
+fn compare(
+    record: &ExpressionRecord,
+    guards: &[Guard],
+    op: &'static str,
+    left: &ExprNode,
+    right: &ExprNode,
+) -> Code {
+    if is_string(record, guards, left) {
         Code::Compare(
             op,
             Box::new(Code::Call(
                 "lekCmpStr",
-                vec![compile(record, left), compile(record, right)],
+                vec![
+                    compile_guards(record, left, guards),
+                    compile_guards(record, right, guards),
+                ],
             )),
             Box::new(Code::Int(0)),
         )
     } else {
         Code::Compare(
             op,
-            Box::new(compile(record, left)),
-            Box::new(compile(record, right)),
+            Box::new(compile_guards(record, left, guards)),
+            Box::new(compile_guards(record, right, guards)),
         )
     }
 }
 
-/// Whether one node is statically string-typed.
-fn is_string(node: &ExprNode, record: &ExpressionRecord) -> bool {
-    node_type(node, record) == Ok(ExprType::Scalar(ScalarType::Str))
+/// Whether one node is statically string-typed under the guards in
+/// force at this position.
+fn is_string(record: &ExpressionRecord, guards: &[Guard], node: &ExprNode) -> bool {
+    node_type_guards(node, record, guards) == Ok(ExprType::Scalar(ScalarType::Str))
 }
 
 /// Helper shims for string equality through the comparison helper.
@@ -328,8 +389,8 @@ fn extract_helper(ty: &ExprType) -> &'static str {
 }
 
 /// The membership helper for one set operand.
-fn set_helper(record: &ExpressionRecord, set: &ExprNode) -> &'static str {
-    match node_type(set, record) {
+fn set_helper(record: &ExpressionRecord, guards: &[Guard], set: &ExprNode) -> &'static str {
+    match node_type_guards(set, record, guards) {
         Ok(ExprType::Set(ScalarType::Bool)) => "lekHasBool",
         Ok(ExprType::Set(ScalarType::Int)) => "lekHasInt",
         Ok(ExprType::Set(ScalarType::Str)) => "lekHasStr",
@@ -341,16 +402,18 @@ fn set_helper(record: &ExpressionRecord, set: &ExprNode) -> &'static str {
 
 /// The compiled set operand: a literal set becomes a typed literal
 /// maker call; a set-typed reference becomes its typed extraction.
-fn set_operand(record: &ExpressionRecord, set: &ExprNode) -> Code {
+fn set_operand(record: &ExpressionRecord, guards: &[Guard], set: &ExprNode) -> Code {
     match set {
-        ExprNode::Set(items) => Code::Call(set_lit_helper(record, set), encode_set_items(items)),
-        other => compile(record, other),
+        ExprNode::Set(items) => {
+            Code::Call(set_lit_helper(record, guards, set), encode_set_items(items))
+        }
+        other => compile_guards(record, other, guards),
     }
 }
 
 /// The literal-maker helper of one set literal.
-fn set_lit_helper(record: &ExpressionRecord, set: &ExprNode) -> &'static str {
-    match node_type(set, record) {
+fn set_lit_helper(record: &ExpressionRecord, guards: &[Guard], set: &ExprNode) -> &'static str {
+    match node_type_guards(set, record, guards) {
         Ok(ExprType::Set(ScalarType::Bool)) => "lekSetLitBool",
         Ok(ExprType::Set(ScalarType::Int)) => "lekSetLitInt",
         Ok(ExprType::Set(ScalarType::Str)) => "lekSetLitStr",
@@ -377,8 +440,16 @@ fn scalar_code(scalar: &Scalar) -> Code {
 }
 
 /// The checked-add helper for one operand pair.
-fn add_name(record: &ExpressionRecord, left: &ExprNode, right: &ExprNode) -> &'static str {
-    match (node_type(left, record), node_type(right, record)) {
+fn add_name(
+    record: &ExpressionRecord,
+    guards: &[Guard],
+    left: &ExprNode,
+    right: &ExprNode,
+) -> &'static str {
+    match (
+        node_type_guards(left, record, guards),
+        node_type_guards(right, record, guards),
+    ) {
         (Ok(ExprType::Scalar(ScalarType::Int)), Ok(ExprType::Scalar(ScalarType::Int))) => "lekAdd",
         (
             Ok(ExprType::Scalar(ScalarType::Duration)),
@@ -389,8 +460,16 @@ fn add_name(record: &ExpressionRecord, left: &ExprNode, right: &ExprNode) -> &'s
 }
 
 /// The checked-subtract helper for one operand pair.
-fn sub_name(record: &ExpressionRecord, left: &ExprNode, right: &ExprNode) -> &'static str {
-    match (node_type(left, record), node_type(right, record)) {
+fn sub_name(
+    record: &ExpressionRecord,
+    guards: &[Guard],
+    left: &ExprNode,
+    right: &ExprNode,
+) -> &'static str {
+    match (
+        node_type_guards(left, record, guards),
+        node_type_guards(right, record, guards),
+    ) {
         (Ok(ExprType::Scalar(ScalarType::Int)), Ok(ExprType::Scalar(ScalarType::Int))) => "lekSub",
         (
             Ok(ExprType::Scalar(ScalarType::Duration)),
@@ -402,16 +481,24 @@ fn sub_name(record: &ExpressionRecord, left: &ExprNode, right: &ExprNode) -> &'s
 }
 
 /// The checked-multiply helper for one operand pair.
-fn mul_name(record: &ExpressionRecord, left: &ExprNode, right: &ExprNode) -> &'static str {
-    match (node_type(left, record), node_type(right, record)) {
+fn mul_name(
+    record: &ExpressionRecord,
+    guards: &[Guard],
+    left: &ExprNode,
+    right: &ExprNode,
+) -> &'static str {
+    match (
+        node_type_guards(left, record, guards),
+        node_type_guards(right, record, guards),
+    ) {
         (Ok(ExprType::Scalar(ScalarType::Int)), Ok(ExprType::Scalar(ScalarType::Int))) => "lekMul",
         _ => "lekDurMul",
     }
 }
 
 /// The checked-divide helper for one operand pair.
-fn div_name(record: &ExpressionRecord, left: &ExprNode) -> &'static str {
-    match node_type(left, record) {
+fn div_name(record: &ExpressionRecord, guards: &[Guard], left: &ExprNode) -> &'static str {
+    match node_type_guards(left, record, guards) {
         Ok(ExprType::Scalar(ScalarType::Duration)) => "lekDurDiv",
         _ => "lekDiv",
     }
@@ -460,6 +547,11 @@ fn render_node(attachment: &ExpressionsAttachment) -> String {
             node_string(record.id()),
             node_string(&record.result().key())
         ));
+        out.push_str(&format!(
+            "LEK_PARAMS[{}] = [{}];\n",
+            node_string(record.id()),
+            node_params(record)
+        ));
     }
     out.push_str(NODE_RUNNER);
     out
@@ -486,6 +578,11 @@ fn render_php(attachment: &ExpressionsAttachment) -> String {
             php_string(record.id()),
             php_string(&record.result().key())
         ));
+        out.push_str(&format!(
+            "$LEK_PARAMS[{}] = array({});\n",
+            php_string(record.id()),
+            php_params(record)
+        ));
     }
     out.push_str(PHP_RUNNER);
     out
@@ -500,6 +597,11 @@ fn render_go(attachment: &ExpressionsAttachment) -> String {
         "\n// Generated by lekalo; do not edit. Reads the shared\n// evaluation vectors on stdin, writes computed results to stdout.\npackage main\n\nimport (\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"io\"\n\t\"os\"\n\t\"sort\"\n\t\"strconv\"\n\t\"strings\"\n)\n\n",
     );
     out.push_str(GO_PRELUDE);
+    out.push_str("\nvar lekParams = map[string][]lekParam{\n");
+    for record in attachment.expressions() {
+        out.push_str(&go_params_lines(record));
+    }
+    out.push_str("}\n");
     out.push_str(GO_RUNNER_HEAD);
     for record in attachment.expressions() {
         let compiled = compile(record, record.body());
@@ -513,6 +615,62 @@ fn render_go(attachment: &ExpressionsAttachment) -> String {
         ));
     }
     out.push_str(GO_RUNNER_TAIL);
+    out
+}
+
+/// The declared reference table of one record, rendered as Node
+/// object literals for the eager binding validation.
+fn node_params(record: &ExpressionRecord) -> String {
+    record
+        .params
+        .iter()
+        .map(|param| {
+            format!(
+                "{{\"s\":{},\"f\":{},\"t\":{},\"n\":{}}}",
+                node_string(param.scope.key()),
+                node_string(&param.field),
+                node_string(&param.ty.key()),
+                param.nullable
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The declared reference table of one record, rendered as PHP array
+/// literals for the eager binding validation.
+fn php_params(record: &ExpressionRecord) -> String {
+    record
+        .params
+        .iter()
+        .map(|param| {
+            format!(
+                "array('s'=>{},'f'=>{},'t'=>{},'n'=>{})",
+                php_string(param.scope.key()),
+                php_string(&param.field),
+                php_string(&param.ty.key()),
+                if param.nullable { "true" } else { "false" }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The declared reference table of one record, rendered as Go struct
+/// literals for the eager binding validation.
+fn go_params_lines(record: &ExpressionRecord) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("\t{}: {{\n", go_string(record.id())));
+    for param in &record.params {
+        out.push_str(&format!(
+            "\t\t{{{}, {}, {}, {}}},\n",
+            go_string(param.scope.key()),
+            go_string(&param.field),
+            go_string(&param.ty.key()),
+            param.nullable
+        ));
+    }
+    out.push_str("\t},\n");
     out
 }
 
@@ -554,8 +712,12 @@ fn emit_node(code: &Code) -> String {
             format!("({} {} {})", emit_node(left), op, emit_node(right))
         }
         Code::Equal(negated, left, right) => {
+            // Each operand is parenthesized individually, so a boolean
+            // combinator used as an equality operand keeps its AST
+            // grouping instead of being reassociated by target
+            // operator precedence.
             let op = if *negated { "!==" } else { "===" };
-            format!("({} {} {})", emit_node(left), op, emit_node(right))
+            format!("(({}) {} ({}))", emit_node(left), op, emit_node(right))
         }
         // Every operand is parenthesized, exactly like the PHP and
         // Go emit: JavaScript `&&` binds tighter than `||`, so a
@@ -603,8 +765,10 @@ fn emit_php(code: &Code) -> String {
             format!("({} {} {})", emit_php(left), op, emit_php(right))
         }
         Code::Equal(negated, left, right) => {
-            let op = if *negated { "!=" } else { "===" };
-            format!("({} {} {})", emit_php(left), op, emit_php(right))
+            // Each operand is parenthesized individually for the same
+            // grouping guarantee as the Node emit.
+            let op = if *negated { "!==" } else { "===" };
+            format!("(({}) {} ({}))", emit_php(left), op, emit_php(right))
         }
         Code::And(operands) => operands
             .iter()
@@ -652,8 +816,10 @@ fn emit_go(code: &Code) -> String {
             format!("({} {} {})", emit_go(left), op, emit_go(right))
         }
         Code::Equal(negated, left, right) => {
+            // Each operand is parenthesized individually for the same
+            // grouping guarantee as the Node emit.
             let op = if *negated { "!=" } else { "==" };
-            format!("({} {} {})", emit_go(left), op, emit_go(right))
+            format!("(({}) {} ({}))", emit_go(left), op, emit_go(right))
         }
         Code::And(operands) => operands
             .iter()
@@ -708,6 +874,7 @@ fn go_string(text: &str) -> String {
 const NODE_PRELUDE: &str = r#"
 const LEK = {};
 const LEK_TYPES = {};
+const LEK_PARAMS = {};
 const LEK_MAX_INT = 9007199254740991n;
 const LEK_MAX_DUR = 31536000000n;
 let lekEnv = { clockText: null, bindings: {} };
@@ -779,7 +946,11 @@ function lekDtRender(d) {
   return pad(parts[0], 4) + "-" + pad(parts[1], 2) + "-" + pad(parts[2], 2) + "T" + pad(time / 3600n, 2) + ":" + pad((time % 3600n) / 60n, 2) + ":" + pad(time % 60n, 2) + "Z";
 }
 function lekClock() {
-  if (typeof lekEnv.clockText !== "string") { lekFail("clock-missing"); }
+  // An omitted clock reads the shared epoch default, exactly like
+  // the reference decode; a present-but-malformed clock still
+  // refuses with the closed clock token.
+  if (lekEnv.clockText === undefined || lekEnv.clockText === null) { return 0n; }
+  if (typeof lekEnv.clockText !== "string") { lekFail("clock-invalid"); }
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/.exec(lekEnv.clockText);
   if (!m) { lekFail("clock-invalid"); }
   const f = [1, 2, 3, 4, 5, 6].map((i) => BigInt(m[i]));
@@ -794,18 +965,28 @@ function lekGet(scope, field, convert) {
   return convert(v);
 }
 function toBig(v) {
-  if (typeof v === "number" && Number.isInteger(v)) { return BigInt(v); }
-  if (typeof v === "string" && /^-?[0-9]+$/.test(v)) { return BigInt(v); }
-  lekFail("binding-value");
+  // The exact JSON scalar types: only a JSON integer literal is an
+  // int binding (numeric strings and fractional spellings are
+  // refused), and the family integer bound applies (an out-of-range
+  // double still compares above the bound after the rounded parse).
+  if (typeof v !== "number" || !Number.isInteger(v)) { lekFail("binding-value"); }
+  const big = BigInt(v);
+  if (big > LEK_MAX_INT || big < -LEK_MAX_INT) { lekFail("binding-value"); }
+  return big;
 }
-function toStr(v) { if (typeof v !== "string") { lekFail("binding-value"); } return v; }
+function toStr(v) {
+  if (typeof v !== "string" || !lekStrOk(v) || Buffer.byteLength(v) > 256) { lekFail("binding-value"); }
+  return v;
+}
 function toBool(v) { if (typeof v !== "boolean") { lekFail("binding-value"); } return v; }
+function lekDurValue(v) { if (v > LEK_MAX_DUR || v < -LEK_MAX_DUR) { lekFail("binding-value"); } return v; }
 function lekSetCmp(a, b) {
   if (typeof a === "boolean") { return a === b ? 0 : (a ? 1 : -1); }
   return a < b ? -1 : (a > b ? 1 : 0);
 }
 function toSet(v, convert) {
   if (!Array.isArray(v)) { lekFail("binding-value"); }
+  if (v.length > 64) { lekFail("binding-value"); }
   const items = v.map((item) => convert(item));
   items.sort((a, b) => lekSetCmp(a, b));
   for (let i = 1; i < items.length; i++) { if (lekSetCmp(items[i - 1], items[i]) === 0) { lekFail("binding-value"); } }
@@ -815,12 +996,49 @@ function lekGetBool(scope, field) { return lekGet(scope, field, toBool); }
 function lekGetInt(scope, field) { return lekGet(scope, field, toBig); }
 function lekGetStr(scope, field) { return lekGet(scope, field, toStr); }
 function lekGetDt(scope, field) { return lekParseClockText(lekGet(scope, field, toStr)); }
-function lekGetDur(scope, field) { return lekGet(scope, field, toBig); }
+function lekGetDur(scope, field) { return lekGet(scope, field, (v) => lekDurValue(toBig(v))); }
 function lekGetSetBool(scope, field) { return lekGet(scope, field, (v) => toSet(v, toBool)); }
 function lekGetSetInt(scope, field) { return lekGet(scope, field, (v) => toSet(v, toBig)); }
 function lekGetSetStr(scope, field) { return lekGet(scope, field, (v) => toSet(v, toStr)); }
 function lekGetSetDt(scope, field) { return lekGet(scope, field, (v) => toSet(v, (s) => lekParseClockText(toStr(s)))); }
-function lekGetSetDur(scope, field) { return lekGet(scope, field, (v) => toSet(v, toBig)); }
+function lekGetSetDur(scope, field) { return lekGet(scope, field, (v) => toSet(v, (s) => lekDurValue(toBig(s)))); }
+const LEK_PARAM_GETTERS = {
+  "bool": lekGetBool,
+  "int": lekGetInt,
+  "string": lekGetStr,
+  "datetime": lekGetDt,
+  "duration": lekGetDur,
+  "set:bool": lekGetSetBool,
+  "set:int": lekGetSetInt,
+  "set:string": lekGetSetStr,
+  "set:datetime": lekGetSetDt,
+  "set:duration": lekGetSetDur
+};
+function lekValidateBindings(params, bindings) {
+  // The eager per-record binding validation the reference performs
+  // before evaluation: structure, unknowns, presence (even for
+  // nullable references), nullability, and every typed value —
+  // including values on branches the body never takes.
+  if (typeof bindings !== "object" || bindings === null || Array.isArray(bindings)) { lekFail("bindings-shape"); }
+  for (const scope of Object.keys(bindings).sort()) {
+    if (scope !== "input" && scope !== "actor" && scope !== "entity" && scope !== "result") { lekFail("binding-unknown"); }
+    const scopeMap = bindings[scope];
+    if (typeof scopeMap !== "object" || scopeMap === null || Array.isArray(scopeMap)) { lekFail("bindings-shape"); }
+    for (const field of Object.keys(scopeMap).sort()) {
+      let known = false;
+      for (const p of params) { if (p.s === scope && p.f === field) { known = true; break; } }
+      if (!known) { lekFail("binding-unknown"); }
+    }
+  }
+  for (const p of params) {
+    const scopeMap = bindings[p.s];
+    if (!scopeMap || !(p.f in scopeMap)) { lekFail("binding-missing"); }
+    if (scopeMap[p.f] === null) { if (!p.n) { lekFail("binding-null"); } continue; }
+    const getter = LEK_PARAM_GETTERS[p.t];
+    if (!getter) { lekFail("binding-value"); }
+    getter(p.s, p.f);
+  }
+}
 function lekParseClockText(text) {
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/.exec(text);
   if (!m) { lekFail("binding-value"); }
@@ -844,7 +1062,7 @@ function lekConcat(a, b) {
 function lekStrOk(s) {
   for (const ch of s) {
     const c = ch.codePointAt(0);
-    if (c > 0xFFFF || c < 0x20) { return false; }
+    if (c > 0xFFFF || c < 0x20 || (c >= 0xD800 && c <= 0xDFFF)) { return false; }
   }
   return true;
 }
@@ -899,16 +1117,68 @@ function lekEncodeTyped(value, ty) {
   if (typeof value === "bigint") { return Number(value); }
   return value;
 }
+function lekCanonicalDocumentText(text) {
+  // The reference JSON decoder refuses non-integer spellings of
+  // int/duration bindings (42.0, 1e2) and lone surrogate escapes:
+  // scan the raw document text and reject either shape before any
+  // row is evaluated.
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === "\"") {
+      i += 1;
+      while (i < text.length) {
+        if (text[i] === "\\") {
+          if (text[i + 1] === "u") {
+            const cp = parseInt(text.slice(i + 2, i + 6), 16);
+            if (Number.isNaN(cp)) { return false; }
+            if (cp >= 0xD800 && cp <= 0xDBFF) {
+              // A high surrogate must be followed by its low pair.
+              if (text.slice(i + 6, i + 8) !== "\\u") { return false; }
+              const lo = parseInt(text.slice(i + 8, i + 12), 16);
+              if (Number.isNaN(lo) || lo < 0xDC00 || lo > 0xDFFF) { return false; }
+              i += 12;
+              continue;
+            }
+            if (cp >= 0xDC00 && cp <= 0xDFFF) { return false; }
+            i += 6;
+            continue;
+          }
+          i += 2;
+          continue;
+        }
+        if (text[i] === "\"") { i += 1; break; }
+        i += 1;
+      }
+      continue;
+    }
+    if (c === "-" || (c >= "0" && c <= "9")) {
+      let j = i + 1;
+      while (j < text.length && "0123456789.eE+-".includes(text[j])) { j += 1; }
+      if (!/^-?(0|[1-9][0-9]*)$/.test(text.slice(i, j))) { return false; }
+      i = j;
+      continue;
+    }
+    i += 1;
+  }
+  return true;
+}
 function lekMain() {
   const raw = require("fs").readFileSync(0, "utf8");
+  if (!lekCanonicalDocumentText(raw)) {
+    process.stderr.write("lekalo vector input error\n");
+    process.exit(1);
+  }
   const doc = JSON.parse(raw);
   const results = [];
   for (const vector of doc.vectors) {
     lekEnv = { clockText: vector.clock, bindings: vector.bindings };
     const row = { id: vector.id };
     try {
+      const params = LEK_PARAMS[vector.expression];
+      if (!params) { lekFail("expression-unknown"); }
+      lekValidateBindings(params, vector.bindings);
       const fn = LEK[vector.expression];
-      if (!fn) { lekFail("expression-unknown"); }
       row.value = lekEncodeTyped(fn(lekEnv), LEK_TYPES[vector.expression]);
     } catch (error) {
       row.error = error.lekToken || "runtime-error";
@@ -924,6 +1194,7 @@ lekMain();
 const PHP_PRELUDE: &str = r#"
 $LEK = array();
 $LEK_TYPES = array();
+$LEK_PARAMS = array();
 $LEK_ENV = null;
 function lekFail($token) { throw new Exception($token); }
 function lekIntBound($v) { if ($v > 9007199254740991 || $v < -9007199254740991) { lekFail('int-overflow'); } return $v; }
@@ -994,26 +1265,36 @@ function lekDtRender($d) {
 }
 function lekClock() {
   $text = $GLOBALS['LEK_ENV']['clockText'];
-  if (!is_string($text)) { lekFail('clock-missing'); }
+  // An omitted clock reads the shared epoch default, exactly like
+  // the reference decode; a present-but-malformed clock still
+  // refuses with the closed clock token.
+  if ($text === null) { return 0; }
+  if (!is_string($text)) { lekFail('clock-invalid'); }
   $m = array();
-  if (!preg_match('/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})Z$/', $text, $m)) { lekFail('clock-invalid'); }
+  if (!preg_match('/\A(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z\z/', $text, $m)) { lekFail('clock-invalid'); }
   $f = array((int) $m[1], (int) $m[2], (int) $m[3], (int) $m[4], (int) $m[5], (int) $m[6]);
   if (!lekValidFields($f[0], $f[1], $f[2], $f[3], $f[4], $f[5])) { lekFail('clock-invalid'); }
   return lekFromCivil($f[0], $f[1], $f[2]) * 86400 + $f[3] * 3600 + $f[4] * 60 + $f[5];
 }
 function lekField($scope, $field) {
-  if (!isset($GLOBALS['LEK_ENV']['bindings'][$scope]) || !array_key_exists($field, $GLOBALS['LEK_ENV']['bindings'][$scope])) { lekFail('binding-missing'); }
-  $v = $GLOBALS['LEK_ENV']['bindings'][$scope][$field];
+  // Scope members are objects; a non-object scope refuses instead of
+  // crashing the runner.
+  $bindings = $GLOBALS['LEK_ENV']['bindings'];
+  if (!is_object($bindings) || !property_exists($bindings, $scope)) { lekFail('binding-missing'); }
+  $scopeMap = $bindings->$scope;
+  if (!is_object($scopeMap) || !property_exists($scopeMap, $field)) { lekFail('binding-missing'); }
+  $v = $scopeMap->$field;
   if ($v === null) { lekFail('binding-null'); }
   return $v;
 }
-function lekGetBool($scope, $field) { $v = lekField($scope, $field); if (!is_bool($v)) { lekFail('binding-value'); } return $v; }
-function lekGetInt($scope, $field) { $v = lekField($scope, $field); if (!is_int($v)) { lekFail('binding-value'); } return $v; }
-function lekGetStr($scope, $field) { $v = lekField($scope, $field); if (!is_string($v)) { lekFail('binding-value'); } return $v; }
+function lekGetBool($scope, $field) { return lekToBool(lekField($scope, $field)); }
+function lekGetInt($scope, $field) { return lekToInt(lekField($scope, $field)); }
+function lekGetStr($scope, $field) { return lekToStr(lekField($scope, $field)); }
 function lekGetDt($scope, $field) { return lekParseClockText(lekGetStr($scope, $field)); }
-function lekGetDur($scope, $field) { return lekGetInt($scope, $field); }
+function lekGetDur($scope, $field) { return lekToDur(lekField($scope, $field)); }
 function lekSetOf($v, $convert) {
   if (!is_array($v)) { lekFail('binding-value'); }
+  if (count($v) > 64) { lekFail('binding-value'); }
   $out = array();
   foreach ($v as $item) { $out[] = $convert($item); }
   usort($out, function ($a, $b) {
@@ -1026,21 +1307,70 @@ function lekSetOf($v, $convert) {
   return $out;
 }
 function lekToBool($v) { if (!is_bool($v)) { lekFail('binding-value'); } return $v; }
-function lekToInt($v) { if (!is_int($v)) { lekFail('binding-value'); } return $v; }
-function lekToStr($v) { if (!is_string($v)) { lekFail('binding-value'); } return $v; }
+function lekToInt($v) { if (!is_int($v) || $v > 9007199254740991 || $v < -9007199254740991) { lekFail('binding-value'); } return $v; }
+function lekToStr($v) { if (!is_string($v) || strlen($v) > 256 || !lekStrOk($v)) { lekFail('binding-value'); } return $v; }
+function lekToDur($v) { if (!is_int($v) || $v > 31536000000 || $v < -31536000000) { lekFail('binding-value'); } return $v; }
 function lekGetSetBool($scope, $field) { return lekSetOf(lekField($scope, $field), 'lekToBool'); }
 function lekGetSetInt($scope, $field) { return lekSetOf(lekField($scope, $field), 'lekToInt'); }
 function lekGetSetStr($scope, $field) { return lekSetOf(lekField($scope, $field), 'lekToStr'); }
 function lekGetSetDt($scope, $field) { return lekSetOf(lekField($scope, $field), 'lekParseClockText'); }
-function lekGetSetDur($scope, $field) { return lekSetOf(lekField($scope, $field), 'lekToInt'); }
+function lekGetSetDur($scope, $field) { return lekSetOf(lekField($scope, $field), 'lekToDur'); }
+function lekParamGetter($ty) {
+  static $getters = array(
+    'bool' => 'lekGetBool',
+    'int' => 'lekGetInt',
+    'string' => 'lekGetStr',
+    'datetime' => 'lekGetDt',
+    'duration' => 'lekGetDur',
+    'set:bool' => 'lekGetSetBool',
+    'set:int' => 'lekGetSetInt',
+    'set:string' => 'lekGetSetStr',
+    'set:datetime' => 'lekGetSetDt',
+    'set:duration' => 'lekGetSetDur'
+  );
+  return isset($getters[$ty]) ? $getters[$ty] : 'lekFailInvalidParam';
+}
+function lekFailInvalidParam() { lekFail('binding-value'); }
+function lekValidateBindings($params, $bindings) {
+  // The eager per-record binding validation the reference performs
+  // before evaluation: structure, unknowns, presence (even for
+  // nullable references), nullability, and every typed value —
+  // including values on branches the body never takes.
+  if (!is_object($bindings)) { lekFail('bindings-shape'); }
+  $scopes = array_keys((array) $bindings);
+  sort($scopes, SORT_STRING);
+  foreach ($scopes as $scope) {
+    if ($scope !== 'input' && $scope !== 'actor' && $scope !== 'entity' && $scope !== 'result') { lekFail('binding-unknown'); }
+    if (!is_object($bindings->$scope)) { lekFail('bindings-shape'); }
+    $fields = array_keys((array) $bindings->$scope);
+    sort($fields, SORT_STRING);
+    foreach ($fields as $field) {
+      $known = false;
+      foreach ($params as $p) { if ($p['s'] === $scope && $p['f'] === $field) { $known = true; break; } }
+      if (!$known) { lekFail('binding-unknown'); }
+    }
+  }
+  foreach ($params as $p) {
+    if (!property_exists($bindings, $p['s']) || !property_exists($bindings->{$p['s']}, $p['f'])) { lekFail('binding-missing'); }
+    $v = $bindings->{$p['s']}->{$p['f']};
+    if ($v === null) { if (!$p['n']) { lekFail('binding-null'); } continue; }
+    $getter = lekParamGetter($p['t']);
+    $getter($p['s'], $p['f']);
+  }
+}
 function lekParseClockText($text) {
+  // Strict end-of-input anchors: a trailing newline is never part of
+  // a canonical timestamp.
   $m = array();
-  if (!is_string($text) || !preg_match('/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})Z$/', $text, $m)) { lekFail('binding-value'); }
+  if (!is_string($text) || !preg_match('/\A(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z\z/', $text, $m)) { lekFail('binding-value'); }
   $f = array((int) $m[1], (int) $m[2], (int) $m[3], (int) $m[4], (int) $m[5], (int) $m[6]);
   if (!lekValidFields($f[0], $f[1], $f[2], $f[3], $f[4], $f[5])) { lekFail('binding-value'); }
   return lekFromCivil($f[0], $f[1], $f[2]) * 86400 + $f[3] * 3600 + $f[4] * 60 + $f[5];
 }
-function lekIsNull($scope, $field) { return !isset($GLOBALS['LEK_ENV']['bindings'][$scope]) || !array_key_exists($field, $GLOBALS['LEK_ENV']['bindings'][$scope]) || $GLOBALS['LEK_ENV']['bindings'][$scope][$field] === null; }
+function lekIsNull($scope, $field) {
+  $bindings = $GLOBALS['LEK_ENV']['bindings'];
+  return !is_object($bindings) || !property_exists($bindings, $scope) || !is_object($bindings->$scope) || !property_exists($bindings->$scope, $field) || $bindings->$scope->$field === null;
+}
 function lekNotNull($scope, $field) { return !lekIsNull($scope, $field); }
 function lekLen($s) {
   $count = 0;
@@ -1092,19 +1422,24 @@ function lekEncodeTyped($value, $ty) {
   return $value;
 }
 $raw = stream_get_contents(STDIN);
-$doc = json_decode($raw, true);
-if (!is_array($doc) || !isset($doc['vectors'])) { fwrite(STDERR, "lekalo vector input error\n"); exit(1); }
+// Objects decode as stdClass so the binding structure checks can
+// tell an object scope from an array, exactly like the reference.
+$doc = json_decode($raw);
+if (!is_object($doc) || !isset($doc->vectors) || !is_array($doc->vectors)) { fwrite(STDERR, "lekalo vector input error\n"); exit(1); }
 $results = array();
-foreach ($doc['vectors'] as $vector) {
-  $GLOBALS['LEK_ENV'] = array('clockText' => (isset($vector['clock']) ? $vector['clock'] : null), 'bindings' => $vector['bindings']);
-  $row = array('id' => $vector['id']);
+foreach ($doc->vectors as $vector) {
+  if (!is_object($vector) || !isset($vector->id) || !isset($vector->expression) || !isset($vector->bindings)) { fwrite(STDERR, "lekalo vector input error\n"); exit(1); }
+  $GLOBALS['LEK_ENV'] = array('clockText' => (isset($vector->clock) ? $vector->clock : null), 'bindings' => $vector->bindings);
+  $row = array('id' => $vector->id);
   try {
-    if (!isset($LEK[$vector['expression']])) { lekFail('expression-unknown'); }
-    $fn = $LEK[$vector['expression']];
-    $row['value'] = lekEncodeTyped($fn($GLOBALS['LEK_ENV']), $LEK_TYPES[$vector['expression']]);
-  } catch (Exception $e) {
+    if (!isset($LEK_PARAMS[$vector->expression])) { lekFail('expression-unknown'); }
+    lekValidateBindings($LEK_PARAMS[$vector->expression], $vector->bindings);
+    $fn = $LEK[$vector->expression];
+    $row['value'] = lekEncodeTyped($fn($GLOBALS['LEK_ENV']), $LEK_TYPES[$vector->expression]);
+  } catch (Throwable $e) {
     unset($row['value']);
-    $row['error'] = $e->getMessage();
+    $msg = $e->getMessage();
+    $row['error'] = (is_string($msg) && preg_match('/^[a-z][a-z0-9-]*$/', $msg) === 1) ? $msg : 'runtime-error';
   }
   $results[] = $row;
 }
@@ -1187,7 +1522,20 @@ func lekDurBound(v int64) int64 {
 
 func lekDurAdd(a, b int64) int64 { return lekDurBound(lekAdd(a, b)) }
 func lekDurSub(a, b int64) int64 { return lekDurBound(lekSub(a, b)) }
-func lekDurMul(a, b int64) int64 { return lekDurBound(lekMul(a, b)) }
+
+func lekDurMul(a, b int64) int64 {
+	// Duration multiplication refuses with the duration token for
+	// both operand orders, whether the machine multiplication or only
+	// the narrower duration domain overflows — never int-overflow.
+	if a == 0 || b == 0 {
+		return 0
+	}
+	r := a * b
+	if r/b != a {
+		lekFail("duration-overflow")
+	}
+	return lekDurBound(r)
+}
 
 func lekDurDiv(a, b int64) int64 {
 	if b == 0 {
@@ -1313,11 +1661,15 @@ func lekDtRender(d int64) string {
 }
 
 func lekClock(env map[string]any) int64 {
-	text, ok := env["clockText"].(string)
-	if !ok {
-		lekFail("clock-missing")
+	// The runner stores a *string: absent and null clocks read the
+	// shared epoch default, exactly like the reference decode; a
+	// present-but-malformed clock still refuses with the closed
+	// clock token.
+	textPtr, ok := env["clockText"].(*string)
+	if !ok || textPtr == nil {
+		return 0
 	}
-	y, mo, d, h, mi, s, ok := lekClockFields(text)
+	y, mo, d, h, mi, s, ok := lekClockFields(*textPtr)
 	if !ok {
 		lekFail("clock-invalid")
 	}
@@ -1525,20 +1877,38 @@ func lekAnyInt(v any) int64 {
 		if err != nil {
 			lekFail("binding-value")
 		}
+		if i > lekMaxInt || i < -lekMaxInt {
+			lekFail("binding-value")
+		}
 		return i
 	case float64:
 		if n != float64(int64(n)) {
 			lekFail("binding-value")
 		}
-		return int64(n)
+		i := int64(n)
+		if i > lekMaxInt || i < -lekMaxInt {
+			lekFail("binding-value")
+		}
+		return i
 	}
 	lekFail("binding-value")
 	return 0
 }
 
+func lekAnyDur(v any) int64 {
+	d := lekAnyInt(v)
+	if d > lekMaxDur || d < -lekMaxDur {
+		lekFail("binding-value")
+	}
+	return d
+}
+
 func lekAnyStr(v any) string {
 	s, ok := v.(string)
 	if !ok {
+		lekFail("binding-value")
+	}
+	if len(s) > 256 || !lekStrOk(s) {
 		lekFail("binding-value")
 	}
 	return s
@@ -1569,7 +1939,14 @@ func lekGetDt(env map[string]any, scope, field string) int64 {
 }
 
 func lekGetDur(env map[string]any, scope, field string) int64 {
-	return lekGetInt(env, scope, field)
+	return lekAnyDur(lekEnvField(env, scope, field))
+}
+
+func lekSetBound(raw []any) []any {
+	if len(raw) > 64 {
+		lekFail("binding-value")
+	}
+	return raw
 }
 
 func lekGetSetBool(env map[string]any, scope, field string) []bool {
@@ -1577,6 +1954,7 @@ func lekGetSetBool(env map[string]any, scope, field string) []bool {
 	if !ok {
 		lekFail("binding-value")
 	}
+	raw = lekSetBound(raw)
 	out := make([]bool, 0, len(raw))
 	for _, item := range raw {
 		out = append(out, lekAnyBool(item))
@@ -1595,6 +1973,7 @@ func lekGetSetInt(env map[string]any, scope, field string) []int64 {
 	if !ok {
 		lekFail("binding-value")
 	}
+	raw = lekSetBound(raw)
 	out := make([]int64, 0, len(raw))
 	for _, item := range raw {
 		out = append(out, lekAnyInt(item))
@@ -1613,6 +1992,7 @@ func lekGetSetStr(env map[string]any, scope, field string) []string {
 	if !ok {
 		lekFail("binding-value")
 	}
+	raw = lekSetBound(raw)
 	out := make([]string, 0, len(raw))
 	for _, item := range raw {
 		out = append(out, lekAnyStr(item))
@@ -1631,6 +2011,7 @@ func lekGetSetDt(env map[string]any, scope, field string) []int64 {
 	if !ok {
 		lekFail("binding-value")
 	}
+	raw = lekSetBound(raw)
 	out := make([]int64, 0, len(raw))
 	for _, item := range raw {
 		out = append(out, lekParseClockText(lekAnyStr(item)))
@@ -1645,7 +2026,22 @@ func lekGetSetDt(env map[string]any, scope, field string) []int64 {
 }
 
 func lekGetSetDur(env map[string]any, scope, field string) []int64 {
-	return lekGetSetInt(env, scope, field)
+	raw, ok := lekEnvField(env, scope, field).([]any)
+	if !ok {
+		lekFail("binding-value")
+	}
+	raw = lekSetBound(raw)
+	out := make([]int64, 0, len(raw))
+	for _, item := range raw {
+		out = append(out, lekAnyDur(item))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	for i := 1; i < len(out); i++ {
+		if out[i-1] == out[i] {
+			lekFail("binding-value")
+		}
+	}
+	return out
 }
 
 func lekIsNull(env map[string]any, scope, field string) bool {
@@ -1702,7 +2098,17 @@ func lekClockFields(text string) (int64, int64, int64, int64, int64, int64, bool
 	if len(text) != 20 || text[4] != '-' || text[7] != '-' || text[10] != 'T' || text[13] != ':' || text[16] != ':' || text[19] != 'Z' {
 		return 0, 0, 0, 0, 0, 0, false
 	}
+	// Every field byte must be an ASCII digit: signs and negative
+	// fields are refused exactly like the reference calendar parse.
 	digit := func(s string) (int64, bool) {
+		if len(s) == 0 {
+			return 0, false
+		}
+		for i := 0; i < len(s); i++ {
+			if s[i] < '0' || s[i] > '9' {
+				return 0, false
+			}
+		}
 		v, err := strconv.ParseInt(s, 10, 64)
 		if err != nil {
 			return 0, false
@@ -1728,6 +2134,164 @@ func lekParseClockText(text string) int64 {
 	}
 	return lekFromCivil(y, mo, d)*86400 + h*3600 + mi*60 + s
 }
+
+func lekHex4(s []byte) (int, bool) {
+	v := 0
+	for _, c := range s {
+		v <<= 4
+		switch {
+		case c >= '0' && c <= '9':
+			v |= int(c - '0')
+		case c >= 'a' && c <= 'f':
+			v |= int(c-'a') + 10
+		case c >= 'A' && c <= 'F':
+			v |= int(c-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return v, true
+}
+
+func lekCanonicalDocumentText(raw []byte) bool {
+	// The reference JSON decoder refuses non-integer spellings of
+	// int/duration bindings (42.0, 1e2) and lone surrogate escapes:
+	// scan the raw document bytes and reject either shape before any
+	// row is evaluated.
+	inStr := false
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if !inStr {
+			if c == '"' {
+				inStr = true
+			}
+			continue
+		}
+		switch c {
+		case '\\':
+			if i+1 >= len(raw) {
+				return false
+			}
+			if raw[i+1] == 'u' {
+				if i+6 > len(raw) {
+					return false
+				}
+				cp, ok := lekHex4(raw[i+2 : i+6])
+				if !ok {
+					return false
+				}
+				if cp >= 0xD800 && cp <= 0xDBFF {
+					// A high surrogate must be followed by its
+					// low pair.
+					if i+12 > len(raw) || raw[i+6] != '\\' || raw[i+7] != 'u' {
+						return false
+					}
+					lo, ok := lekHex4(raw[i+8 : i+12])
+					if !ok || lo < 0xDC00 || lo > 0xDFFF {
+						return false
+					}
+					i += 6
+				} else if cp >= 0xDC00 && cp <= 0xDFFF {
+					return false
+				}
+			}
+			i++
+		case '"':
+			inStr = false
+		}
+	}
+	return true
+}
+
+type lekParam struct {
+	Scope    string
+	Field    string
+	Type     string
+	Nullable bool
+}
+
+func lekValidateBindings(env map[string]any, params []lekParam) {
+	// The eager per-record binding validation the reference performs
+	// before evaluation: structure, unknowns, presence (even for
+	// nullable references), nullability, and every typed value —
+	// including values on branches the body never takes.
+	bindings, ok := env["bindings"]
+	if !ok {
+		lekFail("bindings-shape")
+	}
+	m, ok := bindings.(map[string]any)
+	if !ok {
+		lekFail("bindings-shape")
+	}
+	scopes := make([]string, 0, len(m))
+	for scope := range m {
+		scopes = append(scopes, scope)
+	}
+	sort.Strings(scopes)
+	for _, scope := range scopes {
+		if scope != "input" && scope != "actor" && scope != "entity" && scope != "result" {
+			lekFail("binding-unknown")
+		}
+		scopeMap, ok := m[scope].(map[string]any)
+		if !ok {
+			lekFail("bindings-shape")
+		}
+		fields := make([]string, 0, len(scopeMap))
+		for field := range scopeMap {
+			fields = append(fields, field)
+		}
+		sort.Strings(fields)
+		for _, field := range fields {
+			known := false
+			for _, p := range params {
+				if p.Scope == scope && p.Field == field {
+					known = true
+					break
+				}
+			}
+			if !known {
+				lekFail("binding-unknown")
+			}
+		}
+	}
+	for _, p := range params {
+		scopeMap, _ := m[p.Scope].(map[string]any)
+		v, present := scopeMap[p.Field]
+		if !present {
+			lekFail("binding-missing")
+		}
+		if v == nil {
+			if !p.Nullable {
+				lekFail("binding-null")
+			}
+			continue
+		}
+		switch p.Type {
+		case "bool":
+			lekGetBool(env, p.Scope, p.Field)
+		case "int":
+			lekGetInt(env, p.Scope, p.Field)
+		case "string":
+			lekGetStr(env, p.Scope, p.Field)
+		case "datetime":
+			lekGetDt(env, p.Scope, p.Field)
+		case "duration":
+			lekGetDur(env, p.Scope, p.Field)
+		case "set:bool":
+			lekGetSetBool(env, p.Scope, p.Field)
+		case "set:int":
+			lekGetSetInt(env, p.Scope, p.Field)
+		case "set:string":
+			lekGetSetStr(env, p.Scope, p.Field)
+		case "set:datetime":
+			lekGetSetDt(env, p.Scope, p.Field)
+		case "set:duration":
+			lekGetSetDur(env, p.Scope, p.Field)
+		default:
+			lekFail("binding-value")
+		}
+	}
+}
 "#;
 
 const GO_RUNNER_HEAD: &str = r#"
@@ -1743,6 +2307,11 @@ func lekRun(expression string, id string, env map[string]any) (row map[string]an
 			row["error"] = token
 		}
 	}()
+	params, known := lekParams[expression]
+	if !known {
+		lekFail("expression-unknown")
+	}
+	lekValidateBindings(env, params)
 	switch expression {
 "#;
 
@@ -1758,12 +2327,15 @@ func main() {
 	if err != nil {
 		lekInputFail()
 	}
+	if !lekCanonicalDocumentText(raw) {
+		lekInputFail()
+	}
 	var doc struct {
 		Vectors []struct {
-			ID         string         `json:"id"`
-			Expression string         `json:"expression"`
-			Clock      string         `json:"clock"`
-			Bindings   map[string]any `json:"bindings"`
+			ID         string          `json:"id"`
+			Expression string          `json:"expression"`
+			Clock      *string         `json:"clock"`
+			Bindings   map[string]any  `json:"bindings"`
 		} `json:"vectors"`
 	}
 	decoder := json.NewDecoder(strings.NewReader(string(raw)))

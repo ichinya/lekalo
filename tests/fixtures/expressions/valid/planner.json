@@ -1288,6 +1288,394 @@
           }
         ]
       }
+    },
+    {
+      "id": "expr.planner/and-eq-gate",
+      "kind": "condition",
+      "description": "A conjunction compared on the left of an equality keeps its grouping.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "flag_a",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_b",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_c",
+          "type": "bool"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "eq",
+        "left": {
+          "op": "and",
+          "operands": [
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_a"
+            },
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_b"
+            }
+          ]
+        },
+        "right": {
+          "op": "ref",
+          "scope": "input",
+          "field": "flag_c"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/and-eq-gate-rev",
+      "kind": "condition",
+      "description": "A conjunction compared on the right of an equality keeps its grouping.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "flag_a",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_b",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_c",
+          "type": "bool"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "eq",
+        "left": {
+          "op": "ref",
+          "scope": "input",
+          "field": "flag_c"
+        },
+        "right": {
+          "op": "and",
+          "operands": [
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_a"
+            },
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_b"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "expr.planner/or-ne-gate",
+      "kind": "condition",
+      "description": "A disjunction compared on the left of an inequality keeps its grouping.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "flag_a",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_b",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_c",
+          "type": "bool"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "ne",
+        "left": {
+          "op": "or",
+          "operands": [
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_a"
+            },
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_b"
+            }
+          ]
+        },
+        "right": {
+          "op": "ref",
+          "scope": "input",
+          "field": "flag_c"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/or-ne-gate-rev",
+      "kind": "condition",
+      "description": "A disjunction compared on the right of an inequality keeps its grouping.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "flag_a",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_b",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_c",
+          "type": "bool"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "ne",
+        "left": {
+          "op": "ref",
+          "scope": "input",
+          "field": "flag_c"
+        },
+        "right": {
+          "op": "or",
+          "operands": [
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_a"
+            },
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_b"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "expr.planner/guarded-note-lt",
+      "kind": "condition",
+      "description": "A guarded nullable string orders by the contract byte order.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "note",
+          "type": "string",
+          "nullable": true
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "not-null",
+          "operand": {
+            "op": "ref",
+            "scope": "input",
+            "field": "note"
+          }
+        },
+        "then": {
+          "op": "lt",
+          "left": {
+            "op": "ref",
+            "scope": "input",
+            "field": "note"
+          },
+          "right": {
+            "op": "lit-string",
+            "value": "2"
+          }
+        },
+        "else": {
+          "op": "lit-bool",
+          "value": false
+        }
+      }
+    },
+    {
+      "id": "expr.planner/guarded-tag-membership",
+      "kind": "condition",
+      "description": "A guarded nullable set keeps its typed membership helper.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "tags",
+          "type": "set:string",
+          "nullable": true
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "not-null",
+          "operand": {
+            "op": "ref",
+            "scope": "input",
+            "field": "tags"
+          }
+        },
+        "then": {
+          "op": "in-set",
+          "operand": {
+            "op": "lit-string",
+            "value": "x"
+          },
+          "set": {
+            "op": "ref",
+            "scope": "input",
+            "field": "tags"
+          }
+        },
+        "else": {
+          "op": "lit-bool",
+          "value": false
+        }
+      }
+    },
+    {
+      "id": "expr.planner/nested-guard-label",
+      "kind": "assignment",
+      "description": "A nested conditional inherits the outer null guard in its inner then-branch.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "note",
+          "type": "string",
+          "nullable": true
+        }
+      ],
+      "result": "string",
+      "target": {
+        "scope": "entity",
+        "field": "guard_label",
+        "type": "string"
+      },
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "not-null",
+          "operand": {
+            "op": "ref",
+            "scope": "input",
+            "field": "note"
+          }
+        },
+        "then": {
+          "op": "if",
+          "condition": {
+            "op": "lit-bool",
+            "value": true
+          },
+          "then": {
+            "op": "ref",
+            "scope": "input",
+            "field": "note"
+          },
+          "else": {
+            "op": "lit-string",
+            "value": "fallback"
+          }
+        },
+        "else": {
+          "op": "lit-string",
+          "value": "null"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/duration-scale",
+      "kind": "assignment",
+      "description": "A duration scales on the left of a multiplication with the duration token.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "age",
+          "type": "duration"
+        },
+        {
+          "scope": "input",
+          "field": "factor",
+          "type": "int"
+        }
+      ],
+      "result": "duration",
+      "target": {
+        "scope": "entity",
+        "field": "duration_scale",
+        "type": "duration"
+      },
+      "body": {
+        "op": "mul",
+        "left": {
+          "op": "ref",
+          "scope": "entity",
+          "field": "age"
+        },
+        "right": {
+          "op": "ref",
+          "scope": "input",
+          "field": "factor"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/duration-scale-rev",
+      "kind": "assignment",
+      "description": "A duration scales on the right of a multiplication with the duration token.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "age",
+          "type": "duration"
+        },
+        {
+          "scope": "input",
+          "field": "factor",
+          "type": "int"
+        }
+      ],
+      "result": "duration",
+      "target": {
+        "scope": "entity",
+        "field": "duration_scale_rev",
+        "type": "duration"
+      },
+      "body": {
+        "op": "mul",
+        "left": {
+          "op": "ref",
+          "scope": "input",
+          "field": "factor"
+        },
+        "right": {
+          "op": "ref",
+          "scope": "entity",
+          "field": "age"
+        }
+      }
     }
   ]
 }

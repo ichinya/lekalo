@@ -900,6 +900,295 @@
       "expect": {
         "error": "concat-overflow"
       }
+    },
+    {
+      "id": "eq-and-left-false",
+      "expression": "expr.planner/and-eq-gate",
+      "bindings": {
+        "input": {
+          "flag_a": false,
+          "flag_b": true,
+          "flag_c": false
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "eq-and-left-true",
+      "expression": "expr.planner/and-eq-gate",
+      "bindings": {
+        "input": {
+          "flag_a": true,
+          "flag_b": true,
+          "flag_c": false
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "eq-and-right-false",
+      "expression": "expr.planner/and-eq-gate-rev",
+      "bindings": {
+        "input": {
+          "flag_a": false,
+          "flag_b": true,
+          "flag_c": false
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "eq-and-right-true",
+      "expression": "expr.planner/and-eq-gate-rev",
+      "bindings": {
+        "input": {
+          "flag_a": true,
+          "flag_b": true,
+          "flag_c": true
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "ne-or-left-equal",
+      "expression": "expr.planner/or-ne-gate",
+      "bindings": {
+        "input": {
+          "flag_a": true,
+          "flag_b": false,
+          "flag_c": true
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "ne-or-left-flip",
+      "expression": "expr.planner/or-ne-gate",
+      "bindings": {
+        "input": {
+          "flag_a": false,
+          "flag_b": false,
+          "flag_c": true
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "ne-or-right-flip",
+      "expression": "expr.planner/or-ne-gate-rev",
+      "bindings": {
+        "input": {
+          "flag_a": false,
+          "flag_b": true,
+          "flag_c": false
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "guard-string-lt",
+      "expression": "expr.planner/guarded-note-lt",
+      "bindings": {
+        "input": {
+          "note": "10"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "guard-string-else",
+      "expression": "expr.planner/guarded-note-lt",
+      "bindings": {
+        "input": {
+          "note": null
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "guard-set-member",
+      "expression": "expr.planner/guarded-tag-membership",
+      "bindings": {
+        "input": {
+          "tags": [
+            "x"
+          ]
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "guard-set-miss",
+      "expression": "expr.planner/guarded-tag-membership",
+      "bindings": {
+        "input": {
+          "tags": [
+            "y"
+          ]
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "nested-guard-hit",
+      "expression": "expr.planner/nested-guard-label",
+      "bindings": {
+        "input": {
+          "note": "x"
+        }
+      },
+      "expect": {
+        "value": "x"
+      }
+    },
+    {
+      "id": "nested-guard-null",
+      "expression": "expr.planner/nested-guard-label",
+      "bindings": {
+        "input": {
+          "note": null
+        }
+      },
+      "expect": {
+        "value": "null"
+      }
+    },
+    {
+      "id": "dur-scale-ok",
+      "expression": "expr.planner/duration-scale",
+      "bindings": {
+        "entity": {
+          "age": 100
+        },
+        "input": {
+          "factor": 3
+        }
+      },
+      "expect": {
+        "value": 300
+      }
+    },
+    {
+      "id": "dur-scale-domain-overflow",
+      "expression": "expr.planner/duration-scale",
+      "bindings": {
+        "entity": {
+          "age": 31536000000
+        },
+        "input": {
+          "factor": 1000
+        }
+      },
+      "expect": {
+        "error": "duration-overflow"
+      }
+    },
+    {
+      "id": "dur-scale-machine-overflow",
+      "expression": "expr.planner/duration-scale",
+      "bindings": {
+        "entity": {
+          "age": 31536000000
+        },
+        "input": {
+          "factor": 9007199254740991
+        }
+      },
+      "expect": {
+        "error": "duration-overflow"
+      }
+    },
+    {
+      "id": "dur-scale-rev-ok",
+      "expression": "expr.planner/duration-scale-rev",
+      "bindings": {
+        "entity": {
+          "age": 100
+        },
+        "input": {
+          "factor": 3
+        }
+      },
+      "expect": {
+        "value": 300
+      }
+    },
+    {
+      "id": "dur-scale-rev-domain-overflow",
+      "expression": "expr.planner/duration-scale-rev",
+      "bindings": {
+        "entity": {
+          "age": 31536000000
+        },
+        "input": {
+          "factor": 1000
+        }
+      },
+      "expect": {
+        "error": "duration-overflow"
+      }
+    },
+    {
+      "id": "dur-scale-rev-machine-overflow",
+      "expression": "expr.planner/duration-scale-rev",
+      "bindings": {
+        "entity": {
+          "age": 31536000000
+        },
+        "input": {
+          "factor": 9007199254740991
+        }
+      },
+      "expect": {
+        "error": "duration-overflow"
+      }
+    },
+    {
+      "id": "omitted-clock-now-epoch",
+      "expression": "expr.planner/overdue-check",
+      "bindings": {
+        "input": {
+          "due": "1960-01-01T00:00:00Z",
+          "state": "open"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "omitted-clock-review-epoch",
+      "expression": "expr.planner/review-due",
+      "bindings": {
+        "entity": {
+          "reviewed_at": null
+        }
+      },
+      "expect": {
+        "value": "1970-01-01T00:00:00Z"
+      }
     }
   ]
 }

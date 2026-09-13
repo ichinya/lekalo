@@ -216,8 +216,10 @@ for (const name of ["full.json", "core-only.json"]) {
 }
 
 // Cross-fixture closure: every vector resolves to a declared
-// expression, ids are unique, and every vector of a now-reading
-// expression injects its deterministic clock.
+// expression and ids are unique. A now-reading vector either injects
+// its canonical deterministic clock (the schema pattern above) or
+// omits the clock and is evaluated at the shared epoch default
+// (1970-01-01T00:00:00Z) by the reference and every generated target.
 const declared = new Map(planner.expressions.map((record) => [record.id, record]));
 const bodyHasNow = (node) => {
   if (!node || typeof node !== "object") return false;
@@ -229,12 +231,13 @@ const bodyHasNow = (node) => {
   return false;
 };
 const vectorIds = new Set();
+const epochClockVectors = [];
 for (const vector of vectors.vectors) {
   if (vectorIds.has(vector.id)) fail("duplicate-vector-id", vector.id);
   vectorIds.add(vector.id);
   const record = declared.get(vector.expression);
   if (!record) fail("vector-expression-unknown", { vector: vector.id, expression: vector.expression });
-  if (bodyHasNow(record.body) && !vector.clock) fail("clock-not-injected", vector.id);
+  if (bodyHasNow(record.body) && !vector.clock) epochClockVectors.push(vector.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -357,6 +360,7 @@ process.stdout.write(
       builtins: builtinNames.size,
       nodeOps: nodeOps.size,
       vectors: vectors.vectors.length,
+      epochClockVectors: epochClockVectors.length,
       invalidFixtures: wireInvalid.length + semanticInvalid.length,
     },
     null,

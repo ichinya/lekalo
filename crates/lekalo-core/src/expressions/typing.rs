@@ -89,29 +89,36 @@ impl TypeDetail {
 
 /// One established not-null guard: the reference a condition proved
 /// non-null for the branch it dominates.
-type Guard = (RefScope, String);
+pub(crate) type Guard = (RefScope, String);
 
 /// The static type of one conditional's then-branch, computed with
 /// the same definite-assignment guards the checker establishes from
-/// its condition. The projection renderer uses this to pick the
-/// branch helper without re-deriving guard analysis.
+/// its condition on top of the guards the enclosing context already
+/// established. The projection renderer uses this to pick the branch
+/// helper without re-deriving guard analysis.
 pub(crate) fn conditional_then_type(
     record: &ExpressionRecord,
+    inherited: &[Guard],
     condition: &ExprNode,
     then: &ExprNode,
 ) -> ExprType {
-    let mut established: Vec<Guard> = Vec::new();
+    let mut established: Vec<Guard> = inherited.to_vec();
     collect_guards(condition, &mut established);
     type_of(then, record, false, &established).unwrap_or(ExprType::Scalar(ScalarType::Int))
 }
 
-/// The static type of one node in record context; the projection
-/// renderer and the checker share this total function.
-pub(crate) fn node_type(
+/// The static type of one node in record context under guards the
+/// enclosing branches already established. The projection renderer
+/// asks exactly this question while compiling a guarded then-branch:
+/// a legal guarded subexpression answers with its real type, never
+/// `NullableReference`, so the compiled helpers stay typed. The empty
+/// guard list is the checker's own body-level question.
+pub(crate) fn node_type_guards(
     node: &ExprNode,
     record: &ExpressionRecord,
+    guards: &[Guard],
 ) -> Result<ExprType, TypeDetail> {
-    type_of(node, record, false, &[])
+    type_of(node, record, false, guards)
 }
 
 /// Check one record: complexity bounds, kind/target coherence, and
@@ -394,7 +401,7 @@ fn type_of(
 /// Collect the not-null guards one boolean condition establishes.
 /// Only `not-null(ref)` leaves (directly, or as operands of `and`
 /// chains) prove anything; negation and disjunction prove nothing.
-fn collect_guards(node: &ExprNode, guards: &mut Vec<Guard>) {
+pub(crate) fn collect_guards(node: &ExprNode, guards: &mut Vec<Guard>) {
     match node {
         ExprNode::NotNull { operand } => {
             if let ExprNode::Ref { scope, field } = operand.as_ref() {
@@ -513,6 +520,44 @@ mod tests {
         // body type differs from declared result
         let body_type = record_with(ExprNode::Int(1), ExprType::Scalar(ScalarType::Bool));
         assert!(check_record(&body_type).is_err());
+    }
+
+    #[test]
+    fn guard_aware_type_queries_answer_guarded_subexpressions() {
+        // The projection compiles the inside of an established guard;
+        // its type queries must see the inherited guard, not start
+        // from an empty list.
+        let note = ExprNode::Ref {
+            scope: RefScope::Input,
+            field: "note".to_owned(),
+        };
+        assert_eq!(
+            node_type_guards(
+                &note,
+                &record_with(note.clone(), ExprType::Scalar(ScalarType::Bool)),
+                &[]
+            ),
+            Err(TypeDetail::NullableReference)
+        );
+        let guards: Vec<Guard> = vec![(RefScope::Input, "note".to_owned())];
+        let record = record_with(note.clone(), ExprType::Scalar(ScalarType::Bool));
+        assert_eq!(
+            node_type_guards(&note, &record, &guards),
+            Ok(ExprType::Scalar(ScalarType::Str))
+        );
+        // An unrelated guard does not unguard the reference.
+        let other: Vec<Guard> = vec![(RefScope::Input, "estimate".to_owned())];
+        assert_eq!(
+            node_type_guards(&note, &record, &other),
+            Err(TypeDetail::NullableReference)
+        );
+        // The conditional helper carries the inherited guards into the
+        // then-branch it types.
+        let condition = ExprNode::Bool(true);
+        assert_eq!(
+            conditional_then_type(&record, &guards, &condition, &note),
+            ExprType::Scalar(ScalarType::Str)
+        );
     }
 
     #[test]
