@@ -175,7 +175,7 @@ fn eval_runs_the_shared_vectors_with_the_injected_clock() {
 fn render_emits_complete_programs_for_every_target() {
     let root = expressions_root();
     for (target, marker) in [
-        ("node", "const LEK = {};"),
+        ("node", "const LEK = Object.create(null);"),
         ("php", "<?php"),
         ("go", "package main"),
     ] {

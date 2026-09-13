@@ -878,9 +878,14 @@ fn go_string(text: &str) -> String {
 }
 
 const NODE_PRELUDE: &str = r#"
-const LEK = {};
-const LEK_TYPES = {};
-const LEK_PARAMS = {};
+// Prototype-free expression tables: `Object.create(null)` keeps the
+// declared records the only members, so an undeclared selector —
+// including a name matching an inherited Object.prototype member
+// (`constructor`, `toString`, `__proto__`, `hasOwnProperty`) — can
+// never pass the declaration check through an inherited property.
+const LEK = Object.create(null);
+const LEK_TYPES = Object.create(null);
+const LEK_PARAMS = Object.create(null);
 const LEK_MAX_INT = 9007199254740991n;
 const LEK_MAX_DUR = 31536000000n;
 let lekEnv = { clockText: null, bindings: {} };
@@ -1214,8 +1219,25 @@ function lekMain() {
   } catch (error) {
     lekInputRefuse();
   }
+  // The evaluation vectors are a JSON array of non-null objects: an
+  // iterable string, a scalar, or a non-object element refuses the
+  // document at the boundary instead of iterating into fabricated
+  // result rows.
+  if (typeof doc !== "object" || doc === null || !Array.isArray(doc.vectors)) {
+    lekInputRefuse();
+  }
   const results = [];
   for (const vector of doc.vectors) {
+    if (typeof vector !== "object" || vector === null || Array.isArray(vector)) {
+      lekInputRefuse();
+    }
+    // The consumed id is echoed into the result row, so only a
+    // primitive string id can reach the envelope: a null, number,
+    // boolean, object, array, or absent id refuses the document
+    // instead of emitting a malformed or id-less value row.
+    if (typeof vector.id !== "string") {
+      lekInputRefuse();
+    }
     // Presence is distinct from value: only an omitted clock reads
     // the epoch default, and an explicit null or malformed supplied
     // clock refuses even when the body never reads it.
@@ -1227,6 +1249,12 @@ function lekMain() {
     const row = { id: vector.id };
     try {
       if (lekEnv.clockPresent) { lekCheckClock(lekEnv.clockText); }
+      // Only a primitive string selects an expression record: the
+      // selector is validated before any table lookup, so an array,
+      // object, or scalar can never be coerced into an expression
+      // name and computed. The supplied-clock check above keeps its
+      // first place on a double-fault vector.
+      if (typeof vector.expression !== "string") { lekFail("expression-unknown"); }
       const params = LEK_PARAMS[vector.expression];
       if (!params) { lekFail("expression-unknown"); }
       lekValidateBindings(params, vector.bindings);
@@ -1540,7 +1568,11 @@ $doc = json_decode($raw);
 if (!is_object($doc) || !isset($doc->vectors) || !is_array($doc->vectors)) { fwrite(STDERR, "lekalo vector input error\n"); exit(1); }
 $results = array();
 foreach ($doc->vectors as $vector) {
-  if (!is_object($vector) || !isset($vector->id) || !isset($vector->expression) || !isset($vector->bindings)) { fwrite(STDERR, "lekalo vector input error\n"); exit(1); }
+  // The consumed id is echoed into the result row, so only a
+  // primitive string id can reach the envelope: a null, number,
+  // boolean, object, array, or absent id refuses the document
+  // instead of emitting a malformed or id-less value row.
+  if (!is_object($vector) || !isset($vector->id) || !is_string($vector->id) || !isset($vector->expression) || !isset($vector->bindings)) { fwrite(STDERR, "lekalo vector input error\n"); exit(1); }
   // Presence is distinct from value: only an omitted clock reads
   // the epoch default, and an explicit null or malformed supplied
   // clock refuses even when the body never reads it.
@@ -1549,6 +1581,13 @@ foreach ($doc->vectors as $vector) {
   $row = array('id' => $vector->id);
   try {
     if ($clockPresent) { lekCheckClock($GLOBALS['LEK_ENV']['clockText']); }
+    // Only a primitive string selects an expression record: the
+    // selector is validated before any table lookup, so an array,
+    // object, or scalar can never be coerced into an expression
+    // name and computed. The supplied-clock check above keeps its
+    // first place on a double-fault vector (a null or absent
+    // selector already refused the document above).
+    if (!is_string($vector->expression)) { lekFail('expression-unknown'); }
     if (!isset($LEK_PARAMS[$vector->expression])) { lekFail('expression-unknown'); }
     lekValidateBindings($LEK_PARAMS[$vector->expression], $vector->bindings);
     $fn = $LEK[$vector->expression];
@@ -2505,16 +2544,22 @@ func main() {
 	}
 	results := make([]map[string]any, 0, len(vectors))
 	for _, vector := range vectors {
+		// The consumed id is echoed into the result row, so only a
+		// primitive string id can reach the envelope: an explicit null
+		// refuses here instead of unmarshalling into the empty string.
 		idRaw, ok := vector["id"]
-		if !ok {
+		if !ok || string(idRaw) == "null" {
 			lekInputFail()
 		}
 		var id string
 		if err := json.Unmarshal(idRaw, &id); err != nil {
 			lekInputFail()
 		}
+		// The selector is a primitive string too: an explicit null
+		// refuses here instead of unmarshalling into the empty string,
+		// and every other non-string spelling fails the unmarshal.
 		expressionRaw, ok := vector["expression"]
-		if !ok {
+		if !ok || string(expressionRaw) == "null" {
 			lekInputFail()
 		}
 		var expression string

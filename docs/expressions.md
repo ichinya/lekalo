@@ -102,6 +102,17 @@ bounds, canonical datetimes, and set size/sorting/duplicates —
 including values on branches the body never takes. The binding
 root itself is exact: an absent or null `bindings` member refuses
 like the reference decode, and only `{}` is the empty root. The
+consumed envelope is exact too: `vectors` must be a JSON array of
+non-null objects, the consumed `id` must be a string (it is echoed
+into the result row), and only a primitive-string `expression`
+selector resolves through the generated expression tables — a
+present non-string selector takes the closed `expression-unknown`
+token in the row-level targets (Node and PHP) and refuses the
+document where the typed decode refuses outright (Go, plus a null
+or absent selector in PHP), always after the supplied-clock check,
+and an undeclared name — including one matching an inherited
+object-prototype member — is `expression-unknown` in every
+target. The
 typed getters accept only canonical integer spellings: a
 fractional (`42.0`), exponent (`1e2`), or negative-zero (`-0`)
 number spelling refuses like the reference parse instead of

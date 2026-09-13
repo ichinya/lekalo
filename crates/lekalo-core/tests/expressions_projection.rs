@@ -1518,9 +1518,10 @@ fn every_generated_program_consumes_exactly_one_json_document() {
 /// variant (`Bindings`, `BINDINGS`, `Vectors`, `ID`, `EXPRESSION`)
 /// never satisfies the required lowercase member's presence. The
 /// reference decodes exact keys and refuses the document; PHP
-/// refuses the document; Node carries the absence into its
-/// row-level model; Go must refuse the document instead of silently
-/// decoding the case variant into the required member.
+/// refuses the document; a case-variant `ID` leaves no string id to
+/// consume, so Node refuses the document too; Go must refuse the
+/// document instead of silently decoding the case variant into the
+/// required member.
 #[test]
 fn every_generated_program_enforces_exact_envelope_member_names() {
     let attachment = parse();
@@ -1563,7 +1564,7 @@ fn every_generated_program_enforces_exact_envelope_member_names() {
         (
             "exact-id-title",
             wrap("{\"ID\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{}}"),
-            value,
+            Outcome::Doc,
             Outcome::Doc,
             Outcome::Doc,
         ),
@@ -1846,5 +1847,590 @@ fn every_generated_program_refuses_clock_before_unknown_expression() {
     assert!(
         executed >= 1,
         "at least one target executed the double-fault precedence probes"
+    );
+}
+
+/// A non-string `expression` selector never resolves through the
+/// generated expression tables: an array (or nested array), an
+/// object, a scalar number or boolean, and an explicit null can
+/// never be coerced into an expression name and computed. Where the
+/// target model is row-level the vector takes the closed
+/// `expression-unknown` token; where the typed decode refuses
+/// outright the document is refused. A malformed supplied clock
+/// keeps its first place on a double-fault vector, and the
+/// primitive-string control still computes. The reference refuses
+/// every non-string selector at decode.
+#[test]
+fn every_generated_program_refuses_non_string_expression_selectors() {
+    let attachment = parse();
+    // (id, vector member JSON, node, php, go)
+    let probes: &[(&str, &str, Outcome, Outcome, Outcome)] = &[
+        (
+            "selector-array",
+            "{\"id\":\"probe\",\"expression\":[\"expr.planner/history-stamp\"],\"bindings\":{}}",
+            Outcome::Row("expression-unknown"),
+            Outcome::Row("expression-unknown"),
+            Outcome::Doc,
+        ),
+        (
+            "selector-nested-array",
+            "{\"id\":\"probe\",\"expression\":[[\"expr.planner/history-stamp\"]],\"bindings\":{}}",
+            Outcome::Row("expression-unknown"),
+            Outcome::Row("expression-unknown"),
+            Outcome::Doc,
+        ),
+        (
+            "selector-object",
+            "{\"id\":\"probe\",\"expression\":{\"name\":\"expr.planner/history-stamp\"},\"bindings\":{}}",
+            Outcome::Row("expression-unknown"),
+            Outcome::Row("expression-unknown"),
+            Outcome::Doc,
+        ),
+        (
+            "selector-number",
+            "{\"id\":\"probe\",\"expression\":42,\"bindings\":{}}",
+            Outcome::Row("expression-unknown"),
+            Outcome::Row("expression-unknown"),
+            Outcome::Doc,
+        ),
+        (
+            "selector-boolean",
+            "{\"id\":\"probe\",\"expression\":true,\"bindings\":{}}",
+            Outcome::Row("expression-unknown"),
+            Outcome::Row("expression-unknown"),
+            Outcome::Doc,
+        ),
+        (
+            "selector-null",
+            "{\"id\":\"probe\",\"expression\":null,\"bindings\":{}}",
+            Outcome::Row("expression-unknown"),
+            Outcome::Doc,
+            Outcome::Doc,
+        ),
+        // Double faults: the malformed supplied clock is validated
+        // before the selector, so the row-level targets report
+        // `clock-invalid` wherever their decode lets the vector
+        // reach row evaluation.
+        (
+            "clock-first-array-selector",
+            "{\"id\":\"probe\",\"expression\":[\"expr.planner/history-stamp\"],\"clock\":\"2026-13-45T99:99:99Z\",\"bindings\":{}}",
+            Outcome::Row("clock-invalid"),
+            Outcome::Row("clock-invalid"),
+            Outcome::Doc,
+        ),
+        (
+            "clock-first-null-selector",
+            "{\"id\":\"probe\",\"expression\":null,\"clock\":\"2026-13-45T99:99:99Z\",\"bindings\":{}}",
+            Outcome::Row("clock-invalid"),
+            Outcome::Doc,
+            Outcome::Doc,
+        ),
+        // An empty-string selector is a string, so the clock check
+        // precedes it in every target; it resolves to nothing.
+        (
+            "clock-first-empty-selector",
+            "{\"id\":\"probe\",\"expression\":\"\",\"clock\":\"2026-13-45T99:99:99Z\",\"bindings\":{}}",
+            Outcome::Row("clock-invalid"),
+            Outcome::Row("clock-invalid"),
+            Outcome::Row("clock-invalid"),
+        ),
+        // The primitive-string control computes identically.
+        (
+            "selector-string-ok",
+            "{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{},\"expect\":{\"value\":\"1969-12-31T23:59:59Z\"}}",
+            Outcome::Value("\"1969-12-31T23:59:59Z\""),
+            Outcome::Value("\"1969-12-31T23:59:59Z\""),
+            Outcome::Value("\"1969-12-31T23:59:59Z\""),
+        ),
+    ];
+
+    // Reference side: every non-string selector (and every
+    // double-fault document) refuses at decode; the string control
+    // decodes and evaluates to the epoch stamp. The reference-side
+    // vectors carry the harness-owned expect member, so a refusal
+    // is attributable to the selector alone.
+    for (id, vector_json, ..) in probes {
+        let reference_vector = if *id == "selector-string-ok" {
+            (*vector_json).to_owned()
+        } else {
+            format!(
+                "{},\"expect\":{{\"value\":true}}}}",
+                &vector_json[..vector_json.len() - 1]
+            )
+        };
+        let document_text = format!(
+            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{reference_vector}]}}"
+        );
+        let json: serde_json::Value = serde_json::from_str(&document_text).expect("document json");
+        let refused = VectorsDocument::from_value(&json).is_err();
+        if *id == "selector-string-ok" {
+            assert!(!refused, "{id}: the string control must decode");
+        } else {
+            assert!(
+                refused,
+                "{id}: the reference must refuse a non-string selector"
+            );
+        }
+    }
+
+    let dir = std::env::temp_dir().join(format!(
+        "lekalo-expr-selector-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let node = available("node", &["--version"]);
+    let php = available("php", &["--version"]);
+    let go = available("go", &["version"]);
+    assert!(node, "node must be available to execute the probes");
+
+    let mut executed = 0usize;
+    for (target, tool, args) in [
+        (Target::Node, "node", vec![]),
+        (Target::Php, "php", vec![]),
+        (Target::Go, "go", vec!["run".to_owned()]),
+    ] {
+        let present = match target {
+            Target::Node => node,
+            Target::Php => php,
+            Target::Go => go,
+        };
+        if !present {
+            eprintln!("skipping target {target:?}: {tool} is not on this host");
+            continue;
+        }
+        let program = write_program(&dir, &attachment, target);
+        for (id, vector_json, node_expect, php_expect, go_expect) in probes {
+            let document = format!(
+                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{vector_json}]}}"
+            );
+            let expected = match target {
+                Target::Node => *node_expect,
+                Target::Php => *php_expect,
+                Target::Go => *go_expect,
+            };
+            assert_target_outcome(
+                tool,
+                &args,
+                &program,
+                &document,
+                &dir.join(format!("{id}-{}.json", target.key())),
+                expected,
+                &format!("{tool}: {id}"),
+            );
+        }
+        executed += 1;
+    }
+    assert!(
+        executed >= 1,
+        "at least one target executed the selector probes"
+    );
+}
+
+/// An undeclared expression name that matches an inherited
+/// object-prototype member (`constructor`, `toString`, `__proto__`,
+/// `hasOwnProperty`, `valueOf`) is unknown exactly like any other
+/// undeclared name: the generated tables carry only the declared
+/// records, so every target emits the closed `expression-unknown`
+/// token — never a value computed from, or the runtime failure of,
+/// the inherited member — and the declared-string control computes.
+#[test]
+fn every_generated_program_treats_prototype_names_as_unknown_expressions() {
+    let attachment = parse();
+    let token = Outcome::Row("expression-unknown");
+    let value = Outcome::Value("\"1969-12-31T23:59:59Z\"");
+    // (id, selector text, node, php, go)
+    let probes: &[(&str, &str, Outcome, Outcome, Outcome)] = &[
+        ("prototype-constructor", "constructor", token, token, token),
+        ("prototype-to-string", "toString", token, token, token),
+        ("prototype-proto", "__proto__", token, token, token),
+        (
+            "prototype-has-own-property",
+            "hasOwnProperty",
+            token,
+            token,
+            token,
+        ),
+        ("prototype-value-of", "valueOf", token, token, token),
+        (
+            "prototype-declared-ok",
+            "expr.planner/history-stamp",
+            value,
+            value,
+            value,
+        ),
+    ];
+
+    // Reference side: every prototype-shaped selector fails the
+    // canonical expression-name decode; the declared control
+    // decodes and evaluates to the epoch stamp. The reference-side
+    // vectors carry the harness-owned expect member.
+    for (id, selector, ..) in probes {
+        let document_text = format!(
+            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{{\"id\":\"probe\",\"expression\":\"{selector}\",\"bindings\":{{}},\"expect\":{{\"value\":true}}}}]}}"
+        );
+        let json: serde_json::Value = serde_json::from_str(&document_text).expect("document json");
+        let refused = VectorsDocument::from_value(&json).is_err();
+        if *id == "prototype-declared-ok" {
+            assert!(!refused, "{id}: the declared control must decode");
+        } else {
+            assert!(
+                refused,
+                "{id}: the reference must refuse the noncanonical name"
+            );
+        }
+    }
+
+    let dir = std::env::temp_dir().join(format!(
+        "lekalo-expr-prototype-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let node = available("node", &["--version"]);
+    let php = available("php", &["--version"]);
+    let go = available("go", &["version"]);
+    assert!(node, "node must be available to execute the probes");
+
+    let mut executed = 0usize;
+    for (target, tool, args) in [
+        (Target::Node, "node", vec![]),
+        (Target::Php, "php", vec![]),
+        (Target::Go, "go", vec!["run".to_owned()]),
+    ] {
+        let present = match target {
+            Target::Node => node,
+            Target::Php => php,
+            Target::Go => go,
+        };
+        if !present {
+            eprintln!("skipping target {target:?}: {tool} is not on this host");
+            continue;
+        }
+        let program = write_program(&dir, &attachment, target);
+        for (id, selector, node_expect, php_expect, go_expect) in probes {
+            let document = format!(
+                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{{\"id\":\"probe\",\"expression\":\"{selector}\",\"bindings\":{{}},\"expect\":{{\"value\":\"1969-12-31T23:59:59Z\"}}}}]}}"
+            );
+            let expected = match target {
+                Target::Node => *node_expect,
+                Target::Php => *php_expect,
+                Target::Go => *go_expect,
+            };
+            assert_target_outcome(
+                tool,
+                &args,
+                &program,
+                &document,
+                &dir.join(format!("{id}-{}.json", target.key())),
+                expected,
+                &format!("{tool}: {id}"),
+            );
+        }
+        executed += 1;
+    }
+    assert!(
+        executed >= 1,
+        "at least one target executed the prototype-name probes"
+    );
+}
+
+/// The consumed `id` is echoed into the result row, so every target
+/// requires a primitive string before any row exists: an explicit
+/// null, a number, a boolean, an object, an array, and an absent id
+/// refuse the document outright — no malformed or id-less value row
+/// may reach the envelope — while the string control computes and
+/// echoes its id exactly. The reference refuses every malformed id
+/// at decode.
+#[test]
+fn every_generated_program_requires_primitive_string_vector_ids() {
+    let attachment = parse();
+    // (id, vector member JSON)
+    let probes: &[(&str, &str)] = &[
+        (
+            "id-null",
+            "{\"id\":null,\"expression\":\"expr.planner/history-stamp\",\"bindings\":{}}",
+        ),
+        (
+            "id-number",
+            "{\"id\":42,\"expression\":\"expr.planner/history-stamp\",\"bindings\":{}}",
+        ),
+        (
+            "id-boolean",
+            "{\"id\":true,\"expression\":\"expr.planner/history-stamp\",\"bindings\":{}}",
+        ),
+        (
+            "id-object",
+            "{\"id\":{},\"expression\":\"expr.planner/history-stamp\",\"bindings\":{}}",
+        ),
+        (
+            "id-array",
+            "{\"id\":[],\"expression\":\"expr.planner/history-stamp\",\"bindings\":{}}",
+        ),
+        (
+            "id-absent",
+            "{\"expression\":\"expr.planner/history-stamp\",\"bindings\":{}}",
+        ),
+    ];
+
+    // Reference side: every malformed or absent id refuses at
+    // decode; the string control decodes and evaluates. The
+    // reference-side vectors carry the harness-owned expect member,
+    // so a refusal is attributable to the id alone.
+    for (id, vector_json) in probes {
+        let reference_vector = format!(
+            "{},\"expect\":{{\"value\":true}}}}",
+            &vector_json[..vector_json.len() - 1]
+        );
+        let document_text = format!(
+            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{reference_vector}]}}"
+        );
+        let json: serde_json::Value = serde_json::from_str(&document_text).expect("document json");
+        assert!(
+            VectorsDocument::from_value(&json).is_err(),
+            "{id}: the reference must refuse the malformed id"
+        );
+    }
+    let control_text = "{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{},\"expect\":{\"value\":\"1969-12-31T23:59:59Z\"}}]}";
+    let control_json: serde_json::Value = serde_json::from_str(control_text).expect("control json");
+    let control_document = VectorsDocument::from_value(&control_json).expect("control decodes");
+    {
+        let record = attachment
+            .expression("expr.planner/history-stamp")
+            .expect("control expression");
+        let bindings = Bindings::from_json(record, &control_json["vectors"][0]["bindings"])
+            .expect("control bindings");
+        let clock = Clock::from_datetime("1970-01-01T00:00:00Z").expect("epoch");
+        let case = &control_document.vectors[0];
+        let value = evaluate(record, &bindings, &clock).expect("control evaluates");
+        assert_eq!(
+            value.to_json().to_string(),
+            "\"1969-12-31T23:59:59Z\"",
+            "the string-id control must evaluate"
+        );
+        assert_eq!(case.id, "probe", "the control id is consumed as a string");
+    }
+
+    let dir = std::env::temp_dir().join(format!(
+        "lekalo-expr-id-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let node = available("node", &["--version"]);
+    let php = available("php", &["--version"]);
+    let go = available("go", &["version"]);
+    assert!(node, "node must be available to execute the probes");
+
+    let mut executed = 0usize;
+    for (target, tool, args) in [
+        (Target::Node, "node", vec![]),
+        (Target::Php, "php", vec![]),
+        (Target::Go, "go", vec!["run".to_owned()]),
+    ] {
+        let present = match target {
+            Target::Node => node,
+            Target::Php => php,
+            Target::Go => go,
+        };
+        if !present {
+            eprintln!("skipping target {target:?}: {tool} is not on this host");
+            continue;
+        }
+        let program = write_program(&dir, &attachment, target);
+        for (id, vector_json) in probes {
+            let document = format!(
+                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{vector_json}]}}"
+            );
+            assert_target_outcome(
+                tool,
+                &args,
+                &program,
+                &document,
+                &dir.join(format!("{id}-{}.json", target.key())),
+                Outcome::Doc,
+                &format!("{tool}: {id}"),
+            );
+        }
+        // The string control computes and echoes its id exactly: no
+        // target may drop, rewrite, or coerce the consumed id.
+        let control_path = dir.join(format!("id-control-{}.json", target.key()));
+        std::fs::write(&control_path, control_text).expect("write control document");
+        let vectors_file = std::fs::File::open(&control_path).expect("open control");
+        let output = Command::new(tool)
+            .args(&args)
+            .arg(&program)
+            .stdin(Stdio::from(vectors_file))
+            .output()
+            .unwrap_or_else(|error| panic!("id control {tool}: run: {error}"));
+        assert!(
+            output.status.success(),
+            "id control {tool}: must compute, stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout).expect("utf8 results");
+        let envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|error| {
+            panic!("id control {tool}: results envelope: {error}; stdout: {stdout}")
+        });
+        let rows = envelope["results"].as_array().expect("results array");
+        assert_eq!(rows.len(), 1, "id control {tool}: one row");
+        assert_eq!(
+            rows[0]["id"], "probe",
+            "id control {tool}: the string id must be echoed exactly"
+        );
+        assert!(
+            rows[0].get("error").is_none(),
+            "id control {tool}: must compute, got error {:?}",
+            rows[0]["error"]
+        );
+        assert_eq!(
+            rows[0]["value"],
+            serde_json::json!("1969-12-31T23:59:59Z"),
+            "id control {tool}: must compute the reference value"
+        );
+        executed += 1;
+    }
+    assert!(executed >= 1, "at least one target executed the id probes");
+}
+
+/// The `vectors` member is a JSON array of non-null objects before
+/// any row is evaluated: an iterable string, a scalar, an object, a
+/// boolean, null, and scalar/array/null elements refuse the document
+/// with the bounded private refusal — nonzero exit, empty stdout, a
+/// stderr reduced to the fixed message, never an echoed element text
+/// and never a fabricated row — while the single-object control
+/// computes. The reference refuses every such document at decode.
+#[test]
+fn every_generated_program_requires_a_vector_object_array() {
+    const MARKER: &str = "SYNTHETIC_PRIVATE_MARKER_66_C5_VECTORS";
+    let attachment = parse();
+    let wrap = |vectors_json: &str| {
+        format!("{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":{vectors_json}}}")
+    };
+    // (id, document, distinct texts that must never reach stderr)
+    let probes: &[(&str, String, &[&str])] = &[
+        ("vectors-string", wrap(&format!("\"{MARKER}\"")), &[MARKER]),
+        ("vectors-empty-string", wrap("\"\""), &[]),
+        ("vectors-number", wrap("42"), &[]),
+        ("vectors-object", wrap("{}"), &[]),
+        ("vectors-boolean", wrap("true"), &[]),
+        ("vectors-null", wrap("null"), &[]),
+        ("vectors-element-number", wrap("[42]"), &[]),
+        (
+            "vectors-element-string",
+            wrap("[\"probe-element-text\"]"),
+            &["probe-element-text"],
+        ),
+        ("vectors-element-boolean", wrap("[true]"), &[]),
+        ("vectors-element-array", wrap("[[]]"), &[]),
+        ("vectors-element-null", wrap("[null]"), &[]),
+    ];
+    let control = wrap(
+        "[{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{},\"expect\":{\"value\":\"1969-12-31T23:59:59Z\"}}]",
+    );
+
+    // Reference side: every non-array vectors member and every
+    // non-object element refuses at decode; the control decodes.
+    for (id, document, ..) in probes {
+        let json: serde_json::Value = serde_json::from_str(document).expect("document json");
+        assert!(
+            VectorsDocument::from_value(&json).is_err(),
+            "{id}: the reference must refuse the vectors shape"
+        );
+    }
+    let control_json: serde_json::Value = serde_json::from_str(&control).expect("control json");
+    assert!(
+        VectorsDocument::from_value(&control_json).is_ok(),
+        "the control must decode for the reference"
+    );
+
+    let dir = std::env::temp_dir().join(format!(
+        "lekalo-expr-vectors-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let node = available("node", &["--version"]);
+    let php = available("php", &["--version"]);
+    let go = available("go", &["version"]);
+    assert!(node, "node must be available to execute the probes");
+
+    let mut executed = 0usize;
+    for (target, tool, args) in [
+        (Target::Node, "node", vec![]),
+        (Target::Php, "php", vec![]),
+        (Target::Go, "go", vec!["run".to_owned()]),
+    ] {
+        let present = match target {
+            Target::Node => node,
+            Target::Php => php,
+            Target::Go => go,
+        };
+        if !present {
+            eprintln!("skipping target {target:?}: {tool} is not on this host");
+            continue;
+        }
+        let program = write_program(&dir, &attachment, target);
+        for (id, document, private) in probes {
+            let path = dir.join(format!("{id}-{}.json", target.key()));
+            std::fs::write(&path, document).expect("write probe document");
+            let vectors_file = std::fs::File::open(&path).expect("open probe document");
+            let output = Command::new(tool)
+                .args(&args)
+                .arg(&program)
+                .stdin(Stdio::from(vectors_file))
+                .output()
+                .unwrap_or_else(|error| panic!("vectors {tool}: run: {error}"));
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                !output.status.success(),
+                "vectors {tool}: {id} must refuse the document outright"
+            );
+            assert!(
+                output.stdout.is_empty(),
+                "vectors {tool}: {id} refused but still printed results"
+            );
+            assert!(
+                stderr.contains("lekalo vector input error"),
+                "vectors {tool}: {id} must emit the fixed bounded refusal, got {stderr:?}"
+            );
+            for text in *private {
+                assert!(
+                    !stderr.contains(text),
+                    "vectors {tool}: {id} must not echo {text:?}, got {stderr:?}"
+                );
+            }
+        }
+        // The control computes.
+        assert_target_outcome(
+            tool,
+            &args,
+            &program,
+            &control,
+            &dir.join(format!("vectors-control-{}.json", target.key())),
+            Outcome::Value("\"1969-12-31T23:59:59Z\""),
+            &format!("vectors {tool}: control"),
+        );
+        executed += 1;
+    }
+    assert!(
+        executed >= 1,
+        "at least one target executed the vectors-shape probes"
     );
 }
