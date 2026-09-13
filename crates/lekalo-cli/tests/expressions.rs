@@ -77,9 +77,9 @@ fn validate_emits_the_capability_summary_and_digest() {
     let document = json_of(&output);
     assert_eq!(document["status"], "valid");
     assert_eq!(document["expressions"]["projectId"], "planner");
-    assert_eq!(document["expressions"]["expressionCount"], 14);
-    assert_eq!(document["expressions"]["conditions"], 7);
-    assert_eq!(document["expressions"]["assignments"], 7);
+    assert_eq!(document["expressions"]["expressionCount"], 27);
+    assert_eq!(document["expressions"]["conditions"], 10);
+    assert_eq!(document["expressions"]["assignments"], 17);
     assert_eq!(document["expressions"]["builtinSemantics"], "1.0.0");
     assert_eq!(
         document["expressions"]["requiredCapabilities"]
@@ -147,7 +147,7 @@ fn eval_runs_the_shared_vectors_with_the_injected_clock() {
     assert_eq!(exit_code(&output), 0, "{}", stdout_text(&output));
     let document = json_of(&output);
     assert_eq!(document["status"], "valid");
-    assert_eq!(document["expressionEval"]["vectors"], 45);
+    assert_eq!(document["expressionEval"]["vectors"], 66);
     assert_eq!(document["expressionEval"]["failures"], 0);
     let results = document["expressionEval"]["results"]
         .as_array()

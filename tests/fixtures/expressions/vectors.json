@@ -609,6 +609,297 @@
       "expect": {
         "error": "modulo-by-zero"
       }
+    },
+    {
+      "id": "prec-both-true",
+      "expression": "expr.planner/priority-flag",
+      "bindings": {
+        "input": {
+          "flag_a": true,
+          "flag_b": false,
+          "flag_c": true
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "prec-or-only-c-false",
+      "expression": "expr.planner/priority-flag",
+      "bindings": {
+        "input": {
+          "flag_a": true,
+          "flag_b": false,
+          "flag_c": false
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "prec-neither",
+      "expression": "expr.planner/priority-flag",
+      "bindings": {
+        "input": {
+          "flag_a": false,
+          "flag_b": false,
+          "flag_c": false
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "prec-b-and-c",
+      "expression": "expr.planner/priority-flag",
+      "bindings": {
+        "input": {
+          "flag_a": false,
+          "flag_b": true,
+          "flag_c": true
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "set-literal-body",
+      "expression": "expr.planner/tag-set",
+      "bindings": {
+        "input": {
+          "kind": "task"
+        }
+      },
+      "expect": {
+        "value": [
+          "alpha",
+          "gamma"
+        ]
+      }
+    },
+    {
+      "id": "set-if-fast",
+      "expression": "expr.planner/urgent-tags",
+      "bindings": {
+        "input": {
+          "mode": "fast"
+        }
+      },
+      "expect": {
+        "value": [
+          "alpha",
+          "beta"
+        ]
+      }
+    },
+    {
+      "id": "set-if-slow",
+      "expression": "expr.planner/urgent-tags",
+      "bindings": {
+        "input": {
+          "mode": "slow"
+        }
+      },
+      "expect": {
+        "value": [
+          "charlie",
+          "delta"
+        ]
+      }
+    },
+    {
+      "id": "set-normalize-int",
+      "expression": "expr.planner/number-set",
+      "bindings": {
+        "input": {
+          "nums": [
+            3,
+            1,
+            2
+          ]
+        }
+      },
+      "expect": {
+        "value": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "id": "set-already-sorted-int",
+      "expression": "expr.planner/number-set",
+      "bindings": {
+        "input": {
+          "nums": [
+            10,
+            2
+          ]
+        }
+      },
+      "expect": {
+        "value": [
+          2,
+          10
+        ]
+      }
+    },
+    {
+      "id": "set-normalize-bool",
+      "expression": "expr.planner/flag-set",
+      "bindings": {
+        "input": {
+          "flags": [
+            true,
+            false
+          ]
+        }
+      },
+      "expect": {
+        "value": [
+          false,
+          true
+        ]
+      }
+    },
+    {
+      "id": "set-normalize-datetime",
+      "expression": "expr.planner/legacy-days",
+      "bindings": {
+        "entity": {
+          "days": [
+            "2026-01-02T00:00:00Z",
+            "2026-01-01T00:00:00Z"
+          ]
+        }
+      },
+      "expect": {
+        "value": [
+          "2026-01-01T00:00:00Z",
+          "2026-01-02T00:00:00Z"
+        ]
+      }
+    },
+    {
+      "id": "set-normalize-duration",
+      "expression": "expr.planner/span-set",
+      "bindings": {
+        "input": {
+          "spans": [
+            30,
+            10
+          ]
+        }
+      },
+      "expect": {
+        "value": [
+          10,
+          30
+        ]
+      }
+    },
+    {
+      "id": "past-day-fields",
+      "expression": "expr.planner/archive-year",
+      "bindings": {
+        "entity": {
+          "created": "1969-12-31T23:59:59Z"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "current-day-fields",
+      "expression": "expr.planner/archive-year",
+      "bindings": {
+        "entity": {
+          "created": "2026-09-12T00:00:00Z"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "id": "past-render",
+      "expression": "expr.planner/history-stamp",
+      "bindings": {},
+      "expect": {
+        "value": "1969-12-31T23:59:59Z"
+      }
+    },
+    {
+      "id": "year1-render",
+      "expression": "expr.planner/origin-stamp",
+      "bindings": {},
+      "expect": {
+        "value": "0001-01-01T00:00:01Z"
+      }
+    },
+    {
+      "id": "year1-underflow",
+      "expression": "expr.planner/underflow-guard",
+      "bindings": {},
+      "expect": {
+        "error": "datetime-overflow"
+      }
+    },
+    {
+      "id": "suffix-empty",
+      "expression": "expr.planner/suffix-note",
+      "bindings": {
+        "input": {
+          "note": "anything"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "suffix-empty-note",
+      "expression": "expr.planner/suffix-note",
+      "bindings": {
+        "input": {
+          "note": ""
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "id": "concat-byte-boundary",
+      "expression": "expr.planner/wide-label",
+      "bindings": {
+        "input": {
+          "left": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+          "right": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      },
+      "expect": {
+        "value": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+      }
+    },
+    {
+      "id": "concat-multibyte-overflow",
+      "expression": "expr.planner/wide-label",
+      "bindings": {
+        "input": {
+          "left": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+          "right": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      },
+      "expect": {
+        "error": "concat-overflow"
+      }
     }
   ]
 }

@@ -11,12 +11,17 @@
 //! integers stay within ±2^53−1 (exact in every target and in the
 //! JSON double a reader may interpose), all arithmetic goes through
 //! identical checked prelude functions, datetimes are integer
-//! seconds under one civil-calendar algorithm, durations are integer
+//! seconds under one civil-calendar algorithm (the epoch-seconds →
+//! civil-day step floors toward −∞ identically everywhere, matching
+//! the reference `div_euclid`, and every calendar field is
+//! range-checked before use), durations are integer
 //! seconds, strings are BMP-only UTF-8 so code-point order is byte
-//! order everywhere, and casing is ASCII-only by contract. Division
-//! and remainder truncate toward zero identically in Rust, Node,
-//! PHP, and Go. No generated program reads anything but stdin,
-//! writes anything but stdout, or calls anything but its own
+//! order everywhere, and casing is ASCII-only by contract. Arithmetic
+//! division and remainder truncate toward zero identically in Rust,
+//! Node, PHP, and Go; set bindings normalize to the same sorted
+//! duplicate-free order and reject duplicates with the same closed
+//! token in every target. No generated program reads anything but
+//! stdin, writes anything but stdout, or calls anything but its own
 //! prelude.
 
 use super::ast::ExprNode;
@@ -107,7 +112,10 @@ enum Code {
     If(Box<Code>, Box<Code>, Box<Code>, BranchType),
 }
 
-/// The branch typing the Go printer needs.
+/// The branch typing the Go printer needs. Every branch is a
+/// concrete Go type: an `if` over sets closes over the element type
+/// so the encoded result stays a typed slice, never an erased
+/// `any`.
 #[derive(Clone, Copy, Debug)]
 enum BranchType {
     /// An integer-valued branch (int, duration, or datetime).
@@ -116,8 +124,8 @@ enum BranchType {
     Str,
     /// A boolean-valued branch.
     Bool,
-    /// A set-valued branch (opaque `any` in Go).
-    Opaque,
+    /// A set-valued branch with one concrete element type.
+    Set(ScalarType),
 }
 
 /// Compile one record body against its declared references.
@@ -131,11 +139,13 @@ fn compile(record: &ExpressionRecord, node: &ExprNode) -> Code {
         ExprNode::Str(value) => Code::Str(value.clone()),
         ExprNode::DateTime(seconds) => Code::Int(*seconds),
         ExprNode::Duration(seconds) => Code::Int(*seconds),
-        ExprNode::Set(_) => {
-            // A bare set literal is compiled at its only legal site
-            // (the membership operand) below.
-            Code::Call("lekSetLitAny", Vec::new())
-        }
+        // A set literal is legal in every set-typed position: the
+        // membership operand, the whole body of a `set:*`-result
+        // assignment, and the branches of a set-typed conditional.
+        // All route through the typed literal maker with the wire
+        // (already sorted, duplicate-free) items, so every target
+        // computes the same concrete set.
+        ExprNode::Set(_) => set_operand(record, node),
         ExprNode::Ref { scope, field } => {
             let declared = record
                 .params
@@ -247,7 +257,7 @@ fn compile(record: &ExpressionRecord, node: &ExprNode) -> Code {
                 ExprType::Scalar(ScalarType::Str) => BranchType::Str,
                 ExprType::Scalar(ScalarType::Bool) => BranchType::Bool,
                 ExprType::Scalar(_) => BranchType::Int,
-                ExprType::Set(_) => BranchType::Opaque,
+                ExprType::Set(inner) => BranchType::Set(inner),
             };
             Code::If(
                 Box::new(compile(record, condition)),
@@ -547,14 +557,18 @@ fn emit_node(code: &Code) -> String {
             let op = if *negated { "!==" } else { "===" };
             format!("({} {} {})", emit_node(left), op, emit_node(right))
         }
+        // Every operand is parenthesized, exactly like the PHP and
+        // Go emit: JavaScript `&&` binds tighter than `||`, so a
+        // bare `or` nested inside an `and` would silently
+        // re-associate.
         Code::And(operands) => operands
             .iter()
-            .map(emit_node)
+            .map(|operand| format!("({})", emit_node(operand)))
             .collect::<Vec<_>>()
             .join(" && "),
         Code::Or(operands) => operands
             .iter()
-            .map(emit_node)
+            .map(|operand| format!("({})", emit_node(operand)))
             .collect::<Vec<_>>()
             .join(" || "),
         Code::Not(operand) => format!("(!({}))", emit_node(operand)),
@@ -622,7 +636,10 @@ fn emit_go(code: &Code) -> String {
         Code::Call(name, args) => {
             let mut all = String::new();
             if go_takes_env(name) {
-                all.push_str("env, ");
+                all.push_str("env");
+                if !args.is_empty() {
+                    all.push_str(", ");
+                }
             }
             format!(
                 "{}({}{})",
@@ -658,7 +675,9 @@ fn emit_go(code: &Code) -> String {
                 BranchType::Int => "int64",
                 BranchType::Str => "string",
                 BranchType::Bool => "bool",
-                BranchType::Opaque => "any",
+                BranchType::Set(ScalarType::Bool) => "[]bool",
+                BranchType::Set(ScalarType::Str) => "[]string",
+                BranchType::Set(_) => "[]int64",
             };
             format!(
                 "(func() {} {{ if {} {{ return {} }}; return {} }})()",
@@ -727,19 +746,33 @@ function lekFromCivil(y0, m, d) {
   const doe = yoe * 365n + yoe / 4n - yoe / 100n + doy;
   return era * 146097n + doe - 719468n;
 }
+function lekFloorDiv(a, b) {
+  const q = a / b;
+  const r = a % b;
+  return r !== 0n && ((r < 0n) !== (b < 0n)) ? q - 1n : q;
+}
+function lekDaysInMonth(y, m) {
+  if (m === 2n) { const leap = (y % 4n === 0n && y % 100n !== 0n) || y % 400n === 0n; return leap ? 29n : 28n; }
+  return (m === 4n || m === 6n || m === 9n || m === 11n) ? 30n : 31n;
+}
+function lekValidFields(y, mo, d, h, mi, s) {
+  if (y < 1n || y > 9999n || mo < 1n || mo > 12n) { return false; }
+  if (d < 1n || d > lekDaysInMonth(y, mo)) { return false; }
+  return h <= 23n && mi <= 59n && s <= 59n;
+}
 function lekDtRange(d) {
-  const y = lekCivil(d / 86400n)[0];
+  const y = lekCivil(lekFloorDiv(d, 86400n))[0];
   return y >= 1n && y <= 9999n;
 }
 function lekDtAdd(d, s) { const r = d + s; if (!lekDtRange(r)) { lekFail("datetime-overflow"); } return r; }
 function lekDtSub(d, s) { const r = d - s; if (!lekDtRange(r)) { lekFail("datetime-overflow"); } return r; }
 function lekDtDiff(a, b) { return lekDurBound(a - b); }
-function lekYear(d) { return lekCivil(d / 86400n)[0]; }
-function lekMonth(d) { return lekCivil(d / 86400n)[1]; }
-function lekDay(d) { return lekCivil(d / 86400n)[2]; }
-function lekWeekday(d) { const days = d / 86400n; return ((days + 3n) % 7n + 7n) % 7n + 1n; }
+function lekYear(d) { return lekCivil(lekFloorDiv(d, 86400n))[0]; }
+function lekMonth(d) { return lekCivil(lekFloorDiv(d, 86400n))[1]; }
+function lekDay(d) { return lekCivil(lekFloorDiv(d, 86400n))[2]; }
+function lekWeekday(d) { const days = lekFloorDiv(d, 86400n); return ((days + 3n) % 7n + 7n) % 7n + 1n; }
 function lekDtRender(d) {
-  const days = d / 86400n;
+  const days = lekFloorDiv(d, 86400n);
   const time = ((d % 86400n) + 86400n) % 86400n;
   const parts = lekCivil(days);
   const pad = (v, n) => v.toString().padStart(n, "0");
@@ -749,8 +782,9 @@ function lekClock() {
   if (typeof lekEnv.clockText !== "string") { lekFail("clock-missing"); }
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/.exec(lekEnv.clockText);
   if (!m) { lekFail("clock-invalid"); }
-  return lekFromCivil(BigInt(m[1]), BigInt(m[2]), BigInt(m[3])) * 86400n
-    + BigInt(m[4]) * 3600n + BigInt(m[5]) * 60n + BigInt(m[6]);
+  const f = [1, 2, 3, 4, 5, 6].map((i) => BigInt(m[i]));
+  if (!lekValidFields(f[0], f[1], f[2], f[3], f[4], f[5])) { lekFail("clock-invalid"); }
+  return lekFromCivil(f[0], f[1], f[2]) * 86400n + f[3] * 3600n + f[4] * 60n + f[5];
 }
 function lekGet(scope, field, convert) {
   const scopeMap = lekEnv.bindings[scope];
@@ -766,9 +800,16 @@ function toBig(v) {
 }
 function toStr(v) { if (typeof v !== "string") { lekFail("binding-value"); } return v; }
 function toBool(v) { if (typeof v !== "boolean") { lekFail("binding-value"); } return v; }
+function lekSetCmp(a, b) {
+  if (typeof a === "boolean") { return a === b ? 0 : (a ? 1 : -1); }
+  return a < b ? -1 : (a > b ? 1 : 0);
+}
 function toSet(v, convert) {
   if (!Array.isArray(v)) { lekFail("binding-value"); }
-  return v.map((item) => convert(item));
+  const items = v.map((item) => convert(item));
+  items.sort((a, b) => lekSetCmp(a, b));
+  for (let i = 1; i < items.length; i++) { if (lekSetCmp(items[i - 1], items[i]) === 0) { lekFail("binding-value"); } }
+  return items;
 }
 function lekGetBool(scope, field) { return lekGet(scope, field, toBool); }
 function lekGetInt(scope, field) { return lekGet(scope, field, toBig); }
@@ -783,15 +824,21 @@ function lekGetSetDur(scope, field) { return lekGet(scope, field, (v) => toSet(v
 function lekParseClockText(text) {
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/.exec(text);
   if (!m) { lekFail("binding-value"); }
-  return lekFromCivil(BigInt(m[1]), BigInt(m[2]), BigInt(m[3])) * 86400n
-    + BigInt(m[4]) * 3600n + BigInt(m[5]) * 60n + BigInt(m[6]);
+  const f = [1, 2, 3, 4, 5, 6].map((i) => BigInt(m[i]));
+  if (!lekValidFields(f[0], f[1], f[2], f[3], f[4], f[5])) { lekFail("binding-value"); }
+  return lekFromCivil(f[0], f[1], f[2]) * 86400n + f[3] * 3600n + f[4] * 60n + f[5];
 }
 function lekIsNull(scope, field) { const scopeMap = lekEnv.bindings[scope]; return !scopeMap || !(field in scopeMap) || scopeMap[field] === null || scopeMap[field] === undefined; }
 function lekNotNull(scope, field) { return !lekIsNull(scope, field); }
 function lekLen(s) { return BigInt(s.length); }
 function lekConcat(a, b) {
   const s = a + b;
-  if (s.length > 256 || !lekStrOk(s)) { lekFail("concat-overflow"); }
+  let bytes = 0;
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    bytes += c <= 0x7F ? 1 : (c <= 0x7FF ? 2 : (c <= 0xFFFF ? 3 : 4));
+  }
+  if (bytes > 256 || !lekStrOk(s)) { lekFail("concat-overflow"); }
   return s;
 }
 function lekStrOk(s) {
@@ -916,16 +963,31 @@ function lekFromCivil($y0, $m, $d) {
   $doe = $yoe * 365 + intdiv($yoe, 4) - intdiv($yoe, 100) + $doy;
   return $era * 146097 + $doe - 719468;
 }
-function lekDtRange($d) { $c = lekCivil(intdiv($d, 86400)); return $c[0] >= 1 && $c[0] <= 9999; }
+function lekFloorDiv($a, $b) {
+  $q = intdiv($a, $b);
+  $r = $a % $b;
+  if ($r !== 0 && (($r < 0) !== ($b < 0))) { $q--; }
+  return $q;
+}
+function lekDaysInMonth($y, $m) {
+  if ($m === 2) { $leap = ($y % 4 === 0 && $y % 100 !== 0) || $y % 400 === 0; return $leap ? 29 : 28; }
+  return ($m === 4 || $m === 6 || $m === 9 || $m === 11) ? 30 : 31;
+}
+function lekValidFields($y, $mo, $d, $h, $mi, $s) {
+  if ($y < 1 || $y > 9999 || $mo < 1 || $mo > 12) { return false; }
+  if ($d < 1 || $d > lekDaysInMonth($y, $mo)) { return false; }
+  return $h <= 23 && $mi <= 59 && $s <= 59;
+}
+function lekDtRange($d) { $c = lekCivil(lekFloorDiv($d, 86400)); return $c[0] >= 1 && $c[0] <= 9999; }
 function lekDtAdd($d, $s) { $r = $d + $s; if (is_float($r) || !lekDtRange($r)) { lekFail('datetime-overflow'); } return $r; }
 function lekDtSub($d, $s) { $r = $d - $s; if (is_float($r) || !lekDtRange($r)) { lekFail('datetime-overflow'); } return $r; }
 function lekDtDiff($a, $b) { $r = $a - $b; if (is_float($r)) { lekFail('duration-overflow'); } return lekDurBound($r); }
-function lekYear($d) { return lekCivil(intdiv($d, 86400))[0]; }
-function lekMonth($d) { return lekCivil(intdiv($d, 86400))[1]; }
-function lekDay($d) { return lekCivil(intdiv($d, 86400))[2]; }
-function lekWeekday($d) { $days = intdiv($d, 86400); return (($days + 3) % 7 + 7) % 7 + 1; }
+function lekYear($d) { return lekCivil(lekFloorDiv($d, 86400))[0]; }
+function lekMonth($d) { return lekCivil(lekFloorDiv($d, 86400))[1]; }
+function lekDay($d) { return lekCivil(lekFloorDiv($d, 86400))[2]; }
+function lekWeekday($d) { $days = lekFloorDiv($d, 86400); return (($days + 3) % 7 + 7) % 7 + 1; }
 function lekDtRender($d) {
-  $days = intdiv($d, 86400);
+  $days = lekFloorDiv($d, 86400);
   $time = (($d % 86400) + 86400) % 86400;
   $c = lekCivil($days);
   return sprintf('%04d-%02d-%02dT%02d:%02d:%02dZ', $c[0], $c[1], $c[2], intdiv($time, 3600), intdiv($time % 3600, 60), $time % 60);
@@ -934,8 +996,10 @@ function lekClock() {
   $text = $GLOBALS['LEK_ENV']['clockText'];
   if (!is_string($text)) { lekFail('clock-missing'); }
   $m = array();
-  if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/', $text, $m)) { lekFail('clock-invalid'); }
-  return lekFromCivil((int) $m[1], (int) $m[2], (int) $m[3]) * 86400 + ((int) $m[4]) * 3600 + ((int) $m[5]) * 60 + ((int) $m[6]);
+  if (!preg_match('/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})Z$/', $text, $m)) { lekFail('clock-invalid'); }
+  $f = array((int) $m[1], (int) $m[2], (int) $m[3], (int) $m[4], (int) $m[5], (int) $m[6]);
+  if (!lekValidFields($f[0], $f[1], $f[2], $f[3], $f[4], $f[5])) { lekFail('clock-invalid'); }
+  return lekFromCivil($f[0], $f[1], $f[2]) * 86400 + $f[3] * 3600 + $f[4] * 60 + $f[5];
 }
 function lekField($scope, $field) {
   if (!isset($GLOBALS['LEK_ENV']['bindings'][$scope]) || !array_key_exists($field, $GLOBALS['LEK_ENV']['bindings'][$scope])) { lekFail('binding-missing'); }
@@ -948,7 +1012,19 @@ function lekGetInt($scope, $field) { $v = lekField($scope, $field); if (!is_int(
 function lekGetStr($scope, $field) { $v = lekField($scope, $field); if (!is_string($v)) { lekFail('binding-value'); } return $v; }
 function lekGetDt($scope, $field) { return lekParseClockText(lekGetStr($scope, $field)); }
 function lekGetDur($scope, $field) { return lekGetInt($scope, $field); }
-function lekSetOf($v, $convert) { if (!is_array($v)) { lekFail('binding-value'); } $out = array(); foreach ($v as $item) { $out[] = $convert($item); } return $out; }
+function lekSetOf($v, $convert) {
+  if (!is_array($v)) { lekFail('binding-value'); }
+  $out = array();
+  foreach ($v as $item) { $out[] = $convert($item); }
+  usort($out, function ($a, $b) {
+    if (is_bool($a)) { return $a === $b ? 0 : ($a ? 1 : -1); }
+    if (is_string($a)) { return strcmp($a, $b); }
+    return $a < $b ? -1 : ($a > $b ? 1 : 0);
+  });
+  $n = count($out);
+  for ($i = 1; $i < $n; $i++) { if ($out[$i - 1] === $out[$i]) { lekFail('binding-value'); } }
+  return $out;
+}
 function lekToBool($v) { if (!is_bool($v)) { lekFail('binding-value'); } return $v; }
 function lekToInt($v) { if (!is_int($v)) { lekFail('binding-value'); } return $v; }
 function lekToStr($v) { if (!is_string($v)) { lekFail('binding-value'); } return $v; }
@@ -959,8 +1035,10 @@ function lekGetSetDt($scope, $field) { return lekSetOf(lekField($scope, $field),
 function lekGetSetDur($scope, $field) { return lekSetOf(lekField($scope, $field), 'lekToInt'); }
 function lekParseClockText($text) {
   $m = array();
-  if (!is_string($text) || !preg_match('/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/', $text, $m)) { lekFail('binding-value'); }
-  return lekFromCivil((int) $m[1], (int) $m[2], (int) $m[3]) * 86400 + ((int) $m[4]) * 3600 + ((int) $m[5]) * 60 + ((int) $m[6]);
+  if (!is_string($text) || !preg_match('/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})Z$/', $text, $m)) { lekFail('binding-value'); }
+  $f = array((int) $m[1], (int) $m[2], (int) $m[3], (int) $m[4], (int) $m[5], (int) $m[6]);
+  if (!lekValidFields($f[0], $f[1], $f[2], $f[3], $f[4], $f[5])) { lekFail('binding-value'); }
+  return lekFromCivil($f[0], $f[1], $f[2]) * 86400 + $f[3] * 3600 + $f[4] * 60 + $f[5];
 }
 function lekIsNull($scope, $field) { return !isset($GLOBALS['LEK_ENV']['bindings'][$scope]) || !array_key_exists($field, $GLOBALS['LEK_ENV']['bindings'][$scope]) || $GLOBALS['LEK_ENV']['bindings'][$scope][$field] === null; }
 function lekNotNull($scope, $field) { return !lekIsNull($scope, $field); }
@@ -985,7 +1063,7 @@ function lekUpper($s) { $out = ''; for ($i = 0; $i < strlen($s); $i++) { $o = or
 function lekCmpStr($a, $b) { return strcmp($a, $b); }
 function lekContains($a, $b) { return strpos($a, $b) !== false; }
 function lekStartsWith($a, $b) { return strncmp($a, $b, strlen($b)) === 0; }
-function lekEndsWith($a, $b) { return substr($a, -strlen($b)) === $b; }
+function lekEndsWith($a, $b) { $n = strlen($b); return $n === 0 || substr($a, -$n) === $b; }
 function lekIntToStr($n) { return (string) $n; }
 function lekStrToInt($s) {
   if (!preg_match('/^-?(0|[1-9][0-9]{0,15})$/', $s)) { lekFail('cast-invalid'); }
@@ -1234,7 +1312,17 @@ func lekDtRender(d int64) string {
 	return fmt.Sprintf("%04d-%02d-%02dT%02d:%02d:%02dZ", y, m, dd, time/3600, (time%3600)/60, time%60)
 }
 
-func lekClock(env map[string]any) int64 { return lekParseClockText(env["clockText"].(string)) }
+func lekClock(env map[string]any) int64 {
+	text, ok := env["clockText"].(string)
+	if !ok {
+		lekFail("clock-missing")
+	}
+	y, mo, d, h, mi, s, ok := lekClockFields(text)
+	if !ok {
+		lekFail("clock-invalid")
+	}
+	return lekFromCivil(y, mo, d)*86400 + h*3600 + mi*60 + s
+}
 
 func lekLen(s string) int64 { return int64(len([]rune(s))) }
 
@@ -1402,7 +1490,13 @@ func lekEncSetStr(v []string) any {
 	return out
 }
 
-func lekEncSetDt(v []int64) any   { return lekEncSetInt(v) }
+func lekEncSetDt(v []int64) any {
+	out := make([]any, len(v))
+	for i, item := range v {
+		out[i] = lekDtRender(item)
+	}
+	return out
+}
 func lekEncSetDur(v []int64) any  { return lekEncSetInt(v) }
 
 func lekEnvField(env map[string]any, scope, field string) any {
@@ -1487,6 +1581,12 @@ func lekGetSetBool(env map[string]any, scope, field string) []bool {
 	for _, item := range raw {
 		out = append(out, lekAnyBool(item))
 	}
+	sort.Slice(out, func(i, j int) bool { return !out[i] && out[j] })
+	for i := 1; i < len(out); i++ {
+		if out[i-1] == out[i] {
+			lekFail("binding-value")
+		}
+	}
 	return out
 }
 
@@ -1500,6 +1600,11 @@ func lekGetSetInt(env map[string]any, scope, field string) []int64 {
 		out = append(out, lekAnyInt(item))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	for i := 1; i < len(out); i++ {
+		if out[i-1] == out[i] {
+			lekFail("binding-value")
+		}
+	}
 	return out
 }
 
@@ -1513,6 +1618,11 @@ func lekGetSetStr(env map[string]any, scope, field string) []string {
 		out = append(out, lekAnyStr(item))
 	}
 	sort.Strings(out)
+	for i := 1; i < len(out); i++ {
+		if out[i-1] == out[i] {
+			lekFail("binding-value")
+		}
+	}
 	return out
 }
 
@@ -1526,6 +1636,11 @@ func lekGetSetDt(env map[string]any, scope, field string) []int64 {
 		out = append(out, lekParseClockText(lekAnyStr(item)))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	for i := 1; i < len(out); i++ {
+		if out[i-1] == out[i] {
+			lekFail("binding-value")
+		}
+	}
 	return out
 }
 
@@ -1559,23 +1674,58 @@ func lekSetLitAny(items ...any) []any { return items }
 
 func lekFailInvalid() { lekFail("cast-invalid") }
 
-func lekParseClockText(text string) int64 {
-	if len(text) != 20 || text[4] != '-' || text[7] != '-' || text[10] != 'T' || text[13] != ':' || text[16] != ':' || text[19] != 'Z' {
-		lekFail("binding-value")
+func lekDaysInMonth(y, m int64) int64 {
+	if m == 2 {
+		leap := (y%4 == 0 && y%100 != 0) || y%400 == 0
+		if leap {
+			return 29
+		}
+		return 28
 	}
-	digit := func(s string) int64 {
+	if m == 4 || m == 6 || m == 9 || m == 11 {
+		return 30
+	}
+	return 31
+}
+
+func lekValidFields(y, mo, d, h, mi, s int64) bool {
+	if y < 1 || y > 9999 || mo < 1 || mo > 12 {
+		return false
+	}
+	if d < 1 || d > lekDaysInMonth(y, mo) {
+		return false
+	}
+	return h <= 23 && mi <= 59 && s <= 59
+}
+
+func lekClockFields(text string) (int64, int64, int64, int64, int64, int64, bool) {
+	if len(text) != 20 || text[4] != '-' || text[7] != '-' || text[10] != 'T' || text[13] != ':' || text[16] != ':' || text[19] != 'Z' {
+		return 0, 0, 0, 0, 0, 0, false
+	}
+	digit := func(s string) (int64, bool) {
 		v, err := strconv.ParseInt(s, 10, 64)
 		if err != nil {
-			lekFail("binding-value")
+			return 0, false
 		}
-		return v
+		return v, true
 	}
-	y := digit(text[0:4])
-	mo := digit(text[5:7])
-	d := digit(text[8:10])
-	h := digit(text[11:13])
-	mi := digit(text[14:16])
-	s := digit(text[17:19])
+	y, ok1 := digit(text[0:4])
+	mo, ok2 := digit(text[5:7])
+	d, ok3 := digit(text[8:10])
+	h, ok4 := digit(text[11:13])
+	mi, ok5 := digit(text[14:16])
+	s, ok6 := digit(text[17:19])
+	if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
+		return 0, 0, 0, 0, 0, 0, false
+	}
+	return y, mo, d, h, mi, s, lekValidFields(y, mo, d, h, mi, s)
+}
+
+func lekParseClockText(text string) int64 {
+	y, mo, d, h, mi, s, ok := lekClockFields(text)
+	if !ok {
+		lekFail("binding-value")
+	}
 	return lekFromCivil(y, mo, d)*86400 + h*3600 + mi*60 + s
 }
 "#;

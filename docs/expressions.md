@@ -82,7 +82,12 @@ computed results to stdout. The clock is a per-vector field, so the
 shared fixtures prove semantic equivalence by execution:
 [`tests/fixtures/expressions/vectors.json`](../tests/fixtures/expressions/vectors.json)
 drives the reference evaluator, the CI assertions, and every
-generated program over the same cases.
+generated program over the same cases. Binding-stage refusals
+(duplicate set members, malformed datetime calendar fields) and
+clock validation cannot appear in that document; the executed
+projection gate (`tests/expressions_projection.rs`) runs every
+generated program against those exact shapes and requires the same
+closed tokens the reference refuses with.
 
 ## Managed mode: capability snapshots
 
@@ -130,7 +135,7 @@ classification.
 - [`contracts/expressions.schema.v1.0.0.json`](../contracts/expressions.schema.v1.0.0.json) — the attachment contract,
 - [`contracts/expressions-vectors.schema.v1.0.0.json`](../contracts/expressions-vectors.schema.v1.0.0.json) — the shared evaluation-vector contract,
 - [`contracts/expressions-builtin-support.schema.v1.0.0.json`](../contracts/expressions-builtin-support.schema.v1.0.0.json) — the capability-snapshot contract,
-- [`tests/fixtures/expressions/`](../tests/fixtures/expressions/) — the shared fixtures (valid planner, 45 vectors, 28 invalid refusals, capability snapshots, diff pair),
+- [`tests/fixtures/expressions/`](../tests/fixtures/expressions/) — the shared fixtures (valid planner, 66 vectors, 28 invalid refusals, capability snapshots, diff pair),
 - `scripts/test-expressions-contracts.mjs` — the independent Node release gate (pinned Ajv 8.17.1).
 
 Failures emit the accepted #11 diagnostic contract with the

@@ -864,6 +864,430 @@
           "field": "parts"
         }
       }
+    },
+    {
+      "id": "expr.planner/priority-flag",
+      "kind": "condition",
+      "description": "An or nested inside an and must not re-associate in any target.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "flag_a",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_b",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_c",
+          "type": "bool"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "and",
+        "operands": [
+          {
+            "op": "or",
+            "operands": [
+              {
+                "op": "ref",
+                "scope": "input",
+                "field": "flag_a"
+              },
+              {
+                "op": "ref",
+                "scope": "input",
+                "field": "flag_b"
+              }
+            ]
+          },
+          {
+            "op": "ref",
+            "scope": "input",
+            "field": "flag_c"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/archive-year",
+      "kind": "condition",
+      "description": "Calendar accessors must floor over pre-1970 instants.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "created",
+          "type": "datetime"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "and",
+        "operands": [
+          {
+            "op": "eq",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-year",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "created"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 1969
+            }
+          },
+          {
+            "op": "eq",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-weekday",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "created"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 3
+            }
+          },
+          {
+            "op": "eq",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-day",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "created"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 31
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/suffix-note",
+      "kind": "condition",
+      "description": "Every string, including the empty one, ends with the empty suffix.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "note",
+          "type": "string"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "builtin",
+        "name": "string-ends-with",
+        "args": [
+          {
+            "op": "ref",
+            "scope": "input",
+            "field": "note"
+          },
+          {
+            "op": "lit-string",
+            "value": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/tag-set",
+      "kind": "assignment",
+      "description": "A set literal is a legal assignment body and normalizes identically.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "kind",
+          "type": "string"
+        }
+      ],
+      "result": "set:string",
+      "target": {
+        "scope": "input",
+        "field": "tags",
+        "type": "set:string"
+      },
+      "body": {
+        "op": "lit-set",
+        "items": [
+          {
+            "kind": "string",
+            "value": "gamma"
+          },
+          {
+            "kind": "string",
+            "value": "alpha"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/urgent-tags",
+      "kind": "assignment",
+      "description": "Set literals are legal conditional branches on both sides.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "mode",
+          "type": "string"
+        }
+      ],
+      "result": "set:string",
+      "target": {
+        "scope": "input",
+        "field": "urgent_tags",
+        "type": "set:string"
+      },
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "eq",
+          "left": {
+            "op": "ref",
+            "scope": "input",
+            "field": "mode"
+          },
+          "right": {
+            "op": "lit-string",
+            "value": "fast"
+          }
+        },
+        "then": {
+          "op": "lit-set",
+          "items": [
+            {
+              "kind": "string",
+              "value": "beta"
+            },
+            {
+              "kind": "string",
+              "value": "alpha"
+            }
+          ]
+        },
+        "else": {
+          "op": "lit-set",
+          "items": [
+            {
+              "kind": "string",
+              "value": "delta"
+            },
+            {
+              "kind": "string",
+              "value": "charlie"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "expr.planner/number-set",
+      "kind": "assignment",
+      "description": "An int set binding normalizes to the same sorted order everywhere.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "nums",
+          "type": "set:int"
+        }
+      ],
+      "result": "set:int",
+      "target": {
+        "scope": "input",
+        "field": "sorted_nums",
+        "type": "set:int"
+      },
+      "body": {
+        "op": "ref",
+        "scope": "input",
+        "field": "nums"
+      }
+    },
+    {
+      "id": "expr.planner/flag-set",
+      "kind": "assignment",
+      "description": "A bool set binding sorts false before true everywhere.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "flags",
+          "type": "set:bool"
+        }
+      ],
+      "result": "set:bool",
+      "target": {
+        "scope": "input",
+        "field": "sorted_flags",
+        "type": "set:bool"
+      },
+      "body": {
+        "op": "ref",
+        "scope": "input",
+        "field": "flags"
+      }
+    },
+    {
+      "id": "expr.planner/legacy-days",
+      "kind": "assignment",
+      "description": "A datetime set binding sorts by instant and renders canonically.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "days",
+          "type": "set:datetime"
+        }
+      ],
+      "result": "set:datetime",
+      "target": {
+        "scope": "entity",
+        "field": "sorted_days",
+        "type": "set:datetime"
+      },
+      "body": {
+        "op": "ref",
+        "scope": "entity",
+        "field": "days"
+      }
+    },
+    {
+      "id": "expr.planner/span-set",
+      "kind": "assignment",
+      "description": "A duration set binding normalizes like every other member type.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "spans",
+          "type": "set:duration"
+        }
+      ],
+      "result": "set:duration",
+      "target": {
+        "scope": "input",
+        "field": "sorted_spans",
+        "type": "set:duration"
+      },
+      "body": {
+        "op": "ref",
+        "scope": "input",
+        "field": "spans"
+      }
+    },
+    {
+      "id": "expr.planner/history-stamp",
+      "kind": "assignment",
+      "description": "A pre-1970 instant renders the exact civil date it declares.",
+      "params": [],
+      "result": "datetime",
+      "target": {
+        "scope": "entity",
+        "field": "stamped",
+        "type": "datetime"
+      },
+      "body": {
+        "op": "lit-datetime",
+        "value": "1969-12-31T23:59:59Z"
+      }
+    },
+    {
+      "id": "expr.planner/origin-stamp",
+      "kind": "assignment",
+      "description": "The year-1 floor renders without shifting a civil day.",
+      "params": [],
+      "result": "datetime",
+      "target": {
+        "scope": "entity",
+        "field": "origin",
+        "type": "datetime"
+      },
+      "body": {
+        "op": "lit-datetime",
+        "value": "0001-01-01T00:00:01Z"
+      }
+    },
+    {
+      "id": "expr.planner/underflow-guard",
+      "kind": "assignment",
+      "description": "Subtracting below year 1 refuses with the closed overflow token.",
+      "params": [],
+      "result": "datetime",
+      "target": {
+        "scope": "entity",
+        "field": "underflow",
+        "type": "datetime"
+      },
+      "body": {
+        "op": "sub",
+        "left": {
+          "op": "lit-datetime",
+          "value": "0001-01-01T00:00:00Z"
+        },
+        "right": {
+          "op": "lit-duration",
+          "value": 1
+        }
+      }
+    },
+    {
+      "id": "expr.planner/wide-label",
+      "kind": "assignment",
+      "description": "The concat bound counts UTF-8 bytes, not code units.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "left",
+          "type": "string"
+        },
+        {
+          "scope": "input",
+          "field": "right",
+          "type": "string"
+        }
+      ],
+      "result": "string",
+      "target": {
+        "scope": "input",
+        "field": "wide",
+        "type": "string"
+      },
+      "body": {
+        "op": "builtin",
+        "name": "string-concat",
+        "args": [
+          {
+            "op": "ref",
+            "scope": "input",
+            "field": "left"
+          },
+          {
+            "op": "ref",
+            "scope": "input",
+            "field": "right"
+          }
+        ]
+      }
     }
   ]
 }

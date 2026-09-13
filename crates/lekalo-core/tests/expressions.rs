@@ -60,13 +60,13 @@ fn the_planner_fixture_parses_with_the_full_grammar() {
     let attachment = parse(VALID);
     assert_eq!(attachment.project_id().as_str(), "planner");
     assert_eq!(attachment.builtin_semantics(), "1.0.0");
-    assert_eq!(attachment.expressions().len(), 14);
+    assert_eq!(attachment.expressions().len(), 27);
     let conditions = attachment
         .expressions()
         .iter()
         .filter(|record| record.kind().key() == "condition")
         .count();
-    assert_eq!(conditions, 7);
+    assert_eq!(conditions, 10);
     // The span of the overdue record is declared and canonical bytes
     // carry it (explainable diagnostics have a source anchor).
     let overdue = attachment
@@ -98,7 +98,7 @@ fn the_reference_evaluator_passes_the_shared_vectors() {
     let attachment = parse(VALID);
     let json: serde_json::Value = serde_json::from_slice(VECTORS).expect("vectors json");
     let vectors = VectorsDocument::from_value(&json).expect("vectors decode");
-    assert_eq!(vectors.vectors.len(), 45);
+    assert_eq!(vectors.vectors.len(), 66);
     let mut matched = 0usize;
     for vector in &vectors.vectors {
         let record = attachment
