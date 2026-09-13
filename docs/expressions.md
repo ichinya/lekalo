@@ -81,11 +81,14 @@ that reads the shared
 computed results to stdout. The clock is a per-vector field, and
 omission is the only epoch form: a vector that omits the clock
 reads the shared epoch default (`1970-01-01T00:00:00Z`) in the
-reference and in every generated target, while an explicit `null`,
-a non-string value, or a present-but-malformed clock refuses with
-`clock-invalid` in every generated target — eagerly, even when the
-body never reads `now` — and refuses the whole document at the
-reference decode, so the
+reference and in every generated target, while an explicit `null`
+or a non-string value refuses with `clock-invalid` where the
+target model is row-level (Node and PHP) and is refused outright
+as a document by Go's typed clock decode, a present-but-malformed
+clock refuses with `clock-invalid` in every generated target —
+all eagerly, even when the body never reads `now` — and every
+such clock refuses the whole document at the reference decode, so
+the
 shared fixtures prove semantic equivalence by execution:
 [`tests/fixtures/expressions/vectors.json`](../tests/fixtures/expressions/vectors.json)
 drives the reference evaluator, the CI assertions, and every

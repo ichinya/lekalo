@@ -7,7 +7,11 @@
 //! every generated Node/PHP/Go program is executed against those
 //! exact shapes and its emitted row token must equal the closed
 //! token the reference refuses with — no garbage value may reach
-//! stdout.
+//! stdout. The same harness pins the document-boundary behavior:
+//! strict UTF-8 decoding of the raw stdin bytes, exactly-one-document
+//! consumption, exact case-sensitive envelope member names, bounded
+//! refusals that never echo synthetic sensitive input, and the
+//! clock-before-expression precedence on double-fault vectors.
 
 use std::process::{Command, Stdio};
 
@@ -376,7 +380,7 @@ fn assert_target_outcome(
     tool: &str,
     args: &[String],
     program: &std::path::Path,
-    document: &str,
+    document: impl AsRef<[u8]>,
     path: &std::path::Path,
     expected: Outcome,
     context: &str,
@@ -1065,7 +1069,7 @@ fn every_generated_program_refuses_raw_binding_shapes() {
                 tool,
                 &args,
                 &program,
-                &document_of(case),
+                document_of(case),
                 &dir.join(format!("{}-{}.json", case.id, target.key())),
                 expected,
                 &format!("{}: {}", tool, case.id),
@@ -1204,5 +1208,643 @@ fn every_generated_program_distinguishes_binding_roots_identically() {
     assert!(
         executed >= 1,
         "at least one target executed the binding-root probes"
+    );
+}
+
+/// Raw stdin bytes are validated as strict UTF-8 before the JSON
+/// parse: a stray non-ASCII byte, an overlong encoding, a truncated
+/// sequence, and a UTF-8-encoded surrogate refuse the document at
+/// the runner boundary — in scalar string and set-member string
+/// bindings alike — instead of being silently replaced into
+/// binding data, while a legal U+FFFD string stays accepted and
+/// computes identically in every target. The malformed documents
+/// are fed as exact raw bytes, never re-encoded text.
+#[test]
+fn every_generated_program_refuses_malformed_utf8_bytes() {
+    struct Utf8Case {
+        id: &'static str,
+        expression: &'static str,
+        /// The exact bindings-object bytes pasted verbatim into the
+        /// document.
+        bindings: &'static [u8],
+        /// Whether the assembled document is legal JSON in legal
+        /// UTF-8 (only the U+FFFD control is).
+        legal: bool,
+        node: Outcome,
+        php: Outcome,
+        go: Outcome,
+    }
+    let cases: &[Utf8Case] = &[
+        // The raw FF byte inside a scalar string binding.
+        Utf8Case {
+            id: "utf8-scalar-ff",
+            expression: "expr.planner/wide-label",
+            bindings: b"{\"input\":{\"left\":\"\xff\",\"right\":\"x\"}}",
+            legal: false,
+            node: Outcome::Doc,
+            php: Outcome::Doc,
+            go: Outcome::Doc,
+        },
+        // An overlong encoding of U+002F.
+        Utf8Case {
+            id: "utf8-scalar-overlong",
+            expression: "expr.planner/wide-label",
+            bindings: b"{\"input\":{\"left\":\"\xc0\xaf\",\"right\":\"x\"}}",
+            legal: false,
+            node: Outcome::Doc,
+            php: Outcome::Doc,
+            go: Outcome::Doc,
+        },
+        // A truncated three-byte sequence.
+        Utf8Case {
+            id: "utf8-scalar-truncated",
+            expression: "expr.planner/wide-label",
+            bindings: b"{\"input\":{\"left\":\"\xe2\x82\",\"right\":\"x\"}}",
+            legal: false,
+            node: Outcome::Doc,
+            php: Outcome::Doc,
+            go: Outcome::Doc,
+        },
+        // A UTF-8-encoded surrogate (U+D800).
+        Utf8Case {
+            id: "utf8-scalar-surrogate",
+            expression: "expr.planner/wide-label",
+            bindings: b"{\"input\":{\"left\":\"\xed\xa0\x80\",\"right\":\"x\"}}",
+            legal: false,
+            node: Outcome::Doc,
+            php: Outcome::Doc,
+            go: Outcome::Doc,
+        },
+        // The same raw FF byte inside a set:string member.
+        Utf8Case {
+            id: "utf8-set-string-ff",
+            expression: "expr.planner/state-gate",
+            bindings: b"{\"input\":{\"state\":\"todo\",\"project_tags\":[\"\xff\"]},\"actor\":{\"role\":null}}",
+            legal: false,
+            node: Outcome::Doc,
+            php: Outcome::Doc,
+            go: Outcome::Doc,
+        },
+        // The legal control: an actual U+FFFD string is not a
+        // malformed sequence and must compute identically everywhere.
+        Utf8Case {
+            id: "utf8-replacement-ok",
+            expression: "expr.planner/wide-label",
+            bindings: b"{\"input\":{\"left\":\"\xef\xbf\xbd\",\"right\":\"x\"}}",
+            legal: true,
+            node: Outcome::Value("\"\u{FFFD}x\""),
+            php: Outcome::Value("\"\u{FFFD}x\""),
+            go: Outcome::Value("\"\u{FFFD}x\""),
+        },
+    ];
+
+    let document_of = |case: &Utf8Case| -> Vec<u8> {
+        let mut document = Vec::new();
+        document.extend_from_slice(
+            b"{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{\"id\":\"probe\",\"expression\":\"",
+        );
+        document.extend_from_slice(case.expression.as_bytes());
+        document.extend_from_slice(b"\",\"bindings\":");
+        document.extend_from_slice(case.bindings);
+        document.extend_from_slice(b"}]}");
+        document
+    };
+
+    // Reference side: the malformed documents are not even decodable
+    // JSON input (invalid UTF-8 inside a string), while the legal
+    // U+FFFD control decodes and computes the reference value.
+    for case in cases {
+        let document = document_of(case);
+        let parsed: Result<serde_json::Value, _> = serde_json::from_slice(&document);
+        if case.legal {
+            let json = parsed.expect("control document must parse");
+            let attachment = parse();
+            let record = attachment
+                .expression(case.expression)
+                .unwrap_or_else(|| panic!("{}: unknown expression", case.id));
+            let vectors = json["vectors"].as_array().expect("vectors array");
+            let bindings = Bindings::from_json(record, &vectors[0]["bindings"])
+                .expect("control bindings must validate");
+            let clock = Clock::from_datetime("1970-01-01T00:00:00Z").expect("epoch");
+            let value = evaluate(record, &bindings, &clock).expect("control evaluates");
+            assert_eq!(
+                value.to_json().to_string(),
+                "\"\u{FFFD}x\"",
+                "{}: control must compute the reference value",
+                case.id
+            );
+        } else {
+            assert!(
+                parsed.is_err(),
+                "{}: the reference JSON decode must refuse invalid UTF-8",
+                case.id
+            );
+        }
+    }
+
+    let attachment = parse();
+    let dir = std::env::temp_dir().join(format!(
+        "lekalo-expr-utf8-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let node = available("node", &["--version"]);
+    let php = available("php", &["--version"]);
+    let go = available("go", &["version"]);
+    assert!(node, "node must be available to execute the probes");
+
+    let mut executed = 0usize;
+    for (target, tool, args) in [
+        (Target::Node, "node", vec![]),
+        (Target::Php, "php", vec![]),
+        (Target::Go, "go", vec!["run".to_owned()]),
+    ] {
+        let present = match target {
+            Target::Node => node,
+            Target::Php => php,
+            Target::Go => go,
+        };
+        if !present {
+            eprintln!("skipping target {target:?}: {tool} is not on this host");
+            continue;
+        }
+        let program = write_program(&dir, &attachment, target);
+        for case in cases {
+            let document = document_of(case);
+            let expected = match target {
+                Target::Node => case.node,
+                Target::Php => case.php,
+                Target::Go => case.go,
+            };
+            assert_target_outcome(
+                tool,
+                &args,
+                &program,
+                &document,
+                &dir.join(format!("{}-{}.json", case.id, target.key())),
+                expected,
+                &format!("{}: {}", tool, case.id),
+            );
+        }
+        executed += 1;
+    }
+    assert!(
+        executed >= 1,
+        "at least one target executed the UTF-8 probes"
+    );
+}
+
+/// Exactly one JSON document is consumed: a complete document
+/// followed by any non-whitespace trailing byte or value — an extra
+/// closing brace, an extra document, a bare token, a bare number —
+/// refuses at the runner boundary, while a whitespace-only suffix
+/// and the bare document stay legal and compute identically.
+#[test]
+fn every_generated_program_consumes_exactly_one_json_document() {
+    let attachment = parse();
+    // The expect member is included so the reference decode accepts
+    // the control document; every generated target ignores it.
+    let control = "{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{},\"expect\":{\"value\":\"1969-12-31T23:59:59Z\"}}]}";
+    let value = Outcome::Value("\"1969-12-31T23:59:59Z\"");
+    // (id, document, node, php, go)
+    let probes: &[(&str, String, Outcome, Outcome, Outcome)] = &[
+        ("trailing-none-ok", control.to_owned(), value, value, value),
+        (
+            "trailing-whitespace-ok",
+            format!("{control}\n\t "),
+            value,
+            value,
+            value,
+        ),
+        (
+            "trailing-brace",
+            format!("{control}}}"),
+            Outcome::Doc,
+            Outcome::Doc,
+            Outcome::Doc,
+        ),
+        (
+            "trailing-object",
+            format!("{control}{{}}"),
+            Outcome::Doc,
+            Outcome::Doc,
+            Outcome::Doc,
+        ),
+        (
+            "trailing-token",
+            format!("{control}garbage"),
+            Outcome::Doc,
+            Outcome::Doc,
+            Outcome::Doc,
+        ),
+        (
+            "trailing-number",
+            format!("{control}1"),
+            Outcome::Doc,
+            Outcome::Doc,
+            Outcome::Doc,
+        ),
+    ];
+
+    // Reference side: the exact control document decodes for the
+    // reference evaluator.
+    let json: serde_json::Value = serde_json::from_str(control).expect("control json");
+    assert!(
+        VectorsDocument::from_value(&json).is_ok(),
+        "the control document must decode for the reference"
+    );
+
+    let dir = std::env::temp_dir().join(format!(
+        "lekalo-expr-trailing-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let node = available("node", &["--version"]);
+    let php = available("php", &["--version"]);
+    let go = available("go", &["version"]);
+    assert!(node, "node must be available to execute the probes");
+
+    let mut executed = 0usize;
+    for (target, tool, args) in [
+        (Target::Node, "node", vec![]),
+        (Target::Php, "php", vec![]),
+        (Target::Go, "go", vec!["run".to_owned()]),
+    ] {
+        let present = match target {
+            Target::Node => node,
+            Target::Php => php,
+            Target::Go => go,
+        };
+        if !present {
+            eprintln!("skipping target {target:?}: {tool} is not on this host");
+            continue;
+        }
+        let program = write_program(&dir, &attachment, target);
+        for (id, document, node_expect, php_expect, go_expect) in probes {
+            let expected = match target {
+                Target::Node => *node_expect,
+                Target::Php => *php_expect,
+                Target::Go => *go_expect,
+            };
+            assert_target_outcome(
+                tool,
+                &args,
+                &program,
+                document,
+                &dir.join(format!("{id}-{}.json", target.key())),
+                expected,
+                &format!("{tool}: {id}"),
+            );
+        }
+        executed += 1;
+    }
+    assert!(
+        executed >= 1,
+        "at least one target executed the trailing-input probes"
+    );
+}
+
+/// Envelope member names are exact and case-sensitive: a case
+/// variant (`Bindings`, `BINDINGS`, `Vectors`, `ID`, `EXPRESSION`)
+/// never satisfies the required lowercase member's presence. The
+/// reference decodes exact keys and refuses the document; PHP
+/// refuses the document; Node carries the absence into its
+/// row-level model; Go must refuse the document instead of silently
+/// decoding the case variant into the required member.
+#[test]
+fn every_generated_program_enforces_exact_envelope_member_names() {
+    let attachment = parse();
+    let wrap = |vector_json: &str| {
+        format!("{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{vector_json}]}}")
+    };
+    let value = Outcome::Value("\"1969-12-31T23:59:59Z\"");
+    // (id, full document, node, php, go). The control carries the
+    // expect member so the reference decode accepts it; every
+    // generated target ignores it.
+    let probes: &[(&str, String, Outcome, Outcome, Outcome)] = &[
+        (
+            "exact-members-ok",
+            wrap("{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{},\"expect\":{\"value\":\"1969-12-31T23:59:59Z\"}}"),
+            value,
+            value,
+            value,
+        ),
+        (
+            "exact-bindings-title",
+            wrap("{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"Bindings\":{}}"),
+            Outcome::Row("bindings-shape"),
+            Outcome::Doc,
+            Outcome::Doc,
+        ),
+        (
+            "exact-bindings-upper",
+            wrap("{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"BINDINGS\":{}}"),
+            Outcome::Row("bindings-shape"),
+            Outcome::Doc,
+            Outcome::Doc,
+        ),
+        (
+            "exact-vectors-title",
+            "{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"Vectors\":[{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{}}]}".to_owned(),
+            Outcome::Doc,
+            Outcome::Doc,
+            Outcome::Doc,
+        ),
+        (
+            "exact-id-title",
+            wrap("{\"ID\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{}}"),
+            value,
+            Outcome::Doc,
+            Outcome::Doc,
+        ),
+        (
+            "exact-expression-upper",
+            wrap("{\"id\":\"probe\",\"EXPRESSION\":\"expr.planner/history-stamp\",\"bindings\":{}}"),
+            Outcome::Row("expression-unknown"),
+            Outcome::Doc,
+            Outcome::Doc,
+        ),
+    ];
+
+    // Reference side: the exact lowercase members decode; every case
+    // variant refuses the document.
+    for (id, document, ..) in probes {
+        let json: serde_json::Value = serde_json::from_str(document).expect("document json");
+        let refused = VectorsDocument::from_value(&json).is_err();
+        if *id == "exact-members-ok" {
+            assert!(!refused, "{id}: the exact lowercase members must decode");
+        } else {
+            assert!(
+                refused,
+                "{id}: the reference must refuse a case-variant envelope member"
+            );
+        }
+    }
+
+    let dir = std::env::temp_dir().join(format!(
+        "lekalo-expr-exact-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let node = available("node", &["--version"]);
+    let php = available("php", &["--version"]);
+    let go = available("go", &["version"]);
+    assert!(node, "node must be available to execute the probes");
+
+    let mut executed = 0usize;
+    for (target, tool, args) in [
+        (Target::Node, "node", vec![]),
+        (Target::Php, "php", vec![]),
+        (Target::Go, "go", vec!["run".to_owned()]),
+    ] {
+        let present = match target {
+            Target::Node => node,
+            Target::Php => php,
+            Target::Go => go,
+        };
+        if !present {
+            eprintln!("skipping target {target:?}: {tool} is not on this host");
+            continue;
+        }
+        let program = write_program(&dir, &attachment, target);
+        for (id, document, node_expect, php_expect, go_expect) in probes {
+            let expected = match target {
+                Target::Node => *node_expect,
+                Target::Php => *php_expect,
+                Target::Go => *go_expect,
+            };
+            assert_target_outcome(
+                tool,
+                &args,
+                &program,
+                document,
+                &dir.join(format!("{id}-{}.json", target.key())),
+                expected,
+                &format!("{tool}: {id}"),
+            );
+        }
+        executed += 1;
+    }
+    assert!(
+        executed >= 1,
+        "at least one target executed the exact-member probes"
+    );
+}
+
+/// A malformed document that carries a synthetic sensitive binding
+/// marker is refused with only the fixed bounded refusal: nonzero
+/// exit, empty stdout, and a stderr reduced to the fixed message —
+/// never the echoed document text, the raw binding data, an
+/// exception name, a stack trace, or the host program path.
+#[test]
+fn every_generated_program_refuses_malformed_documents_privately() {
+    let attachment = parse();
+    const MARKER: &str = "SYNTHETIC_PRIVATE_MARKER_66_C4";
+    // A syntactically malformed document (one extra closing brace
+    // after the complete document) whose binding carries the
+    // synthetic marker: the refusal must never echo it.
+    let mut document = serde_json::to_string(&serde_json::json!({
+        "schemaVersion": "lekalo/expressions/vectors/v1.0.0",
+        "vectors": [{
+            "id": "probe",
+            "expression": "expr.planner/copy-tag",
+            "bindings": {"input": {"kind": MARKER}}
+        }]
+    }))
+    .expect("marker document");
+    document.push('}');
+    assert!(
+        serde_json::from_str::<serde_json::Value>(&document).is_err(),
+        "the marker document must be malformed JSON"
+    );
+
+    let dir = std::env::temp_dir().join(format!(
+        "lekalo-expr-privacy-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let node = available("node", &["--version"]);
+    let php = available("php", &["--version"]);
+    let go = available("go", &["version"]);
+    assert!(node, "node must be available to execute the probes");
+
+    let mut executed = 0usize;
+    for (target, tool, args) in [
+        (Target::Node, "node", vec![]),
+        (Target::Php, "php", vec![]),
+        (Target::Go, "go", vec!["run".to_owned()]),
+    ] {
+        let present = match target {
+            Target::Node => node,
+            Target::Php => php,
+            Target::Go => go,
+        };
+        if !present {
+            eprintln!("skipping target {target:?}: {tool} is not on this host");
+            continue;
+        }
+        let program = write_program(&dir, &attachment, target);
+        let path = dir.join(format!("privacy-{}.json", target.key()));
+        std::fs::write(&path, document.as_bytes()).expect("write probe document");
+        let vectors_file = std::fs::File::open(&path).expect("open probe document");
+        let output = Command::new(tool)
+            .args(&args)
+            .arg(&program)
+            .stdin(Stdio::from(vectors_file))
+            .output()
+            .unwrap_or_else(|error| panic!("privacy {tool}: run the generated program: {error}"));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "privacy {tool}: must refuse the malformed document outright"
+        );
+        assert!(
+            output.stdout.is_empty(),
+            "privacy {tool}: refused but still printed results"
+        );
+        assert!(
+            stderr.contains("lekalo vector input error"),
+            "privacy {tool}: must emit the fixed bounded refusal, got {stderr:?}"
+        );
+        assert!(
+            !stderr.contains(MARKER),
+            "privacy {tool}: the refusal must not echo the synthetic binding marker"
+        );
+        assert!(
+            !stderr.contains("schemaVersion"),
+            "privacy {tool}: the refusal must not echo document text"
+        );
+        assert!(
+            !stderr.contains("    at ") && !stderr.contains("SyntaxError"),
+            "privacy {tool}: the refusal must not carry an exception or stack trace"
+        );
+        assert!(
+            !stderr.contains(".cjs") && !stderr.contains(".php") && !stderr.contains(".go"),
+            "privacy {tool}: the refusal must not disclose the host program path"
+        );
+        executed += 1;
+    }
+    assert!(
+        executed >= 1,
+        "at least one target executed the privacy probe"
+    );
+}
+
+/// Double-fault precedence: a malformed supplied clock on a vector
+/// whose expression is also unknown surfaces the clock refusal
+/// first — the reference validates the clock at decode, before the
+/// per-vector expression lookup, and every generated target must
+/// report the closed clock token, not `expression-unknown`. The
+/// canonical-clock control keeps the unknown-expression token
+/// reachable.
+#[test]
+fn every_generated_program_refuses_clock_before_unknown_expression() {
+    let attachment = parse();
+    // Reference: the malformed clock refuses the whole document at
+    // decode, before the per-vector expression lookup.
+    let json: serde_json::Value = serde_json::from_str(
+        "{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{\"id\":\"probe\",\"expression\":\"expr.planner/nonexistent\",\"clock\":\"2026-13-45T99:99:99Z\",\"bindings\":{}}]}",
+    )
+    .expect("document json");
+    let rejection = VectorsDocument::from_value(&json)
+        .expect_err("the malformed clock must refuse before the expression lookup");
+    assert!(rejection
+        .as_slice()
+        .iter()
+        .any(|d| d.id() == "expression.input-invalid"));
+
+    // (id, vector member JSON, node, php, go)
+    let probes: &[(&str, &str, Outcome, Outcome, Outcome)] = &[
+        (
+            "clock-first",
+            "{\"id\":\"probe\",\"expression\":\"expr.planner/nonexistent\",\"clock\":\"2026-13-45T99:99:99Z\",\"bindings\":{}}",
+            Outcome::Row("clock-invalid"),
+            Outcome::Row("clock-invalid"),
+            Outcome::Row("clock-invalid"),
+        ),
+        (
+            "expression-unknown-control",
+            "{\"id\":\"probe\",\"expression\":\"expr.planner/nonexistent\",\"bindings\":{}}",
+            Outcome::Row("expression-unknown"),
+            Outcome::Row("expression-unknown"),
+            Outcome::Row("expression-unknown"),
+        ),
+    ];
+
+    let dir = std::env::temp_dir().join(format!(
+        "lekalo-expr-clock-first-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let node = available("node", &["--version"]);
+    let php = available("php", &["--version"]);
+    let go = available("go", &["version"]);
+    assert!(node, "node must be available to execute the probes");
+
+    let mut executed = 0usize;
+    for (target, tool, args) in [
+        (Target::Node, "node", vec![]),
+        (Target::Php, "php", vec![]),
+        (Target::Go, "go", vec!["run".to_owned()]),
+    ] {
+        let present = match target {
+            Target::Node => node,
+            Target::Php => php,
+            Target::Go => go,
+        };
+        if !present {
+            eprintln!("skipping target {target:?}: {tool} is not on this host");
+            continue;
+        }
+        let program = write_program(&dir, &attachment, target);
+        for (id, vector_json, node_expect, php_expect, go_expect) in probes {
+            let document = format!(
+                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{vector_json}]}}"
+            );
+            let expected = match target {
+                Target::Node => *node_expect,
+                Target::Php => *php_expect,
+                Target::Go => *go_expect,
+            };
+            assert_target_outcome(
+                tool,
+                &args,
+                &program,
+                &document,
+                &dir.join(format!("{id}-{}.json", target.key())),
+                expected,
+                &format!("{tool}: {id}"),
+            );
+        }
+        executed += 1;
+    }
+    assert!(
+        executed >= 1,
+        "at least one target executed the double-fault precedence probes"
     );
 }
