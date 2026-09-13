@@ -183,8 +183,21 @@
         "stepId": { "$ref": "#/$defs/stepId" },
         "kind": { "enum": ["state", "fixture", "actor", "clock", "id-source"] },
         "status": {
-          "description": "established, or the fixed unsupported reason.",
-          "enum": ["established", "fixture", "entity-unknown", "identity-incomplete"]
+          "description": "established, or the fixed unsupported reason the establishment cannot resolve.",
+          "enum": [
+            "established",
+            "fixture",
+            "entity-unknown",
+            "identity-incomplete",
+            "step-ref-shape",
+            "step-output-unavailable",
+            "given-value-unavailable",
+            "clock-unresolved",
+            "id-source-unavailable",
+            "actor-ref-unavailable",
+            "semantic-ref-value",
+            "member-path"
+          ]
         },
         "entity": { "$ref": "#/$defs/semanticId" },
         "row": { "type": "string", "minLength": 2 }

@@ -342,9 +342,20 @@ pub(crate) fn normalize_datetime(text: &str) -> Result<String, Reason> {
         Some(index) => (&time_and_zone[..index], &time_and_zone[index..]),
         None => return Err(Reason::IncompatibleKind),
     };
-    let fraction = time.find('.').map(|index| time[index + 1..].to_owned());
+    let (whole, fraction) = match time.split_once('.') {
+        Some((whole, fraction)) => {
+            // The whole-second clock is parsed separately from the
+            // fraction, which survives offset normalization with its
+            // exact precision (issue #107 correction 1).
+            if fraction.is_empty() || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(Reason::IncompatibleKind);
+            }
+            (whole, Some(fraction))
+        }
+        None => (time, None),
+    };
     let mut parts = [0i64; 3];
-    for (slot, piece) in parts.iter_mut().zip(time.split(':')) {
+    for (slot, piece) in parts.iter_mut().zip(whole.split(':')) {
         *slot = piece.parse::<i64>().map_err(|_| Reason::IncompatibleKind)?;
     }
     let [mut hour, mut minute, _second] = parts;
@@ -388,7 +399,7 @@ pub(crate) fn normalize_datetime(text: &str) -> Result<String, Reason> {
     let mut text = format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{_second:02}");
     if let Some(fraction) = fraction {
         text.push('.');
-        text.push_str(&fraction);
+        text.push_str(fraction);
     }
     text.push('Z');
     Ok(text)
@@ -617,6 +628,37 @@ mod tests {
         assert_eq!(
             normalize_datetime("2026-12-31T23:00:00-02:00").expect("normalizes"),
             "2027-01-01T01:00:00Z"
+        );
+    }
+
+    #[test]
+    fn fractional_seconds_normalize_and_keep_precision() {
+        assert_eq!(
+            normalize_datetime("2026-09-08T12:00:00.123Z").expect("normalizes"),
+            "2026-09-08T12:00:00.123Z"
+        );
+        // An offset timestamp keeps its exact fraction after the UTC
+        // shift, including across day boundaries.
+        assert_eq!(
+            normalize_datetime("2026-09-08T15:30:00.456+03:00").expect("normalizes"),
+            "2026-09-08T12:30:00.456Z"
+        );
+        assert_eq!(
+            normalize_datetime("2026-12-31T23:59:59.999999-02:00").expect("normalizes"),
+            "2027-01-01T01:59:59.999999Z"
+        );
+        assert!(normalize_datetime("2026-09-08T12:00:00.Z").is_err());
+    }
+
+    #[test]
+    fn fractional_datetimes_order_chronologically() {
+        assert_eq!(
+            compare_datetime(
+                &normalize_datetime("2026-09-08T12:00:00.1235Z").expect("normalizes"),
+                &normalize_datetime("2026-09-08T12:00:00.123Z").expect("normalizes"),
+            )
+            .expect("comparable"),
+            std::cmp::Ordering::Greater
         );
     }
 

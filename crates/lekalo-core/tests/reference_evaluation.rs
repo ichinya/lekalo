@@ -77,6 +77,48 @@ const ATTACHMENT: &[u8] =
 const REGISTRY: &[u8] =
     include_bytes!("../../../tests/fixtures/reference-evaluation/error-registry.json");
 
+/// The issue #107 correction round 1 fixtures: the exact public-API
+/// reproductions of the four reviewed scenario-level defects, each
+/// bound to its exact canonical golden bytes.
+const CORRECTION_SCENARIOS: &[(&str, &[u8], &[u8])] = &[
+    (
+        "early-unsupported-then-replay",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/early-unsupported-then-replay.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/early-unsupported-then-replay.json.trace.json"
+        ),
+    ),
+    (
+        "early-unsupported-no-replay",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/early-unsupported-no-replay.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/early-unsupported-no-replay.json.trace.json"
+        ),
+    ),
+    (
+        "clock-declaration-order",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/clock-declaration-order.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/clock-declaration-order.json.trace.json"
+        ),
+    ),
+    (
+        "given-missing-reference",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/given-missing-reference.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/given-missing-reference.json.trace.json"
+        ),
+    ),
+];
+
 /// Serializes every test that changes the process working directory.
 static CWD_LOCK: Mutex<()> = Mutex::new(());
 
@@ -142,6 +184,12 @@ fn reference_suite_runs_from_the_workspace_root() {
         unsupported_semantics_are_explicit();
         mismatched_pins_refuse_the_whole_evaluation();
         deterministic_ids_are_seed_stable_and_shape_valid();
+        correction_goldens_match_committed_bytes();
+        early_unsupported_step_keeps_input_log_aligned();
+        unresolved_given_reference_is_typed_with_no_partial_state();
+        early_unsupported_clocks_are_schema_valid();
+        default_clock_is_the_first_declared_given_clock();
+        fractional_datetime_literals_execute();
     });
     std::env::set_current_dir(original).expect("restore cwd");
     if let Err(payload) = result {
@@ -461,4 +509,412 @@ fn deterministic_ids_are_seed_stable_and_shape_valid() {
         derived_id("s", IdAlgorithm::Sequence, 3),
         TypedValue::String("s-3".to_owned())
     );
+}
+
+/// The compiled board pins of one correction regression run.
+fn correction_pins() -> (
+    CompiledProject,
+    InvariantTransitionAttachment,
+    lekalo_core::error_contract::ErrorRegistry,
+) {
+    let selection = LoadSelection {
+        project: Some(MODEL.to_owned()),
+    };
+    let model = match normalize_model(&selection) {
+        Ok(model) => model,
+        Err(outcome) => panic!("board model failed to load: {}", outcome.to_json_string()),
+    };
+    let project = match lekalo_core::ir::compile(&model) {
+        Ok(compilation) => compilation.project,
+        Err(failure) => panic!(
+            "board IR failed: {}",
+            failure
+                .diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.code.clone())
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+    };
+    let attachment_value: serde_json::Value =
+        serde_json::from_slice(ATTACHMENT).expect("attachment JSON");
+    let attachment =
+        InvariantTransitionAttachment::from_value(&attachment_value).expect("attachment parses");
+    let registry =
+        lekalo_core::error_contract::ErrorRegistry::from_bytes(REGISTRY).expect("registry parses");
+    (project, attachment, registry)
+}
+
+/// The schema clock pattern of the published trace contract:
+/// `^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$`.
+fn is_utc_clock(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    if bytes.len() < 20 || !bytes.ends_with(b"Z") || bytes[10] != b'T' {
+        return false;
+    }
+    let digits = |slice: &[u8]| slice.iter().all(|byte| byte.is_ascii_digit());
+    if !(digits(&bytes[0..4])
+        && bytes[4] == b'-'
+        && digits(&bytes[5..7])
+        && bytes[7] == b'-'
+        && digits(&bytes[8..10]))
+    {
+        return false;
+    }
+    let clock = &text[11..text.len() - 1];
+    let (clock, fraction) = match clock.split_once('.') {
+        Some((clock, fraction)) => (clock, Some(fraction)),
+        None => (clock, None),
+    };
+    let parts: Vec<&str> = clock.split(':').collect();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| part.len() == 2 && digits(part.as_bytes()))
+        && fraction.map_or(true, |fraction| {
+            !fraction.is_empty() && fraction.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}
+
+/// Every correction fixture matches its committed canonical golden
+/// byte for byte, and the exact repro outcomes hold.
+fn correction_goldens_match_committed_bytes() {
+    let (project, attachment, registry) = correction_pins();
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    for (index, (name, scenario_bytes, golden)) in CORRECTION_SCENARIOS.iter().enumerate() {
+        let scenario = parse_scenario(name, scenario_bytes);
+        let trace = evaluation.execute(&scenario).expect("trace");
+        let canonical = trace_bytes(&trace).expect("canonical trace bytes");
+        assert_eq!(
+            canonical.as_bytes(),
+            *golden,
+            "{name}: canonical trace diverges from the committed golden"
+        );
+        let expected = match index {
+            2 => Status::Pass,
+            _ => Status::Unsupported,
+        };
+        assert_eq!(trace.status(), expected, "{name}: overall status");
+    }
+}
+
+/// An early-unsupported `when` step stays typed trace data: the
+/// input bookkeeping stays aligned, so the following durable-key
+/// execution and its explicit replay execute and replay without any
+/// indexing panic (correction 1, review A1/B1).
+fn early_unsupported_step_keeps_input_log_aligned() {
+    let (project, attachment, registry) = correction_pins();
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    let (name, scenario_bytes, _) = &CORRECTION_SCENARIOS[0];
+    let scenario = parse_scenario(name, scenario_bytes);
+    let trace = evaluation
+        .execute(&scenario)
+        .expect("mixed unsupported/success/replay runs to a typed result");
+    assert_eq!(trace.status(), Status::Unsupported);
+    let when = trace.when();
+    assert_eq!(when.len(), 3);
+    match &when[0].outcome {
+        Outcome::Unsupported { reason } => assert_eq!(*reason, "member-path"),
+        other => panic!("expected unsupported member-path, got {other:?}"),
+    }
+    assert!(when[1].replay_of.is_none());
+    assert_eq!(when[2].replay_of.as_deref(), Some("focus"));
+    assert!(when[2].effects.is_empty());
+    assert_eq!(trace.assertions()[1].verdict, Verdict::Pass);
+
+    // Adjacent: an explicit replay whose input mismatches after an
+    // early-unsupported step is a typed replay-mismatch, never a
+    // panic.
+    let mut wire: serde_json::Value = serde_json::from_slice(scenario_bytes).expect("JSON");
+    wire["when"][2]["action"]["input"]["user_id"] =
+        serde_json::json!({"type": "string", "value": "user-2"});
+    let variant = ScenarioIr::from_value(&wire).expect("variant parses");
+    let trace = evaluation.execute(&variant).expect("variant trace");
+    match &trace.when()[2].outcome {
+        Outcome::Unsupported { reason } => assert_eq!(*reason, "replay-mismatch"),
+        other => panic!("expected replay-mismatch, got {other:?}"),
+    }
+
+    // Adjacent: a durable re-invocation (no explicit replay) after an
+    // early-unsupported step still replays the recorded result.
+    let mut wire: serde_json::Value = serde_json::from_slice(scenario_bytes).expect("JSON");
+    wire["when"][2]
+        .as_object_mut()
+        .expect("replay step object")
+        .remove("replay");
+    let variant = ScenarioIr::from_value(&wire).expect("variant parses");
+    let trace = evaluation.execute(&variant).expect("variant trace");
+    assert_eq!(trace.when()[2].replay_of.as_deref(), Some("focus"));
+    assert!(trace.when()[2].effects.is_empty());
+}
+
+/// An unresolved `given` selector or field leaf is a typed
+/// unsupported establishment carrying the exact resolution reason,
+/// with no partial row — never a silently dropped field under a
+/// `pass` (correction 1, review A2/B2).
+fn unresolved_given_reference_is_typed_with_no_partial_state() {
+    let (project, attachment, registry) = correction_pins();
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    let (name, scenario_bytes, _) = &CORRECTION_SCENARIOS[3];
+    let scenario = parse_scenario(name, scenario_bytes);
+    let trace = evaluation.execute(&scenario).expect("trace");
+    assert_eq!(trace.status(), Status::Unsupported);
+    let given = trace.given();
+    match &given[1].status {
+        Err(reason) => assert_eq!(*reason, "member-path"),
+        Ok(()) => panic!("unresolved establishment must not report established"),
+    }
+    assert!(given[1].row.is_none());
+    // Only the fully resolved row materialized: no partial row with a
+    // dropped field exists in the final state.
+    assert!(trace.state().iter().all(|row| !row.key.contains("task-2")));
+    // The result assertions still decide, over the actually
+    // established state.
+    assert_eq!(trace.assertions()[0].verdict, Verdict::Pass);
+    assert_eq!(trace.assertions()[1].verdict, Verdict::Pass);
+
+    // Adjacent: an unresolved selector leaf is equally typed and
+    // merges nothing.
+    let mut wire: serde_json::Value = serde_json::from_slice(scenario_bytes).expect("JSON");
+    wire["given"][0]["precondition"]["selector"][0]["equals"] = serde_json::json!({
+        "$ref": "given-value", "id": "setup_row_two", "path": "task_id"
+    });
+    let variant = ScenarioIr::from_value(&wire).expect("variant parses");
+    let trace = evaluation.execute(&variant).expect("variant trace");
+    match &trace.given()[0].status {
+        Err(reason) => assert_eq!(*reason, "given-value-unavailable"),
+        Ok(()) => panic!("unresolved selector must not report established"),
+    }
+    assert!(trace.state().iter().all(|row| !row.key.contains("task-1")));
+}
+
+/// Every reachable early-unsupported `when` outcome serializes a
+/// schema-valid deterministic clock: the declared evaluation clock,
+/// else the documented epoch fallback (correction 1, review A3/B3).
+fn early_unsupported_clocks_are_schema_valid() {
+    let (project, attachment, registry) = correction_pins();
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    let (_, scenario_bytes, _) = &CORRECTION_SCENARIOS[1];
+    let declared = "2026-09-08T12:00:00Z";
+    let epoch = "1970-01-01T00:00:00Z";
+
+    // The reachable early reasons (review A3), each driven by one
+    // wire-valid variant: (variant wire text, reason, expected
+    // clock). The clock-unresolved and step-ref-shape tokens stay
+    // unreachable through the public constructors.
+    let mut variants: Vec<(String, &'static str, &'static str)> = Vec::new();
+    variants.push((
+        String::from_utf8_lossy(scenario_bytes).into_owned(),
+        "member-path",
+        declared,
+    ));
+
+    // step-output-unavailable: a prior step that produced no output.
+    let mut wire: serde_json::Value = serde_json::from_slice(scenario_bytes).expect("JSON");
+    wire["when"]
+        .as_array_mut()
+        .expect("when")
+        .push(serde_json::json!({
+            "action": {
+                "input": {
+                    "task_id": {"$ref": "step-output", "id": "bad_first", "path": "missing"},
+                    "user_id": {"type": "string", "value": "user-1"}
+                },
+                "kind": "invoke",
+                "operation": "board.command.focus_task"
+            },
+            "stepId": "uses_bad"
+        }));
+    variants.push((
+        serde_json::to_string(&wire).expect("wire"),
+        "step-output-unavailable",
+        declared,
+    ));
+
+    // given-value-unavailable: a given-value ref to a control step
+    // that yields no value.
+    let mut wire: serde_json::Value = serde_json::from_slice(scenario_bytes).expect("JSON");
+    wire["given"]
+        .as_array_mut()
+        .expect("given")
+        .push(serde_json::json!({
+            "precondition": {"algorithm": "uuidv4", "kind": "id_source", "seed": "board-seed"},
+            "stepId": "ids_row"
+        }));
+    wire["when"][0]["action"]["input"]["task_id"] =
+        serde_json::json!({"$ref": "given-value", "id": "ids_row"});
+    variants.push((
+        serde_json::to_string(&wire).expect("wire"),
+        "given-value-unavailable",
+        declared,
+    ));
+
+    // fixture: an opaque fixture reference cannot execute.
+    let mut wire: serde_json::Value = serde_json::from_slice(scenario_bytes).expect("JSON");
+    wire["when"][0]["action"]["input"]["task_id"] =
+        serde_json::json!({"$ref": "fixture", "id": "core/board-seed"});
+    variants.push((
+        serde_json::to_string(&wire).expect("wire"),
+        "fixture",
+        declared,
+    ));
+
+    // semantic-ref-value: semantic references carry no runtime value.
+    let mut wire: serde_json::Value = serde_json::from_slice(scenario_bytes).expect("JSON");
+    wire["when"][0]["action"]["input"]["task_id"] =
+        serde_json::json!({"$ref": "entity", "id": "board.user_task_planning"});
+    variants.push((
+        serde_json::to_string(&wire).expect("wire"),
+        "semantic-ref-value",
+        declared,
+    ));
+
+    // actor-ref-unavailable: an actor reference resolves only in the
+    // actor position.
+    let mut wire: serde_json::Value = serde_json::from_slice(scenario_bytes).expect("JSON");
+    wire["when"][0]["action"]["input"]["task_id"] =
+        serde_json::json!({"$ref": "actor", "id": "board.user"});
+    variants.push((
+        serde_json::to_string(&wire).expect("wire"),
+        "actor-ref-unavailable",
+        declared,
+    ));
+
+    // replay-key-missing: an explicit replay with no recorded key.
+    let idempotent_bytes = &SCENARIOS[2].1;
+    let mut wire: serde_json::Value = serde_json::from_slice(idempotent_bytes).expect("JSON");
+    wire["when"][1]["action"]["idempotencyKey"] =
+        serde_json::json!({"type": "string", "value": "user-9"});
+    variants.push((
+        serde_json::to_string(&wire).expect("wire"),
+        "replay-key-missing",
+        declared,
+    ));
+
+    // replay-mismatch: an explicit replay whose input diverges.
+    let mut wire: serde_json::Value = serde_json::from_slice(idempotent_bytes).expect("JSON");
+    wire["when"][1]["action"]["input"]["user_id"] =
+        serde_json::json!({"type": "string", "value": "user-2"});
+    variants.push((
+        serde_json::to_string(&wire).expect("wire"),
+        "replay-mismatch",
+        declared,
+    ));
+
+    // The epoch fallback: no declared clock at all.
+    let mut wire: serde_json::Value = serde_json::from_slice(scenario_bytes).expect("JSON");
+    wire["given"]
+        .as_array_mut()
+        .expect("given")
+        .retain(|step| step["precondition"]["kind"] != "clock");
+    variants.push((
+        serde_json::to_string(&wire).expect("wire"),
+        "member-path",
+        epoch,
+    ));
+
+    for (index, (wire_text, reason, clock)) in variants.iter().enumerate() {
+        let value: serde_json::Value = serde_json::from_str(wire_text).expect("variant JSON");
+        let variant = ScenarioIr::from_value(&value)
+            .unwrap_or_else(|set| panic!("variant {index} ({reason}) must parse: {set:?}"));
+        let trace = evaluation.execute(&variant).expect("variant trace");
+        let record = trace
+            .when()
+            .iter()
+            .rev()
+            .find(|record| matches!(record.outcome, Outcome::Unsupported { .. }))
+            .unwrap_or_else(|| panic!("variant {index} ({reason}) must stay unsupported"));
+        match &record.outcome {
+            Outcome::Unsupported {
+                reason: actual_reason,
+            } => assert_eq!(*actual_reason, *reason, "variant {index}"),
+            other => panic!("variant {index}: expected unsupported, got {other:?}"),
+        }
+        assert_eq!(record.clock, *clock, "variant {index}: clock");
+        assert!(
+            is_utc_clock(&record.clock),
+            "variant {index}: clock must match the schema pattern"
+        );
+        // The exported trace must carry the same valid bytes.
+        trace_bytes(&trace).expect("variant trace exports");
+    }
+}
+
+/// The default clock is the first declared `given` clock in scenario
+/// order, independent of step-id lexical order (correction 1, review
+/// A4/B4).
+fn default_clock_is_the_first_declared_given_clock() {
+    let (project, attachment, registry) = correction_pins();
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    // The committed golden: `aaa_later` (2030) is declared after
+    // `at_noon` (2026) and sorts lexicographically first, yet the
+    // command runs at the first declared 2026 clock.
+    let (name, scenario_bytes, _) = &CORRECTION_SCENARIOS[2];
+    let scenario = parse_scenario(name, scenario_bytes);
+    let trace = evaluation.execute(&scenario).expect("trace");
+    assert_eq!(trace.when()[0].clock, "2026-09-08T12:00:00Z");
+    assert_eq!(trace.status(), Status::Pass);
+
+    // Adjacent: reversing the declaration order reverses the default.
+    let mut wire: serde_json::Value = serde_json::from_slice(scenario_bytes).expect("JSON");
+    let given = wire
+        .get_mut("given")
+        .and_then(|given| given.as_array_mut())
+        .expect("given");
+    given.swap(1, 2);
+    let variant = ScenarioIr::from_value(&wire).expect("variant parses");
+    let trace = evaluation.execute(&variant).expect("variant trace");
+    assert_eq!(trace.when()[0].clock, "2030-01-01T00:00:00Z");
+    assert_eq!(
+        trace.assertions()[1].verdict,
+        Verdict::Fail("field-mismatch")
+    );
+}
+
+/// Grammar-valid fractional-second datetime literals execute, with
+/// the exact fraction preserved after offset normalization, in UTC
+/// and offset spellings (correction 1, review A5/B5).
+fn fractional_datetime_literals_execute() {
+    let (project, _attachment, registry) = correction_pins();
+    for (literal, normalized) in [
+        ("2026-09-08T12:00:00.123Z", "2026-09-08T12:00:00.123Z"),
+        ("2026-09-08T15:30:00.456+03:00", "2026-09-08T12:30:00.456Z"),
+    ] {
+        let mut attachment_wire: serde_json::Value =
+            serde_json::from_slice(ATTACHMENT).expect("attachment JSON");
+        attachment_wire["transitions"][0]["assignments"][0]["value"] = serde_json::json!({
+            "kind": "literal",
+            "value": {"kind": "datetime", "value": literal}
+        });
+        let attachment =
+            InvariantTransitionAttachment::from_value(&attachment_wire).expect("attachment parses");
+        let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+        let (_, scenario_bytes, _) = &SCENARIOS[2];
+        let mut wire: serde_json::Value = serde_json::from_slice(scenario_bytes).expect("JSON");
+        wire["then"][1]["assertion"]["fields"]["focused_at"] = serde_json::json!({
+            "value": {"type": "datetime", "value": normalized}
+        });
+        let scenario = ScenarioIr::from_value(&wire).expect("scenario parses");
+        let trace = evaluation.execute(&scenario).expect("trace");
+        match &trace.when()[0].outcome {
+            Outcome::Ok { .. } => {}
+            other => panic!("fractional literal {literal} must execute, got {other:?}"),
+        }
+        let snapshot = trace
+            .state()
+            .iter()
+            .find(|row| row.key.contains("task-1"))
+            .expect("task-1 snapshot");
+        let focused_at = snapshot
+            .fields
+            .iter()
+            .find(|(field, _)| field == "focused_at")
+            .expect("focused_at field");
+        assert_eq!(
+            focused_at.1,
+            lekalo_core::scenario::TypedValue::Datetime(normalized.to_owned())
+        );
+        assert_eq!(trace.assertions()[1].verdict, Verdict::Pass);
+        assert_eq!(trace.status(), Status::Pass);
+    }
 }

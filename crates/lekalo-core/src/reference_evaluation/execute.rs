@@ -99,6 +99,7 @@ impl<'a> ReferenceEvaluation<'a> {
             scenario,
             store: Store::default(),
             clocks: BTreeMap::new(),
+            first_clock: None,
             id_counters: BTreeMap::new(),
             idempotent: BTreeMap::new(),
             inputs: Vec::new(),
@@ -208,6 +209,10 @@ struct Run<'a> {
     scenario: &'a ScenarioIr,
     store: Store,
     clocks: BTreeMap<String, String>,
+    /// The first declared `given` clock, in scenario declaration
+    /// order: the default evaluation clock (issue #107 correction 1
+    /// keeps it independent of step-id order).
+    first_clock: Option<String>,
     id_counters: BTreeMap<String, u64>,
     idempotent: BTreeMap<String, usize>,
     inputs: Vec<BTreeMap<String, TypedValue>>,
@@ -261,16 +266,36 @@ impl Run<'_> {
                     .iter()
                     .map(|field| field.as_str().to_owned())
                     .collect();
-                let mut row: Row = BTreeMap::new();
+                // Resolve every selector and field leaf before any
+                // mutation: an unresolved reference is a typed
+                // unsupported record with no partial state — no row,
+                // no given value, no advanced ID counter (issue #107
+                // correction 1).
+                let counters = self.id_counters.clone();
+                let derived = self.derived.len();
+                let mut resolved: Vec<(String, TypedValue)> =
+                    Vec::with_capacity(selector.len() + fields.len());
                 for term in selector {
-                    if let Ok(value) = self.resolve_leaf(&term.equals) {
-                        row.insert(term.field.as_str().to_owned(), value);
+                    match self.resolve_leaf(&term.equals) {
+                        Ok(value) => resolved.push((term.field.as_str().to_owned(), value)),
+                        Err(reason) => {
+                            return Ok(self
+                                .unresolved_given(step_id, entity_id, counters, derived, reason));
+                        }
                     }
                 }
                 for (field, leaf) in fields {
-                    if let Ok(value) = self.resolve_leaf(leaf) {
-                        row.insert(field.as_str().to_owned(), value);
+                    match self.resolve_leaf(leaf) {
+                        Ok(value) => resolved.push((field.as_str().to_owned(), value)),
+                        Err(reason) => {
+                            return Ok(self
+                                .unresolved_given(step_id, entity_id, counters, derived, reason));
+                        }
                     }
+                }
+                let mut row: Row = BTreeMap::new();
+                for (field, value) in resolved {
+                    row.insert(field, value);
                 }
                 let Some(key) = Store::row_key(&identity, &row) else {
                     return Ok(GivenRecord {
@@ -316,6 +341,12 @@ impl Run<'_> {
                 })
             }
             Precondition::Clock { at } => {
+                // The default clock is the first declared `given`
+                // clock in scenario order, never the lexicographically
+                // smallest step id (issue #107 correction 1).
+                if self.first_clock.is_none() {
+                    self.first_clock = Some(at.clone());
+                }
                 self.clocks.insert(step_id.to_owned(), at.clone());
                 self.given_values
                     .insert(step_id.to_owned(), TypedValue::Datetime(at.clone()));
@@ -334,6 +365,29 @@ impl Run<'_> {
                 entity: None,
                 row: None,
             }),
+        }
+    }
+
+    /// The typed unsupported record of one `state` establishment whose
+    /// references cannot resolve: no partial state survives — the ID
+    /// counters and derived-ID log are restored, nothing is merged,
+    /// and the exact resolution reason is recorded.
+    fn unresolved_given(
+        &mut self,
+        step_id: &str,
+        entity_id: &str,
+        counters: BTreeMap<String, u64>,
+        derived: usize,
+        reason: &'static str,
+    ) -> GivenRecord {
+        self.id_counters = counters;
+        self.derived.truncate(derived);
+        GivenRecord {
+            step_id: step_id.to_owned(),
+            kind: "state",
+            status: Err(reason),
+            entity: Some(entity_id.to_owned()),
+            row: None,
         }
     }
 
@@ -424,10 +478,8 @@ impl Run<'_> {
             return self.clocks.get(step).cloned().ok_or("clock-unresolved");
         }
         Ok(self
-            .clocks
-            .values()
-            .next()
-            .cloned()
+            .first_clock
+            .clone()
             .unwrap_or_else(|| version::EPOCH_CLOCK.to_owned()))
     }
 
@@ -455,17 +507,17 @@ impl Run<'_> {
                 Ok(value) => {
                     input.insert(field.as_str().to_owned(), value);
                 }
-                Err(reason) => return Ok(self.unsupported_record(step, &operation, reason)),
+                Err(reason) => return Ok(self.unsupported_record(step, &operation, input, reason)),
             }
         }
         let clock = match self.clock_of(action) {
             Ok(clock) => clock,
-            Err(reason) => return Ok(self.unsupported_record(step, &operation, reason)),
+            Err(reason) => return Ok(self.unsupported_record(step, &operation, input, reason)),
         };
         let idempotency_key = match &action.idempotency_key {
             Some(leaf) => match self.resolve_leaf(leaf) {
                 Ok(value) => Some(value),
-                Err(reason) => return Ok(self.unsupported_record(step, &operation, reason)),
+                Err(reason) => return Ok(self.unsupported_record(step, &operation, input, reason)),
             },
             None => None,
         };
@@ -481,7 +533,7 @@ impl Run<'_> {
                 if step.replay.is_some()
                     && (prior.operation != operation || self.inputs[prior_index] != input)
                 {
-                    return Ok(self.unsupported_record(step, &operation, "replay-mismatch"));
+                    return Ok(self.unsupported_record(step, &operation, input, "replay-mismatch"));
                 }
                 let replayed = WhenRecord {
                     step_id: step.step_id.as_str().to_owned(),
@@ -504,7 +556,7 @@ impl Run<'_> {
         }
         // An explicit replay without any recorded key is unknown.
         if step.replay.is_some() {
-            return Ok(self.unsupported_record(step, &operation, "replay-key-missing"));
+            return Ok(self.unsupported_record(step, &operation, input, "replay-key-missing"));
         }
 
         let outcome = match self.evaluation.definitions.get(operation.as_str()) {
@@ -538,20 +590,29 @@ impl Run<'_> {
         Ok(record)
     }
 
-    /// One assembled when record for unsupported early exits.
+    /// One assembled when record for unsupported early exits. The
+    /// record stays structurally aligned with the resolved input and
+    /// carries a schema-valid deterministic clock: the step's declared
+    /// clock when it resolves, else the documented epoch fallback
+    /// (issue #107 correction 1).
     fn unsupported_record(
         &mut self,
         step: &WhenStep,
         operation: &str,
+        input: BTreeMap<String, TypedValue>,
         reason: &'static str,
     ) -> WhenRecord {
+        let clock = self
+            .clock_of(&step.action)
+            .unwrap_or_else(|_| version::EPOCH_CLOCK.to_owned());
+        self.inputs.push(input);
         WhenRecord {
             step_id: step.step_id.as_str().to_owned(),
             operation: operation.to_owned(),
             outcome: Outcome::Unsupported { reason },
             transition: None,
             state_space: None,
-            clock: String::new(),
+            clock,
             replay_of: None,
             effects: Vec::new(),
             derived_ids: std::mem::take(&mut self.derived),

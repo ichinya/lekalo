@@ -34,10 +34,13 @@ nothing is written, read from disk, spawned, or fetched at any point.
 
 ## The supported deterministic subset
 
-- **Given.** State preconditions materialize typed entity rows keyed
-  by the canonical JSON of the entity's declared identity fields;
-  actors, clocks, and ID sources are recorded controls; opaque
-  fixtures are never materialized.
+- **Given.** State preconditions resolve every selector and field
+  leaf atomically before any mutation: an unresolved reference is a
+  typed unsupported status carrying the exact resolution reason, with
+  no partial row, given value, or ID derivation. Resolved rows
+  materialize keyed by the canonical JSON of the entity's declared
+  identity fields; actors, clocks, and ID sources are recorded
+  controls; opaque fixtures are never materialized.
 - **Commands.** Exactly one pinned #63 transition per command
   (`no-transition` / `multiple-transitions` otherwise); the row is
   located by identity fields in the input (`identity-incomplete`
@@ -65,8 +68,11 @@ nothing is written, read from disk, spawned, or fetched at any point.
   operation and input.
 - **Clock and IDs.** The step's clock reference, else the first
   declared clock, else the epoch fallback `1970-01-01T00:00:00Z`;
-  UUIDv4 IDs derive from SHA-256(`seed:index`) with the RFC 4122
-  version/variant bits pinned, sequence IDs spell `seed-index`.
+  every `when` record serializes that deterministic clock — including
+  early-`unsupported` records, which fall back to the epoch when
+  their own clock reference cannot resolve. UUIDv4 IDs derive from
+  SHA-256(`seed:index`) with the RFC 4122 version/variant bits
+  pinned, sequence IDs spell `seed-index`.
 - **Assertions.** `result`, `error` (membership in the #62 registry
   union of the operation), `entity_state`, `emitted`,
   `forbidden_effect`, `idempotency`, and `unsupported` are decided;

@@ -82,10 +82,13 @@ contracts it was not pinned to.
 
 Only the explicitly supported deterministic subset executes:
 
-- `given` state rows materialize into byte-sorted in-memory maps
-  keyed by the canonical JSON of the entity's declared identity
-  fields; actors, clocks, and ID sources are recorded controls.
-  Opaque fixtures are never materialized (`fixture`).
+- `given` state rows resolve every selector and field reference
+  atomically before any mutation — an unresolved reference is a typed
+  unsupported status with the exact reason and no partial state — and
+  then materialize into byte-sorted in-memory maps keyed by the
+  canonical JSON of the entity's declared identity fields; actors,
+  clocks, and ID sources are recorded controls. Opaque fixtures are
+  never materialized (`fixture`).
 - `when` invokes run as staged all-or-nothing transactions over the
   in-memory state. A command needs exactly one transition bound to it
   in the pinned attachment (zero or several are `no-transition` /
