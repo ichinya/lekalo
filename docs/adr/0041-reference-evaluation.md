@@ -97,10 +97,15 @@ Only the explicitly supported deterministic subset executes:
   evaluate over input, prior row, and the evaluation clock
   (chronological ordering compares fraction digits numerically, so
   equal instants with different fraction spellings are neither before
-  nor after each other; `all`/`any` decide empty collections vacuously
+  nor after each other; `within` compares its span numerically
+  against the elapsed distance, keeping endpoints inclusive, without
+  serializing temporary bounds; `all`/`any` decide empty collections vacuously
   without evaluating the member predicate, and a scalar collection is
   a typed `incompatible-kind`); ordered
-  assignments write literal, input, prior, or clock (`now`) sources;
+  assignments write literal, input, prior, or clock (`now`) sources,
+  refusing an offset literal whose normalization leaves the
+  four-digit canonical range with the typed
+  `datetime-out-of-range` outcome before any write or event;
   post-write, every invariant of the transition's state space is
   enforced (field-value, cross-field, temporal, conditional
   requirement, one-active with its partition and `maxActive`, uniqueness,

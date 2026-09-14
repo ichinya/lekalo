@@ -48,12 +48,17 @@ nothing is written, read from disk, spawned, or fetched at any point.
   evaluate over input, prior row, and the evaluation clock:
   chronological ordering compares fraction digits numerically so one
   instant spelled `.5`, `.50`, without a fraction, or `.0` is neither
-  before nor after itself, and the `all`/`any` quantifiers validate
+  before nor after itself, `within` compares its span numerically
+  against the elapsed distance without materializing temporary
+  bounds, and the `all`/`any` quantifiers validate
   their collection operand (a scalar is a typed `incompatible-kind`)
   and decide empty collections vacuously (`all` true, `any` false)
   without evaluating the member predicate; ordered
   assignments write literal, input, prior-field, or clock (`now`)
-  sources; every invariant of the transition's state space is
+  sources, where an offset literal whose normalization rolls outside
+  the four-digit canonical range (`0001..=9999`) is refused as the
+  typed `datetime-out-of-range` outcome before any write or event;
+  every invariant of the transition's state space is
   enforced post-write over the staged state (field-value, cross-field,
   temporal, conditional-requirement, one-active, uniqueness,
   cardinality, aggregate-consistency kinds). Any violation rolls the

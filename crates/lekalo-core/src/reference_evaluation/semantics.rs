@@ -36,6 +36,8 @@ pub(crate) enum Reason {
     Incomparable,
     /// An operand kind cannot take part in the operation.
     IncompatibleKind,
+    /// A normalized literal denotes no runtime-representable value.
+    DatetimeRange,
     /// An aggregate reference names no IR entity.
     AggregateUnknown,
     /// The #63 contract binds no row field to state identifiers.
@@ -51,6 +53,7 @@ impl Reason {
             Self::InputUnset => "input-unset",
             Self::Incomparable => "incomparable",
             Self::IncompatibleKind => "incompatible-kind",
+            Self::DatetimeRange => "datetime-out-of-range",
             Self::AggregateUnknown => "aggregate-unknown",
             Self::StateFieldUnbound => "state-field-unbound",
             Self::MaxActiveMissing => "max-active-missing",
@@ -214,13 +217,30 @@ pub(crate) fn evaluate(node: &PredicateNode, context: &Context<'_>) -> Result<bo
             &resolve(right, context)?,
         )? == std::cmp::Ordering::Greater),
         PredicateNode::Within { left, duration } => {
+            // The span is compared numerically against the elapsed
+            // whole-second distance between the operand and the
+            // evaluation clock: the temporary bounds are never
+            // serialized or reparsed, so only the operands themselves
+            // must be representable wire datetimes. Endpoints stay
+            // inclusive and fraction spellings order numerically at
+            // exact whole-second boundary distance (issue #107
+            // correction 3).
             let left = resolve(left, context)?;
-            let now = Value::Datetime(context.clock.to_owned());
+            let Value::Datetime(left_text) = &left else {
+                return Err(Reason::Incomparable);
+            };
+            let (left_days, left_second, left_fraction) =
+                datetime_parts(left_text).ok_or(Reason::IncompatibleKind)?;
+            let (now_days, now_second, now_fraction) =
+                datetime_parts(context.clock).ok_or(Reason::IncompatibleKind)?;
             let span = duration_seconds(duration);
-            let lower = shift_datetime(&now, -span).ok_or(Reason::IncompatibleKind)?;
-            let upper = shift_datetime(&now, span).ok_or(Reason::IncompatibleKind)?;
-            Ok(compare(&lower, &left)? != std::cmp::Ordering::Greater
-                && compare(&left, &upper)? != std::cmp::Ordering::Greater)
+            let delta = (left_days * 86_400 + left_second) - (now_days * 86_400 + now_second);
+            let fraction = align(&left_fraction, &now_fraction, false);
+            let at_or_after_lower =
+                delta > -span || (delta == -span && fraction != std::cmp::Ordering::Less);
+            let at_or_before_upper =
+                delta < span || (delta == span && fraction != std::cmp::Ordering::Greater);
+            Ok(at_or_after_lower && at_or_before_upper)
         }
         PredicateNode::Count { from, min, max } => {
             let collection = resolve(from, context)?;
@@ -403,6 +423,15 @@ pub(crate) fn normalize_datetime(text: &str) -> Result<String, Reason> {
     let (year, month, day) = civil_of_date(date).ok_or(Reason::IncompatibleKind)?;
     let days = days_from_civil(year, month, day) + day_shift;
     let (year, month, day) = civil_from_days(days);
+    // The runtime typed-value contract admits exactly four-digit
+    // years `0001..=9999`: an offset normalization that rolls out of
+    // that range (e.g. `9999-12-31T23:00:00.1-02:00` to year 10000,
+    // or `0001-01-01T00:00:00.1+01:00` to year 0) denotes no
+    // canonical UTC value and is refused as a typed unsupported
+    // outcome before any write or event (issue #107 correction 3).
+    if !(1..=9999).contains(&year) {
+        return Err(Reason::DatetimeRange);
+    }
     let mut text = format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{_second:02}");
     if let Some(fraction) = fraction {
         text.push('.');
@@ -527,29 +556,6 @@ fn duration_seconds(duration: &Duration) -> i64 {
     }
 }
 
-/// Shift one canonical UTC datetime by whole seconds.
-fn shift_datetime(value: &Value, seconds: i64) -> Option<Value> {
-    let text = match value {
-        Value::Datetime(text) => text,
-        _ => return None,
-    };
-    let (days, second_of_day, fraction) = datetime_parts(text)?;
-    let total = second_of_day + seconds;
-    let days = days + total.div_euclid(86_400);
-    let second_of_day = total.rem_euclid(86_400);
-    let (year, month, day) = civil_from_days(days);
-    let hour = second_of_day / 3_600;
-    let minute = (second_of_day % 3_600) / 60;
-    let second = second_of_day % 60;
-    let mut rebuilt = format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}");
-    if !fraction.is_empty() {
-        rebuilt.push('.');
-        rebuilt.push_str(&fraction);
-    }
-    rebuilt.push('Z');
-    Some(Value::Datetime(rebuilt))
-}
-
 /// Resolve one bounded member path into a referenced value: object
 /// fields by name, list items by decimal index, one to sixteen
 /// segments.
@@ -651,6 +657,37 @@ mod tests {
         assert_eq!(
             normalize_datetime("2026-12-31T23:00:00-02:00").expect("normalizes"),
             "2027-01-01T01:00:00Z"
+        );
+    }
+
+    /// An offset normalization that rolls out of the four-digit
+    /// runtime range denotes no canonical value and is refused as the
+    /// typed `datetime-out-of-range` reason, while the ordinary
+    /// in-range rollover keeps executing (issue #107 correction 3,
+    /// review B3.1).
+    #[test]
+    fn out_of_range_offset_normalization_is_refused() {
+        assert_eq!(
+            normalize_datetime("9999-12-31T23:00:00.1-02:00"),
+            Err(Reason::DatetimeRange)
+        );
+        assert_eq!(
+            normalize_datetime("0001-01-01T00:00:00.1+01:00"),
+            Err(Reason::DatetimeRange)
+        );
+        // Exactly at the edges without a shift: still representable.
+        assert_eq!(
+            normalize_datetime("9999-12-31T23:59:59.1+02:00").expect("edge normalizes"),
+            "9999-12-31T21:59:59.1Z"
+        );
+        assert_eq!(
+            normalize_datetime("0001-01-01T00:00:00.1-02:00").expect("edge normalizes"),
+            "0001-01-01T02:00:00.1Z"
+        );
+        // The in-range year-rollover control keeps working.
+        assert_eq!(
+            normalize_datetime("2026-01-01T00:00:00.1+01:00").expect("control normalizes"),
+            "2025-12-31T23:00:00.1Z"
         );
     }
 

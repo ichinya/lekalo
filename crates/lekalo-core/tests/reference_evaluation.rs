@@ -226,6 +226,9 @@ fn reference_suite_runs_from_the_workspace_root() {
         correction_2_goldens_match_committed_bytes();
         equal_instant_fractions_stay_strictly_chronological();
         all_quantifier_resolves_the_collection();
+        correction_3_goldens_match_committed_bytes();
+        within_stays_numeric_at_year_boundaries();
+        out_of_range_literal_rejects_the_round_trip();
     });
     std::env::set_current_dir(original).expect("restore cwd");
     if let Err(payload) = result {
@@ -1289,5 +1292,371 @@ fn all_quantifier_resolves_the_collection() {
     match &trace.when()[0].outcome {
         Outcome::Error { token, .. } => assert_eq!(*token, ErrorToken::PreconditionFailed),
         other => panic!("expected precondition-failed, got {other:?}"),
+    }
+}
+
+/// The issue #107 correction round 3 fixtures: the exact public-API
+/// reproductions of the two reviewed datetime boundary defects, each
+/// bound to its exact scenario, attachment-variant, and canonical
+/// golden trace bytes.
+type Correction3Fixture = (&'static str, &'static [u8], &'static [u8], &'static [u8]);
+
+const CORRECTION_3_FIXTURES: &[Correction3Fixture] = &[
+    // B3.1 exact upper edge: the offset literal normalizes to year
+    // 10000, so the assignment refuses before any write or event.
+    (
+        "offset-range-upper",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/offset-range-upper.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/invariants-offset-range-upper.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/offset-range-upper.json.trace.json"
+        ),
+    ),
+    // B3.1 exact lower edge: the offset literal normalizes to year 0.
+    (
+        "offset-range-lower",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/offset-range-lower.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/invariants-offset-range-lower.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/offset-range-lower.json.trace.json"
+        ),
+    ),
+    // B3.1 in-range control: the ordinary year rollover still
+    // executes and writes the exact normalized UTC spelling.
+    (
+        "offset-range-control",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/offset-range-control.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/invariants-offset-range-control.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/offset-range-control.json.trace.json"
+        ),
+    ),
+    // B3.2 exact upper boundary: `within(now, 1s)` at
+    // `9999-12-31T23:59:59Z` (whose serialized span would leave the
+    // four-digit range) executes.
+    (
+        "within-year-upper",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/within-year-upper.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/invariants-within-year.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/within-year-upper.json.trace.json"
+        ),
+    ),
+    // B3.2 lower boundary control: the same predicate at
+    // `0001-01-01T00:00:00Z` keeps executing.
+    (
+        "within-year-lower",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/within-year-lower.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/invariants-within-year.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/within-year-lower.json.trace.json"
+        ),
+    ),
+    // B3.2 maximum accepted duration: `within(now, 31536000 days)`
+    // (whose serialized bounds would also leave the four-digit
+    // range) executes at the ordinary clock.
+    (
+        "within-max-duration",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/within-max-duration.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/invariants-within-max-duration.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/within-max-duration.json.trace.json"
+        ),
+    ),
+];
+
+/// Evaluates one correction-3 fixture: the exact scenario against the
+/// exact attachment variant over the committed board model.
+fn correction_3_execute(index: usize) -> ReferenceTrace {
+    let project = compile_board();
+    let (_, scenario_bytes, attachment_bytes, _) = &CORRECTION_3_FIXTURES[index];
+    let attachment_value: serde_json::Value =
+        serde_json::from_slice(attachment_bytes).expect("attachment JSON");
+    let attachment =
+        InvariantTransitionAttachment::from_value(&attachment_value).expect("attachment parses");
+    let registry =
+        lekalo_core::error_contract::ErrorRegistry::from_bytes(REGISTRY).expect("registry parses");
+    let scenario_wire: serde_json::Value =
+        serde_json::from_slice(scenario_bytes).expect("scenario JSON");
+    let scenario = ScenarioIr::from_value(&scenario_wire).expect("scenario parses");
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    evaluation.execute(&scenario).expect("trace")
+}
+
+/// Rebuilds one correction-3 evaluation over a within-year fixture
+/// with a mutated `within` precondition reading the given row, a
+/// mutated given row value, and an optional mutated clock, as a
+/// public wire variant.
+fn correction_3_within_variant(
+    duration: serde_json::Value,
+    clock: &str,
+    given_focused_at: Option<&str>,
+) -> ReferenceTrace {
+    let project = compile_board();
+    let (_, scenario_bytes, attachment_bytes, _) = &CORRECTION_3_FIXTURES[3];
+    let mut attachment_wire: serde_json::Value =
+        serde_json::from_slice(attachment_bytes).expect("attachment JSON");
+    attachment_wire["transitions"][0]["preconditions"] = serde_json::json!([
+        {
+            "op": "within",
+            "left": {"kind": "field", "field": "focused_at"},
+            "duration": duration
+        }
+    ]);
+    let attachment =
+        InvariantTransitionAttachment::from_value(&attachment_wire).expect("attachment parses");
+    let registry =
+        lekalo_core::error_contract::ErrorRegistry::from_bytes(REGISTRY).expect("registry parses");
+    let mut scenario_wire: serde_json::Value =
+        serde_json::from_slice(scenario_bytes).expect("scenario JSON");
+    scenario_wire["given"][1]["precondition"]["at"]["value"] = serde_json::json!(clock);
+    scenario_wire["then"][1]["assertion"]["fields"]["focused_at"]["value"]["value"] =
+        serde_json::json!(clock);
+    match given_focused_at {
+        Some(value) => {
+            scenario_wire["given"][0]["precondition"]["fields"]["focused_at"] =
+                serde_json::json!({ "type": "datetime", "value": value });
+        }
+        None => {
+            scenario_wire["given"][0]["precondition"]["fields"]["focused_at"] =
+                serde_json::json!({ "type": "null", "value": null });
+        }
+    }
+    // The command writes `now`, so the fixture's entity-state
+    // assertion (the clock spelling) stays untouched.
+    let scenario = ScenarioIr::from_value(&scenario_wire).expect("scenario parses");
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    evaluation.execute(&scenario).expect("trace")
+}
+
+/// Every correction-3 fixture matches its committed canonical golden
+/// byte for byte, and the exact repro outcomes hold: an offset
+/// literal whose normalization leaves the four-digit runtime range is
+/// a typed unsupported outcome with zero effects, the in-range
+/// rollover control still writes the exact normalized spelling, and
+/// `within` executes at both year boundaries and at the maximum
+/// accepted duration (correction 3, review B3.1/B3.2).
+fn correction_3_goldens_match_committed_bytes() {
+    // --- B3.1: both range edges refuse with zero effects. ---
+    for index in [0usize, 1] {
+        let trace = correction_3_execute(index);
+        let canonical = trace_bytes(&trace).expect("canonical trace bytes");
+        assert_eq!(
+            canonical.as_bytes(),
+            CORRECTION_3_FIXTURES[index].3,
+            "{}: canonical trace diverges from the committed golden",
+            CORRECTION_3_FIXTURES[index].0
+        );
+        assert_eq!(trace.status(), Status::Unsupported);
+        for record in trace.when() {
+            match &record.outcome {
+                Outcome::Unsupported { reason } => {
+                    assert_eq!(*reason, "datetime-out-of-range");
+                }
+                other => panic!("expected unsupported datetime-out-of-range, got {other:?}"),
+            }
+        }
+        assert_eq!(trace.when()[1].replay_of.as_deref(), Some("focus"));
+        assert!(trace.when()[1].effects.is_empty());
+        assert!(trace.effects().is_empty());
+        assert_eq!(
+            trace.assertions()[0].verdict,
+            Verdict::Unsupported("datetime-out-of-range")
+        );
+        assert_eq!(trace.assertions()[1].verdict, Verdict::Pass);
+        assert_eq!(trace.assertions().len(), 2);
+        let snapshot = &trace.state()[0];
+        let focused_at = snapshot
+            .fields
+            .iter()
+            .find(|(field, _)| field == "focused_at")
+            .expect("focused_at field");
+        assert_eq!(focused_at.1, lekalo_core::scenario::TypedValue::Null);
+    }
+
+    // --- B3.1: the in-range rollover control executes. ---
+    let trace = correction_3_execute(2);
+    let canonical = trace_bytes(&trace).expect("canonical trace bytes");
+    assert_eq!(
+        canonical.as_bytes(),
+        CORRECTION_3_FIXTURES[2].3,
+        "offset-range-control: canonical trace diverges from the committed golden"
+    );
+    assert_eq!(trace.status(), Status::Pass);
+    assert!(matches!(trace.when()[0].outcome, Outcome::Ok { .. }));
+    assert_eq!(trace.when()[1].replay_of.as_deref(), Some("focus"));
+    assert!(trace.when()[1].effects.is_empty());
+    assert_eq!(trace.effects().len(), 2);
+    let snapshot = &trace.state()[0];
+    let focused_at = snapshot
+        .fields
+        .iter()
+        .find(|(field, _)| field == "focused_at")
+        .expect("focused_at field");
+    assert_eq!(
+        focused_at.1,
+        lekalo_core::scenario::TypedValue::Datetime("2025-12-31T23:00:00.1Z".to_owned())
+    );
+    for assertion in trace.assertions() {
+        assert_eq!(assertion.verdict, Verdict::Pass);
+    }
+
+    // --- B3.2: both year boundaries and the maximum accepted
+    // duration execute with the clock written (`now` lies within its
+    // own span at zero distance). ---
+    let written = [
+        "9999-12-31T23:59:59Z",
+        "0001-01-01T00:00:00Z",
+        "2026-09-08T12:00:00Z",
+    ];
+    for index in [3usize, 4, 5] {
+        let trace = correction_3_execute(index);
+        let canonical = trace_bytes(&trace).expect("canonical trace bytes");
+        assert_eq!(
+            canonical.as_bytes(),
+            CORRECTION_3_FIXTURES[index].3,
+            "{}: canonical trace diverges from the committed golden",
+            CORRECTION_3_FIXTURES[index].0
+        );
+        assert_eq!(trace.status(), Status::Pass);
+        assert!(matches!(trace.when()[0].outcome, Outcome::Ok { .. }));
+        assert!(trace.when()[1].effects.is_empty());
+        assert_eq!(trace.effects().len(), 2);
+        for assertion in trace.assertions() {
+            assert_eq!(assertion.verdict, Verdict::Pass);
+        }
+        let snapshot = &trace.state()[0];
+        let focused_at = snapshot
+            .fields
+            .iter()
+            .find(|(field, _)| field == "focused_at")
+            .expect("focused_at field");
+        assert_eq!(
+            focused_at.1,
+            lekalo_core::scenario::TypedValue::Datetime(written[index - 3].to_owned())
+        );
+    }
+}
+
+/// `within` compares the span numerically against the elapsed
+/// distance, so it stays exact at nonzero distances on the upper
+/// year boundary: the inclusive endpoints accept an operand exactly
+/// one span away (including a fractional operand at exact
+/// whole-second distance), and one step beyond the span refuses with
+/// no effects (correction 3, review B3.2).
+fn within_stays_numeric_at_year_boundaries() {
+    // Upper boundary clock 9999-12-31T23:59:59Z with the row exactly
+    // one span below: inclusive lower endpoint accepts.
+    let trace = correction_3_within_variant(
+        serde_json::json!({ "unit": "seconds", "amount": 1 }),
+        "9999-12-31T23:59:59Z",
+        Some("9999-12-31T23:59:58Z"),
+    );
+    assert!(matches!(trace.when()[0].outcome, Outcome::Ok { .. }));
+    assert_eq!(trace.status(), Status::Pass);
+
+    // A fractional operand at exact whole-second distance orders
+    // numerically: `.5` is after the absent fraction of the lower
+    // bound, so it lies within.
+    let trace = correction_3_within_variant(
+        serde_json::json!({ "unit": "seconds", "amount": 1 }),
+        "9999-12-31T23:59:59Z",
+        Some("9999-12-31T23:59:58.5Z"),
+    );
+    assert!(matches!(trace.when()[0].outcome, Outcome::Ok { .. }));
+    assert_eq!(trace.status(), Status::Pass);
+
+    // One step beyond the span refuses with no effects.
+    let trace = correction_3_within_variant(
+        serde_json::json!({ "unit": "seconds", "amount": 1 }),
+        "9999-12-31T23:59:59Z",
+        Some("9999-12-31T23:59:57.9Z"),
+    );
+    match &trace.when()[0].outcome {
+        Outcome::Error { token, .. } => assert_eq!(*token, ErrorToken::PreconditionFailed),
+        other => panic!("expected precondition-failed, got {other:?}"),
+    }
+    assert!(trace.effects().is_empty());
+    assert_eq!(trace.status(), Status::Fail);
+
+    // Lower boundary clock 0001-01-01T00:00:00Z with the row exactly
+    // one span above: inclusive upper endpoint accepts, both at the
+    // one-second span and at the maximum accepted duration.
+    for duration in [
+        serde_json::json!({ "unit": "seconds", "amount": 1 }),
+        serde_json::json!({ "unit": "days", "amount": 31_536_000 }),
+    ] {
+        let trace = correction_3_within_variant(
+            duration,
+            "0001-01-01T00:00:00Z",
+            Some("0001-01-01T00:00:01Z"),
+        );
+        assert!(matches!(trace.when()[0].outcome, Outcome::Ok { .. }));
+        assert_eq!(trace.status(), Status::Pass);
+    }
+}
+
+/// An unrepresentable normalized literal is outside the runtime
+/// typed-value contract: feeding each refused normalization result
+/// back through the public scenario constructor rejects it
+/// (`graph.input-invalid`), proving the evaluator refuses exactly
+/// what the contract cannot represent, while the assignment literal
+/// itself stays legal attachment wire data — the refusal belongs at
+/// normalization, not at parse (correction 3, review B3.1).
+fn out_of_range_literal_rejects_the_round_trip() {
+    let scenario_wire: serde_json::Value =
+        serde_json::from_slice(CORRECTION_3_FIXTURES[0].1).expect("scenario JSON");
+    for committed in ["10000-01-01T01:00:00.1Z", "0000-12-31T23:00:00.1Z"] {
+        let mut wire = scenario_wire.clone();
+        wire["given"][0]["precondition"]["fields"]["focused_at"] =
+            serde_json::json!({ "type": "datetime", "value": committed });
+        let outcome = ScenarioIr::from_value(&wire);
+        assert!(outcome.is_err(), "{committed}: round-trip must reject");
+        let detail = format!("{:?}", outcome.err());
+        assert!(detail.contains("input-invalid"), "{committed}: {detail}");
+    }
+
+    // The refusal fixtures still execute to the typed unsupported
+    // outcome through the public constructor path (assignment value
+    // shape is legal wire data; the literal is what normalization
+    // refuses).
+    let project = compile_board();
+    let attachment_wire: serde_json::Value =
+        serde_json::from_slice(CORRECTION_3_FIXTURES[0].2).expect("attachment JSON");
+    let attachment =
+        InvariantTransitionAttachment::from_value(&attachment_wire).expect("attachment parses");
+    let registry =
+        lekalo_core::error_contract::ErrorRegistry::from_bytes(REGISTRY).expect("registry parses");
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    let scenario = ScenarioIr::from_value(&scenario_wire).expect("baseline scenario parses");
+    let trace = evaluation.execute(&scenario).expect("trace");
+    assert_eq!(trace.status(), Status::Unsupported);
+    match &trace.when()[0].outcome {
+        Outcome::Unsupported { reason } => assert_eq!(*reason, "datetime-out-of-range"),
+        other => panic!("expected unsupported datetime-out-of-range, got {other:?}"),
     }
 }
