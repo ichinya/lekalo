@@ -229,6 +229,9 @@ fn reference_suite_runs_from_the_workspace_root() {
         correction_3_goldens_match_committed_bytes();
         within_stays_numeric_at_year_boundaries();
         out_of_range_literal_rejects_the_round_trip();
+        correction_4_goldens_match_committed_bytes();
+        unrepresentable_date_literals_refuse_before_any_write();
+        date_round_trip_matches_the_public_constructor();
     });
     std::env::set_current_dir(original).expect("restore cwd");
     if let Err(payload) = result {
@@ -1659,4 +1662,321 @@ fn out_of_range_literal_rejects_the_round_trip() {
         Outcome::Unsupported { reason } => assert_eq!(*reason, "datetime-out-of-range"),
         other => panic!("expected unsupported datetime-out-of-range, got {other:?}"),
     }
+}
+
+/// The issue #107 correction round 4 fixtures: the exact public-API
+/// reproductions of the calendar-date literal defect, each bound to
+/// its exact scenario, attachment-variant, and canonical golden
+/// trace bytes.
+type Correction4Fixture = (&'static str, &'static [u8], &'static [u8], &'static [u8]);
+
+const CORRECTION_4_FIXTURES: &[Correction4Fixture] = &[
+    // B4.1 exact assignment repro: the date literal `2026-02-29`
+    // (non-leap February 29) replaces the `now` assignment.
+    (
+        "date-literal-refusal",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/date-literal-refusal.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/invariants-date-literal.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/date-literal-refusal.json.trace.json"
+        ),
+    ),
+    // B4.1 exact predicate repro: the original `now` assignment is
+    // kept and only the precondition becomes
+    // `before(date("2026-02-29"), date("2027-01-01"))`.
+    (
+        "date-predicate-refusal",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/date-predicate-refusal.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/invariants-date-predicate.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/date-predicate-refusal.json.trace.json"
+        ),
+    ),
+    // Valid leap-day control: the date literal `2024-02-29`
+    // executes and survives the public typed-value round trip.
+    (
+        "date-literal-leap",
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/scenarios/date-literal-leap.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/invariants-date-literal-leap.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/reference-evaluation/golden/date-literal-leap.json.trace.json"
+        ),
+    ),
+];
+
+/// Evaluates one correction-4 fixture: the exact scenario against the
+/// exact attachment variant over the committed board model.
+fn correction_4_execute(index: usize) -> ReferenceTrace {
+    let project = compile_board();
+    let (_, scenario_bytes, attachment_bytes, _) = &CORRECTION_4_FIXTURES[index];
+    let attachment_value: serde_json::Value =
+        serde_json::from_slice(attachment_bytes).expect("attachment JSON");
+    let attachment =
+        InvariantTransitionAttachment::from_value(&attachment_value).expect("attachment parses");
+    let registry =
+        lekalo_core::error_contract::ErrorRegistry::from_bytes(REGISTRY).expect("registry parses");
+    let scenario_wire: serde_json::Value =
+        serde_json::from_slice(scenario_bytes).expect("scenario JSON");
+    let scenario = ScenarioIr::from_value(&scenario_wire).expect("scenario parses");
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    evaluation.execute(&scenario).expect("trace")
+}
+
+/// Rebuilds the assignment repro evaluation with the transition's
+/// date literal replaced by the given text, as a public wire variant.
+fn correction_4_assignment_variant(date: &str) -> ReferenceTrace {
+    let project = compile_board();
+    let (_, scenario_bytes, attachment_bytes, _) = &CORRECTION_4_FIXTURES[0];
+    let mut attachment_wire: serde_json::Value =
+        serde_json::from_slice(attachment_bytes).expect("attachment JSON");
+    attachment_wire["transitions"][0]["assignments"][0]["value"] = serde_json::json!({
+        "kind": "literal",
+        "value": {"kind": "date", "value": date},
+    });
+    let attachment =
+        InvariantTransitionAttachment::from_value(&attachment_wire).expect("attachment parses");
+    let registry =
+        lekalo_core::error_contract::ErrorRegistry::from_bytes(REGISTRY).expect("registry parses");
+    let scenario_wire: serde_json::Value =
+        serde_json::from_slice(scenario_bytes).expect("scenario JSON");
+    let scenario = ScenarioIr::from_value(&scenario_wire).expect("scenario parses");
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    evaluation.execute(&scenario).expect("trace")
+}
+
+/// Rebuilds the predicate repro evaluation with both precondition
+/// operands replaced by the given date texts, as a public wire
+/// variant. The `now` assignment stays untouched.
+fn correction_4_predicate_variant(left: &str, right: &str) -> ReferenceTrace {
+    let project = compile_board();
+    let (_, scenario_bytes, attachment_bytes, _) = &CORRECTION_4_FIXTURES[1];
+    let mut attachment_wire: serde_json::Value =
+        serde_json::from_slice(attachment_bytes).expect("attachment JSON");
+    attachment_wire["transitions"][0]["preconditions"] = serde_json::json!([
+        {
+            "op": "before",
+            "left": {"kind": "date", "value": left},
+            "right": {"kind": "date", "value": right},
+        }
+    ]);
+    let attachment =
+        InvariantTransitionAttachment::from_value(&attachment_wire).expect("attachment parses");
+    let registry =
+        lekalo_core::error_contract::ErrorRegistry::from_bytes(REGISTRY).expect("registry parses");
+    let scenario_wire: serde_json::Value =
+        serde_json::from_slice(scenario_bytes).expect("scenario JSON");
+    let scenario = ScenarioIr::from_value(&scenario_wire).expect("scenario parses");
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    evaluation.execute(&scenario).expect("trace")
+}
+
+/// Every correction-4 fixture matches its committed canonical golden
+/// byte for byte, and the exact repro outcomes hold: a calendar-date
+/// literal outside the runtime date domain is the typed
+/// `date-out-of-range` outcome with zero effects both as an
+/// assignment source and as a predicate operand, the state stays
+/// untouched, and the valid leap-day control executes and writes the
+/// exact date (correction 4, review B4.1).
+fn correction_4_goldens_match_committed_bytes() {
+    // --- B4.1: both repro shapes refuse with zero effects. ---
+    for index in [0usize, 1] {
+        let trace = correction_4_execute(index);
+        let canonical = trace_bytes(&trace).expect("canonical trace bytes");
+        assert_eq!(
+            canonical.as_bytes(),
+            CORRECTION_4_FIXTURES[index].3,
+            "{}: canonical trace diverges from the committed golden",
+            CORRECTION_4_FIXTURES[index].0
+        );
+        assert_eq!(trace.status(), Status::Unsupported);
+        for record in trace.when() {
+            match &record.outcome {
+                Outcome::Unsupported { reason } => {
+                    assert_eq!(*reason, "date-out-of-range");
+                }
+                other => panic!("expected unsupported date-out-of-range, got {other:?}"),
+            }
+        }
+        assert_eq!(trace.when()[1].replay_of.as_deref(), Some("focus"));
+        assert!(trace.when()[1].effects.is_empty());
+        assert!(trace.effects().is_empty());
+        assert_eq!(
+            trace.assertions()[0].verdict,
+            Verdict::Unsupported("date-out-of-range")
+        );
+        assert_eq!(trace.assertions()[1].verdict, Verdict::Pass);
+        assert_eq!(trace.assertions().len(), 2);
+        let snapshot = &trace.state()[0];
+        let focused_at = snapshot
+            .fields
+            .iter()
+            .find(|(field, _)| field == "focused_at")
+            .expect("focused_at field");
+        assert_eq!(focused_at.1, lekalo_core::scenario::TypedValue::Null);
+    }
+
+    // --- Leap-day control: the valid date executes. ---
+    let trace = correction_4_execute(2);
+    let canonical = trace_bytes(&trace).expect("canonical trace bytes");
+    assert_eq!(
+        canonical.as_bytes(),
+        CORRECTION_4_FIXTURES[2].3,
+        "date-literal-leap: canonical trace diverges from the committed golden"
+    );
+    assert_eq!(trace.status(), Status::Pass);
+    assert!(matches!(trace.when()[0].outcome, Outcome::Ok { .. }));
+    assert_eq!(trace.when()[1].replay_of.as_deref(), Some("focus"));
+    assert!(trace.when()[1].effects.is_empty());
+    assert_eq!(trace.effects().len(), 2);
+    for assertion in trace.assertions() {
+        assert_eq!(assertion.verdict, Verdict::Pass);
+    }
+    let snapshot = &trace.state()[0];
+    let focused_at = snapshot
+        .fields
+        .iter()
+        .find(|(field, _)| field == "focused_at")
+        .expect("focused_at field");
+    assert_eq!(
+        focused_at.1,
+        lekalo_core::scenario::TypedValue::Date("2024-02-29".to_owned())
+    );
+}
+
+/// Every reviewer-B unrepresentable date refuses as the typed
+/// `date-out-of-range` outcome before any write or event, in all
+/// reachable positions: the assignment source (year zero, non-leap
+/// February 29, April 31), both predicate operands, and a nested
+/// object leaf; the valid leap day executes in the same variant
+/// paths (correction 4, review B4.1).
+fn unrepresentable_date_literals_refuse_before_any_write() {
+    // Assignment sources: the three reviewer dates all refuse with
+    // zero effects and untouched null state.
+    for date in ["2026-02-29", "0000-06-15", "2026-04-31"] {
+        let trace = correction_4_assignment_variant(date);
+        assert_eq!(trace.status(), Status::Unsupported, "{date}: status");
+        match &trace.when()[0].outcome {
+            Outcome::Unsupported { reason } => {
+                assert_eq!(*reason, "date-out-of-range", "{date}: reason");
+            }
+            other => panic!("{date}: expected unsupported, got {other:?}"),
+        }
+        assert!(trace.when()[0].effects.is_empty(), "{date}: effects");
+        assert!(trace.effects().is_empty(), "{date}: effect log");
+        let snapshot = &trace.state()[0];
+        let focused_at = snapshot
+            .fields
+            .iter()
+            .find(|(field, _)| field == "focused_at")
+            .expect("focused_at field");
+        assert_eq!(focused_at.1, lekalo_core::scenario::TypedValue::Null);
+    }
+
+    // The same variant path executes the valid leap day and writes
+    // the exact spelling.
+    let trace = correction_4_assignment_variant("2024-02-29");
+    assert!(matches!(trace.when()[0].outcome, Outcome::Ok { .. }));
+    let snapshot = &trace.state()[0];
+    let focused_at = snapshot
+        .fields
+        .iter()
+        .find(|(field, _)| field == "focused_at")
+        .expect("focused_at field");
+    assert_eq!(
+        focused_at.1,
+        lekalo_core::scenario::TypedValue::Date("2024-02-29".to_owned())
+    );
+
+    // Predicate operands: the left side, the right side, and both
+    // year-zero/April-31 spellings refuse; no precondition is
+    // evaluated against an unrepresentable date.
+    for (left, right) in [
+        ("2026-02-29", "2027-01-01"),
+        ("0000-06-15", "2027-01-01"),
+        ("2026-04-31", "2027-01-01"),
+        ("2026-01-01", "2026-02-29"),
+    ] {
+        let trace = correction_4_predicate_variant(left, right);
+        assert_eq!(trace.status(), Status::Unsupported, "{left}/{right}");
+        match &trace.when()[0].outcome {
+            Outcome::Unsupported { reason } => {
+                assert_eq!(*reason, "date-out-of-range", "{left}/{right}");
+            }
+            other => panic!("{left}/{right}: expected unsupported, got {other:?}"),
+        }
+        assert!(trace.effects().is_empty(), "{left}/{right}: effect log");
+    }
+
+    // A nested literal leaf is validated too: the projection of an
+    // object literal carrying the non-leap day refuses before any
+    // write, even beside a valid sibling leaf.
+    let project = compile_board();
+    let (_, scenario_bytes, attachment_bytes, _) = &CORRECTION_4_FIXTURES[0];
+    let mut attachment_wire: serde_json::Value =
+        serde_json::from_slice(attachment_bytes).expect("attachment JSON");
+    attachment_wire["transitions"][0]["assignments"][0]["value"] = serde_json::json!({
+        "kind": "literal",
+        "value": {
+            "kind": "object",
+            "entries": [
+                {"key": "day", "value": {"kind": "date", "value": "2026-02-29"}},
+                {"key": "ok", "value": {"kind": "date", "value": "2024-02-29"}},
+            ],
+        },
+    });
+    let attachment =
+        InvariantTransitionAttachment::from_value(&attachment_wire).expect("attachment parses");
+    let registry =
+        lekalo_core::error_contract::ErrorRegistry::from_bytes(REGISTRY).expect("registry parses");
+    let scenario_wire: serde_json::Value =
+        serde_json::from_slice(scenario_bytes).expect("scenario JSON");
+    let scenario = ScenarioIr::from_value(&scenario_wire).expect("scenario parses");
+    let evaluation = ReferenceEvaluation::new(&project, &attachment, &registry);
+    let trace = evaluation.execute(&scenario).expect("trace");
+    assert_eq!(trace.status(), Status::Unsupported);
+    match &trace.when()[0].outcome {
+        Outcome::Unsupported { reason } => assert_eq!(*reason, "date-out-of-range"),
+        other => panic!("expected unsupported, got {other:?}"),
+    }
+    assert!(trace.effects().is_empty());
+}
+
+/// A calendar-date literal the evaluator refuses is exactly what the
+/// public scenario constructor refuses: feeding each exact emitted
+/// value back through `ScenarioIr::from_value` rejects with
+/// `graph.input-invalid` (`typed-value-shape`), while the valid leap
+/// day survives the same public round trip (correction 4, review
+/// B4.1).
+fn date_round_trip_matches_the_public_constructor() {
+    let scenario_wire: serde_json::Value =
+        serde_json::from_slice(CORRECTION_4_FIXTURES[0].1).expect("scenario JSON");
+    for date in ["2026-02-29", "0000-06-15", "2026-04-31"] {
+        let mut wire = scenario_wire.clone();
+        wire["given"][0]["precondition"]["fields"]["focused_at"] =
+            serde_json::json!({"type": "date", "value": date});
+        let outcome = ScenarioIr::from_value(&wire);
+        assert!(outcome.is_err(), "{date}: round trip must reject");
+        let detail = format!("{:?}", outcome.err());
+        assert!(detail.contains("input-invalid"), "{date}: {detail}");
+        assert!(detail.contains("typed-value-shape"), "{date}: {detail}");
+    }
+
+    // The valid leap day is accepted by the same constructor in the
+    // same position.
+    let mut wire = scenario_wire.clone();
+    wire["given"][0]["precondition"]["fields"]["focused_at"] =
+        serde_json::json!({"type": "date", "value": "2024-02-29"});
+    ScenarioIr::from_value(&wire).expect("leap day round trip accepts");
 }

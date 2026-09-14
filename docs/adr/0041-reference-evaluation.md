@@ -105,7 +105,11 @@ Only the explicitly supported deterministic subset executes:
   assignments write literal, input, prior, or clock (`now`) sources,
   refusing an offset literal whose normalization leaves the
   four-digit canonical range with the typed
-  `datetime-out-of-range` outcome before any write or event;
+  `datetime-out-of-range` outcome before any write or event, and
+  refusing a calendar-date literal outside the reused runtime date
+  domain (four-digit years `0001..=9999`, Gregorian month lengths,
+  leap years) with the typed `date-out-of-range` outcome before any
+  write or event, wherever the leaf sits;
   post-write, every invariant of the transition's state space is
   enforced (field-value, cross-field, temporal, conditional
   requirement, one-active with its partition and `maxActive`, uniqueness,

@@ -38,6 +38,9 @@ pub(crate) enum Reason {
     IncompatibleKind,
     /// A normalized literal denotes no runtime-representable value.
     DatetimeRange,
+    /// A calendar-date literal lies outside the runtime canonical
+    /// date domain.
+    DateRange,
     /// An aggregate reference names no IR entity.
     AggregateUnknown,
     /// The #63 contract binds no row field to state identifiers.
@@ -54,6 +57,7 @@ impl Reason {
             Self::Incomparable => "incomparable",
             Self::IncompatibleKind => "incompatible-kind",
             Self::DatetimeRange => "datetime-out-of-range",
+            Self::DateRange => "date-out-of-range",
             Self::AggregateUnknown => "aggregate-unknown",
             Self::StateFieldUnbound => "state-field-unbound",
             Self::MaxActiveMissing => "max-active-missing",
@@ -88,7 +92,22 @@ pub(crate) fn literal(node: &ValueNode) -> Result<Value, Reason> {
         ValueNode::Integer(number) => Ok(Value::Integer(*number)),
         ValueNode::String(text) => Ok(Value::String(text.clone())),
         ValueNode::Decimal(text) => Ok(Value::Decimal(text.clone())),
-        ValueNode::Date(text) => Ok(Value::Date(text.clone())),
+        ValueNode::Date(text) => {
+            // The attachment grammar intentionally accepts only the
+            // coarse month/day shape, while the runtime typed-value
+            // contract admits exactly the canonical calendar dates
+            // (four-digit years `0001..=9999`, Gregorian month
+            // lengths, leap years). A literal outside that reused
+            // domain — year zero, a non-leap February 29, April 31 —
+            // denotes no representable runtime value and is refused
+            // as a typed unsupported outcome before any write or
+            // event, wherever the leaf sits (issue #107 correction
+            // 4).
+            if !crate::scenario::value::canonical_date(text) {
+                return Err(Reason::DateRange);
+            }
+            Ok(Value::Date(text.clone()))
+        }
         ValueNode::DateTime(text) => normalize_datetime(text).map(Value::Datetime),
         ValueNode::Uuid(text) => Ok(Value::Uuid(text.clone())),
         ValueNode::Uri(text) => Ok(Value::Uri(text.clone())),

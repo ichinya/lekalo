@@ -57,7 +57,13 @@ nothing is written, read from disk, spawned, or fetched at any point.
   assignments write literal, input, prior-field, or clock (`now`)
   sources, where an offset literal whose normalization rolls outside
   the four-digit canonical range (`0001..=9999`) is refused as the
-  typed `datetime-out-of-range` outcome before any write or event;
+  typed `datetime-out-of-range` outcome before any write or event,
+  and a calendar-date literal outside the reused runtime date domain
+  (four-digit years `0001..=9999`, Gregorian month lengths, leap
+  years — the domain the public typed-value constructor enforces) is
+  refused as the typed `date-out-of-range` outcome before any write
+  or event, wherever the leaf sits, including nested literal leaves
+  and predicate operands;
   every invariant of the transition's state space is
   enforced post-write over the staged state (field-value, cross-field,
   temporal, conditional-requirement, one-active, uniqueness,
