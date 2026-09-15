@@ -1119,11 +1119,11 @@ fn missing_attachment_is_invalid_not_a_crash() {
 fn version_custody_probe() {
     let output = lekalo_in(&fixture_path(), &["--version"]);
     assert_eq!(exit_code(&output), 0);
-    assert_eq!(stdout_text(&output).trim(), "lekalo 0.3.0");
+    assert_eq!(stdout_text(&output).trim(), "lekalo 0.3.1");
     let json = lekalo_in(&fixture_path(), &["--json", "--version"]);
     assert_eq!(exit_code(&json), 0);
     assert_eq!(
         stdout_text(&json).trim(),
-        "{\n  \"status\": \"valid\",\n  \"version\": \"0.3.0\"\n}"
+        "{\n  \"status\": \"valid\",\n  \"version\": \"0.3.1\"\n}"
     );
 }
