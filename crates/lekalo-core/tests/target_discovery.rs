@@ -360,14 +360,10 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
         ContractVersion::parse_canonical("0.2.16").unwrap(),
         ContractVersion::parse_canonical("0.2.16").unwrap(),
         Some(ProtocolBounds {
-            min: ContractVersion::parse_canonical(
-                lekalo_core::target_protocol::version::VERSION,
-            )
-            .unwrap(),
-            max: ContractVersion::parse_canonical(
-                lekalo_core::target_protocol::version::VERSION,
-            )
-            .unwrap(),
+            min: ContractVersion::parse_canonical(lekalo_core::target_protocol::version::VERSION)
+                .unwrap(),
+            max: ContractVersion::parse_canonical(lekalo_core::target_protocol::version::VERSION)
+                .unwrap(),
         }),
         vec![],
         vec![],
@@ -426,10 +422,10 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
     assert!(CompatibilityPreflight::check(
         registry,
         &ContractVersion::parse_canonical("0.2.16").unwrap(),
-        Some(&ContractVersion::parse_canonical(
-            lekalo_core::target_protocol::version::VERSION
-        )
-        .unwrap()),
+        Some(
+            &ContractVersion::parse_canonical(lekalo_core::target_protocol::version::VERSION)
+                .unwrap()
+        ),
         &manifest,
     )
     .is_compatible());

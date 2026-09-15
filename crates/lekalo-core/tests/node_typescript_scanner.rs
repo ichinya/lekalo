@@ -54,7 +54,8 @@ impl ScanSandbox {
         ));
         std::fs::create_dir_all(dir.join("src")).expect("sandbox src");
         std::fs::create_dir_all(dir.join("lekalo")).expect("sandbox lekalo home");
-        std::fs::create_dir_all(dir.join("lekalo").join("modules").join("project")).expect("module dir");
+        std::fs::create_dir_all(dir.join("lekalo").join("modules").join("project"))
+            .expect("module dir");
         std::fs::write(
             dir.join("lekalo").join("project.yaml"),
             b"schema_version: \"0.2.16\"\ndefinitions:\n  - id: scan_fixture\n    kind: project\n    version: 1\n",
@@ -73,11 +74,13 @@ impl ScanSandbox {
             br#"{ "name": "@scan/rs-fixture", "type": "module", "version": "1.0.0" }"#,
         )
         .expect("package manifest");
-        std::fs::write(dir.join("src").join("main.ts"),
+        std::fs::write(
+            dir.join("src").join("main.ts"),
             b"import { tag } from './helper';\n\
               export interface Point { x: number; y: number }\n\
-              export function dist(p: Point): number { return p.x + p.y + tag.length; }\n")
-            .expect("source");
+              export function dist(p: Point): number { return p.x + p.y + tag.length; }\n",
+        )
+        .expect("source");
         std::fs::write(
             dir.join("src").join("helper.ts"),
             b"export const tag = \"helper\";\n",
@@ -97,18 +100,6 @@ fn brief_limits() -> TransportLimits {
     TransportLimits {
         timeout_ms: 60_000,
         ..TransportLimits::default()
-    }
-}
-
-fn describe_request() -> CallRequest<'static> {
-    CallRequest {
-        operation: Operation::Describe,
-        target: None,
-        profile: None,
-        profile_resolution: None,
-        ir_path: None,
-        dry_run: None,
-        plan_id: None,
     }
 }
 
@@ -146,11 +137,11 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
     );
     assert_eq!(described.capabilities.adapter.version, "0.3.1");
     assert_eq!(described.capabilities.operations.len(), 2);
-    assert!(described
-        .capabilities
-        .operations
-        .contains(&Operation::Scan));
-    assert_eq!(described.capabilities.read_scopes, vec!["src/**".to_owned()]);
+    assert!(described.capabilities.operations.contains(&Operation::Scan));
+    assert_eq!(
+        described.capabilities.read_scopes,
+        vec!["src/**".to_owned()]
+    );
     assert_eq!(
         described
             .capabilities

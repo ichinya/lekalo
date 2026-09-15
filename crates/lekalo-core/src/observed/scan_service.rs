@@ -432,8 +432,7 @@ fn build_document(
         if let Some(evidence) = &entry.evidence {
             let mut evidence_map = serde_json::Map::new();
             if let Some(signature) = &evidence.signature {
-                evidence_map
-                    .insert("signature".to_owned(), Json::String(signature.clone()));
+                evidence_map.insert("signature".to_owned(), Json::String(signature.clone()));
             }
             if !evidence.references.is_empty() {
                 let references: Vec<Json> = evidence
@@ -449,8 +448,7 @@ fn build_document(
                         })
                     })
                     .collect();
-                evidence_map
-                    .insert("references".to_owned(), Json::Array(references));
+                evidence_map.insert("references".to_owned(), Json::Array(references));
             }
             if !evidence_map.is_empty() {
                 symbol.insert("evidence".to_owned(), Json::Object(evidence_map));
