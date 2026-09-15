@@ -1,0 +1,818 @@
+{
+  "schemaVersion": "lekalo/expressions/v1.0.0",
+  "identity": "dev.lekalo.expressions@1.0.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.1.0",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "builtinSemantics": "1.0.0",
+  "expressions": [
+    {
+      "id": "expr.planner/overdue-check",
+      "kind": "condition",
+      "description": "A started task with a due date in the past is overdue.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "due",
+          "type": "datetime",
+          "nullable": true
+        },
+        {
+          "scope": "input",
+          "field": "state",
+          "type": "string"
+        }
+      ],
+      "result": "bool",
+      "span": {
+        "file": "modules/planner/expressions.yaml",
+        "startByte": 128,
+        "startLine": 12,
+        "startColumn": 9,
+        "endByte": 512,
+        "endLine": 18,
+        "endColumn": 22
+      },
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "and",
+          "operands": [
+            {
+              "op": "not-null",
+              "operand": {
+                "op": "ref",
+                "scope": "input",
+                "field": "due"
+              }
+            },
+            {
+              "op": "ne",
+              "left": {
+                "op": "ref",
+                "scope": "input",
+                "field": "state"
+              },
+              "right": {
+                "op": "lit-string",
+                "value": "done"
+              }
+            }
+          ]
+        },
+        "then": {
+          "op": "lt",
+          "left": {
+            "op": "ref",
+            "scope": "input",
+            "field": "due"
+          },
+          "right": {
+            "op": "now"
+          }
+        },
+        "else": {
+          "op": "lit-bool",
+          "value": false
+        }
+      }
+    },
+    {
+      "id": "expr.planner/state-gate",
+      "kind": "condition",
+      "description": "The state must be open and either automated or human-approved.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "state",
+          "type": "string"
+        },
+        {
+          "scope": "actor",
+          "field": "role",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "scope": "input",
+          "field": "project_tags",
+          "type": "set:string"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "and",
+        "operands": [
+          {
+            "op": "in-set",
+            "operand": {
+              "op": "ref",
+              "scope": "input",
+              "field": "state"
+            },
+            "set": {
+              "op": "lit-set",
+              "items": [
+                {
+                  "kind": "string",
+                  "value": "backlog"
+                },
+                {
+                  "kind": "string",
+                  "value": "todo"
+                }
+              ]
+            }
+          },
+          {
+            "op": "if",
+            "condition": {
+              "op": "not-null",
+              "operand": {
+                "op": "ref",
+                "scope": "actor",
+                "field": "role"
+              }
+            },
+            "then": {
+              "op": "eq",
+              "left": {
+                "op": "ref",
+                "scope": "actor",
+                "field": "role"
+              },
+              "right": {
+                "op": "lit-string",
+                "value": "automation"
+              }
+            },
+            "else": {
+              "op": "lit-bool",
+              "value": false
+            }
+          },
+          {
+            "op": "in-set",
+            "operand": {
+              "op": "ref",
+              "scope": "input",
+              "field": "state"
+            },
+            "set": {
+              "op": "ref",
+              "scope": "input",
+              "field": "project_tags"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/burst-guard",
+      "kind": "condition",
+      "description": "Large Monday batches with a legacy kind are suspicious.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "count",
+          "type": "int"
+        },
+        {
+          "scope": "input",
+          "field": "day",
+          "type": "datetime"
+        },
+        {
+          "scope": "input",
+          "field": "kind",
+          "type": "string"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "and",
+        "operands": [
+          {
+            "op": "gt",
+            "left": {
+              "op": "builtin",
+              "name": "int-abs",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "input",
+                  "field": "count"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 1000
+            }
+          },
+          {
+            "op": "eq",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-weekday",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "input",
+                  "field": "day"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 1
+            }
+          },
+          {
+            "op": "le",
+            "left": {
+              "op": "mod",
+              "left": {
+                "op": "ref",
+                "scope": "input",
+                "field": "count"
+              },
+              "right": {
+                "op": "lit-int",
+                "value": 7
+              }
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 3
+            }
+          },
+          {
+            "op": "le",
+            "left": {
+              "op": "div",
+              "left": {
+                "op": "ref",
+                "scope": "input",
+                "field": "count"
+              },
+              "right": {
+                "op": "lit-int",
+                "value": 3
+              }
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 100000
+            }
+          },
+          {
+            "op": "not",
+            "operand": {
+              "op": "eq",
+              "left": {
+                "op": "ref",
+                "scope": "input",
+                "field": "kind"
+              },
+              "right": {
+                "op": "lit-string",
+                "value": "legacy"
+              }
+            }
+          },
+          {
+            "op": "not-in-set",
+            "operand": {
+              "op": "ref",
+              "scope": "input",
+              "field": "kind"
+            },
+            "set": {
+              "op": "lit-set",
+              "items": [
+                {
+                  "kind": "string",
+                  "value": "draft"
+                },
+                {
+                  "kind": "string",
+                  "value": "internal"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/optional-note",
+      "kind": "condition",
+      "description": "A note is either absent or urgent.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "note",
+          "type": "string",
+          "nullable": false
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "builtin",
+        "name": "string-contains",
+        "args": [
+          {
+            "op": "ref",
+            "scope": "input",
+            "field": "note"
+          },
+          {
+            "op": "lit-string",
+            "value": "urgent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/search-match",
+      "kind": "condition",
+      "description": "Case-insensitive containment on the title.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "title",
+          "type": "string"
+        },
+        {
+          "scope": "input",
+          "field": "query",
+          "type": "string"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "builtin",
+        "name": "string-contains",
+        "args": [
+          {
+            "op": "builtin",
+            "name": "string-lower",
+            "args": [
+              {
+                "op": "ref",
+                "scope": "entity",
+                "field": "title"
+              }
+            ]
+          },
+          {
+            "op": "builtin",
+            "name": "string-lower",
+            "args": [
+              {
+                "op": "ref",
+                "scope": "input",
+                "field": "query"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/period-check",
+      "kind": "condition",
+      "description": "The record is at least a day old and stamped this year.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "age",
+          "type": "duration"
+        },
+        {
+          "scope": "entity",
+          "field": "created",
+          "type": "datetime"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "and",
+        "operands": [
+          {
+            "op": "ge",
+            "left": {
+              "op": "builtin",
+              "name": "duration-seconds",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "age"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 86400
+            }
+          },
+          {
+            "op": "eq",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-year",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "created"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 2026
+            }
+          },
+          {
+            "op": "ge",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-month",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "created"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 1
+            }
+          },
+          {
+            "op": "le",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-day",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "created"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 31
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/urgency-score",
+      "kind": "assignment",
+      "description": "The urgency score doubles the net estimate, one otherwise.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "estimate",
+          "type": "int"
+        },
+        {
+          "scope": "input",
+          "field": "penalty",
+          "type": "int"
+        }
+      ],
+      "result": "int",
+      "target": {
+        "scope": "entity",
+        "field": "score",
+        "type": "int"
+      },
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "ge",
+          "left": {
+            "op": "sub",
+            "left": {
+              "op": "ref",
+              "scope": "input",
+              "field": "estimate"
+            },
+            "right": {
+              "op": "ref",
+              "scope": "input",
+              "field": "penalty"
+            }
+          },
+          "right": {
+            "op": "lit-int",
+            "value": 5
+          }
+        },
+        "then": {
+          "op": "mul",
+          "left": {
+            "op": "sub",
+            "left": {
+              "op": "ref",
+              "scope": "input",
+              "field": "estimate"
+            },
+            "right": {
+              "op": "ref",
+              "scope": "input",
+              "field": "penalty"
+            }
+          },
+          "right": {
+            "op": "lit-int",
+            "value": 2
+          }
+        },
+        "else": {
+          "op": "lit-int",
+          "value": 1
+        }
+      }
+    },
+    {
+      "id": "expr.planner/slug-label",
+      "kind": "assignment",
+      "description": "The label is the lowered title plus its length.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "title",
+          "type": "string"
+        }
+      ],
+      "result": "string",
+      "target": {
+        "scope": "input",
+        "field": "label",
+        "type": "string"
+      },
+      "body": {
+        "op": "builtin",
+        "name": "string-concat",
+        "args": [
+          {
+            "op": "builtin",
+            "name": "string-lower",
+            "args": [
+              {
+                "op": "ref",
+                "scope": "input",
+                "field": "title"
+              }
+            ]
+          },
+          {
+            "op": "builtin",
+            "name": "cast-int-to-string",
+            "args": [
+              {
+                "op": "builtin",
+                "name": "string-length",
+                "args": [
+                  {
+                    "op": "ref",
+                    "scope": "input",
+                    "field": "title"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/copy-tag",
+      "kind": "assignment",
+      "description": "The display tag is the uppercased kind plus a bang.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "kind",
+          "type": "string"
+        }
+      ],
+      "result": "string",
+      "target": {
+        "scope": "input",
+        "field": "display",
+        "type": "string"
+      },
+      "body": {
+        "op": "builtin",
+        "name": "string-concat",
+        "args": [
+          {
+            "op": "builtin",
+            "name": "string-upper",
+            "args": [
+              {
+                "op": "ref",
+                "scope": "input",
+                "field": "kind"
+              }
+            ]
+          },
+          {
+            "op": "lit-string",
+            "value": "!"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/review-due",
+      "kind": "assignment",
+      "description": "The review date is one week after the last review, now otherwise.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "reviewed_at",
+          "type": "datetime",
+          "nullable": true
+        }
+      ],
+      "result": "datetime",
+      "target": {
+        "scope": "entity",
+        "field": "review_at",
+        "type": "datetime"
+      },
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "not-null",
+          "operand": {
+            "op": "ref",
+            "scope": "entity",
+            "field": "reviewed_at"
+          }
+        },
+        "then": {
+          "op": "add",
+          "left": {
+            "op": "ref",
+            "scope": "entity",
+            "field": "reviewed_at"
+          },
+          "right": {
+            "op": "lit-duration",
+            "value": 604800
+          }
+        },
+        "else": {
+          "op": "now"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/parsed-limit",
+      "kind": "assignment",
+      "description": "The limit comes from a canonical decimal string.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "raw_limit",
+          "type": "string"
+        }
+      ],
+      "result": "int",
+      "target": {
+        "scope": "input",
+        "field": "limit",
+        "type": "int"
+      },
+      "body": {
+        "op": "builtin",
+        "name": "cast-string-to-int",
+        "args": [
+          {
+            "op": "ref",
+            "scope": "input",
+            "field": "raw_limit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/spread",
+      "kind": "assignment",
+      "description": "The spread divides the total by the parts, truncating.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "total",
+          "type": "int"
+        },
+        {
+          "scope": "input",
+          "field": "parts",
+          "type": "int"
+        }
+      ],
+      "result": "int",
+      "target": {
+        "scope": "entity",
+        "field": "spread",
+        "type": "int"
+      },
+      "body": {
+        "op": "div",
+        "left": {
+          "op": "ref",
+          "scope": "input",
+          "field": "total"
+        },
+        "right": {
+          "op": "ref",
+          "scope": "input",
+          "field": "parts"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/spread-rest",
+      "kind": "assignment",
+      "description": "The remainder of the spread division.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "total",
+          "type": "int"
+        },
+        {
+          "scope": "input",
+          "field": "parts",
+          "type": "int"
+        }
+      ],
+      "result": "int",
+      "target": {
+        "scope": "entity",
+        "field": "spread_rest",
+        "type": "int"
+      },
+      "body": {
+        "op": "mod",
+        "left": {
+          "op": "ref",
+          "scope": "input",
+          "field": "total"
+        },
+        "right": {
+          "op": "ref",
+          "scope": "input",
+          "field": "parts"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/audit-tag",
+      "kind": "condition",
+      "description": "Added expression.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "kind",
+          "type": "string"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "eq",
+        "left": {
+          "op": "ref",
+          "scope": "input",
+          "field": "kind"
+        },
+        "right": {
+          "op": "lit-string",
+          "value": "audit"
+        }
+      }
+    }
+  ]
+}

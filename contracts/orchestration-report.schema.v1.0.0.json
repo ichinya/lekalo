@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.orchestration-report@1.0.0",
+  "title": "Lekalo orchestration receipt",
+  "description": "The closed result wire of `lekalo generate` and `lekalo verify` (issue #91): one invocation, its bound lock and generation inputs, the per-target results or per-component states, and the aggregate verdict. Deterministic field order and canonical arrays; no absolute paths, timestamps, hosts, or environment values.",
+  "$defs": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "lekalo/orchestration/v1.0.0"
+    },
+    "identity": {
+      "type": "string",
+      "const": "dev.lekalo.orchestration-report@1.0.0"
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "logicalPath": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$",
+      "maxLength": 512
+    },
+    "token": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 191
+    },
+    "verdict": {
+      "enum": ["ready", "degraded", "blocked"]
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modelVersion", "modelDigest", "irVersion", "irDigest", "revision"],
+      "properties": {
+        "modelVersion": { "type": "string", "pattern": "^(0\\.1\\.0|1\\.0\\.0)$" },
+        "modelDigest": { "$ref": "#/$defs/sha256Digest" },
+        "irVersion": { "type": "string", "const": "0.1.0" },
+        "irDigest": { "$ref": "#/$defs/sha256Digest" },
+        "revision": { "$ref": "#/$defs/sha256Digest" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modules", "allModules"],
+      "properties": {
+        "modules": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/token" }
+        },
+        "allModules": { "type": "boolean" }
+      }
+    },
+    "irEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "digest"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^\\.lekalo/cache/ir/[a-z0-9][a-z0-9_-]{0,63}\\.json$"
+        },
+        "digest": { "$ref": "#/$defs/sha256Digest" }
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "digest"],
+      "properties": {
+        "id": { "$ref": "#/$defs/token" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "digest": { "$ref": "#/$defs/sha256Digest" }
+      }
+    },
+    "write": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "action", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/logicalPath" },
+        "action": { "enum": ["create", "replace", "delete"] },
+        "sha256": {
+          "oneOf": [{ "$ref": "#/$defs/sha256Digest" }, { "type": "null" }]
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "profile",
+        "adapter",
+        "state",
+        "reasonCode",
+        "planId",
+        "writes",
+        "manifestDigest"
+      ],
+      "properties": {
+        "target": { "$ref": "#/$defs/token" },
+        "profile": {
+          "oneOf": [{ "$ref": "#/$defs/token" }, { "type": "null" }]
+        },
+        "adapter": { "$ref": "#/$defs/adapter" },
+        "state": { "enum": ["planned", "applied", "failed"] },
+        "reasonCode": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        },
+        "planId": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        },
+        "writes": {
+          "type": "array",
+          "maxItems": 65536,
+          "items": { "$ref": "#/$defs/write" }
+        },
+        "manifestDigest": {
+          "oneOf": [{ "$ref": "#/$defs/sha256Digest" }, { "type": "null" }]
+        }
+      }
+    },
+    "targetCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targets", "planned", "applied", "failed"],
+      "properties": {
+        "targets": { "type": "integer", "minimum": 0 },
+        "planned": { "type": "integer", "minimum": 0 },
+        "applied": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "severityCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["errors", "warnings", "infos"],
+      "properties": {
+        "errors": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "infos": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "verdictCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifacts",
+        "clean",
+        "stale",
+        "manualDrift",
+        "missing",
+        "orphan",
+        "blocking"
+      ],
+      "properties": {
+        "artifacts": { "type": "integer", "minimum": 0 },
+        "clean": { "type": "integer", "minimum": 0 },
+        "stale": { "type": "integer", "minimum": 0 },
+        "manualDrift": { "type": "integer", "minimum": 0 },
+        "missing": { "type": "integer", "minimum": 0 },
+        "orphan": { "type": "integer", "minimum": 0 },
+        "blocking": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "scenarioCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenarios", "coveredOperations", "uncoveredScenarios"],
+      "properties": {
+        "scenarios": { "type": "integer", "minimum": 0 },
+        "coveredOperations": { "type": "integer", "minimum": 0 },
+        "uncoveredScenarios": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "traceSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relations", "gaps", "uncoveredSinks"],
+      "properties": {
+        "relations": { "type": "integer", "minimum": 0 },
+        "gaps": { "type": "integer", "minimum": 0 },
+        "uncoveredSinks": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "required", "state", "reasonCode"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(model\\.validation|artifact\\.drift|bindings\\.registry|scenarios\\.portable|scenarios\\.execution|native\\.gates|trace\\.summary|adapter\\.[a-z0-9][a-z0-9_-]{0,63})$"
+        },
+        "required": { "type": "boolean" },
+        "state": {
+          "enum": ["pass", "degraded", "fail", "unsupported", "absent"]
+        },
+        "reasonCode": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        },
+        "severityCounts": {
+          "oneOf": [{ "$ref": "#/$defs/severityCounts" }, { "type": "null" }]
+        },
+        "verdictCounts": {
+          "oneOf": [{ "$ref": "#/$defs/verdictCounts" }, { "type": "null" }]
+        },
+        "findings": {
+          "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+        },
+        "scenarios": {
+          "oneOf": [{ "$ref": "#/$defs/scenarioCoverage" }, { "type": "null" }]
+        },
+        "trace": {
+          "oneOf": [{ "$ref": "#/$defs/traceSummary" }, { "type": "null" }]
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "title": "Generate receipt",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "mode",
+        "identity",
+        "project",
+        "lockDigest",
+        "locked",
+        "inputs",
+        "irEvidence",
+        "scope",
+        "targets",
+        "counts",
+        "verdict"
+      ],
+      "properties": {
+        "schema_version": { "$ref": "#/$defs/schemaVersion" },
+        "operation": { "const": "generate" },
+        "mode": { "enum": ["dry-run", "apply"] },
+        "identity": { "$ref": "#/$defs/identity" },
+        "project": { "$ref": "#/$defs/token" },
+        "lockDigest": { "$ref": "#/$defs/sha256Digest" },
+        "locked": { "type": "boolean" },
+        "inputs": { "$ref": "#/$defs/inputs" },
+        "irEvidence": { "$ref": "#/$defs/irEvidence" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "targets": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/target" }
+        },
+        "counts": { "$ref": "#/$defs/targetCounts" },
+        "verdict": { "$ref": "#/$defs/verdict" }
+      }
+    },
+    {
+      "title": "Verify receipt",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "mode",
+        "identity",
+        "project",
+        "lockDigest",
+        "locked",
+        "inputs",
+        "scope",
+        "components",
+        "verdict"
+      ],
+      "properties": {
+        "schema_version": { "$ref": "#/$defs/schemaVersion" },
+        "operation": { "const": "verify" },
+        "mode": { "enum": ["full", "changed"] },
+        "identity": { "$ref": "#/$defs/identity" },
+        "project": { "$ref": "#/$defs/token" },
+        "lockDigest": { "$ref": "#/$defs/sha256Digest" },
+        "locked": { "type": "boolean" },
+        "inputs": { "$ref": "#/$defs/inputs" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "components": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/component" }
+        },
+        "verdict": { "$ref": "#/$defs/verdict" }
+      }
+    }
+  ]
+}

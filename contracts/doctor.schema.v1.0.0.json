@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/doctor.schema.v1.0.0.json",
+  "title": "Lekalo doctor, status, and readiness wire",
+  "description": "Closed contract of the issue #92 readiness report family: `lekalo doctor`, `lekalo status`, and `lekalo readiness --phase PHASE`. One versioned document (lekalo/doctor/v1.0.0) whose checks are a closed vocabulary of read-only diagnostic states with closed next-action recipe ids. Doctor is read-only by default and forever; no secret, environment value, host identity, absolute path, or free-form text may appear. The doctor contract version is independent of the product release and of every Model/IR/graph/effect/lock/diagnostic contract version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "schemaVersion",
+    "identity",
+    "report",
+    "productVersion",
+    "verdict",
+    "revisions",
+    "checks"
+  ],
+  "properties": {
+    "status": { "const": "valid" },
+    "schemaVersion": { "const": "lekalo/doctor/v1.0.0" },
+    "identity": { "const": "dev.lekalo.doctor@1.0.0" },
+    "report": {
+      "description": "The closed report-kind vocabulary.",
+      "enum": ["doctor", "status", "readiness"]
+    },
+    "phase": {
+      "description": "The readiness phase; present only when report is `readiness`. `done` is an accepted CLI alias of `release` and never appears on the wire.",
+      "enum": ["model", "implement", "generate", "verify", "release"]
+    },
+    "productVersion": {
+      "description": "The exact product version of the producing binary.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "verdict": {
+      "description": "The derived verdict: blocked when a required check (or, for `doctor`, any check) is blocked or unknown; degraded when any check is not ok; ready otherwise. Missing optional evidence (for example HLV) degrades and is never a core failure.",
+      "enum": ["ready", "degraded", "blocked"]
+    },
+    "revisions": { "$ref": "#/$defs/revisions" },
+    "checks": {
+      "description": "The closed check panel, sorted by id with no duplicates.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/check" }
+    },
+    "recipes": {
+      "description": "The safe-fix recipe preview of `lekalo doctor --fix`; advice only, never executed.",
+      "type": "array",
+      "maxItems": 13,
+      "items": { "$ref": "#/$defs/recipe" }
+    }
+  },
+  "$defs": {
+    "revisions": {
+      "description": "The exact git/model/lock revision facts; nothing more about the host.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git", "model", "lock"],
+      "properties": {
+        "git": { "$ref": "#/$defs/gitRevision" },
+        "model": { "$ref": "#/$defs/modelRevision" },
+        "lock": { "$ref": "#/$defs/lockRevision" }
+      }
+    },
+    "gitRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["ok", "unavailable", "not-a-repository"] },
+        "commit": {
+          "description": "The exact HEAD commit identity (sha1 or sha256 spelling).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "dirty": { "type": "boolean" }
+      }
+    },
+    "modelRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["ok", "unknown"] },
+        "version": {
+          "description": "The exact canonical Model contract version.",
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        }
+      }
+    },
+    "lockRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "description": "fresh: the verifier accepts the committed lock; stale: a newer resolution exists; absent: no lock; invalid: the lock refused verification.",
+          "enum": ["fresh", "stale", "absent", "invalid"]
+        },
+        "digest": {
+          "description": "The exact lock payload digest.",
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "required"],
+      "properties": {
+        "id": {
+          "description": "The closed check vocabulary.",
+          "enum": [
+            "adapters.inventory",
+            "artifacts.drift",
+            "bindings.freshness",
+            "cache.health",
+            "capabilities.profiles",
+            "fs.confinement",
+            "integrations.hlv",
+            "lock.freshness",
+            "model.references",
+            "model.version",
+            "platform.limits",
+            "project.root",
+            "tools.gates"
+          ]
+        },
+        "state": {
+          "description": "ok: nothing to report; degraded: actionable, non-blocking; blocked: a blocking condition; unknown: the check could not run because an upstream input was unavailable.",
+          "enum": ["ok", "degraded", "blocked", "unknown"]
+        },
+        "required": {
+          "description": "Whether the check is required by the selected report kind and phase.",
+          "type": "boolean"
+        },
+        "reason": {
+          "description": "The closed distinguishing token (fresh/absent/stale, corrupt/missing, drift/clean, and so on).",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "nextAction": {
+          "description": "The closed safe-fix recipe id; present exactly when the state is not ok. Advice only.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "diagnostics": {
+          "description": "Preserved registry rule ids of the underlying refusal, normalized and bounded.",
+          "type": "array",
+          "maxItems": 8,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9.-]*$" }
+        },
+        "notes": {
+          "description": "Closed informational tokens (platform facts, external-ref coverage); never a finding.",
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "enum": [
+              "case-sensitive-filesystem",
+              "case-insensitive-filesystem",
+              "posix-path-syntax",
+              "windows-path-syntax",
+              "symlink-privilege-required",
+              "unicode-normalization-sensitive",
+              "ref-openspec",
+              "ref-hlv",
+              "ref-aifhub",
+              "ref-source-native",
+              "ref-lekalo"
+            ]
+          }
+        }
+      }
+    },
+    "recipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "mutating", "steps"],
+      "properties": {
+        "id": {
+          "description": "The closed recipe id.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "mutating": {
+          "description": "Whether the advice would mutate the project; doctor itself never mutates.",
+          "type": "boolean"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "type": "string", "maxLength": 200 }
+        }
+      }
+    }
+  }
+}

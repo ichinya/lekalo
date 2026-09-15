@@ -1,0 +1,1757 @@
+{
+  "schemaVersion": "lekalo/expressions/v1.0.0",
+  "identity": "dev.lekalo.expressions@1.0.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.1.0",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "builtinSemantics": "1.0.0",
+  "expressions": [
+    {
+      "id": "expr.planner/overdue-check",
+      "kind": "condition",
+      "description": "A started task with a due date in the past is overdue.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "due",
+          "type": "datetime",
+          "nullable": true
+        },
+        {
+          "scope": "input",
+          "field": "state",
+          "type": "string"
+        }
+      ],
+      "result": "bool",
+      "span": {
+        "file": "modules/planner/expressions.yaml",
+        "startByte": 128,
+        "startLine": 12,
+        "startColumn": 9,
+        "endByte": 512,
+        "endLine": 18,
+        "endColumn": 22
+      },
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "and",
+          "operands": [
+            {
+              "op": "not-null",
+              "operand": {
+                "op": "ref",
+                "scope": "input",
+                "field": "due"
+              }
+            },
+            {
+              "op": "ne",
+              "left": {
+                "op": "ref",
+                "scope": "input",
+                "field": "state"
+              },
+              "right": {
+                "op": "lit-string",
+                "value": "done"
+              }
+            }
+          ]
+        },
+        "then": {
+          "op": "lt",
+          "left": {
+            "op": "ref",
+            "scope": "input",
+            "field": "due"
+          },
+          "right": {
+            "op": "now"
+          }
+        },
+        "else": {
+          "op": "lit-bool",
+          "value": false
+        }
+      }
+    },
+    {
+      "id": "expr.planner/state-gate",
+      "kind": "condition",
+      "description": "The state must be open and either automated or human-approved.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "state",
+          "type": "string"
+        },
+        {
+          "scope": "actor",
+          "field": "role",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "scope": "input",
+          "field": "project_tags",
+          "type": "set:string"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "and",
+        "operands": [
+          {
+            "op": "in-set",
+            "operand": {
+              "op": "ref",
+              "scope": "input",
+              "field": "state"
+            },
+            "set": {
+              "op": "lit-set",
+              "items": [
+                {
+                  "kind": "string",
+                  "value": "backlog"
+                },
+                {
+                  "kind": "string",
+                  "value": "todo"
+                }
+              ]
+            }
+          },
+          {
+            "op": "if",
+            "condition": {
+              "op": "not-null",
+              "operand": {
+                "op": "ref",
+                "scope": "actor",
+                "field": "role"
+              }
+            },
+            "then": {
+              "op": "eq",
+              "left": {
+                "op": "ref",
+                "scope": "actor",
+                "field": "role"
+              },
+              "right": {
+                "op": "lit-string",
+                "value": "automation"
+              }
+            },
+            "else": {
+              "op": "lit-bool",
+              "value": false
+            }
+          },
+          {
+            "op": "in-set",
+            "operand": {
+              "op": "ref",
+              "scope": "input",
+              "field": "state"
+            },
+            "set": {
+              "op": "ref",
+              "scope": "input",
+              "field": "project_tags"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/burst-guard",
+      "kind": "condition",
+      "description": "Large Monday batches with a legacy kind are suspicious.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "count",
+          "type": "int"
+        },
+        {
+          "scope": "input",
+          "field": "day",
+          "type": "datetime"
+        },
+        {
+          "scope": "input",
+          "field": "kind",
+          "type": "string"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "and",
+        "operands": [
+          {
+            "op": "gt",
+            "left": {
+              "op": "builtin",
+              "name": "int-abs",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "input",
+                  "field": "count"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 1000
+            }
+          },
+          {
+            "op": "eq",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-weekday",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "input",
+                  "field": "day"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 1
+            }
+          },
+          {
+            "op": "le",
+            "left": {
+              "op": "mod",
+              "left": {
+                "op": "ref",
+                "scope": "input",
+                "field": "count"
+              },
+              "right": {
+                "op": "lit-int",
+                "value": 7
+              }
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 3
+            }
+          },
+          {
+            "op": "le",
+            "left": {
+              "op": "div",
+              "left": {
+                "op": "ref",
+                "scope": "input",
+                "field": "count"
+              },
+              "right": {
+                "op": "lit-int",
+                "value": 3
+              }
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 100000
+            }
+          },
+          {
+            "op": "not",
+            "operand": {
+              "op": "eq",
+              "left": {
+                "op": "ref",
+                "scope": "input",
+                "field": "kind"
+              },
+              "right": {
+                "op": "lit-string",
+                "value": "legacy"
+              }
+            }
+          },
+          {
+            "op": "not-in-set",
+            "operand": {
+              "op": "ref",
+              "scope": "input",
+              "field": "kind"
+            },
+            "set": {
+              "op": "lit-set",
+              "items": [
+                {
+                  "kind": "string",
+                  "value": "draft"
+                },
+                {
+                  "kind": "string",
+                  "value": "internal"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/optional-note",
+      "kind": "condition",
+      "description": "A note is either absent or urgent.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "note",
+          "type": "string",
+          "nullable": true
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "is-null",
+          "operand": {
+            "op": "ref",
+            "scope": "input",
+            "field": "note"
+          }
+        },
+        "then": {
+          "op": "lit-bool",
+          "value": true
+        },
+        "else": {
+          "op": "builtin",
+          "name": "string-contains",
+          "args": [
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "note"
+            },
+            {
+              "op": "lit-string",
+              "value": "urgent"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "expr.planner/title-open",
+      "kind": "condition",
+      "description": "Bracketed titles open a review thread.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "title",
+          "type": "string"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "builtin",
+        "name": "string-starts-with",
+        "args": [
+          {
+            "op": "ref",
+            "scope": "entity",
+            "field": "title"
+          },
+          {
+            "op": "lit-string",
+            "value": "["
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/search-match",
+      "kind": "condition",
+      "description": "Case-insensitive containment on the title.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "title",
+          "type": "string"
+        },
+        {
+          "scope": "input",
+          "field": "query",
+          "type": "string"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "or",
+        "operands": [
+          {
+            "op": "builtin",
+            "name": "string-contains",
+            "args": [
+              {
+                "op": "builtin",
+                "name": "string-lower",
+                "args": [
+                  {
+                    "op": "ref",
+                    "scope": "entity",
+                    "field": "title"
+                  }
+                ]
+              },
+              {
+                "op": "builtin",
+                "name": "string-lower",
+                "args": [
+                  {
+                    "op": "ref",
+                    "scope": "input",
+                    "field": "query"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "builtin",
+            "name": "string-ends-with",
+            "args": [
+              {
+                "op": "builtin",
+                "name": "string-lower",
+                "args": [
+                  {
+                    "op": "ref",
+                    "scope": "entity",
+                    "field": "title"
+                  }
+                ]
+              },
+              {
+                "op": "builtin",
+                "name": "string-lower",
+                "args": [
+                  {
+                    "op": "ref",
+                    "scope": "input",
+                    "field": "query"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/period-check",
+      "kind": "condition",
+      "description": "The record is at least a day old and stamped this year.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "age",
+          "type": "duration"
+        },
+        {
+          "scope": "entity",
+          "field": "created",
+          "type": "datetime"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "and",
+        "operands": [
+          {
+            "op": "ge",
+            "left": {
+              "op": "builtin",
+              "name": "duration-seconds",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "age"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 86400
+            }
+          },
+          {
+            "op": "eq",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-year",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "created"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 2026
+            }
+          },
+          {
+            "op": "ge",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-month",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "created"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 1
+            }
+          },
+          {
+            "op": "le",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-day",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "created"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 31
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/urgency-score",
+      "kind": "assignment",
+      "description": "The urgency score doubles the net estimate, one otherwise.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "estimate",
+          "type": "int"
+        },
+        {
+          "scope": "input",
+          "field": "penalty",
+          "type": "int"
+        }
+      ],
+      "result": "int",
+      "target": {
+        "scope": "entity",
+        "field": "score",
+        "type": "int"
+      },
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "ge",
+          "left": {
+            "op": "sub",
+            "left": {
+              "op": "ref",
+              "scope": "input",
+              "field": "estimate"
+            },
+            "right": {
+              "op": "ref",
+              "scope": "input",
+              "field": "penalty"
+            }
+          },
+          "right": {
+            "op": "lit-int",
+            "value": 5
+          }
+        },
+        "then": {
+          "op": "mul",
+          "left": {
+            "op": "sub",
+            "left": {
+              "op": "ref",
+              "scope": "input",
+              "field": "estimate"
+            },
+            "right": {
+              "op": "ref",
+              "scope": "input",
+              "field": "penalty"
+            }
+          },
+          "right": {
+            "op": "lit-int",
+            "value": 2
+          }
+        },
+        "else": {
+          "op": "lit-int",
+          "value": 1
+        }
+      }
+    },
+    {
+      "id": "expr.planner/slug-label",
+      "kind": "assignment",
+      "description": "The label is the lowered title plus its length.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "title",
+          "type": "string"
+        }
+      ],
+      "result": "string",
+      "target": {
+        "scope": "input",
+        "field": "label",
+        "type": "string"
+      },
+      "body": {
+        "op": "builtin",
+        "name": "string-concat",
+        "args": [
+          {
+            "op": "builtin",
+            "name": "string-lower",
+            "args": [
+              {
+                "op": "ref",
+                "scope": "input",
+                "field": "title"
+              }
+            ]
+          },
+          {
+            "op": "builtin",
+            "name": "cast-int-to-string",
+            "args": [
+              {
+                "op": "builtin",
+                "name": "string-length",
+                "args": [
+                  {
+                    "op": "ref",
+                    "scope": "input",
+                    "field": "title"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/copy-tag",
+      "kind": "assignment",
+      "description": "The display tag is the uppercased kind plus a bang.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "kind",
+          "type": "string"
+        }
+      ],
+      "result": "string",
+      "target": {
+        "scope": "input",
+        "field": "display",
+        "type": "string"
+      },
+      "body": {
+        "op": "builtin",
+        "name": "string-concat",
+        "args": [
+          {
+            "op": "builtin",
+            "name": "string-upper",
+            "args": [
+              {
+                "op": "ref",
+                "scope": "input",
+                "field": "kind"
+              }
+            ]
+          },
+          {
+            "op": "lit-string",
+            "value": "!"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/review-due",
+      "kind": "assignment",
+      "description": "The review date is one week after the last review, now otherwise.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "reviewed_at",
+          "type": "datetime",
+          "nullable": true
+        }
+      ],
+      "result": "datetime",
+      "target": {
+        "scope": "entity",
+        "field": "review_at",
+        "type": "datetime"
+      },
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "not-null",
+          "operand": {
+            "op": "ref",
+            "scope": "entity",
+            "field": "reviewed_at"
+          }
+        },
+        "then": {
+          "op": "add",
+          "left": {
+            "op": "ref",
+            "scope": "entity",
+            "field": "reviewed_at"
+          },
+          "right": {
+            "op": "lit-duration",
+            "value": 604800
+          }
+        },
+        "else": {
+          "op": "now"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/parsed-limit",
+      "kind": "assignment",
+      "description": "The limit comes from a canonical decimal string.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "raw_limit",
+          "type": "string"
+        }
+      ],
+      "result": "int",
+      "target": {
+        "scope": "input",
+        "field": "limit",
+        "type": "int"
+      },
+      "body": {
+        "op": "builtin",
+        "name": "cast-string-to-int",
+        "args": [
+          {
+            "op": "ref",
+            "scope": "input",
+            "field": "raw_limit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/spread",
+      "kind": "assignment",
+      "description": "The spread divides the total by the parts, truncating.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "total",
+          "type": "int"
+        },
+        {
+          "scope": "input",
+          "field": "parts",
+          "type": "int"
+        }
+      ],
+      "result": "int",
+      "target": {
+        "scope": "entity",
+        "field": "spread",
+        "type": "int"
+      },
+      "body": {
+        "op": "div",
+        "left": {
+          "op": "ref",
+          "scope": "input",
+          "field": "total"
+        },
+        "right": {
+          "op": "ref",
+          "scope": "input",
+          "field": "parts"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/spread-rest",
+      "kind": "assignment",
+      "description": "The remainder of the spread division.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "total",
+          "type": "int"
+        },
+        {
+          "scope": "input",
+          "field": "parts",
+          "type": "int"
+        }
+      ],
+      "result": "int",
+      "target": {
+        "scope": "entity",
+        "field": "spread_rest",
+        "type": "int"
+      },
+      "body": {
+        "op": "mod",
+        "left": {
+          "op": "ref",
+          "scope": "input",
+          "field": "total"
+        },
+        "right": {
+          "op": "ref",
+          "scope": "input",
+          "field": "parts"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/priority-flag",
+      "kind": "condition",
+      "description": "An or nested inside an and must not re-associate in any target.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "flag_a",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_b",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_c",
+          "type": "bool"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "and",
+        "operands": [
+          {
+            "op": "or",
+            "operands": [
+              {
+                "op": "ref",
+                "scope": "input",
+                "field": "flag_a"
+              },
+              {
+                "op": "ref",
+                "scope": "input",
+                "field": "flag_b"
+              }
+            ]
+          },
+          {
+            "op": "ref",
+            "scope": "input",
+            "field": "flag_c"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/archive-year",
+      "kind": "condition",
+      "description": "Calendar accessors must floor over pre-1970 instants.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "created",
+          "type": "datetime"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "and",
+        "operands": [
+          {
+            "op": "eq",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-year",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "created"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 1969
+            }
+          },
+          {
+            "op": "eq",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-weekday",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "created"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 3
+            }
+          },
+          {
+            "op": "eq",
+            "left": {
+              "op": "builtin",
+              "name": "datetime-day",
+              "args": [
+                {
+                  "op": "ref",
+                  "scope": "entity",
+                  "field": "created"
+                }
+              ]
+            },
+            "right": {
+              "op": "lit-int",
+              "value": 31
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/suffix-note",
+      "kind": "condition",
+      "description": "Every string, including the empty one, ends with the empty suffix.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "note",
+          "type": "string"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "builtin",
+        "name": "string-ends-with",
+        "args": [
+          {
+            "op": "ref",
+            "scope": "input",
+            "field": "note"
+          },
+          {
+            "op": "lit-string",
+            "value": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/tag-set",
+      "kind": "assignment",
+      "description": "A set literal is a legal assignment body and normalizes identically.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "kind",
+          "type": "string"
+        }
+      ],
+      "result": "set:string",
+      "target": {
+        "scope": "input",
+        "field": "tags",
+        "type": "set:string"
+      },
+      "body": {
+        "op": "lit-set",
+        "items": [
+          {
+            "kind": "string",
+            "value": "gamma"
+          },
+          {
+            "kind": "string",
+            "value": "alpha"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/urgent-tags",
+      "kind": "assignment",
+      "description": "Set literals are legal conditional branches on both sides.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "mode",
+          "type": "string"
+        }
+      ],
+      "result": "set:string",
+      "target": {
+        "scope": "input",
+        "field": "urgent_tags",
+        "type": "set:string"
+      },
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "eq",
+          "left": {
+            "op": "ref",
+            "scope": "input",
+            "field": "mode"
+          },
+          "right": {
+            "op": "lit-string",
+            "value": "fast"
+          }
+        },
+        "then": {
+          "op": "lit-set",
+          "items": [
+            {
+              "kind": "string",
+              "value": "beta"
+            },
+            {
+              "kind": "string",
+              "value": "alpha"
+            }
+          ]
+        },
+        "else": {
+          "op": "lit-set",
+          "items": [
+            {
+              "kind": "string",
+              "value": "delta"
+            },
+            {
+              "kind": "string",
+              "value": "charlie"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "expr.planner/number-set",
+      "kind": "assignment",
+      "description": "An int set binding normalizes to the same sorted order everywhere.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "nums",
+          "type": "set:int"
+        }
+      ],
+      "result": "set:int",
+      "target": {
+        "scope": "input",
+        "field": "sorted_nums",
+        "type": "set:int"
+      },
+      "body": {
+        "op": "ref",
+        "scope": "input",
+        "field": "nums"
+      }
+    },
+    {
+      "id": "expr.planner/flag-set",
+      "kind": "assignment",
+      "description": "A bool set binding sorts false before true everywhere.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "flags",
+          "type": "set:bool"
+        }
+      ],
+      "result": "set:bool",
+      "target": {
+        "scope": "input",
+        "field": "sorted_flags",
+        "type": "set:bool"
+      },
+      "body": {
+        "op": "ref",
+        "scope": "input",
+        "field": "flags"
+      }
+    },
+    {
+      "id": "expr.planner/legacy-days",
+      "kind": "assignment",
+      "description": "A datetime set binding sorts by instant and renders canonically.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "days",
+          "type": "set:datetime"
+        }
+      ],
+      "result": "set:datetime",
+      "target": {
+        "scope": "entity",
+        "field": "sorted_days",
+        "type": "set:datetime"
+      },
+      "body": {
+        "op": "ref",
+        "scope": "entity",
+        "field": "days"
+      }
+    },
+    {
+      "id": "expr.planner/span-set",
+      "kind": "assignment",
+      "description": "A duration set binding normalizes like every other member type.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "spans",
+          "type": "set:duration"
+        }
+      ],
+      "result": "set:duration",
+      "target": {
+        "scope": "input",
+        "field": "sorted_spans",
+        "type": "set:duration"
+      },
+      "body": {
+        "op": "ref",
+        "scope": "input",
+        "field": "spans"
+      }
+    },
+    {
+      "id": "expr.planner/history-stamp",
+      "kind": "assignment",
+      "description": "A pre-1970 instant renders the exact civil date it declares.",
+      "params": [],
+      "result": "datetime",
+      "target": {
+        "scope": "entity",
+        "field": "stamped",
+        "type": "datetime"
+      },
+      "body": {
+        "op": "lit-datetime",
+        "value": "1969-12-31T23:59:59Z"
+      }
+    },
+    {
+      "id": "expr.planner/origin-stamp",
+      "kind": "assignment",
+      "description": "The year-1 floor renders without shifting a civil day.",
+      "params": [],
+      "result": "datetime",
+      "target": {
+        "scope": "entity",
+        "field": "origin",
+        "type": "datetime"
+      },
+      "body": {
+        "op": "lit-datetime",
+        "value": "0001-01-01T00:00:01Z"
+      }
+    },
+    {
+      "id": "expr.planner/underflow-guard",
+      "kind": "assignment",
+      "description": "Subtracting below year 1 refuses with the closed overflow token.",
+      "params": [],
+      "result": "datetime",
+      "target": {
+        "scope": "entity",
+        "field": "underflow",
+        "type": "datetime"
+      },
+      "body": {
+        "op": "sub",
+        "left": {
+          "op": "lit-datetime",
+          "value": "0001-01-01T00:00:00Z"
+        },
+        "right": {
+          "op": "lit-duration",
+          "value": 1
+        }
+      }
+    },
+    {
+      "id": "expr.planner/wide-label",
+      "kind": "assignment",
+      "description": "The concat bound counts UTF-8 bytes, not code units.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "left",
+          "type": "string"
+        },
+        {
+          "scope": "input",
+          "field": "right",
+          "type": "string"
+        }
+      ],
+      "result": "string",
+      "target": {
+        "scope": "input",
+        "field": "wide",
+        "type": "string"
+      },
+      "body": {
+        "op": "builtin",
+        "name": "string-concat",
+        "args": [
+          {
+            "op": "ref",
+            "scope": "input",
+            "field": "left"
+          },
+          {
+            "op": "ref",
+            "scope": "input",
+            "field": "right"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expr.planner/and-eq-gate",
+      "kind": "condition",
+      "description": "A conjunction compared on the left of an equality keeps its grouping.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "flag_a",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_b",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_c",
+          "type": "bool"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "eq",
+        "left": {
+          "op": "and",
+          "operands": [
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_a"
+            },
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_b"
+            }
+          ]
+        },
+        "right": {
+          "op": "ref",
+          "scope": "input",
+          "field": "flag_c"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/and-eq-gate-rev",
+      "kind": "condition",
+      "description": "A conjunction compared on the right of an equality keeps its grouping.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "flag_a",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_b",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_c",
+          "type": "bool"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "eq",
+        "left": {
+          "op": "ref",
+          "scope": "input",
+          "field": "flag_c"
+        },
+        "right": {
+          "op": "and",
+          "operands": [
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_a"
+            },
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_b"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "expr.planner/or-ne-gate",
+      "kind": "condition",
+      "description": "A disjunction compared on the left of an inequality keeps its grouping.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "flag_a",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_b",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_c",
+          "type": "bool"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "ne",
+        "left": {
+          "op": "or",
+          "operands": [
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_a"
+            },
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_b"
+            }
+          ]
+        },
+        "right": {
+          "op": "ref",
+          "scope": "input",
+          "field": "flag_c"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/or-ne-gate-rev",
+      "kind": "condition",
+      "description": "A disjunction compared on the right of an inequality keeps its grouping.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "flag_a",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_b",
+          "type": "bool"
+        },
+        {
+          "scope": "input",
+          "field": "flag_c",
+          "type": "bool"
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "ne",
+        "left": {
+          "op": "ref",
+          "scope": "input",
+          "field": "flag_c"
+        },
+        "right": {
+          "op": "or",
+          "operands": [
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_a"
+            },
+            {
+              "op": "ref",
+              "scope": "input",
+              "field": "flag_b"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "expr.planner/guarded-note-lt",
+      "kind": "condition",
+      "description": "A guarded nullable string orders by the contract byte order.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "note",
+          "type": "string",
+          "nullable": true
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "not-null",
+          "operand": {
+            "op": "ref",
+            "scope": "input",
+            "field": "note"
+          }
+        },
+        "then": {
+          "op": "lt",
+          "left": {
+            "op": "ref",
+            "scope": "input",
+            "field": "note"
+          },
+          "right": {
+            "op": "lit-string",
+            "value": "2"
+          }
+        },
+        "else": {
+          "op": "lit-bool",
+          "value": false
+        }
+      }
+    },
+    {
+      "id": "expr.planner/guarded-tag-membership",
+      "kind": "condition",
+      "description": "A guarded nullable set keeps its typed membership helper.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "tags",
+          "type": "set:string",
+          "nullable": true
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "not-null",
+          "operand": {
+            "op": "ref",
+            "scope": "input",
+            "field": "tags"
+          }
+        },
+        "then": {
+          "op": "in-set",
+          "operand": {
+            "op": "lit-string",
+            "value": "x"
+          },
+          "set": {
+            "op": "ref",
+            "scope": "input",
+            "field": "tags"
+          }
+        },
+        "else": {
+          "op": "lit-bool",
+          "value": false
+        }
+      }
+    },
+    {
+      "id": "expr.planner/nested-guard-label",
+      "kind": "assignment",
+      "description": "A nested conditional inherits the outer null guard in its inner then-branch.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "note",
+          "type": "string",
+          "nullable": true
+        }
+      ],
+      "result": "string",
+      "target": {
+        "scope": "entity",
+        "field": "guard_label",
+        "type": "string"
+      },
+      "body": {
+        "op": "if",
+        "condition": {
+          "op": "not-null",
+          "operand": {
+            "op": "ref",
+            "scope": "input",
+            "field": "note"
+          }
+        },
+        "then": {
+          "op": "if",
+          "condition": {
+            "op": "lit-bool",
+            "value": true
+          },
+          "then": {
+            "op": "ref",
+            "scope": "input",
+            "field": "note"
+          },
+          "else": {
+            "op": "lit-string",
+            "value": "fallback"
+          }
+        },
+        "else": {
+          "op": "lit-string",
+          "value": "null"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/duration-scale",
+      "kind": "assignment",
+      "description": "A duration scales on the left of a multiplication with the duration token.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "age",
+          "type": "duration"
+        },
+        {
+          "scope": "input",
+          "field": "factor",
+          "type": "int"
+        }
+      ],
+      "result": "duration",
+      "target": {
+        "scope": "entity",
+        "field": "duration_scale",
+        "type": "duration"
+      },
+      "body": {
+        "op": "mul",
+        "left": {
+          "op": "ref",
+          "scope": "entity",
+          "field": "age"
+        },
+        "right": {
+          "op": "ref",
+          "scope": "input",
+          "field": "factor"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/duration-scale-rev",
+      "kind": "assignment",
+      "description": "A duration scales on the right of a multiplication with the duration token.",
+      "params": [
+        {
+          "scope": "entity",
+          "field": "age",
+          "type": "duration"
+        },
+        {
+          "scope": "input",
+          "field": "factor",
+          "type": "int"
+        }
+      ],
+      "result": "duration",
+      "target": {
+        "scope": "entity",
+        "field": "duration_scale_rev",
+        "type": "duration"
+      },
+      "body": {
+        "op": "mul",
+        "left": {
+          "op": "ref",
+          "scope": "input",
+          "field": "factor"
+        },
+        "right": {
+          "op": "ref",
+          "scope": "entity",
+          "field": "age"
+        }
+      }
+    },
+    {
+      "id": "expr.planner/set-order-operand",
+      "kind": "condition",
+      "description": "Membership evaluates the operand before the set: both children fail, the operand token wins.",
+      "params": [],
+      "result": "bool",
+      "body": {
+        "op": "in-set",
+        "operand": {
+          "op": "div",
+          "left": {"op": "lit-int", "value": 1},
+          "right": {"op": "lit-int", "value": 0}
+        },
+        "set": {
+          "op": "if",
+          "condition": {
+            "op": "eq",
+            "left": {
+              "op": "mod",
+              "left": {"op": "lit-int", "value": 1},
+              "right": {"op": "lit-int", "value": 0}
+            },
+            "right": {"op": "lit-int", "value": 0}
+          },
+          "then": {"op": "lit-set", "items": [{"kind": "int", "value": 1}]},
+          "else": {"op": "lit-set", "items": [{"kind": "int", "value": 1}]}
+        }
+      }
+    },
+    {
+      "id": "expr.planner/set-order-operand-rev",
+      "kind": "condition",
+      "description": "Membership evaluates the operand before the set in the reversed token direction too.",
+      "params": [],
+      "result": "bool",
+      "body": {
+        "op": "in-set",
+        "operand": {
+          "op": "mod",
+          "left": {"op": "lit-int", "value": 1},
+          "right": {"op": "lit-int", "value": 0}
+        },
+        "set": {
+          "op": "if",
+          "condition": {
+            "op": "eq",
+            "left": {
+              "op": "div",
+              "left": {"op": "lit-int", "value": 1},
+              "right": {"op": "lit-int", "value": 0}
+            },
+            "right": {"op": "lit-int", "value": 0}
+          },
+          "then": {"op": "lit-set", "items": [{"kind": "int", "value": 1}]},
+          "else": {"op": "lit-set", "items": [{"kind": "int", "value": 1}]}
+        }
+      }
+    },
+    {
+      "id": "expr.planner/ctor-guard",
+      "kind": "condition",
+      "description": "A field legally named constructor is an ordinary declared reference.",
+      "params": [
+        {
+          "scope": "input",
+          "field": "constructor",
+          "type": "int",
+          "nullable": true
+        }
+      ],
+      "result": "bool",
+      "body": {
+        "op": "is-null",
+        "operand": {"op": "ref", "scope": "input", "field": "constructor"}
+      }
+    }
+  ]
+}

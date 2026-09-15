@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "lekalo/implementation/v1.0.0",
+  "identity": "dev.lekalo.implementation@1.0.0",
+  "projectId": "schedule",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.1.0",
+    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "contracts": [
+    {
+      "symbol": "schedule.calculate",
+      "contract": "schedule.calculator/v1"
+    }
+  ]
+}

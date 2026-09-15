@@ -1,0 +1,1 @@
+{"schema_version":"1.0.0","definitions":[{"id":"planner","kind":"project","version":1,"description":"Focus planner example model for Lekalo Model v0.1","derived_from":["PLANNER-REQ-001","PLANNER-REQ-002"]}]}

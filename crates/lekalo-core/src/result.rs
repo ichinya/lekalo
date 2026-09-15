@@ -174,6 +174,11 @@ pub enum DomainResult {
         capability: Capability,
         diagnostics: DiagnosticSet,
     },
+    /// A negotiated external operation is unsupported, without inventing a
+    /// foundation CLI capability on its behalf.
+    UnsupportedOperation {
+        diagnostics: DiagnosticSet,
+    },
     UnsupportedVersion {
         diagnostics: DiagnosticSet,
     },
@@ -313,7 +318,7 @@ impl DomainResult {
             Self::Invalid { .. } => Status::Invalid,
             Self::Denied { .. } => Status::Denied,
             Self::Unavailable { .. } => Status::Unavailable,
-            Self::Unsupported { .. } => Status::Unsupported,
+            Self::Unsupported { .. } | Self::UnsupportedOperation { .. } => Status::Unsupported,
             Self::UnsupportedVersion { .. } => Status::UnsupportedVersion,
         }
     }
@@ -341,6 +346,7 @@ impl DomainResult {
             Self::Invalid { diagnostics }
             | Self::Denied { diagnostics }
             | Self::Unavailable { diagnostics }
+            | Self::UnsupportedOperation { diagnostics }
             | Self::UnsupportedVersion { diagnostics } => diagnostics.as_slice(),
             Self::Unsupported { diagnostics, .. } => diagnostics.as_slice(),
         }
@@ -401,6 +407,7 @@ impl DomainResult {
             | Self::Denied { .. }
             | Self::Unavailable { .. }
             | Self::Unsupported { .. }
+            | Self::UnsupportedOperation { .. }
             | Self::UnsupportedVersion { .. } => {
                 #[derive(Serialize)]
                 struct FailureEnvelope<'a> {
@@ -526,12 +533,12 @@ mod tests {
 
     #[test]
     fn version_payload_matches_the_published_bytes() {
-        let result = DomainResult::version("0.1.31");
+        let result = DomainResult::version("0.2.16");
         assert_eq!(
             result.to_json_string(),
-            "{\n  \"status\": \"valid\",\n  \"version\": \"0.1.31\"\n}"
+            "{\n  \"status\": \"valid\",\n  \"version\": \"0.2.16\"\n}"
         );
-        assert_eq!(result.to_human_string("lekalo"), "lekalo 0.1.31");
+        assert_eq!(result.to_human_string("lekalo"), "lekalo 0.2.16");
     }
 
     #[test]

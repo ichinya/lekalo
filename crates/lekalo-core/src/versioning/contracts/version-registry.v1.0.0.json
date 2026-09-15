@@ -49,9 +49,18 @@
       "migrations": []
     },
     "protocol": {
-      "current": null,
-      "aliases": [],
-      "versions": [],
+      "current": "1.0.0",
+      "aliases": [
+        { "alias": "v1", "version": "1.0.0" }
+      ],
+      "versions": [
+        {
+          "version": "1.0.0",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "The published target process protocol lekalo.target/v1 (dev.lekalo.protocol@1.0.0): process envelope, handshake, transport, and error classification for external target adapters (issue #27)."
+        }
+      ],
       "migrations": []
     }
   }

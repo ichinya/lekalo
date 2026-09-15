@@ -1,0 +1,807 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/storage-projection.schema.v1.0.0.json",
+  "title": "Lekalo Domain Relations and Storage Projections",
+  "description": "Closed independent attachment contract separating the target-neutral domain model (entity identity, value types, aggregate ownership, semantic relations with cardinality and explicit delete behavior, invariant and lifecycle references, visibility) from target-namespaced storage projections (tables, columns, keys, indexes, foreign keys, join tables, technical and generated fields, soft-delete and tenant policies, timestamps, migration history) for one project (issue #65). Storage projections are declared explicitly or derived from the same domain model by the published mapping rules; no hidden ORM behavior, no Eloquent or SQL syntax in the domain layer, storage mapping optional for external entities, and every relation carries scenario or constraint coverage. The attachment is pure declaration and validation data: it never executes, never claims enforcement, and never carries source text, physical paths, raw tokens, credentials, runtime values, timestamps, host data, or provider output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "entities",
+    "relations",
+    "projections"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/storage-projection/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.storage-projection@1.0.0"
+    },
+    "attachmentRevision": {
+      "description": "The exact revision of this attachment; a change is a wire-layer fact, classified separately from domain and storage changes.",
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "modelRef": {
+      "description": "The exact bound source Model contract: accepted version plus canonical digest.",
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "description": "The exact bound IR contract: accepted identity plus canonical digest.",
+      "$ref": "#/$defs/irRef"
+    },
+    "sourceMapRef": {
+      "description": "Optional accepted source-map reference binding declared occurrences to their logical origins.",
+      "$ref": "#/$defs/namespacedId"
+    },
+    "entities": {
+      "description": "The declared domain entities: stable keys independent of both the Model symbol id and any table name.",
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/domainEntity"
+      }
+    },
+    "relations": {
+      "description": "The declared semantic relations between entities with closed kinds, explicit cardinality, and explicit delete behavior.",
+      "type": "array",
+      "maxItems": 2048,
+      "items": {
+        "$ref": "#/$defs/relation"
+      }
+    },
+    "projections": {
+      "description": "The declared target-namespaced storage projections. Every local entity is mapped exactly once per projection; external entities are never mapped.",
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/projection"
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "namespacedId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "safeText": {
+      "description": "Bounded declaration text. Never source text, paths, credentials, URLs, runtime values, or provider output.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;()/_-]*$"
+    },
+    "entityKey": {
+      "description": "The stable domain entity key. Independent of the Model symbol id and of every storage table name; renames of either never touch it.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "storageName": {
+      "description": "One lowercase snake-case storage identifier (table or column). Never quoted, dotted, or path-shaped.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "visibility": {
+      "description": "The closed domain visibility. Only public members enter the public DTO projection.",
+      "enum": [
+        "public",
+        "internal",
+        "private"
+      ]
+    },
+    "domainType": {
+      "description": "One closed domain value type: the target-neutral leaf vocabulary of the declared field. Parameters are present exactly when the name requires them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "name": {
+                "const": "string"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "then": {
+            "required": [
+              "length"
+            ],
+            "properties": {
+              "length": {
+                "description": "The exact length of the string type in Unicode scalar values (1..4096).",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4096
+              },
+              "precision": false,
+              "scale": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "name": {
+                "const": "decimal"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "then": {
+            "required": [
+              "precision",
+              "scale"
+            ],
+            "properties": {
+              "length": false,
+              "precision": {
+                "description": "The exact decimal precision (1..38).",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 38
+              },
+              "scale": {
+                "description": "The exact decimal scale (0..precision).",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 38
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "name": {
+                "enum": [
+                  "boolean",
+                  "integer",
+                  "text",
+                  "uuid",
+                  "date",
+                  "timestamp",
+                  "binary",
+                  "json"
+                ]
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "then": {
+            "properties": {
+              "length": false,
+              "precision": false,
+              "scale": false
+            }
+          }
+        }
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "boolean",
+            "integer",
+            "decimal",
+            "string",
+            "text",
+            "uuid",
+            "date",
+            "timestamp",
+            "binary",
+            "json"
+          ]
+        },
+        "length": {
+          "description": "The exact length of the string type in Unicode scalar values (1..4096).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "precision": {
+          "description": "The exact decimal precision (1..38).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 38
+        },
+        "scale": {
+          "description": "The exact decimal scale (0..precision).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 38
+        }
+      }
+    },
+    "scenarioRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioId",
+        "scenarioVersion",
+        "irDigest"
+      ],
+      "properties": {
+        "scenarioId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 191,
+          "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,2}$"
+        },
+        "scenarioVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "irDigest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "enum": [
+            "0.1.0",
+            "1.0.0"
+          ]
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.1.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "domainEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityKey",
+        "entity",
+        "visibility"
+      ],
+      "properties": {
+        "entityKey": {
+          "$ref": "#/$defs/entityKey"
+        },
+        "entity": {
+          "description": "The referenced Model symbol id. A rename of this id is a domain rebind and never implies a table rename.",
+          "$ref": "#/$defs/semanticId"
+        },
+        "external": {
+          "description": "True for an external or remote entity that this project never stores locally; such an entity must not appear in any storage projection.",
+          "type": "boolean"
+        },
+        "aggregateRoot": {
+          "description": "True when this entity is the root of its aggregate.",
+          "type": "boolean"
+        },
+        "aggregateOwner": {
+          "description": "The entity key of the aggregate root this entity belongs to.",
+          "$ref": "#/$defs/entityKey"
+        },
+        "visibility": {
+          "$ref": "#/$defs/visibility"
+        },
+        "fields": {
+          "description": "The declared domain fields with target-neutral value types and visibility. Technical storage fields never appear here.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/domainField"
+          }
+        },
+        "invariants": {
+          "description": "Opaque references into the #63 invariant family. Resolution stays with that owner.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/namespacedId"
+          }
+        },
+        "stateSpaces": {
+          "description": "Opaque references into the #63 state-space family. Resolution stays with that owner.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/namespacedId"
+          }
+        },
+        "description": {
+          "$ref": "#/$defs/safeText"
+        }
+      }
+    },
+    "domainField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "type",
+        "visibility"
+      ],
+      "properties": {
+        "field": {
+          "description": "One lowercase field name; never carries a dot.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "type": {
+          "$ref": "#/$defs/domainType"
+        },
+        "required": {
+          "description": "True when the field is mandatory (a NOT NULL column without backfill obligation in every projection); the default is optional.",
+          "type": "boolean"
+        },
+        "visibility": {
+          "$ref": "#/$defs/visibility"
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relationId",
+        "owner",
+        "target",
+        "kind",
+        "min",
+        "max",
+        "deleteBehavior"
+      ],
+      "properties": {
+        "relationId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "owner": {
+          "$ref": "#/$defs/entityKey"
+        },
+        "target": {
+          "$ref": "#/$defs/entityKey"
+        },
+        "kind": {
+          "enum": [
+            "one_to_one",
+            "one_to_many",
+            "many_to_many",
+            "external_reference",
+            "aggregate_child",
+            "optional_reference",
+            "polymorphic"
+          ]
+        },
+        "min": {
+          "description": "The inclusive minimum number of targets per owner (0..1000000).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "max": {
+          "description": "The inclusive maximum number of targets per owner (min..1000000).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "deleteBehavior": {
+          "description": "The explicit delete behavior: cascade deletes the targets, restrict forbids the delete, detach severs the relation and keeps both sides.",
+          "enum": [
+            "cascade",
+            "restrict",
+            "detach"
+          ]
+        },
+        "foreignKey": {
+          "description": "The explicit foreign-key column for the storage kinds that materialize one (one_to_one, one_to_many, aggregate_child on the target table; optional_reference on the owner table). Forbidden on many_to_many, external_reference, and polymorphic.",
+          "$ref": "#/$defs/storageName"
+        },
+        "scenarios": {
+          "description": "Pinned Scenario IR references covering this relation.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/scenarioRef"
+          }
+        },
+        "constraints": {
+          "description": "Opaque references into the #63 invariant family covering this relation.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/namespacedId"
+          }
+        },
+        "description": {
+          "$ref": "#/$defs/safeText"
+        }
+      }
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "tables"
+      ],
+      "properties": {
+        "namespace": {
+          "description": "The closed target namespace of this projection.",
+          "enum": [
+            "postgres",
+            "laravel"
+          ]
+        },
+        "tables": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/table"
+          }
+        },
+        "joins": {
+          "description": "The explicit join tables materializing many-to-many relations in this namespace. Every many-to-many relation of a mapped entity must be joined exactly once.",
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/join"
+          }
+        },
+        "polymorphics": {
+          "description": "The explicit polymorphic materializations of this namespace. Polymorphic relations exist only where a namespace opts in with declared columns.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/polymorphic"
+          }
+        },
+        "migrationHistory": {
+          "description": "The declared migration history of this projection with a visible data risk per migration.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/migration"
+          }
+        }
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entity",
+        "table",
+        "primaryKey"
+      ],
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/entityKey"
+        },
+        "table": {
+          "$ref": "#/$defs/storageName"
+        },
+        "primaryKey": {
+          "description": "The primary key columns (1..8), resolved against the derived and declared columns of this table.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/storageName"
+          }
+        },
+        "technicalColumns": {
+          "description": "Storage-only technical columns. They never enter the public DTO projection.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/technicalColumn"
+          }
+        },
+        "generatedColumns": {
+          "description": "Generated or computed columns with a closed generation kind; the generation stays target-owned and declarative.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/generatedColumn"
+          }
+        },
+        "softDelete": {
+          "description": "The explicit soft-delete policy of this table.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "column"
+          ],
+          "properties": {
+            "column": {
+              "$ref": "#/$defs/storageName"
+            }
+          }
+        },
+        "tenantKey": {
+          "description": "The explicit tenant partition key of this table with its declared storage type.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "column",
+            "type"
+          ],
+          "properties": {
+            "column": {
+              "$ref": "#/$defs/storageName"
+            },
+            "type": {
+              "$ref": "#/$defs/storageType"
+            }
+          }
+        },
+        "timestamps": {
+          "description": "The explicit audit and version timestamp columns of this table.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "createdAt",
+            "updatedAt"
+          ],
+          "properties": {
+            "createdAt": {
+              "$ref": "#/$defs/storageName"
+            },
+            "updatedAt": {
+              "$ref": "#/$defs/storageName"
+            }
+          }
+        },
+        "indexes": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/index"
+          }
+        }
+      }
+    },
+    "technicalColumn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "purpose"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/storageName"
+        },
+        "type": {
+          "$ref": "#/$defs/storageType"
+        },
+        "purpose": {
+          "$ref": "#/$defs/safeText"
+        },
+        "nullable": {
+          "description": "True when the technical column accepts null; the default is true.",
+          "type": "boolean"
+        }
+      }
+    },
+    "generatedColumn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/storageName"
+        },
+        "kind": {
+          "enum": [
+            "identity",
+            "computed",
+            "sequence"
+          ]
+        },
+        "type": {
+          "description": "The declared storage type; the identity and sequence kinds default to the namespace 64-bit integer type.",
+          "$ref": "#/$defs/storageType"
+        }
+      }
+    },
+    "index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "columns",
+        "unique"
+      ],
+      "properties": {
+        "name": {
+          "description": "Optional bounded index name.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/storageName"
+          }
+        },
+        "unique": {
+          "type": "boolean"
+        }
+      }
+    },
+    "join": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation",
+        "table",
+        "columns"
+      ],
+      "properties": {
+        "relation": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "table": {
+          "$ref": "#/$defs/storageName"
+        },
+        "columns": {
+          "description": "Exactly two join columns: the owner key column, then the target key column.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/storageName"
+          }
+        },
+        "uniquePair": {
+          "description": "True when the owner-target pair is unique in the join table.",
+          "type": "boolean"
+        }
+      }
+    },
+    "polymorphic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation",
+        "keyColumn",
+        "typeColumn"
+      ],
+      "properties": {
+        "relation": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "keyColumn": {
+          "description": "The column on the owner table holding the target key.",
+          "$ref": "#/$defs/storageName"
+        },
+        "typeColumn": {
+          "description": "The column on the owner table holding the target discriminator.",
+          "$ref": "#/$defs/storageName"
+        }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "migrationId",
+        "tables",
+        "risk"
+      ],
+      "properties": {
+        "migrationId": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "tables": {
+          "description": "The table names this migration touches; every name must exist in this projection.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/storageName"
+          }
+        },
+        "risk": {
+          "description": "The declared data risk: none, a backfill obligation, or destructive.",
+          "enum": [
+            "none",
+            "backfill_required",
+            "destructive"
+          ]
+        }
+      }
+    },
+    "storageType": {
+      "description": "The closed storage type vocabulary for declared technical columns; the typed normalizer enforces the per-namespace subset.",
+      "enum": [
+        "boolean",
+        "smallint",
+        "integer",
+        "bigint",
+        "biginteger",
+        "real",
+        "double",
+        "double precision",
+        "numeric",
+        "decimal",
+        "text",
+        "varchar",
+        "string",
+        "uuid",
+        "date",
+        "datetime",
+        "timestamp",
+        "timestamptz",
+        "bytea",
+        "binary",
+        "json",
+        "jsonb"
+      ]
+    }
+  }
+}

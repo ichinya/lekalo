@@ -1,0 +1,107 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.task_id
+    kind: scalar
+    version: 1
+    description: Stable task identifier
+    base: uuid
+    visibility: project
+  - id: planner.project_id
+    kind: scalar
+    version: 1
+    description: Stable project identifier
+    base: uuid
+    visibility: project
+  - id: planner.tenant_id
+    kind: scalar
+    version: 1
+    description: Tenant isolation key
+    base: uuid
+    visibility: project
+  - id: planner.text
+    kind: scalar
+    version: 1
+    description: Human-readable text
+    base: string
+    visibility: module
+  - id: planner.due_date
+    kind: scalar
+    version: 1
+    description: Calendar due date
+    base: date
+    visibility: project
+  - id: planner.rank
+    kind: scalar
+    version: 1
+    description: Focus rank score
+    base: number
+    visibility: project
+  - id: planner.task_state
+    kind: enum
+    version: 1
+    description: Task lifecycle state
+    visibility: project
+    values:
+      - value: backlog
+        description: Not started
+      - value: focused
+        description: Currently focused
+      - value: done
+        description: Completed
+  - id: planner.due_window
+    kind: value-object
+    version: 1
+    description: Inclusive due window
+    visibility: project
+    fields:
+      - name: from
+        type: "planner.due_date"
+        required: true
+      - name: to
+        type: "planner.due_date"
+        required: true
+  - id: planner.project
+    kind: entity
+    version: 1
+    description: A planning project
+    visibility: project
+    fields:
+      - name: project_id
+        type: "planner.project_id"
+        required: true
+      - name: tenant
+        type: "planner.tenant_id"
+        required: true
+      - name: name
+        type: "planner.text"
+        required: true
+    identity:
+      - project_id
+  - id: planner.task
+    kind: entity
+    version: 1
+    description: A focusable task
+    visibility: project
+    fields:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: tenant
+        type: "planner.tenant_id"
+        required: true
+      - name: title
+        type: "planner.text"
+        required: true
+      - name: state
+        type: "planner.task_state"
+        required: true
+      - name: due
+        type: "planner.due_date?"
+      - name: rank
+        type: "planner.rank"
+      - name: project
+        type: "planner.project"
+      - name: window
+        type: "list<planner.due_window>"
+    identity:
+      - task_id

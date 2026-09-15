@@ -46,12 +46,12 @@ const compare = (left, right) => {
 // ---------------------------------------------------------------------------
 // 1. The artifact parses and carries the closed top-level shape.
 // ---------------------------------------------------------------------------
-const registry = JSON.parse(read("crates/lekalo-core/src/versioning/contracts/version-registry.v1.0.0.json"));
+const registry = JSON.parse(read("crates/lekalo-core/src/versioning/contracts/version-registry.v1.2.0.json"));
 
 if (registry.registry !== "dev.lekalo.version-registry") {
   fail("identity", `unexpected registry identity ${registry.registry}`);
 }
-if (registry.registryVersion !== "1.0.0" || !CANONICAL.test(registry.registryVersion)) {
+if (registry.registryVersion !== "1.2.0" || !CANONICAL.test(registry.registryVersion)) {
   fail("registryVersion", `unexpected registry version ${registry.registryVersion}`);
 }
 
@@ -189,10 +189,124 @@ if (irFamily.versions.length !== 1 || irFamily.versions[0].version !== irVersion
   fail("ir:sync", "the IR family must carry exactly the accepted IR version");
 }
 
-// Protocol family policy: unpublished, no fake versions.
+const protocolPolicy = (family, publishedBase) => {
+  if (publishedBase === null) {
+    return family.current === null && family.versions.length === 0 &&
+      family.aliases.length === 0 && family.migrations.length === 0;
+  }
+  // Published policy (issues #27/#28/#29): the base additive 1.0.0, the
+  // additive describe-response extension 1.1.0, and the additive
+  // resolved-profile request extension 1.2.0 as current; alias
+  // v1 -> 1.0.0; no migrations.
+  const versions = family.versions.map((record) => record.version);
+  return family.current === "1.2.0" &&
+    JSON.stringify(versions) === JSON.stringify([publishedBase, "1.1.0", "1.2.0"]) &&
+    family.versions.every(
+      (record) => record.state === "supported" && record.classification === "additive",
+    ) &&
+    family.aliases.length === 1 && family.aliases[0].alias === "v1" &&
+    family.aliases[0].version === publishedBase && family.migrations.length === 0;
+};
+
+// Protocol family policy: issue #27 publishes the base additive 1.0.0;
+// issue #28 publishes the additive describe-response extension 1.1.0;
+// issue #29 publishes the additive resolved-profile request extension
+// 1.2.0 as the current version. The alias v1 -> 1.0.0 stays, and no
+// migrations exist. Historical snapshots retain the exact
+// pre-publication family policy; publication never makes their null
+// current version an implicit alias for the shipped protocol.
 const protocol = registry.families.protocol;
-if (protocol.current !== null || protocol.versions.length !== 0 || protocol.aliases.length !== 0 || protocol.migrations.length !== 0) {
-  fail("protocol:policy", "the protocol family is unpublished and must be empty");
+const protocolVersions = protocol.versions.map((record) => record.version);
+if (JSON.stringify(protocolVersions) !== JSON.stringify(["1.0.0", "1.1.0", "1.2.0"])) {
+  fail("protocol:policy", `unexpected protocol version set ${protocolVersions.join(",")}`);
+}
+for (const record of protocol.versions) {
+  if (record.state !== "supported" || record.classification !== "additive") {
+    fail("protocol:policy", `protocol ${record.version} must be supported additive`);
+  }
+}
+if (protocol.current !== "1.2.0") {
+  fail("protocol:policy", "protocol current must be 1.2.0");
+}
+if (protocol.migrations.length !== 0) {
+  fail("protocol:policy", "the protocol family declares no migrations");
+}
+if (protocol.aliases.length !== 1 || protocol.aliases[0].alias !== "v1" || protocol.aliases[0].version !== "1.0.0") {
+  fail("protocol:policy", "the sole declared alias is v1 -> 1.0.0");
+}
+const protocolSource = read("crates/lekalo-core/src/target_protocol/version.rs");
+const protocolVersion = protocolSource.match(/pub const VERSION: &str = "([^"]+)"/)?.[1];
+const protocolBase = protocolSource.match(/pub const BASE_VERSION: &str = "([^"]+)"/)?.[1];
+const protocolToken = protocolSource.match(/pub const PROTOCOL_TOKEN: &str = "([^"]+)"/)?.[1];
+const schema10 = JSON.parse(read("contracts/target-protocol.schema.v1.0.0.json"));
+const schema11 = JSON.parse(read("contracts/target-protocol.schema.v1.1.0.json"));
+const schema12 = JSON.parse(read("contracts/target-protocol.schema.v1.2.0.json"));
+if (protocolVersion !== "1.2.0" || protocolBase !== "1.0.0" || protocol.current !== protocolVersion) {
+  fail("protocol:sync", "the registry current must equal the compiled current protocol version");
+}
+if (schema10.$defs.protocolVersion.const !== "1.0.0") {
+  fail("protocol:sync", "the frozen 1.0.0 document must keep const 1.0.0");
+}
+if (JSON.stringify(schema11.$defs.protocolVersion.enum) !== JSON.stringify(["1.0.0", "1.1.0"])) {
+  fail("protocol:sync", "the 1.1.0 document must negotiate exactly 1.0.0 and 1.1.0");
+}
+if (JSON.stringify(schema12.$defs.protocolVersion.enum) !== JSON.stringify(["1.0.0", "1.1.0", "1.2.0"])) {
+  fail("protocol:sync", "the 1.2.0 document must negotiate exactly the three published versions");
+}
+if (!schema12.$defs.requestEnvelope.properties.profile_digest ||
+    !schema12.$defs.requestEnvelope.properties.profile_capabilities) {
+  fail("protocol:sync", "the 1.2.0 document must declare the resolved-profile members");
+}
+if (schema11.$defs.requestEnvelope.properties.profile_digest ||
+    schema11.$defs.requestEnvelope.properties.profile_capabilities ||
+    schema10.$defs.requestEnvelope.properties.profile_digest ||
+    schema10.$defs.requestEnvelope.properties.profile_capabilities) {
+  fail("protocol:sync", "the frozen documents must not declare the resolved-profile members");
+}
+if (protocolToken !== "lekalo.target/v1" || schema10.$defs.protocolToken.const !== protocolToken ||
+    schema11.$defs.protocolToken.const !== protocolToken ||
+    schema12.$defs.protocolToken.const !== protocolToken) {
+  fail("protocol:token", "the compiled protocol token and all wire schemas must agree on lekalo.target/v1");
+}
+
+// Boundary/control pairs prove that reconciling the published inventory
+// does not permit fake versions, aliases, lifecycle states, or migrations.
+const unpublished = JSON.parse(read("tests/fixtures/versioning/protocol-unpublished.family.json"));
+let protocolPolicyCases = 0;
+const expectProtocolPolicy = (name, family, publishedVersion, expected) => {
+  protocolPolicyCases += 1;
+  if (protocolPolicy(family, publishedVersion) !== expected) {
+    fail(`protocol:control:${name}`, `expected policy acceptance ${expected}`);
+  }
+};
+expectProtocolPolicy("published", protocol, "1.0.0", true);
+expectProtocolPolicy("historical-unpublished", unpublished, null, true);
+expectProtocolPolicy("unpublished-is-not-current", unpublished, "1.0.0", false);
+expectProtocolPolicy("published-is-not-historical", protocol, null, false);
+for (const [name, mutate] of [
+  ["no-current", (family) => { family.current = null; }],
+  ["wrong-current", (family) => { family.current = "1.0.0"; }],
+  ["no-version", (family) => { family.versions = []; }],
+  ["wrong-base-version", (family) => { family.versions[0].version = "1.2.0"; }],
+  ["extra-version", (family) => { family.versions.push({ ...family.versions[1], version: "1.2.0" }); }],
+  ["dropped-version", (family) => { family.versions = [family.versions[1]]; }],
+  ["deprecated", (family) => { family.versions[0].state = "deprecated"; }],
+  ["retired", (family) => { family.versions[0].state = "retired"; }],
+  ["wrong-classification", (family) => { family.versions[0].classification = "breaking"; }],
+  ["no-alias", (family) => { family.aliases = []; }],
+  ["wrong-alias", (family) => { family.aliases[0].alias = "v2"; }],
+  ["wrong-alias-target", (family) => { family.aliases[0].version = "1.1.0"; }],
+  ["extra-alias", (family) => { family.aliases.push({ alias: "v2", version: "1.0.0" }); }],
+  ["migration", (family) => { family.migrations.push({ id: "invented" }); }],
+]) {
+  const family = structuredClone(protocol);
+  mutate(family);
+  expectProtocolPolicy(name, family, "1.0.0", false);
+}
+for (const field of ["current", "versions", "aliases", "migrations"]) {
+  const family = structuredClone(unpublished);
+  family[field] = field === "current" ? "1.0.0" : [{ id: "invented" }];
+  expectProtocolPolicy(`historical-${field}`, family, null, false);
 }
 
 // Edge binding: every registry edge id must appear in the compiled catalog.
@@ -270,5 +384,7 @@ process.stdout.write(`${JSON.stringify({
   registryVersion: registry.registryVersion,
   families: FAMILY_NAMES,
   modelVersions: model.versions.map((record) => record.version),
+  protocolVersions: protocol.versions.map((record) => record.version),
+  protocolPolicyCases,
   migrationEdges: model.migrations.map((edge) => edge.id),
 }, null, 2)}\n`);

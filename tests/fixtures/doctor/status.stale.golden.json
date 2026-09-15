@@ -1,0 +1,53 @@
+{
+  "status": "valid",
+  "schemaVersion": "lekalo/doctor/v1.0.0",
+  "identity": "dev.lekalo.doctor@1.0.0",
+  "report": "status",
+  "productVersion": "0.2.7",
+  "verdict": "degraded",
+  "revisions": {
+    "git": {
+      "state": "ok",
+      "commit": "bd41fa6171f8ec7c2d104e21ba491bda331d0726",
+      "dirty": true
+    },
+    "model": {
+      "state": "ok",
+      "version": "1.0.0"
+    },
+    "lock": {
+      "state": "stale",
+      "digest": "sha256:ef5d95ebc4701f0bc881611007d1b2f3cbea3e862f9c70a81428755ae4091a6c"
+    }
+  },
+  "checks": [
+    {
+      "id": "artifacts.drift",
+      "state": "ok",
+      "required": false,
+      "reason": "clean"
+    },
+    {
+      "id": "bindings.freshness",
+      "state": "ok",
+      "required": false,
+      "reason": "none-required"
+    },
+    {
+      "id": "cache.health",
+      "state": "ok",
+      "required": false,
+      "reason": "missing"
+    },
+    {
+      "id": "lock.freshness",
+      "state": "degraded",
+      "required": false,
+      "reason": "stale",
+      "nextAction": "preview-lock-update",
+      "diagnostics": [
+        "lock.stale"
+      ]
+    }
+  ]
+}

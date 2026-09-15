@@ -1,0 +1,313 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/target-protocol.schema.v1.0.0.json",
+  "title": "Lekalo Target Protocol",
+  "description": "Closed wire contract for the lekalo.target/v1 process protocol that connects the Lekalo core to external target adapters running as separate executables in any language; one request on stdin or a bounded temporary file, one response envelope on stdout, diagnostics and logs on stderr only, with version and capability negotiation over the describe handshake, deterministic request identifiers, declared output plans verified against observed writes, and the infrastructure/protocol/operation error classification.",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/$defs/requestEnvelope" },
+    { "$ref": "#/$defs/responseEnvelope" }
+  ],
+  "$defs": {
+    "protocolToken": { "const": "lekalo.target/v1" },
+    "protocolVersion": { "type": "string", "const": "1.0.0" },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "describe",
+        "scan",
+        "bind",
+        "validate",
+        "generate",
+        "verify",
+        "clean",
+        "plan-clean"
+      ]
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^req-[0-9a-f]{64}$",
+      "maxLength": 68
+    },
+    "planId": {
+      "type": "string",
+      "pattern": "^plan-[0-9a-f]{64}$",
+      "maxLength": 69
+    },
+    "token": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$",
+      "maxLength": 64
+    },
+    "contractVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    },
+    "detailToken": { "type": "string", "maxLength": 128 },
+    "logicalPath": {
+      "type": "string",
+      "pattern": "^(?!(?:.*[/])?(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[./]|$))(?!(?:.*[/])?\\.{1,2}(?:/|$))(?!.*\\.(?:/|$))[a-z0-9.][a-z0-9._-]{0,63}(?:/[a-z0-9.][a-z0-9._-]{0,63})*$",
+      "maxLength": 512
+    },
+    "projectRoot": {
+      "type": "string",
+      "const": ".",
+      "maxLength": 512
+    },
+    "scope": {
+      "type": "string",
+      "pattern": "^(?!(?:.*[/])?(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[./]|$))(?!(?:.*[/])?\\.{1,2}(?:/|$))(?!.*\\.(?:/|$))[a-z0-9.][a-z0-9._-]{0,63}(?:/[a-z0-9.][a-z0-9._-]{0,63})*(?:/\\*\\*)?$",
+      "maxLength": 512
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeout_ms", "max_output_bytes"],
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600000
+        },
+        "max_output_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        }
+      }
+    },
+    "requestEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "protocol_version",
+        "operation",
+        "request_id",
+        "project_root"
+      ],
+      "properties": {
+        "protocol": { "$ref": "#/$defs/protocolToken" },
+        "protocol_version": { "$ref": "#/$defs/protocolVersion" },
+        "operation": { "$ref": "#/$defs/operation" },
+        "request_id": { "$ref": "#/$defs/requestId" },
+        "project_root": { "$ref": "#/$defs/projectRoot" },
+        "ir_path": { "$ref": "#/$defs/logicalPath" },
+        "target": { "$ref": "#/$defs/token" },
+        "profile": { "$ref": "#/$defs/token" },
+        "dry_run": { "type": "boolean" },
+        "limits": { "$ref": "#/$defs/limits" },
+        "plan_id": { "$ref": "#/$defs/planId" }
+      }
+    },
+    "adapterIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "digest"],
+      "properties": {
+        "id": { "$ref": "#/$defs/token" },
+        "version": { "$ref": "#/$defs/contractVersion" },
+        "digest": { "$ref": "#/$defs/sha256Digest" }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter", "protocol_versions", "operations", "transports"],
+      "properties": {
+        "adapter": { "$ref": "#/$defs/adapterIdentity" },
+        "protocol_versions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/contractVersion" }
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/operation" }
+        },
+        "targets": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/token" }
+        },
+        "profiles": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/token" }
+        },
+        "read_scopes": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/scope" }
+        },
+        "write_scopes": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/scope" }
+        },
+        "transports": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["stdin", "file"] }
+        },
+        "progress": { "type": "boolean" }
+      }
+    },
+    "writeEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "action"],
+      "properties": {
+        "path": { "$ref": "#/$defs/logicalPath" },
+        "action": { "type": "string", "enum": ["create", "replace", "delete"] },
+        "sha256": { "$ref": "#/$defs/sha256Digest" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter"],
+      "properties": {
+        "adapter": { "$ref": "#/$defs/adapterIdentity" },
+        "plan_id": { "$ref": "#/$defs/planId" }
+      }
+    },
+    "progressStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step", "state"],
+      "properties": {
+        "step": { "$ref": "#/$defs/detailToken" },
+        "state": {
+          "type": "string",
+          "enum": ["started", "done", "failed"]
+        },
+        "detail": { "$ref": "#/$defs/detailToken" }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "code"],
+      "properties": {
+        "path": { "$ref": "#/$defs/logicalPath" },
+        "code": { "$ref": "#/$defs/detailToken" },
+        "detail": { "$ref": "#/$defs/detailToken" }
+      }
+    },
+    "scanEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind"],
+      "properties": {
+        "path": { "$ref": "#/$defs/logicalPath" },
+        "kind": { "$ref": "#/$defs/detailToken" },
+        "detail": { "$ref": "#/$defs/detailToken" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module", "target", "profile"],
+      "properties": {
+        "module": { "$ref": "#/$defs/token" },
+        "target": { "$ref": "#/$defs/token" },
+        "profile": { "$ref": "#/$defs/token" }
+      }
+    },
+    "operationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ok": { "type": "boolean" },
+        "truncated": { "type": "boolean" },
+        "entries": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/scanEntry" }
+        },
+        "findings": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/finding" }
+        },
+        "bindings": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/binding" }
+        }
+      }
+    },
+    "errorClass": {
+      "type": "string",
+      "enum": ["invalid", "unsupported", "infrastructure", "conflict"]
+    },
+    "operationError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "code", "message"],
+      "properties": {
+        "class": { "$ref": "#/$defs/errorClass" },
+        "code": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "retryable": { "type": "boolean" },
+        "partial": { "type": "boolean" },
+        "detail": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/detailToken" }
+        }
+      }
+    },
+    "responseEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "protocol_version",
+        "operation",
+        "request_id",
+        "status",
+        "evidence"
+      ],
+      "properties": {
+        "protocol": { "$ref": "#/$defs/protocolToken" },
+        "protocol_version": { "$ref": "#/$defs/protocolVersion" },
+        "operation": { "$ref": "#/$defs/operation" },
+        "request_id": { "$ref": "#/$defs/requestId" },
+        "status": { "type": "string", "enum": ["ok", "error"] },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "capabilities": { "$ref": "#/$defs/capabilities" },
+        "result": { "$ref": "#/$defs/operationResult" },
+        "writes": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/writeEntry" }
+        },
+        "progress": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/progressStep" }
+        },
+        "error": { "$ref": "#/$defs/operationError" }
+      }
+    }
+  }
+}

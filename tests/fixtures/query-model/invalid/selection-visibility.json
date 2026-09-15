@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "lekalo/query-model/v1.0.0",
+  "identity": "dev.lekalo.query-model@1.0.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.1.0",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "tenancy": [],
+  "queries": [
+    {
+      "query": "planner.tasks_by_project",
+      "source": "planner.task",
+      "cardinality": "list",
+      "consistency": "stale-ok",
+      "selection": [{ "field": "title" }]
+    }
+  ]
+}

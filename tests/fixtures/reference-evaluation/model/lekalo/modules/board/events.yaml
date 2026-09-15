@@ -1,0 +1,3 @@
+{"schema_version":"1.0.0","definitions":[
+{"id":"board.event.focus_changed","kind":"event","version":1,"description":"A task focus changed","payload":[{"name":"task_id","type":{"ref":"board.task_id"},"required":true},{"name":"changed_at","type":{"ref":"board.timestamp"},"required":true}]}
+]}

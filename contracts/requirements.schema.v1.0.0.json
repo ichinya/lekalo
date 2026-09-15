@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/requirements.schema.v1.0.0.json",
+  "title": "Lekalo Requirements Attachment",
+  "description": "Closed independent attachment contract binding Lekalo semantic symbols to canonical requirement identities owned by requirement providers (issue #36): namespaced provider declarations over on-disk OpenSpec trees, and derived_from/implements references pinned to the exact requirement revision they were authored against. Read-only by contract: Lekalo never creates or edits OpenSpec artifacts, never copies requirement text, and never resolves a conflict silently. The contract is independent of the product release, of the Model/IR/trace/graph contract versions, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "projectId",
+    "modelRef",
+    "providers",
+    "references"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/requirements/v1.0.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.requirements@1.0.0"
+    },
+    "projectId": {
+      "$ref": "#/$defs/projectId"
+    },
+    "modelRef": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "providers": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/provider"
+      }
+    },
+    "references": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/reference"
+      }
+    }
+  },
+  "$defs": {
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+      "not": {
+        "enum": ["lekalo", "dev"]
+      }
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "sourceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "requirementId": {
+      "type": "string",
+      "minLength": 7,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}\\.REQ-[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "logicalPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9._][A-Za-z0-9._/-]*$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "enum": [
+            "0.1.0",
+            "1.0.0"
+          ]
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "kind",
+        "root"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/sourceId"
+        },
+        "kind": {
+          "enum": [
+            "openspec"
+          ]
+        },
+        "root": {
+          "$ref": "#/$defs/logicalPath"
+        }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "relation",
+        "source",
+        "requirement",
+        "revision"
+      ],
+      "properties": {
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "relation": {
+          "enum": [
+            "derived_from",
+            "implements"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/sourceId"
+        },
+        "requirement": {
+          "$ref": "#/$defs/requirementId"
+        },
+        "revision": {
+          "$ref": "#/$defs/sha256Digest"
+        }
+      }
+    }
+  }
+}

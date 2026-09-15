@@ -1,0 +1,116 @@
+{
+  "status": "valid",
+  "schemaVersion": "lekalo/doctor/v1.0.0",
+  "identity": "dev.lekalo.doctor@1.0.0",
+  "report": "readiness",
+  "phase": "generate",
+  "productVersion": "0.2.7",
+  "verdict": "blocked",
+  "revisions": {
+    "git": {
+      "state": "ok",
+      "commit": "ebba6d8b6671b4b6220f4c1176ef3bef9be6e225",
+      "dirty": false
+    },
+    "model": {
+      "state": "ok",
+      "version": "1.0.0"
+    },
+    "lock": {
+      "state": "absent"
+    }
+  },
+  "checks": [
+    {
+      "id": "adapters.inventory",
+      "state": "blocked",
+      "required": true,
+      "reason": "targets-without-adapters",
+      "nextAction": "resolve-adapters"
+    },
+    {
+      "id": "artifacts.drift",
+      "state": "unknown",
+      "required": true,
+      "reason": "no-lock",
+      "nextAction": "create-lock"
+    },
+    {
+      "id": "bindings.freshness",
+      "state": "ok",
+      "required": true,
+      "reason": "none-required"
+    },
+    {
+      "id": "cache.health",
+      "state": "ok",
+      "required": false,
+      "reason": "missing"
+    },
+    {
+      "id": "capabilities.profiles",
+      "state": "blocked",
+      "required": true,
+      "reason": "targets-without-profile",
+      "nextAction": "resolve-adapters"
+    },
+    {
+      "id": "fs.confinement",
+      "state": "ok",
+      "required": true,
+      "reason": "confined"
+    },
+    {
+      "id": "integrations.hlv",
+      "state": "degraded",
+      "required": false,
+      "reason": "not-supplied",
+      "nextAction": "trace-validate"
+    },
+    {
+      "id": "lock.freshness",
+      "state": "degraded",
+      "required": true,
+      "reason": "absent",
+      "nextAction": "create-lock",
+      "diagnostics": [
+        "lock.missing"
+      ]
+    },
+    {
+      "id": "model.references",
+      "state": "ok",
+      "required": true,
+      "reason": "resolved"
+    },
+    {
+      "id": "model.version",
+      "state": "ok",
+      "required": true,
+      "reason": "accepted"
+    },
+    {
+      "id": "platform.limits",
+      "state": "ok",
+      "required": false,
+      "reason": "informational",
+      "notes": [
+        "case-insensitive-filesystem",
+        "symlink-privilege-required",
+        "windows-path-syntax"
+      ]
+    },
+    {
+      "id": "project.root",
+      "state": "ok",
+      "required": true,
+      "reason": "valid"
+    },
+    {
+      "id": "tools.gates",
+      "state": "ok",
+      "required": false,
+      "reason": "available"
+    }
+  ]
+}

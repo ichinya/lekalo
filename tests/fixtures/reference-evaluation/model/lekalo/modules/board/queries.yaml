@@ -1,0 +1,4 @@
+{"schema_version":"1.0.0","definitions":[
+{"id":"board.query.get_planning","kind":"query","version":1,"description":"Get one planning row","reads":["board.user_task_planning"],"returns":{"ref":"board.user_task_planning"}},
+{"id":"board.query.list_planning","kind":"query","version":1,"description":"List planning rows of one user","reads":["board.user_task_planning"],"returns":{"list":{"ref":"board.user_task_planning"}}}
+]}

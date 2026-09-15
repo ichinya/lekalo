@@ -1,0 +1,49 @@
+schema_version: "1.0.0"
+definitions:
+  - id: planner.count_focused
+    kind: query
+    version: 1
+    description: Count focused tasks
+    reads:
+      - "planner.task"
+    returns:
+      ref: "planner.task_state"
+  - id: planner.tasks_backlog
+    kind: query
+    version: 1
+    description: Backlog tasks, deterministically ordered
+    reads:
+      - "planner.task"
+  - id: planner.tasks_carry_over
+    kind: query
+    version: 1
+    description: Overdue backlog tasks carried over from earlier days
+    reads:
+      - "planner.task"
+  - id: planner.tasks_today
+    kind: query
+    version: 1
+    description: Tasks due today, deterministically ordered
+    reads:
+      - "planner.task"
+    returns:
+      ref: "planner.task"
+  - id: planner.tasks_by_project
+    kind: query
+    version: 1
+    description: Tasks of one project, paged
+    visibility: project
+    reads:
+      - "planner.task"
+  - id: planner.focus_search
+    kind: query
+    version: 1
+    description: Ranked full-text search placeholder
+    reads:
+      - "planner.task"
+  - id: planner.project_rollup
+    kind: query
+    version: 1
+    description: Projects with their tasks
+    reads:
+      - "planner.project"

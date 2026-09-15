@@ -7,3 +7,7 @@
 *.yaml text eol=lf
 *.yml text eol=lf
 *.txt text eol=lf
+# Byte-compared test fixtures must never re-encode on checkout: the
+# observed-mode staleness gate fingerprints the exact working-tree bytes
+# against scan-pinned digests, so any CRLF conversion fails the gate.
+*.ts text eol=lf

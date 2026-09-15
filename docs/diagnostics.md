@@ -2,14 +2,47 @@
 
 Issue #11 defines the stable, machine-readable diagnostic contract: one
 closed wire item (`lekalo/diagnostic/v1.0.0`), one embedded rule registry
-(`dev.lekalo.diagnostic-registry@1.9.0`, registry version `1.9.0` — issue #12 added the `semantic.*`/`validate.*` families and issue #13 added the `graph.*` family, each as a wire-shape-preserving minor increment; issue #14's effect graph reuses the `graph.*` infrastructure rules with bounded tokens and keeps its comparison states as result data; issue #15 added the `inspect.*` family for the single-symbol inspect projection as the same kind of minor increment; issue #16 adds the `impact.*` family plus the one `denied` rule its strict bounded denial requires as the same kind of wire-shape-preserving additive minor increment; issue #18 adds the `diff.*` family for the semantic diff as the same kind of wire-shape-preserving additive minor increment; issue #25 adds the `authorization.*` family for the authorization contract as the same kind of wire-shape-preserving additive minor increment; issue #62 adds the `error.*` family for the explicit error contracts as the same kind of wire-shape-preserving additive minor increment; issue #26 adds the `extended.*`, `event.*`, `job.*`, `call.*`, `cache.*`, `publication.*`, `contract.*`, and `case.*` families for the extended effect contracts as the same kind of wire-shape-preserving additive minor increment; issue #63 adds the `invariant.*` family for first-class invariants and state transitions as the same kind of wire-shape-preserving additive minor increment, a typed
+(`dev.lekalo.diagnostic-registry@1.25.0`, registry version `1.25.0` — issue #12 added the `semantic.*`/`validate.*` families and issue #13 added the `graph.*` family, each as a wire-shape-preserving minor increment; issue #14's effect graph reuses the `graph.*` infrastructure rules with bounded tokens and keeps its comparison states as result data; issue #15 added the `inspect.*` family for the single-symbol inspect projection as the same kind of minor increment; issue #16 adds the `impact.*` family plus the one `denied` rule its strict bounded denial requires as the same kind of wire-shape-preserving additive minor increment; issue #18 adds the `diff.*` family for the semantic diff as the same kind of wire-shape-preserving additive minor increment; issue #2…
 Rust API, deterministic normalization, and the human and JSON projections
-through the shared `DomainResult` envelope. The contracts are published as
+through the shared `DomainResult` envelope. Issue #42 adds the three `bindings.*` rules (`LEK-BND-001..003`: `bindings.proposal-unknown`, `bindings.ambiguous`, `bindings.plan-mismatch`) — the closed refusals of the issue #42 binding workflow: an unknown proposal id, an ambiguous proposal confirmed without naming one candidate of its set, and a batch applied against drifted state — publishing 1.20.0 additively over the accepted frozen 1.19.0 (issue #40's `contracted.*` family, itself published additively over the accepted frozen 1.18.0). Issue #28 adds the single `target.ir-unsupported` rule — the capability-discovery refusal that keeps an adapter which never declared the core IR contract version from receiving project IR — as the same kind of wire-shape-preserving additive minor increment. Issue #29 adds the six `target-profile.*` rules (`LEK-TPF-001..006`) — the closed refusals of the composable target profile contract: document shape, unknown component, invalid inheritance reference, incompatible combination, unsatisfied capability requirement, and unacknowledged inheritance weakening — as the same kind of additive minor increment. Issue #38 (integrated first as registry 1.13.0) adds the five `init.adopt-*` rules (`LEK-INIT-001..005`) for the `init --adopt` boundary; this integrated line publishes 1.14.0 additively over the accepted frozen 1.13.0. Issue #31 adds the four `adapter.*` rules (`LEK-ADP-002..005`) — the closed conformance-suite failure classes `check-failed` (invalid), `adapter.process-failure` (unavailable), `protocol-failure` (unsupported), and `security-failure` (denied) — and publishes 1.15.0 additively over the accepted frozen 1.14.0. Issue #39 adds the eleven `observed.*` rules (`LEK-OBS-001..011`) — the closed refusals and findings of the observed mode: scan normalization and bounds, unknown modules and symbols, the confirmation rule, the staleness gate, the observed-graph incompleteness report, and the promotion refusal and plan-pinning rules — publishing 1.16.0 additively over the accepted frozen 1.15.0. The contracts are published as the frozen instances listed below.
+Issue #97 adds the four `init.bootstrap-*` rules (`LEK-INIT-006..009`:
+`init.bootstrap-conflict`, `init.bootstrap-id-required`,
+`init.bootstrap-write-failed`, `init.bootstrap-recovery-required`) — the
+greenfield `lekalo init` / `lekalo module new` counterparts of the adoption
+refusals with mode-neutral wording — publishing 1.24.0 additively over the
+accepted frozen 1.22.0 (1.23.0 stays reserved by its parallel owner); the
+embedded validation profiles' registry pin advances with no content change.
+Issue #66 adds the nine `expression.*` rules (`LEK-EXPR-001..009`:
+`expression.input-invalid`, `expression.contract-invalid`,
+`expression.type-invalid`, `expression.complexity-limit`,
+`expression.builtin-unsupported`, `expression.eval-invalid`,
+`expression.binding-invalid`, `expression.diff-invalid`,
+`expression.export-limit`) — the closed refusals of the typed-expression
+family (see [expressions.md](expressions.md)): fatal wire-input and
+payload-bound violations, record-contract and static-type contradictions,
+the complexity refusal that routes oversized computations to the foreign
+implementation family, the managed-mode built-in block, the deterministic
+evaluation-domain and binding refusals, the semantically impossible
+comparison, and the canonical export bound — publishing 1.25.0 additively
+over the accepted frozen 1.24.0; the embedded validation profiles' registry
+pin advances with no content change.
 
 - [`contracts/diagnostic.schema.v1.0.0.json`](../contracts/diagnostic.schema.v1.0.0.json) — one diagnostic item,
 - [`contracts/diagnostic-registry.schema.v1.0.0.json`](../contracts/diagnostic-registry.schema.v1.0.0.json) — the registry schema,
-- [`contracts/diagnostic-registry.v1.9.0.json`](../contracts/diagnostic-registry.v1.9.0.json) — the current registry instance,
-- [`contracts/diagnostic-registry.v1.8.0.json`](../contracts/diagnostic-registry.v1.8.0.json) — the accepted predecessor instance.
+- [`contracts/diagnostic-registry.v1.25.0.json`](../contracts/diagnostic-registry.v1.25.0.json) — the current registry instance,
+- [`contracts/diagnostic-registry.v1.24.0.json`](../contracts/diagnostic-registry.v1.24.0.json) — the accepted predecessor instance (issue #97),
+- [`contracts/diagnostic-registry.v1.22.0.json`](../contracts/diagnostic-registry.v1.22.0.json) — the accepted predecessor instance (issue #65),
+- [`contracts/diagnostic-registry.v1.21.0.json`](../contracts/diagnostic-registry.v1.21.0.json) — the accepted predecessor instance (issue #64),
+- [`contracts/diagnostic-registry.v1.20.0.json`](../contracts/diagnostic-registry.v1.20.0.json) — the accepted predecessor instance (issue #42),
+- [`contracts/diagnostic-registry.v1.19.0.json`](../contracts/diagnostic-registry.v1.19.0.json) — the accepted predecessor instance (issue #40),
+- [`contracts/diagnostic-registry.v1.18.0.json`](../contracts/diagnostic-registry.v1.18.0.json) — the accepted predecessor instance (issue #30),
+- [`contracts/diagnostic-registry.v1.16.0.json`](../contracts/diagnostic-registry.v1.16.0.json) — the accepted predecessor instance (issue #39),
+- [`contracts/diagnostic-registry.v1.15.0.json`](../contracts/diagnostic-registry.v1.15.0.json) — the accepted predecessor instance (issue #31),
+- [`contracts/diagnostic-registry.v1.14.0.json`](../contracts/diagnostic-registry.v1.14.0.json) — the accepted predecessor instance (issue #29),
+- [`contracts/diagnostic-registry.v1.13.0.json`](../contracts/diagnostic-registry.v1.13.0.json) — the accepted predecessor instance (issue #38),
+- [`contracts/diagnostic-registry.v1.12.0.json`](../contracts/diagnostic-registry.v1.12.0.json) — an earlier accepted predecessor instance.
+- [`contracts/diagnostic-registry.v1.10.0.json`](../contracts/diagnostic-registry.v1.10.0.json) — an earlier accepted predecessor instance.
+- [`contracts/diagnostic-registry.v1.9.0.json`](../contracts/diagnostic-registry.v1.9.0.json) — an earlier accepted predecessor instance.
 
 Versions are independent of the product release, the Model/IR/protocol
 contract versions, the lock wire, and the resolver algorithm version.

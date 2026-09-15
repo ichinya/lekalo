@@ -47,13 +47,18 @@ pub enum ImpactFailure {
     Denied(crate::diagnostics::DiagnosticSet),
 }
 
-/// Analyze the impact of one symbol or one typed changed-input set.
+/// Analyze the impact of one symbol or one typed changed-input set. The
+/// optional observed view (issue #39) contributes recorded-code
+/// references: their presence degrades the result completeness and adds
+/// the registered `observed.incomplete-graph` warning, because the
+/// canonical graph alone never sees recorded existing code.
 pub fn analyze(
     project: &CompiledProject,
     graph: &DependencyGraph,
     effects: &EffectGraph,
     request: &ImpactRequest,
     changed: Option<&ChangedInputSet>,
+    observed: Option<&crate::observed::view::ObservedView>,
 ) -> Result<ImpactResult, ImpactFailure> {
     let surface = Surface::collect(project, graph);
     let filter = build_filter(graph, request).map_err(ImpactFailure::Invalid)?;
@@ -309,6 +314,20 @@ pub fn analyze(
     );
     let degraded =
         report.degraded || bounded.horizon > 0 || public_truncated || unresolved_entries > 0;
+    // The recorded observed graph (issue #39): recorded code referencing
+    // the impact radius — and stale recorded bindings — are real impact
+    // the canonical graph cannot see, so they degrade completeness.
+    let observed_resolved = observed
+        .map(|view| {
+            view.edges
+                .iter()
+                .filter(|edge| graph.resolve_id(&edge.target).is_some())
+                .count()
+        })
+        .unwrap_or(0);
+    let observed_stale = observed.map(|view| view.stale).unwrap_or(0);
+    let observed_incomplete = observed.is_some() && (observed_resolved > 0 || observed_stale > 0);
+    let degraded = degraded || observed_incomplete;
     let mut reason_refs: Vec<String> = Vec::new();
     if unresolved_entries > 0 {
         reason_refs.push(diagnostic::CHANGED_INPUT_INCOMPLETE.to_owned());
@@ -320,15 +339,24 @@ pub fn analyze(
     if public_truncated || unresolved_entries > 0 {
         reason_refs.push(diagnostic::PUBLIC_IMPACT_INCOMPLETE.to_owned());
     }
+    if observed_incomplete {
+        reason_refs.push("observed.incomplete-graph".to_owned());
+    }
     reason_refs.sort();
     reason_refs.dedup();
 
-    let warnings = collect_warnings(
+    let mut warnings = collect_warnings(
         unresolved_entries,
         effect_degraded,
         public_truncated,
         has_envelopes,
     );
+    if observed_incomplete {
+        warnings.extend(diagnostic::warning(
+            "observed.incomplete-graph",
+            "recorded-code-references-the-radius",
+        ));
+    }
     let diagnostic_refs: Vec<String> = warnings
         .iter()
         .map(|warning| warning.id().to_owned())
@@ -363,7 +391,11 @@ pub fn analyze(
         omitted: bounded.horizon,
         frontier: if public_truncated { public_returned } else { 0 },
         reason_refs,
-        provenance: vec![ProvenanceKind::CanonicalIr],
+        provenance: if observed.is_some() {
+            vec![ProvenanceKind::CanonicalIr, ProvenanceKind::Evidence]
+        } else {
+            vec![ProvenanceKind::CanonicalIr]
+        },
         confidence: if degraded {
             Confidence::Unknown
         } else {

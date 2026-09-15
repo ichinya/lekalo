@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "lekalo/expressions/builtin-support/v1.0.0",
+  "supported": [
+    "expression.builtin/cast-int-to-string",
+    "expression.builtin/cast-string-to-int",
+    "expression.builtin/datetime-day",
+    "expression.builtin/datetime-month",
+    "expression.builtin/datetime-weekday",
+    "expression.builtin/datetime-year",
+    "expression.builtin/duration-seconds",
+    "expression.builtin/int-abs",
+    "expression.builtin/string-concat",
+    "expression.builtin/string-contains",
+    "expression.builtin/string-ends-with",
+    "expression.builtin/string-length",
+    "expression.builtin/string-lower",
+    "expression.builtin/string-starts-with",
+    "expression.builtin/string-upper",
+    "expression.core"
+  ]
+}

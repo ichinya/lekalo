@@ -1,0 +1,250 @@
+{
+  "schemaVersion": "lekalo/query-model/v1.0.0",
+  "identity": "dev.lekalo.query-model@1.0.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "1.0.0",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.1.0",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "tenancy": [
+    {
+      "entity": "planner.project",
+      "field": "tenant"
+    },
+    {
+      "entity": "planner.task",
+      "field": "tenant"
+    }
+  ],
+  "queries": [
+    {
+      "query": "planner.count_focused",
+      "source": "planner.task",
+      "cardinality": "one",
+      "consistency": "strong",
+      "filter": {
+        "field": "state",
+        "op": "eq",
+        "value": {
+          "literal": {
+            "kind": "enum-member",
+            "value": "focused"
+          }
+        }
+      },
+      "cost": {
+        "maxRows": 1
+      }
+    },
+    {
+      "query": "planner.focus_search",
+      "source": "planner.task",
+      "cardinality": "list",
+      "consistency": "stale-ok",
+      "foreign": {
+        "capability": "full-text-search",
+        "reason": "Ranked search exceeds the closed managed grammar."
+      }
+    },
+    {
+      "query": "planner.tasks_backlog",
+      "source": "planner.task",
+      "cardinality": "list",
+      "consistency": "stale-ok",
+      "parameters": [
+        {
+          "name": "tenant_id",
+          "type": "planner.tenant_id"
+        }
+      ],
+      "filter": {
+        "and": [
+          {
+            "field": "state",
+            "op": "eq",
+            "value": {
+              "literal": {
+                "kind": "enum-member",
+                "value": "backlog"
+              }
+            }
+          },
+          {
+            "field": "tenant",
+            "op": "eq",
+            "value": {
+              "param": "tenant_id"
+            }
+          }
+        ]
+      },
+      "sort": [
+        {
+          "field": "task_id",
+          "direction": "asc"
+        }
+      ],
+      "cost": {
+        "maxRows": 10000
+      }
+    },
+    {
+      "query": "planner.tasks_by_project",
+      "source": "planner.task",
+      "cardinality": "list",
+      "consistency": "stale-ok",
+      "parameters": [
+        {
+          "name": "project_ref",
+          "type": "planner.project"
+        }
+      ],
+      "filter": {
+        "field": "project",
+        "op": "eq",
+        "value": {
+          "param": "project_ref"
+        }
+      }
+    },
+    {
+      "query": "planner.tasks_carry_over",
+      "source": "planner.task",
+      "cardinality": "list",
+      "consistency": "stale-ok",
+      "parameters": [
+        {
+          "name": "tenant_id",
+          "type": "planner.tenant_id"
+        },
+        {
+          "name": "today",
+          "type": "planner.due_date"
+        }
+      ],
+      "filter": {
+        "and": [
+          {
+            "field": "state",
+            "op": "eq",
+            "value": {
+              "literal": {
+                "kind": "enum-member",
+                "value": "backlog"
+              }
+            }
+          },
+          {
+            "field": "due",
+            "op": "lt",
+            "value": {
+              "param": "today"
+            }
+          },
+          {
+            "field": "tenant",
+            "op": "eq",
+            "value": {
+              "param": "tenant_id"
+            }
+          }
+        ]
+      },
+      "sort": [
+        {
+          "field": "due",
+          "direction": "asc"
+        },
+        {
+          "field": "task_id",
+          "direction": "asc"
+        }
+      ],
+      "cost": {
+        "expensive": true
+      }
+    },
+    {
+      "query": "planner.tasks_today",
+      "source": "planner.task",
+      "cardinality": "page",
+      "consistency": "bounded",
+      "maxStaleness": 60,
+      "parameters": [
+        {
+          "name": "cursor_key",
+          "type": "planner.task_id"
+        },
+        {
+          "name": "tenant_id",
+          "type": "planner.tenant_id"
+        },
+        {
+          "name": "today",
+          "type": "planner.due_date"
+        }
+      ],
+      "filter": {
+        "and": [
+          {
+            "field": "due",
+            "op": "is-not-null"
+          },
+          {
+            "field": "due",
+            "op": "le",
+            "value": {
+              "param": "today"
+            }
+          },
+          {
+            "field": "tenant",
+            "op": "eq",
+            "value": {
+              "param": "tenant_id"
+            }
+          }
+        ]
+      },
+      "sort": [
+        {
+          "field": "due",
+          "direction": "asc"
+        },
+        {
+          "field": "task_id",
+          "direction": "asc"
+        }
+      ],
+      "pagination": {
+        "strategy": "cursor",
+        "limit": 50,
+        "keyParameter": "cursor_key"
+      },
+      "selection": [
+        {
+          "field": "state"
+        },
+        {
+          "field": "due",
+          "as": "due_at"
+        }
+      ],
+      "policies": [
+        "planner.task_read"
+      ],
+      "scenarios": [
+        "planner.today_page_scenario"
+      ],
+      "cost": {
+        "maxRows": 10000,
+        "expensive": false
+      }
+    }
+  ]
+}
