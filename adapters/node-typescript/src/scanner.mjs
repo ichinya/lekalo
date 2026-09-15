@@ -1471,7 +1471,6 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   }
 
   const program = ts.createProgram({ rootNames, options, host });
-  console.error("DBG OPTIONS", JSON.stringify(options));
   context.program = program;
   const checker = program.getTypeChecker();
 
