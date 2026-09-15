@@ -94,7 +94,7 @@ function collectLibFiles() {
   const libDir = dirname(require.resolve("typescript/package.json"));
   const dir = join(libDir, "lib");
   const names = readdirSync(dir)
-    .filter((name) => /^lib\..+\.d\.ts$/.test(name))
+    .filter((name) => /^lib(\..+)?\.d\.ts$/.test(name))
     .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
   if (names.length === 0) {
     process.stderr.write("no lib.*.d.ts files found in the pinned typescript\n");
@@ -127,6 +127,16 @@ kernel.__setCompilerMetadata({
   esbuild: ${JSON.stringify(ESBUILD_VERSION)},
 });
 kernel.__attachVendoredCompiler(ts, LIB_FILES);
+kernel.__setLaunchExtensions([
+  {
+    id: "typescript-symbol-scanner",
+    version: "0.3.1",
+    operations: ["scan"],
+    namedCapabilities: { "scan.symbols": "full" },
+    acceptedIrVersions: [],
+    invoke: (context) => scanner.scanOperation(context),
+  },
+]);
 export const compilerHostApi = ts;
 export const __lekaloKernel = kernel;
 export const __lekaloScanner = scanner;

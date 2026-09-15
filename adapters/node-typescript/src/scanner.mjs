@@ -57,7 +57,7 @@ const MAX_DIAGNOSTICS = 4096;
 
 /** Standard-library file names never count as project symbols. */
 function isEmbeddedLibBase(fileName) {
-  return /^lib\..+\.d\.ts$/.test(fileName.split("/").pop());
+  return /^lib(\..+)?\.d\.ts$/.test(fileName.split("/").pop());
 }
 
 function isObject(value) {
@@ -427,7 +427,7 @@ function createRestrictedHost({ ts, inventorySet, readBytes, libMap, logicalToHo
   const sourceFileCache = new Map();
   const existsCache = new Map();
   const denied = [];
-  const currentDirectory = "lekalo/project";
+  const currentDirectory = "/lekalo/project";
   const deny = (kind, hostName) => {
     if (denied.length < MAX_DIAGNOSTICS) denied.push({ kind, path: hostName });
     return undefined;
@@ -440,8 +440,8 @@ function createRestrictedHost({ ts, inventorySet, readBytes, libMap, logicalToHo
     getCanonicalFileName: (name) => name.toLowerCase(),
     getCurrentDirectory: () => currentDirectory,
     getNewLine: () => "\n",
-    getDefaultLibFileName: () => "lekalo/libs/lib.d.ts",
-    getDefaultLibLocation: () => "lekalo/libs",
+    getDefaultLibFileName: () => "/lekalo/libs/lib.d.ts",
+    getDefaultLibLocation: () => "/lekalo/libs",
 
     fileExists(hostName) {
       const normalized = hostName.replaceAll("\\", "/");
@@ -450,7 +450,7 @@ function createRestrictedHost({ ts, inventorySet, readBytes, libMap, logicalToHo
       let result;
       if (resolveInventory(normalized) !== undefined) {
         result = true;
-      } else if (/^lekalo\/libs\/lib\..+\.d\.ts$/.test(normalized)
+      } else if (/^\/lekalo\/libs\/lib(\..+)?\.d\.ts$/.test(normalized)
         && libMap.has(normalized.split("/").pop())) {
         result = true;
       } else {
@@ -467,7 +467,7 @@ function createRestrictedHost({ ts, inventorySet, readBytes, libMap, logicalToHo
       if (logical !== undefined) {
         return readBytes(logical).toString("utf8");
       }
-      if (/^lekalo\/libs\/lib\..+\.d\.ts$/.test(normalized)) {
+      if (/^\/lekalo\/libs\/lib(\..+)?\.d\.ts$/.test(normalized)) {
         const text = libMap.get(normalized.split("/").pop());
         if (text !== undefined) return text;
       }
@@ -488,7 +488,7 @@ function createRestrictedHost({ ts, inventorySet, readBytes, libMap, logicalToHo
 
     directoryExists(hostName) {
       const normalized = hostName.replaceAll("\\", "/").replace(/\/$/, "");
-      if (normalized === currentDirectory || normalized === "lekalo" || normalized === "lekalo/libs") {
+      if (normalized === currentDirectory || normalized === "/lekalo" || normalized === "/lekalo/libs") {
         return true;
       }
       for (const logical of inventorySet.keys()) {
@@ -502,8 +502,20 @@ function createRestrictedHost({ ts, inventorySet, readBytes, libMap, logicalToHo
       return [];
     },
 
-    readDirectory() {
-      return [];
+    readDirectory(rootDir, extensions) {
+      // Wildcard include expansion over the pre-enumerated inventory
+      // only — never the host filesystem. Returns the matching files.
+      const prefix = rootDir.replaceAll("\\", "/").replace(/\/$/, "");
+      const extensionSet = new Set(Array.isArray(extensions) ? extensions : []);
+      const matches = [];
+      for (const logical of inventorySet.keys()) {
+        if (!logical.startsWith(`${prefix}/`)) continue;
+        if (extensionSet.size > 0 && ![...extensionSet].some((extension) => logical.endsWith(extension))) {
+          continue;
+        }
+        matches.push(logical);
+      }
+      return matches.sort(utf8Compare);
     },
 
     getEnvironmentVariable: () => "",
@@ -528,7 +540,7 @@ function buildInventorySet(manifest) {
   ]) {
     addLogical(file.path);
     // Compiler-side spellings anchored at the virtual current directory.
-    const host = `lekalo/project/${file.path}`;
+    const host = `/lekalo/project/${file.path}`;
     set.set(host, file.path);
     set.set(host.toLowerCase(), file.path);
   }
@@ -996,7 +1008,8 @@ function indexReferences({ ts, checker, program, context, index }) {
         || node.kind === ts.SyntaxKind.ImportEqualsDeclaration) {
         const moduleSpecifier = node.moduleSpecifier;
         if (moduleSpecifier?.kind === ts.SyntaxKind.StringLiteral) {
-          const resolution = program.getResolvedModule(sourceFile, moduleSpecifier.text);
+          const mode = ts.getModeForUsageLocation?.(sourceFile, moduleSpecifier);
+          const resolution = program.getResolvedModule(sourceFile, moduleSpecifier.text, mode);
           if (resolution?.resolvedModule) {
             const toModule = normalizeModulePath(resolution.resolvedModule.resolvedFileName, context);
             const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
@@ -1023,24 +1036,36 @@ function indexReferences({ ts, checker, program, context, index }) {
         const signature = checker.getResolvedSignature(node);
         const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
         if (signature?.declaration) {
-          const toModule = normalizeModulePath(signature.declaration.getSourceFile().fileName, context);
+          const declarationFile = signature.declaration.getSourceFile();
+          const isLib = declarationFile.isDeclarationFile
+            && isEmbeddedLibBase(declarationFile.fileName);
+          if (isLib) {
+            // Standard-library call target: type context, not a project
+            // reference row.
+            return;
+          }
+          const toModule = normalizeModulePath(declarationFile.fileName, context);
           if (toModule !== null) {
             record(makeReference({ fromModule, toModule, role: 'call', confidence: 'exact', line }));
           } else {
             record(makeReference({
               fromModule,
               toModule: null,
-              toExternal: signature.declaration.getSourceFile().fileName,
+              toExternal: declarationFile.fileName,
               role: 'call',
               confidence: 'medium',
               line,
             }));
           }
-        } else if (node.expression.kind === ts.SyntaxKind.Identifier) {
+        } else if (node.expression.kind === ts.SyntaxKind.Identifier
+          || ts.isPropertyAccessExpression(node.expression)) {
+          const target = node.expression.kind === ts.SyntaxKind.Identifier
+            ? node.expression.text
+            : node.expression.name?.text ?? "dynamic";
           index.anyUncertainty.push({
             path: fromModule,
             kind: 'unresolved-call',
-            detail: node.expression.text.slice(0, 64),
+            detail: String(target).slice(0, 64),
             line,
           });
         }
@@ -1141,9 +1166,16 @@ function indexRoutesAndTests({ ts, checker, program, context, index }) {
       if (context.exceeded()) return;
       if (node.kind === ts.SyntaxKind.CallExpression) {
         const expression = node.expression;
-        const calleeSymbol = checker.getSymbolAtLocation(
+        let calleeSymbol = checker.getSymbolAtLocation(
           expression.kind === ts.SyntaxKind.Identifier ? expression : expression.property ?? expression,
         );
+        if (calleeSymbol && calleeSymbol.flags & ts.SymbolFlags.Alias) {
+          try {
+            calleeSymbol = checker.getAliasedSymbol(calleeSymbol);
+          } catch {
+            // keep the alias symbol: its own declarations are still rows
+          }
+        }
         if (calleeSymbol && calleeSymbol.declarations?.length) {
           const declarationFile = normalizeModulePath(
             calleeSymbol.declarations[0].getSourceFile().fileName, context);
@@ -1383,18 +1415,32 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   };
 
   // Program roots: every tsconfig's parsed file list plus any inventory
-  // source file no config covers. Out-of-scope references are already
-  // uncertainty rows from discovery.
+  // source file no config covers. The parsed compiler options (paths,
+  // baseUrl, moduleResolution, target …) drive the Program so module
+  // resolution follows the project's real configuration.
   const rootNames = [];
+  let options = { module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, noEmit: true, skipLibCheck: false, allowJs: false };
   for (const project of projects) {
     const parsed = ts.parseJsonConfigFileContent(
       project.raw ?? {},
       host,
-      `lekalo/project/${project.directory}`,
+      `/lekalo/project/${project.directory}`,
       undefined,
-      `lekalo/project/${project.configPath}`,
+      `/lekalo/project/${project.configPath}`,
     );
     for (const fileName of parsed.fileNames) rootNames.push(fileName);
+    if (parsed.options && Object.keys(parsed.options).length > 0) {
+      // Merge across configs: a config that explicitly sets a key wins;
+      // a config that leaves a key unset never clobbers another
+      // config's setting. multi-root workspaces share one Program.
+      for (const [key, value] of Object.entries(parsed.options)) {
+        if (!(key in options) || options[key] === undefined) {
+          options[key] = value;
+        }
+      }
+      options.noEmit = true;
+      options.disableSourceOfProjectReferenceRedirect = true;
+    }
     for (const diagnostic of parsed.errors) {
       if (index.diagnostics.length < MAX_DIAGNOSTICS) {
         index.diagnostics.push({
@@ -1409,7 +1455,7 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   }
   const configured = new Set(rootNames.map((name) => name.toLowerCase()));
   for (const file of manifest.sourceFiles) {
-    const hostName = `lekalo/project/${file.path}`;
+    const hostName = `/lekalo/project/${file.path}`;
     if (!configured.has(hostName.toLowerCase()) && !configured.has(file.path.toLowerCase())) {
       rootNames.push(hostName);
     }
@@ -1418,7 +1464,6 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
     return finalizeScan(index, manifest, profile, readView);
   }
 
-  const options = { noEmit: true, skipLibCheck: false, allowJs: false };
   const program = ts.createProgram({ rootNames, options, host });
   context.program = program;
   const checker = program.getTypeChecker();
@@ -1438,10 +1483,16 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   collectDiagnostics({ ts, program, context, index });
   collectAnySurfaces({ ts, checker, program, context, index });
 
-  // Denied host lookups of non-inventory files are honest uncertainty.
+  // Denied host lookups of inventory-shaped source files are honest
+  // uncertainty; negatives for unknown candidate spellings (config
+  // probing, sibling-extension probing) are normal resolution noise.
+  const sourceLike = /\.(ts|tsx|mts|cts|d\.ts|d\.mts|d\.cts|json)$/i;
   for (const entry of denied.slice(0, MAX_DIAGNOSTICS)) {
+    if (entry.kind !== "read") continue;
     const logical = inventorySet.get(entry.path) ?? inventorySet.get(entry.path.toLowerCase());
     if (logical !== undefined) continue; // served from inventory after all
+    if (entry.path.startsWith("/lekalo/libs/")) continue; // type context
+    if (!sourceLike.test(entry.path)) continue;
     index.anyUncertainty.push({
       path: normalizeUnknownPath(entry.path),
       kind: "host-lookup-denied",
@@ -1455,8 +1506,8 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
 
 function normalizeUnknownPath(hostName) {
   const normalized = hostName.split("\\").join("/");
-  return normalized.startsWith("lekalo/project/")
-    ? normalized.slice("lekalo/project/".length)
+  return normalized.startsWith("/lekalo/project/")
+    ? normalized.slice("/lekalo/project/".length)
     : normalized;
 }
 
@@ -1524,3 +1575,112 @@ export {
   IDENTITY_DOMAIN,
   SIGNATURE_DOMAIN,
 };
+
+
+/**
+ * The production extension entry point wired into the bundle descriptor:
+ * translate one kernel dispatch context into a scanner run and the
+ * closed internal outcome envelope. The semantic id proposals use the
+ * package-scoped qualified name; every confidence is honest and
+ * uncertainty in the index never becomes a fabricated success.
+ */
+export function scanOperation(context) {
+  const { operation, profile, readView, cancellation, limits } = context;
+  if (operation !== "scan") {
+    return { state: "unsupported", diagnostics: [{ reason: "scan-only-extension" }] };
+  }
+  const permittedProjectRoot = readView.permittedProjectRoot;
+  if (typeof permittedProjectRoot !== "string" || permittedProjectRoot === "") {
+    return { state: "failed", diagnostics: [{ reason: "root-context-missing" }] };
+  }
+  let index;
+  try {
+    index = runScan({ profile, readView, permittedProjectRoot, limits });
+  } catch (error) {
+    if (cancellation?.cancelled) {
+      return { state: "failed", diagnostics: [{ reason: "cancelled" }] };
+    }
+    return {
+      state: "failed",
+      diagnostics: [{ reason: String(error?.code ?? "scan-failed").slice(0, 64) }],
+    };
+  }
+  if (cancellation?.cancelled) {
+    return { state: "failed", diagnostics: [{ reason: "cancelled" }] };
+  }
+  if (index.state !== "complete") {
+    return { state: "partial", diagnostics: [{ reason: "scan-incomplete" }] };
+  }
+  const entries = [];
+  for (const symbol of index.symbols) {
+    if (symbol.memberOf !== null) continue; // members ride their owner
+    entries.push({
+      path: symbol.module,
+      kind: "entity",
+      detail: JSON.stringify({
+        s: semanticProposalFor(symbol, index),
+        n: symbol.native,
+        l: symbol.line,
+        q: symbol.declarationOnly ? "low" : "medium",
+      }),
+      evidence: buildEntryEvidence(symbol, index),
+    });
+  }
+  const errorCount = index.diagnostics.filter((d) => d.severity === "error").length;
+  const counts = {
+    symbols: index.symbols.length,
+    exports: index.exports.length,
+    references: index.references.length,
+    routes: index.routes.length,
+    tests: index.tests.length,
+    uncertainty: index.anyUncertainty.length,
+    errors: errorCount,
+  };
+  if (index.anyUncertainty.length > 0 || errorCount > 0) {
+    return {
+      state: "partial",
+      diagnostics: [{
+        reason: "uncertainty-present",
+        detail: "uncertainty=" + index.anyUncertainty.length + " errors=" + errorCount,
+      }],
+      evidence: {
+        compiler: index.compiler,
+        profileDigest: index.profileDigest,
+        counts,
+      },
+    };
+  }
+  return {
+    state: "complete",
+    data: { entries, complete: true },
+    evidence: {
+      compiler: index.compiler,
+      profileDigest: index.profileDigest,
+      counts,
+    },
+  };
+}
+
+/** The semantic id proposal of one symbol: package-scoped dotted name. */
+function semanticProposalFor(symbol, index) {
+  const pkg = index.packages.find((candidate) =>
+    symbol.module === candidate.root || symbol.module.startsWith(candidate.root + "/"));
+  const scope = pkg?.name ?? "project";
+  return (scope + "::" + symbol.qualifiedName).slice(0, 192);
+}
+
+/** Typed evidence rows of one symbol entry (signature + references). */
+function buildEntryEvidence(symbol, index) {
+  const references = index.references
+    .filter((row) => row.from === symbol.module)
+    .slice(0, 8)
+    .map((row) => ({
+      target: row.to.slice(0, 192),
+      role: row.role,
+      confidence: row.confidence,
+    }));
+  const evidence = {};
+  if (symbol.signature !== null) evidence.signature = symbol.signature;
+  if (references.length > 0) evidence.references = references;
+  return Object.keys(evidence).length > 0 ? evidence : undefined;
+}
