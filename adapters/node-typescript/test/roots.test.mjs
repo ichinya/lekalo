@@ -14,7 +14,7 @@ import {
   physicalRootViolation,
   resolveReadRoots,
   validateResolvedProjectProfile,
-} from "../adapter.mjs";
+} from "../main.mjs";
 import {
   dispose,
   materializeFixtureProject,

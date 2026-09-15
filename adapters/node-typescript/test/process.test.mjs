@@ -16,7 +16,7 @@ import {
   createKernel,
   decodeJsonDocument,
   validateRequestObject,
-} from "../adapter.mjs";
+} from "../main.mjs";
 import {
   canonical,
   deterministicDescribeRequest,
@@ -105,7 +105,7 @@ test("the metadata probe prints exact runtime fields on stdout", () => {
   assert.equal(result.status, 0);
   const probe = JSON.parse(result.stdout.toString("utf8"));
   assert.equal(probe.adapter.id, "lekalo-target-node-typescript");
-  assert.equal(probe.adapter.version, "0.3.0");
+  assert.equal(probe.adapter.version, "0.3.1");
   assert.match(probe.adapter.digest, /^sha256:[0-9a-f]{64}$/);
   assert.equal(probe.node, process.versions.node);
 });

@@ -31,7 +31,7 @@ import {
   validateExtensionDescriptor,
   validateRequestObject,
   validateResolvedProjectProfile,
-} from "../adapter.mjs";
+} from "../main.mjs";
 import {
   deterministicDescribeRequest,
   expectedNormalization,
@@ -61,7 +61,7 @@ test("identity constants are the frozen #43 values", () => {
   assert.deepEqual(SUPPORTED_VERSIONS, ["0.2.16"]);
   assert.equal(VERSION, "0.2.16");
   assert.equal(ADAPTER_ID, "lekalo-target-node-typescript");
-  assert.equal(ADAPTER_VERSION, "0.3.0");
+  assert.equal(ADAPTER_VERSION, "0.3.1");
   assert.match(entryDigest(), /^sha256:[0-9a-f]{64}$/);
 });
 

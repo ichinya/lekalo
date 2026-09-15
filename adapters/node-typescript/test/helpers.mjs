@@ -14,6 +14,9 @@ import { fileURLToPath } from "node:url";
 export const repoRoot = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../.."));
 
 export const adapterPath = join(repoRoot, "adapters/node-typescript/adapter.mjs");
+/** The unbundled source entry used by the in-process suites. */
+export const sourceEntryPath = join(repoRoot, "adapters/node-typescript/main.mjs");
+export const kernelSourcePath = join(repoRoot, "adapters/node-typescript/src/kernel.mjs");
 export const fixtureRoot = join(repoRoot, "tests/fixtures/node-typescript-kernel");
 
 export function readFixture(relative) {

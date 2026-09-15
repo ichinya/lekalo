@@ -15,7 +15,7 @@ import {
   createKernel,
   decodeJsonDocument,
   validateRequestObject,
-} from "../adapter.mjs";
+} from "../main.mjs";
 import {
   adapterPath,
   deterministicDescribeRequest,
@@ -199,10 +199,13 @@ test("adapter entry digest is stable across reads within one process", () => {
     runAdapter(Buffer.alloc(0), ["--version-json"]).stdout.toString("utf8"),
   );
   assert.equal(first.adapter.digest, second.adapter.digest);
-  assert.equal(first.adapter.digest, entryDigestOfAdapterBytes());
+  // The generated artifact IS the launched entry: its digest is the
+  // sha256 of its own bytes (holds for the interim generation and the
+  // final compiler bundle alike).
+  assert.equal(first.adapter.digest, entryDigestOfArtifactBytes());
 });
 
 import { createHash } from "node:crypto";
-function entryDigestOfAdapterBytes() {
+function entryDigestOfArtifactBytes() {
   return "sha256:" + createHash("sha256").update(readFileSync(adapterPath)).digest("hex");
 }
