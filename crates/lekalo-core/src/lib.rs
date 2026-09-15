@@ -8,6 +8,7 @@ pub mod context;
 pub mod contracted;
 pub mod diagnostics;
 pub mod diff;
+pub mod digest;
 pub mod doctor;
 pub mod effects;
 pub mod error_contract;

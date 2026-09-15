@@ -1,6 +1,8 @@
-# Lekalo Model v0.1
+# Lekalo Model 0.2.16
 
-Status: issue #3 is accepted and published as product 0.1.3 at exact commit `9c35c8f61a87e89ed15471e7f12012946916e8d5`, with immutable annotated tag `v0.1.3`; issue #6 is only the prospective product 0.1.4 candidate until fresh independent PASS, publication, remote verification and closure evidence. Product versions remain independent from Model, schema, semantic-ID, IR and other contract versions.
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
+Current baseline: 0.2.16. See [versioning](versioning.md).
 
 The model is language-neutral and uses the same semantic vocabulary for
 TypeScript, PHP and Go targets. It contains no target-language class, package,
@@ -8,10 +10,10 @@ framework or runtime concepts.
 
 The normative artifacts are:
 
-- [`contracts/model.schema.v0.1.0.json`](../contracts/model.schema.v0.1.0.json) —
+- [`contracts/model.schema.v0.2.16.json`](../contracts/model.schema.v0.2.16.json) —
   JSON Schema Draft 2020-12 with `$id
-  https://lekalo.dev/schemas/model/0.1.0/schema.json` and
-  `schema_version: 0.1.0`;
+  https://lekalo.dev/schemas/model/0.2.16/schema.json` and
+  `schema_version: 0.2.16`;
 - [`scripts/check-model.mjs`](../scripts/check-model.mjs) — dependency-free
   reference shape and semantic validator;
 - [`tests/fixtures/model/valid-planner`](../tests/fixtures/model/valid-planner) —
@@ -27,7 +29,7 @@ File homes are owned by ADR-0003 and issue #4. Every semantic document is a
 closed object:
 
 ```json
-{ "schema_version": "0.1.0", "definitions": [ ... ] }
+{ "schema_version": "0.2.16", "definitions": [ ... ] }
 ```
 
 | File | Allowed definition kinds |
@@ -64,7 +66,7 @@ Every definition is closed and has these common fields:
 `derived_from` is requirement provenance, not identity. Paths, line/column
 locations and parser provenance are loader metadata and never become semantic
 IDs. Stable path-independent IDs, rename history, aliases and tombstones are
-owned by #6 and are intentionally absent from Model v0.1.
+owned by #6 and are intentionally absent from Model.
 
 Project and module definitions have separate identity namespaces. Other
 definitions share one project-wide namespace and use `<module>.<name>`; in
@@ -155,25 +157,16 @@ are not simulated here; they remain #7 scope.
 
 ## Version and evolution policy
 
-Schema version, per-definition version and product version are independent.
-`schema_version` is exact and unknown fields are rejected everywhere.
-
-- Non-breaking schema change: add an optional field, add a new optional
-  reusable definition, or add a new kind without changing existing branches.
-  It requires a reviewed minor schema successor.
-- Breaking schema change: remove/rename/re-type a field, tighten an existing
-  constraint, change ID grammar, change a closed enum, or remap file homes.
-  It requires a reviewed major schema successor plus migration guidance.
-- Per-definition `version` increments when that definition changes; it does
-  not replace the schema version.
-- Published schema bytes are immutable. Unknown/future fields never silently
-  pass an older validator.
+Contracts change to the current product version when edited. All project
+documents must declare the supported exact schema version. Unknown fields
+are rejected. Per-definition versions remain separate model metadata.
+See [versioning](versioning.md) for future migration policy.
 
 ## Explicit exclusions
 
-Model v0.1 does not include arbitrary cycles, recursion, a full expression
+Model does not include arbitrary cycles, recursion, a full expression
 language, UI layout or distributed workflow orchestration. Complex logic is a
-future foreign-implementation contract, not an untyped escape hatch in v0.1.
+future foreign-implementation contract, not an untyped escape hatch in the model.
 
 ## Commands and exit protocol
 

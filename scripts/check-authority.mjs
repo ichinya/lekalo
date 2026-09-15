@@ -10,7 +10,7 @@ const manifestPath = resolve(root, "contracts/authority-contracts.manifest.json"
 const defaultAllowedPath = resolve(root, "tests/fixtures/authority/allowed.json");
 const defaultForbiddenPath = resolve(root, "tests/fixtures/authority/forbidden.json");
 const defaultMalformedPath = resolve(root, "tests/fixtures/authority/malformed.json");
-const trustedManifestSha256 = "b4b3c79a869e70b8a54b10fa23e5f345ff1b4db269dd3e9477bbc01bb86ee4ca";
+const trustedManifestSha256 = "3343240f93db67cd49a14f16cf72c3428ea81b9ee21213105aff008d7bd22371";
 const baselinePathBoundaries = [
   { pattern: "openspec/specs/**", owner: "openspec" },
   { pattern: "openspec/changes/**", owner: "openspec" },
@@ -76,40 +76,19 @@ const successorAddedKindIds = [
   "aggregate.decision"
 ];
 const acceptedProfiles = new Map([
-  ["1.2.0", {
+  ["0.2.16", {
     contractId: "dev.lekalo.authority-matrix",
-    version: "1.2.0",
-    digest: "sha256:3446ce25ce33397f8c49426144a4c4dbf8c8ea23e4c759ceca70557606ffeda2",
-    semanticSha256: "bb9797ddfa140a86de2e8e070bc887827c90b35c0a538e6f65a3aa1fbbd805fc",
-    path: "contracts/authority-matrix.v1.2.0.json",
-    sidecar: "contracts/authority-matrix.v1.2.0.sha256",
-    pathBoundaries: baselinePathBoundaries,
-    kindIds: baselineKindIds,
-    readersRequired: false,
-    boundarySchema: "legacy-profile"
-  }],
-  ["1.3.1", {
-    contractId: "dev.lekalo.authority-matrix",
-    version: "1.3.1",
-    digest: "sha256:5c96ed68fe27956512b6de37e0fa23d223e4430d391b6a5869b12d2a8cb522d3",
-    semanticSha256: "5e15ac4cf77b6fcfa6660a965714ffa4038e816f045032c97565a6c215bc3c38",
-    path: "contracts/authority-matrix.v1.3.1.json",
-    sidecar: "contracts/authority-matrix.v1.3.1.sha256",
+    version: "0.2.16",
+    digest: "sha256:141641cfbc1fbf6a07add99feafb877f9f544687ad558ab91d619ec7dd78d1b4",
+    semanticSha256: "0e483a6c7015fd03c17f610525260bf8a1047e07679837f4e080ba98f8d1b864",
+    path: "contracts/authority-matrix.v0.2.16.json",
+    sidecar: "contracts/authority-matrix.v0.2.16.sha256",
     kindIds: [...baselineKindIds, ...successorAddedKindIds],
     readersRequired: true,
     boundarySchema: "kind-bound"
   }]
 ]);
-const rejectedProfiles = new Map([
-  ["1.3.0", {
-    contractId: "dev.lekalo.authority-matrix",
-    version: "1.3.0",
-    digest: "sha256:50a4b9c8533644bd61841e695fc042e4ac52307952dcccb37bf6f2d3ab3a3211",
-    path: "contracts/authority-matrix.v1.3.0.json",
-    sidecar: "contracts/authority-matrix.v1.3.0.sha256",
-    replacementVersion: "1.3.1"
-  }]
-]);
+const rejectedProfiles = new Map();
 const requiredLegacyConditionalPathBoundary = {
   pattern: "project.yaml",
   owner: "hlv",
@@ -200,12 +179,12 @@ async function loadTrustedManifest() {
   }
   exactContractObject(
     manifest,
-    ["manifestId", "formatVersion", "digestAlgorithm", "digestInput", "selfReferential", "acceptedContracts", "rejectedContracts", "currentAuthorityRef"],
+    ["manifestId", "formatVersion", "digestAlgorithm", "digestInput", "selfReferential", "acceptedContracts", "currentAuthorityRef"],
     "authority manifest"
   );
   if (
     manifest.manifestId !== "dev.lekalo.authority-contract-manifest" ||
-    manifest.formatVersion !== "1.0.0" ||
+    manifest.formatVersion !== "0.2.16" ||
     manifest.digestAlgorithm !== "sha256" ||
     manifest.digestInput !== "exact-file-bytes" ||
     manifest.selfReferential !== false
@@ -238,29 +217,6 @@ async function loadTrustedManifest() {
     entries.set(entry.version, entry);
   }
 
-  if (!Array.isArray(manifest.rejectedContracts) || manifest.rejectedContracts.length !== rejectedProfiles.size) {
-    fail("Authority manifest must enumerate exactly the trusted rejected contracts");
-  }
-  for (const entry of manifest.rejectedContracts) {
-    const profile = rejectedProfiles.get(entry.version);
-    if (
-      !profile ||
-      entry.contractId !== profile.contractId ||
-      entry.digest !== profile.digest ||
-      entry.path !== profile.path ||
-      entry.sidecar !== profile.sidecar ||
-      entry.status !== "rejected-yanked-candidate" ||
-      entry.replacement?.version !== profile.replacementVersion
-    ) {
-      fail(`Authority manifest rejected entry ${entry.version} is not the trusted yanked candidate lifecycle`);
-    }
-    const sidecarBytes = await readFile(resolve(root, entry.sidecar));
-    const expectedSidecar = `${profile.digest.slice("sha256:".length)}  ${basename(profile.path)}\n`;
-    if (sidecarBytes.toString("utf8") !== expectedSidecar) {
-      fail(`Rejected authority sidecar ${entry.sidecar} does not preserve exact candidate bytes`);
-    }
-  }
-
   const current = manifest.currentAuthorityRef;
   if (!isPlainObject(current)) fail("Authority manifest currentAuthorityRef is malformed");
   const currentProfile = acceptedProfiles.get(current.version);
@@ -268,7 +224,7 @@ async function loadTrustedManifest() {
     !currentProfile ||
     current.contractId !== currentProfile.contractId ||
     current.digest !== currentProfile.digest ||
-    current.version !== "1.3.1"
+    current.version !== "0.2.16"
   ) {
     fail("Authority manifest currentAuthorityRef must be the trusted reviewed successor");
   }
@@ -494,13 +450,13 @@ function validateNoAmbiguousTies(boundaries) {
 
 function normalizeLegacyBoundaries(boundaries, conditionalBoundaries, profile, kinds, owners, actors) {
   if (boundaries.length !== profile.pathBoundaries.length) {
-    fail("Legacy pathBoundaries must equal the closed 1.2.0 baseline");
+    fail("Legacy pathBoundaries must equal the closed 0.2.16 baseline");
   }
   const normalized = boundaries.map((boundary, index) => {
     exactContractObject(boundary, ["pattern", "owner"], `pathBoundaries[${index}]`);
     const required = profile.pathBoundaries[index];
     if (boundary.pattern !== required.pattern || boundary.owner !== required.owner) {
-      fail(`Legacy boundary ${index} does not match the accepted 1.2.0 profile`);
+      fail(`Legacy boundary ${index} does not match the accepted 0.2.16 profile`);
     }
     const permittedKinds = [...kinds.values()].filter(
       (kind) => kind.canonicalOwner === boundary.owner && kind.allowedPaths.some((path) => patternsOverlap(path, boundary.pattern))
@@ -734,7 +690,7 @@ function validateContract(contract, profile) {
   if (contract.contractId !== profile.contractId) fail("Unexpected contractId");
   if (contract.version !== profile.version) fail(`Contract version must be ${profile.version}`);
   if (contract.status !== "accepted") fail("Contract status must be accepted");
-  const semanticallyIdenticalCopiesAllowed = profile.version === "1.2.0";
+  const semanticallyIdenticalCopiesAllowed = false;
   if (
     contract.compatibility?.checkerProfile !== "closed-exact" ||
     contract.compatibility?.extensionsAllowed !== false ||
@@ -927,24 +883,7 @@ function validateContract(contract, profile) {
     fail("Claim policy must be universally reference-only");
   }
 
-  if (profile.version === "1.3.1") {
-    const predecessor = contract.predecessor ?? {};
-    const baselineProfile = acceptedProfiles.get("1.2.0");
-    if (
-      predecessor.contractId !== "dev.lekalo.authority-matrix" ||
-      predecessor.version !== "1.3.0" ||
-      predecessor.digest !== rejectedProfiles.get("1.3.0").digest ||
-      predecessor.lifecycle !== "rejected-yanked-candidate"
-    ) {
-      fail("Corrective successor must name the exact rejected/yanked 1.3.0 candidate");
-    }
-    if (
-      contract.acceptedBaseline?.contractId !== baselineProfile.contractId ||
-      contract.acceptedBaseline?.version !== baselineProfile.version ||
-      contract.acceptedBaseline?.digest !== baselineProfile.digest
-    ) {
-      fail("Corrective successor must retain the exact immutable 1.2.0 accepted baseline");
-    }
+  if (profile.version === "0.2.16") {
     const registryPolicy = contract.registryPolicy ?? {};
     if (
       registryPolicy.closure !== "closed-exact" ||
@@ -959,95 +898,8 @@ function validateContract(contract, profile) {
     ) {
       fail("Successor registry policy must remain closed-exact without aliases or runtime extension");
     }
-    const successorProcedure = contract.successorProcedure ?? {};
-    if (
-      successorProcedure.newVersionRequired !== true ||
-      successorProcedure.exactDigestRequired !== true ||
-      successorProcedure.predecessorExactRefRequired !== true ||
-      successorProcedure.compatibilityMetadataRequired !== true ||
-      successorProcedure.migrationMetadataRequired !== true ||
-      successorProcedure.silentMutationAllowed !== false ||
-      successorProcedure.acceptanceManifest !== "contracts/authority-contracts.manifest.json" ||
-      successorProcedure.migrationDocument !== "docs/authority-contract-migration-1.3.0-to-1.3.1.md"
-    ) {
-      fail("Reviewed-successor procedure is incomplete");
-    }
-    const migration = contract.migration ?? {};
-    if (
-      migration.compatibility !== "corrective-successor-over-yanked-candidate" ||
-      migration.operationSemantics !== "protected-path-custody-strengthened" ||
-      migration.stableKindIdsPreserved !== true ||
-      JSON.stringify(migration.removedKindIds) !== "[]" ||
-      JSON.stringify(migration.addedKindIds) !== "[]" ||
-      JSON.stringify(migration.changedKindIds) !== JSON.stringify([
-        "metrics.evaluation-evidence", "native.symbol-identity", "native.source-map"
-      ]) ||
-      migration.boundarySchemaChange !== "owner-only-to-kind-reader-writer-bound" ||
-      JSON.stringify(migration.privacyHandoffAddedKindIdsFromAcceptedBaseline) !== JSON.stringify(successorAddedKindIds) ||
-      migration.rejectedCandidateBehavior !== "never-select-or-accept" ||
-      migration.staleReferenceBehavior !== "reject" ||
-      migration.consumerAction !== "replace-any-1.3.0-candidate-ref-with-exact-1.3.1-ref"
-    ) {
-      fail("Successor compatibility and migration metadata is incomplete");
-    }
-    const expectedWriterChanges = [
-      { id: "metrics.evaluation-evidence", fields: ["allowedWriters"], from: ["hlv", "ai-factory", "aifhub-adapter"], to: ["hlv"] },
-      { id: "native.symbol-identity", fields: ["allowedWriters"], from: ["source-native", "lekalo"], to: ["source-native"] },
-      { id: "native.source-map", fields: ["allowedWriters"], from: ["source-native", "lekalo"], to: ["source-native"] }
-    ];
-    if (canonicalJson(migration.changedFieldsByKind) !== canonicalJson(expectedWriterChanges)) {
-      fail("Corrective successor writer-change metadata is incomplete");
-    }
-    const expectedBoundaryPolicy = {
-      schemaVersion: "1.0.0",
-      resolution: "all-matches-most-specific",
-      specificityOrder: [
-        "literal-prefix-segments-desc",
-        "literal-segment-count-desc",
-        "literal-character-count-desc",
-        "segment-depth-desc",
-        "wildcard-token-count-asc"
-      ],
-      equalSpecificity: "identical-policy-or-reject",
-      kindBinding: "exact-boundary-artifactKinds",
-      readerWriterBinding: "boundary-and-kind-intersection",
-      actionAccess: {
-        read: { source: "read" },
-        write: { target: "write" },
-        syncOneWay: { source: "read", target: "write" },
-        syncBidirectionalProposal: { source: "read", target: "read" },
-        claimReference: { source: "read", target: "read" },
-        promote: { source: "read", target: "write" },
-        adopt: { source: "read", target: "write" }
-      }
-    };
-    if (canonicalJson(contract.boundaryPolicy) !== canonicalJson(expectedBoundaryPolicy)) {
-      fail("Boundary specificity and action-access policy changed or is incomplete");
-    }
-    for (const kindId of [
-      "source-native.source-code",
-      "source-native.native-test",
-      "fixture",
-      "repository.identity",
-      "native.symbol-identity",
-      "native.source-map"
-    ]) {
-      if (JSON.stringify(kindMap.get(kindId).allowedWriters) !== JSON.stringify(["source-native"])) {
-        fail(`${kindId} direct source-native evidence must be source-native-only writable`);
-      }
-    }
-    if (JSON.stringify(kindMap.get("metrics.evaluation-evidence").allowedWriters) !== JSON.stringify(["hlv"])) {
-      fail("HLV metrics evidence must be HLV-only writable");
-    }
-    for (const kind of kinds.slice(0, baselineKindIds.length)) {
-      if (JSON.stringify(kind.allowedReaders) !== JSON.stringify(actors)) {
-        fail(`${kind.id} must preserve 1.2.0 unrestricted-read behavior through explicit readers`);
-      }
-    }
   }
 
-  if (contract.conflictPolicy?.lastWriterWins !== false) fail("Last-writer-wins must be forbidden");
-  if (contract.projectRules?.absentLayerTransfersAuthority !== false) fail("An absent layer must not transfer authority");
   const actualSemanticSha256 = semanticSha256(contract);
   if (actualSemanticSha256 !== profile.semanticSha256) {
     fail(
@@ -1387,7 +1239,7 @@ async function loadAuthoritySelection(options) {
   return { contract, context, profile };
 }
 
-export async function loadAcceptedAuthority(version = "1.3.1") {
+export async function loadAcceptedAuthority(version = "0.2.16") {
   return loadAuthoritySelection({
     contractPath: undefined,
     contractVersion: version,

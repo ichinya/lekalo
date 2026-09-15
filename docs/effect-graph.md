@@ -12,8 +12,8 @@ selects, renders, and maps exits onto the accepted 0/1 envelope. See
 ## Contract
 
 The effect graph publishes its own closed contract,
-`contracts/effect-graph.schema.v1.0.0.json` (discriminator
-`lekalo/effects/v1.0.0`, identity `dev.lekalo.effects@1.0.0`), independent
+`contracts/effect-graph.schema.v0.2.16.json` (discriminator
+`lekalo/effects/v0.2.16`, identity `dev.lekalo.effects@0.2.16`), independent
 of the product release and of every other contract family. Declared
 effects are projected deterministically from the accepted typed IR;
 detected effects enter only as typed evidence records and never mutate the
@@ -96,7 +96,7 @@ lekalo effects conflicts --changed OPERATIONS [--project DIR]
         "transactionGroup": null
       }
     ],
-    "identity": "dev.lekalo.effects@1.0.0",
+    "identity": "dev.lekalo.effects@0.2.16",
     "operation": "operation:planner.focus_task"
   }
 }

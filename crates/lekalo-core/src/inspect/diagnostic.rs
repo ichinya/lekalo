@@ -2,7 +2,7 @@
 //! (issue #15).
 //!
 //! The four inspect rules were added to the embedded registry as a
-//! wire-shape-preserving minor increment (`1.2.0` -> `1.3.0`, ADR-0014):
+//! wire-shape-preserving minor increment (`0.2.16` -> `1.3.0`, ADR-0014):
 //! `inspect.symbol-unknown`, `inspect.short-name-unknown`,
 //! `inspect.short-name-ambiguous`, and `inspect.output-limit`. Unknown
 //! and ambiguous resolution are distinct stable diagnostics and are

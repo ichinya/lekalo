@@ -1,4 +1,4 @@
-{"schema_version":"1.0.0","definitions":[
+{"schema_version":"0.2.16","definitions":[
 {"id":"planner.task_id","kind":"scalar","version":1,"description":"Stable task identifier","base":"uuid","visibility":"project"},
 {"id":"planner.text","kind":"scalar","version":1,"description":"Human-readable text","base":"string","renamed_from":["planner.txt"]},
 {"id":"planner.due_date","kind":"scalar","version":1,"description":"Calendar due date","base":"date"},

@@ -1,11 +1,13 @@
 # ADR-0026: read-only OpenSpec requirement traceability
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 - Status: accepted (issue #36)
 - Depends on: ADR-0001 (authority boundaries), ADR-0005 (semantic IDs),
   ADR-0014 (neutral trace manifest), ADR-0010 (diagnostics)
 - Custody: this issue carries the **prospective product candidate 0.2.1** in
   its candidate tree; product versioning remains independent of every
-  contract version touched here (attachment `1.0.0`, report `1.0.0`,
+  contract version touched here (attachment `0.2.16`, report `0.2.16`,
   diagnostic registry minor `1.10.0` → `1.11.0`).
 
 ## Context
@@ -32,10 +34,10 @@ records that "#36 owns any later provider resolution".
 1. **A separate attachment, not a Model or IR change.** The structured
    requirement reference (`source`, `id`, `revision`) is integration
    metadata, not semantic model content. Publishing it inside the Model
-   would break the published Model 1.0.0 grammar (requirement ids there are
+   would break the published Model 0.2.16 grammar (requirement ids there are
    uppercase provenance strings), force an IR and wire migration, and drag
    OpenSpec-shaped data through every projection. Instead, issue #36 ships
-   one closed attachment (`lekalo/requirements/v1.0.0`) following the
+   one closed attachment (`lekalo/requirements/v0.2.16`) following the
    established #23/#24/#26/#63 attachment pattern: bound to exactly one
    project and one Model pin, closed under `additionalProperties: false`,
    strict-compiled under exact Ajv 8.17.1. The Model grammar and every
@@ -43,7 +45,7 @@ records that "#36 owns any later provider resolution".
    Model-level provenance.
 2. **A derived report wire, not private output shapes.** Coverage gaps,
    reference statuses, conflicts, and impact are one closed
-   `lekalo/requirements-report/v1.0.0` document so AIFHub-class consumers
+   `lekalo/requirements-report/v0.2.16` document so AIFHub-class consumers
    validate them without Rust coupling. The report carries ids, digests,
    and bounded identifiers only — never requirement text.
 3. **The `openspec` provider reads the disk, never a CLI.** Resolution

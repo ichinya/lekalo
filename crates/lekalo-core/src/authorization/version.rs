@@ -8,19 +8,19 @@
 pub const FAMILY: &str = "dev.lekalo.authorization";
 
 /// The exact contract version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact contract identity.
-pub const IDENTITY: &str = "dev.lekalo.authorization@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.authorization@0.2.16";
 
 /// The exact wire discriminator of the canonical authorization document.
-pub const SCHEMA_VERSION: &str = "lekalo/authorization/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/authorization/v0.2.16";
 
 /// The exact `$id` of the published wire schema.
-pub const SCHEMA_ID: &str = "https://dev.lekalo/authorization.schema.v1.0.0.json";
+pub const SCHEMA_ID: &str = "https://dev.lekalo/authorization.schema.v0.2.16.json";
 
 /// The independent strict review profile family identity.
-pub const PROFILE_IDENTITY: &str = "dev.lekalo.authorization-profile@1.0.0";
+pub const PROFILE_IDENTITY: &str = "dev.lekalo.authorization-profile@0.2.16";
 
 /// The canonical project-relative path of the authorization source.
 pub const SOURCE_PATH: &str = "lekalo/authorization.yaml";

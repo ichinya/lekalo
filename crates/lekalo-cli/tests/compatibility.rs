@@ -52,8 +52,8 @@ fn human_projection_is_one_stable_line() {
     assert!(output.stderr.is_empty());
     assert_eq!(
         stdout_text(&output),
-        "compatibility: model current 1.0.0 (0.1.0..1.0.0), ir current 0.1.0, \
-         protocol current 1.2.0\n"
+        "compatibility: model current 0.2.16 (0.2.16..0.2.16), ir current 0.2.16, \
+         protocol current 0.2.16\n"
     );
 }
 
@@ -64,25 +64,18 @@ fn the_projection_reports_exactly_the_three_families_in_order() {
     let value: serde_json::Value =
         serde_json::from_str(stdout_text(&output).trim()).expect("envelope parses");
     assert_eq!(value["status"], "valid");
-    assert_eq!(value["registryVersion"], "1.2.0");
+    assert_eq!(value["registryVersion"], "0.2.16");
     let families = value["families"].as_array().expect("families array");
     assert_eq!(families.len(), 3);
     assert_eq!(families[0]["family"], "model");
-    assert_eq!(families[0]["current"], "1.0.0");
-    assert_eq!(families[0]["min"], "0.1.0");
-    assert_eq!(families[0]["max"], "1.0.0");
-    assert_eq!(families[0]["versions"][0]["state"], "deprecated");
-    assert_eq!(families[0]["versions"][1]["state"], "supported");
-    assert_eq!(families[0]["aliases"][0]["alias"], "v1");
-    assert_eq!(families[0]["migrations"][0]["id"], "model-0.1.0-to-1.0.0@1");
+    assert_eq!(families[0]["current"], "0.2.16");
+    assert_eq!(families[0]["min"], "0.2.16");
+    assert_eq!(families[0]["max"], "0.2.16");
+    assert_eq!(families[0]["versions"][0]["state"], "supported");
     assert_eq!(families[1]["family"], "ir");
-    assert_eq!(families[1]["current"], "0.1.0");
-    assert_eq!(families[1]["migrations"].as_array().map(Vec::len), Some(0));
+    assert_eq!(families[1]["current"], "0.2.16");
     assert_eq!(families[2]["family"], "protocol");
-    assert_eq!(families[2]["current"], "1.2.0");
-    assert_eq!(families[2]["versions"].as_array().map(Vec::len), Some(3));
-    assert_eq!(families[2]["versions"][0]["version"], "1.0.0");
-    assert_eq!(families[2]["versions"][1]["version"], "1.1.0");
-    assert_eq!(families[2]["versions"][2]["version"], "1.2.0");
-    assert_eq!(families[2]["aliases"][0]["alias"], "v1");
+    assert_eq!(families[2]["current"], "0.2.16");
+    assert_eq!(families[2]["versions"].as_array().map(Vec::len), Some(1));
+    assert_eq!(families[2]["versions"][0]["version"], "0.2.16");
 }

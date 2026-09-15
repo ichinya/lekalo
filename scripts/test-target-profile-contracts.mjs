@@ -2,7 +2,7 @@
 /**
  * Issue #29 contract gate: the composable target profile contract.
  *
- * Validates `contracts/target-profile.schema.v1.0.0.json` with the pinned
+ * Validates `contracts/target-profile.schema.v0.2.16.json` with the pinned
  * Ajv 8.17.1, proves the committed fixture set round-trips through the
  * closed schema — the issue's Node and Laravel profiles, a Go runtime
  * reusing the storage/transport/deployment components, a monorepo
@@ -64,7 +64,7 @@ function failAll(failures) {
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
 
-const schema = JSON.parse(read("../contracts/target-profile.schema.v1.0.0.json"));
+const schema = JSON.parse(read("../contracts/target-profile.schema.v0.2.16.json"));
 const validate = ajv.compile(schema);
 
 /** Raw lexer: reject duplicate JSON keys before any parse can hide them. */
@@ -209,7 +209,7 @@ if (failures.length > 0) {
 
 process.stdout.write(`${JSON.stringify({
   ok: true,
-  schema: "lekalo/target-profile/v1.0.0",
+  schema: "lekalo/target-profile/v0.2.16",
   validDocuments: accepted,
   refusedVectors: refused,
   resolvedGolden: resolved.id,

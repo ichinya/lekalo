@@ -1,9 +1,11 @@
 # Lekalo declarative query model
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Issue #64 makes the read semantics of queries first-class,
 machine-checkable contract data. One closed, versioned attachment —
-[`contracts/query-model.schema.v1.0.0.json`](../contracts/query-model.schema.v1.0.0.json)
-(`lekalo/query-model/v1.0.0`, identity `dev.lekalo.query-model@1.0.0`) —
+[`contracts/query-model.schema.v0.2.16.json`](../contracts/query-model.schema.v0.2.16.json)
+(`lekalo/query-model/v0.2.16`, identity `dev.lekalo.query-model@0.2.16`) —
 binds one project to one exact Model pin and declares, per query:
 source entities, result cardinality, parameters resolved from the
 query input, a closed filter grammar, deterministic sort with a

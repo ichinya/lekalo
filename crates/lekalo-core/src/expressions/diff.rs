@@ -217,10 +217,10 @@ mod tests {
         let document = serde_json::json!({
             "schemaVersion": super::super::version::SCHEMA_VERSION,
             "identity": super::super::version::IDENTITY,
-            "attachmentRevision": "1.0.0",
+            "attachmentRevision": "0.2.16",
             "projectId": "planner",
             "modelRef": {
-                "modelVersion": "1.0.0",
+                "modelVersion": "0.2.16",
                 "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
             },
             "irRef": {
@@ -278,10 +278,10 @@ mod tests {
         let mut document = serde_json::json!({
             "schemaVersion": super::super::version::SCHEMA_VERSION,
             "identity": super::super::version::IDENTITY,
-            "attachmentRevision": "1.0.0",
+            "attachmentRevision": "0.2.16",
             "projectId": "other",
             "modelRef": {
-                "modelVersion": "1.0.0",
+                "modelVersion": "0.2.16",
                 "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
             },
             "irRef": {

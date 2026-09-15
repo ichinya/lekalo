@@ -1,15 +1,17 @@
 # Lekalo authorization
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Issue #25 makes authorization an explicit part of the semantic model: an
 operation cannot be generated or implemented without a declared actor,
 scope, and policy. The contract is an independent version family —
-discriminator `lekalo/authorization/v1.0.0`, identity
-`dev.lekalo.authorization@1.0.0` — independent of the product release,
+discriminator `lekalo/authorization/v0.2.16`, identity
+`dev.lekalo.authorization@0.2.16` — independent of the product release,
 the Model/IR/graph/effect/protocol contract versions, the diagnostic
-registry, and the strict review profile (`dev.lekalo.authorization-profile@1.0.0`)
+registry, and the strict review profile (`dev.lekalo.authorization-profile@0.2.16`)
 by design.
 
-- [`contracts/authorization.schema.v1.0.0.json`](../contracts/authorization.schema.v1.0.0.json) — the closed wire schema,
+- [`contracts/authorization.schema.v0.2.16.json`](../contracts/authorization.schema.v0.2.16.json) — the closed wire schema,
 - [`docs/adr/0021-authorization.md`](adr/0021-authorization.md) — the owner decisions,
 
 ## Canonical source

@@ -15,14 +15,14 @@ use std::fmt;
 use super::LockFailure;
 
 /// The closed wire discriminator of the only supported lock schema.
-pub const SCHEMA_VERSION: &str = "lekalo/lock/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/lock/v0.2.16";
 
 /// The contract identity of the published lock schema artifact.
-pub const LOCK_IDENTITY: &str = "dev.lekalo.lock@1.0.0";
+pub const LOCK_IDENTITY: &str = "dev.lekalo.lock@0.2.16";
 
 /// The independent resolver algorithm version (not a product or contract
 /// version). Bumped only by a reviewed resolver change.
-pub const RESOLVER_VERSION: &str = "1.0.0";
+pub const RESOLVER_VERSION: &str = "0.2.16";
 
 /// Canonical SemVer without build metadata: one spelling per version.
 ///

@@ -1,5 +1,7 @@
 # The generate and verify orchestration (issue #91)
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Two unified core commands turn the accepted seams into the generation and
 verification pipelines: `lekalo generate` validates the Model, binds the
 exact lock and inputs, resolves the target profile and adapter
@@ -17,9 +19,9 @@ decision is [ADR-0038](adr/0038-generate-verify-orchestration.md).
 ## Receipt contract
 
 Every success emits one closed receipt
-([`contracts/orchestration-report.schema.v1.0.0.json`](../contracts/orchestration-report.schema.v1.0.0.json),
-discriminator `lekalo/orchestration/v1.0.0`, identity
-`dev.lekalo.orchestration-report@1.0.0`) — independent of the product
+([`contracts/orchestration-report.schema.v0.2.16.json`](../contracts/orchestration-report.schema.v0.2.16.json),
+discriminator `lekalo/orchestration/v0.2.16`, identity
+`dev.lekalo.orchestration-report@0.2.16`) — independent of the product
 release and of every other contract family. Both renderers project the
 same receipt; the human line is a one-line summary of the same data.
 

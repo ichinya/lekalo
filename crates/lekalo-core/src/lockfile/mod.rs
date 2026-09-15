@@ -5,8 +5,8 @@
 //! product, contract, adapter, generator, profile, and capability
 //! identities that participated in a result. It is a physical regular file
 //! at the accepted project home, serialized as strict canonical JSON (the
-//! wire discriminator is `lekalo/lock/v1.0.0`, the schema identity is
-//! `dev.lekalo.lock@1.0.0`), and it is never a runtime mutex, migration
+//! wire discriminator is `lekalo/lock/v0.2.16`, the schema identity is
+//! `dev.lekalo.lock@0.2.16`), and it is never a runtime mutex, migration
 //! journal, package cache, or release attestation.
 //!
 //! This module owns only the lock surface: the closed typed wire

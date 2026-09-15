@@ -1,9 +1,9 @@
 # Neutral trace manifest
 
 Issue #22 defines the neutral, HLV/OpenSpec-independent traceability
-format: a closed, versioned wire (`lekalo/trace-manifest/v1.0.0`,
-identity `dev.lekalo.trace-manifest@1.0.0`, contract
-[contracts/trace-manifest.schema.v1.0.0.json](../contracts/trace-manifest.schema.v1.0.0.json))
+format: a closed, versioned wire (`lekalo/trace-manifest/v0.2.16`,
+identity `dev.lekalo.trace-manifest@0.2.16`, contract
+[contracts/trace-manifest.schema.v0.2.16.json](../contracts/trace-manifest.schema.v0.2.16.json))
 that expresses the chain
 
 ```text
@@ -23,8 +23,8 @@ formats enter only as verbatim external ids. See
 
 The top level is closed: `schemaVersion`, `identity`, `manifestId`,
 `projectRef`, `completeness` (`full|partial`), `sourceRevision`,
-`modelRef` (Model `0.1.0`/`1.0.0`), optional `irRef` (IR `0.1.0`),
-optional `graphRef` (Graph `1.0.0`), optional `artifactManifestRef`,
+`modelRef` (Model `0.2.16`/`0.2.16`), optional `irRef` (IR `0.2.16`),
+optional `graphRef` (Graph `0.2.16`), optional `artifactManifestRef`,
 `exportProfile`, `nodes`, `relations`, `gaps`. Seven node kinds —
 `requirement`, `symbol`, `artifact`, `scenario`, `native_test`, `gate`,
 `diagnostic` — each carry exactly their own identity field; artifacts

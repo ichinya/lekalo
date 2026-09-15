@@ -10,8 +10,8 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const checker = join(root, "scripts/check-privacy.mjs");
-const outputSchema = JSON.parse(readFileSync(join(root, "contracts/privacy-export.schema.v2.6.output.json"), "utf8"));
-const cliErrorSchema = JSON.parse(readFileSync(join(root, "contracts/privacy-cli-error.schema.v1.0.0.json"), "utf8"));
+const outputSchema = JSON.parse(readFileSync(join(root, "contracts/privacy-export.schema.v0.2.16.output.json"), "utf8"));
+const cliErrorSchema = JSON.parse(readFileSync(join(root, "contracts/privacy-cli-error.schema.v0.2.16.json"), "utf8"));
 const temp = mkdtempSync(join(tmpdir(), "lekalo-output-schema-"));
 
 function canonical(value) {
@@ -157,8 +157,8 @@ mutate(transform, "unknown derived requirement", (value) => { value.derivedArtif
 mutate(transform, "duplicate derived requirement", (value) => { value.derivedArtifactRequirements.push(value.derivedArtifactRequirements[0]); });
 mutate(allow, "sourceTransferAllowed non-boolean", (value) => { value.sourceTransferAllowed = "false"; });
 
-mutate(allow, "reviewer swapped classification version", (value) => { value.effectiveRefs.classificationContractRef.version = "1.1.0"; });
-mutate(allow, "reviewer swapped evidence version", (value) => { value.effectiveRefs.authorizingEvidenceContractRef.version = "1.0.0"; });
+mutate(allow, "reviewer swapped classification version", (value) => { value.effectiveRefs.classificationContractRef.version = "0.2.15"; });
+mutate(allow, "reviewer swapped evidence version", (value) => { value.effectiveRefs.authorizingEvidenceContractRef.version = "0.2.15"; });
 mutate(allow, "stale classification digest", (value) => { value.effectiveRefs.classificationContractRef.digest = `sha256:${"0".repeat(64)}`; });
 mutate(allow, "stale evidence digest", (value) => { value.effectiveRefs.authorizingEvidenceContractRef.digest = `sha256:${"0".repeat(64)}`; });
 mutate(allow, "stale policy", (value) => { value.effectiveRefs.policyRef.version = "1.0.5"; });
@@ -181,22 +181,8 @@ const missingDecisionError = parsed(missingDecision.stderr, "missing decision st
 assertValid(cliErrorSchema, missingDecisionError, "missing decision exact CLI error protocol");
 assertInvalid(outputSchema, missingDecisionError, "CLI startup error is not ExportDecisionOutput");
 
-const oldSelection = invoke([
-  "--manifest", join(root, "contracts/privacy-policy.v1.0.5.manifest.json"),
-  "--manifest-sidecar", join(root, "contracts/privacy-policy.v1.0.5.manifest.sha256"),
-  "--policy", join(root, "contracts/privacy-policy.v1.0.5.json"),
-  "--policy-sidecar", join(root, "contracts/privacy-policy.v1.0.5.sha256"),
-  "--input-schema", join(root, "contracts/privacy-export.schema.v2.4.json"),
-  "--output-schema", join(root, "contracts/privacy-export.schema.v2.4.output.json"),
-]);
-assert.equal(oldSelection.status, 1);
-assert.equal(oldSelection.stdout, "");
-const oldSelectionError = parsed(oldSelection.stderr, "old 1.0.5 selection");
-assertValid(cliErrorSchema, oldSelectionError, "old selection CLI error protocol");
-assert.equal(oldSelectionError.reasonCodes[0], "custody.manifest-untrusted");
-
 const mutatedOutput = clone(outputSchema);
-mutatedOutput.properties.effectiveRefs.properties.classificationContractRef.properties.version.const = "1.1.0";
+mutatedOutput.properties.effectiveRefs.properties.classificationContractRef.properties.version.const = "0.2.15";
 const mutatedOutputPath = join(temp, "mutated-output-schema.json");
 writeFileSync(mutatedOutputPath, `${JSON.stringify(mutatedOutput, null, 2)}\n`);
 const outputCustody = invoke(["--output-schema", mutatedOutputPath]);
@@ -211,14 +197,14 @@ const cliErrorCustody = invoke(["--cli-error-schema", mutatedCliErrorPath]);
 assert.equal(cliErrorCustody.status, 1);
 assert.equal(parsed(cliErrorCustody.stderr, "CLI error schema custody").reasonCodes[0], "custody.cli-error-schema-bytes-mismatch");
 
-const manifest = JSON.parse(readFileSync(join(root, "contracts/privacy-policy.v1.0.7.manifest.json"), "utf8"));
+const manifest = JSON.parse(readFileSync(join(root, "contracts/privacy-policy.v0.2.16.manifest.json"), "utf8"));
 manifest.acceptedContracts[0].outputSchemaRef.digest = `sha256:${"0".repeat(64)}`;
 const mutatedManifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
 const mutatedManifestPath = join(temp, "mutated-manifest.json");
 const mutatedManifestSidecarPath = join(temp, "mutated-manifest.sha256");
 writeFileSync(mutatedManifestPath, mutatedManifestBytes);
 writeFileSync(mutatedManifestSidecarPath,
-  `${createHash("sha256").update(mutatedManifestBytes).digest("hex")}  privacy-policy.v1.0.7.manifest.json\n`);
+  `${createHash("sha256").update(mutatedManifestBytes).digest("hex")}  privacy-policy.v0.2.16.manifest.json\n`);
 const manifestCustody = invoke(["--manifest", mutatedManifestPath, "--manifest-sidecar", mutatedManifestSidecarPath]);
 assert.equal(manifestCustody.status, 1);
 assert.equal(parsed(manifestCustody.stderr, "manifest custody").reasonCodes[0], "custody.manifest-untrusted");

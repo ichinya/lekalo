@@ -1,19 +1,21 @@
 # Artifact authority and synchronization boundaries
 
-Status: accepted historical baseline `1.2.0`; rejected/yanked candidate
-`1.3.0`; reviewed corrective successor `1.3.1`.
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
+Status: accepted historical baseline `0.2.16`; rejected/yanked candidate
+`1.3.0`; reviewed corrective successor `0.2.16`.
 
 The normative accepted-version index is
 [`contracts/authority-contracts.manifest.json`](../contracts/authority-contracts.manifest.json).
 It binds each contract to an exact `{contractId, version, digest}` and an
 exact-byte SHA-256 sidecar. The versioned contracts are
-[`1.2.0`](../contracts/authority-matrix.v1.2.0.json) and
-[`1.3.1`](../contracts/authority-matrix.v1.3.1.json). The exact `1.3.0` bytes
-remain at [`authority-matrix.v1.3.0.json`](../contracts/authority-matrix.v1.3.0.json)
+[`0.2.16`](../contracts/authority-matrix.v0.2.16.json) and
+[`0.2.16`](../contracts/authority-matrix.v0.2.16.json). The exact `1.3.0` bytes
+remain at [`authority-matrix.v0.2.16.json`](../contracts/authority-matrix.v0.2.16.json)
 only as a rejected/yanked candidate and are never an accepted authority
 reference. The historical
-[`authority-matrix.v1.json`](../contracts/authority-matrix.v1.json) file is an
-exact byte-for-byte alias of `1.2.0`, not a mutable current pointer.
+[`authority-matrix.v0.2.16.json`](../contracts/authority-matrix.v0.2.16.json) file is an
+exact byte-for-byte alias of `0.2.16`, not a mutable current pointer.
 The rationale is recorded in
 [ADR-0001](adr/0001-artifact-authority-boundaries.md). If prose and the
 machine-readable contract disagree, adapters must stop with a contract-version
@@ -22,7 +24,7 @@ or policy error; they must not guess which form is newer.
 The reviewed successor exact identity is:
 
 ```text
-dev.lekalo.authority-matrix@1.3.1@sha256:5c96ed68fe27956512b6de37e0fa23d223e4430d391b6a5869b12d2a8cb522d3
+dev.lekalo.authority-matrix@0.2.16@sha256:141641cfbc1fbf6a07add99feafb877f9f544687ad558ab91d619ec7dd78d1b4
 ```
 
 The authority contract version is independent from schema and product
@@ -49,12 +51,12 @@ though one owner governs their format and lifecycle.
 | Generated summaries and rules | AI Factory | derived | `.ai-factory/rules/generated/**`, derived QA paths | read; never use them to rewrite canonical inputs |
 | Generated code | Source/native toolchain | derived until explicit adoption | project-native source paths | generate with provenance; never silently promote it |
 
-The `1.3.1` registry contains 49 stable kinds: all 26 `1.2.0` IDs plus 23
+The `0.2.16` registry contains 49 stable kinds: all 26 `0.2.16` IDs plus 23
 additive kinds needed for the #120 handoff. Every `artifactKinds[]` entry has
 exactly one scalar `canonicalOwner` plus non-empty `allowedPaths`,
 `allowedReaders`, and `allowedWriters`. For the 26 predecessor kinds,
 `allowedReaders` lists every declared actor and therefore preserves the
-unrestricted reference behavior of `1.2.0`. Reader declarations are authority
+unrestricted reference behavior of `0.2.16`. Reader declarations are authority
 integration roles, not privacy access grants.
 
 Authority lifecycle is only one of `canonical`, `derived`, `cached`,
@@ -71,7 +73,7 @@ this contract.
 
 | Stable kind ID | Owner | Lifecycle | Logical paths | Writers |
 |---|---|---|---|---|
-| `authority.contract` | Lekalo | canonical | `contracts/authority-matrix.v1.json`, `contracts/authority-matrix.v*.json` | Lekalo |
+| `authority.contract` | Lekalo | canonical | `contracts/authority-matrix.v0.2.16.json`, `contracts/authority-matrix.v*.json` | Lekalo |
 | `authority.contract-manifest` | Lekalo | canonical | authority manifest and authority SHA-256 sidecars | Lekalo |
 | `privacy.policy` | Lekalo | canonical | versioned privacy policy JSON and sidecars | Lekalo |
 | `privacy.export-schema` | Lekalo | canonical | versioned privacy export schema JSON | Lekalo |
@@ -96,7 +98,7 @@ this contract.
 | `aggregate.decision` | Lekalo | direct-evidence | `.lekalo/privacy/decisions/aggregate/**` | Lekalo |
 
 The exact machine entries, including lower-case owner IDs and complete reader
-arrays, are authoritative in `authority-matrix.v1.3.1.json`. This table is a
+arrays, are authoritative in `authority-matrix.v0.2.16.json`. This table is a
 review aid and does not create alternative aliases.
 
 ## Path boundaries
@@ -120,12 +122,12 @@ Protected trees are owner-governed:
 | `lekalo/**` | Lekalo | Lekalo only |
 | `.lekalo/**` | Lekalo | Lekalo non-canonical output only |
 | `.hlv/**` | HLV | HLV only |
-| versioned authority/privacy contracts and SHA-256 sidecars listed by `1.3.1` | Lekalo | Lekalo contract owner only |
+| versioned authority/privacy contracts and SHA-256 sidecars listed by `0.2.16` | Lekalo | Lekalo contract owner only |
 | `.ai-factory/evidence/**`, `.ai-factory/context/**`, `.ai-factory/traces/**`, `.ai-factory/runs/**` | AI Factory | declared producer writers only; owner remains AI Factory |
 | `.source-native/**`, `tests/fixtures/**`, `fixtures/**` | source/native | source/native evidence writers only |
 | root `project.yaml` with `context.hlvLayoutConfirmed: true` and `hlv.project-contract` kind | HLV | conditional; otherwise it is not an HLV boundary |
 
-Every `1.3.1` boundary declares an exact `artifactKinds` set and explicit
+Every `0.2.16` boundary declares an exact `artifactKinds` set and explicit
 `readers` and `writers`. A reference is allowed only when its selected kind is
 in the boundary set and its actor is permitted by both the boundary and the
 kind. `read` source references use reader sets; `write` target references use
@@ -297,7 +299,7 @@ native tests, HLV results, or generated summaries.
 ## Automatic enforcement
 
 Run `node scripts/check-authority.mjs` for the current reviewed successor or
-`node scripts/check-authority.mjs --contract-version 1.2.0` for the immutable
+`node scripts/check-authority.mjs --contract-version 0.2.16` for the immutable
 historical baseline. Both execute the same allowed, forbidden, and malformed
 operation fixtures. Run `node scripts/test-authority-cli.mjs` for real
 subprocess exit-code coverage across both versions. Run
@@ -329,15 +331,15 @@ the exact accepted `--authority-ref`; this prevents a convenience/current path
 from becoming authority by itself. `--contract-version <accepted-version>`
 resolves the canonical versioned path through the trusted manifest.
 
-Both accepted versions (`1.2.0` and `1.3.1`) are `closed-exact`. The exact
+Both accepted versions (`0.2.16` and `0.2.16`) are `closed-exact`. The exact
 `1.3.0` triple is explicitly rejected/yanked and exits `1` before evaluation.
 A byte reformat, semantic change,
 recomputed caller digest, undeclared kind, local alias, boundary extension, or
-unknown successor fails with exit `1`. Even the historical `1.2.0` field that
+unknown successor fails with exit `1`. Even the historical `0.2.16` field that
 once described semantically identical copies is now wrapped by exact-reference
 custody; only its published bytes satisfy the accepted triple.
 
-For `1.3.1`, the checker additionally verifies the complete kind-bound
+For `0.2.16`, the checker additionally verifies the complete kind-bound
 protected-boundary registry, exact specificity policy, kind/owner agreement,
 reader/writer subset constraints, and absence of ambiguous equal-specificity
 overlaps. It verifies the complete protected-boundary baseline, the exact
@@ -348,17 +350,9 @@ semantics before evaluating an operation. Missing, altered, duplicate,
 case-aliased, conflicting, or shadowing entries are contract errors and exit
 `1` without an operation decision.
 
-### Reviewed successor procedure
+### Contract evolution
 
-Published bytes are immutable. Evolution requires a new versioned JSON file,
-an exact-byte SHA-256 sidecar, a manifest entry, the exact predecessor triple,
-machine-readable added/changed/removed kind IDs, compatibility classification,
-and a reviewed migration note. The checker must add a new trust profile and
-mutation fixtures before the manifest may select it. A successor cannot delete
-or change a stable kind silently. Unknown versions and stale references fail
-closed.
-
-The original registry handoff and its yanked status are documented in
-[Authority contract migration 1.2.0 to the 1.3 line](authority-contract-migration-1.2-to-1.3.md).
-Consumers must use the corrective
-[1.3.0 to 1.3.1 migration](authority-contract-migration-1.3.0-to-1.3.1.md).
+The current baseline is `0.2.16`. Historical contracts and migration notes
+have been removed. Changed contracts take the current product version and
+update the manifest, digest, checker and mutation fixtures together. See
+[versioning](versioning.md). Unknown versions and stale references fail closed.

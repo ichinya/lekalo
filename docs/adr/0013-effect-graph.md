@@ -1,5 +1,7 @@
 # ADR-0013: The effect graph of reads, writes, events, and external calls
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-05
 Status: accepted for issue #14
 
@@ -18,7 +20,7 @@ packages in `Cargo.lock` including the regenerated committed golden lock
 and its digests, the `--version` behavior and its pinning tests,
 `README.md`, `docs/cli.md`); issue #13 published product 0.1.11 (annotated
 tag `v0.1.11` on `007c01d`). The effect contract version
-(`lekalo/effects/v1.0.0`, identity `dev.lekalo.effects@1.0.0`) is
+(`lekalo/effects/v0.2.16`, identity `dev.lekalo.effects@0.2.16`) is
 independent of the product release, of the Model/IR/graph/protocol
 contract versions, and of the diagnostic registry by design.
 
@@ -39,8 +41,8 @@ msg_5e876391c107) recorded the owner decisions this ADR adopts.
 ### 1. Independent closed contract, built on the #13 graph APIs
 
 The effect graph publishes its own wire contract,
-[`contracts/effect-graph.schema.v1.0.0.json`](../../contracts/effect-graph.schema.v1.0.0.json)
-(discriminator `lekalo/effects/v1.0.0`, identity `dev.lekalo.effects@1.0.0`),
+[`contracts/effect-graph.schema.v0.2.16.json`](../../contracts/effect-graph.schema.v0.2.16.json)
+(discriminator `lekalo/effects/v0.2.16`, identity `dev.lekalo.effects@0.2.16`),
 independent of every other contract family. `contracts/` gains exactly
 this one new file; the diagnostic registry file is unchanged. The model is
 a separate typed effect model — effect meaning never enters the generic

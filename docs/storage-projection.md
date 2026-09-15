@@ -1,17 +1,18 @@
 # Lekalo domain relations and storage projections
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Issue #65 separates the target-neutral domain model from target-namespaced
 storage projections. One closed, versioned attachment —
-[`contracts/storage-projection.schema.v1.0.0.json`](../contracts/storage-projection.schema.v1.0.0.json)
-(`lekalo/storage-projection/v1.0.0`, identity
-`dev.lekalo.storage-projection@1.0.0`) — binds one project to one exact
+[`contracts/storage-projection.schema.v0.2.16.json`](../contracts/storage-projection.schema.v0.2.16.json)
+(`lekalo/storage-projection/v0.2.16`, identity
+`dev.lekalo.storage-projection@0.2.16`) — binds one project to one exact
 Model pin, IR digest, and attachment revision, and declares the domain
 layer (entity identity, value types, aggregate ownership, semantic
 relations with cardinality and explicit delete behavior, invariant and
 lifecycle references, visibility) beside the storage layer (tables,
 columns, keys, indexes, foreign keys, join tables, technical and
-generated fields, soft-delete and tenant policies, audit timestamps,
-migration history). See
+generated fields, soft-delete and tenant policies, audit timestamps ). See
 [ADR-0025](adr/0025-storage-projection.md) for the owner decisions.
 
 The attachment is pure declaration and validation data: it never
@@ -80,8 +81,8 @@ explicit: primary key, technical columns (storage-only, with declared
 type, purpose, and nullability), generated columns (identity,
 computed, sequence), soft-delete policy, tenant partition key, audit
 timestamps, indexes, join tables for every many-to-many relation,
-polymorphic materializations, and the migration history with a visible
-data risk (`none`, `backfill_required`, `destructive`) per record.
+polymorphic materializations. Historical migration records are absent from
+the 0.2.16 baseline. Storage comparisons retain visible data risk.
 
 Every table name, column name, technical type, and tenant key type is
 declared. Nothing is invented.
@@ -148,7 +149,7 @@ widenings: a new relation, a lengthened string, a visibility widened,
 a Model symbol rebind), and **policy-change** (explicit owner
 decisions with unchanged guarantees: delete behavior, aggregate role,
 soft-delete or tenant policy, polymorphic materializations,
-migration-history bookkeeping). Storage paths additionally carry the
+storage bookkeeping). Storage paths additionally carry the
 visible data risk, so a migration obligation is never hidden inside a
 class. Because layers are separate, a domain rename is provably not a
 table rename: the rebind produces the domain path and, with an

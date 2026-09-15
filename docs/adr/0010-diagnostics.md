@@ -1,5 +1,7 @@
 # ADR-0010: The stable machine-readable diagnostic contract
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-04
 Status: accepted for issue #11
 
@@ -20,8 +22,8 @@ product 0.1.9 in
 every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 `Cargo.lock`, the `--version` behavior and its pinning tests, `README.md`,
 `docs/cli.md`); issue #10 published product 0.1.8 (annotated tag on
-`8ddbbf0`). The diagnostic schema version (`lekalo/diagnostic/v1.0.0`) and
-the diagnostic registry version (`1.0.0`) are independent of the product
+`8ddbbf0`). The diagnostic schema version (`lekalo/diagnostic/v0.2.16`) and
+the diagnostic registry version (`0.2.16`) are independent of the product
 release, of the Model/IR/protocol contract versions, and of the lock wire by
 design.
 
@@ -40,7 +42,7 @@ output through the one `DomainResult`.
 ## The eight recorded owner decisions
 
 1. **Discriminator and ranges.** The wire uses the exact discriminator
-   `lekalo/diagnostic/v1.0.0` with snake_case item fields and the nested
+   `lekalo/diagnostic/v0.2.16` with snake_case item fields and the nested
    #7/#8 start/end range shape; the issue's illustrative snippet and its
    `start_line` shorthand are non-normative.
 2. **Identity.** The dotted rule id stays the primary identity and each

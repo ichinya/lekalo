@@ -12,7 +12,7 @@ and its digests, the `--version` behavior and its pinning tests,
 tag `v0.1.25` on `e627fe5`); this issue published product 0.1.24
 (annotated tag `v0.1.24` on `b4109e5`); issue #20 published product
 0.1.23 (annotated tag `v0.1.23` on `15be55a`, remote CI green). The impact contract version
-(`lekalo/impact/v1.0.0`, identity `dev.lekalo.impact@1.0.0`) is independent
+(`lekalo/impact/v0.2.16`, identity `dev.lekalo.impact@0.2.16`) is independent
 of the product release, of the Model/IR/graph/effect contract versions,
 and of the diagnostic registry by design; this issue also records the
 registry minor increment `1.3.0` → `1.4.0` (below).
@@ -36,9 +36,9 @@ the owner decisions this ADR adopts.
 ### 1. Independent closed contract
 
 Impact publishes its own wire contract,
-[`contracts/impact.schema.v1.0.0.json`](../../contracts/impact.schema.v1.0.0.json)
-(discriminator `lekalo/impact/v1.0.0`, identity `dev.lekalo.impact@1.0.0`,
-algorithm `dev.lekalo.impact.algorithm@1.0.0`), independent of every other
+[`contracts/impact.schema.v0.2.16.json`](../../contracts/impact.schema.v0.2.16.json)
+(discriminator `lekalo/impact/v0.2.16`, identity `dev.lekalo.impact@0.2.16`,
+algorithm `dev.lekalo.impact.algorithm@0.2.16`), independent of every other
 contract family. `contracts/` gains exactly this one new schema file plus
 the registry minor increment the new diagnostics require (below).
 Canonical impact bytes are compact UTF-8 JSON whose object keys follow the
@@ -87,7 +87,7 @@ sensitivity refs). Absent, stale, or unsupported evidence is explicit:
 transaction without groups is unknown, unmapped commands are
 authorization-unknown (never optimistic), tests are `unsupported` in v1
 (no accepted test surface), generated artifacts are unknown (no accepted
-#21 manifest). Renames consume the accepted #6/#1.0.0 rename history and
+#21 manifest). Renames consume the accepted #6/#0.2.16 rename history and
 registry tombstones; field removals enter only as typed member seeds —
 the CLI adapter supplies none, so field-level coverage stays explicitly
 unknown there until #18 exists. Confidence is the closed #13 vocabulary

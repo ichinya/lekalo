@@ -190,8 +190,7 @@ fn canonical_bytes_are_deterministic_and_digest_bound() {
     assert_eq!(first, second, "canonical bytes are deterministic");
     assert!(!first.contains('\n'), "compact: no newlines");
     let digest = attachment.digest().expect("digest");
-    let expected =
-        Sha256Digest::from_hex(&lekalo_core::versioning::plan::sha256_hex(first.as_bytes()));
+    let expected = Sha256Digest::from_hex(&lekalo_core::digest::sha256_hex(first.as_bytes()));
     assert_eq!(digest.as_str(), expected.as_str());
     // Round trip: the canonical bytes decode to an equal attachment.
     let round: serde_json::Value = serde_json::from_str(&first).expect("canonical parses");

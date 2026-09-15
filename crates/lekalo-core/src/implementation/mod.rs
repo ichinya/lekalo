@@ -1,8 +1,8 @@
 //! Issue #30: foreign and custom implementation escape hatches.
 //!
 //! One independent, closed, versioned attachment —
-//! `lekalo/implementation/v1.0.0`, identity
-//! `dev.lekalo.implementation@1.0.0` — binding existing target-local
+//! `lekalo/implementation/v0.2.16`, identity
+//! `dev.lekalo.implementation@0.2.16` — binding existing target-local
 //! implementations to compiled operation symbols so complex or
 //! target-specific logic stays ordinary code instead of pushing Lekalo
 //! toward a universal language. Every hook contract names one command

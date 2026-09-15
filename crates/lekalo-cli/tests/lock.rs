@@ -7,7 +7,7 @@ use std::process::{Command, Output};
 
 const GOLDEN: &str = include_str!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:7f9eac83637a58bceda9081dcc50d4489228016a2856f9160aad8904fbfdd08e";
+    "sha256:24be0c2d47066bdee692d1f2a65e3cd9870882b2760bdf813271e0882f4c636f";
 const REFERENCE_PROJECT: &str = "tests/fixtures/lockfile/project";
 
 fn lekalo_in(dir: &Path, args: &[&str]) -> Output {
@@ -105,7 +105,7 @@ fn lock_create_then_check_produces_the_committed_golden_bytes() {
     assert_eq!(document["operation"], "lock");
     assert_eq!(document["mode"], "check");
     assert_eq!(document["lockDigest"], GOLDEN_DIGEST);
-    assert_eq!(document["resolverVersion"], "1.0.0");
+    assert_eq!(document["resolverVersion"], "0.2.16");
     assert_eq!(document["counts"]["adapters"], 0);
     std::fs::remove_dir_all(&dir).expect("cleanup");
 }
@@ -147,7 +147,7 @@ fn digest_mismatch_is_a_stdout_denial_distinct_from_validation_failure() {
     let dir = project_dir("tamper");
     std::fs::write(
         dir.join("lekalo.lock"),
-        GOLDEN.replace("sha256:2cba65b0", "sha256:3cba65b0"),
+        GOLDEN.replace("sha256:9333f37c", "sha256:0333f37c"),
     )
     .expect("tampered lock");
     let output = lekalo_in(&dir, &["lock"]);

@@ -1,11 +1,11 @@
 {
   "binding": {
-    "cacheIdentity": "dev.lekalo.cache@1.0.0",
+    "cacheIdentity": "dev.lekalo.cache@0.2.16",
     "contracts": [],
     "pipelineRevision": 1
   },
   "dependencies": [],
-  "identity": "dev.lekalo.cache@1.0.0",
+  "identity": "dev.lekalo.cache@0.2.16",
   "key": {
     "kind": "source",
     "normalizedDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -22,5 +22,5 @@
   },
   "payloadDigest": "sha256:81808c167f4a20a3e3887442ad523e597dfacb95cc97a7fe064e0275dafbe62a",
   "recordKind": "source",
-  "schemaVersion": "lekalo/cache/v1.0.0"
+  "schemaVersion": "lekalo/cache/v0.2.16"
 }

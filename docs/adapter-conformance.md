@@ -70,8 +70,8 @@ how many feature checks passed.
 The verified-compatibility badge is issued only for a passing run whose
 core rows are all present and passing, and it names the exact verified
 versions — the negotiated protocol version and the core IR contract
-version. A legacy session that negotiates 1.0.0 earns a badge for
-protocol 1.0.0 exactly; no badge ever covers a declared range.
+version. A legacy session that negotiates 0.2.16 earns a badge for
+protocol 0.2.16 exactly; no badge ever covers a declared range.
 
 ## Profiles
 

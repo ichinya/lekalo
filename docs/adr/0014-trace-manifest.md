@@ -1,5 +1,7 @@
 # ADR-0014: The neutral trace manifest
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-05
 Status: accepted for issue #22
 
@@ -17,8 +19,8 @@ packages in `Cargo.lock` including the regenerated committed golden lock
 and its digests, the `--version` behavior and its pinning tests,
 `README.md`, `docs/cli.md`); issue #14 published product 0.1.12
 (annotated tag `v0.1.12` on `81666da`). The trace contract version
-(`lekalo/trace-manifest/v1.0.0`, identity
-`dev.lekalo.trace-manifest@1.0.0`) is independent of the product release,
+(`lekalo/trace-manifest/v0.2.16`, identity
+`dev.lekalo.trace-manifest@0.2.16`) is independent of the product release,
 of the Model/IR/graph/effects contract versions, of the
 adapter/protocol/profile versions, and of the diagnostic registry by
 design.
@@ -38,7 +40,7 @@ decisions this ADR adopts.
 
 ### 1. Ownership split: neutral contract vs persisted evidence
 
-The accepted authority-matrix 1.3.1 entry fixes `trace.manifest` as
+The accepted authority-matrix 0.2.16 entry fixes `trace.manifest` as
 AI Factory-owned direct evidence (`canonicalOwner ai-factory`,
 `classification direct-evidence`, `allowedPaths [.ai-factory/traces/**]`,
 readers openspec/ai-factory/lekalo/hlv/source-native/aifhub-adapter,
@@ -53,10 +55,10 @@ registry/path/writer semantics is a separately reviewed #2 successor.
 
 ### 2. Independent closed contract
 
-[`contracts/trace-manifest.schema.v1.0.0.json`](../../contracts/trace-manifest.schema.v1.0.0.json)
+[`contracts/trace-manifest.schema.v0.2.16.json`](../../contracts/trace-manifest.schema.v0.2.16.json)
 is the single new contract file (discriminator
-`lekalo/trace-manifest/v1.0.0`, identity
-`dev.lekalo.trace-manifest@1.0.0`). The diagnostic registry file is
+`lekalo/trace-manifest/v0.2.16`, identity
+`dev.lekalo.trace-manifest@0.2.16`). The diagnostic registry file is
 unchanged: trace failures reuse the graph-family infrastructure rules
 (`graph.input-invalid`, `graph.unknown-node`, `graph.traversal-limit`,
 `graph.export-limit`) plus `loader.io` for unreadable documents, exactly
@@ -69,8 +71,8 @@ schema's own custody follows the repository rule.
 The top level is closed: `schemaVersion`, `identity`, `manifestId`
 (stable logical export id), `projectRef` (opaque project identity),
 `completeness` (`full|partial`), exact `sourceRevision` (40 or 64 hex),
-`modelRef` (pinned to Model `0.1.0`/`1.0.0`), optional `irRef` (pinned to
-the accepted IR `0.1.0`), optional `graphRef` (pinned to Graph `1.0.0`),
+`modelRef` (pinned to Model `0.2.16`/`0.2.16`), optional `irRef` (pinned to
+the accepted IR `0.2.16`), optional `graphRef` (pinned to Graph `0.2.16`),
 optional `artifactManifestRef` (generic semver: the #21 seam is
 referenced, not imported), `exportProfile`, `nodes`, `relations`, `gaps`.
 Seven node kinds cover the chain: `requirement`, `symbol`, `artifact`,

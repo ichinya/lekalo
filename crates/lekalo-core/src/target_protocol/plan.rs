@@ -19,7 +19,7 @@ use super::wire::{plan_id, WriteAction, WriteEntry};
 
 /// SHA-256 of arbitrary bytes as lowercase hex (no prefix).
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    crate::versioning::plan::sha256_hex(bytes)
+    crate::digest::sha256_hex(bytes)
 }
 
 /// A snapshot of one write scope: logical path to observed content digest.

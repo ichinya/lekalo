@@ -80,7 +80,7 @@ fn validate_emits_the_capability_summary_and_digest() {
     assert_eq!(document["expressions"]["expressionCount"], 39);
     assert_eq!(document["expressions"]["conditions"], 19);
     assert_eq!(document["expressions"]["assignments"], 20);
-    assert_eq!(document["expressions"]["builtinSemantics"], "1.0.0");
+    assert_eq!(document["expressions"]["builtinSemantics"], "0.2.16");
     assert_eq!(
         document["expressions"]["requiredCapabilities"]
             .as_array()

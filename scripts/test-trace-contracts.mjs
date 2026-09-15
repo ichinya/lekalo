@@ -41,7 +41,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 const readText = (relative) => readFileSync(resolve(root, relative), "utf8");
 
-const schema = read("contracts/trace-manifest.schema.v1.0.0.json");
+const schema = read("contracts/trace-manifest.schema.v0.2.16.json");
 const goldenFile = "tests/fixtures/trace/golden/planner.trace.json";
 const invalidDir = "tests/fixtures/trace/invalid";
 
@@ -108,7 +108,7 @@ const ENDPOINTS = (kind, from, to) => {
     default: return false;
   }
 };
-const RELATION_DOMAIN = "lekalo/trace-manifest/v1.0.0/relation";
+const RELATION_DOMAIN = "lekalo/trace-manifest/v0.2.16/relation";
 const relationIdOf = (kind, from, to, occurrence) =>
   `sha256:${sha256(JSON.stringify([RELATION_DOMAIN, kind, from, to, occurrence]))}`;
 
@@ -457,9 +457,9 @@ function conforms(manifest) {
     }
     const versionPin = (ref, allowed) =>
       ref === undefined || allowed.includes(ref.schemaVersion);
-    if (!versionPin(manifest.modelRef, ["0.1.0", "1.0.0"])) return false;
-    if (!versionPin(manifest.irRef, ["0.1.0"])) return false;
-    if (!versionPin(manifest.graphRef, ["1.0.0"])) return false;
+    if (!versionPin(manifest.modelRef, ["0.2.16", "0.2.16"])) return false;
+    if (!versionPin(manifest.irRef, ["0.2.16"])) return false;
+    if (!versionPin(manifest.graphRef, ["0.2.16"])) return false;
     const tuples = new Set();
     for (const relation of manifest.relations) {
       const from = ids.get(relation.fromNode);

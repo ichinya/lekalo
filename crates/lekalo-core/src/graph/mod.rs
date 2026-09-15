@@ -100,12 +100,12 @@ impl DependencyGraph {
         }
     }
 
-    /// The graph contract identity (`dev.lekalo.graph@1.0.0`).
+    /// The graph contract identity (`dev.lekalo.graph@0.2.16`).
     pub const fn identity(&self) -> &'static str {
         IDENTITY
     }
 
-    /// The graph contract discriminator (`lekalo/graph/v1.0.0`).
+    /// The graph contract discriminator (`lekalo/graph/v0.2.16`).
     pub const fn schema_version(&self) -> &'static str {
         SCHEMA_VERSION
     }

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ichinya/lekalo/contracts/expressions-builtin-support.schema.v0.2.16.json",
+  "title": "Lekalo expression built-in capability snapshot (v0.2.16)",
+  "description": "Issue #66 managed mode: the capability snapshot a target or adapter declares. Validating or generating an attachment against a snapshot that lacks a required capability token (`expression.core` or one `expression.builtin/<name>` per used built-in) blocks managed generation with `expression.builtin-unsupported`; the escape hatch is the foreign implementation family (issue #30).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "supported"],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/expressions/builtin-support/v0.2.16"
+    },
+    "supported": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 1024,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[a-z0-9./-]+$"
+      }
+    }
+  }
+}

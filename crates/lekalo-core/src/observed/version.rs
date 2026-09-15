@@ -8,24 +8,23 @@
 pub const FAMILY: &str = "observed";
 
 /// The observed index wire version.
-pub const VERSION: &str = "1.1.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact `schema_version` literal of a persisted observed index.
-pub const SCHEMA_VERSION: &str = "lekalo/observed-index/v1.1.0";
+pub const SCHEMA_VERSION: &str = "lekalo/observed-index/v0.2.16";
 
 /// The exact `schema_version` literals of an adapter scan document: the
 /// frozen issue #39 base plus the additive issue #42 binding-registry
 /// extension. A scan in either spelling decodes; the additive members
 /// (target, profile, candidates, native test bindings) exist only on a
-/// 1.1.0 document.
-pub const SCAN_SCHEMA_VERSIONS: [&str; 2] =
-    ["lekalo/observed-scan/v1.0.0", "lekalo/observed-scan/v1.1.0"];
+/// 0.2.16 document.
+pub const SCAN_SCHEMA_VERSIONS: [&str; 1] = ["lekalo/observed-scan/v0.2.16"];
 
 /// The current scan spelling new documents advertise.
-pub const SCAN_SCHEMA_VERSION: &str = SCAN_SCHEMA_VERSIONS[1];
+pub const SCAN_SCHEMA_VERSION: &str = SCAN_SCHEMA_VERSIONS[0];
 
 /// The registry identity of the observed index wire.
-pub const INDEX_IDENTITY: &str = "dev.lekalo.observed-index@1.1.0";
+pub const INDEX_IDENTITY: &str = "dev.lekalo.observed-index@0.2.16";
 
 /// The single mode this issue records; `contracted` mode (issue #40) is a
 /// separate surface and never appears here.

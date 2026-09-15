@@ -158,7 +158,7 @@ impl Key {
                 model_version,
                 parsed_digests,
             } => {
-                let version_ok = matches!(model_version.as_str(), "0.1.0" | "1.0.0");
+                let version_ok = matches!(model_version.as_str(), "0.2.16");
                 version_ok
                     && !parsed_digests.is_empty()
                     && parsed_digests.len() <= super::limits::MAX_ENTRIES
@@ -258,17 +258,17 @@ mod tests {
     #[test]
     fn ir_keys_require_sorted_unique_digest_sets() {
         let ok = Key::IrFragment {
-            model_version: "1.0.0".to_owned(),
+            model_version: "0.2.16".to_owned(),
             parsed_digests: vec![hex(1), hex(2)],
         };
         assert!(ok.is_well_formed());
         let unsorted = Key::IrFragment {
-            model_version: "1.0.0".to_owned(),
+            model_version: "0.2.16".to_owned(),
             parsed_digests: vec![hex(2), hex(1)],
         };
         assert!(!unsorted.is_well_formed());
         let duplicated = Key::IrFragment {
-            model_version: "1.0.0".to_owned(),
+            model_version: "0.2.16".to_owned(),
             parsed_digests: vec![hex(1), hex(1)],
         };
         assert!(!duplicated.is_well_formed());

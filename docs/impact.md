@@ -1,13 +1,15 @@
 # Impact and change-radius analysis
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 `lekalo impact` answers one question before any edit happens: if this
 changes, what else changes with it? It is a read-only projection over the
 accepted #13 dependency graph and #14 effect graph; it never parses Git
 inside the core, never rescans source, and never writes anything.
 
-Contract: `lekalo/impact/v1.0.0` (identity `dev.lekalo.impact@1.0.0`,
-algorithm `dev.lekalo.impact.algorithm@1.0.0`), pinned in
-[`contracts/impact.schema.v1.0.0.json`](../contracts/impact.schema.v1.0.0.json).
+Contract: `lekalo/impact/v0.2.16` (identity `dev.lekalo.impact@0.2.16`,
+algorithm `dev.lekalo.impact.algorithm@0.2.16`), pinned in
+[`contracts/impact.schema.v0.2.16.json`](../contracts/impact.schema.v0.2.16.json).
 The contract version is independent of the product release, of the
 Model/IR/graph/effect versions, and of the diagnostic registry
 ([ADR-0017](adr/0017-impact.md)).

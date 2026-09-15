@@ -14,9 +14,9 @@ every behavior outside the supported subset is an explicit
 
 The contract, guarantees, and limits live in
 [ADR-0041](adr/0041-reference-evaluation.md); the wire shape is
-[`contracts/reference-evaluation.schema.v1.0.0.json`](../contracts/reference-evaluation.schema.v1.0.0.json)
-(discriminator `lekalo/reference-evaluation/v1.0.0`, identity
-`dev.lekalo.reference-evaluation@1.0.0`); hermetic fixtures are under
+[`contracts/reference-evaluation.schema.v0.2.16.json`](../contracts/reference-evaluation.schema.v0.2.16.json)
+(discriminator `lekalo/reference-evaluation/v0.2.16`, identity
+`dev.lekalo.reference-evaluation@0.2.16`); hermetic fixtures are under
 `tests/fixtures/reference-evaluation/`.
 
 ## Identity and pinning
@@ -24,7 +24,7 @@ The contract, guarantees, and limits live in
 Every trace names the exact scenario id, the digest of the canonical
 scenario bytes, the Model version, the IR digest, and the attachment
 revision it interpreted, plus the separate
-`dev.lekalo.reference-semantics@1.0.0` identity of the executable
+`dev.lekalo.reference-semantics@0.2.16` identity of the executable
 semantics — reference behavior is versioned with Model/IR. Before any
 step runs, the evaluator recomputes the pinned project's canonical IR
 digest and refuses the whole evaluation (typed `refusal` token,

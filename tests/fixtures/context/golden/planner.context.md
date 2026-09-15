@@ -1,13 +1,13 @@
 # context capsule
-- identity: dev.lekalo.context@1.0.0
-- contract: lekalo/context/v1.0.0
-- model version: 1.0.0
+- identity: dev.lekalo.context@0.2.16
+- contract: lekalo/context/v0.2.16
+- model version: 0.2.16
 - mode: symbol
 - project: planner
 - roots: operation:planner.focus_task
-- ir digest: sha256:7ffc4255fd8d1e3fa34cf14c4a1196199fd5fe32aed5c2fb7aee2075c6e7e88c
-- estimator: dev.lekalo.estimator.chars-4@1.0.0
-- estimator digest: sha256:e2517bff6268ffbb00f677f49ba75480502e05c3ed38a673d8919dbe9ef9ed79
+- ir digest: sha256:2ed11578a45ee61635c51cc4ad5ff758db3bc2a23a867f0c70547c75188df8f7
+- estimator: dev.lekalo.estimator.chars-4@0.2.16
+- estimator digest: sha256:602e648c2ff7c58cace92876f6c834c5c1735ce594e3ba565d7b012f752fb0be
 - budget: limit 5000, estimated 262, minimum required 262, fits true
 - coverage: 13 candidates, 13 included, 0 excluded
 - complete: true

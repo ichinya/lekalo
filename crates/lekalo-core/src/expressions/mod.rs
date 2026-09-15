@@ -428,7 +428,7 @@ impl ExpressionsAttachment {
     /// consumers.
     pub fn canonical_digest(&self) -> Result<String, crate::diagnostics::DiagnosticSet> {
         let bytes = canonical_bytes(self)?;
-        Ok(crate::versioning::plan::sha256_hex(bytes.as_bytes()))
+        Ok(crate::digest::sha256_hex(bytes.as_bytes()))
     }
     /// The expression records, sorted by identity.
     pub fn expressions(&self) -> &[ExpressionRecord] {

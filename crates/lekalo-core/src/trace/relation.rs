@@ -14,7 +14,7 @@ use super::node::NodeKind;
 use super::provenance::{Confidence, Provenance, Status};
 
 /// The fixed domain tag inside every canonical relation id.
-const RELATION_ID_DOMAIN: &str = "lekalo/trace-manifest/v1.0.0/relation";
+const RELATION_ID_DOMAIN: &str = "lekalo/trace-manifest/v0.2.16/relation";
 
 /// The closed relation kind vocabulary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]

@@ -1,5 +1,7 @@
 # The dependency graph of semantic symbols
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Issue #13 implements a read-only, deterministic dependency graph over the
 accepted #8 typed IR: direct edges with closed provenance and confidence,
 precomputed reverse indexes, relation-filtered traversal, bounded slices,
@@ -14,9 +16,9 @@ precomputed incoming index — never a source rescan or an IR rebuild.
 
 ## Contract identity
 
-- Discriminator: `lekalo/graph/v1.0.0`
-- Identity: `dev.lekalo.graph@1.0.0`
-- Schema: [`contracts/graph.schema.v1.0.0.json`](../contracts/graph.schema.v1.0.0.json)
+- Discriminator: `lekalo/graph/v0.2.16`
+- Identity: `dev.lekalo.graph@0.2.16`
+- Schema: [`contracts/graph.schema.v0.2.16.json`](../contracts/graph.schema.v0.2.16.json)
 - Independent of the product release, the Model/IR/protocol versions, and
   the diagnostic registry version.
 

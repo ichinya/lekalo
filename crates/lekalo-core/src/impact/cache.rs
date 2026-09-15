@@ -47,10 +47,7 @@ pub fn fingerprint(result: &ImpactResult) -> String {
     for root in &result.roots {
         push(&mut canonical, root.as_str());
     }
-    format!(
-        "sha256:{}",
-        crate::versioning::plan::sha256_hex(canonical.as_bytes())
-    )
+    format!("sha256:{}", crate::digest::sha256_hex(canonical.as_bytes()))
 }
 
 fn push(canonical: &mut String, field: &str) {
@@ -71,8 +68,8 @@ mod tests {
             push(&mut canonical, "b");
             canonical
         };
-        let first = crate::versioning::plan::sha256_hex(canonical.as_bytes());
-        let second = crate::versioning::plan::sha256_hex(canonical.as_bytes());
+        let first = crate::digest::sha256_hex(canonical.as_bytes());
+        let second = crate::digest::sha256_hex(canonical.as_bytes());
         assert_eq!(first, second);
         assert_eq!(first.len(), 64);
     }

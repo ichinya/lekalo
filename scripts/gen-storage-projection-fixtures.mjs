@@ -122,7 +122,7 @@ const entities = [
 const scenario = (id) => ({
   irDigest: DIGEST_SCENARIO_A,
   scenarioId: id,
-  scenarioVersion: "1.0.0",
+  scenarioVersion: "0.2.16",
 });
 
 const relations = [
@@ -174,7 +174,7 @@ const relations = [
       {
         irDigest: DIGEST_SCENARIO_B,
         scenarioId: "planner.scenario.external_link_roundtrip",
-        scenarioVersion: "1.0.0",
+        scenarioVersion: "0.2.16",
       },
     ],
     target: "task_external_link",
@@ -223,7 +223,6 @@ const table = (entity, name, rest) => ({
   ...rest,
 });
 
-const migrations = (records) => records;
 
 const projections = [
   {
@@ -235,18 +234,6 @@ const projections = [
         uniquePair: true,
       },
     ],
-    migrationHistory: migrations([
-      {
-        migrationId: "planner-migrations/baseline",
-        risk: "none",
-        tables: ["comment", "focus_session", "tag", "task", "task_detail", "task_external_link", "task_tag"],
-      },
-      {
-        migrationId: "planner-migrations/add-soft-deletes",
-        risk: "backfill_required",
-        tables: ["task"],
-      },
-    ]),
     namespace: "laravel",
     polymorphics: [
       {
@@ -296,18 +283,6 @@ const projections = [
         uniquePair: true,
       },
     ],
-    migrationHistory: migrations([
-      {
-        migrationId: "planner-migrations/baseline",
-        risk: "backfill_required",
-        tables: ["comment", "focus_session", "tag", "task", "task_detail", "task_external_link", "task_tag"],
-      },
-      {
-        migrationId: "planner-migrations/archive-legacy-notes",
-        risk: "destructive",
-        tables: ["task"],
-      },
-    ]),
     namespace: "postgres",
     polymorphics: [
       {
@@ -351,15 +326,15 @@ const projections = [
 ];
 
 const validAttachment = () => ({
-  attachmentRevision: "1.0.0",
+  attachmentRevision: "0.2.16",
   entities,
-  identity: "dev.lekalo.storage-projection@1.0.0",
-  irRef: { digest: DIGEST_IR, identity: "dev.lekalo.ir@0.1.0" },
-  modelRef: { digest: DIGEST_MODEL, modelVersion: "1.0.0" },
+  identity: "dev.lekalo.storage-projection@0.2.16",
+  irRef: { digest: DIGEST_IR, identity: "dev.lekalo.ir@0.2.16" },
+  modelRef: { digest: DIGEST_MODEL, modelVersion: "0.2.16" },
   projectId: "planner",
   projections,
   relations,
-  schemaVersion: "lekalo/storage-projection/v1.0.0",
+  schemaVersion: "lekalo/storage-projection/v0.2.16",
 });
 
 // --- canonical form --------------------------------------------------------
@@ -399,9 +374,6 @@ const normalize = (attachment) => {
         const rightKey = [right.name ?? "", ...right.columns].join("\u0000");
         return Buffer.compare(Buffer.from(leftKey), Buffer.from(rightKey));
       });
-    }
-    for (const migration of projection.migrationHistory ?? []) {
-      migration.tables.sort();
     }
   }
   return clone;
@@ -494,9 +466,6 @@ laravel.tables.find((entry) => entry.entity === "task").table = "planner_task";
 laravel.tables
   .find((entry) => entry.entity === "task")
   .technicalColumns.splice(0, 1);
-for (const migration of laravel.migrationHistory) {
-  migration.tables = migration.tables.map((name) => (name === "task" ? "planner_task" : name));
-}
 write("diff/candidate-storage.json", storage);
 
 // The pure permutation: identical content, non-canonical array order.
@@ -561,7 +530,7 @@ addInvalid(
 write(
   "invalid/duplicate-json-key.json",
   null,
-  '{"attachmentRevision":"1.0.0","attachmentRevision":"1.0.0"}',
+  '{"attachmentRevision":"0.2.16","attachmentRevision":"0.2.16"}',
 );
 write(
   "invalid/duplicate-json-key.expect.json",
@@ -801,7 +770,6 @@ addInvalid(
     copy.tables = [];
     copy.joins = [];
     copy.polymorphics = [];
-    copy.migrationHistory = [];
     clone.projections.push(copy);
   }),
   "storage.input-invalid",
@@ -886,13 +854,10 @@ addInvalid(
   "storage-type",
 );
 addInvalid(
-  "migration-unknown-table",
-  mutate({}, (clone) => {
-    findProjection(clone, "postgres").migrationHistory[0].tables.push("ghost");
-  }),
-  "storage.projection-invalid",
-  "migration-unknown-table",
-  "ghost",
+  "migration-history-rejected",
+  mutate({}, (clone) => { findProjection(clone, "postgres").migrationHistory = []; }),
+  "storage.input-invalid",
+  "unknown-field",
 );
 addInvalid(
   "join-kind",

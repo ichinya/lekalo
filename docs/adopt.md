@@ -7,7 +7,7 @@ path and a closed confidence — and never declares unconfirmed framework
 semantics. Nothing here executes a discovered script, package manager, or
 adapter; the issue #27 target protocol keeps that boundary.
 
-Product 0.2.3, Model 1.0.0, IR 0.1.0 and diagnostic registry 1.13.0 remain
+Product 0.2.3, Model 0.2.16, IR 0.2.16 and diagnostic registry 1.13.0 remain
 independent version lines.
 
 ## Commands
@@ -82,7 +82,7 @@ later work.
 Adoption writes only what the accepted #4 structure contract requires:
 
 - `lekalo/project.yaml` — the single project definition
-  (`{"schema_version":"1.0.0","definitions":[{"id":...,"kind":"project","version":1,"description":"Adopted existing project."}]}`),
+  (`{"schema_version":"0.2.16","definitions":[{"id":...,"kind":"project","version":1,"description":"Adopted existing project."}]}`),
   always written;
 - `lekalo/targets/<id>.yaml` — the explicit selection record, written
   only when `--target` selected one. Target documents stay opaque to the

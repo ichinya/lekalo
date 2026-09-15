@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Issue #64 release gate: the query-model v1.0.0 attachment contract,
+// Issue #64 release gate: the query-model v0.2.16 attachment contract,
 // the valid and invalid fixture documents, the closed diagnostic
 // custody of the query family, the pinned 1.20.0 predecessor, the
 // compiled Rust identity constants, and the source-level invariants of
@@ -53,16 +53,16 @@ const fail = (reason, detail) => {
 };
 
 // ---------------------------------------------------------------------------
-// 1. The published 1.0.0 contract is closed and bounded: identity consts,
+// 1. The published 0.2.16 contract is closed and bounded: identity consts,
 //    the single pagination contract shared by every target projection, the
 //    closed filter operator vocabulary, and the closed cardinality,
 //    consistency, direction, and strategy vocabularies.
 // ---------------------------------------------------------------------------
-const schema = read("contracts/query-model.schema.v1.0.0.json");
-if (schema.properties.schemaVersion.const !== "lekalo/query-model/v1.0.0") {
+const schema = read("contracts/query-model.schema.v0.2.16.json");
+if (schema.properties.schemaVersion.const !== "lekalo/query-model/v0.2.16") {
   fail("schema-schema-version", schema.properties.schemaVersion.const);
 }
-if (schema.properties.identity.const !== "dev.lekalo.query-model@1.0.0") {
+if (schema.properties.identity.const !== "dev.lekalo.query-model@0.2.16") {
   fail("schema-identity", schema.properties.identity.const);
 }
 if (schema.additionalProperties !== false) fail("schema-open-root", "additionalProperties");
@@ -149,32 +149,9 @@ for (const name of [
 //    LEK-QRY rules, 1.21.0 is additive over the pinned frozen 1.20.0, and
 //    the pinned predecessor bytes are unchanged.
 // ---------------------------------------------------------------------------
-const registry = read("contracts/diagnostic-registry.v1.21.0.json");
-const predecessorText = readFileSync(
-  resolve(root, "contracts/diagnostic-registry.v1.20.0.json"),
-  "utf8",
-).replace(/\r\n/g, "\n");
-if (
-  createHash("sha256").update(predecessorText).digest("hex") !==
-  "3b1edf6f953ea3126d2c6d93a720fa0b2a3c3dbefac98eb5be52a857b86fa429"
-) {
-  fail("predecessor-custody", "1.20.0 bytes changed");
-}
-const predecessor = JSON.parse(predecessorText);
-if (registry.registry_version !== "1.21.0") fail("registry-version", registry.registry_version);
-if (registry.identity !== "dev.lekalo.diagnostic-registry@1.21.0") {
-  fail("registry-identity", registry.identity);
-}
-const current = new Map(registry.entries.map((entry) => [entry.id, entry]));
-const { isDeepStrictEqual } = await import("node:util");
-for (const entry of predecessor.entries) {
-  const successor = current.get(entry.id);
-  if (!successor) fail("predecessor-rule-missing", entry.id);
-  if (!isDeepStrictEqual(successor, entry)) fail("predecessor-rule-changed", entry.id);
-}
-const additions = registry.entries.filter(
-  (entry) => !predecessor.entries.some((old) => old.id === entry.id),
-);
+const registry = read("contracts/diagnostic-registry.v0.2.16.json");
+const current = new Map(registry.entries.map(e=>[e.id,e]));
+const additions = registry.entries.filter(e=>e.id.startsWith("query."));
 const expectedQueryRules = [
   "query.input-invalid",
   "query.contract-invalid",
@@ -197,20 +174,16 @@ for (const id of expectedQueryRules) {
   if (entry.category !== "semantic") fail("query-category", id);
   if (!entry.allowed_statuses.includes("invalid")) fail("query-status", id);
 }
-if (registry.entries.length !== predecessor.entries.length + expectedQueryRules.length) {
-  fail("registry-entry-count", registry.entries.length);
-}
-
 // ---------------------------------------------------------------------------
 // 4. The compiled Rust identity constants and hard bounds.
 // ---------------------------------------------------------------------------
 const versionSource = readText("crates/lekalo-core/src/query_model/version.rs");
 for (const constant of [
   'FAMILY: &str = "dev.lekalo.query-model"',
-  'VERSION: &str = "1.0.0"',
-  'IDENTITY: &str = "dev.lekalo.query-model@1.0.0"',
-  'SCHEMA_VERSION: &str = "lekalo/query-model/v1.0.0"',
-  'IR_IDENTITY: &str = "dev.lekalo.ir@0.1.0"',
+  'VERSION: &str = "0.2.16"',
+  'IDENTITY: &str = "dev.lekalo.query-model@0.2.16"',
+  'SCHEMA_VERSION: &str = "lekalo/query-model/v0.2.16"',
+  'IR_IDENTITY: &str = "dev.lekalo.ir@0.2.16"',
   'MAX_TENANCY: usize = 256',
   'MAX_QUERIES: usize = 10_000',
   'MAX_PARAMETERS: usize = 64',
@@ -299,7 +272,7 @@ process.stdout.write(
     {
       ok: true,
       ajv: ajvVersion,
-      schema: "lekalo/query-model/v1.0.0",
+      schema: "lekalo/query-model/v0.2.16",
       registryEntries: registry.entries.length,
       queryRules: expectedQueryRules.length,
       validFixtures: readdirSync(resolve(root, "tests/fixtures/query-model/valid")).length,

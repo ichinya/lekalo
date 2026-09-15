@@ -2,8 +2,8 @@
   "status": "unsupported",
   "diagnostics": [
     {
-      "schema_version": "lekalo/diagnostic/v1.0.0",
-      "registry_version": "1.25.0",
+      "schema_version": "lekalo/diagnostic/v0.2.16",
+      "registry_version": "0.2.16",
       "id": "target.protocol-mismatch",
       "code": "LEK-TGT-003",
       "severity": "error",

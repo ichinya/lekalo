@@ -61,7 +61,7 @@ const derivedDir = "tests/fixtures/storage-projection/derived";
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const schema = JSON.parse(
   readFileSync(
-    resolve(root, "contracts/storage-projection.schema.v1.0.0.json"),
+    resolve(root, "contracts/storage-projection.schema.v0.2.16.json"),
     "utf8",
   ),
 );
@@ -107,7 +107,7 @@ const SEMANTIC_ONLY_DETAILS = new Set([
   "join-kind",
   "join-materialization-missing",
   "join-unknown-relation",
-  "migration-unknown-table",
+  "migration-history-rejected",
   "min-above-max",
   "one-to-many-max",
   "one-to-one-max",

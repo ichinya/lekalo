@@ -1,7 +1,7 @@
 {
   "status": "valid",
-  "schemaVersion": "lekalo/doctor/v1.0.0",
-  "identity": "dev.lekalo.doctor@1.0.0",
+  "schemaVersion": "lekalo/doctor/v0.2.16",
+  "identity": "dev.lekalo.doctor@0.2.16",
   "report": "readiness",
   "phase": "generate",
   "productVersion": "0.2.7",
@@ -14,7 +14,7 @@
     },
     "model": {
       "state": "ok",
-      "version": "1.0.0"
+      "version": "0.2.16"
     },
     "lock": {
       "state": "absent"

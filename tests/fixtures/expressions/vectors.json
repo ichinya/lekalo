@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "lekalo/expressions/vectors/v1.0.0",
+  "schemaVersion": "lekalo/expressions/vectors/v0.2.16",
   "vectors": [
     {
       "id": "overdue-past-open",

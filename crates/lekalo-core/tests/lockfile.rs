@@ -34,7 +34,7 @@ use lekalo_core::versioning::{ContractVersion, VersionRegistry};
 const GOLDEN: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:7f9eac83637a58bceda9081dcc50d4489228016a2856f9160aad8904fbfdd08e";
+    "sha256:24be0c2d47066bdee692d1f2a65e3cd9870882b2760bdf813271e0882f4c636f";
 const MULTI: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/multi-adapter.lock.json");
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/lockfile/project";
@@ -44,61 +44,21 @@ fn ir_version() -> ContractVersion<IrContract> {
 }
 
 fn model_1_0() -> ContractVersion<ModelContract> {
-    ContractVersion::<ModelContract>::parse_canonical("1.0.0").expect("1.0.0 is canonical")
+    ContractVersion::<ModelContract>::parse_canonical("0.2.16").expect("0.2.16 is canonical")
 }
 
 /// The synthetic published-protocol world's current version: the
 /// candidate-resolution tests below declare manifest bounds inside it.
 fn protocol_version() -> ContractVersion<ProtocolContract> {
-    ContractVersion::<ProtocolContract>::parse_canonical("1.1.0").expect("1.1.0 is canonical")
+    ContractVersion::<ProtocolContract>::parse_canonical("0.2.16").expect("0.2.16 is canonical")
 }
 
 /// A synthetic registry identical to the embedded one except that the
-/// protocol family publishes the base 1.0.0 and the #28 extension 1.1.0
+/// protocol family publishes the base 0.2.16 and the #28 extension 0.2.16
 /// (current) — the published-protocol world the multi-adapter resolver
 /// tests run in.
 fn published_protocol_registry() -> VersionRegistry {
-    const JSON: &str = r#"
-{
-  "registry": "dev.lekalo.version-registry",
-  "registryVersion": "1.0.0",
-  "families": {
-    "model": {
-      "current": "1.0.0",
-      "aliases": [],
-      "versions": [
-        {"version": "0.1.0", "state": "deprecated", "deprecatedSince": "1.0.0",
-         "retirementNotBefore": "2.0.0", "classification": "additive",
-         "reason": "Initial Model contract; deprecated by Model 1.0.0."},
-        {"version": "1.0.0", "state": "supported", "classification": "breaking",
-         "reason": "Model 1.0.0 tightened the module-ID grammar."}
-      ],
-      "migrations": []
-    },
-    "ir": {
-      "current": "0.1.0",
-      "aliases": [],
-      "versions": [
-        {"version": "0.1.0", "state": "supported", "classification": "additive",
-         "reason": "The accepted IR contract."}
-      ],
-      "migrations": []
-    },
-    "protocol": {
-      "current": "1.1.0",
-      "aliases": [],
-      "versions": [
-        {"version": "1.0.0", "state": "supported", "classification": "additive",
-         "reason": "Synthetic published protocol for issue #10 hermetic tests."},
-        {"version": "1.1.0", "state": "supported", "classification": "additive",
-         "reason": "Synthetic protocol extension for the capability discovery issue."}
-      ],
-      "migrations": []
-    }
-  }
-}
-"#;
-    VersionRegistry::from_bytes(JSON.as_bytes()).expect("synthetic registry is valid")
+    VersionRegistry::from_bytes(lekalo_core::versioning::REGISTRY_BYTES).expect("baseline registry")
 }
 
 fn request(registry: &VersionRegistry) -> ResolutionRequest {
@@ -116,8 +76,8 @@ fn manifest_for(adapter: &str) -> AdapterCompatibilityManifest {
         )
         .expect("manifest schema version is canonical"),
         adapter,
-        ContractVersion::<IrContract>::parse_canonical("0.1.0").expect("ir min"),
-        ContractVersion::<IrContract>::parse_canonical("0.1.0").expect("ir max"),
+        ContractVersion::<IrContract>::parse_canonical("0.2.16").expect("ir min"),
+        ContractVersion::<IrContract>::parse_canonical("0.2.16").expect("ir max"),
         Some(ProtocolBounds {
             min: protocol_version(),
             max: protocol_version(),
@@ -183,7 +143,7 @@ fn capability_candidate(
         Platform::parse("any").expect("platform"),
         ComponentId::parse("default").expect("profile"),
         CapabilityId::parse(id).expect("capability"),
-        SemVer::parse("0.1.0").expect("version"),
+        SemVer::parse("0.2.16").expect("version"),
         support,
         ProviderRef::new(
             provider_kind,
@@ -266,7 +226,7 @@ fn golden_contract_only_lock_parses_and_matches_its_independent_digest() {
     assert_eq!(lock.resolver_version().as_str(), RESOLVER_VERSION);
     assert_eq!(lock.core_version().as_str(), "0.2.16");
     let protocol = lock.target_protocol().expect("published protocol");
-    assert_eq!(protocol.version().as_str(), "1.2.0");
+    assert_eq!(protocol.version().as_str(), "0.2.16");
     // Round-trip: canonical bytes are byte-identical to the committed file.
     assert_eq!(lock.canonical_bytes().as_ref(), GOLDEN);
 }
@@ -303,19 +263,19 @@ fn wire_refusals_carry_the_closed_reason_codes() {
         (
             "duplicate JSON key",
             payload.replace(
-                "\"schema_version\":\"lekalo/lock/v1.0.0\"",
-                "\"schema_version\":\"lekalo/lock/v1.0.0\",\"schema_version\":\"lekalo/lock/v1.0.0\"",
+                "\"schema_version\":\"lekalo/lock/v0.2.16\"",
+                "\"schema_version\":\"lekalo/lock/v0.2.16\",\"schema_version\":\"lekalo/lock/v0.2.16\"",
             ),
             "lock.noncanonical",
         ),
         (
             "future schema discriminator",
-            tampered("lekalo/lock/v1.0.0", "lekalo/lock/v2.0.0"),
+            tampered("lekalo/lock/v0.2.16", "lekalo/lock/v2.0.0"),
             "lock.unsupported-schema-version",
         ),
         (
             "unknown schema spelling",
-            tampered("lekalo/lock/v1.0.0", "lekalo/lock/1"),
+            tampered("lekalo/lock/v0.2.16", "lekalo/lock/1"),
             "lock.schema-invalid",
         ),
         (
@@ -325,12 +285,12 @@ fn wire_refusals_carry_the_closed_reason_codes() {
         ),
         (
             "uppercase digest",
-            tampered("sha256:2cba65b0", "sha256:2CBA65B0"),
+            tampered("sha256:9333f37c", "sha256:9333F37C"),
             "lock.schema-invalid",
         ),
         (
             "short digest",
-            tampered("sha256:2cba65b0", "sha256:2cba65b"),
+            tampered("sha256:9333f37c", "sha256:9333f37"),
             "lock.schema-invalid",
         ),
         (
@@ -367,7 +327,7 @@ fn wire_refusals_carry_the_closed_reason_codes() {
     }
     // Exit classes: unsupported schema is 5, schema-invalid is 1.
     let future =
-        Lockfile::parse_canonical(tampered("lekalo/lock/v1.0.0", "lekalo/lock/v2.0.0").as_bytes())
+        Lockfile::parse_canonical(tampered("lekalo/lock/v0.2.16", "lekalo/lock/v2.0.0").as_bytes())
             .map(|_: Lockfile| ())
             .expect_err("future");
     assert_eq!(future.exit_code(), 5);
@@ -382,7 +342,7 @@ fn multi_adapter_wire_document_parses_with_references_resolved() {
     assert_eq!(lock.profiles().len(), 1);
     assert_eq!(lock.capabilities().len(), 2);
     let protocol = lock.target_protocol().expect("published protocol");
-    assert_eq!(protocol.version().as_str(), "1.1.0");
+    assert_eq!(protocol.version().as_str(), "0.2.16");
 }
 
 #[test]
@@ -482,22 +442,22 @@ fn unpublished_protocol_registry() -> VersionRegistry {
     const JSON: &str = r#"
 {
   "registry": "dev.lekalo.version-registry",
-  "registryVersion": "1.0.0",
+  "registryVersion": "0.2.16",
   "families": {
     "model": {
-      "current": "1.0.0",
+      "current": "0.2.16",
       "aliases": [],
       "versions": [
-        {"version": "1.0.0", "state": "supported", "classification": "additive",
+        {"version": "0.2.16", "state": "supported", "classification": "additive",
          "reason": "Synthetic published model for issue #10 hermetic tests."}
       ],
       "migrations": []
     },
     "ir": {
-      "current": "0.1.0",
+      "current": "0.2.16",
       "aliases": [],
       "versions": [
-        {"version": "0.1.0", "state": "supported", "classification": "additive",
+        {"version": "0.2.16", "state": "supported", "classification": "additive",
          "reason": "Synthetic published IR for issue #10 hermetic tests."}
       ],
       "migrations": []
@@ -661,7 +621,7 @@ fn generators_profiles_and_required_capabilities_resolve_together() {
             "0.3.0",
             "node-typescript",
         ))
-        .with_profile(profile_candidate("default", "1.1.0", "node-typescript"))
+        .with_profile(profile_candidate("default", "0.2.16", "node-typescript"))
         .with_capability(capability_candidate(
             "planner.render",
             Support::Full,
@@ -696,7 +656,7 @@ fn generators_profiles_and_required_capabilities_resolve_together() {
             "0.3.0",
             "node-typescript",
         ))
-        .with_profile(profile_candidate("default", "1.1.0", "node-typescript"))
+        .with_profile(profile_candidate("default", "0.2.16", "node-typescript"))
         .with_capability(capability_candidate(
             "planner.render",
             Support::Partial,

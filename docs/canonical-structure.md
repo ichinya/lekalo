@@ -73,9 +73,9 @@ All other shown files and directories are optional legal homes. The leaf names b
 copy of a canonical semantic decision. Canonical model files are never stored
 in `.ai-factory/qa`, generated rules or OpenSpec changes.
 
-### Authority 1.3.1 compatibility
+### Authority 0.2.16 compatibility
 
-The published `dev.lekalo.authority-matrix` `1.3.1` contract is upstream and
+The published `dev.lekalo.authority-matrix` `0.2.16` contract is upstream and
 non-negotiable. Every Lekalo-owned registered `.lekalo/**` kind has exactly one
 legal structure home:
 

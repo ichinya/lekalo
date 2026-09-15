@@ -1,13 +1,15 @@
 # Requirements: the OpenSpec traceability integration (issue #36)
 
-One independent, closed, versioned attachment — `lekalo/requirements/v1.0.0`,
-identity `dev.lekalo.requirements@1.0.0`, contract
-[contracts/requirements.schema.v1.0.0.json](../contracts/requirements.schema.v1.0.0.json) —
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
+One independent, closed, versioned attachment — `lekalo/requirements/v0.2.16`,
+identity `dev.lekalo.requirements@0.2.16`, contract
+[contracts/requirements.schema.v0.2.16.json](../contracts/requirements.schema.v0.2.16.json) —
 binds Lekalo semantic symbols to canonical requirement identities owned by
 requirement providers, and one derived, read-only report wire —
-`lekalo/requirements-report/v1.0.0`, identity
-`dev.lekalo.requirements-report@1.0.0`,
-[contracts/requirements-report.schema.v1.0.0.json](../contracts/requirements-report.schema.v1.0.0.json) —
+`lekalo/requirements-report/v0.2.16`, identity
+`dev.lekalo.requirements-report@0.2.16`,
+[contracts/requirements-report.schema.v0.2.16.json](../contracts/requirements-report.schema.v0.2.16.json) —
 carries the resolution results: the effective requirement catalog with exact
 revisions, per-reference resolution statuses, coverage gaps, explicit
 conflicts, and changed-requirement impact. Owner decisions are recorded in

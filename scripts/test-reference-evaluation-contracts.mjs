@@ -111,7 +111,7 @@ function canonicalize(value) {
   return JSON.stringify(value);
 }
 
-const schemaPath = "contracts/reference-evaluation.schema.v1.0.0.json";
+const schemaPath = "contracts/reference-evaluation.schema.v0.2.16.json";
 const goldenDir = "tests/fixtures/reference-evaluation/golden";
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
@@ -154,7 +154,7 @@ for (const name of goldenFiles) {
   if (validateTrace && !validateTrace(parsed)) {
     fail(`${name}:schema`, JSON.stringify(validateTrace.errors));
   }
-  if (!raw.includes('"schemaVersion":"lekalo/reference-evaluation/v1.0.0"')) {
+  if (!raw.includes('"schemaVersion":"lekalo/reference-evaluation/v0.2.16"')) {
     fail(`${name}:identity`, "wrong schema version discriminator");
   }
   const canonical = canonicalize(parsed);
@@ -192,17 +192,17 @@ for (const name of goldenFiles) {
 // carries an unknown status word, and then drops the member
 // entirely; both shapes must fail closed.
 const tampered = {
-  schemaVersion: "lekalo/reference-evaluation/v1.0.0",
-  identity: "dev.lekalo.reference-evaluation@1.0.0",
-  semantics: "dev.lekalo.reference-semantics@1.0.0",
+  schemaVersion: "lekalo/reference-evaluation/v0.2.16",
+  identity: "dev.lekalo.reference-evaluation@0.2.16",
+  semantics: "dev.lekalo.reference-semantics@0.2.16",
   scenario: {
     digest: `sha256:${"0".repeat(64)}`,
     id: "board.scenario.x",
-    version: "1.0.0",
+    version: "0.2.16",
   },
-  modelVersion: "1.0.0",
+  modelVersion: "0.2.16",
   irDigest: `sha256:${"a".repeat(64)}`,
-  attachmentRevision: "1.0.0",
+  attachmentRevision: "0.2.16",
   capabilities: { absent: [], supported: [] },
   status: "pass",
   steps: [],

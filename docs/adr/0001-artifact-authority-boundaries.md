@@ -2,7 +2,7 @@
 title: "ADR-0001: Artifact authority and synchronization boundaries"
 status: accepted
 date: 2026-08-30
-contract-version: 1.3.1
+contract-version: 0.2.16
 predecessor-contract-version: 1.3.0-rejected-yanked
 ---
 
@@ -73,17 +73,17 @@ digests. `--contract` therefore requires an exact accepted `--authority-ref`;
 a path, reformatted copy, recomputed caller digest, runtime kind extension,
 local alias, or undeclared successor is not authority.
 
-The historical `1.2.0` bytes remain accepted and unchanged. The exact `1.3.0`
+The historical `0.2.16` bytes remain accepted and unchanged. The exact `1.3.0`
 bytes are preserved as a rejected/yanked candidate because owner-only path
 boundaries permitted same-owner kind and writer relabeling. Corrective successor
-`1.3.1` preserves the 49 stable IDs: all 26 baseline kind IDs plus 23 kinds
+`0.2.16` preserves the 49 stable IDs: all 26 baseline kind IDs plus 23 kinds
 needed for the #120 handoff. Those kinds cover the
 authority and privacy policy/schema artifacts, source maps and native identity,
 raw diagnostics, context/trace/run evidence, fixtures and repository identity,
 consumer projections, and export/redaction/aggregate artifacts and decisions.
 Authority lifecycle remains separate from privacy classification.
 
-In `1.3.1`, each protected boundary binds an exact set of kinds, readers, and
+In `0.2.16`, each protected boundary binds an exact set of kinds, readers, and
 writers. Evaluation collects every matching boundary and chooses the
 deterministic most-specific policy by literal prefix segments, literal segment
 count, literal character count, segment depth, then fewer wildcards. A tied
@@ -97,12 +97,8 @@ reviewed derived kind. HLV metrics are HLV-owned direct evidence and only HLV
 may write `.hlv/evidence/metrics/**`; AI Factory and AIFHub may read it or write
 their own envelopes elsewhere, never inside `.hlv/**`.
 
-Every later successor needs a new versioned file and digest, exact predecessor
-reference, compatibility/migration metadata, stable-kind diff, manifest entry,
-checker trust profile, and mutation evidence before review can select it. This
-procedure is machine-readable in `1.3.1` and documented in
-`docs/authority-contract-migration-1.2-to-1.3.md` and
-`docs/authority-contract-migration-1.3.0-to-1.3.1.md`.
+The development baseline is now `0.2.16`; previous contracts and migration
+metadata have been removed. Future changes follow [versioning](../versioning.md).
 
 ## Consequences
 

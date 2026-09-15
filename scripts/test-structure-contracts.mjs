@@ -14,7 +14,7 @@ import { checkPathGrammar, checkSelectionGrammar, RUNTIME_AUTHORITY_HOMES } from
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const checker = join(root, "scripts", "check-structure.mjs");
 const fixturesDir = join(root, "tests", "fixtures", "structure");
-const authorityPath = join(root, "contracts", "authority-matrix.v1.3.1.json");
+const authorityPath = join(root, "contracts", "authority-matrix.v0.2.16.json");
 
 const failures = [];
 let fixtureCases = 0;
@@ -196,7 +196,7 @@ for (const [candidate, expected] of selectionMatrix) {
   check(`selection-import:${JSON.stringify(candidate)}`, checkSelectionGrammar(candidate) === expected, { expected, actual: checkSelectionGrammar(candidate) });
 }
 
-// --- accepted authority 1.3.1 runtime homes ------------------------------------
+// --- accepted authority 0.2.16 runtime homes ------------------------------------
 
 const authority = JSON.parse(await readFile(authorityPath, "utf8"));
 const authorityHomes = authority.artifactKinds

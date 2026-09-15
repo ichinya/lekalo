@@ -2,7 +2,7 @@
 //!
 //! Compact UTF-8 JSON, no insignificant whitespace, no trailing
 //! newline. Top-level fields and sections appear in the fixed wire
-//! order of `contracts/inspect.schema.v1.0.0.json`; the members of
+//! order of `contracts/inspect.schema.v0.2.16.json`; the members of
 //! set-like arrays are sorted upstream by unsigned UTF-8 bytes of their
 //! typed ids, and per-item object keys follow the schema order. The
 //! bytes are path-independent: no physical root, raw source text,
@@ -20,7 +20,7 @@ use crate::loader::canonical::write_json_string;
 /// Serialize the whole inspect result to canonical payload bytes.
 pub(crate) fn payload_bytes(result: &InspectResult) -> String {
     let mut json = String::from("{\"schemaVersion\":");
-    json.push_str(&quote("lekalo/inspect/v1.0.0"));
+    json.push_str(&quote("lekalo/inspect/v0.2.16"));
     json.push_str(",\"identity\":");
     json.push_str(&quote(super::version::IDENTITY));
     json.push_str(",\"modelVersion\":");

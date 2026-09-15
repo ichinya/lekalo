@@ -1,19 +1,19 @@
 # Lekalo
 
+Контракты имеют исходную версию **0.2.16**. При изменении контракта его версия
+становится текущей версией проекта; неизменённые контракты сохраняют свою версию.
+Старые схемы и история миграций удалены. См. [правила версионирования](docs/versioning.md).
+
 Lekalo is the semantic application-model layer described by the project
 architecture. The first repository contract fixes artifact ownership before the
 Rust workspace and provider implementations are introduced.
 
 - [Authority matrix and boundary policy](docs/authority.md)
 - [ADR-0001: artifact authority and synchronization boundaries](docs/adr/0001-artifact-authority-boundaries.md)
-- [Authority contract migration 1.2.0 to the 1.3 line](docs/authority-contract-migration-1.2-to-1.3.md)
-- [Corrective migration from yanked 1.3.0 to 1.3.1](docs/authority-contract-migration-1.3.0-to-1.3.1.md)
 - Accepted-version manifest: `contracts/authority-contracts.manifest.json`
-- Reviewed corrective successor: `contracts/authority-matrix.v1.3.1.json`
-- Rejected/yanked candidate preserved for custody: `contracts/authority-matrix.v1.3.0.json`
-- Immutable historical baseline: `contracts/authority-matrix.v1.2.0.json`
+- Current contract: `contracts/authority-matrix.v0.2.16.json`
 - [Contract versioning, support policy, and migrations](docs/versioning.md)
-- [ADR-0008: versioning and migrations for Model, IR, and protocol](docs/adr/0008-versioning-and-migrations.md)
+- [Версии контрактов и миграции](docs/versioning.md)
 - [The committed `lekalo.lock`: reproducible resolution](docs/lockfile.md)
 - [ADR-0009: the committed lekalo.lock and reproducible resolution](docs/adr/0009-lockfile.md)
 - [The stable machine-readable diagnostic contract](docs/diagnostics.md)
@@ -26,7 +26,7 @@ the documented CLI exit-code protocol with Node.js, without installing
 dependencies:
 ```sh
 node scripts/check-authority.mjs
-node scripts/check-authority.mjs --contract-version 1.2.0
+node scripts/check-authority.mjs --contract-version 0.2.16
 node scripts/test-authority-cli.mjs
 node scripts/test-authority-contracts.mjs
 node scripts/test-authority-boundaries.mjs
@@ -48,15 +48,12 @@ The fail-closed privacy/export baseline for issue #120, corrected after the M0
 post-acceptance audit:
 
 ```text
-dev.lekalo.privacy-export-policy@1.0.7@sha256:008ec26caac4771ee14f1f3cd6c1a8e24a714643b2efb8daffd7a4064bac0129
+dev.lekalo.privacy-export-policy@0.2.16@sha256:430ba543098c91f70d0c4e37c32ac8e41b3de65498f119ecf85188919c095c93
 ```
 
 - [Privacy and export policy](docs/privacy.md)
 - [ADR-0002: exact-custody privacy decision contract](docs/adr/0002-privacy-export-policy.md)
-- Accepted policy: `contracts/privacy-policy.v1.0.7.json` with its manifest and sidecars
-- Frozen history: `1.0.0` rejected-unaccepted WIP; `1.0.1`-`1.0.6` yanked candidates, preserved byte-for-byte
-- Corrective migration: `docs/privacy-policy-migration-1.0.6-to-1.0.7.md`
-- Migration notes: `docs/privacy-policy-migration-*.md` for every step of the ladder
+- Accepted policy: `contracts/privacy-policy.v0.2.16.json` with its manifest and sidecars
 
 Validate one export decision or run the full protocol suites:
 
@@ -78,7 +75,7 @@ configuration, lockfile location, generated cache and reports — is fixed by
 [the structure contract](docs/canonical-structure.md) and
 [ADR-0003](docs/adr/0003-canonical-structure-and-path-safety.md). It is
 neutral to the Node.js, PHP and Rust targets, aligns every `.lekalo/**` home
-with accepted authority contract `1.3.1`, and defines root discovery, physical
+with accepted authority contract `0.2.16`, and defines root discovery, physical
 link containment and the canonical/runtime ownership split. Model/import and
 lockfile contents remain owned by their downstream issues.
 
@@ -110,7 +107,7 @@ writes, and emits the typed exit protocol (0 valid, 1 invalid, 3 denied,
 `tests/fixtures/loader/`.
 
 Issue #8 compiles the loaded model into the typed, deterministic,
-target-neutral Lekalo IR (`dev.lekalo.ir@0.1.0`): `lekalo load --ir`
+target-neutral Lekalo IR (`dev.lekalo.ir@0.2.16`): `lekalo load --ir`
 prints canonical IR bytes with an optional occurrence-safe source map, and
 the `lekalo-core::ir` library surface exposes the closed typed read model
 (exhaustive definition/effect enums, resolved references, closed extension
@@ -143,7 +140,7 @@ stay registered but unemitted until their typed owners land. The thin
 `lekalo graph show | callers | path | export` handoff keeps every decision
 in the core; the contract, guarantees, and limits live in
 [docs/graph.md](docs/graph.md), [ADR-0012](docs/adr/0012-dependency-graph.md),
-and `contracts/graph.schema.v1.0.0.json`; hermetic fixtures are under
+and `contracts/graph.schema.v0.2.16.json`; hermetic fixtures are under
 `tests/fixtures/graph/`.
 
 ## Effect graph of reads, writes, and external calls
@@ -160,7 +157,7 @@ byte-identical canonical export. The thin
 in the core; the contract, guarantees, and limits live in
 [docs/effect-graph.md](docs/effect-graph.md),
 [ADR-0013](docs/adr/0013-effect-graph.md), and
-`contracts/effect-graph.schema.v1.0.0.json`; hermetic fixtures are under
+`contracts/effect-graph.schema.v0.2.16.json`; hermetic fixtures are under
 `tests/fixtures/effects/`.
 
 ## Bounded context capsules
@@ -178,16 +175,16 @@ pins its identity, version, and digest into every capsule. Raw source,
 secrets, `.env` content, and absolute paths never enter; the only
 source evidence is the opt-in declaration-span sidecar of logical
 paths. One normalized capsule renders both the agent-facing Markdown
-and the structured JSON (`lekalo/context/v1.0.0`). The contract,
+and the structured JSON (`lekalo/context/v0.2.16`). The contract,
 guarantees, and limits live in [docs/context.md](docs/context.md),
 [ADR-0018](docs/adr/0018-context-capsules.md), and
-`contracts/context-capsule.schema.v1.0.0.json`; hermetic fixtures are
+`contracts/context-capsule.schema.v0.2.16.json`; hermetic fixtures are
 under `tests/fixtures/context/`.
 
 ## Neutral trace manifest
 
 Issue #22 defines the closed, versioned traceability contract
-(`lekalo/trace-manifest/v1.0.0`) for the requirement -> symbol ->
+(`lekalo/trace-manifest/v0.2.16`) for the requirement -> symbol ->
 binding/artifact -> scenario/native-test -> gate chain, consumable by
 AIFHub as plain JSON with no Rust coupling. Lekalo owns the contract,
 typed validation, canonical export, and derived queries; persisted
@@ -198,7 +195,7 @@ full/partial/gap/dangling semantics, byte-stable canonical export and
 digest, and the thin `lekalo trace validate | export | query` handoff.
 The details live in [docs/trace-manifest.md](docs/trace-manifest.md),
 [ADR-0014](docs/adr/0014-trace-manifest.md), and
-`contracts/trace-manifest.schema.v1.0.0.json`; hermetic fixtures are
+`contracts/trace-manifest.schema.v0.2.16.json`; hermetic fixtures are
 under `tests/fixtures/trace/`.
 
 ## Inspect: one semantic symbol
@@ -214,20 +211,20 @@ omission. Safe selector grammar, distinct unknown/ambiguous diagnostics,
 the #6 alias registry semantics, fixed wire order, and a recorded bound
 profile keep reruns byte-identical. See [docs/inspect.md](docs/inspect.md),
 [ADR-0014](docs/adr/0014-inspect.md), and
-`contracts/inspect.schema.v1.0.0.json`; hermetic fixtures are under
+`contracts/inspect.schema.v0.2.16.json`; hermetic fixtures are under
 `tests/fixtures/inspect/`.
 
 ## Stable machine-readable diagnostics
 
 Issue #11 freezes the diagnostic wire: every failure carries closed wire
-diagnostics (`lekalo/diagnostic/v1.0.0`) with immutable `LEK-SUBSYSTEM-NNN`
+diagnostics (`lekalo/diagnostic/v0.2.16`) with immutable `LEK-SUBSYSTEM-NNN`
 codes, registered category/severity/message/data semantics, deterministic
 sorting and dedup, and derived `reasonCodes`; human and JSON renderers are
 projections of the same `DomainResult`. Exit classes stay status-owned
 (0/1/3/4/5) and severity never computes an exit. See
 [docs/diagnostics.md](docs/diagnostics.md),
 [ADR-0010](docs/adr/0010-diagnostics.md), and the embedded
-`contracts/diagnostic-registry.v1.22.0.json` (issue #12 extended it with the
+`contracts/diagnostic-registry.v0.2.16.json` (issue #12 extended it with the
 `semantic.*`/`validate.*` families and issue #13 added the `graph.*`
 family, each as a minor increment; issue #15 added the `inspect.*` family
 the same way; issue #16 added the `impact.*` family issue #18 adds the
@@ -254,7 +251,7 @@ and zero-deletes races. Source maps carry semantic-id to generated-range
 traceability bound to the exact inputs revision. See
 [docs/artifact-manifest.md](docs/artifact-manifest.md),
 [ADR-0015](docs/adr/0015-artifact-ownership-manifest.md), and
-`contracts/artifact-manifest.schema.v1.0.0.json`.
+`contracts/artifact-manifest.schema.v0.2.16.json`.
 
 ## Generate and verify orchestration
 
@@ -267,7 +264,7 @@ validation, drift, per-target adapter validation, and the optional
 binding, scenario, and trace summaries into one receipt where required
 and optional components stay distinguished and partial success is never
 full success. The receipts are published as
-`contracts/orchestration-report.schema.v1.0.0.json`; the details live
+`contracts/orchestration-report.schema.v0.2.16.json`; the details live
 in [docs/orchestration.md](docs/orchestration.md),
 [ADR-0038](docs/adr/0038-generate-verify-orchestration.md), and the
 hermetic fixtures under `tests/fixtures/orchestration/`.
@@ -291,7 +288,7 @@ matrix is under `tests/fixtures/validation/`.
 ## Extended effect contracts
 
 Issue #26 publishes the closed extended-effects attachment
-(`lekalo/extended-effects/v1.0.0`): event contracts with delivery,
+(`lekalo/extended-effects/v0.2.16`): event contracts with delivery,
 ordering, deduplication, and correlation semantics; job contracts with
 payload, queue class, retry/backoff, idempotency, timeout, and
 dead-letter policies; external-call contracts with provider
@@ -313,7 +310,7 @@ fixtures under `tests/fixtures/extended-effects/`.
 ## Transaction and concurrency contracts
 
 Issue #24 publishes the closed transaction-concurrency attachment
-(`lekalo/transaction-concurrency/v1.0.0`): required/optional/forbidden
+(`lekalo/transaction-concurrency/v0.2.16`): required/optional/forbidden
 transaction semantics, local all-or-nothing atomic effect groups keyed by
 exact effect IDs, optimistic version/ETag and pessimistic lock
 preconditions, the closed isolation vocabulary with its owner-published
@@ -331,7 +328,7 @@ fixtures under `tests/fixtures/transaction-concurrency/`.
 
 Issue #62 makes operation errors a formal, versioned part of the
 behavior contract: the closed error-contract and error-registry wire
-schemas (`lekalo/error-contract/v1.0.0`, `lekalo/error-registry/v1.0.0`),
+schemas (`lekalo/error-contract/v0.2.16`, `lekalo/error-registry/v0.2.16`),
 the canonical registry binding the planner operations to typed `Result<
 Output, ErrorUnion>` unions, immutable `LEK-ERR-NNN` codes with
 closed categories, payloads, and public/private message separation,
@@ -350,7 +347,7 @@ under `tests/fixtures/error-contract/`.
 
 Issue #63 makes domain invariants and state transitions first-class,
 machine-checkable contract data: the closed invariant-transition wire
-schema (`lekalo/invariant-transition/v1.0.0`) binding one project to
+schema (`lekalo/invariant-transition/v0.2.16`) binding one project to
 one exact Model pin, IR digest, and attachment revision; bounded
 state spaces with explicit initial/terminal states and explicit
 cycle and dead-state policies; eleven closed invariant kinds over a
@@ -372,7 +369,7 @@ fixtures under `tests/fixtures/invariant-transition/`.
 ## Target protocol
 
 Issue #27 publishes the target process protocol (`lekalo.target/v1`,
-`dev.lekalo.protocol@1.0.0` in the version registry): target adapters are
+`dev.lekalo.protocol@0.2.16` in the version registry): target adapters are
 separate executables in any language — never Rust ABI plugins, never
 internal dependencies. Eight operations (`describe`, `scan`, `bind`,
 `validate`, `generate`, `verify`, `plan-clean`, `clean`) run over closed
@@ -388,17 +385,17 @@ state, with every deviation classified (`target.*` family, integrated
 registry 1.14.0). The contract, transport rules, and error taxonomy live in
 [docs/target-protocol.md](docs/target-protocol.md) and
 [ADR-0025](docs/adr/0025-target-protocol.md); the wire schemas are
-`contracts/target-protocol.schema.v1.0.0.json` (frozen base) and
-`contracts/target-protocol.schema.v1.1.0.json` (additive describe
+`contracts/target-protocol.schema.v0.2.16.json` (frozen base) and
+`contracts/target-protocol.schema.v0.2.16.json` (additive describe
 extension, issue #28) and
-`contracts/target-protocol.schema.v1.2.0.json` (additive resolved-profile
+`contracts/target-protocol.schema.v0.2.16.json` (additive resolved-profile
 request extension, issue #29); the language-neutral fake adapter and hermetic
 fixtures are under `tests/fixtures/target-protocol/`.
 
 Issue #28 adds capability discovery and version negotiation over the
 same wire: the describe handshake probes at the base version and
 upgrades only to a protocol version the adapter declared
-(1.0.0/1.1.0); the 1.1.0 describe response additively declares accepted
+(0.2.16/0.2.16); the 0.2.16 describe response additively declares accepted
 IR contract versions, named capability support states
 (`full`/`partial`/`unsupported`/`unknown`), and optional constraints.
 Discovery is safe (describe only: no IR, no writes), distinguishes the
@@ -411,7 +408,7 @@ yes — and reports the selected and excluded candidates with stable
 reasons. The resolved capability snapshot resolves into the committed
 `lekalo.lock`.
 
-Issue #29 introduces composable target profiles and the additive 1.2.0
+Issue #29 introduces composable target profiles and the additive 0.2.16
 request extension: a profile composes one component per closed axis
 (`runtime`, `storage`, `transport`, `testing`, `analysis`,
 `deployment`) from an embedded, versioned component registry, so
@@ -426,11 +423,11 @@ override acknowledging exactly that state, and removal is never
 overridable. Each profile resolves into an immutable machine-readable
 snapshot whose declared and resolved digests land in the committed
 lock; per-axis portability reports name exactly which components
-change between two profiles; and on a 1.2.0 session the adapter
+change between two profiles; and on a 0.2.16 session the adapter
 receives the resolved capabilities instead of arbitrary YAML. See
 [docs/target-profile.md](docs/target-profile.md),
 [ADR-0029](docs/adr/0029-composable-target-profiles.md), and
-`contracts/target-profile.schema.v1.0.0.json`.
+`contracts/target-profile.schema.v0.2.16.json`.
 
 ## Bootstrap: `lekalo init` and `lekalo module new`
 
@@ -490,13 +487,13 @@ is under `tests/fixtures/adapter-conformance/`.
 
 Issue #36 links semantic symbols to canonical requirements without owning
 them: one closed requirements attachment
-(`lekalo/requirements/v1.0.0`) binds symbols through `derived_from`/
+(`lekalo/requirements/v0.2.16`) binds symbols through `derived_from`/
 `implements` references to namespaced requirement ids pinned to exact
 `sha256:` body revisions, and the read-only `openspec` provider resolves
 them straight from `openspec/specs/**` and `openspec/changes/**` — no
 OpenSpec CLI, no writes, no requirement text copied into the model, and
 conflicting active changes resolved by a gate, never silently. The derived
-report (`lekalo/requirements-report/v1.0.0`) carries the catalog, per-
+report (`lekalo/requirements-report/v0.2.16`) carries the catalog, per-
 reference `fresh`/`stale`/`missing`/`conflict` statuses, coverage gaps,
 and changed-requirement impact; `lekalo requirements trace` projects the
 resolution into the neutral #22 trace manifest. Archiving a change is
@@ -516,7 +513,7 @@ and digests, capability/profile resolution, cache health, binding
 freshness, generated artifact drift, native tool availability, optional
 OpenSpec/HLV/AI Factory evidence, filesystem permissions and path
 confinement, and platform limitations in one versioned document
-(`lekalo/doctor/v1.0.0`). `lekalo status` reports the freshness quartet
+(`lekalo/doctor/v0.2.16`). `lekalo status` reports the freshness quartet
 plus the exact git/model/lock revisions, and `lekalo readiness --phase
 model|implement|generate|verify|release` marks the required and
 optional checks per phase with derived ready/degraded/blocked verdicts.
@@ -546,8 +543,8 @@ the incompleteness of the observed graph, and `lekalo clean` can
 never delete observed files. The contract, guarantees, and limits live
 in [docs/observed-mode.md](docs/observed-mode.md),
 [ADR-0031](docs/adr/0031-observed-mode.md), and
-`contracts/observed-index.schema.v1.0.0.json` with
-`contracts/observed-scan.schema.v1.0.0.json`; the hermetic
+`contracts/observed-index.schema.v0.2.16.json` with
+`contracts/observed-scan.schema.v0.2.16.json`; the hermetic
 task-domain fixture is under `tests/fixtures/observed/`.
 
 ## Binding registry for existing code
@@ -568,7 +565,7 @@ node-typescript scanner is under `tests/fixtures/bindings/`.
 ## Foreign and custom implementation escape hatches
 
 Issue #30 lets complex or target-specific logic stay ordinary code: one
-closed implementation attachment (`lekalo/implementation/v1.0.0`) binds a
+closed implementation attachment (`lekalo/implementation/v0.2.16`) binds a
 compiled operation to per-target implementations over the kinds
 `generated`, `custom`, `foreign` (an existing symbol such as
 `@example/core-domain#calculateSchedule` or
@@ -587,7 +584,7 @@ never-overwritten, never-cleaned `custom` lifecycle of the ownership
 manifest. The contract lives in
 [docs/implementation.md](docs/implementation.md) and
 [ADR-0033](docs/adr/0033-foreign-implementation-escape-hatch.md); the
-schema is `contracts/implementation.schema.v1.0.0.json` and the fixtures
+schema is `contracts/implementation.schema.v0.2.16.json` and the fixtures
 are under `tests/fixtures/implementation/`.
 
 ## Contracted mode for AI-written implementation
@@ -606,7 +603,7 @@ native tests to semantic symbols, and a module moves from observed to
 contracted by promotion plus one declaration merge, without a rewrite.
 The mode lives in [docs/contracted-mode.md](docs/contracted-mode.md),
 [ADR-0034](docs/adr/0034-contracted-mode.md), and
-`contracts/contracted-declaration.schema.v1.0.0.json`; the planner
+`contracts/contracted-declaration.schema.v0.2.16.json`; the planner
 reference module is the first contracted slice under
 `tests/fixtures/contracted/planner-slice/`.
 
@@ -614,7 +611,7 @@ reference module is the first contracted slice under
 
 Issue #65 separates the target-neutral domain model from target-
 namespaced storage projections: the closed domain-storage attachment
-(`lekalo/storage-projection/v1.0.0`) declares stable entity keys
+(`lekalo/storage-projection/v0.2.16`) declares stable entity keys
 independent of both the Model symbol id and every table name, closed
 value types, aggregate ownership, visibility, opaque invariant and
 lifecycle references, and seven relation kinds with explicit
@@ -622,8 +619,7 @@ cardinality, explicit delete behavior, and mandatory scenario or
 constraint coverage; beside it, namespaced `postgres` and `laravel`
 projections declare tables, technical and generated columns,
 soft-delete and tenant policies, timestamps, indexes, join tables,
-explicit polymorphic materializations, and migration history with
-visible data risk. The core derives both projections from the same
+explicit polymorphic materializations, and visible data risk in storage comparisons.
 domain model through the published type tables, derives the public
 DTO from the domain only (storage-only technical columns can never
 leak), and classifies every diff path as domain, wire, or storage
@@ -638,8 +634,8 @@ fixtures under `tests/fixtures/storage-projection/`.
 
 Issue #66 makes planner preconditions, filters, and field
 assignments first-class, machine-checkable contract data: the closed
-typed-expression attachment (`lekalo/expressions/v1.0.0`, identity
-`dev.lekalo.expressions@1.0.0`) declares named condition and
+typed-expression attachment (`lekalo/expressions/v0.2.16`, identity
+`dev.lekalo.expressions@0.2.16`) declares named condition and
 assignment records over a small deterministic language — typed
 literals and scope references, equality/comparison/null/set-membership
 operators, checked arithmetic, bounded boolean combinators, the
@@ -682,48 +678,12 @@ CI pinned-Ajv list.
 
 ## Lekalo Model contracts and semantic IDs
 
-The published language-neutral Model 0.1.0 contract for issue #5 remains at
-[Model 0.1](docs/model.md), [ADR-0004](docs/adr/0004-model-v0.1.md), and
-`contracts/model.schema.v0.1.0.json`. Its stable-ID successor is
-[Model 1.0](docs/model-1.0.md), governed by the closed
-[semantic-ID contract](docs/semantic-ids.md), [ADR-0005](docs/adr/0005-semantic-ids.md),
-and [0.1-to-1.0 guidance](docs/model-migration-0.1.0-to-1.0.0.md). Contract versions are
-independent of product releases; issue #107 carries prospective product 0.2.16
-(issue #66 carried prospective product 0.2.15
-(issue #97 carried prospective product 0.2.14
-(issue #91 carried prospective product 0.2.13
-(issue #65 carried prospective product 0.2.12; issue #64 carried prospective
-product 0.2.11; issue #42 carried prospective product 0.2.9; issue #30 carried prospective
-product 0.2.8; issue #92 carried prospective product 0.2.7; issue #39
-published product 0.2.6, annotated tag `0.2.6` on `80a815a`); (issue #31
-published product 0.2.5; the accepted M2 line published products 0.2.0
-through 0.2.4 for issues #27, #36, #28, #38 and #29; issue #63
-published product 0.1.31 (annotated tag `v0.1.31` on `9cdd8c1`);
-issue #26 published product
-0.1.30 (annotated tag `v0.1.30` on `9020558`); issue #62 published product
-0.1.29 (annotated tag `v0.1.29` on `de6f8a7`); issue #25 published product
-0.1.28 (annotated tag `v0.1.28` on `967bf52`); issue #24 published product
-0.1.27 (annotated tag `v0.1.27` on `ef7680d`); issue #18 published product
-0.1.26 (annotated tag `v0.1.26` on `3710179`); issue #17 published product
-0.1.25 (annotated tag `v0.1.25` on `e627fe5`); issue #16 published product
-0.1.24 (annotated tag `v0.1.24` on
-`b4109e5`); issue #20 published product 0.1.23 (annotated tag `v0.1.23` on
-`15be55a`); issue #21 published product 0.1.22 at `2dab70e`; issue #15
-published product 0.1.21 at `9ab5b07`; issue #23
-published product 0.1.20 at `eef1863`; issue #22
-published product 0.1.19 at `31468e9`; issue #14
-published product 0.1.12 at `81666da`; issue #13
-published product 0.1.11 at `007c01d`; issue #12
-published product 0.1.10 at `fdfbcb5`; issue #11
-published product 0.1.9 at `5b885bf`; issue #10
-published product 0.1.8 at `8ddbbf0`; issues #8/#9
-published products 0.1.6/0.1.7, the latter at `f0b3784`).
-
-The checker recognizes only the two exact schema versions, and all documents
-in one project must agree. Model 1.0 makes project/module IDs one-segment and immutable,
-supports two- or three-segment symbol IDs, decouples module identity from its
-directory, and adds symbol-only rename history plus permanent tombstones.
-Historical IDs are traceability only and never resolve live references.
+The current Model contract is **0.2.16**. See [Model](docs/model.md),
+[stable semantic IDs](docs/model-1.0.md), and [versioning](docs/versioning.md).
+The checker accepts this exact version; all project documents must agree.
+Project and module IDs are immutable one-segment identifiers. Symbol IDs
+contain two or three segments. Symbol rename history and tombstones retain
+traceability; historical IDs never resolve live references.
 
 Run the dependency-free checker and its independent schema/semantic suite:
 

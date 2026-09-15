@@ -144,13 +144,13 @@ fn doctor_reports_the_fresh_fixture_without_mutating_it() {
     let json = stdout_text(&output);
     let document: serde_json::Value = serde_json::from_str(&json).expect("wire document parses");
     assert_eq!(document["status"], "valid");
-    assert_eq!(document["schemaVersion"], "lekalo/doctor/v1.0.0");
-    assert_eq!(document["identity"], "dev.lekalo.doctor@1.0.0");
+    assert_eq!(document["schemaVersion"], "lekalo/doctor/v0.2.16");
+    assert_eq!(document["identity"], "dev.lekalo.doctor@0.2.16");
     assert_eq!(document["report"], "doctor");
     assert_eq!(document["productVersion"], env!("CARGO_PKG_VERSION"));
     assert_eq!(document["verdict"], "ready");
     assert_eq!(document["revisions"]["lock"]["state"], "fresh");
-    assert_eq!(document["revisions"]["model"]["version"], "1.0.0");
+    assert_eq!(document["revisions"]["model"]["version"], "0.2.16");
     // The exact model/lock revisions are pinned by the fixture bytes.
     let lock_digest = document["revisions"]["lock"]["digest"].as_str().unwrap();
     assert!(lock_digest.starts_with("sha256:"));

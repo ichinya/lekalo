@@ -90,7 +90,7 @@ pub fn run(
 
     // 2. Deterministic selection under the strict default policy: the
     // scanner must declare the scan capability `full` and the core IR
-    // version (or run a legacy 1.0.0 session, whose IR compatibility the
+    // version (or run a legacy 0.2.16 session, whose IR compatibility the
     // upstream preflight owns). A selection that names no adapter is the
     // registered unsupported refusal, never a guess.
     let required = [REQUIRED_CAPABILITY.to_owned()];
@@ -299,10 +299,7 @@ fn file_fingerprint(fs: &crate::project_fs::Fs, path: &str) -> Option<String> {
         .read_file_opt(dir, name, super::MAX_SOURCE_BYTES)
         .ok()
         .flatten()?;
-    Some(format!(
-        "sha256:{}",
-        crate::versioning::plan::sha256_hex(&bytes)
-    ))
+    Some(format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
 }
 
 /// Assemble the observed-scan document from the adapter response. Every
@@ -434,10 +431,7 @@ fn build_document(
     );
     let revision_bytes =
         serde_json::to_vec(&revision_payload).map_err(|_| invalid_set("document-shape"))?;
-    let revision = format!(
-        "sha256:{}",
-        crate::versioning::plan::sha256_hex(&revision_bytes)
-    );
+    let revision = format!("sha256:{}", crate::digest::sha256_hex(&revision_bytes));
 
     let mut document = serde_json::Map::new();
     document.insert(

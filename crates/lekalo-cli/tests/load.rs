@@ -263,7 +263,7 @@ fn human_output_is_one_stable_line_per_status() {
     assert_exit(&valid, 0);
     assert_eq!(
         stdout_text(&valid),
-        "loaded model 1.0.0: 0 modules, 0 definitions\n"
+        "loaded model 0.2.16: 0 modules, 0 definitions\n"
     );
 
     let invalid = run_load(&format!("{FIXTURE_ROOT}/invalid-json-comment"), &[], None);
@@ -370,12 +370,12 @@ fn write_minimal_project(project: &Path) {
     std::fs::create_dir_all(&module).expect("layout");
     std::fs::write(
         project.join("lekalo").join("project.yaml"),
-        "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"j\",\"kind\":\"project\",\"version\":1}]}\n",
+        "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"j\",\"kind\":\"project\",\"version\":1}]}\n",
     )
     .expect("project doc");
     std::fs::write(
         module.join("module.yaml"),
-        "schema_version: \"1.0.0\"\ndefinitions:\n  - id: j\n    kind: module\n    version: 1\n",
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: j\n    kind: module\n    version: 1\n",
     )
     .expect("module doc");
 }
@@ -389,7 +389,7 @@ fn junction_inside_module_tree_is_a_policy_denial() {
     std::fs::create_dir_all(&modules).expect("layout");
     std::fs::write(
         project.join("lekalo").join("project.yaml"),
-        "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"j\",\"kind\":\"project\",\"version\":1}]}\n",
+        "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"j\",\"kind\":\"project\",\"version\":1}]}\n",
     )
     .expect("project doc");
     let real = temp.path().join("outside-target");
@@ -421,7 +421,7 @@ fn symlink_inside_module_tree_is_a_policy_denial() {
     std::fs::create_dir_all(&modules).expect("layout");
     std::fs::write(
         project.join("lekalo").join("project.yaml"),
-        "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"s\",\"kind\":\"project\",\"version\":1}]}\n",
+        "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"s\",\"kind\":\"project\",\"version\":1}]}\n",
     )
     .expect("project doc");
     if symlink("elsewhere", modules.join("linked")).is_err() {
@@ -464,7 +464,7 @@ fn lone_cr_documents_are_rejected_as_encoding_defects() {
     std::fs::create_dir_all(project.join("lekalo")).expect("layout");
     std::fs::write(
         project.join("lekalo").join("project.yaml"),
-        "schema_version: \"1.0.0\"\rdefinitions:\r  - id: core\r    kind: project\r    version: 1\r",
+        "schema_version: \"0.2.16\"\rdefinitions:\r  - id: core\r    kind: project\r    version: 1\r",
     )
     .expect("lone-cr doc");
     let output = run_load("proj", &["--json"], Some(temp.path()));
@@ -481,14 +481,14 @@ fn hostile_megabyte_import_token_yields_bounded_deterministic_stderr() {
     // echoed token stops scaling the envelope.
     let token = "z".repeat(1_000_000);
     let module_doc = format!(
-        "schema_version: \"1.0.0\"\ndefinitions:\n  - id: core\n    kind: module\n    version: 1\n    imports:\n      - \"{token}\"\n"
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: core\n    kind: module\n    version: 1\n    imports:\n      - \"{token}\"\n"
     );
     let temp = tempfile::tempdir().expect("tempdir");
     let project = temp.path().join("proj");
     std::fs::create_dir_all(project.join("lekalo").join("modules").join("m")).expect("layout");
     std::fs::write(
         project.join("lekalo").join("project.yaml"),
-        "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"j\",\"kind\":\"project\",\"version\":1}]}\n",
+        "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"j\",\"kind\":\"project\",\"version\":1}]}\n",
     )
     .expect("project doc");
     std::fs::write(

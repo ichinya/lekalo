@@ -49,10 +49,7 @@ fn scratch_with_attachment(name: &str) -> tempfile::TempDir {
 }
 
 fn digest(bytes: &[u8]) -> String {
-    format!(
-        "sha256:{}",
-        lekalo_core::versioning::plan::sha256_hex(bytes)
-    )
+    format!("sha256:{}", lekalo_core::digest::sha256_hex(bytes))
 }
 
 /// Rebind the attachment to the exact canonical load envelope of the

@@ -1,15 +1,17 @@
 # Error contracts and typed results
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Issue #62 makes operation errors a formal, versioned part of the
 behavior contract. The error-contract family (`lekalo/error-contract/
-v1.0.0`, `dev.lekalo.error-contract@1.0.0`) and the error-registry
-family (`lekalo/error-registry/v1.0.0`, `dev.lekalo.error-registry@
-1.0.0`) are independent of the product release and of every other
+v0.2.16`, `dev.lekalo.error-contract@0.2.16`) and the error-registry
+family (`lekalo/error-registry/v0.2.16`, `dev.lekalo.error-registry@
+0.2.16`) are independent of the product release and of every other
 contract family. The contracts are published as:
 
-- [`contracts/error-contract.schema.v1.0.0.json`](../contracts/error-contract.schema.v1.0.0.json) — one typed operation binding,
-- [`contracts/error-registry.schema.v1.0.0.json`](../contracts/error-registry.schema.v1.0.0.json) — the registry envelope,
-- [`contracts/error-registry.v1.0.0.json`](../contracts/error-registry.v1.0.0.json) — the canonical registry instance (planner seed).
+- [`contracts/error-contract.schema.v0.2.16.json`](../contracts/error-contract.schema.v0.2.16.json) — one typed operation binding,
+- [`contracts/error-registry.schema.v0.2.16.json`](../contracts/error-registry.schema.v0.2.16.json) — the registry envelope,
+- [`contracts/error-registry.v0.2.16.json`](../contracts/error-registry.v0.2.16.json) — the canonical registry instance (planner seed).
 
 Owner decisions and the rationale live in
 [ADR-0022](adr/0022-error-contracts.md).
@@ -20,7 +22,7 @@ Each command or query may declare its errors as one closed binding:
 
 ```json
 {
-  "schema_version": "lekalo/error-contract/v1.0.0",
+  "schema_version": "lekalo/error-contract/v0.2.16",
   "operation": "planner.focus_task",
   "kind": "command",
   "output": null,
@@ -97,7 +99,7 @@ the declared kind and output type, union members must resolve, payload
 leaves must resolve to declared scalars or enums, and every error must
 be reachable. Generic Model/IR semantics stay with semantic validation;
 nothing here re-reads source files. Findings are registered `error.*`
-rules (LEK-ERR-001..012, registry minor 1.6.0 → 1.7.0, additions-only)
+rules (LEK-ERR-001..012, registry minor 0.2.16 → 1.7.0, additions-only)
 rendered through the shared #11 envelope. A diagnostic id is never an
 error id; `reasonCodes` stay derived diagnostic ids.
 

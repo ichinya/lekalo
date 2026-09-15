@@ -1,5 +1,7 @@
 # ADR-0024: First-class invariants and state transitions
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-08
 Status: accepted for issue #63
 
@@ -9,8 +11,8 @@ every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 and its digest, the `--version` behavior and its pinning tests,
 `README.md`, `docs/cli.md`); issue #26 published product 0.1.30
 (annotated tag `v0.1.30` on `9020558`). The invariant-transition
-contract version (`lekalo/invariant-transition/v1.0.0`, identity
-`dev.lekalo.invariant-transition@1.0.0`) is independent of the product
+contract version (`lekalo/invariant-transition/v0.2.16`, identity
+`dev.lekalo.invariant-transition@0.2.16`) is independent of the product
 release, of the Model/IR/Scenario contract versions, of the
 error-contract, authorization, and expression families, and of the
 diagnostic registry by design. The publication-order version may
@@ -23,7 +25,7 @@ The Model declares entities, fields, commands, and queries, but the
 domain's real rules — which states an entity may occupy, which
 invariants must hold, which state changes are legal — live only in
 prose. Issue #63 makes them machine-checkable declarations, per the
-recorded research decision: Model v0.1.0/v1.0.0 stay immutable, and no
+recorded research decision: Model v0.2.16/v0.2.16 stay immutable, and no
 runtime enforcement, adapter generation, SQL or method enforcement,
 transaction runtime (#24), authorization runtime (#25), scenario
 runner (#23), reference evaluator (#107), or report/trace surface is
@@ -33,9 +35,9 @@ introduced here.
 
 ### 1. One closed, immutable wire contract
 
-[`contracts/invariant-transition.schema.v1.0.0.json`](../../contracts/invariant-transition.schema.v1.0.0.json)
-(discriminator `lekalo/invariant-transition/v1.0.0`, identity
-`dev.lekalo.invariant-transition@1.0.0`) is a closed Draft 2020-12
+[`contracts/invariant-transition.schema.v0.2.16.json`](../../contracts/invariant-transition.schema.v0.2.16.json)
+(discriminator `lekalo/invariant-transition/v0.2.16`, identity
+`dev.lekalo.invariant-transition@0.2.16`) is a closed Draft 2020-12
 document binding one project identity and one exact attachment
 revision to one exact Model pin, one exact IR digest, and an optional
 accepted source-map reference. Top-level members: `schemaVersion`,
@@ -154,7 +156,7 @@ conformance owners, not to core runtime code.
 The contract adds its own rule family — reusing `transaction.*` or
 `contract.*` would blur contract families. The registry takes its
 next wire-shape-preserving minor increment to
-[`diagnostic-registry.v1.9.0.json`](../../contracts/diagnostic-registry.v1.9.0.json)
+[`diagnostic-registry.v0.2.16.json`](../../contracts/diagnostic-registry.v0.2.16.json)
 with `invariant.input-invalid`, `invariant.contract-invalid`,
 `invariant.state-invalid`, `invariant.transition-invalid`,
 `invariant.mapping-invalid`, `invariant.graph-invalid`, and

@@ -68,9 +68,9 @@ fn export_is_byte_identical_and_matches_the_golden() {
     let document: serde_json::Value =
         serde_json::from_str(stdout_text(&first).trim()).expect("envelope json");
     assert_eq!(document["status"], "valid");
-    assert_eq!(document["graph"]["identity"], "dev.lekalo.graph@1.0.0");
-    assert_eq!(document["graph"]["schemaVersion"], "lekalo/graph/v1.0.0");
-    assert_eq!(document["graph"]["modelVersion"], "1.0.0");
+    assert_eq!(document["graph"]["identity"], "dev.lekalo.graph@0.2.16");
+    assert_eq!(document["graph"]["schemaVersion"], "lekalo/graph/v0.2.16");
+    assert_eq!(document["graph"]["modelVersion"], "0.2.16");
     assert_eq!(document["graph"]["metadata"]["nodeCount"], 24);
     assert_eq!(document["graph"]["metadata"]["edgeCount"], 32);
     let rendered = serde_json::to_string(&document["graph"]).expect("graph bytes");
@@ -286,7 +286,7 @@ fn human_projection_matches_the_json_envelope() {
     assert_eq!(exit_code(&output), 0);
     let stdout = stdout_text(&output);
     assert!(
-        stdout.contains("built graph dev.lekalo.graph@1.0.0: 24 nodes, 32 edges"),
+        stdout.contains("built graph dev.lekalo.graph@0.2.16: 24 nodes, 32 edges"),
         "human summary: {stdout}"
     );
 }

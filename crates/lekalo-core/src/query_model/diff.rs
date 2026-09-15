@@ -421,10 +421,10 @@ mod tests {
         QueryModelAttachment::from_value(&serde_json::json!({
             "schemaVersion": version::SCHEMA_VERSION,
             "identity": version::IDENTITY,
-            "attachmentRevision": "1.0.0",
+            "attachmentRevision": "0.2.16",
             "projectId": "planner",
             "modelRef": {
-                "modelVersion": "1.0.0",
+                "modelVersion": "0.2.16",
                 "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
             },
             "irRef": {
@@ -484,7 +484,7 @@ mod tests {
             "attachmentRevision": "1.0.1",
             "projectId": "planner",
             "modelRef": {
-                "modelVersion": "1.0.0",
+                "modelVersion": "0.2.16",
                 "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
             },
             "irRef": {
@@ -496,7 +496,7 @@ mod tests {
         });
         let candidate = QueryModelAttachment::from_value(&candidate_body).expect("attachment");
         assert!(compare(&base, &candidate).is_err());
-        candidate_body["attachmentRevision"] = serde_json::json!("1.0.0");
+        candidate_body["attachmentRevision"] = serde_json::json!("0.2.16");
         let same_revision = QueryModelAttachment::from_value(&candidate_body).expect("attachment");
         assert!(compare(&base, &same_revision).is_ok());
     }

@@ -159,12 +159,12 @@ fn canonical_ir_bytes_match_the_frozen_golden() {
     assert!(envelope.get("model").is_none(), "--ir replaces the model");
     assert_eq!(
         envelope["ir"]["contract"].as_str(),
-        Some("dev.lekalo.ir@0.1.0"),
+        Some("dev.lekalo.ir@0.2.16"),
         "contract identity is bound"
     );
     assert_eq!(
         envelope["ir"]["modelVersion"].as_str(),
-        Some("1.0.0"),
+        Some("0.2.16"),
         "source model version is preserved"
     );
     // The `ir` value is the canonical IR object serialized with no
@@ -316,7 +316,7 @@ fn human_success_line_names_the_ir_contract() {
     assert_exit(&output, 0);
     assert_eq!(
         stdout_text(&output).trim(),
-        "compiled ir dev.lekalo.ir@0.1.0: 2 modules, 19 definitions"
+        "compiled ir dev.lekalo.ir@0.2.16: 2 modules, 19 definitions"
     );
 }
 

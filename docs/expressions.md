@@ -1,10 +1,12 @@
 # Lekalo typed expressions
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Issue #66 makes planner conditions and field assignments
 first-class, machine-checkable contract data. One closed, versioned
 attachment —
-[`contracts/expressions.schema.v1.0.0.json`](../contracts/expressions.schema.v1.0.0.json)
-(`lekalo/expressions/v1.0.0`, identity `dev.lekalo.expressions@1.0.0`)
+[`contracts/expressions.schema.v0.2.16.json`](../contracts/expressions.schema.v0.2.16.json)
+(`lekalo/expressions/v0.2.16`, identity `dev.lekalo.expressions@0.2.16`)
 — binds one project to one exact Model pin and IR identity and
 declares named typed-expression records: boolean **conditions** and
 field **assignments** over a small deterministic language. See
@@ -40,7 +42,7 @@ the Scenario IR, and of the diagnostic registry.
 - **`now`**: the deterministic clock reference; the evaluation
   instant is injected per call, never read from the environment.
 - **Built-ins**: fifteen target-neutral functions with versioned
-  semantics (`builtinSemantics`, `1.0.0`): string
+  semantics (`builtinSemantics`, `0.2.16`): string
   length/concat/casing/starts-with/ends-with/contains, `int-abs`,
   the calendar accessors (`datetime-year`/`-month`/`-day`/
   `-weekday`), `duration-seconds`, and the two closed casts
@@ -76,8 +78,8 @@ emit.
 One compiler projects a validated attachment into one complete,
 self-contained program per target — Node (BigInt), PHP, and Go —
 that reads the shared
-[evaluation-vector document](../contracts/expressions-vectors.schema.v1.0.0.json)
-(`lekalo/expressions/vectors/v1.0.0`) on stdin and writes the
+[evaluation-vector document](../contracts/expressions-vectors.schema.v0.2.16.json)
+(`lekalo/expressions/vectors/v0.2.16`) on stdin and writes the
 computed results to stdout. The clock is a per-vector field, and
 omission is the only epoch form: a vector that omits the clock
 reads the shared epoch default (`1970-01-01T00:00:00Z`) in the
@@ -131,7 +133,7 @@ any target.
 Every feature carries a capability token: `expression.core` for the
 closed grammar, `expression.builtin/<name>` per built-in. A target
 or adapter declares its snapshot
-([`contracts/expressions-builtin-support.schema.v1.0.0.json`](../contracts/expressions-builtin-support.schema.v1.0.0.json));
+([`contracts/expressions-builtin-support.schema.v0.2.16.json`](../contracts/expressions-builtin-support.schema.v0.2.16.json));
 validating or generating against a snapshot that lacks a required
 token blocks managed mode with `expression.builtin-unsupported`.
 The escape hatch is the foreign implementation family — never a
@@ -169,14 +171,14 @@ classification.
 
 ## Contract custody
 
-- [`contracts/expressions.schema.v1.0.0.json`](../contracts/expressions.schema.v1.0.0.json) — the attachment contract,
-- [`contracts/expressions-vectors.schema.v1.0.0.json`](../contracts/expressions-vectors.schema.v1.0.0.json) — the shared evaluation-vector contract,
-- [`contracts/expressions-builtin-support.schema.v1.0.0.json`](../contracts/expressions-builtin-support.schema.v1.0.0.json) — the capability-snapshot contract,
+- [`contracts/expressions.schema.v0.2.16.json`](../contracts/expressions.schema.v0.2.16.json) — the attachment contract,
+- [`contracts/expressions-vectors.schema.v0.2.16.json`](../contracts/expressions-vectors.schema.v0.2.16.json) — the shared evaluation-vector contract,
+- [`contracts/expressions-builtin-support.schema.v0.2.16.json`](../contracts/expressions-builtin-support.schema.v0.2.16.json) — the capability-snapshot contract,
 - [`tests/fixtures/expressions/`](../tests/fixtures/expressions/) — the shared fixtures (valid planner, 91 vectors, 28 invalid refusals, capability snapshots, diff pair),
 - `scripts/test-expressions-contracts.mjs` — the independent Node release gate (pinned Ajv 8.17.1).
 
 Failures emit the accepted #11 diagnostic contract with the
-registry minor 1.24.0 → 1.25.0 (additions only):
+registry minor 1.24.0 → 0.2.16 (additions only):
 `expression.input-invalid` (LEK-EXPR-001),
 `expression.contract-invalid` (LEK-EXPR-002),
 `expression.type-invalid` (LEK-EXPR-003),

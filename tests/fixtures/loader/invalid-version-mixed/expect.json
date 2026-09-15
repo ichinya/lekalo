@@ -1,6 +1,6 @@
 {
-  "status": "invalid",
-  "exit": 1,
+  "status": "unsupported-version",
+  "exit": 5,
   "stream": "stderr",
-  "code": "versioning.mixed-versions"
+  "code": "versioning.unsupported-version"
 }

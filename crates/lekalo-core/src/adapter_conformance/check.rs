@@ -18,7 +18,7 @@ pub enum CheckId {
     /// scopes, and identity tokens are grammatical, and the evidence
     /// digest matches the canonical capability bytes.
     CapabilityDeclaration,
-    /// On a 1.1.0+ session, every IR-carrying operation the adapter
+    /// On a 0.2.16+ session, every IR-carrying operation the adapter
     /// declares is backed by a declared accepted IR contract version.
     CapabilityIrDeclaration,
     /// Strict only: the adapter declares the complete v1 operation

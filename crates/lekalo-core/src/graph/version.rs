@@ -10,13 +10,13 @@
 pub const FAMILY: &str = "dev.lekalo.graph";
 
 /// The exact graph contract version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.graph@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.graph@0.2.16";
 
 /// The exact wire discriminator of the graph contract.
-pub const SCHEMA_VERSION: &str = "lekalo/graph/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/graph/v0.2.16";
 
 /// The maximum number of nodes one graph may hold (fatal beyond it).
 pub const MAX_NODES: usize = 100_000;
@@ -56,8 +56,8 @@ mod tests {
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
         assert_eq!(FAMILY, "dev.lekalo.graph");
-        assert_eq!(VERSION, "1.0.0");
-        assert_eq!(SCHEMA_VERSION, "lekalo/graph/v1.0.0");
+        assert_eq!(VERSION, "0.2.16");
+        assert_eq!(SCHEMA_VERSION, "lekalo/graph/v0.2.16");
     }
 
     #[test]

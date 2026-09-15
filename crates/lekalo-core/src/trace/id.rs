@@ -196,12 +196,12 @@ mod tests {
 
     #[test]
     fn contract_versions_are_canonical_triplets() {
-        assert!(is_contract_version("1.0.0"));
-        assert!(is_contract_version("0.1.0"));
+        assert!(is_contract_version("0.2.16"));
+        assert!(is_contract_version("0.2.16"));
         assert!(!is_contract_version("1.0"));
         assert!(is_contract_version("01.0.0")); // digits-only triplets, matching the graph protocol grammar
-        assert!(!is_contract_version("v1.0.0"));
-        assert!(!is_contract_version("1.0.0+meta"));
+        assert!(!is_contract_version("v0.2.16"));
+        assert!(!is_contract_version("0.2.16+meta"));
     }
 
     #[test]

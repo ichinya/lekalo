@@ -15,7 +15,7 @@ const temp = await mkdtemp(join(tmpdir(), "lekalo-privacy-cli-"));
 let subprocessCases = 0;
 const clone = (value) => structuredClone(value);
 const digest = (character) => `sha256:${character.repeat(64)}`;
-const audit = (id, character) => ({ id, version: "1.0.0", evidenceDigest: digest(character) });
+const audit = (id, character) => ({ id, version: "0.2.16", evidenceDigest: digest(character) });
 const classification = (character) => ({
   ...CLASSIFICATION_CONTRACT_REF,
   decisionId: `classification-sha256:${character.repeat(64)}`,
@@ -62,7 +62,7 @@ try {
   assert.equal(defaultOutput.status, "valid");
   assert.equal(defaultOutput.policyLifecycle, "accepted");
   assert.equal(defaultOutput.accepted, true);
-  assert.equal(defaultOutput.policyRef.version, "1.0.7");
+  assert.equal(defaultOutput.policyRef.version, "0.2.16");
   subprocessCases += 1;
 
   for (const group of ["allowed", "ambiguous", "malformed", "forbidden", "transform-required"]) {
@@ -105,7 +105,7 @@ try {
   sensitivityBroadening.dataSensitivity = ["internal"];
   sensitivityBroadening.constraints = [{
     scope: "profile",
-    constraintRef: { id: "constraint.sensitivity-operation", version: "1.0.0", evidenceDigest: digest("b") },
+    constraintRef: { id: "constraint.sensitivity-operation", version: "0.2.16", evidenceDigest: digest("b") },
     allowedOperations: ["local-use", "publish"],
     allowedTrustBoundaries: ["same-local-workspace"],
     allowedAudiences: ["operator-only"],
@@ -150,12 +150,12 @@ try {
       authorityRef: clone(AUTHORITY_REF), policyRef: clone(POLICY_REF), classificationRef: classification("c"),
       dataSensitivity: ["internal"], exportDisposition: "shareable-with-redaction",
     }],
-    appliedTransforms: [{ transformId: "aggregate-no-source-rows", version: "1.0.0", evidenceDigest: digest("d") }],
+    appliedTransforms: [{ transformId: "aggregate-no-source-rows", version: "0.2.16", evidenceDigest: digest("d") }],
     declassificationDecision: {
-      policyRef: clone(POLICY_REF), decisionRef: null, version: "1.0.0", outcome: "approved", removedSensitivities: ["internal"],
+      policyRef: clone(POLICY_REF), decisionRef: null, version: "0.2.16", outcome: "approved", removedSensitivities: ["internal"],
     },
     aggregationDecision: {
-      policyRef: clone(POLICY_REF), decisionRef: null, version: "1.0.0", outcome: "approved", removesSourceRows: true, removesSourceIdentities: true,
+      policyRef: clone(POLICY_REF), decisionRef: null, version: "0.2.16", outcome: "approved", removesSourceRows: true, removesSourceIdentities: true,
     },
     containsSourceRows: false, containsSourceIdentities: false, reevaluated: true,
   };
@@ -281,7 +281,7 @@ try {
 
   const grantPolicyExtra = clone(base);
   grantPolicyExtra.broadeningGrant = {
-    grantId: "grant.reviewed", version: "1.0.0", policyRef: clone(POLICY_REF), reviewRef: audit("review.grant", "a"),
+    grantId: "grant.reviewed", version: "0.2.16", policyRef: clone(POLICY_REF), reviewRef: audit("review.grant", "a"),
   };
   grantPolicyExtra.broadeningGrant.policyRef.extra = true;
   assertDecisionRun(await invokeDecision("shape-grant-policy-extra", grantPolicyExtra), 1, "deny", "input.broadening-grant");
@@ -298,26 +298,6 @@ try {
   duplicateConstraintMember.constraints = [clone(constraint)];
   duplicateConstraintMember.constraints[0].allowedOperations.push("publish");
   assertDecisionRun(await invokeDecision("shape-duplicate-constraint-operation", duplicateConstraintMember), 1, "deny", "input.constraints");
-
-  const rejectedAccepted102 = invoke([
-    "--manifest", join(root, "contracts/privacy-policy.v1.0.2.manifest.json"),
-    "--manifest-sidecar", join(root, "contracts/privacy-policy.v1.0.2.manifest.sha256"),
-    "--policy", join(root, "contracts/privacy-policy.v1.0.2.json"),
-    "--policy-sidecar", join(root, "contracts/privacy-policy.v1.0.2.sha256"),
-  ]);
-  assert.equal(rejectedAccepted102.status, 1);
-  assert.equal(JSON.parse(rejectedAccepted102.stderr).reasonCodes[0], "custody.manifest-untrusted");
-  subprocessCases += 1;
-
-  const rejectedCandidate = invoke([
-    "--manifest", join(root, "contracts/privacy-policy.v1.manifest.json"),
-    "--manifest-sidecar", join(root, "contracts/privacy-policy.v1.manifest.sha256"),
-    "--policy", join(root, "contracts/privacy-policy.v1.json"),
-    "--policy-sidecar", join(root, "contracts/privacy-policy.v1.sha256"),
-  ]);
-  assert.equal(rejectedCandidate.status, 1);
-  assert.equal(JSON.parse(rejectedCandidate.stderr).reasonCodes[0], "custody.manifest-untrusted");
-  subprocessCases += 1;
 
   console.log(JSON.stringify({ ok: true, subprocessCases, exitCodes: [0, 1, 3], realProcessBoundary: true }));
 } finally {

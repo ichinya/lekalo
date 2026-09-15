@@ -257,12 +257,12 @@ fn validate(manifest: Manifest) -> Result<TraceManifest, crate::diagnostics::Dia
     {
         return Err(diagnostic::input_invalid_detail("identity-invalid", None));
     }
-    validate_contract_ref(&manifest.model_ref, &["0.1.0", "1.0.0"])?;
+    validate_contract_ref(&manifest.model_ref, &["0.2.16", "0.2.16"])?;
     if let Some(ir) = &manifest.ir_ref {
-        validate_contract_ref(ir, &["0.1.0"])?;
+        validate_contract_ref(ir, &["0.2.16"])?;
     }
     if let Some(graph) = &manifest.graph_ref {
-        validate_contract_ref(graph, &["1.0.0"])?;
+        validate_contract_ref(graph, &["0.2.16"])?;
     }
     if let Some(artifact) = &manifest.artifact_manifest_ref {
         validate_contract_ref(artifact, &[])?;

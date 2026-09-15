@@ -14,7 +14,7 @@
 //! SHA-256 of the compact canonical entry serialization.
 
 use crate::diagnostics::DiagnosticSet;
-use crate::versioning::plan::sha256_hex;
+use crate::digest::sha256_hex;
 
 use super::diagnostic;
 use super::version::MAX_ENTRIES;

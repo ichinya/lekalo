@@ -251,12 +251,12 @@ const INVALID: &[(&str, &[u8], &[u8])] = &[
         ),
     ),
     (
-        "migration-unknown-table",
+        "migration-history-rejected",
         include_bytes!(
-            "../../../tests/fixtures/storage-projection/invalid/migration-unknown-table.json"
+            "../../../tests/fixtures/storage-projection/invalid/migration-history-rejected.json"
         ),
         include_bytes!(
-            "../../../tests/fixtures/storage-projection/invalid/migration-unknown-table.expect.json"
+            "../../../tests/fixtures/storage-projection/invalid/migration-history-rejected.expect.json"
         ),
     ),
     (
@@ -410,7 +410,7 @@ fn parse(bytes: &[u8]) -> StorageProjectionAttachment {
 fn golden_normalizes_and_canonicalizes_byte_identically() {
     let attachment = parse(VALID);
     assert_eq!(attachment.project_id().as_str(), "planner");
-    assert_eq!(attachment.attachment_revision().as_str(), "1.0.0");
+    assert_eq!(attachment.attachment_revision().as_str(), "0.2.16");
     assert_eq!(attachment.entities().len(), 7);
     assert_eq!(attachment.relations().len(), 7);
     assert_eq!(attachment.projections().len(), 2);

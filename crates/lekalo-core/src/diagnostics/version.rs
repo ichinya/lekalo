@@ -8,13 +8,13 @@
 use serde::Serialize;
 
 /// The exact wire discriminator of the diagnostic item contract.
-pub const SCHEMA_VERSION: &str = "lekalo/diagnostic/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/diagnostic/v0.2.16";
 
 /// The exact wire discriminator of the diagnostic registry contract.
-pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v1.0.0";
+pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v0.2.16";
 
 /// The embedded diagnostic registry identity.
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@1.25.0";
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.2.16";
 
 /// The current diagnostic registry version. The integrated chain is
 /// additive end to end: 1.14.0 (issue #29) -> 1.16.0 (issue #39, the
@@ -27,15 +27,15 @@ pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@1.25.0";
 /// `storage.*` family LEK-STO-001..007) -> 1.24.0 (issue #97, the
 /// reserved `init.bootstrap.*` family LEK-INIT-006..009; 1.23.0 stays
 /// reserved by its parallel owner and is not part of this line) ->
-/// 1.25.0 (issue #66, the reserved `expression.*` family
+/// 0.2.16 (issue #66, the reserved `expression.*` family
 /// LEK-EXPR-001..009).
-pub const REGISTRY_VERSION: &str = "1.25.0";
+pub const REGISTRY_VERSION: &str = "0.2.16";
 
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticSchemaVersion {
-    /// `lekalo/diagnostic/v1.0.0`.
-    V1_0_0,
+    /// `lekalo/diagnostic/v0.2.16`.
+    Current,
 }
 
 impl DiagnosticSchemaVersion {

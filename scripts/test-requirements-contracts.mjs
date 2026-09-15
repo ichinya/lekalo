@@ -72,16 +72,16 @@ const goldenDir = "tests/fixtures/requirements/golden";
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const attachmentSchema = JSON.parse(
-  readFileSync(resolve(root, "contracts/requirements.schema.v1.0.0.json"), "utf8"),
+  readFileSync(resolve(root, "contracts/requirements.schema.v0.2.16.json"), "utf8"),
 );
 const reportSchema = JSON.parse(
   readFileSync(
-    resolve(root, "contracts/requirements-report.schema.v1.0.0.json"),
+    resolve(root, "contracts/requirements-report.schema.v0.2.16.json"),
     "utf8",
   ),
 );
 const traceSchema = JSON.parse(
-  readFileSync(resolve(root, "contracts/trace-manifest.schema.v1.0.0.json"), "utf8"),
+  readFileSync(resolve(root, "contracts/trace-manifest.schema.v0.2.16.json"), "utf8"),
 );
 let validateAttachment;
 let validateReport;
@@ -147,7 +147,7 @@ function canonicalForm(documentText, name) {
   }
   const parsed = JSON.parse(documentText);
   const normalized = structuredClone(parsed);
-  if (normalized?.schemaVersion === 'lekalo/requirements-report/v1.0.0') {
+  if (normalized?.schemaVersion === 'lekalo/requirements-report/v0.2.16') {
     const compare = keys => (a,b) => {
       for (const key of keys) {
         const order = Buffer.compare(Buffer.from(a[key]), Buffer.from(b[key]));
@@ -222,7 +222,7 @@ if (!validateAttachment(attachment)) {
 const projectIdVectors = JSON.parse(readFileSync(resolve(root,
   "tests/fixtures/requirements/project-id-vectors.json"), "utf8"));
 const modelSchema = JSON.parse(readFileSync(resolve(root,
-  "contracts/model.schema.v1.0.0.json"), "utf8"));
+  "contracts/model.schema.v0.2.16.json"), "utf8"));
 const validateModelProjectId = ajv.compile({
   $defs: modelSchema.$defs, $ref: "#/$defs/projectId",
 });

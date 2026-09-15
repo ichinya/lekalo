@@ -34,7 +34,7 @@ Rejected alternatives:
 1. A profile composes exactly one component per closed axis —
    `runtime`, `storage`, `transport`, `testing`, `analysis`,
    `deployment`. Components live in an embedded, closed, versioned
-   registry (`dev.lekalo.target-components@1.0.0`); a declared id
+   registry (`dev.lekalo.target-components@0.2.16`); a declared id
    without a definition refuses resolution. Adding a component is a
    reviewed registry increment.
 2. Component capability contracts are declared, not inferred: provided
@@ -62,7 +62,7 @@ Rejected alternatives:
 6. Portability is a per-axis report over two resolved snapshots: reused
    or changed per component, with the capability deltas of each change.
 7. The adapter protocol transports the resolved snapshot, not YAML: on
-   a 1.2.0 session an operation with a profile token may carry the
+   a 0.2.16 session an operation with a profile token may carry the
    snapshot digest plus id-sorted capability pairs; older sessions
    refuse rather than drop the resolution.
 8. Six registered `target-profile.*` rules (`LEK-TPF-001..006`) close
@@ -73,8 +73,8 @@ Rejected alternatives:
 
 ## Consequences
 
-- The version registry moves to 1.2.0 (protocol family publishes the
-  additive 1.2.0 request extension; frozen 1.0.0/1.1.0 documents keep
+- The version registry moves to 0.2.16 (protocol family publishes the
+  additive 0.2.16 request extension; frozen 0.2.16/0.2.16 documents keep
   their exact meanings), so committed contract-only locks are
   regenerated in the published world, as in #27/#28.
 - The candidate product version carries 0.2.4; product, protocol,

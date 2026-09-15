@@ -4,7 +4,7 @@
  *
  * A dependency-free Node.js adapter implementing the `lekalo.target/v1`
  * handshake for the planner-pipeline end-to-end fixtures: protocol
- * 1.0.0-1.2.0 negotiation, the `node-typescript` target, deterministic
+ * 0.2.16-0.2.16 negotiation, the `node-typescript` target, deterministic
  * create plans under the declared write scope, and honest `validate`
  * and `verify` results. Read scope covers the canonical IR cache home
  * (`.lekalo/cache/ir/**`); the write scope is the adapter's managed
@@ -24,7 +24,7 @@ import { dirname } from "node:path";
 
 const ADAPTER = {
   id: "node-typescript",
-  version: "0.1.0",
+  version: "0.2.16",
   digest: sha256("lekalo orchestration reference adapter v1"),
 };
 
@@ -73,7 +73,7 @@ function deterministicWrites(request) {
 function capabilities(requestedVersion) {
   const declared = {
     adapter: ADAPTER,
-    protocol_versions: ["1.0.0", "1.1.0", "1.2.0"],
+    protocol_versions: ["0.2.16"],
     operations: ["describe", "validate", "generate", "verify"],
     targets: ["node-typescript"],
     profiles: ["default"],
@@ -82,8 +82,8 @@ function capabilities(requestedVersion) {
     progress: true,
     write_scopes: [`src/generated/${ADAPTER.id}/**`],
   };
-  if (requestedVersion !== "1.0.0") {
-    declared.ir_versions = ["0.1.0"];
+  {
+    declared.ir_versions = ["0.2.16"];
     declared.capabilities = {
       "generate.zod": "full",
       "verify.scenarios": "partial",

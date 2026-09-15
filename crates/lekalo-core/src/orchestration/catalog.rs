@@ -167,7 +167,7 @@ pub fn candidate_supply(
 
 /// The typed `#9` compatibility manifest derived from the declared
 /// versions: the IR range spans the declared IR versions (or exactly the
-/// current contract on a legacy 1.0.0 session, whose compatibility the
+/// current contract on a legacy 0.2.16 session, whose compatibility the
 /// lock governs), and the protocol range spans the declared protocol
 /// versions. An adapter whose declared range cannot cover the requested
 /// contract versions is refused by the accepted preflight at resolution

@@ -7,7 +7,7 @@ use lekalo_core::trace::{Completeness, QuerySelection, TraceManifest};
 
 const GOLDEN: &str = include_str!("../../../tests/fixtures/trace/golden/planner.trace.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:b0fabdc6f2bc55f392e912989579ce8b56b41547d7a4782f06acfda41a3a5031";
+    "sha256:ebb5fc53c04befc3edb6c01a671c697f46f48aad611814c1bb9a0d6e11da45b2";
 const FULL: &str = include_str!("../../../tests/fixtures/trace/full.trace.json");
 const PARTIAL: &str = include_str!("../../../tests/fixtures/trace/partial.trace.json");
 const INVALID_DIR: &str = concat!(
@@ -292,11 +292,11 @@ fn known_but_unmatched_queries_are_empty_never_errors() {
 fn trace_module_constants_match_the_recorded_owner_decisions() {
     assert_eq!(
         lekalo_core::trace::version::SCHEMA_VERSION,
-        "lekalo/trace-manifest/v1.0.0"
+        "lekalo/trace-manifest/v0.2.16"
     );
     assert_eq!(
         lekalo_core::trace::version::IDENTITY,
-        "dev.lekalo.trace-manifest@1.0.0"
+        "dev.lekalo.trace-manifest@0.2.16"
     );
     assert_eq!(
         lekalo_core::trace::io_failure("file-missing").as_slice()[0].id(),

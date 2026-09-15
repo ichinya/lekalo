@@ -253,7 +253,7 @@ fn strict_blocks(
     // older compiled payload; either way strict cannot trust it.
     let current_digest = format!(
         "sha256:{}",
-        crate::versioning::plan::sha256_hex(compilation.project.to_canonical_json().as_bytes())
+        crate::digest::sha256_hex(compilation.project.to_canonical_json().as_bytes())
     );
     if document.model_ref.schema_version != compilation.project.model_version.as_str()
         || document.model_ref.ir_digest != current_digest

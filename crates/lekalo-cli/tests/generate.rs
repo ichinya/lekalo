@@ -11,8 +11,8 @@ use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use lekalo_core::artifacts::GenerateService;
+use lekalo_core::digest::sha256_hex;
 use lekalo_core::loader::LoadSelection;
-use lekalo_core::versioning::plan::sha256_hex;
 
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/artifacts/project";
 const ARTIFACT_DIR: &str = "apps/api/src/planner";
@@ -131,11 +131,11 @@ impl Sandbox {
     fn author_manifest(&self, artifacts: Vec<Value>) {
         let inputs = GenerateService::inputs(&self.selection()).expect("inputs receipt");
         let mut document = json!({
-            "schema_version": "lekalo/artifact-manifest/v1.0.0",
-            "identity": "dev.lekalo.artifact-manifest@1.0.0",
+            "schema_version": "lekalo/artifact-manifest/v0.2.16",
+            "identity": "dev.lekalo.artifact-manifest@0.2.16",
             "project_ref": "planner",
             "lock_ref": {
-                "schema_version": "lekalo/lock/v1.0.0",
+                "schema_version": "lekalo/lock/v0.2.16",
                 "digest": inputs.lock_digest,
             },
             "inputs": {

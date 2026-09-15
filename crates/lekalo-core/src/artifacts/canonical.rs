@@ -20,13 +20,13 @@ use super::types::{
     SourceRange, IDENTITY, SCHEMA_VERSION,
 };
 use super::ArtifactFailure;
+use crate::digest::sha256_hex;
 use crate::loader::canonical::Canonical;
 use crate::loader::ModelVersion;
 use crate::lockfile::types::ArtifactPin;
 use crate::lockfile::{
     ComponentId, ComponentRef, ContractPin, LockDigest, Platform, SemVer, Sha256Digest,
 };
-use crate::versioning::plan::sha256_hex;
 
 impl ArtifactManifest {
     /// Parse and fully validate exact manifest bytes (file or payload
@@ -573,8 +573,7 @@ fn digest(text: &str) -> Result<Sha256Digest, ArtifactFailure> {
 
 fn model_version(text: &str) -> Result<ModelVersion, ArtifactFailure> {
     match text {
-        "0.1.0" => Ok(ModelVersion::V0_1_0),
-        "1.0.0" => Ok(ModelVersion::V1_0_0),
+        "0.2.16" => Ok(ModelVersion::Current),
         _ => Err(ArtifactFailure::ManifestInvalid),
     }
 }

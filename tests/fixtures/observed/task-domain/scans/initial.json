@@ -1,8 +1,8 @@
 {
-  "schemaVersion": "lekalo/observed-scan/v1.0.0",
+  "schemaVersion": "lekalo/observed-scan/v0.2.16",
   "adapter": {
     "id": "lekalo-target-node-typescript",
-    "version": "1.0.0",
+    "version": "0.2.16",
     "digest": null
   },
   "project": "taskboard",

@@ -14,7 +14,7 @@ const REPO_ONE = `repo-sha256:${"1".repeat(64)}`;
 const REPO_TWO = `repo-sha256:${"2".repeat(64)}`;
 let vectorCount = 0;
 const digest = (character) => `sha256:${character.repeat(64)}`;
-const audit = (id, character = "a") => ({ id, version: "1.0.0", evidenceDigest: digest(character) });
+const audit = (id, character = "a") => ({ id, version: "0.2.16", evidenceDigest: digest(character) });
 
 function expect(input, decision, reason = null, malformed = false) {
   refreshEvidenceBindings(input);
@@ -307,7 +307,7 @@ sensitivityBoundaryBroadening.constraints = [{
 expect(sensitivityBoundaryBroadening, "deny", "constraint.broadening-forbidden");
 const callerGrant = clone(base);
 callerGrant.broadeningGrant = {
-  grantId: "caller.local-grant", version: "1.0.0", policyRef: clone(context.policy.policyRef), reviewRef: audit("caller.review"),
+  grantId: "caller.local-grant", version: "0.2.16", policyRef: clone(context.policy.policyRef), reviewRef: audit("caller.review"),
 };
 expect(callerGrant, "deny", "input.broadening-grant", true);
 

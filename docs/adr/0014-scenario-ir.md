@@ -1,5 +1,7 @@
 # ADR-0014: The portable Scenario IR for multi-target conformance tests
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-05
 Status: accepted for issue #23
 
@@ -18,7 +20,7 @@ tag `v0.1.22` on `2dab70e`); issue #20 published product 0.1.23
 regenerated committed lock golden and its digests, `README.md`,
 `docs/cli.md`); issue #14 published product 0.1.12
 (annotated tag `v0.1.12` on `81666da`). The Scenario IR contract version
-(`lekalo/scenario-ir/v1.0.0`, identity `dev.lekalo.scenario-ir@1.0.0`)
+(`lekalo/scenario-ir/v0.2.16`, identity `dev.lekalo.scenario-ir@0.2.16`)
 is independent of the product release, of the Model and IR contract
 versions, of the diagnostic registry, and of every execution backend by
 design.
@@ -37,9 +39,9 @@ their narrow reading as the owner decisions for v1.
 ### 1. Independent closed contract; sidecar custody
 
 The Scenario IR publishes its own wire contract,
-[`contracts/scenario-ir.schema.v1.0.0.json`](../../contracts/scenario-ir.schema.v1.0.0.json)
-(discriminator `lekalo/scenario-ir/v1.0.0`, identity
-`dev.lekalo.scenario-ir@1.0.0`). `contracts/` gains exactly this one
+[`contracts/scenario-ir.schema.v0.2.16.json`](../../contracts/scenario-ir.schema.v0.2.16.json)
+(discriminator `lekalo/scenario-ir/v0.2.16`, identity
+`dev.lekalo.scenario-ir@0.2.16`). `contracts/` gains exactly this one
 new file. Scenario IR is a derived test contract: not canonical Model
 source (no #5/#7 successor is embedded), not the compiled IR (#8), and
 not runtime evidence. The **neutral evidence/result envelope is not
@@ -50,7 +52,7 @@ to #23, it lands as a separate versioned contract. The source map is a
 separate digest-bound sidecar keyed by scenario ID, step ID, role and
 member path, reference role, and occurrence ordinal; the IR references
 it (`sourceMapRef`, identity
-`dev.lekalo.scenario-sourcemap@1.0.0`, at most 8192 entries) and never
+`dev.lekalo.scenario-sourcemap@0.2.16`, at most 8192 entries) and never
 contains logical paths or spans itself.
 
 ### 2. Explicit stable identity, ordered steps

@@ -22,7 +22,7 @@ const fail = (caseName, detail) => failures.push({ case: caseName, detail });
 // The closed canonical SemVer spelling: no build metadata, no leading v.
 const CANONICAL = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
-const DISCRIMINATOR = "lekalo/lock/v1.0.0";
+const DISCRIMINATOR = "lekalo/lock/v0.2.16";
 const TOP_LEVEL = [
   "schema_version",
   "resolver",
@@ -37,9 +37,9 @@ const TOP_LEVEL = [
 // ---------------------------------------------------------------------------
 // 1. The committed schema artifact carries the closed shape.
 // ---------------------------------------------------------------------------
-const schema = JSON.parse(readText("contracts/lock.schema.v1.0.0.json"));
+const schema = JSON.parse(readText("contracts/lock.schema.v0.2.16.json"));
 
-if (schema.$id !== "dev.lekalo.lock@1.0.0") {
+if (schema.$id !== "dev.lekalo.lock@0.2.16") {
   fail("schema:identity", `unexpected $id ${schema.$id}`);
 }
 if (schema.$schema !== "https://json-schema.org/draft/2020-12/schema") {
@@ -61,7 +61,7 @@ if (!("const" in discriminator) || discriminator.const !== DISCRIMINATOR) {
 }
 const versionPattern = schema.$defs.version.pattern;
 const digestPattern = schema.$defs.digest.pattern;
-if (!new RegExp(versionPattern).test("1.0.0") || new RegExp(versionPattern).test("v1") || new RegExp(versionPattern).test("1.0.0+meta")) {
+if (!new RegExp(versionPattern).test("0.2.16") || new RegExp(versionPattern).test("v1") || new RegExp(versionPattern).test("0.2.16+meta")) {
   fail("schema:version-pattern", "the version pattern is not canonical SemVer");
 }
 if (!new RegExp(digestPattern).test("sha256:" + "0".repeat(64)) || new RegExp(digestPattern).test("sha256:" + "A".repeat(64))) {
@@ -224,9 +224,9 @@ for (const name of [
 // 4. Contract parity with the Rust side.
 // ---------------------------------------------------------------------------
 const registry = JSON.parse(
-  readText("crates/lekalo-core/src/versioning/contracts/version-registry.v1.2.0.json"),
+  readText("crates/lekalo-core/src/versioning/contracts/version-registry.v0.2.16.json"),
 );
-if (registry.registryVersion !== "1.2.0") {
+if (registry.registryVersion !== "0.2.16") {
   fail("parity:registry", "the version registry artifact moved");
 }
 const golden = JSON.parse(readText(`${validDir}/contract-only.lock.json`));

@@ -1,5 +1,7 @@
 # Binding registry (`lekalo scan`, `lekalo bindings`)
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Issue #42 collects target evidence about existing code and relates native
 symbols, files, endpoints, and tests to Lekalo semantic ids without
 turning a heuristic into a fact. The observed index (issue #39) is the
@@ -8,9 +10,9 @@ binding registry: `lekalo scan` fills it through a target adapter, and
 design decision is [ADR-0035](adr/0035-bindings-registry.md).
 
 The wire extensions are additive successors of the frozen issue #39
-contracts: [`contracts/observed-scan.schema.v1.1.0.json`](../contracts/observed-scan.schema.v1.1.0.json)
-and [`contracts/observed-index.schema.v1.1.0.json`](../contracts/observed-index.schema.v1.1.0.json).
-The 1.0.0 documents stay published and their fixture-era documents still
+contracts: [`contracts/observed-scan.schema.v0.2.16.json`](../contracts/observed-scan.schema.v0.2.16.json)
+and [`contracts/observed-index.schema.v0.2.16.json`](../contracts/observed-index.schema.v0.2.16.json).
+The 0.2.16 documents stay published and their fixture-era documents still
 decode. Both versions remain independent of the product release, of the
 Model/IR/protocol contract versions, of each other, and of the diagnostic
 registry version.

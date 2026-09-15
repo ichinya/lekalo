@@ -45,8 +45,8 @@ if (ajvVersion !== "8.17.1") {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
-const registrySchema = read("contracts/error-registry.schema.v1.0.0.json");
-const bindingSchema = read("contracts/error-contract.schema.v1.0.0.json");
+const registrySchema = read("contracts/error-registry.schema.v0.2.16.json");
+const bindingSchema = read("contracts/error-contract.schema.v0.2.16.json");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateRegistry = ajv.compile(registrySchema);
 const validateBinding = ajv.compile(bindingSchema);
@@ -98,8 +98,8 @@ const typeLeaves = (expr, leaves) => {
 };
 
 const checkRegistryInvariants = (where_, registry) => {
-  if (registry.schema_version !== "lekalo/error-registry/v1.0.0") bad("registry-schema-version", where_);
-  if (registry.identity !== "dev.lekalo.error-registry@1.0.0") bad("registry-identity", where_);
+  if (registry.schema_version !== "lekalo/error-registry/v0.2.16") bad("registry-schema-version", where_);
+  if (registry.identity !== "dev.lekalo.error-registry@0.2.16") bad("registry-identity", where_);
   if (registry.closed !== true) bad("registry-closed", where_);
   if (!sortedIds(registry.errors, (error) => error.id)) bad("errors-unsorted", where_);
   if (!sortedIds(registry.bindings, (binding) => binding.operation)) bad("bindings-unsorted", where_);
@@ -204,7 +204,7 @@ const checkRegistryInvariants = (where_, registry) => {
 };
 
 const checkBindingInvariants = (where_, binding) => {
-  if (binding.schema_version !== "lekalo/error-contract/v1.0.0") bad("binding-schema-version", where_);
+  if (binding.schema_version !== "lekalo/error-contract/v0.2.16") bad("binding-schema-version", where_);
   if (binding.errors.length === 0) bad("empty-union", where_);
   if (!sortedIds(binding.errors, (member) => member)) bad("union-unsorted", where_);
   if (new Set(binding.errors).size !== binding.errors.length) bad("duplicate-union-member", where_);
@@ -238,7 +238,7 @@ const checkInvalid = (where_, document) => {
 
 // The published registry must be canonical bytes: compact JSON with
 // byte-sorted keys, no final line feed.
-const registryBytes = readFileSync(resolve(root, "contracts/error-registry.v1.0.0.json"), "utf8");
+const registryBytes = readFileSync(resolve(root, "contracts/error-registry.v0.2.16.json"), "utf8");
 const canonical = (value) => {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
@@ -261,7 +261,7 @@ if (validNames.length === 0) fail("no-valid-fixtures", validRoot);
 if (invalidNames.length === 0) fail("no-invalid-fixtures", invalidRoot);
 
 let documents = 0;
-checkValid("contracts/error-registry.v1.0.0.json", JSON.parse(registryBytes));
+checkValid("contracts/error-registry.v0.2.16.json", JSON.parse(registryBytes));
 documents += 1;
 for (const name of validNames) {
   checkValid(`tests/fixtures/error-contract/valid/${name}`, read(`tests/fixtures/error-contract/valid/${name}`));

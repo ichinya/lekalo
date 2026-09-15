@@ -150,12 +150,12 @@ pub struct ProjectRef {
 }
 
 impl ProjectRef {
-    /// The exact source Model version (`0.1.0` or `1.0.0`).
+    /// The exact source Model version (`0.2.16` or `0.2.16`).
     pub fn model_version(&self) -> &str {
         &self.model_version
     }
 
-    /// The IR contract identity (`dev.lekalo.ir@0.1.0`).
+    /// The IR contract identity (`dev.lekalo.ir@0.2.16`).
     pub fn ir_identity(&self) -> &str {
         &self.ir_identity
     }

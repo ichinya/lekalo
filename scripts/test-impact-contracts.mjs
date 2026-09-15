@@ -40,7 +40,7 @@ if (ajvVersion !== "8.17.1") {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
-const schema = read("contracts/impact.schema.v1.0.0.json");
+const schema = read("contracts/impact.schema.v0.2.16.json");
 const goldenDir = "tests/fixtures/impact/golden";
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });

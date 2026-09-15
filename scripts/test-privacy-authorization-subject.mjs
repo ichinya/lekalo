@@ -31,7 +31,7 @@ const clone = (value) => structuredClone(value);
 const digest = (character) => `sha256:${character.repeat(64)}`;
 const repo = (character) => `repo-sha256:${character.repeat(64)}`;
 const sourceRef = (character) => `source-sha256:${character.repeat(64)}`;
-const audit = (id, character) => ({ id, version: "1.0.0", evidenceDigest: digest(character) });
+const audit = (id, character) => ({ id, version: "0.2.16", evidenceDigest: digest(character) });
 const classification = (character) => ({
   ...CLASSIFICATION_CONTRACT_REF,
   decisionId: `classification-sha256:${character.repeat(64)}`,
@@ -87,15 +87,15 @@ function maximalAggregate() {
       },
     ],
     appliedTransforms: [
-      { transformId: "aggregate-no-source-rows", version: "1.0.0", evidenceDigest: digest("4") },
-      { transformId: "replace-repository-identity", version: "1.0.0", evidenceDigest: digest("5") },
+      { transformId: "aggregate-no-source-rows", version: "0.2.16", evidenceDigest: digest("4") },
+      { transformId: "replace-repository-identity", version: "0.2.16", evidenceDigest: digest("5") },
     ],
     declassificationDecision: {
-      policyRef: clone(POLICY_REF), decisionRef: null, version: "1.0.0", outcome: "approved",
+      policyRef: clone(POLICY_REF), decisionRef: null, version: "0.2.16", outcome: "approved",
       removedSensitivities: ["retention-limited", "internal"],
     },
     aggregationDecision: {
-      policyRef: clone(POLICY_REF), decisionRef: null, version: "1.0.0", outcome: "approved",
+      policyRef: clone(POLICY_REF), decisionRef: null, version: "0.2.16", outcome: "approved",
       removesSourceRows: true, removesSourceIdentities: true,
     },
     containsSourceRows: false,
@@ -319,15 +319,6 @@ try {
     locate(input).binding.subjectDigest = `subject-sha256:${"f".repeat(64)}`;
     await subprocess(`purpose-${name}-stale-subject`, input, 3, "evidence.binding-mismatch");
   }
-
-  const oldManifest = spawnSync(process.execPath, [checker,
-    "--manifest", join(root, "contracts/privacy-policy.v1.0.4.manifest.json"),
-    "--manifest-sidecar", join(root, "contracts/privacy-policy.v1.0.4.manifest.sha256"),
-    "--policy", join(root, "contracts/privacy-policy.v1.0.4.json"),
-    "--policy-sidecar", join(root, "contracts/privacy-policy.v1.0.4.sha256"),
-  ], { cwd: root, encoding: "utf8", windowsHide: true });
-  assert.equal(oldManifest.status, 1);
-  assert.equal(JSON.parse(oldManifest.stderr).reasonCodes[0], "custody.manifest-untrusted");
 
   console.log(JSON.stringify({
     ok: true,

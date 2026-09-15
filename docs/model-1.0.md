@@ -1,43 +1,12 @@
-# Lekalo Model 1.0
+# Lekalo Model: stable semantic IDs
 
-Status: implementation candidate for issue #6. Model contract version 1.0.0
-is independent of reserved product candidate 0.1.4.
+The current contract version is **0.2.16**. The normative artifacts are
+[Model schema](../contracts/model.schema.v0.2.16.json) and
+[semantic IDs](../contracts/semantic-ids.v0.2.16.json). See
+[Model](model.md) and [versioning](versioning.md).
 
-Model 1.0.0 is the stable-semantic-ID successor to published Model 0.1.0.
-The normative schema is
-[contracts/model.schema.v1.0.0.json](../contracts/model.schema.v1.0.0.json);
-the ID rules are
-[dev.lekalo.semantic-ids@0.1.0](../contracts/semantic-ids.v0.1.0.json).
-[Model 0.1](model.md) remains the immutable published record.
-
-## Exact version dispatch
-
-Every project document has exactly one schema_version. The reference checker
-accepts only the complete exact sets 0.1.0 and 1.0.0. The project document
-selects the validation path and every discovered module document must carry
-the same version. An unknown or mixed value fails as model.schema-version.
-
-This is intentionally finite dispatch, not a generic SemVer support range,
-loader, migration engine, or deprecation policy.
-
-## Preserved Model surface
-
-Model 1.0.0 was cloned from the exact schema published at commit
-b2ace5e893ffd62c80250099792d2e33a0aff3a7. Outside version identity,
-ID-bearing fields, symbol rename metadata, and the project registry, it
-preserves Model 0.1.0:
-
-- the same fourteen closed definition kinds and file-to-kind mapping;
-- the same required and optional kind fields;
-- the same requirement, field, description, endpoint, enum, and target
-  constraints;
-- the same four-level finite type-expression grammar;
-- the same typed reference-kind checks and recursion prohibition;
-- the same Unicode code-point interpretation of string length;
-- the same structure-first physical containment and exit protocol.
-
-The 0.1.0 schema file is not edited. The checker supports both exact contract
-versions; this 1.0.0 contract remains an implementation candidate.
+Every project and module document must declare exactly `0.2.16`. Unknown or
+mixed versions fail as `model.schema-version`.
 
 ## ID-bearing fields
 
@@ -68,7 +37,7 @@ model.ref-unresolved even when that ID appears in history.
 
 ## Deterministic output
 
-For 1.0.0, the validation report exposes semantic module IDs and live symbols
+For 0.2.16, the validation report exposes semantic module IDs and live symbols
 in ascending unsigned UTF-8 byte order. Physical module directories never
 appear as semantic module identities. The complete symbol string is also the
 verbatim canonical key that the semantic-ID contract requires of its closed

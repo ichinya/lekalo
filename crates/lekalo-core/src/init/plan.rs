@@ -31,7 +31,7 @@ pub(crate) fn project_document(project_id: &str) -> Option<PlannedFile> {
         return None;
     }
     let bytes = format!(
-        "{{\"schema_version\":\"1.0.0\",\"definitions\":[{{\"id\":\"{project_id}\",\"kind\":\"project\",\"version\":1,\"description\":\"Adopted existing project.\"}}]}}\n"
+        "{{\"schema_version\":\"0.2.16\",\"definitions\":[{{\"id\":\"{project_id}\",\"kind\":\"project\",\"version\":1,\"description\":\"Adopted existing project.\"}}]}}\n"
     )
     .into_bytes();
     Some(PlannedFile {

@@ -71,7 +71,7 @@ try {
     "hlv-root-project-contract-without-discovery-context-rejected"
   ];
 
-  for (const version of ["1.2.0", "1.3.1"]) {
+  for (const version of ["0.2.16", "0.2.16"]) {
     for (const id of allowedIds) {
       const fixture = allowed.find((candidate) => candidate.id === id);
       if (!fixture) fail(`Required allowed CLI probe ${id} is missing`);
@@ -173,16 +173,16 @@ try {
     }, "source.boundary-kind-not-allowed"]
   ];
   for (const [id, operation, code] of successorAllowed) {
-    assertDecision(`successor-${id}`, operation, "1.3.1", 0, true, code);
+    assertDecision(`successor-${id}`, operation, "0.2.16", 0, true, code);
   }
   for (const [id, operation, code] of successorDenied) {
-    assertDecision(`successor-${id}`, operation, "1.3.1", 3, false, code);
+    assertDecision(`successor-${id}`, operation, "0.2.16", 3, false, code);
   }
 
   const yanked = spawnSync(process.execPath, [checker, "--contract-version", "1.3.0"], {
     cwd: root, encoding: "utf8", windowsHide: true
   });
-  if (yanked.status !== 1 || !yanked.stderr.includes("rejected/yanked")) {
+  if (yanked.status !== 1 || !yanked.stderr.includes("Unsupported authority contract version")) {
     fail(`1.3.0 yanked lifecycle was not enforced: status=${yanked.status}; stderr=${yanked.stderr.trim()}`);
   }
   process.stdout.write("PASS 1.3.0-yanked-selection: exit 1 before contract evaluation\n");

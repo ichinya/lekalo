@@ -59,7 +59,7 @@ fn attachment_payload(attachment: &super::InvariantTransitionAttachment) -> Stri
         (
             "irRef",
             Some(digest_payload(
-                "dev.lekalo.ir@0.1.0",
+                "dev.lekalo.ir@0.2.16",
                 attachment.ir_digest().as_str(),
             )),
         ),

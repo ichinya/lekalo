@@ -1,5 +1,7 @@
 # Generated-artifact ownership manifest and drift detection (issue #21)
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Every generated, scaffolded, checked, external, and custom artifact is
 recorded in one derived ownership manifest that binds the artifact to its
 semantic owner, the exact locked adapter and generator identity, the exact
@@ -11,9 +13,9 @@ confirmation, applies a deterministic clean of orphaned generated files.
 ## Contract and location
 
 - Wire contract:
-  [`contracts/artifact-manifest.schema.v1.0.0.json`](../contracts/artifact-manifest.schema.v1.0.0.json),
-  discriminator `lekalo/artifact-manifest/v1.0.0`, identity
-  `dev.lekalo.artifact-manifest@1.0.0` — independent of the product
+  [`contracts/artifact-manifest.schema.v0.2.16.json`](../contracts/artifact-manifest.schema.v0.2.16.json),
+  discriminator `lekalo/artifact-manifest/v0.2.16`, identity
+  `dev.lekalo.artifact-manifest@0.2.16` — independent of the product
   release, of the Model/IR/graph/lock/protocol contract versions, and of
   the diagnostic registry.
 - The manifest is Lekalo-owned runtime-derived data under the accepted

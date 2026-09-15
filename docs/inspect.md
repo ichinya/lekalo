@@ -41,12 +41,12 @@ files, never re-scans or rebuilds indexes, and never writes anywhere.
 Diagnostics ride the accepted #11 contract: `inspect.symbol-unknown`,
 `inspect.short-name-unknown`, `inspect.short-name-ambiguous`, and
 `inspect.output-limit` were added to the embedded registry as a
-wire-shape-preserving minor increment (`1.2.0` → `1.3.0`, ADR-0014).
+wire-shape-preserving minor increment (`0.2.16` → `1.3.0`, ADR-0014).
 
 ## One result, two views
 
 Human and JSON are two projections of the same normalized object. The JSON
-payload (`lekalo/inspect/v1.0.0`, identity `dev.lekalo.inspect@1.0.0`) is
+payload (`lekalo/inspect/v0.2.16`, identity `dev.lekalo.inspect@0.2.16`) is
 compact UTF-8 with a fixed top-level and section wire order:
 
 1. `schemaVersion`, `identity`, `modelVersion`, `project`, `selector`,

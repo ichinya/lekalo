@@ -341,25 +341,21 @@ impl Runner {
         });
         // IR backing for declared IR-carrying operations.
         let ir_ops = caps.operations.iter().any(|op| op.requires_ir());
-        self.record(
-            if self.negotiated == Some(crate::target_protocol::version::BASE_VERSION) {
-                CheckOutcome::skipped(CheckId::CapabilityIrDeclaration, "legacy-session")
-            } else if !ir_ops {
-                CheckOutcome::skipped(CheckId::CapabilityIrDeclaration, "no-ir-operations")
-            } else if caps
-                .ir_versions
-                .iter()
-                .any(|declared| declared == crate::ir::version::VERSION)
-            {
-                CheckOutcome::pass(CheckId::CapabilityIrDeclaration)
-            } else {
-                CheckOutcome::fail(
-                    CheckId::CapabilityIrDeclaration,
-                    CheckClass::Protocol,
-                    "ir-undeclared",
-                )
-            },
-        );
+        self.record(if !ir_ops {
+            CheckOutcome::skipped(CheckId::CapabilityIrDeclaration, "no-ir-operations")
+        } else if caps
+            .ir_versions
+            .iter()
+            .any(|declared| declared == crate::ir::version::VERSION)
+        {
+            CheckOutcome::pass(CheckId::CapabilityIrDeclaration)
+        } else {
+            CheckOutcome::fail(
+                CheckId::CapabilityIrDeclaration,
+                CheckClass::Protocol,
+                "ir-undeclared",
+            )
+        });
         // The strict full-surface requirement.
         let complete = ALL_OPERATIONS.iter().all(|op| caps.operations.contains(op));
         self.record(match self.options.profile {

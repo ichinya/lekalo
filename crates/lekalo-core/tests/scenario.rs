@@ -373,17 +373,17 @@ fn role_bounds_and_total_bounds_are_enforced_with_typed_limits() {
     });
     let scenario = |given: usize, when: usize, then: usize| {
         let mut base = serde_json::json!({
-            "schemaVersion": "lekalo/scenario-ir/v1.0.0",
-            "identity": "dev.lekalo.scenario-ir@1.0.0",
+            "schemaVersion": "lekalo/scenario-ir/v0.2.16",
+            "identity": "dev.lekalo.scenario-ir@0.2.16",
             "projectId": "planner",
             "scenarioId": "planner.scenario.bounds",
-            "scenarioVersion": "1.0.0",
+            "scenarioVersion": "0.2.16",
             "summary": "bounds",
             "irRef": {
-                "identity": "dev.lekalo.ir@0.1.0",
+                "identity": "dev.lekalo.ir@0.2.16",
                 "digest": format!("sha256:{}", "0".repeat(64))
             },
-            "modelRef": {"modelVersion": "1.0.0", "digest": format!("sha256:{}", "0".repeat(64))},
+            "modelRef": {"modelVersion": "0.2.16", "digest": format!("sha256:{}", "0".repeat(64))},
             "given": [],
             "when": [],
             "then": [],

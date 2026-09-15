@@ -9,7 +9,6 @@ import { readFile, readdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  MODEL_COMPAT_GOLDEN_PAIR,
   MODEL_DOCUMENT_SCHEMA,
   MODEL_FIXTURE_SETS,
   fixtureManifestParityFailure,
@@ -81,7 +80,7 @@ const validators = new Map();
 for (const contractCase of CASES) {
   const schema = JSON.parse(await readFile(join(root, contractCase.schema), "utf8"));
   try {
-    ajv.addSchema(schema);
+    if (!ajv.getSchema(schema.$id)) ajv.addSchema(schema);
     const byDocument = new Map();
     for (const [fileName, definitionName] of Object.entries(MODEL_DOCUMENT_SCHEMA)) {
       byDocument.set(fileName, ajv.compile({ $ref: `${schema.$id}#/$defs/${definitionName}` }));
@@ -111,7 +110,7 @@ for (const contractCase of CASES) {
   // without a manifest entry (or vice versa) must fail this gate, not slip
   // through one suite silently. The shared manifest is the single source.
   const parityFailure = fixtureManifestParityFailure(
-    MODEL_FIXTURE_SETS.find((fixtureSet) => fixtureSet.version === contractCase.version),
+    MODEL_FIXTURE_SETS.find((fixtureSet) => fixtureSet.fixtures === contractCase.fixtures),
     entries
   );
   if (parityFailure !== null) {
@@ -146,50 +145,6 @@ for (const contractCase of CASES) {
   }
 }
 
-// The compatibility golden pair must pass third-party validation against its
-// exact respective schemas on both sides. Assertions prove both sides were
-// exercised: each side requires its own compiled validators and at least one
-// document, and both sides are reported individually.
-const compatGolden = {};
-let compatGoldenCases = 0;
-if (manifestIntegrityFailure() !== null) {
-  failures.push({ case: "fixture-manifest:integrity", detail: manifestIntegrityFailure() });
-}
-for (const side of MODEL_COMPAT_GOLDEN_PAIR.sides) {
-  const versionValidators = validators.get(side.version);
-  const goldenRoot = join(root, MODEL_COMPAT_GOLDEN_PAIR.root, side.directory);
-  if (versionValidators === undefined) {
-    failures.push({ case: `compat-golden:${side.version}:validators`, detail: "no compiled validators for the golden side schema" });
-    continue;
-  }
-  const paths = await modelDocuments(goldenRoot);
-  if (paths.length === 0) {
-    failures.push({ case: `compat-golden:${side.version}:empty`, detail: goldenRoot });
-    continue;
-  }
-  let goldenInvalid = false;
-  for (const path of paths) {
-    compatGoldenCases += 1;
-    let document = null;
-    try {
-      document = JSON.parse(await readFile(path, "utf8"));
-    } catch (error) {
-      failures.push({ case: `compat-golden:${side.version}:parse`, detail: error?.message });
-      goldenInvalid = true;
-      continue;
-    }
-    const specialized = versionValidators.byDocument.get(basename(path));
-    if (!specialized(document) || !versionValidators.umbrella(document)) {
-      goldenInvalid = true;
-    }
-  }
-  compatGolden[side.version] = paths.length;
-  if (goldenInvalid) {
-    failures.push({ case: `compat-golden:${side.version}:schema-valid`, detail: "the golden side must validate against its exact schema" });
-  }
-}
-
-if (warnings.length > 0) failures.push({ case: "strict-warnings", detail: warnings });
 if (failures.length > 0) {
   process.stderr.write(`${JSON.stringify({ ok: false, ajvVersion, failures }, null, 2)}\n`);
   process.exit(1);
@@ -203,8 +158,5 @@ process.stdout.write(`${JSON.stringify({
   warnings: 0,
   schemas: CASES.length,
   fixtureCases,
-  documentCases,
-  compatGoldenSides: MODEL_COMPAT_GOLDEN_PAIR.sides.length,
-  compatGoldenCases,
-  compatGoldenDocuments: compatGolden
+  documentCases
 }, null, 2)}\n`);

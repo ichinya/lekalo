@@ -76,7 +76,7 @@ function emit(relative, document, { sortArrays = true, stamp = true } = {}) {
   writeFileSync(join(out, relative + ".manifest.json"), Buffer.from(JSON.stringify(final) + "\n", "utf8"));
 }
 
-const ADAPTER = (protocol = "1.0.0") => ({
+const ADAPTER = (protocol = "0.2.16") => ({
   id: "node-typescript",
   version: "0.1.2",
   digest: filler("adapter-package"),
@@ -102,13 +102,13 @@ const ARTIFACT = (over = {}) => ({
 });
 
 const BASE = (over = {}) => ({
-  schema_version: "lekalo/artifact-manifest/v1.0.0",
-  identity: "dev.lekalo.artifact-manifest@1.0.0",
+  schema_version: "lekalo/artifact-manifest/v0.2.16",
+  identity: "dev.lekalo.artifact-manifest@0.2.16",
   project_ref: "planner",
-  lock_ref: { schema_version: "lekalo/lock/v1.0.0", digest: filler("lock") },
+  lock_ref: { schema_version: "lekalo/lock/v0.2.16", digest: filler("lock") },
   inputs: {
-    model: { version: "1.0.0", digest: filler("model") },
-    ir: { version: "0.1.0", digest: filler("ir") },
+    model: { version: "0.2.16", digest: filler("model") },
+    ir: { version: "0.2.16", digest: filler("ir") },
   },
   artifacts: [],
   source_maps: [],

@@ -140,7 +140,7 @@ fn greenfield_bootstrap_creates_a_valid_minimal_project() {
     assert_eq!(envelope["unchanged"], 0);
     assert_eq!(envelope["conflicting"], 0);
     assert_eq!(envelope["gate"]["status"], "valid");
-    assert_eq!(envelope["gate"]["modelVersion"], "1.0.0");
+    assert_eq!(envelope["gate"]["modelVersion"], "0.2.16");
     assert_eq!(envelope["projectIdSource"]["source"], "directory-name");
     let project_id = envelope["projectId"]
         .as_str()
@@ -149,13 +149,13 @@ fn greenfield_bootstrap_creates_a_valid_minimal_project() {
     assert_eq!(
         fs::read_to_string(root.join("lekalo").join("project.yaml")).expect("project bytes"),
         format!(
-            "schema_version: \"1.0.0\"\ndefinitions:\n  - id: {project_id}\n    kind: project\n    version: 1\n    description: \"New Lekalo project.\"\n"
+            "schema_version: \"0.2.16\"\ndefinitions:\n  - id: {project_id}\n    kind: project\n    version: 1\n    description: \"New Lekalo project.\"\n"
         )
     );
     assert_eq!(
         fs::read_to_string(root.join("lekalo").join("modules").join("app").join("module.yaml"))
             .expect("module bytes"),
-        "schema_version: \"1.0.0\"\ndefinitions:\n  - id: app\n    kind: module\n    version: 1\n    description: \"Initial module.\"\n"
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: app\n    kind: module\n    version: 1\n    description: \"Initial module.\"\n"
     );
     assert_eq!(
         fs::read_to_string(root.join(".gitignore")).expect("ignore bytes"),
@@ -225,7 +225,7 @@ fn greenfield_conflicting_files_are_denied_never_overwritten() {
     let (_temp, root) = empty_greenfield();
     let first = lekalo_in(&root, &["--json", "init"]);
     assert_eq!(exit_code(&first), 0, "{}", stderr_text(&first));
-    let user_bytes = b"schema_version: \"1.0.0\"\ndefinitions:\n  - id: probe\n    kind: project\n    version: 2\n    description: \"User-owned.\"\n".to_vec();
+    let user_bytes = b"schema_version: \"0.2.16\"\ndefinitions:\n  - id: probe\n    kind: project\n    version: 2\n    description: \"User-owned.\"\n".to_vec();
     fs::write(root.join("lekalo").join("project.yaml"), &user_bytes).expect("user edit");
     let rerun = lekalo_in(&root, &["--json", "init"]);
     assert_eq!(exit_code(&rerun), 3);
@@ -353,7 +353,7 @@ fn greenfield_json_frontend_uses_the_adoption_spelling() {
     assert_eq!(stdout_json(&output)["frontend"], "json");
     assert_eq!(
         fs::read_to_string(root.join("lekalo").join("project.yaml")).expect("project bytes"),
-        "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"probe\",\"kind\":\"project\",\"version\":1,\"description\":\"New Lekalo project.\"}]}\n"
+        "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"probe\",\"kind\":\"project\",\"version\":1,\"description\":\"New Lekalo project.\"}]}\n"
     );
     let validate = lekalo_in(&root, &["--json", "validate"]);
     assert_eq!(exit_code(&validate), 0, "{}", stderr_text(&validate));
@@ -379,7 +379,7 @@ fn greenfield_editor_hints_are_opt_in() {
         concat!(
             "{\n",
             "  \"yaml.schemas\": {\n",
-            "    \"https://lekalo.dev/schemas/model/1.0.0/schema.json\": [\n",
+            "    \"https://lekalo.dev/schemas/model/0.2.16/schema.json\": [\n",
             "      \"lekalo/project.yaml\",\n",
             "      \"lekalo/modules/**/*.yaml\"\n",
             "    ]\n",
@@ -478,7 +478,7 @@ fn module_new_creates_gates_and_revalidates() {
     assert_eq!(
         fs::read_to_string(root.join("lekalo").join("modules").join("planner").join("module.yaml"))
             .expect("module bytes"),
-        "schema_version: \"1.0.0\"\ndefinitions:\n  - id: planner\n    kind: module\n    version: 1\n    description: \"Initial module.\"\n"
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: planner\n    kind: module\n    version: 1\n    description: \"Initial module.\"\n"
     );
     let validate = lekalo_in(&root, &["--json", "validate"]);
     assert_eq!(exit_code(&validate), 0, "{}", stderr_text(&validate));
@@ -494,7 +494,7 @@ fn module_new_creates_gates_and_revalidates() {
             .join("modules")
             .join("planner")
             .join("module.yaml"),
-        b"schema_version: \"1.0.0\"\ndefinitions:\n  - id: planner\n  kind: module\n  version: 3\n",
+        b"schema_version: \"0.2.16\"\ndefinitions:\n  - id: planner\n  kind: module\n  version: 3\n",
     )
     .expect("user edit");
     let conflict = lekalo_in(&root, &["--json", "module", "new", "planner"]);
@@ -533,7 +533,7 @@ fn module_new_failures_and_frontend() {
     assert_eq!(
         fs::read_to_string(root.join("lekalo").join("modules").join("extra").join("module.yaml"))
             .expect("module bytes"),
-        "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"extra\",\"kind\":\"module\",\"version\":1,\"description\":\"Initial module.\"}]}\n"
+        "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"extra\",\"kind\":\"module\",\"version\":1,\"description\":\"Initial module.\"}]}\n"
     );
     let validate = lekalo_in(&root, &["--json", "validate"]);
     assert_eq!(exit_code(&validate), 0, "{}", stderr_text(&validate));

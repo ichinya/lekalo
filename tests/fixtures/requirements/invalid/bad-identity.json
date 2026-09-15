@@ -1,10 +1,10 @@
 {
-  "schemaVersion": "lekalo/requirements/v1.0.0",
+  "schemaVersion": "lekalo/requirements/v0.2.16",
   "identity": "dev.lekalo.requirements@0.9.0",
   "projectId": "planner",
   "modelRef": {
-    "modelVersion": "1.0.0",
-    "digest": "sha256:85f19258888456d40fffecb8a1cf5dbc43f8abea308203fc55a993939dce3daa"
+    "modelVersion": "0.2.16",
+    "digest": "sha256:972f8d9305ede8bce9a10b197cb144ac354fa00856d735f3298f436c13ffe9d7"
   },
   "providers": [
     {

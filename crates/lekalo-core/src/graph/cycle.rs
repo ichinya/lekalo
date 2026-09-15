@@ -225,7 +225,7 @@ mod tests {
         }
         DependencyGraph::assemble(GraphParts {
             registry: GraphRegistry::core(),
-            model_version: ModelVersion::V1_0_0,
+            model_version: ModelVersion::Current,
             project: None,
             nodes,
             index,

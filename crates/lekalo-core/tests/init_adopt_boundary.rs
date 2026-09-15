@@ -334,12 +334,12 @@ fn no_profile_control_writes_only_the_legacy_project_document() {
     assert!(receipt["target"].is_null());
     assert!(receipt["adapterProfile"].is_null());
     assert_eq!(receipt["gate"]["status"], "valid");
-    assert_eq!(receipt["gate"]["modelVersion"], "1.0.0");
+    assert_eq!(receipt["gate"]["modelVersion"], "0.2.16");
     let project_bytes =
         std::fs::read(probe.root.join("lekalo/project.yaml")).expect("project document");
     assert_eq!(
         project_bytes,
-        b"{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"probe\",\"kind\":\"project\",\"version\":1,\"description\":\"Adopted existing project.\"}]}\n"
+        b"{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"probe\",\"kind\":\"project\",\"version\":1,\"description\":\"Adopted existing project.\"}]}\n"
     );
     assert!(
         !probe.root.join("lekalo/targets").exists(),

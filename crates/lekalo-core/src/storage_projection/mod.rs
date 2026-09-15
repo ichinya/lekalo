@@ -10,8 +10,7 @@
 //! constraint coverage; storage projections per closed namespace with
 //! explicit tables, technical and generated columns, soft-delete and
 //! tenant policies, audit timestamps, indexes, join tables, explicit
-//! polymorphic materializations, and migration history with visible
-//! data risk.
+//! polymorphic materializations. Storage comparisons expose data risk.
 //!
 //! Boundaries: this module is pure declaration, validation, deriva-
 //! tion, and comparison — no runtime storage, no adapter execution,
@@ -45,8 +44,8 @@ pub use diff::{compare, DiffClass, DiffLayer, DiffPath, DiffResult};
 pub use entity::{DomainEntity, DomainField, DomainType, Visibility};
 pub use id::{EntityKey, StorageName};
 pub use projection::{
-    DataRisk, GeneratedColumn, GeneratedKind, Index, Join, Migration, Namespace, Polymorphic,
-    Projection, StorageType, Table, TechnicalColumn,
+    DataRisk, GeneratedColumn, GeneratedKind, Index, Join, Namespace, Polymorphic, Projection,
+    StorageType, Table, TechnicalColumn,
 };
 pub use relation::{DeleteBehavior, Relation, RelationKind, ScenarioRef};
 pub use version::{FAMILY, IDENTITY, SCHEMA_VERSION, VERSION};

@@ -10,7 +10,7 @@
 //! metadata do not exist here.
 //!
 //! Until issue #27 the protocol family was unpublished, so no external
-//! adapter could be compatible. The family now publishes `1.0.0`
+//! adapter could be compatible. The family now publishes `0.2.16`
 //! (`lekalo.target/v1`); an unpublished or unregistered protocol still
 //! refuses through `versioning.protocol-unpublished` before any runner
 //! could be created.
@@ -24,7 +24,7 @@ use super::support::{ir_support, protocol_support};
 use super::version::ContractVersion;
 
 /// The current adapter-compatibility manifest schema version.
-pub const MANIFEST_SCHEMA_VERSION: &str = "1.0.0";
+pub const MANIFEST_SCHEMA_VERSION: &str = "0.2.16";
 
 /// The inclusive protocol version range of one adapter manifest.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -264,8 +264,6 @@ pub struct FamilySummary {
     pub aliases: Vec<AliasSummary>,
     /// The registered versions with their lifecycle, in registry order.
     pub versions: Vec<VersionSummary>,
-    /// The declared migration edges, in registry order.
-    pub migrations: Vec<EdgeSummary>,
 }
 
 /// One alias projection.
@@ -285,19 +283,6 @@ pub struct VersionSummary {
     /// The lifecycle state.
     pub state: String,
     /// The change classification of the introducing change.
-    pub classification: String,
-}
-
-/// One migration edge projection.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct EdgeSummary {
-    /// The stable edge identity.
-    pub id: String,
-    /// The source version.
-    pub from: String,
-    /// The target version.
-    pub to: String,
-    /// The change classification.
     pub classification: String,
 }
 
@@ -341,16 +326,6 @@ impl CompatibilityReport {
                         version: record.version.to_string(),
                         state: record.state.as_str().to_owned(),
                         classification: record.classification.as_str().to_owned(),
-                    })
-                    .collect(),
-                migrations: family
-                    .edges()
-                    .iter()
-                    .map(|edge| EdgeSummary {
-                        id: edge.id.clone(),
-                        from: edge.from.to_string(),
-                        to: edge.to.to_string(),
-                        classification: edge.classification.as_str().to_owned(),
                     })
                     .collect(),
             }

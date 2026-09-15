@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn mirror_round_trip_preserves_the_document() {
-        let text = "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"planner\",\"kind\":\"module\",\"version\":1}]}";
+        let text = "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"planner\",\"kind\":\"module\",\"version\":1}]}";
         let index = crate::loader::source::LineIndex::new(text);
         let parsed = crate::loader::frontends::json::parse(text, &index).expect("parses");
         let document = crate::loader::project_docs::decode(
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn normalized_digest_ignores_spans_but_not_content() {
-        let text = "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"planner\"}]}";
+        let text = "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"planner\"}]}";
         let index = crate::loader::source::LineIndex::new(text);
         let parsed = crate::loader::frontends::json::parse(text, &index).expect("parses");
         let first = crate::loader::project_docs::decode(
@@ -347,7 +347,7 @@ mod tests {
             &parsed,
         )
         .expect("decodes");
-        let other_text = "{\"definitions\":[{\"id\":\"planner\"}],\"schema_version\":\"1.0.0\"}";
+        let other_text = "{\"definitions\":[{\"id\":\"planner\"}],\"schema_version\":\"0.2.16\"}";
         let other_index = crate::loader::source::LineIndex::new(other_text);
         let other_parsed =
             crate::loader::frontends::json::parse(other_text, &other_index).expect("parses");

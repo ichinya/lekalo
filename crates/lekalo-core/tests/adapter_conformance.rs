@@ -87,13 +87,13 @@ fn the_reference_adapter_passes_the_default_battery_with_an_exact_badge() {
         outcome.report.badge,
         lekalo_core::adapter_conformance::Badge {
             issued: true,
-            protocol: Some("1.0.0"),
-            ir: Some("0.1.0"),
+            protocol: Some("0.2.16"),
+            ir: Some("0.2.16"),
         }
     );
-    // The legacy session skips exactly the rows that do not apply.
+    // IR support is required; the optional fluent surface is absent.
     let (ir_state, _) = check(&outcome, "capability.ir-declaration");
-    assert_eq!(ir_state, "skipped");
+    assert_eq!(ir_state, "pass");
     let (surface_state, _) = check(&outcome, "capability.surface");
     assert_eq!(surface_state, "skipped");
     // Every catalog row is present in fixed order.
@@ -106,12 +106,12 @@ fn the_reference_adapter_passes_the_default_battery_with_an_exact_badge() {
 }
 
 #[test]
-fn the_fluent_adapter_passes_strict_with_a_1_2_0_badge() {
+fn the_fluent_adapter_passes_strict_with_the_current_badge() {
     let command = adapter_command(&["--lekalo-adapter-variant", "fluent"]);
     let outcome = run(&command, &timed_options("strict")).expect("the suite completes");
     assert_eq!(outcome.status, lekalo_core::result::Status::Valid);
-    assert_eq!(outcome.report.session.protocol, "1.2.0");
-    assert_eq!(outcome.report.badge.protocol, Some("1.2.0"));
+    assert_eq!(outcome.report.session.protocol, "0.2.16");
+    assert_eq!(outcome.report.badge.protocol, Some("0.2.16"));
     let (surface_state, _) = check(&outcome, "capability.surface");
     assert_eq!(surface_state, "pass");
     let (ir_state, _) = check(&outcome, "capability.ir-declaration");

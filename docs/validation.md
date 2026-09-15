@@ -95,8 +95,8 @@ invariant (cleaned, at most 256 bytes).
 ## Profiles
 
 A validation profile is a closed, independently versioned contract
-(`dev.lekalo.validation-profile@1.0.0`,
-[validation-profile.schema.v1.0.0.json](../contracts/validation-profile.schema.v1.0.0.json))
+(`dev.lekalo.validation-profile@0.2.16`,
+[validation-profile.schema.v0.2.16.json](../contracts/validation-profile.schema.v0.2.16.json))
 that lists rule selections — `enabled` plus an optional
 `severity_override` — for exactly the `semantic.*` and `validate.*`
 inventory, sorted by rule id, duplicates rejected. Every profile pins

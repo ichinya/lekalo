@@ -3,28 +3,28 @@
 Status: accepted corrective privacy-contract successor for issue #120. Issue
 #120 passed cold review and was closed on 2026-08-30; a post-acceptance M0
 audit found a constraint/sensitivity intersection defect and produced policy
-`1.0.7` without rewriting the historical product release. The accepted M0
+`0.2.16` without rewriting the historical product release. The accepted M0
 product release remains `0.0.2`. The `0.0.1`/`0.0.2` pair frozen inside the
 accepted manifest is an acceptance-time snapshot, not living product state;
 the living release is governed by the versioning policy artifact.
 
 The normative files are:
 
-- `contracts/privacy-policy.v1.0.7.json`: accepted policy `1.0.7`;
-- `contracts/privacy-policy.v1.0.7.manifest.json` and its `.sha256` sidecars: exact
+- `contracts/privacy-policy.v0.2.16.json`: accepted policy `0.2.16`;
+- `contracts/privacy-policy.v0.2.16.manifest.json` and its `.sha256` sidecars: exact
   custody anchors;
-- `contracts/privacy-authorizing-evidence.v1.1.0.json` and its sidecar: exact,
+- `contracts/privacy-authorizing-evidence.v0.2.16.json` and its sidecar: exact,
   purpose-bound authorizing-evidence registry;
-- `contracts/privacy-authorization-subject-profile.v1.0.0.json` and its sidecar:
+- `contracts/privacy-authorization-subject-profile.v0.2.16.json` and its sidecar:
   exact canonical authorization-subject projection;
-- `contracts/privacy-policy.v1.0.2.classification.json`: exact classification
-  decision contract `1.0.0`;
-- `contracts/privacy-export.schema.v2.6.json`: strict input schema `2.6.0`;
-- `contracts/privacy-export.schema.v2.6.output.json`: strict output schema `1.6.0`;
-- `contracts/privacy-cli-error.schema.v1.0.0.json`: separate closed startup/custody
+- `contracts/privacy-policy.v0.2.16.classification.json`: exact classification
+  decision contract `0.2.16`;
+- `contracts/privacy-export.schema.v0.2.16.json`: strict input schema `0.2.16`;
+- `contracts/privacy-export.schema.v0.2.16.output.json`: strict output schema `0.2.16`;
+- `contracts/privacy-cli-error.schema.v0.2.16.json`: separate closed startup/custody
   exit-1 protocol; it is not an `ExportDecisionOutput`;
-- `contracts/privacy-export.schema.v2.classification.json`: classification-ref
-  schema `1.0.0`;
+- `contracts/privacy-export.schema.v0.2.16.classification.json`: classification-ref
+  schema `0.2.16`;
 - `scripts/check-privacy.mjs`: dependency-free reference evaluator.
 
 The ADR is [ADR-0002](adr/0002-privacy-export-policy.md). If explanatory prose
@@ -36,43 +36,27 @@ broaden policy.
 | Identity | Current value | Meaning |
 |---|---|---|
 | Accepted product release | `0.0.2` | Current M0 product state after #120 acceptance (`0.0.1` is the historical M0 release); a product number, never a policy or schema version |
-| Privacy policy | `dev.lekalo.privacy-export-policy@1.0.7` | Accepted constraint-intersection corrective successor |
-| Decision contract | `dev.lekalo.privacy-export-decision@1.6.0` | Corrected evaluator constraint semantics |
-| Input schema | `dev.lekalo.privacy-export-input-schema@2.6.0` | Strict input shape; exact refs refreshed, shape unchanged |
-| Output schema | `dev.lekalo.privacy-export-output-schema@1.6.0` | Strict output shape; exact refs refreshed, shape unchanged |
-| CLI startup error schema | `dev.lekalo.privacy-cli-error-schema@1.0.0` | Separate pre-evaluation exit-1 JSON |
-| Classification contract/schema | `dev.lekalo.privacy-classification-decision@1.0.0` / schema `1.0.0` | Exact classification custody |
-| Authorizing-evidence contract | `dev.lekalo.privacy-authorizing-evidence@1.1.0` | Exact field/purpose/outcome registry |
-| Authorization subject profile | `dev.lekalo.privacy-authorization-subject-profile@1.0.0` | Complete canonical decision subject |
-| Authority contract | `dev.lekalo.authority-matrix@1.3.1` | Exact 49-kind registry |
+| Privacy policy | `dev.lekalo.privacy-export-policy@0.2.16` | Accepted constraint-intersection corrective successor |
+| Decision contract | `dev.lekalo.privacy-export-decision@0.2.16` | Corrected evaluator constraint semantics |
+| Input schema | `dev.lekalo.privacy-export-input-schema@0.2.16` | Strict input shape; exact refs refreshed, shape unchanged |
+| Output schema | `dev.lekalo.privacy-export-output-schema@0.2.16` | Strict output shape; exact refs refreshed, shape unchanged |
+| CLI startup error schema | `dev.lekalo.privacy-cli-error-schema@0.2.16` | Separate pre-evaluation exit-1 JSON |
+| Classification contract/schema | `dev.lekalo.privacy-classification-decision@0.2.16` / schema `0.2.16` | Exact classification custody |
+| Authorizing-evidence contract | `dev.lekalo.privacy-authorizing-evidence@0.2.16` | Exact field/purpose/outcome registry |
+| Authorization subject profile | `dev.lekalo.privacy-authorization-subject-profile@0.2.16` | Complete canonical decision subject |
+| Authority contract | `dev.lekalo.authority-matrix@0.2.16` | Exact 49-kind registry |
 
-Privacy `1.0.0` is recorded as `rejected-unaccepted-wip`. Frozen `1.0.1` is
-recorded as `rejected-after-corrective-review`, `accepted:false`, with its exact
-policy, manifest and `2.0.0`/`1.0.0` schemas preserved byte-for-byte on the old
-`v1` paths. Frozen accepted `1.0.2` is now yanked after the third independent
-review, with its exact policy, manifest, schemas and sidecars preserved on their
-versioned paths. Frozen accepted `1.0.3` is now yanked after the fourth
-independent review, with its exact policy, manifest, schemas and sidecars
-preserved byte-for-byte. Frozen accepted `1.0.4` is yanked after exact review
-and preserved byte-for-byte. Frozen accepted `1.0.5`, including its output
-schema `1.4.0`, is yanked after exact review and preserved byte-for-byte.
-Frozen accepted `1.0.6` is yanked after the M0 constraint-intersection audit
-and preserved byte-for-byte. Accepted `1.0.7` is an explicit successor, not a silent
-mutation. See the [1.0.1 to 1.0.2 migration](privacy-policy-migration-1.0.1-to-1.0.2.md)
-and the [1.0.2 to 1.0.3 migration](privacy-policy-migration-1.0.2-to-1.0.3.md),
-the [1.0.3 to 1.0.4 migration](privacy-policy-migration-1.0.3-to-1.0.4.md), then
-the [1.0.4 to 1.0.5 migration](privacy-policy-migration-1.0.4-to-1.0.5.md), then
-the [1.0.5 to 1.0.6 migration](privacy-policy-migration-1.0.5-to-1.0.6.md), then
-the [1.0.6 to 1.0.7 migration](privacy-policy-migration-1.0.6-to-1.0.7.md).
-M0 uses product `0.0.x`; M1 later starts product `0.1.0`.
+The current accepted baseline is `0.2.16`. Historical policies, schemas,
+sidecars and migration notes have been removed. Future changes follow
+[the product version policy](versioning.md).
 
 Exact accepted reference:
 
 ```json
 {
   "policyId": "dev.lekalo.privacy-export-policy",
-  "version": "1.0.7",
-  "digest": "sha256:008ec26caac4771ee14f1f3cd6c1a8e24a714643b2efb8daffd7a4064bac0129"
+  "version": "0.2.16",
+  "digest": "sha256:430ba543098c91f70d0c4e37c32ac8e41b3de65498f119ecf85188919c095c93"
 }
 ```
 
@@ -81,8 +65,8 @@ Exact authority reference:
 ```json
 {
   "contractId": "dev.lekalo.authority-matrix",
-  "version": "1.3.1",
-  "digest": "sha256:5c96ed68fe27956512b6de37e0fa23d223e4430d391b6a5869b12d2a8cb522d3"
+  "version": "0.2.16",
+  "digest": "sha256:141641cfbc1fbf6a07add99feafb877f9f544687ad558ab91d619ec7dd78d1b4"
 }
 ```
 
@@ -185,7 +169,7 @@ conflicts and missing consent deny.
 
 ## Closed-exact default table
 
-Defaults cover exactly the 49 stable authority `1.3.1` kind IDs, in registry
+Defaults cover exactly the 49 stable authority `0.2.16` kind IDs, in registry
 order. There is no copied taxonomy, extension set, or alias layer.
 
 | Artifact kind | Default disposition |
@@ -278,7 +262,7 @@ closed. A wrong-shaped or unknown evidence contract is malformed.
 ## Provenance, derivation, paths and values
 
 Every artifact carries an exact
-`dev.lekalo.privacy-classification-decision@1.0.0` reference and a stable
+`dev.lekalo.privacy-classification-decision@0.2.16` reference and a stable
 repository role plus opaque `repo-sha256:` reference. Provenance modes are
 mutually exclusive: `origin:derived` means `derived:true, synthetic:false`;
 `origin:synthetic` means `synthetic:true, derived:false`; every other origin
@@ -289,7 +273,7 @@ role/ref and origin/synthetic/derived flags must agree.
 
 A derived artifact additionally retains every source kind, an opaque stable
 `source-sha256:` ref, exact authority/policy/classification refs, sensitivities
-and default disposition. Source kinds must exist in authority `1.3.1`; stale or
+and default disposition. Source kinds must exist in authority `0.2.16`; stale or
 unknown classification contracts deny. An exact duplicate source is malformed;
 one source ref with conflicting classifications denies; distinct sources are
 evaluated as a permutation-invariant set. Applied transforms carry exact transform

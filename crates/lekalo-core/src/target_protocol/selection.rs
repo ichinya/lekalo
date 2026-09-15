@@ -347,7 +347,7 @@ mod tests {
         DiscoveredAdapter {
             adapter: identity(id, version),
             negotiated_version: crate::target_protocol::version::VERSION,
-            declared_protocols: vec!["1.0.0".to_owned(), "1.1.0".to_owned()],
+            declared_protocols: vec!["0.2.16".to_owned(), "0.2.16".to_owned()],
             ir_versions: ir.iter().map(|value| value.to_string()).collect(),
             constraints: None,
             targets: vec![id.to_owned()],
@@ -359,7 +359,7 @@ mod tests {
                 .map(|(id, state)| DiscoveredCapability {
                     id: id.to_string(),
                     state: *state,
-                    definition_version: "1.0.0",
+                    definition_version: "0.2.16",
                     provenance: Provenance::Declared,
                 })
                 .collect(),
@@ -378,7 +378,7 @@ mod tests {
                 preferred_profile: None,
                 policy: SelectionPolicy::default(),
             },
-            "0.1.0",
+            "0.2.16",
         )
     }
 
@@ -386,7 +386,7 @@ mod tests {
     fn incompatible_adapter_is_excluded_before_capabilities() {
         let candidates = [adapter(
             "node-typescript",
-            "0.1.0",
+            "0.2.16",
             &["0.2.0"],
             &[("scan.symbols", wire::SupportState::Full)],
         )];
@@ -403,8 +403,8 @@ mod tests {
     fn unknown_is_never_an_optimistic_yes() {
         let candidates = [adapter(
             "node-typescript",
-            "0.1.0",
-            &["0.1.0"],
+            "0.2.16",
+            &["0.2.16"],
             &[("scan.symbols", wire::SupportState::Unknown)],
         )];
         let strict = report(&candidates, &required(&["scan.symbols"]));
@@ -424,7 +424,7 @@ mod tests {
                     allow_partial: false,
                 },
             },
-            "0.1.0",
+            "0.2.16",
         );
         assert!(lenient.is_selected());
         assert_eq!(
@@ -437,8 +437,8 @@ mod tests {
     fn partial_requires_the_explicit_policy() {
         let candidates = [adapter(
             "node-typescript",
-            "0.1.0",
-            &["0.1.0"],
+            "0.2.16",
+            &["0.2.16"],
             &[("scan.symbols", wire::SupportState::Partial)],
         )];
         let strict = report(&candidates, &required(&["scan.symbols"]));
@@ -455,7 +455,7 @@ mod tests {
                     allow_partial: true,
                 },
             },
-            "0.1.0",
+            "0.2.16",
         );
         assert!(with_policy.is_selected());
         assert_eq!(
@@ -469,11 +469,11 @@ mod tests {
         let candidates = [
             adapter(
                 "adapter-a",
-                "0.1.0",
-                &["0.1.0"],
+                "0.2.16",
+                &["0.2.16"],
                 &[("scan.symbols", wire::SupportState::Unsupported)],
             ),
-            adapter("adapter-b", "0.1.0", &["0.1.0"], &[]),
+            adapter("adapter-b", "0.2.16", &["0.2.16"], &[]),
         ];
         let result = report(&candidates, &required(&["scan.symbols"]));
         assert!(!result.is_selected());
@@ -493,20 +493,20 @@ mod tests {
         let candidates = [
             adapter(
                 "zeta-adapter",
-                "1.0.0",
-                &["0.1.0"],
+                "0.2.16",
+                &["0.2.16"],
                 &[("scan.symbols", wire::SupportState::Full)],
             ),
             adapter(
                 "alpha-adapter",
                 "0.2.0",
-                &["0.1.0"],
+                &["0.2.16"],
                 &[("scan.symbols", wire::SupportState::Full)],
             ),
             adapter(
                 "alpha-adapter",
                 "0.9.0",
-                &["0.1.0"],
+                &["0.2.16"],
                 &[("scan.symbols", wire::SupportState::Full)],
             ),
         ];
@@ -554,7 +554,7 @@ mod tests {
         let unknown = adapter(
             "adapter-a",
             "0.1.0",
-            &["0.1.0"],
+            &["0.2.16"],
             &[("scan.symbols", wire::SupportState::Unknown)],
         );
         let forward = report(
@@ -600,7 +600,7 @@ mod tests {
         let variant = |digest: &str, executable: Option<&str>, capability: &str, ir: &[&str]| {
             let mut candidate = adapter(
                 "adapter-a",
-                "0.1.0",
+                "0.2.16",
                 ir,
                 &[("scan.symbols", wire::SupportState::Full)],
             );
@@ -611,8 +611,8 @@ mod tests {
         };
         let mut with_partial = adapter(
             "adapter-a",
-            "0.1.0",
-            &["0.1.0"],
+            "0.2.16",
+            &["0.2.16"],
             &[("scan.symbols", wire::SupportState::Partial)],
         );
         with_partial.adapter.digest = "sha256:aa".to_owned();
@@ -622,31 +622,31 @@ mod tests {
         // records and warnings.
         let pairs = [
             (
-                variant("sha256:aa", None, "sha256:cc", &["0.1.0"]),
-                variant("sha256:bb", None, "sha256:cc", &["0.1.0"]),
+                variant("sha256:aa", None, "sha256:cc", &["0.2.16"]),
+                variant("sha256:bb", None, "sha256:cc", &["0.2.16"]),
                 SelectionPolicy::default(),
                 "declared digest",
             ),
             (
-                variant("sha256:aa", Some("sha256:11"), "sha256:cc", &["0.1.0"]),
-                variant("sha256:aa", Some("sha256:22"), "sha256:cc", &["0.1.0"]),
+                variant("sha256:aa", Some("sha256:11"), "sha256:cc", &["0.2.16"]),
+                variant("sha256:aa", Some("sha256:22"), "sha256:cc", &["0.2.16"]),
                 SelectionPolicy::default(),
                 "executable digest",
             ),
             (
-                variant("sha256:aa", None, "sha256:cc", &["0.1.0"]),
-                variant("sha256:aa", None, "sha256:dd", &["0.1.0"]),
+                variant("sha256:aa", None, "sha256:cc", &["0.2.16"]),
+                variant("sha256:aa", None, "sha256:dd", &["0.2.16"]),
                 SelectionPolicy::default(),
                 "capability digest",
             ),
             (
-                variant("sha256:aa", None, "sha256:cc", &["0.1.0", "0.2.0"]),
-                variant("sha256:aa", None, "sha256:cc", &["0.2.0", "0.1.0"]),
+                variant("sha256:aa", None, "sha256:cc", &["0.2.16", "0.2.0"]),
+                variant("sha256:aa", None, "sha256:cc", &["0.2.0", "0.2.16"]),
                 SelectionPolicy::default(),
                 "ir declaration order",
             ),
             (
-                variant("sha256:aa", None, "sha256:cc", &["0.1.0"]),
+                variant("sha256:aa", None, "sha256:cc", &["0.2.16"]),
                 with_partial.clone(),
                 SelectionPolicy {
                     allow_partial: true,
@@ -664,7 +664,7 @@ mod tests {
                         preferred_profile: None,
                         policy,
                     },
-                    "0.1.0",
+                    "0.2.16",
                 )
             };
             let forward = run(&[first.clone(), second.clone()]);
@@ -692,8 +692,8 @@ mod tests {
     fn the_report_serializes_with_closed_sorted_members() {
         let candidates = [adapter(
             "node-typescript",
-            "0.1.0",
-            &["0.1.0"],
+            "0.2.16",
+            &["0.2.16"],
             &[("scan.symbols", wire::SupportState::Full)],
         )];
         let result = report(&candidates, &required(&["scan.symbols"]));
@@ -714,7 +714,7 @@ mod tests {
         let selected = value["selected"].as_object().unwrap();
         assert_eq!(selected["profile"], "default");
         assert_eq!(selected["capabilities"][0]["id"], "scan.symbols");
-        assert_eq!(selected["capabilities"][0]["definition_version"], "1.0.0");
+        assert_eq!(selected["capabilities"][0]["definition_version"], "0.2.16");
         assert_eq!(selected["capabilities"][0]["provenance"], "declared");
     }
 }

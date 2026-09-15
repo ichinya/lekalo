@@ -186,7 +186,7 @@ pub struct Common {
     pub derived_from: Vec<RequirementId>,
     pub visibility: Option<Visibility>,
     pub portability: Option<Portability>,
-    /// Model 1.0.0 only; always empty under Model 0.1.0.
+    /// Model 0.2.16 only; always empty under Model 0.1.0.
     pub renamed_from: Vec<SymbolId>,
 }
 
@@ -220,7 +220,7 @@ impl Portability {
     }
 }
 
-/// The closed rename-history registry entry (Model 1.0.0 project document).
+/// The closed rename-history registry entry (Model 0.2.16 project document).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RenameHistoryEntry {
     pub from: SymbolId,
@@ -231,7 +231,7 @@ pub struct RenameHistoryEntry {
     pub note: Option<Text>,
 }
 
-/// The closed tombstone vocabulary (Model 1.0.0 project document).
+/// The closed tombstone vocabulary (Model 0.2.16 project document).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Tombstone {
     Replaced {
@@ -245,7 +245,7 @@ pub enum Tombstone {
     },
 }
 
-/// The closed project ID registry (Model 1.0.0).
+/// The closed project ID registry (Model 0.2.16).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IdRegistry {
     pub rename_history: Vec<RenameHistoryEntry>,

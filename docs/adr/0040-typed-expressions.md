@@ -1,5 +1,7 @@
 # ADR-0040: The bounded typed-expression language
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-13
 Status: accepted for issue #66
 
@@ -20,8 +22,8 @@ family by opaque reference".
 ### 1. One independent attachment family, not a Model or IR change
 
 Expressions live in one closed, versioned attachment
-(`lekalo/expressions/v1.0.0`, identity
-`dev.lekalo.expressions@1.0.0`) following the established
+(`lekalo/expressions/v0.2.16`, identity
+`dev.lekalo.expressions@0.2.16`) following the established
 attachment pattern: bound to one project, one exact Model pin, and
 one exact IR identity plus digests, closed under
 `additionalProperties: false`, identity independent of the product
@@ -103,7 +105,7 @@ paths, or digests.
 
 ## Consequences
 
-The diagnostic registry advances 1.24.0 → 1.25.0 additively with the
+The diagnostic registry advances 1.24.0 → 0.2.16 additively with the
 nine `expression.*` rules (LEK-EXPR-001..009). The product carries
 prospective version 0.2.15. The Node release gate
 `scripts/test-expressions-contracts.mjs` is the independent second

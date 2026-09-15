@@ -930,7 +930,7 @@ impl Surface {
             }
             facts.insert(id, fact);
         }
-        // Rename history and tombstones from the 1.0.0 project registry.
+        // Rename history and tombstones from the 0.2.16 project registry.
         if let Some(registry) = project
             .project
             .as_ref()

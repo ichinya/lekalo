@@ -89,8 +89,8 @@ fn construction_is_deterministic_and_canonical() {
     let second = build(&project).expect("graph builds");
     assert_eq!(edges(&first), edges(&second));
     assert_eq!(first.ir_digest(), second.ir_digest());
-    assert_eq!(first.identity(), "dev.lekalo.effects@1.0.0");
-    assert_eq!(first.schema_version(), "lekalo/effects/v1.0.0");
+    assert_eq!(first.identity(), "dev.lekalo.effects@0.2.16");
+    assert_eq!(first.schema_version(), "lekalo/effects/v0.2.16");
     assert_eq!(first.project_id(), Some("planner"));
     assert_eq!(first.envelope_count(), 0);
 }
@@ -251,7 +251,7 @@ fn detected_effects_attach_without_mutating_the_canonical_model() {
     let envelope = EvidenceEnvelope {
         adapter_id: "vendor.example/adapter".to_owned(),
         target_id: "vendor.example/target".to_owned(),
-        protocol_version: "1.0.0".to_owned(),
+        protocol_version: "0.2.16".to_owned(),
         evidence_digest: format!("sha256:{}", "a".repeat(64)),
         source_revision: "planner".to_owned(),
         trust: TrustState::Extracted,
@@ -310,7 +310,7 @@ fn malformed_evidence_envelopes_fail_closed() {
     let base = EvidenceEnvelope {
         adapter_id: "vendor.example/adapter".to_owned(),
         target_id: "vendor.example/target".to_owned(),
-        protocol_version: "1.0.0".to_owned(),
+        protocol_version: "0.2.16".to_owned(),
         evidence_digest: format!("sha256:{}", "a".repeat(64)),
         source_revision: "planner".to_owned(),
         trust: TrustState::Extracted,
@@ -359,7 +359,7 @@ fn the_comparison_classifies_declared_versus_detected() {
     let envelope = EvidenceEnvelope {
         adapter_id: "vendor.example/adapter".to_owned(),
         target_id: "vendor.example/target".to_owned(),
-        protocol_version: "1.0.0".to_owned(),
+        protocol_version: "0.2.16".to_owned(),
         evidence_digest: format!("sha256:{}", "b".repeat(64)),
         source_revision: "planner".to_owned(),
         trust: TrustState::Verified,

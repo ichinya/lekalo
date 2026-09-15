@@ -29,7 +29,7 @@ pub enum RefError {
 
 /// A validated provider capability contract in the accepted #14
 /// provider grammar: namespaced id plus exact SemVer tail
-/// (`vendor.mail/send@1.0.0`). Never a URL, hostname, credential, or
+/// (`vendor.mail/send@0.2.16`). Never a URL, hostname, credential, or
 /// runtime endpoint.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ProviderContract(String);
@@ -278,11 +278,11 @@ mod tests {
 
     #[test]
     fn provider_and_error_refs_reject_paths_urls_and_tokens() {
-        assert!(ProviderContract::parse("vendor.mail/send@1.0.0").is_ok());
+        assert!(ProviderContract::parse("vendor.mail/send@0.2.16").is_ok());
         assert!(ProviderContract::parse("vendor.mail/send@01.0.0").is_err());
         assert!(ProviderContract::parse("vendor.mail/send@1.0").is_err());
-        assert!(ProviderContract::parse("https://vendor/maill@1.0.0").is_err());
-        assert!(ProviderContract::parse("vendor.mail/send@1.0.0-extra").is_err());
+        assert!(ProviderContract::parse("https://vendor/maill@0.2.16").is_err());
+        assert!(ProviderContract::parse("vendor.mail/send@0.2.16-extra").is_err());
         assert_eq!(
             ErrorRef::parse("errors.vendor/timeout"),
             Ok(ErrorRef("errors.vendor/timeout".to_owned()))

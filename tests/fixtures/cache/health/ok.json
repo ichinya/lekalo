@@ -1,7 +1,7 @@
 {
   "backend": "sqlite",
   "dependencyEdges": 7,
-  "identity": "dev.lekalo.cache@1.0.0",
+  "identity": "dev.lekalo.cache@0.2.16",
   "records": [
     {
       "count": 7,
@@ -12,7 +12,7 @@
       "kind": "source"
     }
   ],
-  "schemaVersion": "lekalo/cache/v1.0.0",
+  "schemaVersion": "lekalo/cache/v0.2.16",
   "state": "ok",
   "totalBytes": 24576
 }

@@ -1,7 +1,7 @@
 //! The fixed offline token estimator (issue #17).
 //!
 //! The v1 profile is exactly one deterministic, offline estimator:
-//! `dev.lekalo.estimator.chars-4@1.0.0`. Its rule is fixed and recorded in
+//! `dev.lekalo.estimator.chars-4@0.2.16`. Its rule is fixed and recorded in
 //! [`SPEC`]: a content string of `n` Unicode scalars estimates
 //! `max(1, ceil(n / 4))` tokens, and empty content estimates zero. The
 //! estimate is computed per typed fact from the fact's semantic text
@@ -12,21 +12,21 @@
 //! bytes. Successor profiles (real model tokenizers) enter as additional
 //! versioned identities; they never silently replace this one.
 
-use crate::versioning::plan::sha256_hex;
+use crate::digest::sha256_hex;
 
 /// The exact estimator rule text the digest is computed over.
 pub const SPEC: &str = concat!(
-    "family=dev.lekalo.estimator profile=chars-4 version=1.0.0 ",
+    "family=dev.lekalo.estimator profile=chars-4 version=0.2.16 ",
     "rule=tokens:max(1,ceil(scalars/4)) unit=unicode-scalar ",
     "scope=per-typed-fact content=semantic-values-joined-by-space ",
     "offline=true deterministic=true format-independent=true"
 );
 
 /// The estimator profile identity (family and version joined with `@`).
-pub const IDENTITY: &str = "dev.lekalo.estimator.chars-4@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.estimator.chars-4@0.2.16";
 
 /// The estimator profile version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The `sha256` digest over the exact rule text ([`SPEC`]).
 pub fn digest() -> String {

@@ -77,7 +77,7 @@ fn library_suite_runs_from_the_workspace_root() {
 
 fn ir_compiles_as_a_library_without_the_cli() {
     let ir = compile_fixture(FULL_KINDS);
-    assert_eq!(ir.model_version.as_str(), "1.0.0");
+    assert_eq!(ir.model_version.as_str(), "0.2.16");
     assert_eq!(ir.modules.len(), 2);
     assert_eq!(ir.definitions.len(), 19);
     assert!(ir.project.is_some(), "project definition is present");
@@ -99,8 +99,8 @@ fn repeated_compilations_are_deterministic() {
     let first = compile_fixture(FULL_KINDS).to_canonical_json();
     let second = compile_fixture(FULL_KINDS).to_canonical_json();
     assert_eq!(first, second);
-    assert!(first.contains("\"contract\":\"dev.lekalo.ir@0.1.0\""));
-    assert_eq!(IDENTITY, "dev.lekalo.ir@0.1.0");
+    assert!(first.contains("\"contract\":\"dev.lekalo.ir@0.2.16\""));
+    assert_eq!(IDENTITY, "dev.lekalo.ir@0.2.16");
 }
 
 fn definitions_and_modules_are_sorted_by_semantic_id() {

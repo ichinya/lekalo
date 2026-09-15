@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "tests", "fixtures", "validation");
 
-const SCHEMA = "0.1.0";
+const SCHEMA = "0.2.16";
 
 const doc = (definitions) => `${JSON.stringify({ schema_version: SCHEMA, definitions }, null, 2)}\n`;
 

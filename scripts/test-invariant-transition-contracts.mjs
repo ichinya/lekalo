@@ -67,7 +67,7 @@ const diffDir = "tests/fixtures/invariant-transition/diff";
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const schema = JSON.parse(
   readFileSync(
-    resolve(root, "contracts/invariant-transition.schema.v1.0.0.json"),
+    resolve(root, "contracts/invariant-transition.schema.v0.2.16.json"),
     "utf8",
   ),
 );
@@ -270,7 +270,7 @@ process.stdout.write(
     goldens: goldenCount,
     diffVectors: diffCount,
     invalidVectors: invalidCount,
-    schema: "contracts/invariant-transition.schema.v1.0.0.json",
+    schema: "contracts/invariant-transition.schema.v0.2.16.json",
     ajv: ajvVersion,
   })}\n`,
 );

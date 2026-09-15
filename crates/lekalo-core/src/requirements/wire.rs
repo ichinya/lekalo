@@ -179,7 +179,7 @@ fn model_ref(json: &Json) -> Result<ModelRef, DiagnosticSet> {
         .get("modelVersion")
         .and_then(Json::as_str)
         .ok_or_else(|| diagnostic::document_invalid("model-version", None))?;
-    if model_version != "0.1.0" && model_version != "1.0.0" {
+    if model_version != "0.2.16" {
         return Err(diagnostic::document_invalid("model-version", None));
     }
     let digest = Sha256Digest::parse(

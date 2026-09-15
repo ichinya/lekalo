@@ -25,7 +25,7 @@ try {
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const schemaText = readFileSync(resolve(root, "contracts/lock.schema.v1.0.0.json"), "utf8");
+const schemaText = readFileSync(resolve(root, "contracts/lock.schema.v0.2.16.json"), "utf8");
 const schema = JSON.parse(schemaText);
 
 const listDir = (relative) =>

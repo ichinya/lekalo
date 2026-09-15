@@ -15,11 +15,11 @@ safety story that #4 established in Node.
 ## Decisions
 
 1. **Two exact Model versions, finite dispatch.** The loader recognizes
-   exactly `0.1.0` and `1.0.0`. There is no version range, no prerelease
+   exactly `0.2.16` and `0.2.16`. There is no version range, no prerelease
    grammar, no migrator, and no auto-conversion. An unknown literal fails
    `versioning.unsupported-version` (exit 5); supported-but-mixed input
    fails `versioning.mixed-versions` (exit 1). The active version selects
-   the module-ID grammar (0.1.0 allows hyphens; 1.0.0 does not) and is
+   the module-ID grammar (0.2.16 allows hyphens; 0.2.16 does not) and is
    preserved verbatim in the output.
 
 2. **Strict frontends over one spanned tree.** JSON and YAML both build the

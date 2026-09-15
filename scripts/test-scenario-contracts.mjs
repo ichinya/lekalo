@@ -52,7 +52,7 @@ const invalidDir = "tests/fixtures/scenario/invalid";
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const schema = JSON.parse(
-  readFileSync(resolve(root, "contracts/scenario-ir.schema.v1.0.0.json"), "utf8"),
+  readFileSync(resolve(root, "contracts/scenario-ir.schema.v0.2.16.json"), "utf8"),
 );
 let validateScenario;
 try {

@@ -141,10 +141,7 @@ impl Sandbox {
 
     fn fingerprint(&self, name: &str) -> String {
         let bytes = std::fs::read(self.project().join(name)).expect("source");
-        format!(
-            "sha256:{}",
-            lekalo_core::versioning::plan::sha256_hex(&bytes)
-        )
+        format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes))
     }
 }
 
@@ -194,10 +191,7 @@ fn the_first_contracted_slice_passes_conformance() {
     let digest = {
         let bytes =
             std::fs::read(sandbox.project().join("openapi-planner.json")).expect("artifact");
-        format!(
-            "sha256:{}",
-            lekalo_core::versioning::plan::sha256_hex(&bytes)
-        )
+        format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes))
     };
     let digest = digest.leak() as &str;
     let receipt = sandbox.json(&[

@@ -1,5 +1,7 @@
 # ADR-0011: Semantic validation over the Lekalo IR
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-04
 Status: accepted for issue #12
 
@@ -18,8 +20,8 @@ tag `v0.1.21` on `9ab5b07`); issue #14 published product 0.1.12
 0.1.10 (annotated
 tag `v0.1.10` on `fdfbcb5`, followed by the CI-parity fix `47b2ec8`),
 with the same accepted custody paths as every issue since #3. The validation-profile contract version
-(`lekalo/validation-profile/v1.0.0`) and the diagnostic registry increment
-(`1.0.0` → `1.1.0`) are independent of the product release, of the
+(`lekalo/validation-profile/v0.2.16`) and the diagnostic registry increment
+(`0.2.16` → `0.2.16`) are independent of the product release, of the
 Model/IR/protocol contract versions, and of the lock wire by design.
 
 ## Context
@@ -40,8 +42,8 @@ pure validator lives in `lekalo_core::validator` behind `lekalo validate`.
 1. **Code and rule prefixes.** Rule ids use the `semantic.*` family;
    immutable codes use `LEK-SEM-NNN`. Invocation rules use `validate.*`
    with `LEK-VAL-NNN`. The registry successor is a minor increment
-   (`1.0.0` → `1.1.0`, wire shape unchanged, schema discriminator
-   `lekalo/diagnostic-registry/v1.0.0` retained).
+   (`0.2.16` → `0.2.16`, wire shape unchanged, schema discriminator
+   `lekalo/diagnostic-registry/v0.2.16` retained).
 2. **Reference-kind matrix.** The expectations mirror the published model
    contract exactly (`model.ref-kind-mismatch`): type leaves resolve to
    `enum`/`entity`/`scalar`/`value-object`; `command.effects` to `effect`;

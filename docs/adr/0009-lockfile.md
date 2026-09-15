@@ -1,5 +1,7 @@
 # ADR-0009: The committed `lekalo.lock` and reproducible resolution
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-04
 Status: accepted for issue #10
 
@@ -21,8 +23,8 @@ issue #21 published product 0.1.22 (annotated tag `v0.1.22` on
 product 0.1.25 (annotated tag `v0.1.25` on `e627fe5`); issue #18 published product 0.1.26 (annotated tag `v0.1.26` on
 `3710179`); issue #24 published product 0.1.27 (annotated tag `v0.1.27` on
 `ef7680d`); issue #25 published product 0.1.28 (annotated tag `v0.1.28` on `967bf52`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on `de6f8a7`); issue #26 now carries prospective product 0.1.30. The lock
-schema version (`lekalo/lock/v1.0.0`, identity `dev.lekalo.lock@1.0.0`), the
-resolver algorithm version (1.0.0), and every contract version remain
+schema version (`lekalo/lock/v0.2.16`, identity `dev.lekalo.lock@0.2.16`), the
+resolver algorithm version (0.2.16), and every contract version remain
 independent of the product release by design.
 
 ## Context
@@ -38,7 +40,7 @@ read-only preflight seam downstream commands call.
 ## The eight recorded owner decisions
 
 1. **Format.** v1 is strict canonical JSON with the discriminator
-   `lekalo/lock/v1.0.0` and the schema identity `dev.lekalo.lock@1.0.0`;
+   `lekalo/lock/v0.2.16` and the schema identity `dev.lekalo.lock@0.2.16`;
    general YAML and the issue's illustrative `lekalo/lock/v1` shorthand are
    rejected. One canonicalization, one spelling per value, one LF.
 2. **Provider seam.** #10 lands the lock schema, the pure resolver/verifier/

@@ -1,13 +1,13 @@
 {
-  "schemaVersion": "lekalo/implementation/v1.0.0",
-  "identity": "dev.lekalo.implementation@1.0.0",
+  "schemaVersion": "lekalo/implementation/v0.2.16",
+  "identity": "dev.lekalo.implementation@0.2.16",
   "projectId": "planner",
   "modelRef": {
-    "modelVersion": "1.0.0",
+    "modelVersion": "0.2.16",
     "digest": "sha256:cda74a4d726341fffebb7e1cd25e88fb6fa8cc2a00d4ef19893ec16c9b2e4f30"
   },
   "irRef": {
-    "identity": "dev.lekalo.ir@0.1.0",
+    "identity": "dev.lekalo.ir@0.2.16",
     "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   },
   "contracts": [

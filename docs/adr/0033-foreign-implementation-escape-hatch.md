@@ -22,9 +22,9 @@ input/output/error/effect contract stays in the Model.
 ## Decision
 
 1. **One closed, immutable wire contract.**
-   [`contracts/implementation.schema.v1.0.0.json`](../../contracts/implementation.schema.v1.0.0.json)
-   (discriminator `lekalo/implementation/v1.0.0`, identity
-   `dev.lekalo.implementation@1.0.0`) binds one project identity to one
+   [`contracts/implementation.schema.v0.2.16.json`](../../contracts/implementation.schema.v0.2.16.json)
+   (discriminator `lekalo/implementation/v0.2.16`, identity
+   `dev.lekalo.implementation@0.2.16`) binds one project identity to one
    exact Model pin and one exact canonical-IR digest. Every hook
    contract names one operation symbol (a command or query), one
    hook-interface contract name, and per-target bindings over the

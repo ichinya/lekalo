@@ -9,7 +9,7 @@ use lekalo_core::result::DomainResult;
 #[test]
 fn embedded_registry_parses_and_is_closed() {
     let registry = DiagnosticRegistry::embedded().expect("embedded registry is valid");
-    assert_eq!(registry.registry_version(), "1.25.0");
+    assert_eq!(registry.registry_version(), "0.2.16");
     assert!(registry.len() >= 100, "the core rule inventory is present");
     // A second parse of the exact bytes yields the same table (pure data).
     let again = DiagnosticRegistry::from_bytes(REGISTRY_BYTES).expect("registry bytes re-validate");
@@ -98,7 +98,6 @@ fn version_results_omit_empty_diagnostic_fields() {
 /// token bound, so the exit-5 envelope can never scale with the selector.
 #[test]
 fn hostile_unbounded_alias_echo_is_bounded_in_the_versioning_envelope() {
-    use lekalo_core::versioning::migration::VersioningFailure;
     use lekalo_core::versioning::registry::VersionRegistry;
     use lekalo_core::versioning::support::ModelTarget;
     let alias = format!("v{}", "9".repeat(100_000));
@@ -107,7 +106,7 @@ fn hostile_unbounded_alias_echo_is_bounded_in_the_versioning_envelope() {
     let Err(error) = target.resolve(registry) else {
         panic!("an unregistered 100,000-digit alias is unsupported");
     };
-    let result = DomainResult::from(&VersioningFailure::from_target_error(error));
+    let result = lekalo_core::versioning::diagnostic::target_error(error);
     let envelope: serde_json::Value =
         serde_json::from_str(&result.to_json_string()).expect("envelope parses");
     assert_eq!(envelope["status"], "unsupported-version");

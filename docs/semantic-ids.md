@@ -5,8 +5,8 @@ candidate is 0.1.4 because issue #3 published product 0.1.3. Product releases,
 Model schema versions, and the semantic-ID contract version are independent.
 
 The normative machine artifacts are
-[dev.lekalo.semantic-ids@0.1.0](../contracts/semantic-ids.v0.1.0.json) and
-[Model schema 1.0.0](../contracts/model.schema.v1.0.0.json). The design
+[dev.lekalo.semantic-ids@0.2.16](../contracts/semantic-ids.v0.2.16.json) and
+[Model schema 0.2.16](../contracts/model.schema.v0.2.16.json). The design
 decision is [ADR-0005](adr/0005-semantic-ids.md), and
 [Model 1.0](model-1.0.md) describes the enclosing document contract. If these
 artifacts and prose disagree, consumers fail closed.

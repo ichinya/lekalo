@@ -26,8 +26,8 @@ aggregates the verification phases into one deterministic receipt.
 1. **Two core services, one receipt family.** `orchestration::generate`
    and `orchestration::verify` own the pipelines; the CLI selects,
    renders, and maps exits. Both emit closed receipts published as
-   `dev.lekalo.orchestration-report@1.0.0`
-   (`lekalo/orchestration/v1.0.0`), independent of every other version
+   `dev.lekalo.orchestration-report@0.2.16`
+   (`lekalo/orchestration/v0.2.16`), independent of every other version
    line, with one gate (`scripts/test-orchestration-contracts.mjs`)
    validating the schema, the pinned goldens, and the cross-language
    invariants with exact Ajv 8.17.1.

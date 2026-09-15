@@ -408,23 +408,6 @@ fn stale_adapter_evidence_is_recorded_and_never_merges() {
 }
 
 #[test]
-fn mixed_model_versions_reject_without_a_partial_result() {
-    let (base, _) = case("fields");
-    let error = with_workspace_root(|| {
-        let selection = LoadSelection {
-            project: Some("tests/fixtures/versioning/migration/golden-0.1.0".to_owned()),
-        };
-        let old_model = lekalo_core::loader::normalize_model(&selection).expect("0.1.0 loads");
-        let old = lekalo_core::ir::compile(&old_model)
-            .expect("0.1.0 compiles")
-            .project;
-        compare(&base, &old, &DiffRequest::new()).err()
-    })
-    .expect("mixed versions reject");
-    assert_eq!(reason_ids(&error), vec!["diff.input-invalid".to_owned()]);
-}
-
-#[test]
 fn profile_terms_reject_unknown_and_empty_terms() {
     let error = lekalo_core::diff::parse_profile_terms("source-consumer,warp-drive")
         .expect_err("unknown term rejects");

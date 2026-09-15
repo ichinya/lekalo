@@ -17,26 +17,21 @@ use super::types::{
     RESOLVER_VERSION,
 };
 use super::LockFailure;
+use crate::digest::sha256_hex;
 use crate::versioning::family::ModelContract;
-use crate::versioning::plan::sha256_hex;
 use crate::versioning::registry::REGISTRY_BYTES;
 use crate::versioning::ContractVersion;
 use crate::versioning::VersionRegistry;
 
-/// The exact committed Model 0.1.0 schema bytes.
-pub const MODEL_SCHEMA_V0_1_0_BYTES: &[u8] =
-    include_bytes!("../../../../contracts/model.schema.v0.1.0.json");
-
-/// The exact committed Model 1.0.0 schema bytes.
-pub const MODEL_SCHEMA_V1_0_0_BYTES: &[u8] =
-    include_bytes!("../../../../contracts/model.schema.v1.0.0.json");
+/// The exact committed Model 0.2.16 schema bytes.
+pub const MODEL_SCHEMA_CURRENT_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/model.schema.v0.2.16.json");
 
 /// The exact committed Model schema bytes for one accepted version
 /// spelling; `None` for versions without a committed schema artifact.
 pub fn model_schema_bytes_for(spelling: &str) -> Option<&'static [u8]> {
     match spelling {
-        "0.1.0" => Some(MODEL_SCHEMA_V0_1_0_BYTES),
-        "1.0.0" => Some(MODEL_SCHEMA_V1_0_0_BYTES),
+        "0.2.16" => Some(MODEL_SCHEMA_CURRENT_BYTES),
         _ => None,
     }
 }

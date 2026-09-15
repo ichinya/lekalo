@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-// Reference validator for the exact Lekalo Model 0.1.0 and 1.0.0 contracts.
-// Contracts: contracts/model.schema.v0.1.0.json,
-// contracts/model.schema.v1.0.0.json, and dev.lekalo.semantic-ids@0.1.0.
+// Reference validator for the exact Lekalo Model 0.2.16 and 0.2.16 contracts.
+// Contracts: contracts/model.schema.v0.2.16.json,
+// contracts/model.schema.v0.2.16.json, and dev.lekalo.semantic-ids@0.1.0.
 // Exit protocol: 0 valid, 1 invalid/usage, 3 when the accepted structure
 // contract denies physical input. Model validation never downgrades that
 // stronger structure verdict.
@@ -27,11 +27,10 @@ import { validateProject } from "./check-structure.mjs";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixturesDir = join(root, "tests", "fixtures", "model");
 const fixturesV1Dir = join(root, "tests", "fixtures", "model-v1");
-const semanticIdsContract = JSON.parse(await readFile(join(root, "contracts", "semantic-ids.v0.1.0.json"), "utf8"));
+const semanticIdsContract = JSON.parse(await readFile(join(root, "contracts", "semantic-ids.v0.2.16.json"), "utf8"));
 
-const SCHEMA_V0 = "0.1.0";
 const SCHEMA_V1 = semanticIdsContract.releaseBinding.modelSchemaSuccessor;
-const SUPPORTED_SCHEMA_VERSIONS = new Set([SCHEMA_V0, SCHEMA_V1]);
+const SUPPORTED_SCHEMA_VERSIONS = new Set([SCHEMA_V1]);
 const KINDS = new Set(["project", "module", "scalar", "enum", "value-object", "entity", "command", "query", "policy", "event", "effect", "endpoint", "scenario", "target-binding"]);
 const SYMBOL_KINDS = new Set([...KINDS].filter((kind) => kind !== "project" && kind !== "module"));
 const KIND_NAMESPACE_TOKENS = new Set(semanticIdsContract.kindNamespaces.tokens);
@@ -924,160 +923,6 @@ function findTypeRecursion(graph) {
   return null;
 }
 
-function checkSemanticsV0(project) {
-  // Project and module identities live in their own namespaces. Every other
-  // definition shares one project-wide symbol space and is qualified by its
-  // containing module directory. Stable path-independent IDs are owned by #6.
-  const byId = new Map();
-  for (const { document, where, moduleName } of project.documents) {
-    for (const definition of document.definitions) {
-      if (definition.kind === "project") {
-        continue;
-      }
-      if (definition.kind === "module") {
-        if (definition.id !== moduleName) {
-          return invalid(["model.module-mismatch", `${where}:${definition.id}`, `module:${moduleName}`]);
-        }
-        continue;
-      }
-      if (byId.has(definition.id)) {
-        return invalid(["model.duplicate-id", where, `id:${definition.id}`]);
-      }
-      byId.set(definition.id, { definition, where });
-    }
-  }
-  const targets = new Set(project.targets);
-  const typeGraph = new Map();
-
-  for (const { document, where, moduleName } of project.documents) {
-    for (const definition of document.definitions) {
-      const definitionWhere = `${where}:${definition.id}`;
-      if (definition.kind === "project" || definition.kind === "module") {
-        continue;
-      }
-      const segments = definition.id.split(".");
-      if (segments.length !== 2 || segments[0] !== moduleName) {
-        return invalid(["model.module-mismatch", definitionWhere, `module:${moduleName}`]);
-      }
-      const refs = [];
-      switch (definition.kind) {
-        case "scalar":
-        case "enum":
-          break;
-        case "value-object":
-          for (const field of definition.fields) {
-            typeExpressionRefs(field.type, refs);
-          }
-          break;
-        case "entity":
-          for (const field of definition.fields) {
-            typeExpressionRefs(field.type, refs);
-          }
-          break;
-        case "command":
-          if (definition.input !== undefined) {
-            for (const field of definition.input) {
-              typeExpressionRefs(field.type, refs);
-            }
-          }
-          if (definition.effects !== undefined) {
-            for (const effectId of definition.effects) {
-              const failure = resolveReference(effectId, byId, new Set(["effect"]), definitionWhere);
-              if (failure) {
-                return failure;
-              }
-            }
-          }
-          break;
-        case "query":
-          for (const entityId of definition.reads) {
-            const failure = resolveReference(entityId, byId, new Set(["entity"]), definitionWhere);
-            if (failure) {
-              return failure;
-            }
-          }
-          if (definition.returns !== undefined) {
-            typeExpressionRefs(definition.returns, refs);
-          }
-          break;
-        case "policy":
-          for (const commandId of definition.applies_to) {
-            const failure = resolveReference(commandId, byId, new Set(["command"]), definitionWhere);
-            if (failure) {
-              return failure;
-            }
-          }
-          break;
-        case "event":
-          if (definition.payload !== undefined) {
-            for (const field of definition.payload) {
-              typeExpressionRefs(field.type, refs);
-            }
-          }
-          break;
-        case "effect": {
-          const failure = resolveReference(definition.entity, byId, new Set(["entity"]), definitionWhere);
-          if (failure) {
-            return failure;
-          }
-          if (definition.emits !== undefined) {
-            for (const eventId of definition.emits) {
-              const eventFailure = resolveReference(eventId, byId, new Set(["event"]), definitionWhere);
-              if (eventFailure) {
-                return eventFailure;
-              }
-            }
-          }
-          break;
-        }
-        case "endpoint": {
-          const failure = resolveReference(definition.invokes, byId, new Set(["command", "query"]), definitionWhere);
-          if (failure) {
-            return failure;
-          }
-          break;
-        }
-        case "scenario":
-          if (definition.covers !== undefined) {
-            for (const coveredId of definition.covers) {
-              if (!byId.has(coveredId)) {
-                return invalid(["model.ref-unresolved", definitionWhere, `ref:${coveredId}`]);
-              }
-            }
-          }
-          break;
-        case "target-binding":
-          if (!targets.has(definition.target)) {
-            return invalid(["model.target-unresolved", definitionWhere, `target:${definition.target}`]);
-          }
-          break;
-        default:
-          break;
-      }
-      for (const ref of refs) {
-        const failure = resolveReference(ref, byId, TYPE_REF_KINDS, definitionWhere);
-        if (failure) {
-          return failure;
-        }
-      }
-      if (definition.kind === "value-object" || definition.kind === "entity") {
-        const dependencies = refs.filter((ref) => {
-          const targetKind = byId.get(ref).definition.kind;
-          return targetKind === "value-object" || targetKind === "entity";
-        });
-        typeGraph.set(definition.id, [...new Set(dependencies)].sort());
-      }
-    }
-  }
-
-  const recursion = findTypeRecursion(typeGraph);
-  if (recursion) {
-    return invalid(["model.type-recursion", `cycle:${recursion.join("->")}`]);
-  }
-
-  return null;
-}
-
 function findRenameCycle(renameByFrom) {
   const state = new Map();
   const stack = [];
@@ -1449,7 +1294,7 @@ export async function validateModel(projectRoot) {
     }
     schemaVersion ??= document.schema_version;
   }
-  const semantic = schemaVersion === SCHEMA_V1 ? checkSemanticsV1(loaded) : checkSemanticsV0(loaded);
+  const semantic = checkSemanticsV1(loaded);
   if (semantic) {
     return semantic;
   }
@@ -1527,7 +1372,7 @@ async function runFixtureSet(directory, label) {
 }
 
 async function runFixtureConformance() {
-  const v0 = await runFixtureSet(fixturesDir, SCHEMA_V0);
+  const v0 = await runFixtureSet(fixturesDir, SCHEMA_V1);
   const v1 = await runFixtureSet(fixturesV1Dir, SCHEMA_V1);
   const mismatches = [...v0.mismatches, ...v1.mismatches];
   if (mismatches.length > 0) {

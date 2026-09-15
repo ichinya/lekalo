@@ -2,7 +2,7 @@
 //! (issue #91).
 //!
 //! Both renderers project these values; the JSON shape is published as
-//! `contracts/orchestration-report.schema.v1.0.0.json`. Every array is
+//! `contracts/orchestration-report.schema.v0.2.16.json`. Every array is
 //! emitted in canonical order, no field carries an absolute path,
 //! timestamp, host, or environment value, and partial success is never
 //! spelled as full success: the verdict plus the per-target and
@@ -11,10 +11,10 @@
 use serde::Serialize;
 
 /// The closed v1 wire discriminator of a generate or verify receipt.
-pub const SCHEMA_VERSION: &str = "lekalo/orchestration/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/orchestration/v0.2.16";
 
 /// The independent contract identity of the published receipt schema.
-pub const IDENTITY: &str = "dev.lekalo.orchestration-report@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.orchestration-report@0.2.16";
 
 /// The closed verdict of one orchestration invocation.
 ///

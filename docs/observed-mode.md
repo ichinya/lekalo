@@ -1,5 +1,7 @@
 # Observed mode for existing code
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Issue #39 lets Lekalo index, bind, and analyze existing code without
 declaring the semantic model the owner of the implementation. The mode
 semantics are fixed:
@@ -11,9 +13,9 @@ Lekalo does not generate or overwrite implementation.
 ```
 
 The contract is published as
-[`contracts/observed-index.schema.v1.0.0.json`](../contracts/observed-index.schema.v1.0.0.json)
+[`contracts/observed-index.schema.v0.2.16.json`](../contracts/observed-index.schema.v0.2.16.json)
 (the persisted registry) and
-[`contracts/observed-scan.schema.v1.0.0.json`](../contracts/observed-scan.schema.v1.0.0.json)
+[`contracts/observed-scan.schema.v0.2.16.json`](../contracts/observed-scan.schema.v0.2.16.json)
 (the adapter scan document). Both versions are independent of the product
 release, of the Model/IR/protocol contract versions, and of the diagnostic
 registry version.
@@ -104,8 +106,8 @@ confirmation until one candidate is named. Native test bindings are the
 registry's `verifies` rows, endpoint bindings its `exposes` rows, and
 the declared target and adapter profile are set once per registry. The
 normative contract is [bindings.md](bindings.md) and
-[ADR-0035](adr/0035-bindings-registry.md); the additive 1.1.0 wire is
-published next to the frozen 1.0.0 schemas.
+[ADR-0035](adr/0035-bindings-registry.md); the additive 0.2.16 wire is
+published next to the frozen 0.2.16 schemas.
 
 ## Limits
 

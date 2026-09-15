@@ -1,8 +1,10 @@
 # Foreign and custom implementation escape hatches (issue #30)
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 One independent, closed, versioned attachment —
-`lekalo/implementation/v1.0.0`, identity
-`dev.lekalo.implementation@1.0.0` — lets complex or target-specific
+`lekalo/implementation/v0.2.16`, identity
+`dev.lekalo.implementation@0.2.16` — lets complex or target-specific
 logic stay ordinary code. A hook contract binds one compiled operation
 symbol (command or query) to per-target implementations over the
 closed kinds `generated`, `custom` (checked/custom files), `foreign`

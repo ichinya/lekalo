@@ -1,12 +1,12 @@
 //! Issue #36: the read-only OpenSpec requirement traceability integration.
 //!
 //! One independent, closed, versioned attachment —
-//! `lekalo/requirements/v1.0.0`, identity `dev.lekalo.requirements@1.0.0` —
+//! `lekalo/requirements/v0.2.16`, identity `dev.lekalo.requirements@0.2.16` —
 //! binds Lekalo semantic symbols to canonical requirement identities owned
 //! by requirement providers (the `openspec` provider kind reads the
 //! on-disk `openspec/specs/**` and `openspec/changes/**` trees; no OpenSpec
 //! CLI is ever invoked), and one derived, read-only report wire —
-//! `lekalo/requirements-report/v1.0.0` — carries the resolved catalog,
+//! `lekalo/requirements-report/v0.2.16` — carries the resolved catalog,
 //! per-reference resolution statuses, coverage gaps, conflicts, and the
 //! changed-requirement impact.
 //!
@@ -134,7 +134,7 @@ pub struct RequirementLink {
 /// The bound source Model contract: exact accepted version plus digest.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelRef {
-    /// The exact Model contract version spelling (`0.1.0` or `1.0.0`).
+    /// The exact Model contract version spelling (`0.2.16` or `0.2.16`).
     pub model_version: String,
     /// The SHA-256 over the canonical Model payload bytes.
     pub digest: Sha256Digest,

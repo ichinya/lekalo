@@ -61,12 +61,12 @@ pub(crate) struct Selection {
 /// Classify one raw selector without touching any project data.
 ///
 /// The accepted grammar is `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){0,2}$`
-/// with a total length of at most 191 bytes (the Model 1.0.0 symbol-id
+/// with a total length of at most 191 bytes (the Model 0.2.16 symbol-id
 /// bound). Everything else — uppercase, Unicode, whitespace, control
 /// bytes, path and URI punctuation, trailing dots, overlength — is a
 /// malformed invocation, not an unknown symbol.
 pub(crate) fn classify(raw: &str) -> Result<SelectorForm, DiagnosticSet> {
-    /// The total byte cap of one selector (the Model 1.0.0 symbol-id bound).
+    /// The total byte cap of one selector (the Model 0.2.16 symbol-id bound).
     const MAX_SELECTOR_BYTES: usize = 191;
     if raw.is_empty() || raw.len() > MAX_SELECTOR_BYTES {
         return Err(diagnostic::selector_invalid_set());

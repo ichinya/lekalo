@@ -95,12 +95,12 @@ impl EffectGraph {
         }
     }
 
-    /// The effect contract identity (`dev.lekalo.effects@1.0.0`).
+    /// The effect contract identity (`dev.lekalo.effects@0.2.16`).
     pub const fn identity(&self) -> &'static str {
         IDENTITY
     }
 
-    /// The effect contract discriminator (`lekalo/effects/v1.0.0`).
+    /// The effect contract discriminator (`lekalo/effects/v0.2.16`).
     pub const fn schema_version(&self) -> &'static str {
         SCHEMA_VERSION
     }

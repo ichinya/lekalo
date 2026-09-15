@@ -1,5 +1,7 @@
 # The committed `lekalo.lock` (issue #10)
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 `lekalo.lock` makes generation and verification reproducible: it freezes the
 exact product, contract, adapter, generator, profile, and capability
 identities that participated in a result. Two environments holding the same
@@ -14,9 +16,9 @@ lock resolve the same components, byte for byte.
   order, semantic arrays in the documented sorted order, and exactly one LF
   at the end of the file. (Strict JSON is also a YAML 1.2 subset; no second
   YAML canonicalization exists.)
-- The schema artifact is `contracts/lock.schema.v1.0.0.json`
-  (Draft 2020-12, closed), identity `dev.lekalo.lock@1.0.0`; the wire
-  discriminator is `schema_version = "lekalo/lock/v1.0.0"`. These versions
+- The schema artifact is `contracts/lock.schema.v0.2.16.json`
+  (Draft 2020-12, closed), identity `dev.lekalo.lock@0.2.16`; the wire
+  discriminator is `schema_version = "lekalo/lock/v0.2.16"`. These versions
   are independent of the product release, the Model/IR/protocol contract
   versions, and the resolver algorithm version.
 - `LockDigest` is SHA-256 over the canonical payload bytes **without** the
@@ -31,7 +33,7 @@ Top-level keys, in wire (byte-sorted) order: `adapters`, `capabilities`,
 `contracts`, `core`, `generators`, `profiles`, `resolver`,
 `schema_version`.
 
-- `resolver.version` is the independent resolver algorithm SemVer (1.0.0 in
+- `resolver.version` is the independent resolver algorithm SemVer (0.2.16 in
   v1). `resolver.request_digest` is SHA-256 over the canonical typed,
   path-free resolution request (registry identity/version, Model/IR/protocol
   versions, core version, requested target, adapter/generator/profile ids,
@@ -61,7 +63,7 @@ Top-level keys, in wire (byte-sorted) order: `adapters`, `capabilities`,
   input, `digest` over the fully resolved, inheritance-applied, path-free
   snapshot, and sorted component references. Since issue #29 both digests
   are produced by the target-profile contract
-  (`dev.lekalo.target-profile@1.0.0`, see
+  (`dev.lekalo.target-profile@0.2.16`, see
   [target profiles](target-profile.md)): the declared bytes are the
   canonical JSON of the closed declaration, the resolved bytes are the
   canonical JSON of `{id, version, components, capabilities}`.

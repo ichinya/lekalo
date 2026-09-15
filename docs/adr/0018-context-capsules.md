@@ -1,5 +1,7 @@
 # ADR-0018: Bounded context capsules with a token budget
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-06
 Status: accepted for issue #17
 
@@ -13,7 +15,7 @@ digests, the `--version` behavior and its pinning tests, `README.md`,
 `v0.1.25` on `e627fe5`); issue #16 published product 0.1.24 (annotated tag
 `v0.1.24` on `b4109e5`); issue #20 published product 0.1.23 (annotated tag
 `v0.1.23` on `15be55a`). The context contract version
-(`lekalo/context/v1.0.0`, identity `dev.lekalo.context@1.0.0`) is
+(`lekalo/context/v0.2.16`, identity `dev.lekalo.context@0.2.16`) is
 independent of the product release, of the Model/IR/graph/effect/protocol
 contract versions, and of the diagnostic registry by design.
 
@@ -42,8 +44,8 @@ The capsule is a single normalized in-memory product: the core owns
 selection, estimation, and both projections; the binary only selects and
 renders. `--json` emits the structured capsule
 (`{"status":"valid","context":{...}}`, payload contract
-[`contracts/context-capsule.schema.v1.0.0.json`](../../contracts/context-capsule.schema.v1.0.0.json),
-discriminator `lekalo/context/v1.0.0`); the human stream emits the
+[`contracts/context-capsule.schema.v0.2.16.json`](../../contracts/context-capsule.schema.v0.2.16.json),
+discriminator `lekalo/context/v0.2.16`); the human stream emits the
 agent-facing Markdown rendering of the exact same capsule.
 `contracts/` gains exactly this one new file; the diagnostic registry is
 unchanged. AI Factory owns persisted `.ai-factory/context/**` artifacts;
@@ -86,7 +88,7 @@ silently dropped; nothing is lossily summarized.
 ### 4. The fixed offline estimator profile
 
 v1 ships exactly one estimator:
-`dev.lekalo.estimator.chars-4@1.0.0`, the offline deterministic
+`dev.lekalo.estimator.chars-4@0.2.16`, the offline deterministic
 fallback. Its rule is fixed: a content string of `n` Unicode scalars
 estimates `max(1, ceil(n / 4))` tokens, empty content zero; content is
 the fact's semantic text values joined by single spaces in a fixed

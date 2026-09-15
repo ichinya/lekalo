@@ -25,10 +25,7 @@ pub fn impact_bytes(result: &ImpactResult) -> Result<String, DiagnosticSet> {
 /// with an empty digest field.
 pub fn digest_of(result: &ImpactResult) -> String {
     let bytes = render(result, "").unwrap_or_default();
-    format!(
-        "sha256:{}",
-        crate::versioning::plan::sha256_hex(bytes.as_bytes())
-    )
+    format!("sha256:{}", crate::digest::sha256_hex(bytes.as_bytes()))
 }
 
 fn render(result: &ImpactResult, digest: &str) -> Result<String, DiagnosticSet> {

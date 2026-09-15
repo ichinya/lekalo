@@ -2,7 +2,7 @@
 //!
 //! Errors are a formal part of the behavior contract, not catch-all
 //! exceptions or free text. This module owns the closed wire contracts
-//! (`lekalo/error-contract/v1.0.0`, `lekalo/error-registry/v1.0.0`), the
+//! (`lekalo/error-contract/v0.2.16`, `lekalo/error-registry/v0.2.16`), the
 //! typed private Rust surface (validated constructors, no `Deserialize`
 //! escape hatch), the canonical registry, the pure revision comparison,
 //! the language-neutral projection vectors, and the explicit
@@ -417,7 +417,7 @@ mod tests {
     #[test]
     fn identity_constants_are_independent() {
         assert_ne!(FAMILY, REGISTRY_FAMILY);
-        assert_eq!(IDENTITY, "dev.lekalo.error-contract@1.0.0");
-        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.error-registry@1.0.0");
+        assert_eq!(IDENTITY, "dev.lekalo.error-contract@0.2.16");
+        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.error-registry@0.2.16");
     }
 }

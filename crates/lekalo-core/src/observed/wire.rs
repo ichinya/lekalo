@@ -20,22 +20,10 @@ use super::types::{
     SourceLocation, SymbolKind, ValueEvidence,
 };
 
-/// The closed top-level member set of a 1.0.0 scan document (the frozen
-/// issue #39 base).
-const TOP_LEVEL_KEYS: &[&str] = &[
-    "schemaVersion",
-    "adapter",
-    "project",
-    "revision",
-    "symbols",
-    "endpoints",
-    "schemas",
-];
-
-/// The closed top-level member set of a 1.1.0 scan document (issue #42):
+/// The closed top-level member set of a 0.2.16 scan document (issue #42):
 /// the additive declared target, adapter profile, and native test
 /// bindings.
-const TOP_LEVEL_KEYS_V11: &[&str] = &[
+const TOP_LEVEL_KEYS: &[&str] = &[
     "schemaVersion",
     "adapter",
     "project",
@@ -50,21 +38,9 @@ const TOP_LEVEL_KEYS_V11: &[&str] = &[
 
 /// The closed adapter member set.
 const ADAPTER_KEYS: &[&str] = &["id", "version", "digest"];
-/// The closed symbol member set of a 1.0.0 scan document (the frozen
-/// issue #39 base).
-const SYMBOL_KEYS: &[&str] = &[
-    "id",
-    "kind",
-    "stableKey",
-    "location",
-    "fingerprint",
-    "mappingConfidence",
-    "evidence",
-];
-
-/// The closed symbol member set of a 1.1.0 scan document (issue #42):
+/// The closed symbol member set of a 0.2.16 scan document (issue #42):
 /// the additive per-symbol candidate set.
-const SYMBOL_KEYS_V11: &[&str] = &[
+const SYMBOL_KEYS: &[&str] = &[
     "id",
     "kind",
     "stableKey",
@@ -134,17 +110,9 @@ pub(super) fn parse_scan(
     if !version::SCAN_SCHEMA_VERSIONS.contains(&schema_version.as_str()) {
         return Err(diagnostic::scan_invalid_set("schema-version", None));
     }
-    // The additive issue #42 members exist only on a 1.1.0 document; the
-    // frozen 1.0.0 key sets refuse them exactly as unknown members.
-    let extension = schema_version == version::SCAN_SCHEMA_VERSION;
-    exact_keys(
-        map,
-        if extension {
-            TOP_LEVEL_KEYS_V11
-        } else {
-            TOP_LEVEL_KEYS
-        },
-    )?;
+    // The additive issue #42 members exist only on a 0.2.16 document; the
+    // frozen 0.2.16 key sets refuse them exactly as unknown members.
+    exact_keys(map, TOP_LEVEL_KEYS)?;
     let adapter_map = as_object(
         map.get("adapter").ok_or_else(|| missing("adapter"))?,
         "adapter",
@@ -187,7 +155,7 @@ pub(super) fn parse_scan(
     let mut symbols = Vec::with_capacity(symbols_member.len());
     let mut seen_symbols = HashSet::new();
     for entry in symbols_member {
-        let symbol = parse_symbol(entry, model_version, extension)?;
+        let symbol = parse_symbol(entry, model_version)?;
         if !seen_symbols.insert(symbol.id.clone()) {
             return Err(diagnostic::scan_invalid_set(
                 "duplicate-id",
@@ -247,37 +215,28 @@ pub(super) fn parse_scan(
         schemas.push(schema);
     }
 
-    let target = match extension {
-        false => None,
-        true => match optional_string_member(map, "target")? {
-            None => None,
-            Some(target) => {
-                if !crate::init::detect::valid_target_id(&target) {
-                    return Err(diagnostic::scan_invalid_set("scan-target", Some(&target)));
-                }
-                Some(target)
+    let target = match optional_string_member(map, "target")? {
+        None => None,
+        Some(target) => {
+            if !crate::init::detect::valid_target_id(&target) {
+                return Err(diagnostic::scan_invalid_set("scan-target", Some(&target)));
             }
-        },
+            Some(target)
+        }
     };
-    let profile = match extension {
-        false => None,
-        true => match optional_string_member(map, "profile")? {
-            None => None,
-            Some(profile) => {
-                if !crate::target_protocol::scopes::is_token(&profile) {
-                    return Err(diagnostic::scan_invalid_set("scan-profile", None));
-                }
-                Some(profile)
+    let profile = match optional_string_member(map, "profile")? {
+        None => None,
+        Some(profile) => {
+            if !crate::target_protocol::scopes::is_token(&profile) {
+                return Err(diagnostic::scan_invalid_set("scan-profile", None));
             }
-        },
+            Some(profile)
+        }
     };
     if profile.is_some() && target.is_none() {
         return Err(diagnostic::scan_invalid_set("profile-without-target", None));
     }
-    let test_bindings_member = match extension {
-        false => [].as_slice(),
-        true => optional_array(map.get("testBindings"))?,
-    };
+    let test_bindings_member = optional_array(map.get("testBindings"))?;
     if test_bindings_member.len() > version::MAX_TEST_BINDINGS {
         return Err(diagnostic::scan_limit_set(
             "test-bindings",
@@ -323,17 +282,9 @@ pub(super) fn parse_scan(
 fn parse_symbol(
     value: &Json,
     model_version: ModelVersion,
-    extension: bool,
 ) -> Result<ScanSymbol, crate::diagnostics::DiagnosticSet> {
     let map = as_object(value, "symbol")?;
-    exact_keys(
-        map,
-        if extension {
-            SYMBOL_KEYS_V11
-        } else {
-            SYMBOL_KEYS
-        },
-    )?;
+    exact_keys(map, SYMBOL_KEYS)?;
     let id = string_member(map, "id")?;
     if !crate::trace::id::is_semantic_id(&id) {
         return Err(diagnostic::scan_invalid_set("symbol-id", Some(&id)));
@@ -388,23 +339,20 @@ fn parse_symbol(
     if !model_version.module_id_valid(module) {
         return Err(diagnostic::scan_invalid_set("symbol-module", Some(&id)));
     }
-    let candidates = match extension {
-        false => Vec::new(),
-        true => {
-            let member = optional_array(map.get("candidates"))?;
-            if member.len() > version::MAX_CANDIDATES {
-                return Err(diagnostic::scan_limit_set("candidates", member.len()));
-            }
-            let mut candidates = Vec::with_capacity(member.len());
-            for entry in member {
-                candidates.push(parse_candidate(entry, &id)?);
-            }
-            candidates.sort_by(|left, right| {
-                (&left.confidence, &left.native).cmp(&(&right.confidence, &right.native))
-            });
-            candidates.dedup();
-            candidates
+    let candidates = {
+        let member = optional_array(map.get("candidates"))?;
+        if member.len() > version::MAX_CANDIDATES {
+            return Err(diagnostic::scan_limit_set("candidates", member.len()));
         }
+        let mut candidates = Vec::with_capacity(member.len());
+        for entry in member {
+            candidates.push(parse_candidate(entry, &id)?);
+        }
+        candidates.sort_by(|left, right| {
+            (&left.confidence, &left.native).cmp(&(&right.confidence, &right.native))
+        });
+        candidates.dedup();
+        candidates
     };
     Ok(ScanSymbol {
         id,

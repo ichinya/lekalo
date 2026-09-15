@@ -5,8 +5,8 @@ the load pipeline, selective invalidation, and the thin `cache status` /
 `cache clear` handoff. The cache is Lekalo-owned derived data under
 `.lekalo/cache/**` only — disposable at any moment, never a canonical
 source, never read as model input. The wire contract is
-[`contracts/cache.schema.v1.0.0.json`](../contracts/cache.schema.v1.0.0.json)
-(discriminator `lekalo/cache/v1.0.0`, identity `dev.lekalo.cache@1.0.0`);
+[`contracts/cache.schema.v0.2.16.json`](../contracts/cache.schema.v0.2.16.json)
+(discriminator `lekalo/cache/v0.2.16`, identity `dev.lekalo.cache@0.2.16`);
 the recorded owner decisions live in
 [ADR-0016](adr/0016-cache.md).
 
@@ -35,8 +35,8 @@ projection in both projections of the accepted envelope:
 {
   "status": "valid",
   "cache": {
-    "schemaVersion": "lekalo/cache/v1.0.0",
-    "identity": "dev.lekalo.cache@1.0.0",
+    "schemaVersion": "lekalo/cache/v0.2.16",
+    "identity": "dev.lekalo.cache@0.2.16",
     "state": "ok",
     "backend": "sqlite",
     "records": [

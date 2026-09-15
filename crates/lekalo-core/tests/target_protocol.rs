@@ -117,7 +117,7 @@ fn full_handshake_negotiates_the_published_protocol() {
         .capabilities
         .protocol_versions
         .iter()
-        .any(|v| v == "1.0.0"));
+        .any(|v| v == "0.2.16"));
     assert_eq!(outcome.capabilities.operations.len(), 8);
     assert!(outcome.capability_digest.starts_with("sha256:"));
 }

@@ -158,11 +158,11 @@ pub(crate) fn inputs_canon(model: &ContractPin, ir: &ContractPin) -> String {
 
 pub(crate) fn inputs_revision(model: &ContractPin, ir: &ContractPin) -> Sha256Digest {
     let bytes = inputs_canon(model, ir);
-    Sha256Digest::from_hex(&crate::versioning::plan::sha256_hex(bytes.as_bytes()))
+    Sha256Digest::from_hex(&crate::digest::sha256_hex(bytes.as_bytes()))
 }
 
 pub(crate) fn hash(bytes: &[u8]) -> Sha256Digest {
-    Sha256Digest::from_hex(&crate::versioning::plan::sha256_hex(bytes))
+    Sha256Digest::from_hex(&crate::digest::sha256_hex(bytes))
 }
 
 /// Read the derived manifest; absence is the legal empty state.

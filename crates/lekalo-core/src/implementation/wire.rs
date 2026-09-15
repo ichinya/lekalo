@@ -156,7 +156,7 @@ pub(crate) fn grammar_segment(text: &str) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_')
 }
 
-/// The closed operation-symbol grammar: the exact Model 1.0.0
+/// The closed operation-symbol grammar: the exact Model 0.2.16
 /// `symbolId` pattern (two or three lowercase segments).
 pub(crate) fn is_operation_symbol(text: &str) -> bool {
     if text.len() > 191 {
@@ -482,8 +482,7 @@ fn decode_model_ref(object: &serde_json::Map<String, Json>) -> WireResult<ModelP
     }
     let version = text_member(inner, "modelVersion")?;
     let pin = match version {
-        "0.1.0" => crate::scenario::ModelPin::V0_1_0,
-        "1.0.0" => crate::scenario::ModelPin::V1_0_0,
+        "0.2.16" => crate::scenario::ModelPin::Current,
         _ => return Err(diagnostic::document_invalid("model-ref", None)),
     };
     let digest = decode_digest(inner)?;

@@ -1,5 +1,5 @@
 {
-  "schema_version": "lekalo/target-profile/v1.0.0",
+  "schema_version": "lekalo/target-profile/v0.2.16",
   "profiles": [
     {
       "id": "node-postgres-http",

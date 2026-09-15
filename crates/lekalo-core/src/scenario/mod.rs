@@ -62,18 +62,16 @@ pub use version::{FAMILY, IDENTITY, IR_IDENTITY, SCHEMA_VERSION, SOURCE_MAP_IDEN
 /// The exact accepted source Model contract pin of one scenario.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModelPin {
-    /// The accepted Model v0.1.0 contract.
-    V0_1_0,
-    /// The accepted Model v1.0.0 contract.
-    V1_0_0,
+    /// The accepted Model v0.2.16 contract.
+    /// The accepted Model v0.2.16 contract.
+    Current,
 }
 
 impl ModelPin {
     /// The exact wire text of the Model version.
     pub fn as_str(&self) -> &'static str {
         match self {
-            ModelPin::V0_1_0 => "0.1.0",
-            ModelPin::V1_0_0 => "1.0.0",
+            ModelPin::Current => "0.2.16",
         }
     }
 }

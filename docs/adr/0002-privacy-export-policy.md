@@ -1,5 +1,7 @@
 # ADR-0002: Exact-custody privacy decision contract
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Status: accepted corrective privacy-contract successor for issue #120; #120
 passed cold review and was closed on 2026-08-30, and the accepted product
 release is `0.0.2`. Amended on 2026-09-02 after the M0 constraint-intersection
@@ -11,8 +13,8 @@ Date: 2026-08-30
 
 Lekalo needs one fail-closed privacy/export seam before downstream issues read,
 transform, retain or publish evidence. The authority dependency is now the
-closed-exact `dev.lekalo.authority-matrix@1.3.1` registry with 49 stable kind
-IDs. The earlier privacy `1.0.0` WIP used older authority references, a copied
+closed-exact `dev.lekalo.authority-matrix@0.2.16` registry with 49 stable kind
+IDs. The earlier privacy `0.2.16` WIP used older authority references, a copied
 taxonomy and caller-recomputable policy custody; it was reviewed but never
 accepted.
 
@@ -22,23 +24,23 @@ The accepted M0 product is `0.0.1`; acceptance of #120 would produce product
 
 ## Decision
 
-Adopt privacy policy `dev.lekalo.privacy-export-policy@1.0.7`, input schema
-`2.6.0`, output schema `1.6.0`, decision contract
-`dev.lekalo.privacy-export-decision@1.6.0`, exact classification contract
-`dev.lekalo.privacy-classification-decision@1.0.0`, bound exclusively to
-authority `1.3.1` and its exact digest, and exact authorizing-evidence registry
-`dev.lekalo.privacy-authorizing-evidence@1.1.0`, and authorization subject
-profile `dev.lekalo.privacy-authorization-subject-profile@1.0.0`.
+Adopt privacy policy `dev.lekalo.privacy-export-policy@0.2.16`, input schema
+`0.2.16`, output schema `0.2.16`, decision contract
+`dev.lekalo.privacy-export-decision@0.2.16`, exact classification contract
+`dev.lekalo.privacy-classification-decision@0.2.16`, bound exclusively to
+authority `0.2.16` and its exact digest, and exact authorizing-evidence registry
+`dev.lekalo.privacy-authorizing-evidence@0.2.16`, and authorization subject
+profile `dev.lekalo.privacy-authorization-subject-profile@0.2.16`.
 
-Policy `1.0.7` corrects frozen `1.0.6`: local constraint broadening is checked
+Policy `0.2.16` corrects frozen `1.0.6`: local constraint broadening is checked
 against the intersection with every applicable sensitivity rule, not merely
-against disposition, operation and destination profiles. Input `2.6.0` and
-output `1.6.0` retain the closed shapes and Authorization Subject Profile
+against disposition, operation and destination profiles. Input `0.2.16` and
+output `0.2.16` retain the closed shapes and Authorization Subject Profile
 semantics of `2.5.0`/`1.5.0`; their exact policy and decision refs advance.
 Output schema `1.5.0` had already corrected frozen `1.4.0` so emitted
-classification refs are exactly contract `1.0.0` and authorizing-evidence refs
-are exactly registry `1.1.0`. Pre-evaluation startup
-and custody failures use the separate closed CLI error schema `1.0.0` and are
+classification refs are exactly contract `0.2.16` and authorizing-evidence refs
+are exactly registry `0.2.16`. Pre-evaluation startup
+and custody failures use the separate closed CLI error schema `0.2.16` and are
 not represented as `ExportDecisionOutput`.
 
 Policy identity uses a deterministic, non-self-referential canonical projection
@@ -99,9 +101,9 @@ overrides.
 - Authority/default coverage is mechanically closed-exact at 49 kinds.
 - A cosmetic policy edit intentionally changes raw custody, while a semantic
   policy edit also changes the canonical policy identity.
-- The rejected `1.0.0` WIP, frozen rejected `1.0.1` candidate and frozen/yanked
-  accepted `1.0.2`, `1.0.3`, `1.0.4`, `1.0.5` and `1.0.6` remain auditable at
-  exact old policy/manifest/schema bytes. Accepted `1.0.7` is an explicit
+- The rejected `0.2.16` WIP, frozen rejected `1.0.1` candidate and frozen/yanked
+  accepted `0.2.16`, `1.0.3`, `1.0.4`, `1.0.5` and `1.0.6` remain auditable at
+  exact old policy/manifest/schema bytes. Accepted `0.2.16` is an explicit
   successor rather than a silent replacement.
 - Input/output schema versions advance because nested exact-ref validation,
   conflict-state coupling, duplicate-set closure and effective current refs

@@ -67,7 +67,7 @@ const diffDir = "tests/fixtures/extended-effects/diff";
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const schema = JSON.parse(
   readFileSync(
-    resolve(root, "contracts/extended-effects.schema.v1.0.0.json"),
+    resolve(root, "contracts/extended-effects.schema.v0.2.16.json"),
     "utf8",
   ),
 );

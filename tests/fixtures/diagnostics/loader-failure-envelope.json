@@ -2,8 +2,8 @@
   "status": "invalid",
   "diagnostics": [
     {
-      "schema_version": "lekalo/diagnostic/v1.0.0",
-      "registry_version": "1.25.0",
+      "schema_version": "lekalo/diagnostic/v0.2.16",
+      "registry_version": "0.2.16",
       "id": "loader.duplicate-definition",
       "code": "LEK-LOAD-004",
       "severity": "error",
@@ -14,12 +14,12 @@
         "path": "lekalo/modules/core/entities.yaml",
         "range": {
           "start": {
-            "byte": 113,
+            "byte": 114,
             "line": 7,
             "column": 9
           },
           "end": {
-            "byte": 123,
+            "byte": 124,
             "line": 7,
             "column": 19
           }

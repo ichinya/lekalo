@@ -1,5 +1,7 @@
 # ADR-0021: Authorization actors, scopes, and policy contracts
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-06
 Status: accepted for issue #25
 
@@ -12,9 +14,9 @@ tag `v0.1.28` on `967bf52`); issue #62 published product 0.1.29 (annotated tag `
 product 0.1.27 (annotated tag `v0.1.27` on `ef7680d`); issue #18
 published product 0.1.26 (annotated tag
 `v0.1.26` on `3710179`). The authorization contract version
-(`lekalo/authorization/v1.0.0`, identity `dev.lekalo.authorization@1.0.0`)
+(`lekalo/authorization/v0.2.16`, identity `dev.lekalo.authorization@0.2.16`)
 and the strict review profile identity
-(`dev.lekalo.authorization-profile@1.0.0`) are independent of the product
+(`dev.lekalo.authorization-profile@0.2.16`) are independent of the product
 release, of the Model/IR/graph/effect/protocol contract versions, of the
 diagnostic registry, and of each other by design.
 
@@ -42,10 +44,10 @@ recorded the owner decisions this ADR adopts.
 ### 1. Independent closed contract; Model stays immutable
 
 Authorization publishes its own wire contract,
-[`contracts/authorization.schema.v1.0.0.json`](../../contracts/authorization.schema.v1.0.0.json)
-(discriminator `lekalo/authorization/v1.0.0`, identity
-`dev.lekalo.authorization@1.0.0`), independent of every other contract
-family. The accepted Model v0.1.0 and the current Model 1.0.0 stay
+[`contracts/authorization.schema.v0.2.16.json`](../../contracts/authorization.schema.v0.2.16.json)
+(discriminator `lekalo/authorization/v0.2.16`, identity
+`dev.lekalo.authorization@0.2.16`), independent of every other contract
+family. The accepted Model v0.2.16 and the current Model 0.2.16 stay
 untouched: authorization metadata never enters `model.schema.*.json` or
 the per-module `policies.yaml`. `model_ref` pins the Model schema
 version plus the canonical IR payload digest, so a document is
@@ -132,10 +134,10 @@ narrower writes are behavioral; cosmetic ordering is empty. Policy,
 actor, capability, and role ids follow #6 grammar and rename/tombstone
 rules, so retired ids are never reused.
 
-### 8. Diagnostics through the #11 seam: registry minor 1.5.0 → 1.6.0
+### 8. Diagnostics through the #11 seam: registry minor 1.5.0 → 0.2.16
 
 The registry takes its next wire-shape-preserving minor increment to
-[`diagnostic-registry.v1.6.0.json`](../../contracts/diagnostic-registry.v1.6.0.json)
+[`diagnostic-registry.v0.2.16.json`](../../contracts/diagnostic-registry.v0.2.16.json)
 with twelve `authorization.*` rules (LEK-AUTH-001..012, category
 `security`): `document-invalid`, `actor-invalid`, `scope-invalid`,
 `policy-invalid`, `ref-unresolved`, `error-ref-unresolved`,
@@ -146,7 +148,7 @@ tokens only — no attacker-controlled echo. `field-uncovered` is
 registered without a declared-IR emitter in v1 (declared effects are
 entity-scoped; exact-field evidence arrives with the adapter owners),
 exactly like `diff.change-limit`. The validation profiles pin
-`diagnostic_registry_version` 1.6.0 and move together with the embed.
+`diagnostic_registry_version` 0.2.16 and move together with the embed.
 
 ### 9. Limits and determinism (v1, owner-approved)
 
@@ -161,8 +163,8 @@ are SHA-256 over the canonical bytes.
 
 ### 10. Owner decisions adopted
 
-- contract family `dev.lekalo.authorization@1.0.0` and profile identity
-  `dev.lekalo.authorization-profile@1.0.0` (independent families);
+- contract family `dev.lekalo.authorization@0.2.16` and profile identity
+  `dev.lekalo.authorization-profile@0.2.16` (independent families);
 - canonical path `lekalo/authorization.yaml`, project-wide (one
   document; not per-module);
 - `error_ref` is required on every policy and grammar-validated; with

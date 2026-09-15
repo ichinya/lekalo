@@ -225,7 +225,7 @@ fn plan_digest(
     ];
     pairs.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
     let payload = Canonical::Map(pairs).to_json();
-    Sha256Digest::from_hex(&crate::versioning::plan::sha256_hex(payload.as_bytes()))
+    Sha256Digest::from_hex(&crate::digest::sha256_hex(payload.as_bytes()))
 }
 
 /// Scan the declared managed root for files no manifest entry claims.
@@ -349,7 +349,7 @@ fn revalidate(prepared: &Prepared, file: &CleanFile) -> Result<(), ArtifactFailu
         .read_file_opt(dir, name, MAX_ARTIFACT_BYTES)
         .map_err(|_| ArtifactFailure::PlanChanged)?
         .ok_or(ArtifactFailure::PlanChanged)?;
-    let digest = Sha256Digest::from_hex(&crate::versioning::plan::sha256_hex(&bytes));
+    let digest = Sha256Digest::from_hex(&crate::digest::sha256_hex(&bytes));
     if digest.as_str() != file.digest || bytes.len() as u64 != file.size {
         return Err(ArtifactFailure::PlanChanged);
     }

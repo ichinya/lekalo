@@ -1,5 +1,7 @@
 # Target profiles
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Issue #29 replaces monolithic framework adapters with composable target
 profiles. A profile composes exactly one component per axis —
 `runtime`, `storage`, `transport`, `testing`, `analysis`, and
@@ -7,18 +9,18 @@ profiles. A profile composes exactly one component per axis —
 transport, and deployment components and changes only the runtime-bound
 ones. The design decision is [ADR-0029](adr/0029-composable-target-profiles.md).
 
-The contract (`dev.lekalo.target-profile@1.0.0`,
-`lekalo/target-profile/v1.0.0`) is independent of the product release,
+The contract (`dev.lekalo.target-profile@0.2.16`,
+`lekalo/target-profile/v0.2.16`) is independent of the product release,
 the Model/IR/protocol versions, the diagnostic registry, and the adapter
 process protocol. It is published as
-[`contracts/target-profile.schema.v1.0.0.json`](../contracts/target-profile.schema.v1.0.0.json)
+[`contracts/target-profile.schema.v0.2.16.json`](../contracts/target-profile.schema.v0.2.16.json)
 and executed by `target_profile` in `lekalo-core`.
 
 ## Components and capability contracts
 
 Every component that may appear on an axis carries exactly one
 definition in the embedded, closed registry
-(`dev.lekalo.target-components@1.0.0`):
+(`dev.lekalo.target-components@0.2.16`):
 
 - `provides` — the capability contract: stable dotted capability ids
   with the closed support states `full` and `partial`. A component that
@@ -102,7 +104,7 @@ and it is a plain serializable value with byte-stable output.
 ## Adapter protocol integration
 
 Adapters never receive profile YAML. An operation that carries a
-profile token may carry, on a protocol 1.2.0 session, the resolved
+profile token may carry, on a protocol 0.2.16 session, the resolved
 snapshot digest plus the capability pairs projected by
 `ResolvedProfile::wire_resolution` (see
 [target protocol](target-protocol.md)). Older sessions refuse the

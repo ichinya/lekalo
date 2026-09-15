@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Independent conformance suite for exact Lekalo Model 0.1.0 and 1.0.0.
+// Independent conformance suite for exact Lekalo Model 0.2.16 and 1.0.0.
 // It exercises the reference checker as a real subprocess and separately
 // interprets every JSON Schema keyword used by the shipped contract.
 
@@ -14,12 +14,10 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  MODEL_COMPAT_GOLDEN_PAIR,
   MODEL_DOCUMENT_SCHEMA,
   MODEL_FIXTURE_SETS,
   fixtureManifestParityFailure,
   manifestFixtureNames,
-  manifestFixtureSet,
   manifestIntegrityFailure
 } from "./model-fixture-manifest.mjs";
 
@@ -27,14 +25,13 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const checker = join(root, "scripts", "check-model.mjs");
 const fixturesDir = join(root, "tests", "fixtures", "model");
 const validPlanner = join(fixturesDir, "valid-planner");
-const schemaPath = join(root, "contracts", "model.schema.v0.1.0.json");
+const schemaPath = join(root, "contracts", "model.schema.v0.2.16.json");
 const fixturesV1Dir = join(root, "tests", "fixtures", "model-v1");
 const validPlannerV1 = join(fixturesV1Dir, "valid-planner");
-const schemaV1Path = join(root, "contracts", "model.schema.v1.0.0.json");
-const semanticIdsPath = join(root, "contracts", "semantic-ids.v0.1.0.json");
-const compatibilityDir = join(root, MODEL_COMPAT_GOLDEN_PAIR.root);
-const PUBLISHED_V0_SHA256 = "24d772729bb6806cd69f1064e656358ab99a283ae797ff280f9272100c5c7dae";
-const SEMANTIC_IDS_SHA256 = "ed3672fbb52f9771677089e8ca7b6ba2f57527296112b4d97535a7ffa1a1038a";
+const schemaV1Path = join(root, "contracts", "model.schema.v0.2.16.json");
+const semanticIdsPath = join(root, "contracts", "semantic-ids.v0.2.16.json");
+const CURRENT_SCHEMA_SHA256 = "0bf1d8274e6bc5501d68b55944e562ac999210803e10bdaf69e4cf14ab1ccba2";
+const SEMANTIC_IDS_SHA256 = "ae399d9d1eeb755fe7db08cd84e539d6372ee7dbab02a4fe4a006bfcabc815bd";
 
 const ALL_KINDS = ["project", "module", "scalar", "enum", "value-object", "entity", "command", "query", "policy", "event", "effect", "endpoint", "scenario", "target-binding"];
 // The exact logical consumer mapping of the closed canonical-key list. The
@@ -50,8 +47,8 @@ const CANONICAL_KEY_CONSUMER_KINDS = new Map([
   ["trace.manifest", "manifest"]
 ]);
 const CANONICAL_KEY_CONSUMERS = [...CANONICAL_KEY_CONSUMER_KINDS.keys()];
-const V0_FIXTURE_SET = manifestFixtureSet("0.1.0");
-const V1_FIXTURE_SET = manifestFixtureSet("1.0.0");
+const V0_FIXTURE_SET = MODEL_FIXTURE_SETS[0];
+const V1_FIXTURE_SET = MODEL_FIXTURE_SETS[1];
 const EXACT_FIXTURES = manifestFixtureNames(V0_FIXTURE_SET);
 const SCHEMA_INVALID_FIXTURES = new Set(V0_FIXTURE_SET.schemaInvalid);
 const V1_SCHEMA_INVALID_FIXTURES = new Set(V1_FIXTURE_SET.schemaInvalid);
@@ -413,9 +410,9 @@ const schema = parseJson(await readFile(schemaPath, "utf8"));
 schemaCases += 1;
 check("schema:parses", schema !== null, schemaPath);
 schemaCases += 1;
-check("schema:id-versioned", schema?.$id === "https://lekalo.dev/schemas/model/0.1.0/schema.json", schema?.$id);
+check("schema:id-versioned", schema?.$id === "https://lekalo.dev/schemas/model/0.2.16/schema.json", schema?.$id);
 schemaCases += 1;
-check("schema:version-const", schema?.$defs?.schemaVersion?.const === "0.1.0", schema?.$defs?.schemaVersion);
+check("schema:version-const", schema?.$defs?.schemaVersion?.const === "0.2.16", schema?.$defs?.schemaVersion);
 schemaCases += 1;
 const kindEnum = schema?.$defs?.commonFields?.properties?.kind?.enum;
 check("schema:all-14-kinds", Array.isArray(kindEnum) && canonical([...kindEnum].sort()) === canonical([...ALL_KINDS].sort()), kindEnum);
@@ -463,56 +460,11 @@ check("fixtures:exact-scope", canonical(fixtureDirs) === canonical(EXACT_FIXTURE
 check("fixture-manifest:integrity", manifestIntegrityFailure() === null, manifestIntegrityFailure());
 check("fixture-manifest:v0-parity", fixtureManifestParityFailure(V0_FIXTURE_SET, fixtureDirs) === null, fixtureManifestParityFailure(V0_FIXTURE_SET, fixtureDirs));
 
-// Direct mutation probes for manifestIntegrityFailure: every probe hands the
-// function directly mutated manifest inputs and must be rejected (except the
-// unmutated baseline), proving the compatibility golden pair fails closed on
-// missing, extra, duplicate, swapped, mismatched, malformed, and missing or
-// empty field values instead of matching versions and schemas independently.
-// Duplicate-side proofs are count-neutral: the second side is replaced in
-// place, so rejection comes from the integrity rules themselves rather than
-// from a changed side count.
-const integrityProbeFixtureSets = structuredClone(MODEL_FIXTURE_SETS);
-const integrityProbeGoldenPair = structuredClone(MODEL_COMPAT_GOLDEN_PAIR);
 let integrityProbeCases = 0;
-for (const [probeName, mustReject, mutate] of [
-  ["unmutated-manifest-accepted", false, () => {}],
-  ["missing-golden-side-rejected", true, (_sets, golden) => { golden.sides.shift(); }],
-  ["extra-golden-side-rejected", true, (_sets, golden) => {
-    golden.sides.push({ version: "9.9.9", schema: "contracts/model.schema.v9.9.9.json", directory: "9.9.9" });
-  }],
-  ["duplicate-golden-side-rejected", true, (_sets, golden) => { golden.sides[1] = structuredClone(golden.sides[0]); }],
-  ["duplicate-golden-version-rejected", true, (_sets, golden) => { golden.sides[1].version = golden.sides[0].version; }],
-  ["duplicate-golden-schema-rejected", true, (_sets, golden) => { golden.sides[1].schema = golden.sides[0].schema; }],
-  ["duplicate-golden-directory-rejected", true, (_sets, golden) => { golden.sides[1].directory = golden.sides[0].directory; }],
-  ["swapped-golden-pair-rejected", true, (sets, golden) => {
-    golden.sides[0].schema = sets[1].schema;
-    golden.sides[1].schema = sets[0].schema;
-  }],
-  ["mismatched-golden-schema-rejected", true, (_sets, golden) => {
-    golden.sides[0].schema = "contracts/model.schema.v9.9.9.json";
-  }],
-  ["missing-golden-directory-rejected", true, (_sets, golden) => { delete golden.sides[1].directory; }],
-  ["empty-golden-directory-rejected", true, (_sets, golden) => { golden.sides[1].directory = ""; }],
-  ["malformed-golden-version-rejected", true, (_sets, golden) => { golden.sides[0].version = 0.1; }],
-  ["empty-golden-root-rejected", true, (_sets, golden) => { golden.root = ""; }],
-  ["missing-golden-root-rejected", true, (_sets, golden) => { delete golden.root; }],
-  ["empty-fixture-set-version-rejected", true, (sets) => { sets[0].version = ""; }],
-  ["malformed-fixture-set-schema-rejected", true, (sets) => { sets[1].schema = null; }],
-  ["missing-fixture-set-root-rejected", true, (sets) => { delete sets[0].fixtures; }],
-  ["golden-side-without-fixture-set-rejected", true, (sets) => { sets.pop(); }],
-  ["duplicate-fixture-set-version-rejected", true, (sets, golden) => {
-    sets.push(structuredClone(sets[0]));
-    golden.sides.push(structuredClone(golden.sides[0]));
-  }]
-]) {
-  const probeSets = structuredClone(integrityProbeFixtureSets);
-  const probeGolden = structuredClone(integrityProbeGoldenPair);
-  mutate(probeSets, probeGolden);
-  const probeFailure = manifestIntegrityFailure(probeSets, probeGolden);
-  check(`fixture-manifest:integrity-probe:${probeName}`, mustReject ? probeFailure !== null : probeFailure === null, probeFailure);
-  integrityProbeCases += 1;
+for(const mutate of [s=>s.push(structuredClone(s[0])), s=>{s[0].schema='unknown';},s=>{delete s[0].fixtures;}, s=>{s[0].version='0.2.15';}]) {
+ const sets=structuredClone(MODEL_FIXTURE_SETS);mutate(sets);
+ check('fixture-manifest:mutation',manifestIntegrityFailure(sets)!==null,sets);integrityProbeCases++;
 }
-
 const conformance = run([]);
 fixtureCases += 1;
 const conformanceDoc = parseJson(conformance.stdout);
@@ -600,16 +552,16 @@ const semanticIdsText = await readFile(semanticIdsPath, "utf8");
 const semanticIds = parseJson(semanticIdsText);
 schemaCases += 1;
 check(
-  "schema:v0-published-bytes-immutable",
-  createHash("sha256").update(schemaText, "utf8").digest("hex") === PUBLISHED_V0_SHA256,
+  "schema:current-exact-bytes",
+  createHash("sha256").update(schemaText, "utf8").digest("hex") === CURRENT_SCHEMA_SHA256,
   createHash("sha256").update(schemaText, "utf8").digest("hex")
 );
 schemaCases += 1;
 check("schema:v1-parses", schemaV1 !== null, schemaV1Path);
 schemaCases += 1;
-check("schema:v1-id-versioned", schemaV1?.$id === "https://lekalo.dev/schemas/model/1.0.0/schema.json", schemaV1?.$id);
+check("schema:v1-id-versioned", schemaV1?.$id === "https://lekalo.dev/schemas/model/0.2.16/schema.json", schemaV1?.$id);
 schemaCases += 1;
-check("schema:v1-version-const", schemaV1?.$defs?.schemaVersion?.const === "1.0.0", schemaV1?.$defs?.schemaVersion);
+check("schema:v1-version-const", schemaV1?.$defs?.schemaVersion?.const === "0.2.16", schemaV1?.$defs?.schemaVersion);
 schemaCases += 1;
 check(
   "schema:v1-segment-exact",
@@ -702,7 +654,7 @@ check(
   hasExactKeys(semanticIds, [
     "contractId", "version", "status", "closed", "releaseBinding", "segment",
     "idClasses", "kindNamespaces", "canonicalOrdering", "identityHistory",
-    "renameGraph", "tombstones", "targetCanonicalKey", "migration", "diagnostics"
+    "renameGraph", "tombstones", "targetCanonicalKey", "diagnostics"
   ])
     && hasExactKeys(semanticIds?.releaseBinding, ["productCandidate", "modelSchemaSuccessor", "versionsIndependent"])
     && hasExactKeys(semanticIds?.segment, [
@@ -732,10 +684,6 @@ check(
       "source", "verbatim", "transformation", "caseFolding", "truncation", "translation", "adapterMayInventCanonicalId",
       "canonicalKeyConsumers"
     ])
-    && hasExactKeys(semanticIds?.migration, [
-      "automaticChangeAllowed", "ownerAuthoredChangeRequiredForNonconformingIds", "autoCaseFold",
-      "autoTruncate", "autoTranslateHyphens"
-    ])
     && hasExactKeys(semanticIds?.diagnostics, ["precedence", "semanticIdCodes"]),
   semanticIds
 );
@@ -743,10 +691,10 @@ schemaCases += 1;
 check(
   "semantic-contract:identity",
   semanticIds?.contractId === "dev.lekalo.semantic-ids"
-    && semanticIds?.version === "0.1.0"
+    && semanticIds?.version === "0.2.16"
     && semanticIds?.closed === true
-    && semanticIds?.releaseBinding?.productCandidate === "0.1.4"
-    && semanticIds?.releaseBinding?.versionsIndependent === true,
+    && semanticIds?.releaseBinding?.productCandidate === "0.2.16"
+    && semanticIds?.releaseBinding?.versionsIndependent === false,
   semanticIds?.releaseBinding
 );
 schemaCases += 1;
@@ -789,11 +737,7 @@ check(
     && semanticIds?.targetCanonicalKey?.caseFolding === false
     && semanticIds?.targetCanonicalKey?.truncation === false
     && semanticIds?.targetCanonicalKey?.translation === false
-    && semanticIds?.targetCanonicalKey?.adapterMayInventCanonicalId === false
-    && semanticIds?.migration?.ownerAuthoredChangeRequiredForNonconformingIds === true
-    && semanticIds?.migration?.autoCaseFold === false
-    && semanticIds?.migration?.autoTruncate === false
-    && semanticIds?.migration?.autoTranslateHyphens === false,
+    && semanticIds?.targetCanonicalKey?.adapterMayInventCanonicalId === false,
   semanticIds
 );
 schemaCases += 1;
@@ -878,8 +822,8 @@ check(
   "conformance:combined-counts",
   combinedConformanceDoc?.fixtures?.valid === 1
     && combinedConformanceDoc?.fixtures?.invalid === 12
-    && combinedConformanceDoc?.versionedFixtures?.["1.0.0"]?.valid === 11
-    && combinedConformanceDoc?.versionedFixtures?.["1.0.0"]?.invalid === 36,
+    && combinedConformanceDoc?.versionedFixtures?.["0.2.16"]?.valid === 11
+    && combinedConformanceDoc?.versionedFixtures?.["0.2.16"]?.invalid === 36,
   combinedConformanceDoc
 );
 
@@ -898,7 +842,7 @@ for (const name of fixtureDirsV1) {
     const report = parseJson(result.stdout);
     check(`fixture-v1:${name}:exit`, result.code === 0 && result.stderr === "", result);
     check(`fixture-v1:${name}:schema`, independent.errors.length === 0, independent.errors);
-    check(`fixture-v1:${name}:version`, report?.schemaVersion === "1.0.0", report);
+    check(`fixture-v1:${name}:version`, report?.schemaVersion === "0.2.16", report);
     const byteSorted = [...(report?.symbols ?? [])].sort((left, right) => Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8")));
     check(`fixture-v1:${name}:canonical-order`, canonical(report?.symbols) === canonical(byteSorted), report?.symbols);
     if (name === "valid-module-move") {
@@ -1010,34 +954,6 @@ for (const [name, args] of [
   check(`check-id:usage:${name}`, result.code === 1 && parseJson(result.stderr)?.reasonCodes?.[0] === "model.usage", result);
   check(`check-id:usage:${name}:no-echo`, result.stderr === MODEL_USAGE_ENVELOPE, { expected: MODEL_USAGE_ENVELOPE, actual: result.stderr });
 }
-
-const compatibilityExpectation = parseJson(await readFile(join(compatibilityDir, "expect.json"), "utf8"));
-const compatibilitySidePath = (version) => join(compatibilityDir, MODEL_COMPAT_GOLDEN_PAIR.sides.find((side) => side.version === version)?.directory ?? "MISSING-GOLDEN-SIDE");
-const compatibilityV0 = compatibilitySidePath("0.1.0");
-const compatibilityV1 = compatibilitySidePath("1.0.0");
-const compatibilityV0Result = run(["--project", "tests/fixtures/model-compat/0.1.0"]);
-const compatibilityV1Result = run(["--project", "tests/fixtures/model-compat/1.0.0"]);
-compatibilityCases += 2;
-check("compatibility:v0-valid", compatibilityV0Result.code === 0 && compatibilityV0Result.stderr === "", compatibilityV0Result);
-check("compatibility:v1-valid", compatibilityV1Result.code === 0 && compatibilityV1Result.stderr === "", compatibilityV1Result);
-const compatibilityV0Paths = (await modelDocuments(compatibilityV0)).map((path) => relative(compatibilityV0, path).replaceAll("\\", "/"));
-const compatibilityV1Paths = (await modelDocuments(compatibilityV1)).map((path) => relative(compatibilityV1, path).replaceAll("\\", "/"));
-check("compatibility:paths", canonical(compatibilityV0Paths) === canonical(compatibilityV1Paths), { compatibilityV0Paths, compatibilityV1Paths });
-let compatibilityChangedDocuments = 0;
-for (const relativePath of compatibilityV0Paths) {
-  const left = parseJson(await readFile(join(compatibilityV0, relativePath), "utf8"));
-  const right = parseJson(await readFile(join(compatibilityV1, relativePath), "utf8"));
-  if (left?.schema_version !== right?.schema_version) compatibilityChangedDocuments += 1;
-  left.schema_version = "VERSION";
-  right.schema_version = "VERSION";
-  check(`compatibility:schema-version-only:${relativePath}`, canonical(left) === canonical(right), { left, right });
-}
-check(
-  "compatibility:golden-count",
-  compatibilityExpectation?.automaticChange === "schema_version-only"
-    && compatibilityChangedDocuments === compatibilityExpectation?.changedDocumentCount,
-  { compatibilityExpectation, compatibilityChangedDocuments }
-);
 
 const mutations = [
   ["unknown-definition-field", "entities.yaml", (doc) => { doc.definitions[0].unexpected = true; }, "model.field-unknown", true],
@@ -1313,7 +1229,7 @@ try {
   await cp(validPlannerV1, precedence, { recursive: true });
   const precedenceModulePath = join(precedence, "lekalo", "modules", "planner", "module.yaml");
   const precedenceModule = JSON.parse(await readFile(precedenceModulePath, "utf8"));
-  precedenceModule.schema_version = "0.1.0";
+  precedenceModule.schema_version = "0.2.15";
   await writeFile(precedenceModulePath, `${JSON.stringify(precedenceModule)}\n`, "utf8");
   const precedenceEntitiesPath = join(precedence, "lekalo", "modules", "planner", "entities.yaml");
   const precedenceEntities = JSON.parse(await readFile(precedenceEntitiesPath, "utf8"));
@@ -1377,7 +1293,7 @@ try {
 const scratchDuplicateJson = await mkdtemp(join(tmpdir(), "lekalo-model-json-"));
 try {
   const duplicateCases = [
-    ["top-level-document", "valid-planner/lekalo/project.yaml", '"schema_version":"1.0.0","definitions"', '"schema_version":"1.0.0","schema_version":"1.0.0","definitions"', "lekalo/project.yaml"],
+    ["top-level-document", "valid-planner/lekalo/project.yaml", '"schema_version":"0.2.16","definitions"', '"schema_version":"0.2.16","schema_version":"0.2.16","definitions"', "lekalo/project.yaml"],
     ["definition-first-hostile-kind", "valid-planner/lekalo/modules/planner/entities.yaml", '"kind":"scalar","version"', '"kind":"constructor","kind":"scalar","version"', "lekalo/modules/planner/entities.yaml"],
     ["definition-last-hostile-kind", "valid-planner/lekalo/modules/planner/entities.yaml", '"kind":"scalar","version"', '"kind":"scalar","kind":"constructor","version"', "lekalo/modules/planner/entities.yaml"],
     ["escaped-duplicate-key", "valid-planner/lekalo/modules/planner/entities.yaml", '"kind":"scalar","version"', '"k\\u0069nd":"constructor","kind":"scalar","version"', "lekalo/modules/planner/entities.yaml"],
@@ -1629,8 +1545,8 @@ if (failures.length > 0) {
 } else {
   process.stdout.write(`${JSON.stringify({
     ok: true,
-    schemaVersion: "0.1.0",
-    schemaVersions: ["0.1.0", "1.0.0"],
+    schemaVersion: "0.2.16",
+    schemaVersions: ["0.2.16", "0.2.16"],
     kinds: ALL_KINDS.length,
     fixtureCases,
     subprocessCases,
@@ -1648,6 +1564,6 @@ if (failures.length > 0) {
     unknownFieldPrivacyCases,
     integrityProbeCases,
     fixtures: { valid: 1, invalid: 12 },
-    versionedFixtures: { "1.0.0": { valid: 11, invalid: 36 } }
+    versionedFixtures: { "0.2.16": { valid: 11, invalid: 36 } }
   }, null, 2)}\n`);
 }

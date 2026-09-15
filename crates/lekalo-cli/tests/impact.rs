@@ -139,8 +139,8 @@ fn symbol_mode_answers_on_the_valid_envelope() {
     let document: serde_json::Value =
         serde_json::from_str(stdout_text(&json).trim_end()).expect("json envelope");
     assert_eq!(document["status"], "valid");
-    assert_eq!(document["impact"]["schemaVersion"], "lekalo/impact/v1.0.0");
-    assert_eq!(document["impact"]["identity"], "dev.lekalo.impact@1.0.0");
+    assert_eq!(document["impact"]["schemaVersion"], "lekalo/impact/v0.2.16");
+    assert_eq!(document["impact"]["identity"], "dev.lekalo.impact@0.2.16");
     assert_eq!(document["impact"]["roots"][0], "entity:planner.task");
     assert_eq!(document["impact"]["direct"]["returned"], 6);
     assert_eq!(document["impact"]["transitive"]["returned"], 6);

@@ -6,7 +6,7 @@ import {
 } from "./check-privacy.mjs";
 
 export const AUTHORIZATION_SUBJECT_PROFILE = Object.freeze(JSON.parse(readFileSync(
-  new URL("../contracts/privacy-authorization-subject-profile.v1.0.0.json", import.meta.url), "utf8",
+  new URL("../contracts/privacy-authorization-subject-profile.v0.2.16.json", import.meta.url), "utf8",
 )));
 
 const SPECS = Object.freeze({

@@ -18,13 +18,9 @@ use super::registry::{
 use super::version::ContractVersion;
 use crate::loader::ModelVersion;
 
-/// The stable identity of the one real Model migration step.
-pub const MODEL_STEP_0_1_0_TO_1_0_0: &str = "model-0.1.0-to-1.0.0@1";
-
 mod private {
     /// Seal [`super::MigrationStep`] to this crate's catalog.
     pub trait SealedStep {}
-    impl SealedStep for crate::versioning::model_v0_1_0_to_v1_0_0::ModelV0_1_0ToV1_0_0 {}
 }
 
 /// One compiled, Model-only migration step.
@@ -54,9 +50,9 @@ pub trait MigrationStep: private::SealedStep + Sync {
 }
 
 /// The compiled catalog: every step the binary can execute, in identity
-/// order. Exactly one real Model step exists today.
+/// order. The development baseline has no historical steps.
 pub fn catalog() -> &'static [&'static dyn MigrationStep] {
-    static CATALOG: &[&dyn MigrationStep] = &[&super::model_v0_1_0_to_v1_0_0::ModelV0_1_0ToV1_0_0];
+    static CATALOG: &[&dyn MigrationStep] = &[];
     CATALOG
 }
 
@@ -67,8 +63,7 @@ fn step_by_id(id: &str) -> Option<&'static dyn MigrationStep> {
 /// The finite Model versions, for binding registry edges to steps.
 fn finite_model(text: &str) -> Option<ModelVersion> {
     match text {
-        "0.1.0" => Some(ModelVersion::V0_1_0),
-        "1.0.0" => Some(ModelVersion::V1_0_0),
+        "0.2.16" => Some(ModelVersion::Current),
         _ => None,
     }
 }

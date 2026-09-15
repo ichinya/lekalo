@@ -11,16 +11,16 @@
 pub const FAMILY: &str = "dev.lekalo.impact";
 
 /// The exact impact contract version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.impact@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.impact@0.2.16";
 
 /// The exact wire discriminator of the impact contract.
-pub const SCHEMA_VERSION: &str = "lekalo/impact/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/impact/v0.2.16";
 
 /// The exact identity of the deterministic v1 impact algorithm.
-pub const ALGORITHM: &str = "dev.lekalo.impact.algorithm@1.0.0";
+pub const ALGORITHM: &str = "dev.lekalo.impact.algorithm@0.2.16";
 
 /// The default traversal depth (the depth the issue examples use).
 pub const DEFAULT_DEPTH: u16 = 3;
@@ -62,9 +62,9 @@ mod tests {
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
         assert_eq!(FAMILY, "dev.lekalo.impact");
-        assert_eq!(VERSION, "1.0.0");
-        assert_eq!(SCHEMA_VERSION, "lekalo/impact/v1.0.0");
-        assert_eq!(ALGORITHM, "dev.lekalo.impact.algorithm@1.0.0");
+        assert_eq!(VERSION, "0.2.16");
+        assert_eq!(SCHEMA_VERSION, "lekalo/impact/v0.2.16");
+        assert_eq!(ALGORITHM, "dev.lekalo.impact.algorithm@0.2.16");
     }
 
     #[test]

@@ -82,7 +82,7 @@ fn show_reports_declared_effects_of_one_operation() {
         serde_json::from_str(stdout_text(&output).trim()).expect("envelope json");
     assert_eq!(document["status"], "valid");
     let effects = &document["effects"];
-    assert_eq!(effects["identity"], "dev.lekalo.effects@1.0.0");
+    assert_eq!(effects["identity"], "dev.lekalo.effects@0.2.16");
     assert_eq!(effects["operation"], "operation:planner.focus_task");
     assert_eq!(effects["complete"], true);
     let edges = effects["edges"].as_array().expect("edges");

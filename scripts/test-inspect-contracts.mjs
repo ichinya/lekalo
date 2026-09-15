@@ -31,7 +31,7 @@ if (ajvVersion !== "8.17.1") {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
-const schema = read("contracts/inspect.schema.v1.0.0.json");
+const schema = read("contracts/inspect.schema.v0.2.16.json");
 const goldenDir = "tests/fixtures/inspect/golden";
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
@@ -91,8 +91,8 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
   });
 
   // 3. Identities and coherence of the header.
-  if (inspect.schemaVersion !== "lekalo/inspect/v1.0.0") fail(`${name}-discriminator`);
-  if (inspect.identity !== "dev.lekalo.inspect@1.0.0") fail(`${name}-identity`);
+  if (inspect.schemaVersion !== "lekalo/inspect/v0.2.16") fail(`${name}-discriminator`);
+  if (inspect.identity !== "dev.lekalo.inspect@0.2.16") fail(`${name}-identity`);
   if (inspect.selector.mode !== "short-name" && inspect.selector.input !== inspect.symbol.id) {
     fail(`${name}-selector-identity`, inspect.selector);
   }

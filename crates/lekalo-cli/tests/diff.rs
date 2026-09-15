@@ -78,9 +78,9 @@ fn formatting_only_cases_answer_equal_with_empty_facts() {
     assert_eq!(diff["complete"], true);
     assert_eq!(diff["changes"].as_array().expect("changes").len(), 0);
     assert_eq!(diff["affectedSeeds"].as_array().expect("seeds").len(), 0);
-    assert_eq!(diff["schemaVersion"], "lekalo/semantic-diff/v1.0.0");
-    assert_eq!(diff["identity"], "dev.lekalo.semantic-diff@1.0.0");
-    assert_eq!(diff["base"]["irIdentity"], "dev.lekalo.ir@0.1.0");
+    assert_eq!(diff["schemaVersion"], "lekalo/semantic-diff/v0.2.16");
+    assert_eq!(diff["identity"], "dev.lekalo.semantic-diff@0.2.16");
+    assert_eq!(diff["base"]["irIdentity"], "dev.lekalo.ir@0.2.16");
 }
 
 /// Every fixture case compares cleanly and emits the exact change count
@@ -213,16 +213,16 @@ fn selector_arity_violations_are_usage_failures() {
 /// A base and a candidate from different Model contract families reject
 /// through `diff.input-invalid` with no partial diff.
 #[test]
-fn mixed_model_versions_reject_without_partial_output() {
+fn unsupported_model_version_rejects_without_partial_output() {
     let output = run_diff(&[
         "diff",
         "tests/fixtures/diff/cases/fields/base",
-        "tests/fixtures/versioning/migration/golden-0.1.0",
+        "tests/fixtures/model-v1/invalid-schema-version-unknown",
     ]);
-    assert_eq!(exit_code(&output), 1, "{}", stderr_text(&output));
+    assert_eq!(exit_code(&output), 5, "{}", stderr_text(&output));
     let text = stderr_text(&output);
-    assert!(text.contains("diff.input-invalid"), "{text}");
-    assert!(!text.contains("semantic-diff/v1.0.0"), "no partial result");
+    assert!(text.contains("versioning.unsupported-version"), "{text}");
+    assert!(!text.contains("semantic-diff/v0.2.16"), "no partial result");
 }
 
 /// The version custody probe: the binary prints the prospective product

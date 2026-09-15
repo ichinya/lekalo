@@ -20,18 +20,18 @@
 pub const FAMILY: &str = "dev.lekalo.reference-evaluation";
 
 /// The exact reference-evaluation contract version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.reference-evaluation@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.reference-evaluation@0.2.16";
 
 /// The exact wire discriminator of the reference-evaluation trace.
-pub const SCHEMA_VERSION: &str = "lekalo/reference-evaluation/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/reference-evaluation/v0.2.16";
 
 /// The identity of the executable reference semantics the evaluator
 /// implements. It changes only through a reviewed successor of this
 /// contract family, never silently.
-pub const SEMANTICS_IDENTITY: &str = "dev.lekalo.reference-semantics@1.0.0";
+pub const SEMANTICS_IDENTITY: &str = "dev.lekalo.reference-semantics@0.2.16";
 
 /// The fallback evaluation clock applied when a `when` step carries no
 /// clock reference and no `given` clock was established: the epoch
@@ -63,7 +63,7 @@ mod tests {
     #[test]
     fn identities_are_spellable_from_their_parts() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
-        assert_eq!(SCHEMA_VERSION, "lekalo/reference-evaluation/v1.0.0");
+        assert_eq!(SCHEMA_VERSION, "lekalo/reference-evaluation/v0.2.16");
         assert!(SEMANTICS_IDENTITY.starts_with("dev.lekalo.reference-semantics@"));
     }
 

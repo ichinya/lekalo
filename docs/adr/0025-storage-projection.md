@@ -21,7 +21,7 @@ The #18 semantic-diff already reserves `storage-review` hints and a
 ## Decision
 
 One closed, independent, versioned attachment family —
-`lekalo/storage-projection/v1.0.0` — binds one project to one exact
+`lekalo/storage-projection/v0.2.16` — binds one project to one exact
 Model pin, IR digest, and attachment revision, and declares:
 
 1. **Domain layer, target-neutral.** Stable entity keys independent of
@@ -60,7 +60,7 @@ Model pin, IR digest, and attachment revision, and declares:
    The contract adds its own `storage.*` rule family — reusing
    `invariant.*` or `transaction.*` would blur contract families. The
    registry takes its wire-shape-preserving additive increment to
-   [`diagnostic-registry.v1.22.0.json`](../../contracts/diagnostic-registry.v1.22.0.json)
+   [`diagnostic-registry.v0.2.16.json`](../../contracts/diagnostic-registry.v0.2.16.json)
    with `storage.input-invalid`, `storage.domain-invalid`,
    `storage.relation-invalid`, `storage.projection-invalid`,
    `storage.mapping-invalid`, `storage.diff-invalid`, and
@@ -82,7 +82,7 @@ Model pin, IR digest, and attachment revision, and declares:
   keys).** Rejected: hidden ORM behavior is exactly what the issue
   forbids. Every name is explicit at the domain or projection layer.
 - **Model-level relations instead of an attachment.** Rejected: the
-  Model is a frozen published contract (1.0.0); relations with storage
+  Model is a frozen published contract (0.2.16); relations with storage
   semantics are a new independent concern with its own versioning.
 
 ## Consequences

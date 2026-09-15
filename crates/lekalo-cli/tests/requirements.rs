@@ -47,10 +47,7 @@ fn save_attachment(dir: &Path, value: &Value) {
 }
 
 fn digest(bytes: &[u8]) -> String {
-    format!(
-        "sha256:{}",
-        lekalo_core::versioning::plan::sha256_hex(bytes)
-    )
+    format!("sha256:{}", lekalo_core::digest::sha256_hex(bytes))
 }
 
 fn repin_model(dir: &Path, value: &mut Value) {
@@ -815,7 +812,7 @@ fn maximum_semantic_ids_project_without_collisions_and_keep_gap_anchors() {
     let symbols = [format!("{prefix}s"), format!("{prefix}t")];
     let module_dir = dir.join("lekalo/modules").join(&module);
     fs::create_dir_all(&module_dir).unwrap();
-    fs::write(module_dir.join("module.yaml"), format!("schema_version: \"1.0.0\"\ndefinitions:\n  - id: {module}\n    kind: module\n    version: 1\n")).unwrap();
+    fs::write(module_dir.join("module.yaml"), format!("schema_version: \"0.2.16\"\ndefinitions:\n  - id: {module}\n    kind: module\n    version: 1\n")).unwrap();
     let definitions: Vec<String> = symbols
         .iter()
         .map(|id| format!("  - id: {id}\n    kind: command\n    version: 1\n"))
@@ -824,7 +821,7 @@ fn maximum_semantic_ids_project_without_collisions_and_keep_gap_anchors() {
     fs::write(
         &commands,
         format!(
-            "schema_version: \"1.0.0\"\ndefinitions:\n{}",
+            "schema_version: \"0.2.16\"\ndefinitions:\n{}",
             definitions.join("")
         ),
     )
@@ -876,7 +873,7 @@ fn maximum_semantic_ids_project_without_collisions_and_keep_gap_anchors() {
     fs::write(
         &commands,
         format!(
-            "schema_version: \"1.0.0\"\ndefinitions:\n{}{}",
+            "schema_version: \"0.2.16\"\ndefinitions:\n{}{}",
             definitions[1], definitions[0]
         ),
     )
@@ -1029,7 +1026,7 @@ fn report_and_trace_emit_schema_valid_canonical_bytes() {
     assert_eq!(exit_code(&report), 0, "{}", stderr_text(&report));
     let parsed: serde_json::Value =
         serde_json::from_str(stdout_text(&report).trim()).expect("report json");
-    assert_eq!(parsed["identity"], "dev.lekalo.requirements-report@1.0.0");
+    assert_eq!(parsed["identity"], "dev.lekalo.requirements-report@0.2.16");
 
     let trace = lekalo_in(
         &fixture,
@@ -1044,7 +1041,7 @@ fn report_and_trace_emit_schema_valid_canonical_bytes() {
     assert_eq!(exit_code(&trace), 0, "{}", stderr_text(&trace));
     let manifest: serde_json::Value =
         serde_json::from_str(stdout_text(&trace).trim()).expect("trace json");
-    assert_eq!(manifest["schemaVersion"], "lekalo/trace-manifest/v1.0.0");
+    assert_eq!(manifest["schemaVersion"], "lekalo/trace-manifest/v0.2.16");
     assert_eq!(manifest["completeness"], "partial");
     assert_eq!(manifest["manifestId"], "requirements-trace");
 }

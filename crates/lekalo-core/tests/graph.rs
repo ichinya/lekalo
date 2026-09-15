@@ -308,13 +308,13 @@ fn registry_extensions_are_closed_and_versioned() {
     let registry = GraphRegistry::core()
         .with_extension_kind(lekalo_core::graph::ExtensionKind {
             key: "vendor.example/widget".to_owned(),
-            version: "1.0.0".to_owned(),
+            version: "0.2.16".to_owned(),
         })
         .expect("valid extension kind");
     let registry = registry
         .with_extension_relation(lekalo_core::graph::ExtensionRelation {
             key: "vendor.example/bundles".to_owned(),
-            version: "1.0.0".to_owned(),
+            version: "0.2.16".to_owned(),
             acyclic: false,
         })
         .expect("valid extension relation");
@@ -330,7 +330,7 @@ fn registry_extensions_are_closed_and_versioned() {
     assert!(GraphRegistry::core()
         .with_extension_kind(lekalo_core::graph::ExtensionKind {
             key: "nowhere".to_owned(),
-            version: "1.0.0".to_owned(),
+            version: "0.2.16".to_owned(),
         })
         .is_err());
     assert!(GraphRegistry::core()
@@ -358,8 +358,8 @@ fn canonical_export_is_stable_and_closed() {
         "compact, no insignificant whitespace"
     );
     let document: serde_json::Value = serde_json::from_str(&first).expect("valid json");
-    assert_eq!(document["schemaVersion"], "lekalo/graph/v1.0.0");
-    assert_eq!(document["identity"], "dev.lekalo.graph@1.0.0");
+    assert_eq!(document["schemaVersion"], "lekalo/graph/v0.2.16");
+    assert_eq!(document["identity"], "dev.lekalo.graph@0.2.16");
     assert_eq!(document["project"], "planner");
     assert_eq!(document["metadata"]["nodeCount"], 24);
     assert_eq!(document["metadata"]["edgeCount"], 32);

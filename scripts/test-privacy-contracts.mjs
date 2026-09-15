@@ -22,7 +22,7 @@ const temp = await mkdtemp(join(tmpdir(), "lekalo-privacy-contracts-"));
 const context = await loadTrustedContext();
 const clone = (value) => structuredClone(value);
 const hex = (character) => `sha256:${character.repeat(64)}`;
-const audit = (id, character = "b") => ({ id, version: "1.0.0", evidenceDigest: hex(character) });
+const audit = (id, character = "b") => ({ id, version: "0.2.16", evidenceDigest: hex(character) });
 const classification = (character = "c") => ({
   ...CLASSIFICATION_CONTRACT_REF,
   decisionId: `classification-sha256:${character.repeat(64)}`,
@@ -135,21 +135,8 @@ try {
     assert.deepEqual(schemaDef.properties.outcome.enum, registryEntry.allowedOutcomes);
   }
   assert.equal(context.manifest.acceptedContracts.length, 1);
+  assert.equal(context.manifest.yankedCandidates, undefined);
   assert.deepEqual(context.manifest.currentAcceptedRef, POLICY_REF);
-  assert.equal(context.manifest.yankedCandidates.length, 6);
-  assert.equal(context.manifest.yankedCandidates[0].policyRef.version, "1.0.1");
-  assert.equal(context.manifest.yankedCandidates[0].accepted, false);
-  assert.equal(context.manifest.yankedCandidates[1].policyRef.version, "1.0.2");
-  assert.equal(context.manifest.yankedCandidates[1].accepted, false);
-  assert.equal(context.manifest.yankedCandidates[2].policyRef.version, "1.0.3");
-  assert.equal(context.manifest.yankedCandidates[2].accepted, false);
-  assert.equal(context.manifest.yankedCandidates[3].policyRef.version, "1.0.4");
-  assert.equal(context.manifest.yankedCandidates[3].accepted, false);
-  assert.equal(context.manifest.yankedCandidates[4].policyRef.version, "1.0.5");
-  assert.equal(context.manifest.yankedCandidates[4].accepted, false);
-  assert.equal(context.manifest.yankedCandidates[5].policyRef.version, "1.0.6");
-  assert.equal(context.manifest.yankedCandidates[5].status, "yanked-after-constraint-intersection-audit");
-  assert.equal(context.manifest.yankedCandidates[5].accepted, false);
   assert.deepEqual(context.inputSchema.properties.operation.properties.id.enum, context.policy.vocabularies.operation);
   assert.deepEqual(context.inputSchema.properties.dataSensitivity.items.enum, context.policy.vocabularies.dataSensitivity);
   assert.deepEqual(context.inputSchema.properties.exportDisposition.enum, context.policy.vocabularies.exportDisposition);
@@ -209,7 +196,7 @@ try {
   const manifestSidecarPath = join(temp, "manifest.sha256");
   const manifestBytes = Buffer.from(`${JSON.stringify(substitutedManifest, null, 2)}\n`);
   await writeFile(manifestPath, manifestBytes);
-  await writeFile(manifestSidecarPath, `${createHash("sha256").update(manifestBytes).digest("hex")}  privacy-policy.v1.0.3.manifest.json\n`);
+  await writeFile(manifestSidecarPath, `${createHash("sha256").update(manifestBytes).digest("hex")}  privacy-policy.v0.2.16.manifest.json\n`);
   await expectCustodyFailure({ manifest: manifestPath, manifestSidecar: manifestSidecarPath }, "custody.manifest-untrusted");
 
   const weakenedBindingManifest = clone(context.manifest);
@@ -219,7 +206,7 @@ try {
   const weakenedBindingManifestBytes = Buffer.from(`${JSON.stringify(weakenedBindingManifest, null, 2)}\n`);
   await writeFile(weakenedBindingManifestPath, weakenedBindingManifestBytes);
   await writeFile(weakenedBindingManifestSidecarPath,
-    `${createHash("sha256").update(weakenedBindingManifestBytes).digest("hex")}  privacy-policy.v1.0.3.manifest.json\n`);
+    `${createHash("sha256").update(weakenedBindingManifestBytes).digest("hex")}  privacy-policy.v0.2.16.manifest.json\n`);
   await expectCustodyFailure({ manifest: weakenedBindingManifestPath, manifestSidecar: weakenedBindingManifestSidecarPath }, "custody.manifest-untrusted");
 
   const weakenedSchema = clone(context.inputSchema);
@@ -258,7 +245,7 @@ try {
   const missingEvidenceSidecar = join(temp, "missing-evidence.sha256");
   await expectCustodyFailure({ authorizingEvidenceSidecar: missingEvidenceSidecar }, "custody.required-file-missing");
   const mutatedEvidenceSidecar = join(temp, "mutated-evidence.sha256");
-  await writeFile(mutatedEvidenceSidecar, `${"0".repeat(64)}  privacy-authorizing-evidence.v1.1.0.json\n`);
+  await writeFile(mutatedEvidenceSidecar, `${"0".repeat(64)}  privacy-authorizing-evidence.v0.2.16.json\n`);
   await expectCustodyFailure({ authorizingEvidenceSidecar: mutatedEvidenceSidecar }, "custody.authorizing-evidence-sidecar-mismatch");
 
   const weakenedSubjectProfile = clone(context.authorizationSubjectProfile);
@@ -268,10 +255,10 @@ try {
   await expectCustodyFailure({ authorizationSubjectProfile: weakenedSubjectProfilePath }, "custody.subject-profile-bytes-mismatch");
   await expectCustodyFailure({ authorizationSubjectProfileSidecar: join(temp, "missing-subject-profile.sha256") }, "custody.required-file-missing");
   const mutatedSubjectProfileSidecar = join(temp, "mutated-subject-profile.sha256");
-  await writeFile(mutatedSubjectProfileSidecar, `${"0".repeat(64)}  privacy-authorization-subject-profile.v1.0.0.json\n`);
+  await writeFile(mutatedSubjectProfileSidecar, `${"0".repeat(64)}  privacy-authorization-subject-profile.v0.2.16.json\n`);
   await expectCustodyFailure({ authorizationSubjectProfileSidecar: mutatedSubjectProfileSidecar }, "custody.subject-profile-sidecar-mismatch");
   const mutatedPolicySidecar = join(temp, "mutated-policy.sha256");
-  await writeFile(mutatedPolicySidecar, `${"0".repeat(64)}  privacy-policy.v1.0.7.json\n`);
+  await writeFile(mutatedPolicySidecar, `${"0".repeat(64)}  privacy-policy.v0.2.16.json\n`);
   await expectCustodyFailure({ policySidecar: mutatedPolicySidecar }, "custody.policy-sidecar-mismatch");
 
   const allowedFixtures = JSON.parse(await readFile(join(root, "tests/fixtures/privacy/allowed.json"), "utf8"));
@@ -296,12 +283,12 @@ try {
       dataSensitivity: ["internal"],
       exportDisposition: "shareable-with-redaction",
     }],
-    appliedTransforms: [{ transformId: "aggregate-no-source-rows", version: "1.0.0", evidenceDigest: hex("d") }],
+    appliedTransforms: [{ transformId: "aggregate-no-source-rows", version: "0.2.16", evidenceDigest: hex("d") }],
     declassificationDecision: {
-      policyRef: clone(POLICY_REF), decisionRef: null, version: "1.0.0", outcome: "approved", removedSensitivities: ["internal"],
+      policyRef: clone(POLICY_REF), decisionRef: null, version: "0.2.16", outcome: "approved", removedSensitivities: ["internal"],
     },
     aggregationDecision: {
-      policyRef: clone(POLICY_REF), decisionRef: null, version: "1.0.0", outcome: "approved", removesSourceRows: true, removesSourceIdentities: true,
+      policyRef: clone(POLICY_REF), decisionRef: null, version: "0.2.16", outcome: "approved", removesSourceRows: true, removesSourceIdentities: true,
     },
     containsSourceRows: false,
     containsSourceIdentities: false,
@@ -313,7 +300,7 @@ try {
   evaluate(aggregate, "allow", "policy.allow");
 
   const staleSourcePolicy = clone(aggregate);
-  staleSourcePolicy.derivedArtifact.sourceArtifacts[0].policyRef.version = "1.0.0";
+  staleSourcePolicy.derivedArtifact.sourceArtifacts[0].policyRef.version = "0.2.15";
   evaluate(staleSourcePolicy, "deny", "input.derived-artifact", true);
   const staleSourceAuthority = clone(aggregate);
   staleSourceAuthority.derivedArtifact.sourceArtifacts[0].authorityRef.version = "1.3.0";

@@ -72,7 +72,7 @@ lekalo readiness --phase model|implement|generate|verify|release [--project DIR]
 opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic
 ID rules, validation, and graph construction bind every implemented
 command. Every implemented capability is bound by
-dev.lekalo.semantic-ids@0.1.0 to use the validated semantic ID verbatim as
+dev.lekalo.semantic-ids@0.2.16 to use the validated semantic ID verbatim as
 its canonical key; the implemented loader already consumes those IDs
 verbatim when it normalizes references, and the graph, effects, context,
 and impact engines resolve them through the kind-qualified node identity.
@@ -135,7 +135,7 @@ hermetic fixture suite under `tests/fixtures/loader/`. `--spans` adds the
 sorted `sourceMap` sibling; it never alters the model bytes.
 
 With `--ir`, `load` additionally compiles the loaded model into the typed,
-deterministic Lekalo IR (`dev.lekalo.ir@0.1.0`) and prints the canonical IR
+deterministic Lekalo IR (`dev.lekalo.ir@0.2.16`) and prints the canonical IR
 bytes in place of the preserved model; `--spans` then appends the IR source
 map. IR decode failures are `invalid` (exit 1, stderr) with the closed
 `ir.*` reason codes. See [ir.md](ir.md) for the normative IR contract and
@@ -192,7 +192,7 @@ owner decisions.
 writing. Apply and rollback are journaled, verified transactions with
 immutable backups under `.lekalo/cache/migrations/`; readers fail closed
 while a journal exists. See [versioning.md](versioning.md) for the
-normative support policy, the 0.1.0 to 1.0.0 preconditions, and the
+normative support policy, the 0.2.16 to 0.2.16 preconditions, and the
 recovery contract. Unsupported contract versions exit 5 with the shared
 `versioning.unsupported-version` reason.
 
@@ -227,7 +227,7 @@ only. The normative contract is
 | 1 | `invalid` | stderr | Malformed command-line syntax or usage |
 | 3 | `denied` | stdout | Well-formed physical/policy denial (loader, structure) |
 | 4 | `unsupported` | stdout | Recognized capability unavailable in this build |
-| 5 | `unsupported-version` | stderr | Model contract version outside the exact 0.1.0/1.0.0 set |
+| 5 | `unsupported-version` | stderr | Model contract version outside the exact 0.2.16/0.2.16 set |
 
 No subcommand remains a stub. The loader emits 0/1/3/5 as specified in
 [loader.md](loader.md).
@@ -249,8 +249,8 @@ escapes, timestamps, absolute paths, current-directory values, or raw argv.
 
 Since issue #11 the diagnostics array is authoritative and `reasonCodes` is
 derived from it: the unique diagnostic ids in normalized order. Every
-diagnostic is one closed wire item (`lekalo/diagnostic/v1.0.0`, registry
-version `1.0.0`) whose code, category, severity, message, and data fields are
+diagnostic is one closed wire item (`lekalo/diagnostic/v0.2.16`, registry
+version `0.2.16`) whose code, category, severity, message, and data fields are
 resolved from the embedded rule registry; see
 [Diagnostics](diagnostics.md) and
 [ADR-0010](adr/0010-diagnostics.md). Severity and category never compute the
@@ -263,8 +263,8 @@ Malformed syntax:
   "status": "invalid",
   "diagnostics": [
     {
-      "schema_version": "lekalo/diagnostic/v1.0.0",
-      "registry_version": "1.0.0",
+      "schema_version": "lekalo/diagnostic/v0.2.16",
+      "registry_version": "0.2.16",
       "id": "cli.usage",
       "code": "LEK-CLI-001",
       "severity": "error",
@@ -292,8 +292,8 @@ Recognized unavailable capability (using `impact` as the example):
   "capability": "impact",
   "diagnostics": [
     {
-      "schema_version": "lekalo/diagnostic/v1.0.0",
-      "registry_version": "1.0.0",
+      "schema_version": "lekalo/diagnostic/v0.2.16",
+      "registry_version": "0.2.16",
       "id": "core.capability-unavailable",
       "code": "LEK-DIAG-001",
       "severity": "info",
@@ -441,7 +441,7 @@ explicitly supplied change set. The core owns every decision
 (selection, estimation, truncation, projection); the binary only
 selects, renders, and maps exits onto the accepted 0/1 envelope. The
 human stream carries the agent-facing Markdown of the capsule; `--json`
-wraps the structured capsule (`lekalo/context/v1.0.0`) in the success
+wraps the structured capsule (`lekalo/context/v0.2.16`) in the success
 envelope. Successes exit 0 on stdout; unknown symbols
 (`graph.unknown-node`, `LEK-GRAPH-007`), out-of-range budgets and
 over-bound scopes (`graph.input-invalid`), and manifest bound exhaustion
@@ -459,7 +459,7 @@ Protected semantic facts (the root contract, its policies, effects,
 direct dependencies, scenarios, public impact, and bindings) are typed
 records, never collapsed into ambiguous prose; supporting context (type
 cards, bounded closure) is ranked and may be excluded. The estimator
-profile (`dev.lekalo.estimator.chars-4@1.0.0`, the offline deterministic
+profile (`dev.lekalo.estimator.chars-4@0.2.16`, the offline deterministic
 fallback) pins its identity, version, and digest into every capsule.
 `--spans` attaches the declaration-span sidecar (logical
 project-relative paths only) as the restricted raw-source evidence path;
@@ -569,7 +569,7 @@ generate applied plan sha256:973d... (-1)
 ## Requirements
 
 The `lekalo requirements` handoff resolves one requirements attachment
-(`lekalo/requirements/v1.0.0`) against its project: the read-only OpenSpec
+(`lekalo/requirements/v0.2.16`) against its project: the read-only OpenSpec
 provider walks `specs/**` and `changes/**`, projects the effective
 requirement set, and pins every reference to an exact body revision. All
 decisions live in the core; the binary selects, renders, and maps exits,
@@ -706,7 +706,7 @@ exit 1 with `observed.stale-binding` per finding).
 
 Issue #66 adds the typed-expression handoff: the thin
 validate/eval/render/diff subcommands over the closed
-`dev.lekalo.expressions@1.0.0` family. The core owns every decision
+`dev.lekalo.expressions@0.2.16` family. The core owns every decision
 (static typing, reference evaluation with the injected clock,
 projection, classification); the binary only selects, renders, and
 maps exits. The contract, the closed grammar, the managed-mode

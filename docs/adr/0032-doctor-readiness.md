@@ -1,5 +1,7 @@
 # ADR-0032: Doctor, status, and the readiness report
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-09
 Status: accepted for issue #92
 
@@ -9,7 +11,7 @@ workspace `Cargo.toml`, both `lekalo` packages in `Cargo.lock`, the
 regenerated committed golden lock and its digest sidecar, the
 `--version` behavior and its pinning tests, `README.md`, and
 `docs/cli.md`. The doctor contract version
-(`lekalo/doctor/v1.0.0`, identity `dev.lekalo.doctor@1.0.0`) is
+(`lekalo/doctor/v0.2.16`, identity `dev.lekalo.doctor@0.2.16`) is
 independent of the product release, of the Model/IR/graph/effect/lock
 contract versions, and of the diagnostic registry by design. The
 reserved diagnostic registry version 1.17.0 is **not consumed**: the
@@ -41,8 +43,8 @@ exit policy, and disclose no secret or environment values.
 
 `lekalo doctor`, `lekalo status`, and `lekalo readiness --phase PHASE`
 project one document
-([`contracts/doctor.schema.v1.0.0.json`](../../contracts/doctor.schema.v1.0.0.json),
-discriminator `lekalo/doctor/v1.0.0`). The report kind selects the
+([`contracts/doctor.schema.v0.2.16.json`](../../contracts/doctor.schema.v0.2.16.json),
+discriminator `lekalo/doctor/v0.2.16`). The report kind selects the
 panel: `doctor` runs the full thirteen-check vocabulary, `status`
 runs the freshness quartet (lock, cache, bindings, artifacts) plus the
 revisions block, `readiness` runs the full panel and marks the

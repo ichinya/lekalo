@@ -53,7 +53,7 @@ content inside those `.yaml` files; `.json` siblings are not legal homes.
 `lekalo/targets/**` and `.lekalo/**` are never model input.
 
 `schema_version` is read from the parsed top-level mapping, never by a text
-scan. The only accepted literals are exactly `0.1.0` and `1.0.0` — no
+scan. The only accepted literals are exactly `0.2.16` and `0.2.16` — no
 ranges, prerelease, or build forms. Any other literal (including `v1`,
 `1`, `2.0.0`, `1.x.0`) is `versioning.unsupported-version` (exit 5,
 stderr). If every document carries a supported literal but they disagree,
@@ -104,8 +104,8 @@ indentation) is `loader.yaml-parse`. Duplicate keys are
 ## Imports, visibility, and collisions
 
 `module.yaml` alone declares `imports`; each entry is an exact semantic
-module ID under the active Model version (0.1.0 module names allow hyphens,
-1.0.0 module IDs do not). Module IDs — never directory names — key the
+module ID under the active Model version (0.2.16 module names allow hyphens,
+0.2.16 module IDs do not). Module IDs — never directory names — key the
 graph; filesystem paths always come from the #4 discovery result.
 
 - An import containing `/`, `\`, `..`, `%`, `:`, `~`, or an absolute marker
@@ -159,7 +159,7 @@ Non-string reference values pass through untouched for the Model validator.
 Success is one compact UTF-8 JSON line plus LF:
 
 ```
-{"status":"valid","modelVersion":"1.0.0","model":{"definitions":[...],"modules":[...],"project":{...}}}
+{"status":"valid","modelVersion":"0.2.16","model":{"definitions":[...],"modules":[...],"project":{...}}}
 ```
 
 The envelope top level is the fixed contract order `status`,

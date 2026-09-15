@@ -1,28 +1,28 @@
 {
   "binding": {
-    "cacheIdentity": "dev.lekalo.cache@1.0.0",
+    "cacheIdentity": "dev.lekalo.cache@0.2.16",
     "contracts": [
       {
         "family": "dev.lekalo.model",
-        "identity": "dev.lekalo.model@1.0.0"
+        "identity": "dev.lekalo.model@0.2.16"
       },
       {
         "family": "dev.lekalo.ir",
-        "identity": "dev.lekalo.ir@0.1.0"
+        "identity": "dev.lekalo.ir@0.2.16"
       }
     ],
     "pipelineRevision": 1
   },
   "dependencies": [],
-  "identity": "dev.lekalo.cache@1.0.0",
+  "identity": "dev.lekalo.cache@0.2.16",
   "key": {
     "kind": "ir-fragment",
-    "modelVersion": "1.0.0",
+    "modelVersion": "0.2.16",
     "parsedDigests": [
       "sha256:72673e25f53da49ad6298f302d35b2f8888b8945c8a8bee512e563b7a87877b5"
     ]
   },
-  "keyDigest": "sha256:b07953d2b661018f4a9850965be3b3664789f019caa9e08eeb5f0404ddef2529",
+  "keyDigest": "sha256:368caa442d2eed77e31e828dcd715b6d467d9654378e161ca41cc962ea14192d",
   "payload": {
     "encoding": "lekalo/canonical-json",
     "value": {
@@ -32,5 +32,5 @@
   },
   "payloadDigest": "sha256:81808c167f4a20a3e3887442ad523e597dfacb95cc97a7fe064e0275dafbe62a",
   "recordKind": "ir-fragment",
-  "schemaVersion": "lekalo/cache/v1.0.0"
+  "schemaVersion": "lekalo/cache/v0.2.16"
 }

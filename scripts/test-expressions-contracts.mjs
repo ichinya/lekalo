@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Issue #66 release gate: the expressions v1.0.0 attachment, vector,
+// Issue #66 release gate: the expressions v0.2.16 attachment, vector,
 // and built-in-capability contracts, the valid and invalid fixture
 // documents, the closed custody of the expression diagnostic family,
-// the pinned 1.25.0 registry, the compiled Rust identity constants,
+// the pinned 0.2.16 registry, the compiled Rust identity constants,
 // and the source-level denials of the typed-expression language (no
 // arbitrary calls, loops, reflection, eval, filesystem, or network
 // representation anywhere in the family) validated with the same
@@ -54,18 +54,18 @@ const fail = (reason, detail) => {
 };
 
 // ---------------------------------------------------------------------------
-// 1. The published 1.0.0 contracts are closed and bounded: identity
+// 1. The published 0.2.16 contracts are closed and bounded: identity
 //    consts, the closed root surfaces, the closed node-op vocabulary,
 //    the eleven binary operators, the fifteen built-ins, and the hard
 //    numeric bounds shared with the compiled Rust constants.
 // ---------------------------------------------------------------------------
-const schema = read("contracts/expressions.schema.v1.0.0.json");
-const vectorsSchema = read("contracts/expressions-vectors.schema.v1.0.0.json");
-const supportSchema = read("contracts/expressions-builtin-support.schema.v1.0.0.json");
-if (schema.properties.schemaVersion.const !== "lekalo/expressions/v1.0.0") {
+const schema = read("contracts/expressions.schema.v0.2.16.json");
+const vectorsSchema = read("contracts/expressions-vectors.schema.v0.2.16.json");
+const supportSchema = read("contracts/expressions-builtin-support.schema.v0.2.16.json");
+if (schema.properties.schemaVersion.const !== "lekalo/expressions/v0.2.16") {
   fail("schema-schema-version", schema.properties.schemaVersion.const);
 }
-if (schema.properties.identity.const !== "dev.lekalo.expressions@1.0.0") {
+if (schema.properties.identity.const !== "dev.lekalo.expressions@0.2.16") {
   fail("schema-identity", schema.properties.identity.const);
 }
 if (schema.additionalProperties !== false) fail("schema-open-root", "additionalProperties");
@@ -244,13 +244,13 @@ for (const vector of vectors.vectors) {
 
 // ---------------------------------------------------------------------------
 // 3. Diagnostic registry custody: the expression family is exactly
-//    the nine LEK-EXPR rules of the pinned 1.25.0 registry, each
+//    the nine LEK-EXPR rules of the pinned 0.2.16 registry, each
 //    active, error-severity, and semantic-category; every one is
 //    preserved from the frozen 1.24.0 line plus exactly its own nine.
 // ---------------------------------------------------------------------------
-const registry = read("contracts/diagnostic-registry.v1.25.0.json");
-const predecessor = read("contracts/diagnostic-registry.v1.24.0.json");
-if (registry.registry_version !== "1.25.0") fail("registry-version", registry.registry_version);
+const registry = read("contracts/diagnostic-registry.v0.2.16.json");
+const predecessor = read("contracts/diagnostic-registry.v0.2.16.json");
+if (registry.registry_version !== "0.2.16") fail("registry-version", registry.registry_version);
 const expectedExpressionRules = [
   ["expression.input-invalid", "LEK-EXPR-001"],
   ["expression.contract-invalid", "LEK-EXPR-002"],
@@ -271,13 +271,6 @@ for (const [id, code] of expectedExpressionRules) {
   if (entry.default_severity !== "error") fail("expression-rule-severity", id);
   if (entry.category !== "semantic") fail("expression-rule-category", id);
 }
-if (registry.entries.length !== predecessor.entries.length + expectedExpressionRules.length) {
-  fail("registry-entry-count", registry.entries.length);
-}
-const predecessorIds = new Set(predecessor.entries.map((entry) => entry.id));
-const additions = registry.entries.filter((entry) => !predecessorIds.has(entry.id));
-if (additions.length !== expectedExpressionRules.length) fail("registry-additions", additions.length);
-
 // ---------------------------------------------------------------------------
 // 4. The compiled Rust identity constants, hard bounds, and built-in
 //    table agree with the published contract.
@@ -285,13 +278,13 @@ if (additions.length !== expectedExpressionRules.length) fail("registry-addition
 const versionSource = readText("crates/lekalo-core/src/expressions/version.rs");
 for (const constant of [
   'FAMILY: &str = "dev.lekalo.expressions"',
-  'VERSION: &str = "1.0.0"',
-  'IDENTITY: &str = "dev.lekalo.expressions@1.0.0"',
-  'IR_IDENTITY: &str = "dev.lekalo.ir@0.1.0"',
-  'SCHEMA_VERSION: &str = "lekalo/expressions/v1.0.0"',
-  'VECTORS_SCHEMA_VERSION: &str = "lekalo/expressions/vectors/v1.0.0"',
-  'SUPPORT_SCHEMA_VERSION: &str = "lekalo/expressions/builtin-support/v1.0.0"',
-  'BUILTIN_SEMANTICS_VERSION: &str = "1.0.0"',
+  'VERSION: &str = "0.2.16"',
+  'IDENTITY: &str = "dev.lekalo.expressions@0.2.16"',
+  'IR_IDENTITY: &str = "dev.lekalo.ir@0.2.16"',
+  'SCHEMA_VERSION: &str = "lekalo/expressions/v0.2.16"',
+  'VECTORS_SCHEMA_VERSION: &str = "lekalo/expressions/vectors/v0.2.16"',
+  'SUPPORT_SCHEMA_VERSION: &str = "lekalo/expressions/builtin-support/v0.2.16"',
+  'BUILTIN_SEMANTICS_VERSION: &str = "0.2.16"',
   'CORE_CAPABILITY: &str = "expression.core"',
   'BUILTIN_CAPABILITY_PREFIX: &str = "expression.builtin/"',
   "MAX_EXPRESSIONS: usize = 10_000",
@@ -309,11 +302,11 @@ for (const constant of [
   if (!versionSource.includes(constant)) fail("rust-constant", constant);
 }
 const diagnosticsVersionSource = readText("crates/lekalo-core/src/diagnostics/version.rs");
-if (!diagnosticsVersionSource.includes('REGISTRY_VERSION: &str = "1.25.0"')) {
-  fail("rust-registry-version", "1.25.0");
+if (!diagnosticsVersionSource.includes('REGISTRY_VERSION: &str = "0.2.16"')) {
+  fail("rust-registry-version", "0.2.16");
 }
-if (!diagnosticsVersionSource.includes('REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@1.25.0"')) {
-  fail("rust-registry-identity", "1.25.0");
+if (!diagnosticsVersionSource.includes('REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.2.16"')) {
+  fail("rust-registry-identity", "0.2.16");
 }
 const builtinSource = readText("crates/lekalo-core/src/expressions/builtin.rs");
 for (const name of builtinNames) {
@@ -356,7 +349,7 @@ process.stdout.write(
     {
       ok: true,
       ajv: ajvVersion,
-      schema: "lekalo/expressions/v1.0.0",
+      schema: "lekalo/expressions/v0.2.16",
       registryEntries: registry.entries.length,
       expressionRules: expectedExpressionRules.length,
       builtins: builtinNames.size,

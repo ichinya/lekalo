@@ -1,5 +1,0 @@
-schema_version: "0.1.0"
-definitions:
-  - id: work-items
-    kind: module
-    version: 1

@@ -1,12 +1,14 @@
 # The Scenario IR (issue #23)
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 One portable behavioral scenario, written once and referenced by the
 native test backend of every target. The Scenario IR is a derived test
 contract — never canonical Model source, never runtime evidence — with
 its own closed wire schema
-([`contracts/scenario-ir.schema.v1.0.0.json`](../contracts/scenario-ir.schema.v1.0.0.json),
-discriminator `lekalo/scenario-ir/v1.0.0`, identity
-`dev.lekalo.scenario-ir@1.0.0`), independent of the product release, of
+([`contracts/scenario-ir.schema.v0.2.16.json`](../contracts/scenario-ir.schema.v0.2.16.json),
+discriminator `lekalo/scenario-ir/v0.2.16`, identity
+`dev.lekalo.scenario-ir@0.2.16`), independent of the product release, of
 the Model/IR/graph/protocol contract versions, of the diagnostic
 registry, and of every execution backend.
 
@@ -22,7 +24,7 @@ registry, and of every execution backend.
   occurrence ordinal exists only for source and reference
   disambiguation.
 - Every document binds the exact compiled inputs: `irRef` (the one
-  accepted IR contract `dev.lekalo.ir@0.1.0` plus the canonical IR
+  accepted IR contract `dev.lekalo.ir@0.2.16` plus the canonical IR
   digest) and `modelRef` (the accepted Model version plus the source
   Model digest).
 
@@ -57,7 +59,7 @@ registry, and of every execution backend.
 - `tags` (sorted set, at most 64) and dotted-namespace `metadata`
   (at most 64 entries, 64 KiB canonical bytes) are bounded and closed.
 - The optional `sourceMapRef` pins the digest-bound source-map sidecar
-  (identity `dev.lekalo.scenario-sourcemap@1.0.0`, at most 8192
+  (identity `dev.lekalo.scenario-sourcemap@0.2.16`, at most 8192
   entries) that maps scenario, step, role, member path, reference
   role, and occurrence ordinal onto accepted logical paths and exact
   byte/line/column ranges. The sidecar never carries a physical root,

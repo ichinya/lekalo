@@ -20,6 +20,7 @@ use crate::artifacts::types::{
 use crate::artifacts::ArtifactFailure;
 use crate::diagnostics::types::token_value;
 use crate::diagnostics::{DataObject, Diagnostic};
+use crate::digest::sha256_hex;
 use crate::ir::Compilation;
 use crate::loader::{self, LoadSelection, ModelVersion};
 use crate::lockfile::types::Sha256Digest;
@@ -28,7 +29,6 @@ use crate::result::{DomainResult, Status};
 use crate::target_protocol::transport::TransportLimits;
 use crate::target_protocol::wire::{Operation, WriteAction, WriteEntry};
 use crate::target_protocol::{CallRequest, TargetClient, TargetFailure};
-use crate::versioning::plan::sha256_hex;
 
 use super::catalog::{binding_failure, discover, locked_adapter, AdapterSupply};
 use super::receipt::{
@@ -804,8 +804,8 @@ mod tests {
     /// contract identity, and the canonical verdict tokens.
     #[test]
     fn receipt_wire_spelling() {
-        assert_eq!(SCHEMA_VERSION, "lekalo/orchestration/v1.0.0");
-        assert_eq!(IDENTITY, "dev.lekalo.orchestration-report@1.0.0");
+        assert_eq!(SCHEMA_VERSION, "lekalo/orchestration/v0.2.16");
+        assert_eq!(IDENTITY, "dev.lekalo.orchestration-report@0.2.16");
         assert_eq!(Verdict::Blocked.as_str(), "blocked");
         assert_eq!(TargetState::Applied.as_str(), "applied");
         assert_eq!(

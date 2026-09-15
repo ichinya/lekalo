@@ -1,8 +1,8 @@
 {
-  "schemaVersion": "lekalo/contracted-declaration/v1.0.0",
+  "schemaVersion": "lekalo/contracted-declaration/v0.2.16",
   "adapter": {
     "id": "lekalo-target-node-typescript",
-    "version": "1.0.0",
+    "version": "0.2.16",
     "digest": null
   },
   "project": "planner",
@@ -69,7 +69,7 @@
       "kind": "openapi",
       "path": ".lekalo/generated/openapi/planner.json",
       "lifecycle": "generated",
-      "digest": "sha256:4c40646761a65fa27b2a61b76bed9dd40b986249a6e27d64499e109222bd22d7"
+      "digest": "sha256:e016735988a34826030f8582bab8622d2afd3cab72089cd84017a42fc6452d1f"
     }
   ]
 }

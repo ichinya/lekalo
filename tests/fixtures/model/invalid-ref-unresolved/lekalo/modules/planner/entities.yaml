@@ -1,1 +1,1 @@
-{"schema_version":"0.1.0","definitions":[{"id":"planner.thing","kind":"value-object","version":1,"fields":[{"name":"a","type":{"ref":"planner.missing"},"required":true}]}]}
+{"schema_version":"0.2.16","definitions":[{"id":"planner.thing","kind":"value-object","version":1,"fields":[{"name":"a","type":{"ref":"planner.missing"},"required":true}]}]}

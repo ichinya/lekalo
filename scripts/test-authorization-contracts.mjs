@@ -44,7 +44,7 @@ if (ajvVersion !== "8.17.1") {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
-const schema = read("contracts/authorization.schema.v1.0.0.json");
+const schema = read("contracts/authorization.schema.v0.2.16.json");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validate = ajv.compile(schema);
 
@@ -73,9 +73,9 @@ const sortedUnique = (values) => {
 };
 
 const checkDocument = (name, document) => {
-  if (document.schema_version !== "lekalo/authorization/v1.0.0") fail("schema-version", name);
-  if (document.identity !== "dev.lekalo.authorization@1.0.0") fail("identity", name);
-  if (document.profile_ref !== "dev.lekalo.authorization-profile@1.0.0") fail("profile-ref", name);
+  if (document.schema_version !== "lekalo/authorization/v0.2.16") fail("schema-version", name);
+  if (document.identity !== "dev.lekalo.authorization@0.2.16") fail("identity", name);
+  if (document.profile_ref !== "dev.lekalo.authorization-profile@0.2.16") fail("profile-ref", name);
 
   for (const section of ["capabilities", "roles"]) {
     const decls = document[section] ?? [];

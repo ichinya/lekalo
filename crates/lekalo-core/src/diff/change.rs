@@ -11,7 +11,7 @@ use super::identity::Subject;
 use super::version::MAX_HISTORY_HOPS;
 
 /// The closed change taxonomy: exactly the kinds the accepted Model
-/// (0.1.0 / 1.0.0) can produce. Families without a declared source in the
+/// (0.2.16 / 0.2.16) can produce. Families without a declared source in the
 /// accepted contracts (standalone invariants, error unions, storage
 /// projections, artifact manifests) have no kinds here; activating them
 /// requires a Diff contract successor.

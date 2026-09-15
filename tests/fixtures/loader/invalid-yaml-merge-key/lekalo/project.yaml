@@ -1,6 +1,6 @@
 defaults:
   <<: {version: 1}
-schema_version: "1.0.0"
+schema_version: "0.2.16"
 definitions:
   - id: core
     kind: project

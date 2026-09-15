@@ -1,83 +1,48 @@
 {
   "status": "valid",
-  "registryVersion": "1.2.0",
+  "registryVersion": "0.2.16",
   "families": [
     {
       "family": "model",
-      "current": "1.0.0",
-      "min": "0.1.0",
-      "max": "1.0.0",
-      "aliases": [
-        {
-          "alias": "v1",
-          "version": "1.0.0"
-        }
-      ],
+      "current": "0.2.16",
+      "min": "0.2.16",
+      "max": "0.2.16",
+      "aliases": [],
       "versions": [
         {
-          "version": "0.1.0",
-          "state": "deprecated",
-          "classification": "additive"
-        },
-        {
-          "version": "1.0.0",
+          "version": "0.2.16",
           "state": "supported",
-          "classification": "breaking"
-        }
-      ],
-      "migrations": [
-        {
-          "id": "model-0.1.0-to-1.0.0@1",
-          "from": "0.1.0",
-          "to": "1.0.0",
           "classification": "breaking"
         }
       ]
     },
     {
       "family": "ir",
-      "current": "0.1.0",
-      "min": "0.1.0",
-      "max": "0.1.0",
+      "current": "0.2.16",
+      "min": "0.2.16",
+      "max": "0.2.16",
       "aliases": [],
       "versions": [
         {
-          "version": "0.1.0",
+          "version": "0.2.16",
           "state": "supported",
-          "classification": "additive"
+          "classification": "breaking"
         }
-      ],
-      "migrations": []
+      ]
     },
     {
       "family": "protocol",
-      "current": "1.2.0",
-      "min": "1.0.0",
-      "max": "1.2.0",
-      "aliases": [
-        {
-          "alias": "v1",
-          "version": "1.0.0"
-        }
-      ],
+      "current": "0.2.16",
+      "min": "0.2.16",
+      "max": "0.2.16",
+      "aliases": [],
       "versions": [
         {
-          "version": "1.0.0",
+          "version": "0.2.16",
           "state": "supported",
-          "classification": "additive"
-        },
-        {
-          "version": "1.1.0",
-          "state": "supported",
-          "classification": "additive"
-        },
-        {
-          "version": "1.2.0",
-          "state": "supported",
-          "classification": "additive"
+          "classification": "breaking"
         }
-      ],
-      "migrations": []
+      ]
     }
   ]
 }

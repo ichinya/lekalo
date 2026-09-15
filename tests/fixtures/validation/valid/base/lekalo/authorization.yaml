@@ -1,9 +1,9 @@
-schema_version: "lekalo/authorization/v1.0.0"
-identity: "dev.lekalo.authorization@1.0.0"
+schema_version: "lekalo/authorization/v0.2.16"
+identity: "dev.lekalo.authorization@0.2.16"
 model_ref:
-  schema_version: "0.1.0"
-  ir_digest: "sha256:f62d815b5d757bc36cc52a2a4ae0e728ce567a620f6ff22882f2372ae1fc35cc"
-profile_ref: "dev.lekalo.authorization-profile@1.0.0"
+  schema_version: "0.2.16"
+  ir_digest: "sha256:8b51b8a47d3480bf6333c4d7f470dc46a5df0bfd795a353f788496f6b650d48e"
+profile_ref: "dev.lekalo.authorization-profile@0.2.16"
 policies:
   - id: planner.policy.create_task
     actor: identity.user

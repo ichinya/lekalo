@@ -11,11 +11,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use lekalo_core::artifacts::{
     ArtifactFailure, DriftVerdict, GenerateService, GENERATED_ROOT, MANIFEST_DIR, MANIFEST_NAME,
 };
+use lekalo_core::digest::sha256_hex;
 use lekalo_core::loader::LoadSelection;
 use lekalo_core::lockfile::plan::LockService;
 use lekalo_core::lockfile::resolution::CandidateSet;
 use lekalo_core::lockfile::LockRequirement;
-use lekalo_core::versioning::plan::sha256_hex;
 
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/artifacts/project";
 const ARTIFACT_DIR: &str = "apps/api/src/planner";
@@ -87,7 +87,7 @@ impl Sandbox {
         let dir = self.root.join(ARTIFACT_DIR);
         std::fs::create_dir_all(&dir).expect("artifact dir");
         std::fs::write(dir.join(ARTIFACT_NAME), content).expect("artifact bytes");
-        lekalo_core::versioning::plan::sha256_hex(content.as_bytes())
+        lekalo_core::digest::sha256_hex(content.as_bytes())
     }
 
     fn manifest_path(&self) -> PathBuf {
@@ -145,11 +145,11 @@ fn adapter_bound_value(owner: &str, path: &str, content: &str) -> Value {
 fn author_manifest(sandbox: &Sandbox, artifacts: Vec<Value>, source_maps: Vec<Value>) {
     let inputs = GenerateService::inputs(&sandbox.selection()).expect("inputs receipt");
     let mut document = json!({
-        "schema_version": "lekalo/artifact-manifest/v1.0.0",
-        "identity": "dev.lekalo.artifact-manifest@1.0.0",
+        "schema_version": "lekalo/artifact-manifest/v0.2.16",
+        "identity": "dev.lekalo.artifact-manifest@0.2.16",
         "project_ref": "planner",
         "lock_ref": {
-            "schema_version": "lekalo/lock/v1.0.0",
+            "schema_version": "lekalo/lock/v0.2.16",
             "digest": inputs.lock_digest,
         },
         "inputs": {
@@ -240,8 +240,8 @@ fn inputs_receipt_is_deterministic_and_binds_the_created_lock() {
         let second = GenerateService::inputs(&sandbox.selection()).expect("inputs");
         assert_eq!(first, second);
         assert_eq!(first.lock_digest, lock_digest);
-        assert_eq!(first.model_version, "1.0.0");
-        assert_eq!(first.ir_version, "0.1.0");
+        assert_eq!(first.model_version, "0.2.16");
+        assert_eq!(first.ir_version, "0.2.16");
         assert!(first.model_digest.starts_with("sha256:"));
         assert!(first.revision.starts_with("sha256:"));
     });

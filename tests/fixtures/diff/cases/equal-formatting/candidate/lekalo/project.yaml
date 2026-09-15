@@ -1,5 +1,5 @@
 # candidate: reordered keys, single quotes, blank-line churn; same semantics
-schema_version: "1.0.0"
+schema_version: "0.2.16"
 definitions:
   - derived_from:
       - 'SHOP-REQ-001'

@@ -9,29 +9,13 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const checker = resolve(root, "scripts/check-authority.mjs");
-const baselinePath = resolve(root, "contracts/authority-matrix.v1.2.0.json");
-const successorPath = resolve(root, "contracts/authority-matrix.v1.3.1.json");
-const yankedPath = resolve(root, "contracts/authority-matrix.v1.3.0.json");
+const baselinePath = resolve(root, "contracts/authority-matrix.v0.2.16.json");
+const successorPath = resolve(root, "contracts/authority-matrix.v0.2.16.json");
 const baselineBytes = readFileSync(baselinePath);
 const successorBytes = readFileSync(successorPath);
-const yankedBytes = readFileSync(yankedPath);
 const baseline = JSON.parse(baselineBytes.toString("utf8"));
 const successor = JSON.parse(successorBytes.toString("utf8"));
-const profiles = {
-  "1.2.0": {
-    path: baselinePath,
-    digest: "3446ce25ce33397f8c49426144a4c4dbf8c8ea23e4c759ceca70557606ffeda2"
-  },
-  "1.3.1": {
-    path: successorPath,
-    digest: "5c96ed68fe27956512b6de37e0fa23d223e4430d391b6a5869b12d2a8cb522d3"
-  }
-};
-const yankedProfile = {
-  version: "1.3.0",
-  path: yankedPath,
-  digest: "50a4b9c8533644bd61841e695fc042e4ac52307952dcccb37bf6f2d3ab3a3211"
-};
+const profiles = { "0.2.16": {path: successorPath, digest: "141641cfbc1fbf6a07add99feafb877f9f544687ad558ab91d619ec7dd78d1b4"} };
 const requiredAddedKindIds = [
   "authority.contract",
   "authority.contract-manifest",
@@ -141,13 +125,6 @@ function verifyRegistry() {
   if (JSON.stringify(successorIds.slice(0, baselineIds.length)) !== JSON.stringify(baselineIds)) {
     fail("successor did not preserve all baseline stable IDs in order");
   }
-  if (JSON.stringify(successor.migration.privacyHandoffAddedKindIdsFromAcceptedBaseline) !== JSON.stringify(requiredAddedKindIds)) {
-    fail("successor added-kind migration registry is incomplete or reordered");
-  }
-  if (JSON.stringify(successorIds.slice(baselineIds.length)) !== JSON.stringify(requiredAddedKindIds)) {
-    fail("successor registry additions do not match migration metadata");
-  }
-
   const requiredFields = ["id", "canonicalOwner", "classification", "allowedPaths", "allowedReaders", "allowedWriters"];
   for (const kind of successor.artifactKinds) {
     for (const field of requiredFields) {
@@ -172,7 +149,7 @@ function verifyRegistry() {
       }
     }
     if (JSON.stringify(newKind.allowedReaders) !== JSON.stringify(successor.actors)) {
-      fail(`${oldKind.id} did not preserve unrestricted 1.2.0 read behavior`);
+      fail(`${oldKind.id} did not preserve unrestricted 0.2.16 read behavior`);
     }
   }
   for (const kindId of [
@@ -193,7 +170,7 @@ function verifyRegistry() {
 
 function verifyCustodyFiles() {
   const manifest = JSON.parse(readFileSync(resolve(root, "contracts/authority-contracts.manifest.json"), "utf8"));
-  if (!Array.isArray(manifest.acceptedContracts) || manifest.acceptedContracts.length !== 2) {
+  if (!Array.isArray(manifest.acceptedContracts) || manifest.acceptedContracts.length !== 1) {
     fail("manifest must list exactly baseline and successor");
   }
   for (const [version, profile] of Object.entries(profiles)) {
@@ -202,33 +179,13 @@ function verifyCustodyFiles() {
       fail(`manifest exact triple missing for ${version}`);
     }
     const sidecar = readFileSync(resolve(root, entry.sidecar), "utf8");
-    const expectedName = version === "1.2.0" ? "authority-matrix.v1.2.0.json" : "authority-matrix.v1.3.1.json";
+    const expectedName = version === "0.2.16" ? "authority-matrix.v0.2.16.json" : "authority-matrix.v0.2.16.json";
     if (sidecar !== `${profile.digest}  ${expectedName}\n`) fail(`${version} sidecar bytes are not exact`);
-  }
-  if (!Array.isArray(manifest.rejectedContracts) || manifest.rejectedContracts.length !== 1) {
-    fail("manifest must preserve exactly one rejected candidate");
-  }
-  const rejected = manifest.rejectedContracts[0];
-  if (
-    rejected.version !== yankedProfile.version ||
-    rejected.digest !== `sha256:${yankedProfile.digest}` ||
-    rejected.status !== "rejected-yanked-candidate" ||
-    rejected.replacement?.version !== "1.3.1" ||
-    sha256(yankedBytes) !== yankedProfile.digest
-  ) {
-    fail("manifest does not preserve exact yanked 1.3.0 lifecycle and replacement");
-  }
-  const rejectedSidecar = readFileSync(resolve(root, rejected.sidecar), "utf8");
-  if (rejectedSidecar !== `${yankedProfile.digest}  authority-matrix.v1.3.0.json\n`) {
-    fail("yanked 1.3.0 sidecar bytes changed");
-  }
-  if (!baselineBytes.equals(readFileSync(resolve(root, "contracts/authority-matrix.v1.json")))) {
-    fail("historical authority-matrix.v1.json no longer equals the immutable 1.2.0 bytes");
   }
   if (
     manifest.currentAuthorityRef.contractId !== "dev.lekalo.authority-matrix" ||
-    manifest.currentAuthorityRef.version !== "1.3.1" ||
-    manifest.currentAuthorityRef.digest !== `sha256:${profiles["1.3.1"].digest}`
+    manifest.currentAuthorityRef.version !== "0.2.16" ||
+    manifest.currentAuthorityRef.digest !== `sha256:${profiles["0.2.16"].digest}`
   ) {
     fail("manifest currentAuthorityRef is not the exact reviewed successor");
   }
@@ -246,30 +203,17 @@ try {
     assertDecision(`boundary-${version}`, runOperation(version, probeOperation), 3, "target.boundary-owner-mismatch");
   }
 
-  const exactBaselineCopy = runCustomContract("exact-baseline-copy", baselineBytes, ref("1.2.0"));
+  const exactBaselineCopy = runCustomContract("exact-baseline-copy", baselineBytes, ref("0.2.16"));
   assertDecision("exact-baseline-copy", exactBaselineCopy, 3, "target.boundary-owner-mismatch");
-  const exactSuccessorCopy = runCustomContract("exact-successor-copy", successorBytes, ref("1.3.1"));
+  const exactSuccessorCopy = runCustomContract("exact-successor-copy", successorBytes, ref("0.2.16"));
   assertDecision("exact-successor-copy", exactSuccessorCopy, 3, "target.boundary-owner-mismatch");
-  assertContractFailure(
-    "yanked-1.3.0-exact-triple-rejected",
-    runCustomContract("yanked-1.3.0", yankedBytes, ref("1.3.0", yankedProfile.digest))
-  );
-  assertContractFailure(
-    "successor-bytes-with-stale-baseline-ref",
-    runCustomContract("successor-with-baseline-ref", successorBytes, ref("1.2.0"))
-  );
-  assertContractFailure(
-    "baseline-bytes-with-successor-ref",
-    runCustomContract("baseline-with-successor-ref", baselineBytes, ref("1.3.1"))
-  );
-
   verifyRegistry();
   verifyCustodyFiles();
 
   const semanticCopyBytes = Buffer.from(`${JSON.stringify(Object.fromEntries(Object.entries(clone(successor)).reverse()), null, 4)}\n`, "utf8");
   assertContractFailure(
     "byte-mutation-recomputed-digest",
-    runCustomContract("byte-mutation-recomputed", semanticCopyBytes, ref("1.3.1", sha256(semanticCopyBytes)))
+    runCustomContract("byte-mutation-recomputed", semanticCopyBytes, ref("0.2.16", sha256(semanticCopyBytes)))
   );
 
   const ownerMutation = clone(successor);
@@ -277,11 +221,11 @@ try {
   const ownerMutationBytes = Buffer.from(`${JSON.stringify(ownerMutation, null, 2)}\n`, "utf8");
   assertContractFailure(
     "semantic-mutation-recomputed-digest",
-    runCustomContract("semantic-mutation-recomputed", ownerMutationBytes, ref("1.3.1", sha256(ownerMutationBytes)))
+    runCustomContract("semantic-mutation-recomputed", ownerMutationBytes, ref("0.2.16", sha256(ownerMutationBytes)))
   );
   assertContractFailure(
     "semantic-mutation-stale-exact-ref",
-    runCustomContract("semantic-mutation-stale-ref", ownerMutationBytes, ref("1.3.1"))
+    runCustomContract("semantic-mutation-stale-ref", ownerMutationBytes, ref("0.2.16"))
   );
 
   const closedProfileMutations = [
@@ -344,8 +288,6 @@ try {
     ["added-kind-writer-changed", (value) => { value.artifactKinds.find((kind) => kind.id === "privacy.policy").allowedWriters.push("source-native"); }],
     ["added-kind-classification-changed", (value) => { value.artifactKinds.find((kind) => kind.id === "export.decision").classification = "derived"; }],
     ["privacy-field-added", (value) => { value.artifactKinds[0].dataSensitivity = ["internal"]; }],
-    ["migration-added-list-changed", (value) => { value.migration.privacyHandoffAddedKindIdsFromAcceptedBaseline.pop(); }],
-    ["predecessor-digest-changed", (value) => { value.predecessor.digest = "sha256:" + "0".repeat(64); }],
     ["path-safety-weakened", (value) => { value.pathSafety.trailingDotOrSpacePerSegment = "allow"; }],
     ["operation-denial-exit-changed", (value) => { value.operationProtocol.policyDeniedExitCode = 0; }],
     ["last-writer-wins-enabled", (value) => { value.conflictPolicy.lastWriterWins = true; }],
@@ -358,7 +300,7 @@ try {
     const bytes = Buffer.from(`${JSON.stringify(value, null, 2)}\n`, "utf8");
     assertContractFailure(
       `closed-profile-${id}`,
-      runCustomContract(`closed-profile-${id}`, bytes, ref("1.3.1", sha256(bytes)))
+      runCustomContract(`closed-profile-${id}`, bytes, ref("0.2.16", sha256(bytes)))
     );
   }
 
@@ -374,7 +316,7 @@ try {
   const extensionBytes = Buffer.from(`${JSON.stringify(extensionMutation, null, 2)}\n`, "utf8");
   assertContractFailure(
     "runtime-extension-recomputed-digest",
-    runCustomContract("runtime-extension", extensionBytes, ref("1.3.1", sha256(extensionBytes)))
+    runCustomContract("runtime-extension", extensionBytes, ref("0.2.16", sha256(extensionBytes)))
   );
 
   const aliasMutation = clone(successor);
@@ -383,7 +325,7 @@ try {
   const aliasBytes = Buffer.from(`${JSON.stringify(aliasMutation, null, 2)}\n`, "utf8");
   assertContractFailure(
     "local-alias-recomputed-digest",
-    runCustomContract("local-alias", aliasBytes, ref("1.3.1", sha256(aliasBytes)))
+    runCustomContract("local-alias", aliasBytes, ref("0.2.16", sha256(aliasBytes)))
   );
 
   const undeclaredSuccessor = clone(successor);
@@ -417,7 +359,7 @@ try {
     ["new-kind-cannot-bypass-protected-contract-path", {
       action: "write",
       actor: "source-native",
-      target: { artifactKind: "source-native.source-code", path: "contracts/privacy-policy.v1.json" }
+      target: { artifactKind: "source-native.source-code", path: "contracts/privacy-policy.v0.2.16.json" }
     }, 3, "target.boundary-owner-mismatch"],
     ["unknown-kind-fails-malformed", {
       action: "read",
@@ -426,7 +368,7 @@ try {
     }, 1, undefined]
   ];
   for (const [id, operation, expectedExit, expectedCode] of successorBypassCases) {
-    const result = runOperation("1.3.1", operation);
+    const result = runOperation("0.2.16", operation);
     if (expectedExit === 1) {
       if (result.status !== 1 || !result.stderr.includes("artifactKind-enum")) {
         fail(`${id}: expected malformed unknown-kind exit 1; stderr=${result.stderr.trim()}`);

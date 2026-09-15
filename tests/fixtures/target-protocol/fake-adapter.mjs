@@ -39,8 +39,8 @@ const FAULT =
 
 /**
  * The declared capability profile (issue #28): `legacy` (default) speaks
- * exactly the 1.0.0 contract; the fluent variants additionally declare
- * protocol 1.1.0 and answer a 1.1.0 describe with IR versions, named
+ * exactly the 0.2.16 contract; the fluent variants additionally declare
+ * protocol 0.2.16 and answer a 0.2.16 describe with IR versions, named
  * capability support states, and constraints. `unknown` declares unknown
  * states, `incompatible` declares an IR set without the core IR version,
  * and `partial` is the issue's example map.
@@ -49,7 +49,7 @@ const variantArg = process.argv.indexOf("--lekalo-adapter-variant");
 const VARIANT =
   variantArg !== -1 && process.argv[variantArg + 1]
     ? process.argv[variantArg + 1]
-    : (process.env.LEKALO_ADAPTER_VARIANT ?? "legacy");
+    : (process.env.LEKALO_ADAPTER_VARIANT ?? "minimal");
 
 /**
  * Fixture knob for the issue #91 hostile-write probes: the managed root
@@ -107,7 +107,7 @@ const CAPABILITY_PROFILES = {
 
 const ADAPTER = {
   id: IDENTITY ?? "node-typescript",
-  version: "0.1.0",
+  version: "0.2.16",
   digest: sha256("lekalo fake target adapter v1"),
 };
 
@@ -170,7 +170,7 @@ function planId(writes) {
 function capabilities(requestedVersion) {
   const declared = {
     adapter: ADAPTER,
-    protocol_versions: FLUENT ? ["1.0.0", "1.1.0", "1.2.0"] : ["1.0.0"],
+    protocol_versions: ["0.2.16"],
     operations: OPERATIONS,
     targets: ["node-typescript"],
     profiles: ["default"],
@@ -179,10 +179,11 @@ function capabilities(requestedVersion) {
     progress: true,
     write_scopes: [`${WRITE_ROOT}/${ADAPTER.id}/**`],
   };
-  // The 1.1.0 extension members exist only on a 1.1.0+ describe: a base
-  // response keeps the exact published 1.0.0 shape.
-  if (FLUENT && requestedVersion !== "1.0.0") {
-    declared.ir_versions = VARIANT === "incompatible" ? ["0.2.0"] : ["0.1.0"];
+  if (!FLUENT && VARIANT !== "legacy") {
+    declared.ir_versions = ["0.2.16"];
+  }
+  if (FLUENT) {
+    declared.ir_versions = VARIANT === "incompatible" ? ["0.2.0"] : ["0.2.16"];
     declared.capabilities = CAPABILITY_PROFILES[VARIANT] ?? CAPABILITY_PROFILES.fluent;
     declared.constraints = { max_entries: 10000 };
   }

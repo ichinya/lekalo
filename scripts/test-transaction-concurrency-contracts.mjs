@@ -57,7 +57,7 @@ const diffDir = "tests/fixtures/transaction-concurrency/diff";
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const schema = JSON.parse(
   readFileSync(
-    resolve(root, "contracts/transaction-concurrency.schema.v1.0.0.json"),
+    resolve(root, "contracts/transaction-concurrency.schema.v0.2.16.json"),
     "utf8",
   ),
 );

@@ -43,7 +43,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 const readText = (relative) => readFileSync(resolve(root, relative), "utf8");
 
-const schema = read("contracts/contracted-declaration.schema.v1.0.0.json");
+const schema = read("contracts/contracted-declaration.schema.v0.2.16.json");
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateDeclaration = ajv.compile(schema);
@@ -62,7 +62,7 @@ const initial = read(`${DECLARATION_DIR}/initial.json`);
 if (!validateDeclaration(initial)) {
   fail("declaration-invalid", validateDeclaration.errors);
 }
-if (initial.schemaVersion !== "lekalo/contracted-declaration/v1.0.0") {
+if (initial.schemaVersion !== "lekalo/contracted-declaration/v0.2.16") {
   fail("declaration-identity", initial.schemaVersion);
 }
 if (initial.adapter.id !== "lekalo-target-node-typescript") {
@@ -162,7 +162,7 @@ const versionRust = readText("crates/lekalo-core/src/contracted/version.rs");
 if (!versionRust.includes('MODE: &str = "contracted"')) {
   fail("custody-mode", "the contracted mode identity moved");
 }
-if (!versionRust.includes('SCHEMA_VERSION: &str = "lekalo/conformed-binding-registry/v1.0.0"')) {
+if (!versionRust.includes('SCHEMA_VERSION: &str = "lekalo/conformed-binding-registry/v0.2.16"')) {
   fail("custody-registry-schema", "the registry discriminator moved");
 }
 if (!versionRust.includes(".lekalo/generated/")) {
@@ -193,65 +193,15 @@ for (const rule of [
 ]) {
   if (!diagnosticRust.includes(rule)) fail("custody-rule", rule);
 }
-// The registry family rides the reserved 1.19.0 successor with full
-// predecessor custody; the frozen 1.16.0 and 1.18.0 bytes must never move.
-const registry116Text = readText(
-  "contracts/diagnostic-registry.v1.16.0.json",
-).replace(/\r\n/g, "\n");
-if (
-  createHash("sha256").update(registry116Text).digest("hex") !==
-  "02035b9c01451fd7e130dab7251b9b5213237fa433e2744795ae9bfbb222b485"
-) {
-  fail("custody-predecessor-registry", "diagnostic-registry.v1.16.0.json");
+const registry119 = read("contracts/diagnostic-registry.v0.2.16.json");
+for (const [family, count] of [["contracted", 8], ["implementation", 7]]) {
+  if (registry119.entries.filter(e => e.id.startsWith(family + ".")).length !== count) fail("registry-family", family);
 }
-const registry118Text = readText(
-  "contracts/diagnostic-registry.v1.18.0.json",
-).replace(/\r\n/g, "\n");
-if (
-  createHash("sha256").update(registry118Text).digest("hex") !==
-  "bcf0feb107f7fd3bcd6f488044fabd2142c44e55e092b1691193eeafa7d95a89"
-) {
-  fail("custody-predecessor-registry", "diagnostic-registry.v1.18.0.json");
-}
-const registry119 = read("contracts/diagnostic-registry.v1.19.0.json");
-const registry116 = JSON.parse(registry116Text);
-const registry118 = JSON.parse(registry118Text);
-const current = new Map(registry119.entries.map((entry) => [entry.id, entry]));
-for (const entry of registry116.entries) {
-  const successor = current.get(entry.id);
-  if (!successor) fail("predecessor-rule-missing", entry.id);
-  if (JSON.stringify(successor) !== JSON.stringify(entry)) {
-    fail("predecessor-rule-changed", entry.id);
-  }
-}
-const implementationAdditions = registry118.entries.filter(
-  (entry) => !registry116.entries.some((old) => old.id === entry.id),
-);
-if (
-  implementationAdditions.length !== 7 ||
-  implementationAdditions.some(
-    (entry) => !entry.id.startsWith("implementation.") || !entry.code.startsWith("LEK-IMPL-"),
-  )
-) {
-  fail("implementation-additions", implementationAdditions.map((entry) => entry.id));
-}
-const additions = registry119.entries.filter(
-  (entry) => !registry118.entries.some((old) => old.id === entry.id),
-);
-if (
-  additions.length !== 8 ||
-  additions.some(
-    (entry) => !entry.id.startsWith("contracted.") || !entry.code.startsWith("LEK-CNT-"),
-  )
-) {
-  fail("contracted-additions", additions.map((entry) => entry.id));
-}
-
 process.stdout.write(
   `${JSON.stringify(
     {
       ok: true,
-      schema: "lekalo/contracted-declaration/v1.0.0",
+      schema: "lekalo/contracted-declaration/v0.2.16",
       declarationSymbols: ids.length,
       refusalVectors: 6,
       registryEntries: registry119.entries.length,

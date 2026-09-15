@@ -18,8 +18,8 @@ product 0.1.25 (annotated tag `v0.1.25` on `e627fe5`); issue #18 published produ
 packages in `Cargo.lock`, the `--version` behavior and its pinning tests,
 `README.md`, `docs/cli.md`); issue #12 published product 0.1.10 (annotated
 tag `v0.1.10` on `fdfbcb5`, followed by the CI-parity fix `47b2ec8`). The graph
-contract version (`lekalo/graph/v1.0.0`, identity `dev.lekalo.graph@1.0.0`)
-and the diagnostic registry increment (`1.1.0` → `1.2.0`) are independent of
+contract version (`lekalo/graph/v0.2.16`, identity `dev.lekalo.graph@0.2.16`)
+and the diagnostic registry increment (`0.2.16` → `0.2.16`) are independent of
 the product release, of the Model/IR/protocol contract versions, and of the
 lock wire by design.
 
@@ -46,8 +46,8 @@ anywhere.
 ### 1. Independent closed contract and registry
 
 The graph publishes its own wire contract,
-[`contracts/graph.schema.v1.0.0.json`](../../contracts/graph.schema.v1.0.0.json)
-(discriminator `lekalo/graph/v1.0.0`, identity `dev.lekalo.graph@1.0.0`),
+[`contracts/graph.schema.v0.2.16.json`](../../contracts/graph.schema.v0.2.16.json)
+(discriminator `lekalo/graph/v0.2.16`, identity `dev.lekalo.graph@0.2.16`),
 independent of every other contract family. Node kinds and relations are
 registry-backed identifiers with fixed ranks — never caller strings and
 never an exhaustive Rust enum that would block future kinds. Extension
@@ -139,7 +139,7 @@ Eight graph-owned rules, `LEK-GRAPH-001`–`008`, in the `graph.` namespace:
 `input-invalid`, `path-not-found` (semantic), `provenance-incomplete`
 (semantic warning, the only non-invalid status), `traversal-limit`,
 `unknown-node`, and `unknown-relation`. This is a wire-shape-preserving
-registry minor increment (`1.1.0` → `1.2.0`): the registry version is
+registry minor increment (`0.2.16` → `0.2.16`): the registry version is
 metadata on every diagnostic and inside the #12 validation report by
 design, so those version strings update while every rule decision, span,
 and message stays identical. Graph failures use the accepted #3 envelope

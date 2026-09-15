@@ -1,7 +1,7 @@
 //! Stable machine-readable diagnostic contract (issue #11).
 //!
-//! This module owns the closed diagnostic wire (`lekalo/diagnostic/v1.0.0`),
-//! the embedded rule registry (`dev.lekalo.diagnostic-registry@1.0.0`),
+//! This module owns the closed diagnostic wire (`lekalo/diagnostic/v0.2.16`),
+//! the embedded rule registry (`dev.lekalo.diagnostic-registry@0.2.16`),
 //! deterministic normalization, and the human projection. Producers never
 //! assemble a [`Diagnostic`] by hand: they go through the registry-backed
 //! constructor so every emitted rule matches its registered identity, code,
@@ -91,7 +91,7 @@ pub struct SuggestedFix {
 /// Provider metadata: key-sorted map of namespaced bounded original codes.
 pub type ProviderMetadata = BTreeMap<String, BTreeMap<String, OriginalCode>>;
 
-/// The stable machine-readable diagnostic (wire `lekalo/diagnostic/v1.0.0`).
+/// The stable machine-readable diagnostic (wire `lekalo/diagnostic/v0.2.16`).
 ///
 /// Fields are private by contract: producers construct diagnostics through
 /// [`build`], which resolves the registry entry and validates every field.

@@ -119,7 +119,7 @@ fn connect_records_the_index_without_touching_source_files() {
     let sandbox = Sandbox::new("connect");
     let fingerprint = |name: &str| {
         let bytes = std::fs::read(sandbox.root.join("proj").join(name)).expect("source");
-        lekalo_core::versioning::plan::sha256_hex(&bytes)
+        lekalo_core::digest::sha256_hex(&bytes)
     };
     let before_tasks = fingerprint("src/tasks.ts");
     let before_http = fingerprint("src/http.ts");

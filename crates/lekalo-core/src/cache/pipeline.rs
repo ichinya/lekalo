@@ -512,7 +512,7 @@ fn ir_digest(compilation: &crate::ir::Compilation) -> String {
 /// The model contract identity for one exact model version.
 fn model_identity(model_version: &str) -> &'static str {
     match model_version {
-        "0.1.0" => "dev.lekalo.model@0.1.0",
+        "0.2.16" => "dev.lekalo.model@0.1.0",
         _ => "dev.lekalo.model@1.0.0",
     }
 }

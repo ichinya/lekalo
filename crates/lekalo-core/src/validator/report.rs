@@ -158,7 +158,7 @@ mod tests {
     fn json_projection_has_the_fixed_field_order() {
         let report = ValidationReport {
             profile_id: "default".to_owned(),
-            profile_version: "1.0.0".to_owned(),
+            profile_version: "0.2.16".to_owned(),
             registry_version: crate::diagnostics::version::REGISTRY_VERSION.to_owned(),
             module_scope: Some("planner".to_owned()),
             rules_enabled: 25,
@@ -172,14 +172,14 @@ mod tests {
         assert_eq!(
             report.to_json(),
             concat!(
-                "{\"profile\":\"default\",\"profileVersion\":\"1.0.0\",",
-                "\"registryVersion\":\"1.25.0\",\"moduleScope\":\"planner\",",
+                "{\"profile\":\"default\",\"profileVersion\":\"0.2.16\",",
+                "\"registryVersion\":\"0.2.16\",\"moduleScope\":\"planner\",",
                 "\"rulesEnabled\":25,\"counts\":{\"error\":0,\"warning\":1,\"info\":2}}"
             )
         );
         assert_eq!(
             report.to_human(),
-            "validated default profile v1.0.0: 25 rules, 0 errors, 1 warnings, 2 info (module planner)"
+            "validated default profile v0.2.16: 25 rules, 0 errors, 1 warnings, 2 info (module planner)"
         );
         let unscoped = ValidationReport {
             module_scope: None,

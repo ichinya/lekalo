@@ -62,10 +62,10 @@ const entitiesYaml = (version, body) => `schema_version: "${version}"\ndefinitio
 fixture(
   "valid-yaml-1-0-0",
   {
-    "lekalo/project.yaml": `schema_version: "1.0.0"\ndefinitions:\n  - id: planner\n    kind: project\n    version: 1\n    description: Planner sample\n`,
-    "lekalo/modules/planner/module.yaml": moduleYaml("1.0.0", "planner", []),
+    "lekalo/project.yaml": `schema_version: "0.2.16"\ndefinitions:\n  - id: planner\n    kind: project\n    version: 1\n    description: Planner sample\n`,
+    "lekalo/modules/planner/module.yaml": moduleYaml("0.2.16", "planner", []),
     "lekalo/modules/planner/entities.yaml": entitiesYaml(
-      "1.0.0",
+      "0.2.16",
       [
         "  - id: planner.task_id",
         "    kind: scalar",
@@ -86,7 +86,7 @@ fixture(
       ].join("\n"),
     ),
     "lekalo/modules/planner/commands.yaml": entitiesYaml(
-      "1.0.0",
+      "0.2.16",
       [
         "  - id: planner.focus_task",
         "    kind: command",
@@ -101,7 +101,7 @@ fixture(
       ].join("\n"),
     ),
     "lekalo/modules/planner/events.yaml": entitiesYaml(
-      "1.0.0",
+      "0.2.16",
       [
         "  - id: planner.event.focus_changed",
         "    kind: event",
@@ -119,13 +119,13 @@ fixture(
 fixture(
   "valid-json-0-1-0",
   {
-    "lekalo/project.yaml": `${projectJson("0.1.0", "work")}\n`,
-    "lekalo/modules/work-items/module.yaml": moduleYaml("0.1.0", "work-items", []),
+    "lekalo/project.yaml": `${projectJson("0.2.16", "work")}\n`,
+    "lekalo/modules/work-items/module.yaml": moduleYaml("0.2.16", "work-items", []),
     "lekalo/modules/work-items/entities.yaml":
-      '{"schema_version":"0.1.0","definitions":[{"id":"work-items.item_id","kind":"scalar","version":1,"base":"uuid"}]}\n',
-    "lekalo/modules/tracking/module.yaml": moduleYaml("0.1.0", "tracking", ["work-items"]),
+      '{"schema_version":"0.2.16","definitions":[{"id":"work-items.item_id","kind":"scalar","version":1,"base":"uuid"}]}\n',
+    "lekalo/modules/tracking/module.yaml": moduleYaml("0.2.16", "tracking", ["work-items"]),
     "lekalo/modules/tracking/queries.yaml":
-      '{"schema_version":"0.1.0","definitions":[{"id":"tracking.recent_items","kind":"query","version":1,"reads":["work-items.item_id"]}]}\n',
+      '{"schema_version":"0.2.16","definitions":[{"id":"tracking.recent_items","kind":"query","version":1,"reads":["work-items.item_id"]}]}\n',
   },
   { status: "valid" },
 );
@@ -133,7 +133,7 @@ fixture(
 fixture(
   "valid-zero-modules",
   {
-    "lekalo/project.yaml": `schema_version: "1.0.0"\ndefinitions:\n  - id: solo\n    kind: project\n    version: 1\n`,
+    "lekalo/project.yaml": `schema_version: "0.2.16"\ndefinitions:\n  - id: solo\n    kind: project\n    version: 1\n`,
   },
   { status: "valid" },
 );
@@ -141,10 +141,10 @@ fixture(
 fixture(
   "valid-crlf-multibyte",
   {
-    "lekalo/project.yaml": "schema_version: \"1.0.0\"\r\ndefinitions:\r\n  - id: plan\r\n    kind: project\r\n    version: 1\r\n    description: Café planning — résumé\r\n",
-    "lekalo/modules/plan/module.yaml": moduleYaml("1.0.0", "plan", []),
+    "lekalo/project.yaml": "schema_version: \"0.2.16\"\r\ndefinitions:\r\n  - id: plan\r\n    kind: project\r\n    version: 1\r\n    description: Café planning — résumé\r\n",
+    "lekalo/modules/plan/module.yaml": moduleYaml("0.2.16", "plan", []),
     "lekalo/modules/plan/entities.yaml": entitiesYaml(
-      "1.0.0",
+      "0.2.16",
       [
         "  - id: plan.élément",
         "    kind: scalar",
@@ -159,15 +159,15 @@ fixture(
 fixture(
   "valid-direct-visibility",
   {
-    "lekalo/project.yaml": `${projectJson("1.0.0", "net")}\n`,
-    "lekalo/modules/alpha/module.yaml": moduleYaml("1.0.0", "alpha", []),
+    "lekalo/project.yaml": `${projectJson("0.2.16", "net")}\n`,
+    "lekalo/modules/alpha/module.yaml": moduleYaml("0.2.16", "alpha", []),
     "lekalo/modules/alpha/entities.yaml": entitiesYaml(
-      "1.0.0",
+      "0.2.16",
       ["  - id: alpha.widget", "    kind: scalar", "    version: 1", "    base: string"].join("\n"),
     ),
-    "lekalo/modules/beta/module.yaml": moduleYaml("1.0.0", "beta", ["alpha"]),
+    "lekalo/modules/beta/module.yaml": moduleYaml("0.2.16", "beta", ["alpha"]),
     "lekalo/modules/beta/entities.yaml": entitiesYaml(
-      "1.0.0",
+      "0.2.16",
       [
         "  - id: beta.gadget",
         "    kind: entity",
@@ -180,9 +180,9 @@ fixture(
         "      - base",
       ].join("\n"),
     ),
-    "lekalo/modules/gamma/module.yaml": moduleYaml("1.0.0", "gamma", ["alpha", "beta"]),
+    "lekalo/modules/gamma/module.yaml": moduleYaml("0.2.16", "gamma", ["alpha", "beta"]),
     "lekalo/modules/gamma/entities.yaml": entitiesYaml(
-      "1.0.0",
+      "0.2.16",
       [
         "  - id: gamma.tool",
         "    kind: value-object",
@@ -200,10 +200,10 @@ fixture(
 fixture(
   "valid-rename-history",
   {
-    "lekalo/project.yaml": `schema_version: "1.0.0"\ndefinitions:\n  - id: hist\n    kind: project\n    version: 2\n    id_registry:\n      rename_history:\n        - from: hist.legacy_name\n          to: hist.modern_name\n          definition_version: 2\n`,
-    "lekalo/modules/hist/module.yaml": moduleYaml("1.0.0", "hist", []),
+    "lekalo/project.yaml": `schema_version: "0.2.16"\ndefinitions:\n  - id: hist\n    kind: project\n    version: 2\n    id_registry:\n      rename_history:\n        - from: hist.legacy_name\n          to: hist.modern_name\n          definition_version: 2\n`,
+    "lekalo/modules/hist/module.yaml": moduleYaml("0.2.16", "hist", []),
     "lekalo/modules/hist/entities.yaml": entitiesYaml(
-      "1.0.0",
+      "0.2.16",
       [
         "  - id: hist.modern_name",
         "    kind: scalar",
@@ -237,19 +237,19 @@ const twinSemantic = {
 fixture(
   "valid-twin-json",
   {
-    "lekalo/project.yaml": `${JSON.stringify({ schema_version: "1.0.0", definitions: [twinSemantic.project] })}\n`,
-    "lekalo/modules/twin/module.yaml": `${JSON.stringify({ schema_version: "1.0.0", definitions: [twinSemantic.module] })}\n`,
-    "lekalo/modules/twin/entities.yaml": `${JSON.stringify({ schema_version: "1.0.0", definitions: [twinSemantic.scalar, twinSemantic.entity] })}\n`,
+    "lekalo/project.yaml": `${JSON.stringify({ schema_version: "0.2.16", definitions: [twinSemantic.project] })}\n`,
+    "lekalo/modules/twin/module.yaml": `${JSON.stringify({ schema_version: "0.2.16", definitions: [twinSemantic.module] })}\n`,
+    "lekalo/modules/twin/entities.yaml": `${JSON.stringify({ schema_version: "0.2.16", definitions: [twinSemantic.scalar, twinSemantic.entity] })}\n`,
   },
   { status: "valid", modelGolden: "../golden-twin.json" },
 );
 fixture(
   "valid-twin-yaml",
   {
-    "lekalo/project.yaml": `schema_version: "1.0.0"\ndefinitions:\n  - id: twin\n    kind: project\n    version: 1\n`,
-    "lekalo/modules/twin/module.yaml": `schema_version: "1.0.0"\ndefinitions:\n  - id: twin\n    kind: module\n    version: 1\n`,
+    "lekalo/project.yaml": `schema_version: "0.2.16"\ndefinitions:\n  - id: twin\n    kind: project\n    version: 1\n`,
+    "lekalo/modules/twin/module.yaml": `schema_version: "0.2.16"\ndefinitions:\n  - id: twin\n    kind: module\n    version: 1\n`,
     "lekalo/modules/twin/entities.yaml": [
-      'schema_version: "1.0.0"',
+      'schema_version: "0.2.16"',
       "definitions:",
       "  - id: twin.label",
       "    kind: scalar",
@@ -279,7 +279,7 @@ fixture(
 // Invalid projects: one focused defect per stable code
 // ---------------------------------------------------------------------------
 
-const V1 = "1.0.0";
+const V1 = "0.2.16";
 
 const simple = (name, expect, mutated, options = {}) => {
   const files = {
@@ -372,7 +372,7 @@ simple("invalid-version-unsupported", {
 });
 
 simple("invalid-version-mixed", { status: "invalid", exit: 1, stream: "stderr", code: "versioning.mixed-versions" }, {}, {
-  entities: entitiesYaml("0.1.0", ["  - id: core.thing", "    kind: scalar", "    version: 1", "    base: string"].join("\n")),
+  entities: entitiesYaml("0.2.16", ["  - id: core.thing", "    kind: scalar", "    version: 1", "    base: string"].join("\n")),
 });
 
 simple("invalid-definitions-empty", { status: "invalid", exit: 1, stream: "stderr", code: "loader.document-shape" }, {}, {

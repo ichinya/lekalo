@@ -37,7 +37,7 @@ pub struct IrContract;
 
 /// The target/provider process protocol family (`protocol`).
 ///
-/// Published by issue #27 as `lekalo.target/v1` (`dev.lekalo.protocol@1.0.0`,
+/// Published by issue #27 as `lekalo.target/v1` (`dev.lekalo.protocol@0.2.16`,
 /// selector alias `protocol/v1`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProtocolContract;
@@ -71,8 +71,7 @@ impl From<crate::loader::ModelVersion> for super::ContractVersion<ModelContract>
     fn from(version: crate::loader::ModelVersion) -> Self {
         use crate::loader::ModelVersion;
         let text = match version {
-            ModelVersion::V0_1_0 => "0.1.0",
-            ModelVersion::V1_0_0 => "1.0.0",
+            ModelVersion::Current => "0.2.16",
         };
         // The literals are compile-time constants proven canonical by tests.
         Self::parse_canonical(text).expect("finite Model literals are canonical")
@@ -80,7 +79,7 @@ impl From<crate::loader::ModelVersion> for super::ContractVersion<ModelContract>
 }
 
 impl super::ContractVersion<IrContract> {
-    /// The one accepted #8 IR contract version (`dev.lekalo.ir@0.1.0`).
+    /// The one accepted #8 IR contract version (`dev.lekalo.ir@0.2.16`).
     pub fn current() -> Self {
         // `crate::ir::VERSION` is a repository constant; its canonical
         // spelling is asserted by a unit test in this module.

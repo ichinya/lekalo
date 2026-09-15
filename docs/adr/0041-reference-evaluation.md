@@ -1,5 +1,7 @@
 # ADR-0041: The in-memory reference evaluator for basic semantics and the Scenario IR
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-12
 Status: accepted for issue #107
 
@@ -9,8 +11,8 @@ every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 and its digest, the `--version` behavior and its pinning tests,
 `README.md`, `docs/cli.md`); issue #63 carried prospective product
 0.1.31. The reference-evaluation contract version
-(`lekalo/reference-evaluation/v1.0.0`, identity
-`dev.lekalo.reference-evaluation@1.0.0`) is independent of the product
+(`lekalo/reference-evaluation/v0.2.16`, identity
+`dev.lekalo.reference-evaluation@0.2.16`) is independent of the product
 release, of the Model/IR/Scenario contract versions, of the
 invariant-transition and error-registry attachments it consumes, and of
 the diagnostic registry by design. The diagnostic registry is
@@ -52,9 +54,9 @@ it.
 
 ### 2. One closed, immutable trace contract
 
-[`contracts/reference-evaluation.schema.v1.0.0.json`](../../contracts/reference-evaluation.schema.v1.0.0.json)
-(discriminator `lekalo/reference-evaluation/v1.0.0`, identity
-`dev.lekalo.reference-evaluation@1.0.0`) is a closed Draft 2020-12
+[`contracts/reference-evaluation.schema.v0.2.16.json`](../../contracts/reference-evaluation.schema.v0.2.16.json)
+(discriminator `lekalo/reference-evaluation/v0.2.16`, identity
+`dev.lekalo.reference-evaluation@0.2.16`) is a closed Draft 2020-12
 document. Top-level members: `schemaVersion`, `identity`, `semantics`,
 `scenario`, `modelVersion`, `irDigest`, `attachmentRevision`, optional
 `refusal`, `capabilities`, `status`, `steps`, `effects`,
@@ -62,7 +64,7 @@ document. Top-level members: `schemaVersion`, `identity`, `semantics`,
 is a stable semantic identifier; the trace pins the exact canonical
 scenario digest, the exact IR digest, the Model version, and the
 attachment revision it interpreted, plus the separate
-`dev.lekalo.reference-semantics@1.0.0` identity of the executable
+`dev.lekalo.reference-semantics@0.2.16` identity of the executable
 semantics. Reference behavior is thereby versioned with Model/IR: a
 semantics change is a reviewed successor of this contract, never a
 silent drift.

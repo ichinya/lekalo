@@ -11,25 +11,25 @@
 pub const FAMILY: &str = "dev.lekalo.error-contract";
 
 /// The exact error-contract (operation binding) version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.error-contract@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.error-contract@0.2.16";
 
 /// The exact wire discriminator of the operation error binding.
-pub const SCHEMA_VERSION: &str = "lekalo/error-contract/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/error-contract/v0.2.16";
 
 /// The error-registry family identifier.
 pub const REGISTRY_FAMILY: &str = "dev.lekalo.error-registry";
 
 /// The exact wire discriminator of the error registry.
-pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/error-registry/v1.0.0";
+pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/error-registry/v0.2.16";
 
 /// The exact embedded error-registry identity.
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.error-registry@1.0.0";
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.error-registry@0.2.16";
 
 /// The current error-registry contract version.
-pub const REGISTRY_VERSION: &str = "1.0.0";
+pub const REGISTRY_VERSION: &str = "0.2.16";
 
 /// The maximum number of error contracts one registry may declare.
 pub const MAX_ERRORS: usize = 10_000;
@@ -74,14 +74,14 @@ mod tests {
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
         assert_eq!(FAMILY, "dev.lekalo.error-contract");
-        assert_eq!(VERSION, "1.0.0");
-        assert_eq!(SCHEMA_VERSION, "lekalo/error-contract/v1.0.0");
+        assert_eq!(VERSION, "0.2.16");
+        assert_eq!(SCHEMA_VERSION, "lekalo/error-contract/v0.2.16");
         assert_eq!(
             REGISTRY_IDENTITY,
             format!("{REGISTRY_FAMILY}@{REGISTRY_VERSION}")
         );
         assert_eq!(REGISTRY_FAMILY, "dev.lekalo.error-registry");
-        assert_eq!(REGISTRY_SCHEMA_VERSION, "lekalo/error-registry/v1.0.0");
+        assert_eq!(REGISTRY_SCHEMA_VERSION, "lekalo/error-registry/v0.2.16");
     }
 
     #[test]

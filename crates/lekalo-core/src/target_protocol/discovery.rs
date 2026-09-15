@@ -71,8 +71,8 @@ pub struct DiscoveredAdapter {
     pub negotiated_version: &'static str,
     /// Every protocol version the adapter declared.
     pub declared_protocols: Vec<String>,
-    /// The IR contract versions the adapter declared (empty on a legacy
-    /// 1.0.0 session: compatibility is then the #9 preflight's business).
+    /// The IR contract versions the adapter declared. An empty set cannot
+    /// receive IR-carrying operations.
     pub ir_versions: Vec<String>,
     /// The declared optional constraints, when present.
     pub constraints: Option<wire::AdapterConstraints>,
@@ -333,12 +333,12 @@ mod tests {
         DiscoveredAdapter {
             adapter: wire::AdapterIdentity {
                 id: "node-typescript".to_owned(),
-                version: "0.1.0".to_owned(),
+                version: "0.2.16".to_owned(),
                 digest: "sha256:46332b8c3649ad6fd9b4be16a212113dee1a7d084bd2dc910c9a1c82ceaa7778"
                     .to_owned(),
             },
             negotiated_version: super::super::version::VERSION,
-            declared_protocols: vec!["1.0.0".to_owned(), "1.1.0".to_owned()],
+            declared_protocols: vec!["0.2.16".to_owned(), "0.2.16".to_owned()],
             ir_versions: ir.iter().map(|value| value.to_string()).collect(),
             constraints: None,
             targets: vec!["node-typescript".to_owned()],
@@ -348,7 +348,7 @@ mod tests {
             capabilities: vec![DiscoveredCapability {
                 id: "scan.symbols".to_owned(),
                 state: wire::SupportState::Full,
-                definition_version: "1.0.0",
+                definition_version: "0.2.16",
                 provenance: Provenance::Declared,
             }],
         }
@@ -356,19 +356,19 @@ mod tests {
 
     #[test]
     fn ir_compatibility_requires_exact_declared_membership() {
-        let adapter = sample_adapter("sha256:aa", &["0.1.0"]);
-        assert!(adapter.ir_compatible("0.1.0"));
+        let adapter = sample_adapter("sha256:aa", &["0.2.16"]);
+        assert!(adapter.ir_compatible("0.2.16"));
         assert!(!adapter.ir_compatible("0.2.0"));
         let undeclared = sample_adapter("sha256:aa", &[]);
         assert!(
-            !undeclared.ir_compatible("0.1.0"),
+            !undeclared.ir_compatible("0.2.16"),
             "an undeclared IR version is never optimistic yes"
         );
     }
 
     #[test]
     fn profile_selection_is_deterministic() {
-        let mut adapter = sample_adapter("sha256:aa", &["0.1.0"]);
+        let mut adapter = sample_adapter("sha256:aa", &["0.2.16"]);
         adapter.profiles = vec!["zeta".to_owned(), "alpha".to_owned()];
         assert_eq!(
             adapter.selected_profile(None).as_deref(),
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn provenance_upgrades_monotonically_and_never_revives_unsupported() {
-        let mut adapter = sample_adapter("sha256:aa", &["0.1.0"]);
+        let mut adapter = sample_adapter("sha256:aa", &["0.2.16"]);
         adapter.mark_probed("scan.symbols");
         assert_eq!(
             adapter.capability("scan.symbols").unwrap().provenance,
@@ -410,7 +410,7 @@ mod tests {
         adapter.capabilities.push(DiscoveredCapability {
             id: "generate.ui".to_owned(),
             state: wire::SupportState::Unsupported,
-            definition_version: "1.0.0",
+            definition_version: "0.2.16",
             provenance: Provenance::Declared,
         });
         adapter.mark_verified("generate.ui");
@@ -425,12 +425,12 @@ mod tests {
     #[test]
     fn cache_hits_only_on_the_exact_version_and_digest_key() {
         let mut cache = Cache::new();
-        let adapter = sample_adapter("sha256:aa", &["0.1.0"]);
+        let adapter = sample_adapter("sha256:aa", &["0.2.16"]);
         let key = Cache::key(&adapter, crate::ir::version::VERSION);
         cache.insert(key.clone(), adapter);
         assert!(cache.get(&key).is_some(), "identical inputs hit");
 
-        let mut different_digest = sample_adapter("sha256:bb", &["0.1.0"]);
+        let mut different_digest = sample_adapter("sha256:bb", &["0.2.16"]);
         different_digest.adapter.digest =
             "sha256:46332b8c3649ad6fd9b4be16a212113dee1a7d084bd2dc910c9a1c82ceaa7777".to_owned();
         let key2 = Cache::key(&different_digest, crate::ir::version::VERSION);
@@ -439,10 +439,10 @@ mod tests {
             "a changed adapter digest misses"
         );
 
-        let key3 = Cache::key(&sample_adapter("sha256:aa", &["0.1.0"]), "0.0.9");
+        let key3 = Cache::key(&sample_adapter("sha256:aa", &["0.2.16"]), "0.0.9");
         assert!(cache.get(&key3).is_none(), "a changed IR version misses");
 
-        let mut changed_executable = sample_adapter("sha256:aa", &["0.1.0"]);
+        let mut changed_executable = sample_adapter("sha256:aa", &["0.2.16"]);
         changed_executable.executable_digest = Some("sha256:cc".to_owned());
         let key4 = Cache::key(&changed_executable, crate::ir::version::VERSION);
         assert!(cache.get(&key4).is_none(), "changed executable bytes miss");

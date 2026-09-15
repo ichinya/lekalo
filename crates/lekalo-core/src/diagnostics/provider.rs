@@ -197,7 +197,7 @@ mod tests {
 
     fn wire(id: &str, path: Option<&str>) -> ProviderDiagnosticWire {
         let namespace =
-            ProviderNamespace::new("com.example.provider:1.0.0".to_owned()).expect("namespace");
+            ProviderNamespace::new("com.example.provider:0.2.16".to_owned()).expect("namespace");
         let original = OriginalCode::new("E5123".to_owned()).expect("original code");
         ProviderDiagnosticWire {
             id: id.to_owned(),
@@ -216,7 +216,7 @@ mod tests {
     fn provider_original_code_is_namespaced_and_preserved() {
         let diagnostic = normalize(wire("adapter.diagnostic-invalid", None)).expect("normalizes");
         let namespace = diagnostic.metadata.keys().next().expect("namespace key");
-        assert_eq!(namespace, "com.example.provider:1.0.0");
+        assert_eq!(namespace, "com.example.provider:0.2.16");
         assert_eq!(
             diagnostic.metadata[namespace]["original_code"].as_str(),
             "E5123"
@@ -263,13 +263,13 @@ mod tests {
     #[test]
     fn wire_deserialization_is_closed_and_bounded() {
         let text = "{\"id\": \"adapter.diagnostic-invalid\", \"namespace\": \
-             \"com.example:1.0.0\", \"original_code\": \"E1\", \"unknown\": 1}";
+             \"com.example:0.2.16\", \"original_code\": \"E1\", \"unknown\": 1}";
         let result: Result<ProviderDiagnosticWire, _> = serde_json::from_str(text);
         assert!(result.is_err(), "unknown fields are refused");
 
         let long_code = "x".repeat(limits::ORIGINAL_CODE_BYTES + 1);
         let text = format!(
-            "{{\"id\": \"adapter.diagnostic-invalid\", \"namespace\": \"com.example:1.0.0\", \
+            "{{\"id\": \"adapter.diagnostic-invalid\", \"namespace\": \"com.example:0.2.16\", \
              \"original_code\": \"{long_code}\"}}"
         );
         let result: Result<ProviderDiagnosticWire, _> = serde_json::from_str(&text);

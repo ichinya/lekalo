@@ -202,7 +202,7 @@ fn planner_project_satisfies_every_binding_and_reachability_rule() {
 fn empty_project_reports_unresolved_operations_types_and_members() {
     let _guard = CWD_LOCK.lock().expect("cwd lock");
     let project = ir::CompiledProject {
-        model_version: ModelVersion::V1_0_0,
+        model_version: ModelVersion::Current,
         project: None,
         modules: Vec::new(),
         definitions: Vec::new(),

@@ -60,27 +60,12 @@ pub(crate) fn is_requirement_id(text: &str) -> bool {
 
 /// The symbol-ID grammar of the active Model version.
 ///
-/// Model 0.1.0: `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)?$` with total length
-/// 3-129 (one or two unbounded-length segments). Model 1.0.0: two or three
+/// Model 0.2.16: `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)?$` with total length
+/// 3-129 (one or two unbounded-length segments). Model 0.2.16: two or three
 /// `segment` parts with total length 3-191.
 pub(crate) fn is_symbol_id(version: ModelVersion, text: &str) -> bool {
     match version {
-        ModelVersion::V0_1_0 => {
-            if !(3..=129).contains(&text.chars().count()) {
-                return false;
-            }
-            text.split('.').all(|part| {
-                let bytes = part.as_bytes();
-                let Some((&first, rest)) = bytes.split_first() else {
-                    return false;
-                };
-                first.is_ascii_lowercase()
-                    && rest.iter().all(|byte| {
-                        byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_'
-                    })
-            }) && text.matches('.').count() <= 1
-        }
-        ModelVersion::V1_0_0 => {
+        ModelVersion::Current => {
             if !(3..=191).contains(&text.chars().count()) {
                 return false;
             }
@@ -92,12 +77,11 @@ pub(crate) fn is_symbol_id(version: ModelVersion, text: &str) -> bool {
 
 /// The project-ID grammar of the active Model version.
 ///
-/// Model 0.1.0 uses the shared definition-ID grammar; Model 1.0.0 requires
+/// Model 0.2.16 uses the shared definition-ID grammar; Model 0.2.16 requires
 /// exactly one `segment`.
 pub(crate) fn is_project_id(version: ModelVersion, text: &str) -> bool {
     match version {
-        ModelVersion::V0_1_0 => is_symbol_id(version, text),
-        ModelVersion::V1_0_0 => is_segment(text),
+        ModelVersion::Current => is_segment(text),
     }
 }
 
@@ -143,25 +127,17 @@ mod tests {
 
     #[test]
     fn symbol_ids_follow_the_active_version() {
-        assert!(is_symbol_id(ModelVersion::V0_1_0, "abc"));
-        assert!(is_symbol_id(ModelVersion::V0_1_0, "a.b"));
-        assert!(is_symbol_id(ModelVersion::V0_1_0, "planner.task_id"));
-        assert!(!is_symbol_id(ModelVersion::V0_1_0, "ab"));
-        assert!(!is_symbol_id(ModelVersion::V0_1_0, "a.b.c"));
-        assert!(!is_symbol_id(ModelVersion::V0_1_0, "a..b"));
-        assert!(is_symbol_id(ModelVersion::V1_0_0, "planner.task"));
-        assert!(is_symbol_id(ModelVersion::V1_0_0, "planner.task.field"));
-        assert!(!is_symbol_id(ModelVersion::V1_0_0, "planner"));
-        assert!(!is_symbol_id(ModelVersion::V1_0_0, "planner.a.b.c"));
-        assert!(is_symbol_id(ModelVersion::V1_0_0, "ab.c"));
+        assert!(is_symbol_id(ModelVersion::Current, "planner.task"));
+        assert!(is_symbol_id(ModelVersion::Current, "planner.task.field"));
+        assert!(!is_symbol_id(ModelVersion::Current, "planner"));
+        assert!(!is_symbol_id(ModelVersion::Current, "planner.a.b.c"));
+        assert!(is_symbol_id(ModelVersion::Current, "ab.c"));
     }
 
     #[test]
     fn project_ids_follow_the_active_version() {
-        assert!(is_project_id(ModelVersion::V0_1_0, "planner"));
-        assert!(is_project_id(ModelVersion::V0_1_0, "a.b"));
-        assert!(is_project_id(ModelVersion::V1_0_0, "planner"));
-        assert!(!is_project_id(ModelVersion::V1_0_0, "a.b"));
+        assert!(is_project_id(ModelVersion::Current, "planner"));
+        assert!(!is_project_id(ModelVersion::Current, "a.b"));
     }
 
     #[test]

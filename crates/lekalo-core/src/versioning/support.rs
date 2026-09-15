@@ -142,7 +142,7 @@ impl ModelTarget {
     /// Resolve against the registry to one exact registered version.
     ///
     /// Canonical targets must be registered; aliases must be declared.
-    /// Nothing is inferred: `model/1`, `model/v1.0.0`, and repeated `v`
+    /// Nothing is inferred: `model/1`, `model/v0.2.16`, and repeated `v`
     /// prefixes are malformed, and an absent `model/v2` is unsupported.
     pub fn resolve(
         self,

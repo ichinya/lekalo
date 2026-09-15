@@ -214,12 +214,12 @@ fn adopt_creates_minimal_skeleton_and_preserves_the_monorepo() {
     assert_eq!(envelope["changed"], true);
     assert_eq!(envelope["created"], 1);
     assert_eq!(envelope["gate"]["status"], "valid");
-    assert_eq!(envelope["gate"]["modelVersion"], "1.0.0");
+    assert_eq!(envelope["gate"]["modelVersion"], "0.2.16");
     // The canonical skeleton is exactly the project document.
     let project_yaml = fs::read(root.join("lekalo").join("project.yaml")).expect("skeleton bytes");
     assert_eq!(
         project_yaml,
-        b"{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"acme_node_monorepo\",\"kind\":\"project\",\"version\":1,\"description\":\"Adopted existing project.\"}]}\n"
+        b"{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"acme_node_monorepo\",\"kind\":\"project\",\"version\":1,\"description\":\"Adopted existing project.\"}]}\n"
     );
     // No `apps/**` or `packages/**` byte changed; only `lekalo/**` appeared.
     assert_eq!(snapshot(&root, true), before);
@@ -530,7 +530,7 @@ fn adopt_supports_an_empty_repository() {
     assert_eq!(envelope["detection"]["basis"], "invocation-directory");
     assert_eq!(envelope["projectId"], "repo");
     assert_eq!(envelope["projectIdSource"]["source"], "directory-name");
-    assert_eq!(envelope["gate"]["modelVersion"], "1.0.0");
+    assert_eq!(envelope["gate"]["modelVersion"], "0.2.16");
     let validate = lekalo_in(temp.path(), &["--json", "validate", "--project", "repo"]);
     assert_eq!(exit_code(&validate), 0, "{}", stderr_text(&validate));
     // The source directory name is never derived from a README-only repo.

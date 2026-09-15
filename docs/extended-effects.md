@@ -1,8 +1,10 @@
 # Extended effect contracts (issue #26)
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 One independent, closed, versioned attachment —
-`lekalo/extended-effects/v1.0.0`, identity
-`dev.lekalo.extended-effects@1.0.0` — declaring the non-database effect
+`lekalo/extended-effects/v0.2.16`, identity
+`dev.lekalo.extended-effects@0.2.16` — declaring the non-database effect
 semantics of a project: event contracts (schema and version, local and
 durable delivery, ordering and deduplication, correlation and causation
 fields), job contracts (payload, queue class, retry and backoff,
@@ -87,7 +89,7 @@ dead-letter policy needs the `queue.dead_letter` capability record.
 ## External calls
 
 `providerContract` names the provider capability in the accepted #14
-provider grammar (`vendor.mail/send@1.2.0`); `requestDigest` and
+provider grammar (`vendor.mail/send@0.2.16`); `requestDigest` and
 `responseDigest` pin the wire schemas; `errorRefs` is the closed typed
 error vocabulary — at least one owner-supplied #62 reference, never a
 catch-all; `timeoutMillis` bounds every attempt; `retry` carries the

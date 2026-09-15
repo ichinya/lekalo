@@ -14,7 +14,7 @@ tag `v0.1.25` on `e627fe5`); issue #16 published product 0.1.24
 (annotated tag `v0.1.23` on `15be55a`); issue #21 published product
 0.1.22 (annotated tag `v0.1.22` on `2dab70e`); issue #14 published
 product 0.1.12 (annotated tag `v0.1.12` on `81666da`). The cache contract version
-(`lekalo/cache/v1.0.0`, identity `dev.lekalo.cache@1.0.0`) is independent
+(`lekalo/cache/v0.2.16`, identity `dev.lekalo.cache@0.2.16`) is independent
 of the product release, of every Model/IR/graph/effect/lock/protocol
 contract version, and of the diagnostic registry by design.
 
@@ -38,8 +38,8 @@ owner decisions this ADR adopts.
 ### 1. Independent closed contract, Lekalo-owned derived data only
 
 The cache publishes its own wire contract,
-[`contracts/cache.schema.v1.0.0.json`](../../contracts/cache.schema.v1.0.0.json)
-(discriminator `lekalo/cache/v1.0.0`, identity `dev.lekalo.cache@1.0.0`),
+[`contracts/cache.schema.v0.2.16.json`](../../contracts/cache.schema.v0.2.16.json)
+(discriminator `lekalo/cache/v0.2.16`, identity `dev.lekalo.cache@0.2.16`),
 covering the closed record envelope and the bounded health projection.
 `contracts/` gains exactly this one new file. The cache is Lekalo-owned
 derived/cached data under `.lekalo/cache/**` only — never a canonical

@@ -17,6 +17,8 @@ jobs:
         node-version: [18.x, 24.x]
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
@@ -68,6 +70,8 @@ jobs:
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites
         run: |
+          node scripts/check-contract-versions.mjs --base HEAD^
+          node scripts/test-contract-versions.mjs
           node scripts/check-authority.mjs
           node scripts/test-authority-contracts.mjs
           node scripts/test-authority-cli.mjs

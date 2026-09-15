@@ -1,38 +1,35 @@
 //! Document decode: per-document shape, schema-version extraction, and the
-//! exact dual Model-version dispatch (0.1.0 / 1.0.0).
+//! exact current Model-version dispatch.
 
 use super::error::{Diagnostic, Span};
 use super::frontends::{Node, Scalar, Value};
 
-/// The two exact Model contract versions the loader recognizes.
+/// The current Model contract recognized by the loader.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModelVersion {
-    V0_1_0,
-    V1_0_0,
+    Current,
 }
 
 impl ModelVersion {
     /// The exact literal accepted in `schema_version`.
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::V0_1_0 => "0.1.0",
-            Self::V1_0_0 => "1.0.0",
+            Self::Current => "0.2.16",
         }
     }
 
     /// Exhaustive literal dispatch; no ranges, no prerelease forms.
     pub fn parse_exact(literal: &str) -> Option<Self> {
         match literal {
-            "0.1.0" => Some(Self::V0_1_0),
-            "1.0.0" => Some(Self::V1_0_0),
+            "0.2.16" => Some(Self::Current),
             _ => None,
         }
     }
 
     /// The module-ID grammar of the active Model version.
     ///
-    /// Model 0.1.0 module names allow hyphens
-    /// (`^[a-z][a-z0-9_-]{0,62}$`); Model 1.0.0 semantic module IDs do not
+    /// Model 0.2.16 module names allow hyphens
+    /// (`^[a-z][a-z0-9_-]{0,62}$`); Model 0.2.16 semantic module IDs do not
     /// (`^[a-z][a-z0-9_]{0,62}$`). Reserved words are the #6 validator's
     /// concern and are accepted here.
     pub fn module_id_valid(self, id: &str) -> bool {
@@ -44,10 +41,7 @@ impl ModelVersion {
             return false;
         }
         rest.iter().all(|byte| match self {
-            Self::V0_1_0 => {
-                byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_' || *byte == b'-'
-            }
-            Self::V1_0_0 => byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_',
+            Self::Current => byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_',
         })
     }
 }
@@ -197,40 +191,34 @@ mod tests {
     #[test]
     fn exact_version_dispatch_recognizes_only_the_two_literals() {
         assert_eq!(
-            ModelVersion::parse_exact("0.1.0"),
-            Some(ModelVersion::V0_1_0)
+            ModelVersion::parse_exact("0.2.16"),
+            Some(ModelVersion::Current)
         );
-        assert_eq!(
-            ModelVersion::parse_exact("1.0.0"),
-            Some(ModelVersion::V1_0_0)
-        );
-        for bogus in ["v1", "1", "1.x.0", "2.0.0", "0.1.0-rc1", "0.1", "01.0.0"] {
+        for bogus in ["v1", "1", "1.x.0", "2.0.0", "0.2.16-rc1", "0.1", "01.0.0"] {
             assert_eq!(ModelVersion::parse_exact(bogus), None, "{bogus}");
         }
     }
 
     #[test]
     fn module_id_grammar_differs_by_model_version() {
-        assert!(ModelVersion::V0_1_0.module_id_valid("work-items"));
-        assert!(!ModelVersion::V1_0_0.module_id_valid("work-items"));
-        assert!(ModelVersion::V1_0_0.module_id_valid("planner_v2"));
-        assert!(!ModelVersion::V0_1_0.module_id_valid("Planner"));
-        assert!(!ModelVersion::V1_0_0.module_id_valid(""));
-        assert!(!ModelVersion::V1_0_0.module_id_valid("a.b"));
+        assert!(!ModelVersion::Current.module_id_valid("work-items"));
+        assert!(ModelVersion::Current.module_id_valid("planner_v2"));
+        assert!(!ModelVersion::Current.module_id_valid(""));
+        assert!(!ModelVersion::Current.module_id_valid("a.b"));
         let long = "a".repeat(64);
-        assert!(!ModelVersion::V1_0_0.module_id_valid(&long));
+        assert!(!ModelVersion::Current.module_id_valid(&long));
         let max = "a".repeat(63);
-        assert!(ModelVersion::V1_0_0.module_id_valid(&max));
+        assert!(ModelVersion::Current.module_id_valid(&max));
     }
 
     #[test]
     fn document_decode_enforces_shape_rules() {
         let good = parse_json(
-            "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"planner\",\"kind\":\"module\",\"version\":1}]}",
+            "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"planner\",\"kind\":\"module\",\"version\":1}]}",
         );
         let document =
             decode("lekalo/modules/planner/module.yaml", DocKind::Module, &good).unwrap();
-        assert_eq!(document.version, "1.0.0");
+        assert_eq!(document.version, "0.2.16");
         assert_eq!(document.definitions.len(), 1);
         assert_eq!(document.definitions[0].id, "planner");
 
@@ -240,21 +228,21 @@ mod tests {
                 "{\"schema_version\":1,\"definitions\":[]}",
                 "schema-version-not-string",
             ),
-            ("{\"schema_version\":\"1.0.0\"}", "definitions-missing"),
+            ("{\"schema_version\":\"0.2.16\"}", "definitions-missing"),
             (
-                "{\"schema_version\":\"1.0.0\",\"definitions\":{}}",
+                "{\"schema_version\":\"0.2.16\",\"definitions\":{}}",
                 "definitions-not-array",
             ),
             (
-                "{\"schema_version\":\"1.0.0\",\"definitions\":[]}",
+                "{\"schema_version\":\"0.2.16\",\"definitions\":[]}",
                 "definitions-empty",
             ),
             (
-                "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"kind\":\"module\"}]}",
+                "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"kind\":\"module\"}]}",
                 "definition-id-missing",
             ),
             (
-                "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":3}]}",
+                "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":3}]}",
                 "definition-id-not-string",
             ),
         ];
@@ -266,7 +254,7 @@ mod tests {
         }
         // Two definitions in a module document are rejected.
         let two = parse_json(
-            "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"a\"},{\"id\":\"b\"}]}",
+            "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"a\"},{\"id\":\"b\"}]}",
         );
         let error = decode("d.yaml", DocKind::Module, &two).unwrap_err();
         assert_eq!(

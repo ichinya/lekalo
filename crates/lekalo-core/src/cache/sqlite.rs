@@ -93,8 +93,8 @@ impl SqliteStore {
                      PRIMARY KEY (entry_key_digest, dependency_key_digest, role, ordinal)
                  ) WITHOUT ROWID;
                  INSERT OR IGNORE INTO cache_meta(key, value)
-                     VALUES ('schema_version', 'lekalo/cache/v1.0.0'),
-                             ('identity', 'dev.lekalo.cache@1.0.0');
+                     VALUES ('schema_version', 'lekalo/cache/v0.2.16'),
+                             ('identity', 'dev.lekalo.cache@0.2.16');
                  COMMIT;",
             )
             .map_err(Self::classify)?;

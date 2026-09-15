@@ -483,12 +483,12 @@ fn temp_project(name: &str) -> PathBuf {
 fn write_project(root: &Path, field_count: usize) {
     std::fs::write(
         root.join("lekalo/project.yaml"),
-        "schema_version: \"1.0.0\"\ndefinitions:\n  - id: big\n    kind: project\n    version: 1\n",
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: big\n    kind: project\n    version: 1\n",
     )
     .expect("project yaml");
     std::fs::write(
         root.join("lekalo/modules/main/module.yaml"),
-        "schema_version: \"1.0.0\"\ndefinitions:\n  - id: main\n    kind: module\n    version: 1\n",
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: main\n    kind: module\n    version: 1\n",
     )
     .expect("module yaml");
     let mut fields = String::new();
@@ -500,7 +500,7 @@ fn write_project(root: &Path, field_count: usize) {
     std::fs::write(
         root.join("lekalo/modules/main/entities.yaml"),
         format!(
-            "schema_version: \"1.0.0\"\ndefinitions:\n  - id: main.text\n    kind: scalar\n    version: 1\n    base: string\n  - id: main.blob\n    kind: entity\n    version: 1\n    description: \"Wide entity\"\n    fields:\n{fields}    identity:\n      - field_0000\n"
+            "schema_version: \"0.2.16\"\ndefinitions:\n  - id: main.text\n    kind: scalar\n    version: 1\n    base: string\n  - id: main.blob\n    kind: entity\n    version: 1\n    description: \"Wide entity\"\n    fields:\n{fields}    identity:\n      - field_0000\n"
         ),
     )
     .expect("entities yaml");
@@ -538,7 +538,7 @@ fn ambiguity_carries_a_bounded_sorted_candidate_prefix_and_exact_total() {
     let root = temp_project("ambiguous");
     std::fs::write(
         root.join("lekalo/project.yaml"),
-        "schema_version: \"1.0.0\"\ndefinitions:\n  - id: big\n    kind: project\n    version: 1\n",
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: big\n    kind: project\n    version: 1\n",
     )
     .expect("project yaml");
     // temp_project seeds an unused `main` module directory; the closed
@@ -550,7 +550,7 @@ fn ambiguity_carries_a_bounded_sorted_candidate_prefix_and_exact_total() {
         std::fs::write(
             root.join(format!("lekalo/modules/{module}/module.yaml")),
             format!(
-                "schema_version: \"1.0.0\"\ndefinitions:\n  - id: {module}\n    kind: module\n    version: 1\n{}",
+                "schema_version: \"0.2.16\"\ndefinitions:\n  - id: {module}\n    kind: module\n    version: 1\n{}",
                 if module == "m00" {
                     String::new()
                 } else {
@@ -562,7 +562,7 @@ fn ambiguity_carries_a_bounded_sorted_candidate_prefix_and_exact_total() {
         std::fs::write(
             root.join(format!("lekalo/modules/{module}/entities.yaml")),
             format!(
-                "schema_version: \"1.0.0\"\ndefinitions:\n  - id: {module}.item\n    kind: entity\n    version: 1\n    fields:\n      - name: token\n        type: \"m00.text\"\n    identity:\n      - token\n{}",
+                "schema_version: \"0.2.16\"\ndefinitions:\n  - id: {module}.item\n    kind: entity\n    version: 1\n    fields:\n      - name: token\n        type: \"m00.text\"\n    identity:\n      - token\n{}",
                 if module == "m00" {
                     "  - id: m00.text\n    kind: scalar\n    version: 1\n    base: string\n"
                 } else {

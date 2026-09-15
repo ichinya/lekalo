@@ -9,7 +9,7 @@
 //! and privacy violations of the cache home stay fail-closed denials.
 //!
 //! The module is composed of:
-//! - [`version`]: the closed `dev.lekalo.cache@1.0.0` contract identity;
+//! - [`version`]: the closed `dev.lekalo.cache@0.2.16` contract identity;
 //! - [`canonical`]: canonical bytes and SHA-256 digests;
 //! - [`key`]: the closed typed key vocabulary and key digests;
 //! - [`record`]: the closed self-describing record envelope;

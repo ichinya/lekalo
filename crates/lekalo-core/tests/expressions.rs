@@ -59,7 +59,7 @@ fn parse(bytes: &[u8]) -> ExpressionsAttachment {
 fn the_planner_fixture_parses_with_the_full_grammar() {
     let attachment = parse(VALID);
     assert_eq!(attachment.project_id().as_str(), "planner");
-    assert_eq!(attachment.builtin_semantics(), "1.0.0");
+    assert_eq!(attachment.builtin_semantics(), "0.2.16");
     assert_eq!(attachment.expressions().len(), 39);
     let conditions = attachment
         .expressions()

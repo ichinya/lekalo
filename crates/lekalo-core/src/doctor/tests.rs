@@ -83,8 +83,8 @@ fn fresh_fixture_is_ready_with_the_full_panel() {
         project: Some(fixture_selection()),
     };
     let (report, human) = run(&selection, &git_available(), &doctor_options());
-    assert_eq!(report.schema_version, "lekalo/doctor/v1.0.0");
-    assert_eq!(report.identity, "dev.lekalo.doctor@1.0.0");
+    assert_eq!(report.schema_version, "lekalo/doctor/v0.2.16");
+    assert_eq!(report.identity, "dev.lekalo.doctor@0.2.16");
     assert_eq!(report.report, "doctor");
     assert_eq!(report.product_version, crate::lockfile::PRODUCT_VERSION);
     let ids: Vec<&str> = report.checks.iter().map(|c| c.id).collect();
@@ -110,7 +110,7 @@ fn fresh_fixture_is_ready_with_the_full_panel() {
     assert_eq!(check(&report, "model.version").state, CheckState::Ok);
     assert_eq!(
         report.revisions.model.version.as_deref(),
-        Some("1.0.0"),
+        Some("0.2.16"),
         "the fixture compiles under Model 1.0.0"
     );
     // No lock exists in the bare loader fixture: degraded, not blocked.

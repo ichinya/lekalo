@@ -107,13 +107,13 @@ pub(crate) fn from_value(json: &Json) -> Result<TransactionConcurrencyAttachment
         object
             .get("irRef")
             .ok_or_else(|| diagnostic::input_invalid("ir-ref", None))?,
-        "dev.lekalo.ir@0.1.0",
+        "dev.lekalo.ir@0.2.16",
         "ir-ref",
     )?;
     let effect_graph = match object.get("effectGraphRef") {
         Some(value) => Some(digest_member(
             value,
-            "dev.lekalo.effects@1.0.0",
+            "dev.lekalo.effects@0.2.16",
             "effect-graph-ref",
         )?),
         None => None,
@@ -174,8 +174,7 @@ fn model_pin(json: &Json) -> Result<ModelPin, DiagnosticSet> {
         .and_then(Json::as_str)
         .ok_or_else(|| diagnostic::input_invalid("model-version", None))?;
     let pin = match version {
-        "0.1.0" => crate::scenario::ModelPin::V0_1_0,
-        "1.0.0" => crate::scenario::ModelPin::V1_0_0,
+        "0.2.16" => crate::scenario::ModelPin::Current,
         _ => return Err(diagnostic::input_invalid("model-version", Some(version))),
     };
     let digest = Sha256Digest::parse(

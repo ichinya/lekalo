@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/privacy-export.schema.v0.2.16.classification.json",
+  "schemaId": "dev.lekalo.privacy-classification-decision-schema",
+  "version": "0.2.16",
+  "lifecycle": {
+    "status": "accepted",
+    "accepted": true
+  },
+  "title": "Lekalo exact classification decision reference",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractId", "version", "digest", "decisionId", "evidenceDigest"],
+  "properties": {
+    "contractId": { "const": "dev.lekalo.privacy-classification-decision" },
+    "version": { "const": "0.2.16" },
+    "digest": { "const": "sha256:78de535f02b6a8065579b43798ed650849aca0b7edf1aa08b2e0219fc744dde6" },
+    "decisionId": { "type": "string", "pattern": "^classification-sha256:[0-9a-f]{64}$" },
+    "evidenceDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

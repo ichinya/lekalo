@@ -1,5 +1,7 @@
 # ADR-0036: The declarative query model
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-11
 Status: accepted for issue #64
 
@@ -17,7 +19,7 @@ consistency) had no portable home, so every target invented its own.
 ### 1. One independent attachment family, not a Model change
 
 The Model contract stays at 1.0.0. Query read semantics live in one
-closed, versioned attachment (`lekalo/query-model/v1.0.0`) following
+closed, versioned attachment (`lekalo/query-model/v0.2.16`) following
 the established #23/#24/#26/#62/#63 attachment pattern: bound to one
 project and one exact Model pin, closed under
 `additionalProperties: false`, identity independent of the product
@@ -85,7 +87,7 @@ with #18.
 
 ## Consequences
 
-- `contracts/query-model.schema.v1.0.0.json` is the single new
+- `contracts/query-model.schema.v0.2.16.json` is the single new
   contract file; the diagnostic registry publishes the additive
   1.21.0 (exactly ten `query.*` rules, `LEK-QRY-001..010`, category
   `semantic`) over the frozen 1.20.0.

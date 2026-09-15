@@ -545,7 +545,6 @@ fn compare_projection(
     }
     compare_joins(base, candidate, prefix, paths);
     compare_polymorphics(base, candidate, prefix, paths);
-    compare_migrations(base, candidate, prefix, paths);
 }
 
 /// One table's comparison.
@@ -826,56 +825,6 @@ fn compare_polymorphics(
                     "{prefix}/polymorphics/{}",
                     materialization.relation().as_str()
                 ),
-                DiffLayer::Storage,
-                DiffClass::PolicyChange,
-                None,
-            );
-        }
-    }
-}
-
-/// Migration-history comparison: bookkeeping with unchanged
-/// guarantees; the records' own risks stay visible as data.
-fn compare_migrations(
-    base: &Projection,
-    candidate: &Projection,
-    prefix: &str,
-    paths: &mut Vec<DiffPath>,
-) {
-    for migration in base.migration_history() {
-        let Some(other) = candidate
-            .migration_history()
-            .iter()
-            .find(|candidate| candidate.migration_id() == migration.migration_id())
-        else {
-            push(
-                paths,
-                format!("{prefix}/migrations/{}", migration.migration_id().as_str()),
-                DiffLayer::Storage,
-                DiffClass::PolicyChange,
-                None,
-            );
-            continue;
-        };
-        if migration.tables() != other.tables() || migration.risk() != other.risk() {
-            push(
-                paths,
-                format!("{prefix}/migrations/{}", migration.migration_id().as_str()),
-                DiffLayer::Storage,
-                DiffClass::PolicyChange,
-                None,
-            );
-        }
-    }
-    for migration in candidate.migration_history() {
-        if !base
-            .migration_history()
-            .iter()
-            .any(|base| base.migration_id() == migration.migration_id())
-        {
-            push(
-                paths,
-                format!("{prefix}/migrations/{}", migration.migration_id().as_str()),
                 DiffLayer::Storage,
                 DiffClass::PolicyChange,
                 None,

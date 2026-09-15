@@ -20,8 +20,8 @@ use super::diagnostic;
 use super::entity::{DomainEntity, DomainField, DomainType, Visibility};
 use super::id::{EntityKey, StorageName};
 use super::projection::{
-    DataRisk, GeneratedColumn, GeneratedKind, Index, Join, Migration, Namespace, Polymorphic,
-    Projection, StorageType, Table, TechnicalColumn,
+    GeneratedColumn, GeneratedKind, Index, Join, Namespace, Polymorphic, Projection, StorageType,
+    Table, TechnicalColumn,
 };
 use super::relation::{DeleteBehavior, Relation, RelationKind, ScenarioRef};
 use super::version;
@@ -103,7 +103,7 @@ pub(crate) fn from_value(json: &Json) -> Result<StorageProjectionAttachment, Dia
         object
             .get("irRef")
             .ok_or_else(|| diagnostic::input_invalid("ir-ref"))?,
-        "dev.lekalo.ir@0.1.0",
+        "dev.lekalo.ir@0.2.16",
     )?;
     let source_map_ref = match object.get("sourceMapRef") {
         Some(value) => Some(
@@ -163,8 +163,7 @@ fn model_pin(json: &Json) -> Result<ModelPin, DiagnosticSet> {
         .and_then(Json::as_str)
         .ok_or_else(|| diagnostic::input_invalid("model-version"))?;
     let pin = match pin_version {
-        "0.1.0" => crate::scenario::ModelPin::V0_1_0,
-        "1.0.0" => crate::scenario::ModelPin::V1_0_0,
+        "0.2.16" => crate::scenario::ModelPin::Current,
         _ => return Err(diagnostic::input_invalid("model-version")),
     };
     let digest = Sha256Digest::parse(
@@ -623,7 +622,7 @@ fn projections(array: &[Json]) -> Result<Vec<Projection>, DiagnosticSet> {
         for key in projection.keys() {
             if !matches!(
                 key.as_str(),
-                "namespace" | "tables" | "joins" | "polymorphics" | "migrationHistory"
+                "namespace" | "tables" | "joins" | "polymorphics"
             ) {
                 return Err(diagnostic::input_invalid("unknown-field"));
             }
@@ -645,20 +644,11 @@ fn projections(array: &[Json]) -> Result<Vec<Projection>, DiagnosticSet> {
                 Some(entries) => polymorphics(entries)?,
                 None => Vec::new(),
             };
-        let migration_history = match optional_bounded_array(
-            projection,
-            "migrationHistory",
-            version::MAX_MIGRATIONS,
-        )? {
-            Some(entries) => migrations(entries)?,
-            None => Vec::new(),
-        };
         parsed.push(Projection {
             namespace,
             tables,
             joins,
             polymorphics,
-            migration_history,
         });
     }
     parsed.sort_by_key(|projection| projection.namespace.key());
@@ -1026,67 +1016,8 @@ fn polymorphics(array: &[Json]) -> Result<Vec<Polymorphic>, DiagnosticSet> {
     Ok(parsed)
 }
 
-/// Parse the declared migration history; declared (chronological)
-/// order is behavioral and preserved.
-fn migrations(array: &[Json]) -> Result<Vec<Migration>, DiagnosticSet> {
-    let mut parsed = Vec::with_capacity(array.len());
-    for entry in array {
-        let migration = entry
-            .as_object()
-            .ok_or_else(|| diagnostic::input_invalid("migration-shape"))?;
-        for key in migration.keys() {
-            if !matches!(key.as_str(), "migrationId" | "tables" | "risk") {
-                return Err(diagnostic::input_invalid("unknown-field"));
-            }
-        }
-        let migration_id = id_member(
-            migration,
-            "migrationId",
-            "migration-shape",
-            NamespacedId::parse,
-        )?;
-        let tables = storage_name_list(
-            migration,
-            "tables",
-            version::MAX_MIGRATION_TABLES,
-            "migration-tables",
-        )?;
-        if tables.is_empty() {
-            return Err(diagnostic::input_invalid("migration-tables"));
-        }
-        let mut tables = tables;
-        tables.sort();
-        tables.dedup();
-        let risk = DataRisk::parse(
-            migration
-                .get("risk")
-                .and_then(Json::as_str)
-                .ok_or_else(|| diagnostic::input_invalid("migration-risk"))?,
-        )
-        .map_err(|_| diagnostic::input_invalid("migration-risk"))?;
-        parsed.push(Migration {
-            migration_id,
-            tables,
-            risk,
-        });
-    }
-    if has_adjacent_duplicate_by_key(&parsed, |migration| {
-        migration.migration_id.as_str().to_owned()
-    }) {
-        return Err(diagnostic::input_invalid("duplicate-migration"));
-    }
-    Ok(parsed)
-}
-
 /// Whether any two adjacent entries share the same sort key.
 fn has_adjacent_duplicate<T, K: PartialEq>(parsed: &[T], key: impl Fn(&T) -> &K) -> bool {
-    parsed
-        .windows(2)
-        .any(|window| key(&window[0]) == key(&window[1]))
-}
-
-/// The same adjacency duplicate check over owned keys.
-fn has_adjacent_duplicate_by_key<T>(parsed: &[T], key: impl Fn(&T) -> String) -> bool {
     parsed
         .windows(2)
         .any(|window| key(&window[0]) == key(&window[1]))

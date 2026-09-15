@@ -59,7 +59,7 @@ pub(crate) fn build(
         return Err(BuildError::Inactive(id.to_owned()));
     }
     Ok(Diagnostic {
-        schema_version: DiagnosticSchemaVersion::V1_0_0,
+        schema_version: DiagnosticSchemaVersion::Current,
         registry_version: REGISTRY_VERSION.to_owned(),
         id: DiagnosticId::new(id).ok_or(BuildError::Registry)?,
         code: super::id::DiagnosticCode::new(entry.code().to_owned())

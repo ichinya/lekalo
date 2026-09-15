@@ -15,9 +15,9 @@ use crate::lockfile::{ComponentId, ComponentRef, ContractPin, LockDigest, SemVer
 use crate::project_fs;
 
 /// The closed v1 discriminator.
-pub const SCHEMA_VERSION: &str = "lekalo/artifact-manifest/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/artifact-manifest/v0.2.16";
 /// The independent contract identity; unrelated to every other family.
-pub const IDENTITY: &str = "dev.lekalo.artifact-manifest@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.artifact-manifest@0.2.16";
 /// The exact derived-manifest home inside the reserved `.lekalo/generated`
 /// runtime area.
 pub const MANIFEST_DIR: &str = ".lekalo/generated/manifests";

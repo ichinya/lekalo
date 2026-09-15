@@ -1,5 +1,7 @@
 # The bounded context capsule
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Issue #17 projects a minimal-but-sufficient context document for one
 symbol or one explicitly supplied change set: `lekalo context SYMBOL
 --budget TOKENS` and `lekalo context --changed SYMBOLS --budget TOKENS`.
@@ -12,9 +14,9 @@ owner decisions live in [ADR-0018](adr/0018-context-capsules.md).
 
 ## Contract identity
 
-- Discriminator: `lekalo/context/v1.0.0`
-- Identity: `dev.lekalo.context@1.0.0`
-- Schema: [`contracts/context-capsule.schema.v1.0.0.json`](../contracts/context-capsule.schema.v1.0.0.json)
+- Discriminator: `lekalo/context/v0.2.16`
+- Identity: `dev.lekalo.context@0.2.16`
+- Schema: [`contracts/context-capsule.schema.v0.2.16.json`](../contracts/context-capsule.schema.v0.2.16.json)
 - Independent of the product release, the Model/IR/graph/effect/protocol
   versions, and the diagnostic registry version.
 
@@ -56,7 +58,7 @@ the truncation is explicit metadata.
 
 ## Token estimator
 
-v1 pins one profile: `dev.lekalo.estimator.chars-4@1.0.0`, the offline
+v1 pins one profile: `dev.lekalo.estimator.chars-4@0.2.16`, the offline
 deterministic fallback. A content string of `n` Unicode scalars
 estimates `max(1, ceil(n / 4))` tokens; empty content estimates zero.
 The estimate is computed per typed fact from the fact's semantic text

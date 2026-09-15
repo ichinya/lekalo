@@ -272,7 +272,7 @@ fn status_reports_missing_then_ok_then_state_survives_clear() {
     assert!(json.contains("\"state\":\"ok\""), "{json}");
     assert!(json.contains("\"parsed-fragment\""), "{json}");
     assert!(
-        json.contains("\"schemaVersion\":\"lekalo/cache/v1.0.0\""),
+        json.contains("\"schemaVersion\":\"lekalo/cache/v0.2.16\""),
         "{json}"
     );
     assert!(
@@ -370,7 +370,7 @@ fn bench_generate(root: &Path, modules: usize, entities_per_module: usize) -> us
     fs::create_dir_all(lekalo.join("modules")).expect("lekalo tree");
     fs::write(
         lekalo.join("project.yaml"),
-        "schema_version: \"1.0.0\"\ndefinitions:\n  - id: bench\n    kind: project\n    version: 1\n",
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: bench\n    kind: project\n    version: 1\n",
     )
     .expect("project.yaml");
     let mut files = 1usize;
@@ -379,7 +379,7 @@ fn bench_generate(root: &Path, modules: usize, entities_per_module: usize) -> us
         let dir = lekalo.join("modules").join(&name);
         fs::create_dir_all(&dir).expect("module dir");
         files += 1;
-        let mut defs = String::from("schema_version: \"1.0.0\"\ndefinitions:\n");
+        let mut defs = String::from("schema_version: \"0.2.16\"\ndefinitions:\n");
         defs.push_str(&format!(
             "  - id: {name}\n    kind: module\n    version: 1\n"
         ));
@@ -390,7 +390,7 @@ fn bench_generate(root: &Path, modules: usize, entities_per_module: usize) -> us
         }
         fs::write(
             dir.join("module.yaml"),
-            format!("schema_version: \"1.0.0\"\ndefinitions:\n  - id: {name}\n    kind: module\n    version: 1\n"),
+            format!("schema_version: \"0.2.16\"\ndefinitions:\n  - id: {name}\n    kind: module\n    version: 1\n"),
         )
         .expect("module.yaml");
         files += 1;
@@ -398,7 +398,7 @@ fn bench_generate(root: &Path, modules: usize, entities_per_module: usize) -> us
         // Commands and queries reference the previous module's entities:
         // cross-module edges the dependency closure must follow.
         let target = if module == 0 { 0 } else { module - 1 };
-        let mut commands = String::from("schema_version: \"1.0.0\"\ndefinitions:\n");
+        let mut commands = String::from("schema_version: \"0.2.16\"\ndefinitions:\n");
         for entity in 0..entities_per_module {
             commands.push_str(&format!(
                 "  - id: {name}.create{entity:03}_cmd\n    kind: command\n    version: 1\n    effect: {name}.create{entity:03}\n"
@@ -409,7 +409,7 @@ fn bench_generate(root: &Path, modules: usize, entities_per_module: usize) -> us
         }
         fs::write(dir.join("commands.yaml"), commands).expect("commands");
         files += 1;
-        let mut queries = String::from("schema_version: \"1.0.0\"\ndefinitions:\n");
+        let mut queries = String::from("schema_version: \"0.2.16\"\ndefinitions:\n");
         for entity in 0..entities_per_module {
             queries.push_str(&format!(
                 "  - id: {name}.get{entity:03}_query\n    kind: query\n    version: 1\n    reads: m{target:04}.entity{entity:03}\n"
@@ -552,8 +552,8 @@ fn golden_record_fixtures_validate_and_match_their_pinned_digests() {
 fn the_health_fixture_matches_the_closed_projection_vocabulary() {
     let bytes = std::fs::read(fixture_dir().join("health/ok.json")).expect("health fixture");
     let value: serde_json::Value = serde_json::from_slice(&bytes).expect("parses");
-    assert_eq!(value["schemaVersion"], "lekalo/cache/v1.0.0");
-    assert_eq!(value["identity"], "dev.lekalo.cache@1.0.0");
+    assert_eq!(value["schemaVersion"], "lekalo/cache/v0.2.16");
+    assert_eq!(value["identity"], "dev.lekalo.cache@0.2.16");
     assert_eq!(value["backend"], "sqlite");
     let states = [
         "ok",

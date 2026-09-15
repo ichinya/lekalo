@@ -12,8 +12,8 @@
 //!
 //! Diagnostics reuse the accepted closed registry (no new rules); the
 //! receipts are typed result data published as
-//! `contracts/orchestration-report.schema.v1.0.0.json`
-//! (`dev.lekalo.orchestration-report@1.0.0`).
+//! `contracts/orchestration-report.schema.v0.2.16.json`
+//! (`dev.lekalo.orchestration-report@0.2.16`).
 
 mod catalog;
 mod diagnostic;

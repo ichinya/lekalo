@@ -46,7 +46,7 @@ import { join } from "node:path";
 
 const ADAPTER = {
   id: "lekalo-target-node-typescript",
-  version: "1.0.0",
+  version: "0.2.16",
   digest: "sha256:" + "0".repeat(64),
 };
 
@@ -90,7 +90,7 @@ function readRequest() {
 function capabilities(requestedVersion) {
   const declared = {
     adapter: ADAPTER,
-    protocol_versions: ["1.0.0", "1.1.0"],
+    protocol_versions: ["0.2.16"],
     operations: ["describe", "scan"],
     transports: ["stdin", "file"],
     progress: false,
@@ -99,8 +99,8 @@ function capabilities(requestedVersion) {
     read_scopes: READ_SCOPES,
     write_scopes: [],
   };
-  if (requestedVersion !== "1.0.0") {
-    declared.ir_versions = ["0.1.0"];
+  {
+    declared.ir_versions = ["0.2.16"];
     declared.capabilities = { "scan.symbols": "full" };
     declared.constraints = { max_entries: MAX_ENTRIES };
   }
@@ -262,7 +262,7 @@ function scan(request) {
 const request = JSON.parse(readRequest());
 if (request.protocol !== "lekalo.target/v1") {
   fail(request, "invalid", "protocol-token", "unknown protocol token");
-} else if (!["1.0.0", "1.1.0"].includes(request.protocol_version)) {
+} else if (!["0.2.16"].includes(request.protocol_version)) {
   fail(request, "invalid", "protocol-version", "unsupported protocol version");
 } else if (request.operation === "describe") {
   respond(request, { capabilities: capabilities(request.protocol_version) });

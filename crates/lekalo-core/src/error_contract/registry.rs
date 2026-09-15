@@ -26,7 +26,7 @@ use crate::diagnostics::DiagnosticSet;
 
 /// The exact embedded registry bytes.
 pub const REGISTRY_BYTES: &[u8] =
-    include_bytes!("../../../../contracts/error-registry.v1.0.0.json");
+    include_bytes!("../../../../contracts/error-registry.v0.2.16.json");
 
 /// One retired code: tombstoned forever, never reassigned or reused.
 #[derive(Clone, Debug, Eq, PartialEq)]

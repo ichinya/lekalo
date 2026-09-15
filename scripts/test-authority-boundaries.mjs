@@ -2,7 +2,7 @@
 
 import { loadAcceptedAuthority, evaluate } from "./check-authority.mjs";
 
-const { contract, context } = await loadAcceptedAuthority("1.3.1");
+const { contract, context } = await loadAcceptedAuthority("0.2.16");
 const actors = contract.actors;
 const kinds = contract.artifactKinds;
 const broadPredecessorKinds = new Set([

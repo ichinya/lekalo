@@ -326,9 +326,7 @@ impl LockService {
     ) -> Result<PreparedLockUpdate, LockFailure> {
         let existing = Self::read_state_at(root)?;
         let before = existing.as_lock().map(|lock| {
-            Sha256Digest::from_hex(&crate::versioning::plan::sha256_hex(
-                &canonical::payload_bytes(lock),
-            ))
+            Sha256Digest::from_hex(&crate::digest::sha256_hex(&canonical::payload_bytes(lock)))
         });
         let after_bytes = canonical::file_bytes(&resolved);
         let after_digest = canonical::lock_digest(&resolved);
@@ -422,7 +420,7 @@ fn validate_unchanged(
     match (current, before) {
         (None, None) => Ok(()),
         (Some(bytes), Some(before)) => {
-            let digest = Sha256Digest::from_hex(&crate::versioning::plan::sha256_hex(bytes));
+            let digest = Sha256Digest::from_hex(&crate::digest::sha256_hex(bytes));
             if digest == *before {
                 Ok(())
             } else {
@@ -631,7 +629,7 @@ fn compute_plan_id(
         ("resolver", canonical::Canon::str(resolver_version)),
     ])
     .to_json();
-    Sha256Digest::from_hex(&crate::versioning::plan::sha256_hex(text.as_bytes()))
+    Sha256Digest::from_hex(&crate::digest::sha256_hex(text.as_bytes()))
         .as_str()
         .to_owned()
 }

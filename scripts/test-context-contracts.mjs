@@ -31,7 +31,7 @@ if (ajvVersion !== "8.17.1") {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
-const schema = read("contracts/context-capsule.schema.v1.0.0.json");
+const schema = read("contracts/context-capsule.schema.v0.2.16.json");
 const goldenDir = "tests/fixtures/context/golden";
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
@@ -67,7 +67,7 @@ const GAP_IDS = new Set([
   "no-description", "no-effects", "no-policies", "no-relevant-bindings",
   "no-scenario-coverage",
 ]);
-const ESTIMATOR_IDENTITY = "dev.lekalo.estimator.chars-4@1.0.0";
+const ESTIMATOR_IDENTITY = "dev.lekalo.estimator.chars-4@0.2.16";
 
 // The estimator content rule: tokens = max(1, ceil(scalars / 4)) over a
 // non-empty string, 0 for empty. The gate recomputes every manifest token
@@ -115,8 +115,8 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
   if (!validateCapsule(capsule)) fail(`${name}-invalid`, validateCapsule.errors);
 
   // 2. Identity and estimator pins.
-  if (capsule.schemaVersion !== "lekalo/context/v1.0.0") fail(`${name}-schema`);
-  if (capsule.identity !== "dev.lekalo.context@1.0.0") fail(`${name}-identity`);
+  if (capsule.schemaVersion !== "lekalo/context/v0.2.16") fail(`${name}-schema`);
+  if (capsule.identity !== "dev.lekalo.context@0.2.16") fail(`${name}-identity`);
   if (capsule.estimator.identity !== ESTIMATOR_IDENTITY) fail(`${name}-estimator`);
   if (!capsule.irDigest.startsWith("sha256:")) fail(`${name}-ir-digest`);
 

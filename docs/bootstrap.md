@@ -15,7 +15,7 @@ any-other-content conflict denial, the same target document bytes, and
 the same in-process load-and-validate gate. [ADR-0039](adr/0039-greenfield-init-bootstrap.md)
 records the greenfield decisions.
 
-Product 0.2.16, Model 1.0.0, IR 0.1.0 and diagnostic registry 1.25.0
+Product 0.2.16, Model 0.2.16, IR 0.2.16 and diagnostic registry 0.2.16
 remain independent version lines.
 
 ## Commands
@@ -52,7 +52,7 @@ bootstrap never creates project roots. The receipt records the closed
 
 | Path | Written | Content |
 | --- | --- | --- |
-| `lekalo/project.yaml` | always | one `project` definition, Model 1.0.0 |
+| `lekalo/project.yaml` | always | one `project` definition, Model 0.2.16 |
 | `lekalo/modules/<module>/module.yaml` | always | one empty `module` definition (the first module) |
 | `lekalo/targets/<target>.yaml` | only for `--target` | the shared opaque selection document (byte-identical to adoption) |
 | `.gitignore` | always | the managed `/.lekalo/` ignore line |
@@ -80,7 +80,7 @@ bytes skip, any other content is a conflict.
 
 `--editor-hints` opts into a fixed `.vscode/settings.json` mapping
 `lekalo/project.yaml` and `lekalo/modules/**/*.yaml` to the published
-Model 1.0.0 schema `$id` (`https://lekalo.dev/schemas/model/1.0.0/schema.json`).
+Model 0.2.16 schema `$id` (`https://lekalo.dev/schemas/model/0.2.16/schema.json`).
 A differing pre-existing settings file is an ordinary no-overwrite
 conflict; bootstrap is re-runnable without the flag.
 

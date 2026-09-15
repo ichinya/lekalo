@@ -381,8 +381,8 @@ fn the_estimator_pins_its_identity_version_and_digest() {
     let document: serde_json::Value =
         serde_json::from_str(&capsule.to_canonical_json()).expect("canonical json");
     let estimator = &document["estimator"];
-    assert_eq!(estimator["identity"], "dev.lekalo.estimator.chars-4@1.0.0");
-    assert_eq!(estimator["version"], "1.0.0");
+    assert_eq!(estimator["identity"], "dev.lekalo.estimator.chars-4@0.2.16");
+    assert_eq!(estimator["version"], "0.2.16");
     assert_eq!(
         estimator["digest"].as_str().expect("digest").len(),
         "sha256:".len() + 64

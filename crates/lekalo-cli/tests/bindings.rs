@@ -138,7 +138,7 @@ fn scan_records_the_registry_without_reading_sensitive_paths_or_writing_sources(
     let sandbox = Sandbox::new("scan");
     let fingerprint = |name: &str| {
         let bytes = std::fs::read(sandbox.root.join(name)).expect("source");
-        lekalo_core::versioning::plan::sha256_hex(&bytes)
+        lekalo_core::digest::sha256_hex(&bytes)
     };
     let before_tasks = fingerprint("proj/src/tasks.ts");
     let before_env = fingerprint("proj/.env");

@@ -1,0 +1,45 @@
+{
+  "registry": "dev.lekalo.version-registry",
+  "registryVersion": "0.2.16",
+  "families": {
+    "model": {
+      "current": "0.2.16",
+      "aliases": [],
+      "versions": [
+        {
+          "version": "0.2.16",
+          "state": "supported",
+          "classification": "breaking",
+          "reason": "Development baseline at product 0.2.16. Only the current contract is supported."
+        }
+      ],
+      "migrations": []
+    },
+    "ir": {
+      "current": "0.2.16",
+      "aliases": [],
+      "versions": [
+        {
+          "version": "0.2.16",
+          "state": "supported",
+          "classification": "breaking",
+          "reason": "Development baseline at product 0.2.16. Only the current contract is supported."
+        }
+      ],
+      "migrations": []
+    },
+    "protocol": {
+      "current": "0.2.16",
+      "aliases": [],
+      "versions": [
+        {
+          "version": "0.2.16",
+          "state": "supported",
+          "classification": "breaking",
+          "reason": "Development baseline at product 0.2.16. Only the current contract is supported."
+        }
+      ],
+      "migrations": []
+    }
+  }
+}

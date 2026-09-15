@@ -507,7 +507,7 @@ fn append_document(
             }
             format!("{trimmed}\n")
         }
-        None => "schema_version: \"1.0.0\"\ndefinitions:\n".to_owned(),
+        None => "schema_version: \"0.2.16\"\ndefinitions:\n".to_owned(),
     };
     for block in blocks {
         text.push_str(block);

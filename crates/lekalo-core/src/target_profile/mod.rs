@@ -25,7 +25,7 @@
 //! Every refusal is deterministic and explainable; nothing here launches
 //! a process, reads the filesystem, or depends on the adapter protocol.
 //! The adapter protocol consumes a resolved snapshot through its own
-//! negotiated wire members (protocol 1.2.0), never raw YAML.
+//! negotiated wire members (protocol 0.2.16), never raw YAML.
 
 pub mod component;
 pub mod diagnostic;

@@ -2,7 +2,7 @@
 //!
 //! The integration never defines an OpenSpec-specific wire: it projects
 //! the resolved requirements and their symbol links into the closed #22
-//! trace contract (`lekalo/trace-manifest/v1.0.0`). Requirement nodes
+//! trace contract (`lekalo/trace-manifest/v0.2.16`). Requirement nodes
 //! carry the OpenSpec original ids verbatim as external references with
 //! their exact body digests; every reference becomes an `implements`
 //! edge (symbol→requirement — the only legal symbol→requirement kind in

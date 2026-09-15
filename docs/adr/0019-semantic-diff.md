@@ -1,5 +1,7 @@
 # ADR-0019: Semantic diff and compatibility classification
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-05
 Status: accepted for issue #18
 
@@ -11,8 +13,8 @@ every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 this issue published product 0.1.26 (annotated tag `v0.1.26` on
 `3710179`); issue #17 published product 0.1.25 (annotated tag `v0.1.25` on
 `e627fe5`).
-The semantic-diff contract version (`lekalo/semantic-diff/v1.0.0`, identity
-`dev.lekalo.semantic-diff@1.0.0`) is independent of the product release, of
+The semantic-diff contract version (`lekalo/semantic-diff/v0.2.16`, identity
+`dev.lekalo.semantic-diff@0.2.16`) is independent of the product release, of
 the Model/IR/graph/effect/protocol contract versions, and of the
 diagnostic registry by design.
 
@@ -36,9 +38,9 @@ adopts.
 ### 1. Independent closed contract over two typed IR values
 
 The diff publishes its own wire contract,
-[`contracts/semantic-diff.schema.v1.0.0.json`](../../contracts/semantic-diff.schema.v1.0.0.json)
-(discriminator `lekalo/semantic-diff/v1.0.0`, identity
-`dev.lekalo.semantic-diff@1.0.0`), independent of every other contract
+[`contracts/semantic-diff.schema.v0.2.16.json`](../../contracts/semantic-diff.schema.v0.2.16.json)
+(discriminator `lekalo/semantic-diff/v0.2.16`, identity
+`dev.lekalo.semantic-diff@0.2.16`), independent of every other contract
 family. It consumes two immutable `CompiledProject` values — never YAML
 text, line diffs, physical paths, source bytes, Git state, clocks, or
 the filesystem. SourceMap spans stay outside the core result; they may
@@ -110,7 +112,7 @@ Unlike #14, this contract adds its own rule family — the brief requires
 typed `diff.*` identities, and reusing `graph.*` for diff-family
 failures would blur contract families. The registry therefore takes its
 next wire-shape-preserving minor increment to
-[`diagnostic-registry.v1.5.0.json`](../../contracts/diagnostic-registry.v1.5.0.json)
+[`diagnostic-registry.v0.2.16.json`](../../contracts/diagnostic-registry.v0.2.16.json)
 with `diff.input-invalid`, `diff.profile-invalid`,
 `diff.adapter-invalid`, `diff.subject-limit`, `diff.change-limit`,
 `diff.seed-limit`, `diff.export-limit`, and `diff.history-invalid`

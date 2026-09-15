@@ -11,13 +11,13 @@
 pub const FAMILY: &str = "dev.lekalo.trace-manifest";
 
 /// The exact trace contract version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.trace-manifest@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.trace-manifest@0.2.16";
 
 /// The exact wire discriminator of the trace contract.
-pub const SCHEMA_VERSION: &str = "lekalo/trace-manifest/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/trace-manifest/v0.2.16";
 
 /// The maximum number of nodes one manifest may hold (fatal beyond it).
 pub const MAX_NODES: usize = 100_000;
@@ -52,8 +52,8 @@ mod tests {
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
         assert_eq!(FAMILY, "dev.lekalo.trace-manifest");
-        assert_eq!(VERSION, "1.0.0");
-        assert_eq!(SCHEMA_VERSION, "lekalo/trace-manifest/v1.0.0");
+        assert_eq!(VERSION, "0.2.16");
+        assert_eq!(SCHEMA_VERSION, "lekalo/trace-manifest/v0.2.16");
     }
 
     #[test]

@@ -1,9 +1,9 @@
-schema_version: "lekalo/authorization/v1.0.0"
-identity: "dev.lekalo.authorization@1.0.0"
+schema_version: "lekalo/authorization/v0.2.16"
+identity: "dev.lekalo.authorization@0.2.16"
 model_ref:
-  schema_version: "1.0.0"
-  ir_digest: "sha256:1f824102640caa3aa4ffb5e906db4dff9539587e14d2f9949ce67b98dc9b901e"
-profile_ref: "dev.lekalo.authorization-profile@1.0.0"
+  schema_version: "0.2.16"
+  ir_digest: "sha256:e909626a8419929d0515ce0545240e638eeed6c425f362853475f087e15ca58a"
+profile_ref: "dev.lekalo.authorization-profile@0.2.16"
 capabilities:
   - id: planner.cap.task_read
   - id: planner.cap.task_write
@@ -153,7 +153,7 @@ compositions:
       - "planner.policy.task_read_member"
 mappings:
   - target: "rest/gateway"
-    authorization_contract_ref: "dev.lekalo.authorization@1.0.0"
+    authorization_contract_ref: "dev.lekalo.authorization@0.2.16"
     semantic_policy_ref: "planner.policy.task_write_owner"
     mapping_state: partial
     evidence_ref: "lekalo/targets/rest.yaml"

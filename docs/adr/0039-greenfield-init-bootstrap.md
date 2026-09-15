@@ -61,7 +61,7 @@ creating the lock before explicit resolution.
 
 6. **Editor hints are opt-in.** `--editor-hints` writes a fixed
    `.vscode/settings.json` mapping the model homes to the published
-   Model 1.0.0 schema `$id`. A differing pre-existing settings file is
+   Model 0.2.16 schema `$id`. A differing pre-existing settings file is
    an ordinary conflict (re-run without the flag); an opt-in
    convenience never silently overrides user editor configuration.
 

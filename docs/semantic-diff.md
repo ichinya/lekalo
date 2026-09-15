@@ -1,15 +1,17 @@
 # Semantic diff and compatibility classification
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Issue #18 gives Lekalo a way to compare two versions of a model **by
 meaning, not by lines of YAML**, and to classify the consequences for
 consumers, storage, and targets. The implementation is a pure, read-only,
 two-project comparison service in `lekalo-core` (`crate::diff`) with a
 thin `lekalo diff` handoff in the CLI.
 
-- Contract: `contracts/semantic-diff.schema.v1.0.0.json`
-- Wire discriminator: `lekalo/semantic-diff/v1.0.0`
-- Contract identity: `dev.lekalo.semantic-diff@1.0.0`
-- Profiles: `lekalo/diff-profile/v1.0.0`, policy revision `diff-policy/v1`
+- Contract: `contracts/semantic-diff.schema.v0.2.16.json`
+- Wire discriminator: `lekalo/semantic-diff/v0.2.16`
+- Contract identity: `dev.lekalo.semantic-diff@0.2.16`
+- Profiles: `lekalo/diff-profile/v0.2.16`, policy revision `diff-policy/v1`
 - Diagnostics: the `diff.*` rule family (`LEK-DIFF-001..008`) through the
   #11 registry, added as the wire-shape-preserving registry minor
   increment 1.4.0 → 1.5.0

@@ -12,25 +12,25 @@
 pub const FAMILY: &str = "dev.lekalo.requirements";
 
 /// The exact requirements attachment contract version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.requirements@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.requirements@0.2.16";
 
 /// The exact wire discriminator of the requirements attachment contract.
-pub const SCHEMA_VERSION: &str = "lekalo/requirements/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/requirements/v0.2.16";
 
 /// The requirements report contract family identifier.
 pub const REPORT_FAMILY: &str = "dev.lekalo.requirements-report";
 
 /// The exact requirements report contract version.
-pub const REPORT_VERSION: &str = "1.0.0";
+pub const REPORT_VERSION: &str = "0.2.16";
 
 /// The exact report contract identity.
-pub const REPORT_IDENTITY: &str = "dev.lekalo.requirements-report@1.0.0";
+pub const REPORT_IDENTITY: &str = "dev.lekalo.requirements-report@0.2.16";
 
 /// The exact wire discriminator of the requirements report contract.
-pub const REPORT_SCHEMA_VERSION: &str = "lekalo/requirements-report/v1.0.0";
+pub const REPORT_SCHEMA_VERSION: &str = "lekalo/requirements-report/v0.2.16";
 
 /// The maximum number of declared requirement providers (fatal beyond it).
 pub const MAX_PROVIDERS: usize = 8;
@@ -72,12 +72,12 @@ mod tests {
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
         assert_eq!(FAMILY, "dev.lekalo.requirements");
-        assert_eq!(VERSION, "1.0.0");
-        assert_eq!(SCHEMA_VERSION, "lekalo/requirements/v1.0.0");
+        assert_eq!(VERSION, "0.2.16");
+        assert_eq!(SCHEMA_VERSION, "lekalo/requirements/v0.2.16");
         assert_eq!(REPORT_IDENTITY, format!("{REPORT_FAMILY}@{REPORT_VERSION}"));
         assert_eq!(REPORT_FAMILY, "dev.lekalo.requirements-report");
-        assert_eq!(REPORT_VERSION, "1.0.0");
-        assert_eq!(REPORT_SCHEMA_VERSION, "lekalo/requirements-report/v1.0.0");
+        assert_eq!(REPORT_VERSION, "0.2.16");
+        assert_eq!(REPORT_SCHEMA_VERSION, "lekalo/requirements-report/v0.2.16");
     }
 
     #[test]

@@ -255,14 +255,14 @@ mod tests {
     fn decodes_a_complete_profile() {
         let bytes = document(serde_json::json!([{
             "id": "node-postgres-http",
-            "version": "1.0.0",
+            "version": "0.2.16",
             "components": complete_components(),
         }]));
         let document = decode(&bytes).expect("decodes");
         assert_eq!(document.profiles.len(), 1);
         let profile = &document.profiles[0];
         assert_eq!(profile.id, "node-postgres-http");
-        assert_eq!(profile.version.as_str(), "1.0.0");
+        assert_eq!(profile.version.as_str(), "0.2.16");
         assert_eq!(profile.extends, None);
         assert_eq!(profile.components.len(), 6);
         assert!(profile.overrides.is_empty());
@@ -272,7 +272,7 @@ mod tests {
     fn canonical_declaration_bytes_are_key_sorted_and_stable() {
         let extending = serde_json::json!({
             "id": "derived",
-            "version": "1.1.0",
+            "version": "0.2.16",
             "extends": "base",
             "components": { "transport": "grpc-proto" },
             "overrides": [
@@ -285,7 +285,7 @@ mod tests {
             String::from_utf8(profile.canonical_bytes()).expect("utf8"),
             "{\"components\":{\"transport\":\"grpc-proto\"},\"extends\":\"base\",\
              \"id\":\"derived\",\"overrides\":[{\"accept\":\"partial\",\
-             \"capability\":\"transport.streaming\"}],\"version\":\"1.1.0\"}"
+             \"capability\":\"transport.streaming\"}],\"version\":\"0.2.16\"}"
         );
     }
 
@@ -331,48 +331,48 @@ mod tests {
         match detail {
             "profiles-empty" => serde_json::json!([]),
             "id" => {
-                serde_json::json!({ "id": "-bad", "version": "1.0.0", "components": complete_components() })
+                serde_json::json!({ "id": "-bad", "version": "0.2.16", "components": complete_components() })
             }
             "duplicate-id" => serde_json::json!([
-                { "id": "a", "version": "1.0.0", "components": complete_components() },
+                { "id": "a", "version": "0.2.16", "components": complete_components() },
                 { "id": "a", "version": "1.0.1", "components": complete_components() }
             ]),
             "version" => {
                 serde_json::json!({ "id": "a", "version": "0.0.0", "components": complete_components() })
             }
             "extends" => {
-                serde_json::json!({ "id": "a", "version": "1.0.0", "extends": "a", "components": complete_components() })
+                serde_json::json!({ "id": "a", "version": "0.2.16", "extends": "a", "components": complete_components() })
             }
             "components-empty" => {
-                serde_json::json!({ "id": "a", "version": "1.0.0", "extends": "b", "components": {} })
+                serde_json::json!({ "id": "a", "version": "0.2.16", "extends": "b", "components": {} })
             }
             "components-incomplete" => {
-                serde_json::json!({ "id": "a", "version": "1.0.0", "components": { "runtime": "node-typescript" } })
+                serde_json::json!({ "id": "a", "version": "0.2.16", "components": { "runtime": "node-typescript" } })
             }
             "axis" => {
-                serde_json::json!({ "id": "a", "version": "1.0.0", "components": { "middle": "x" } })
+                serde_json::json!({ "id": "a", "version": "0.2.16", "components": { "middle": "x" } })
             }
             "component" => {
-                serde_json::json!({ "id": "a", "version": "1.0.0", "extends": "b", "components": { "runtime": "Bad/Id" } })
+                serde_json::json!({ "id": "a", "version": "0.2.16", "extends": "b", "components": { "runtime": "Bad/Id" } })
             }
             "override-without-extends" => {
-                serde_json::json!({ "id": "a", "version": "1.0.0", "components": complete_components(), "overrides": [
+                serde_json::json!({ "id": "a", "version": "0.2.16", "components": complete_components(), "overrides": [
                 { "capability": "x.y", "accept": "partial" }
             ] })
             }
             "override-duplicate" => {
-                serde_json::json!({ "id": "a", "version": "1.0.0", "extends": "b", "components": { "runtime": "node-typescript" }, "overrides": [
+                serde_json::json!({ "id": "a", "version": "0.2.16", "extends": "b", "components": { "runtime": "node-typescript" }, "overrides": [
                 { "capability": "x.y", "accept": "partial" },
                 { "capability": "x.y", "accept": "full" }
             ] })
             }
             "override-accept" => {
-                serde_json::json!({ "id": "a", "version": "1.0.0", "extends": "b", "components": { "runtime": "node-typescript" }, "overrides": [
+                serde_json::json!({ "id": "a", "version": "0.2.16", "extends": "b", "components": { "runtime": "node-typescript" }, "overrides": [
                 { "capability": "x.y", "accept": "unknown" }
             ] })
             }
             "override-capability" => {
-                serde_json::json!({ "id": "a", "version": "1.0.0", "extends": "b", "components": { "runtime": "node-typescript" }, "overrides": [
+                serde_json::json!({ "id": "a", "version": "0.2.16", "extends": "b", "components": { "runtime": "node-typescript" }, "overrides": [
                 { "capability": "X.Y", "accept": "partial" }
             ] })
             }

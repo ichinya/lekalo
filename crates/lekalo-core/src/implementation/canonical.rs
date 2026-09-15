@@ -13,10 +13,10 @@
 use super::version::MAX_CANONICAL_BYTES;
 use super::ImplementationDocument;
 use crate::diagnostics::DiagnosticSet;
+use crate::digest::sha256_hex;
 use crate::implementation::diagnostic;
 use crate::ir::CompiledProject;
 use crate::lockfile::types::Sha256Digest;
-use crate::versioning::plan::sha256_hex;
 
 /// The canonical compact JSON bytes, or the payload-bound rejection.
 pub(crate) fn to_canonical_json(

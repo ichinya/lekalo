@@ -111,10 +111,10 @@ fn project_document(project_id: &str, frontend: Frontend) -> Option<plan::Planne
     }
     let bytes = match frontend {
         Frontend::Json => format!(
-            "{{\"schema_version\":\"1.0.0\",\"definitions\":[{{\"id\":\"{project_id}\",\"kind\":\"project\",\"version\":1,\"description\":\"New Lekalo project.\"}}]}}\n"
+            "{{\"schema_version\":\"0.2.16\",\"definitions\":[{{\"id\":\"{project_id}\",\"kind\":\"project\",\"version\":1,\"description\":\"New Lekalo project.\"}}]}}\n"
         ),
         Frontend::Yaml => format!(
-            "schema_version: \"1.0.0\"\ndefinitions:\n  - id: {project_id}\n    kind: project\n    version: 1\n    description: \"New Lekalo project.\"\n"
+            "schema_version: \"0.2.16\"\ndefinitions:\n  - id: {project_id}\n    kind: project\n    version: 1\n    description: \"New Lekalo project.\"\n"
         ),
     }
     .into_bytes();
@@ -136,10 +136,10 @@ fn module_document(module_id: &str, frontend: Frontend) -> Option<plan::PlannedF
     }
     let bytes = match frontend {
         Frontend::Json => format!(
-            "{{\"schema_version\":\"1.0.0\",\"definitions\":[{{\"id\":\"{module_id}\",\"kind\":\"module\",\"version\":1,\"description\":\"Initial module.\"}}]}}\n"
+            "{{\"schema_version\":\"0.2.16\",\"definitions\":[{{\"id\":\"{module_id}\",\"kind\":\"module\",\"version\":1,\"description\":\"Initial module.\"}}]}}\n"
         ),
         Frontend::Yaml => format!(
-            "schema_version: \"1.0.0\"\ndefinitions:\n  - id: {module_id}\n    kind: module\n    version: 1\n    description: \"Initial module.\"\n"
+            "schema_version: \"0.2.16\"\ndefinitions:\n  - id: {module_id}\n    kind: module\n    version: 1\n    description: \"Initial module.\"\n"
         ),
     }
     .into_bytes();
@@ -150,14 +150,14 @@ fn module_document(module_id: &str, frontend: Frontend) -> Option<plan::PlannedF
 }
 
 /// The opt-in `.vscode/settings.json`: editor/schema hints mapping the
-/// canonical model homes to the published Model 1.0.0 schema `$id`.
+/// canonical model homes to the published Model 0.2.16 schema `$id`.
 fn editor_hints_document() -> plan::PlannedFile {
     plan::PlannedFile {
         path: EDITOR_HINTS_PATH.to_owned(),
         bytes: concat!(
             "{\n",
             "  \"yaml.schemas\": {\n",
-            "    \"https://lekalo.dev/schemas/model/1.0.0/schema.json\": [\n",
+            "    \"https://lekalo.dev/schemas/model/0.2.16/schema.json\": [\n",
             "      \"lekalo/project.yaml\",\n",
             "      \"lekalo/modules/**/*.yaml\"\n",
             "    ]\n",
@@ -209,7 +209,7 @@ fn templates(request: &BootstrapRequest) -> Vec<TemplateRecord> {
 
 /// The SHA-256 helper of the versioning plan surface.
 fn sha256_hex(bytes: &[u8]) -> String {
-    crate::versioning::plan::sha256_hex(bytes)
+    crate::digest::sha256_hex(bytes)
 }
 
 /// The classified preflight of one bootstrap.
@@ -725,12 +725,12 @@ mod tests {
         assert_eq!(yaml.path, "lekalo/project.yaml");
         assert_eq!(
             String::from_utf8(yaml.bytes).expect("utf8"),
-            "schema_version: \"1.0.0\"\ndefinitions:\n  - id: probe\n    kind: project\n    version: 1\n    description: \"New Lekalo project.\"\n"
+            "schema_version: \"0.2.16\"\ndefinitions:\n  - id: probe\n    kind: project\n    version: 1\n    description: \"New Lekalo project.\"\n"
         );
         let json = project_document("probe", Frontend::Json).expect("json project document");
         assert_eq!(
             String::from_utf8(json.bytes).expect("utf8"),
-            "{\"schema_version\":\"1.0.0\",\"definitions\":[{\"id\":\"probe\",\"kind\":\"project\",\"version\":1,\"description\":\"New Lekalo project.\"}]}\n"
+            "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"probe\",\"kind\":\"project\",\"version\":1,\"description\":\"New Lekalo project.\"}]}\n"
         );
         let module = module_document("planner", Frontend::Yaml).expect("module document");
         assert_eq!(module.path, "lekalo/modules/planner/module.yaml");
@@ -766,7 +766,7 @@ mod tests {
             concat!(
                 "{\n",
                 "  \"yaml.schemas\": {\n",
-                "    \"https://lekalo.dev/schemas/model/1.0.0/schema.json\": [\n",
+                "    \"https://lekalo.dev/schemas/model/0.2.16/schema.json\": [\n",
                 "      \"lekalo/project.yaml\",\n",
                 "      \"lekalo/modules/**/*.yaml\"\n",
                 "    ]\n",

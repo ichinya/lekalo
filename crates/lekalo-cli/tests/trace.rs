@@ -8,7 +8,7 @@ use std::process::{Command, Output};
 
 const GOLDEN: &str = include_str!("../../../tests/fixtures/trace/golden/planner.trace.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:b0fabdc6f2bc55f392e912989579ce8b56b41547d7a4782f06acfda41a3a5031";
+    "sha256:ebb5fc53c04befc3edb6c01a671c697f46f48aad611814c1bb9a0d6e11da45b2";
 const FULL: &str = "tests/fixtures/trace/full.trace.json";
 const PARTIAL: &str = "tests/fixtures/trace/partial.trace.json";
 

@@ -2,8 +2,8 @@
   "status": "invalid",
   "diagnostics": [
     {
-      "schema_version": "lekalo/diagnostic/v1.0.0",
-      "registry_version": "1.25.0",
+      "schema_version": "lekalo/diagnostic/v0.2.16",
+      "registry_version": "0.2.16",
       "id": "ir.unknown-field",
       "code": "LEK-IR-005",
       "severity": "error",
@@ -14,12 +14,12 @@
         "path": "lekalo/modules/planner/entities.yaml",
         "range": {
           "start": {
-            "byte": 94,
+            "byte": 95,
             "line": 6,
             "column": 5
           },
           "end": {
-            "byte": 108,
+            "byte": 109,
             "line": 6,
             "column": 19
           }

@@ -776,6 +776,6 @@ mod tests {
 
     #[test]
     fn estimator_identity_is_stable() {
-        assert_eq!(estimate::IDENTITY, "dev.lekalo.estimator.chars-4@1.0.0");
+        assert_eq!(estimate::IDENTITY, "dev.lekalo.estimator.chars-4@0.2.16");
     }
 }

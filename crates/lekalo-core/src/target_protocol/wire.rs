@@ -5,7 +5,7 @@
 //! response envelopes are parsed and semantically validated here. Unknown
 //! members are rejected on both sides: the protocol is closed. Wire names
 //! are snake_case exactly as the issue specifies; the schema artifact
-//! `contracts/target-protocol.schema.v1.0.0.json` mirrors every bound.
+//! `contracts/target-protocol.schema.v0.2.16.json` mirrors every bound.
 
 use serde::{Deserialize, Serialize};
 
@@ -283,14 +283,6 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
         {
             return invalid;
         }
-        // The extension members exist only on the 1.1.0 contract; a
-        // response claiming the base version must keep the exact
-        // published 1.0.0 shape (issue #28).
-        if response.protocol_version == super::version::BASE_VERSION
-            && (!c.ir_versions.is_empty() || !c.capabilities.is_empty() || c.constraints.is_some())
-        {
-            return invalid;
-        }
         // Scope grammar is projected by the client as a policy refusal.
     }
     if let Some(writes) = &response.writes {
@@ -455,8 +447,8 @@ pub struct RequestEnvelope {
     )]
     pub profile: Option<String>,
     /// The resolved profile snapshot digest (`sha256:…`, issue #29,
-    /// protocol 1.2.0). Legal only on a 1.2.0 request and only together
-    /// with `profile_capabilities`; a 1.0.0 or 1.1.0 request carrying it
+    /// protocol 0.2.16). Legal only on a 0.2.16 request and only together
+    /// with `profile_capabilities`; a 0.2.16 or 0.2.16 request carrying it
     /// is refused so the frozen documents keep their exact meanings.
     #[serde(
         default,
@@ -465,7 +457,7 @@ pub struct RequestEnvelope {
     )]
     pub profile_digest: Option<String>,
     /// The resolved profile capability snapshot (issue #29, protocol
-    /// 1.2.0), sorted strictly by capability id: the negotiated
+    /// 0.2.16), sorted strictly by capability id: the negotiated
     /// capabilities an adapter receives instead of arbitrary YAML.
     #[serde(
         default,
@@ -521,18 +513,18 @@ pub struct Capabilities {
     #[serde(default)]
     pub progress: bool,
     /// The IR contract versions the adapter accepts (issue #28, protocol
-    /// 1.1.0). Absent on a 1.0.0 session: IR compatibility is then
+    /// 0.2.16). Absent on a 0.2.16 session: IR compatibility is then
     /// governed upstream by the #9 compatibility preflight, never
     /// guessed here.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ir_versions: Vec<String>,
     /// The named capability support states the adapter declares
-    /// (issue #28, protocol 1.1.0). Canonical byte order comes from the
+    /// (issue #28, protocol 0.2.16). Canonical byte order comes from the
     /// `BTreeMap`; an absent id is undeclared, never optimistically
     /// available.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub capabilities: std::collections::BTreeMap<String, SupportState>,
-    /// Optional declared constraints (issue #28, protocol 1.1.0).
+    /// Optional declared constraints (issue #28, protocol 0.2.16).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub constraints: Option<AdapterConstraints>,
 }
@@ -577,7 +569,7 @@ pub struct AdapterConstraints {
     pub max_writes: Option<u64>,
 }
 
-/// One resolved profile capability carried on a 1.2.0 request (issue
+/// One resolved profile capability carried on a 0.2.16 request (issue
 /// #29): the support state the whole profile guarantees for the id.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1153,7 +1145,7 @@ mod tests {
     use crate::target_protocol::TargetFailure;
 
     #[test]
-    fn resolved_profile_members_are_1_2_0_only_and_paired() {
+    fn resolved_profile_members_are_paired() {
         let resolution = ProfileResolution {
             digest: format!("sha256:{}", "a".repeat(64)),
             capabilities: vec![ProfileCapability {
@@ -1170,19 +1162,8 @@ mod tests {
         request.profile_capabilities = Some(resolution.capabilities.clone());
         assert!(
             validate_request(&request).is_ok(),
-            "legal on a 1.2.0 request"
+            "legal on a 0.2.16 request"
         );
-
-        // Older sessions refuse the members: the frozen documents keep
-        // their exact published meanings.
-        for version in ["1.0.0", "1.1.0"] {
-            request.protocol_version = version.to_owned();
-            assert_eq!(
-                validate_request(&request),
-                Err(TargetFailure::RequestInvalid { detail: "member" }),
-                "refused on {version}"
-            );
-        }
 
         // Pair rule: one member without the other is invalid.
         request.protocol_version = VERSION.to_owned();

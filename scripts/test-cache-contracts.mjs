@@ -30,7 +30,7 @@ if (ajvVersion !== "8.17.1") {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
-const schema = read("contracts/cache.schema.v1.0.0.json");
+const schema = read("contracts/cache.schema.v0.2.16.json");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateWire = ajv.compile(schema);
 
@@ -126,7 +126,7 @@ if (healthCount === 0) fail("no health vector was checked");
 
 process.stdout.write(`${JSON.stringify({
   gate: "lekalo-cache-contracts",
-  schema: "lekalo/cache/v1.0.0",
+  schema: "lekalo/cache/v0.2.16",
   ajv: ajvVersion,
   validRecords: recordCount,
   rejectedVectors: invalidCount,

@@ -94,8 +94,8 @@ fn rewrite_declaration(sandbox: &Sandbox, name: &str, mutate: impl FnOnce(&mut s
 #[test]
 fn declaration_wire_fails_closed_on_unknown_keys_and_bad_grammar() {
     let base = br#"{
-        "schemaVersion": "lekalo/contracted-declaration/v1.0.0",
-        "adapter": {"id": "lekalo-target-node-typescript", "version": "1.0.0", "digest": null},
+        "schemaVersion": "lekalo/contracted-declaration/v0.2.16",
+        "adapter": {"id": "lekalo-target-node-typescript", "version": "0.2.16", "digest": null},
         "project": "planner",
         "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "symbols": [], "artifacts": []
@@ -300,10 +300,7 @@ fn support_paths_confine_to_the_generated_home_and_digests_gate() {
     // Exact bytes satisfy the digest gate.
     std::fs::create_dir_all(sandbox.root.join(".lekalo/generated/types")).expect("dir");
     let payload = b"{\"planner\":true}";
-    let digest = format!(
-        "sha256:{}",
-        lekalo_core::versioning::plan::sha256_hex(payload)
-    );
+    let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(payload));
     std::fs::write(
         sandbox.root.join(".lekalo/generated/types/focus.json"),
         payload,

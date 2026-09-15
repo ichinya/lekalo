@@ -1,6 +1,6 @@
 {
   "binding": {
-    "cacheIdentity": "dev.lekalo.cache@1.0.0",
+    "cacheIdentity": "dev.lekalo.cache@0.2.16",
     "contracts": [],
     "pipelineRevision": 1
   },
@@ -11,7 +11,7 @@
       "role": "input"
     }
   ],
-  "identity": "dev.lekalo.cache@1.0.0",
+  "identity": "dev.lekalo.cache@0.2.16",
   "key": {
     "kind": "parsed-fragment",
     "path": "lekalo/project.yaml",
@@ -32,5 +32,5 @@
   },
   "payloadDigest": "sha256:62d24a516d91c99bde915979a465dc5507c146538fd3179bfe7aea74f2e43b4d",
   "recordKind": "parsed-fragment",
-  "schemaVersion": "lekalo/cache/v1.0.0"
+  "schemaVersion": "lekalo/cache/v0.2.16"
 }

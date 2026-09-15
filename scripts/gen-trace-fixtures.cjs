@@ -15,7 +15,7 @@ const out = (relative, content) => {
   writeFileSync(path, content);
 };
 
-const DOMAIN = "lekalo/trace-manifest/v1.0.0/relation";
+const DOMAIN = "lekalo/trace-manifest/v0.2.16/relation";
 const sha = (text) => createHash("sha256").update(text).digest("hex");
 const digest = (text) => `sha256:${sha(text)}`;
 const relationId = (kind, from, to, occurrence) =>
@@ -56,15 +56,15 @@ const baseManifest = (extra = {}) => ({
   relations: extra.relations,
   nodes: extra.nodes,
   exportProfile: extra.exportProfile ?? "requirement-to-gate",
-  modelRef: { schemaVersion: "1.0.0", digest: MODEL_DIGEST },
+  modelRef: { schemaVersion: "0.2.16", digest: MODEL_DIGEST },
   sourceRevision: extra.sourceRevision ?? REV,
   completeness: extra.completeness,
   projectRef: "planner",
-  identity: "dev.lekalo.trace-manifest@1.0.0",
+  identity: "dev.lekalo.trace-manifest@0.2.16",
   manifestId: extra.manifestId ?? "planner-trace-full",
-  schemaVersion: "lekalo/trace-manifest/v1.0.0",
-  irRef: { schemaVersion: "0.1.0", digest: IR_DIGEST },
-  graphRef: { schemaVersion: "1.0.0", digest: GRAPH_DIGEST },
+  schemaVersion: "lekalo/trace-manifest/v0.2.16",
+  irRef: { schemaVersion: "0.2.16", digest: IR_DIGEST },
+  graphRef: { schemaVersion: "0.2.16", digest: GRAPH_DIGEST },
 });
 
 const node = (nodeId, nodeKind, identityField, identity, extra = {}) => ({
@@ -96,7 +96,7 @@ const scenarioNode = {
   nodeId: "scenario:planner-scenario-switch-focus",
   nodeKind: "scenario",
   scenarioId: "planner.scenario.switch_focus",
-  contractVersion: "0.1.0",
+  contractVersion: "0.2.16",
   evidenceDigest: SCENARIO_EVIDENCE,
 };
 
@@ -104,7 +104,7 @@ const testNode = {
   nodeId: "test:node-focus-task-switch",
   nodeKind: "native_test",
   testId: "node.focus-task-switch",
-  contractVersion: "1.0.0",
+  contractVersion: "0.2.16",
   evidenceDigest: TEST_EVIDENCE,
   externalRefs: [{ system: "source-native", originalId: "node.test.focus-task-switch" }],
 };
@@ -113,7 +113,7 @@ const gateNode = {
   nodeId: "gate:hlv-gate-focus",
   nodeKind: "gate",
   gateId: "hlv.gate.focus",
-  contractVersion: "1.0.0",
+  contractVersion: "0.2.16",
   evidenceDigest: GATE_EVIDENCE,
   externalRefs: [{ system: "hlv", originalId: "hlv.native.gate.focus" }],
 };
@@ -122,7 +122,7 @@ const diagnosticNode = {
   nodeId: "diagnostic:hlv-diag-focus",
   nodeKind: "diagnostic",
   diagnosticId: "hlv.diag.focus",
-  contractVersion: "1.0.0",
+  contractVersion: "0.2.16",
   externalRefs: [{ system: "hlv", originalId: "hlv.native.diag.focus" }],
 };
 
@@ -208,7 +208,7 @@ const mutate = (name, mutateFn) => {
 };
 
 mutate("wrong-schema-version", (m) => { m.schemaVersion = "lekalo/trace/v1"; });
-mutate("wrong-identity", (m) => { m.identity = "dev.lekalo.trace@1.0.0"; });
+mutate("wrong-identity", (m) => { m.identity = "dev.lekalo.trace@0.2.16"; });
 mutate("unknown-top-key", (m) => { m.extraKey = true; });
 mutate("unknown-node-key", (m) => { m.nodes[0].extraNodeKey = 1; });
 mutate("duplicate-json-key", (m) => {

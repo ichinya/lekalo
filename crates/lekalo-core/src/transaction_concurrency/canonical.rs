@@ -54,7 +54,7 @@ fn attachment_payload(attachment: &TransactionConcurrencyAttachment) -> String {
         (
             "irRef",
             Some(contract_ref_payload(
-                "dev.lekalo.ir@0.1.0",
+                "dev.lekalo.ir@0.2.16",
                 attachment.ir_digest().as_str(),
             )),
         ),
@@ -62,7 +62,7 @@ fn attachment_payload(attachment: &TransactionConcurrencyAttachment) -> String {
             "effectGraphRef",
             attachment
                 .effect_graph_digest()
-                .map(|digest| contract_ref_payload("dev.lekalo.effects@1.0.0", digest.as_str())),
+                .map(|digest| contract_ref_payload("dev.lekalo.effects@0.2.16", digest.as_str())),
         ),
         (
             "operations",

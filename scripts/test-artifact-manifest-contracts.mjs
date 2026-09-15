@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Issue #21 release gate: validate the closed ownership-manifest wire
-// contract (contracts/artifact-manifest.schema.v1.0.0.json) against the
+// contract (contracts/artifact-manifest.schema.v0.2.16.json) against the
 // fixture matrix under tests/fixtures/artifacts/wire with exact
 // structural Ajv checks plus the canonical-byte, self-digest, and
 // cross-field invariants the schema cannot express. Exact Ajv 8.17.1 is
@@ -48,7 +48,7 @@ function canonicalBytes(document) {
   return Buffer.from(JSON.stringify(sortValue(document)), "utf8");
 }
 
-const schema = JSON.parse(readFileSync(join(root, "contracts", "artifact-manifest.schema.v1.0.0.json"), "utf8"));
+const schema = JSON.parse(readFileSync(join(root, "contracts", "artifact-manifest.schema.v0.2.16.json"), "utf8"));
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validate = ajv.compile(schema);
 

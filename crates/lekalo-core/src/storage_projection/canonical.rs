@@ -7,7 +7,7 @@
 //! scenarios, constraints, references, tables, technical and generated
 //! columns, joins, polymorphic materializations, migration tables)
 //! normalize to unsigned UTF-8-byte order while primary keys, join
-//! column pairs, and the migration history keep their declared
+//! column pairs keep their declared
 //! behavioral order. The output is path-independent and byte-identical
 //! for value-equal attachments.
 
@@ -55,7 +55,7 @@ fn attachment_payload(attachment: &StorageProjectionAttachment) -> String {
         (
             "irRef",
             Some(digest_payload(
-                "dev.lekalo.ir@0.1.0",
+                "dev.lekalo.ir@0.2.16",
                 attachment.ir_digest().as_str(),
             )),
         ),
@@ -281,16 +281,6 @@ fn projection_payload(projection: &super::projection::Projection) -> String {
                     .collect::<Vec<String>>(),
             ),
         ),
-        (
-            "migrationHistory",
-            optional_array(
-                &projection
-                    .migration_history()
-                    .iter()
-                    .map(migration_payload)
-                    .collect::<Vec<String>>(),
-            ),
-        ),
     ])
 }
 
@@ -442,27 +432,6 @@ fn polymorphic_payload(materialization: &super::projection::Polymorphic) -> Stri
             "typeColumn",
             Some(string(materialization.type_column().as_str())),
         ),
-    ])
-}
-
-/// One canonical migration-history record.
-fn migration_payload(migration: &super::projection::Migration) -> String {
-    object(vec![
-        (
-            "migrationId",
-            Some(string(migration.migration_id().as_str())),
-        ),
-        (
-            "tables",
-            Some(array(
-                &migration
-                    .tables()
-                    .iter()
-                    .map(|table| string(table.as_str()))
-                    .collect::<Vec<String>>(),
-            )),
-        ),
-        ("risk", Some(string(migration.risk().key()))),
     ])
 }
 

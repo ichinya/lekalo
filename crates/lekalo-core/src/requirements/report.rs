@@ -1,7 +1,7 @@
 //! The derived requirements report (issue #36).
 //!
-//! One read-only projection — `lekalo/requirements-report/v1.0.0`,
-//! identity `dev.lekalo.requirements-report@1.0.0` — computed as a pure
+//! One read-only projection — `lekalo/requirements-report/v0.2.16`,
+//! identity `dev.lekalo.requirements-report@0.2.16` — computed as a pure
 //! function of the attachment, the compiled Model, and the provider
 //! snapshots. It carries the resolved requirement catalog with its exact
 //! revisions, every reference resolution status, the coverage gaps

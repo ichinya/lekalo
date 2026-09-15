@@ -1,8 +1,10 @@
 # Transaction and concurrency contracts (issue #24)
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 One independent, closed, versioned attachment —
-`lekalo/transaction-concurrency/v1.0.0`, identity
-`dev.lekalo.transaction-concurrency@1.0.0` — declaring how a project's
+`lekalo/transaction-concurrency/v0.2.16`, identity
+`dev.lekalo.transaction-concurrency@0.2.16` — declaring how a project's
 effects commit under failure and concurrency: transaction semantics,
 atomic effect groups, optimistic and pessimistic control, isolation
 requirements, unique invariants, idempotency, retry safety, partial
@@ -143,7 +145,7 @@ Error references are opaque typed pointers; #62 owns error identity.
 ## Diagnostics
 
 Failures emit the accepted #11 diagnostic contract with the registry
-minor 1.5.0 → 1.6.0 (additions only): LEK-TC-001
+minor 1.5.0 → 0.2.16 (additions only): LEK-TC-001
 `transaction.input-invalid`, LEK-TC-002 `transaction.group-missing`,
 LEK-TC-003 `transaction.group-overlap`, LEK-TC-004
 `transaction.external-atomic`, LEK-TC-005

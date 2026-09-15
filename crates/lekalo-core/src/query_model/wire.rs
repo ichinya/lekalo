@@ -178,8 +178,7 @@ fn model_pin(value: &Json) -> Result<ModelPin, DiagnosticSet> {
         .and_then(Json::as_str)
         .ok_or_else(|| diagnostic::input_invalid("model-version"))?;
     let pin = match version {
-        "0.1.0" => crate::scenario::ModelPin::V0_1_0,
-        "1.0.0" => crate::scenario::ModelPin::V1_0_0,
+        "0.2.16" => crate::scenario::ModelPin::Current,
         _ => return Err(diagnostic::input_invalid("model-version")),
     };
     let digest = Sha256Digest::parse(
@@ -1209,10 +1208,10 @@ mod tests {
         json!({
             "schemaVersion": version::SCHEMA_VERSION,
             "identity": version::IDENTITY,
-            "attachmentRevision": "1.0.0",
+            "attachmentRevision": "0.2.16",
             "projectId": "planner",
             "modelRef": {
-                "modelVersion": "1.0.0",
+                "modelVersion": "0.2.16",
                 "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
             },
             "irRef": {

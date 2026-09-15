@@ -168,9 +168,7 @@ impl ResolutionRequest {
 
     /// SHA-256 over the canonical typed request bytes.
     pub fn request_digest(&self) -> Sha256Digest {
-        Sha256Digest::from_hex(&crate::versioning::plan::sha256_hex(
-            &self.canonical_bytes(),
-        ))
+        Sha256Digest::from_hex(&crate::digest::sha256_hex(&self.canonical_bytes()))
     }
 
     /// The canonical typed request bytes (sorted keys, path-free).
@@ -319,7 +317,7 @@ impl CandidateAdapter {
     /// The digest over the canonical manifest bytes (the locked
     /// `compatibility_digest` domain).
     pub fn compatibility_digest(&self) -> Sha256Digest {
-        Sha256Digest::from_hex(&crate::versioning::plan::sha256_hex(
+        Sha256Digest::from_hex(&crate::digest::sha256_hex(
             canonical::manifest_bytes(&self.manifest).as_slice(),
         ))
     }

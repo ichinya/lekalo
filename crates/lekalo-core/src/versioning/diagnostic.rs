@@ -132,3 +132,7 @@ impl From<&super::migration::PlanFailure> for DomainResult {
         }
     }
 }
+
+pub fn target_error(error: super::support::TargetError) -> crate::result::DomainResult {
+    super::migration::VersioningFailure::from_target_error(error).into()
+}

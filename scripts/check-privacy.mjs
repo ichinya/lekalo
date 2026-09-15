@@ -7,64 +7,64 @@ import { pathToFileURL } from "node:url";
 
 const BASE = new URL("../", import.meta.url);
 const DEFAULTS = {
-  manifest: new URL("contracts/privacy-policy.v1.0.7.manifest.json", BASE),
-  manifestSidecar: new URL("contracts/privacy-policy.v1.0.7.manifest.sha256", BASE),
-  policy: new URL("contracts/privacy-policy.v1.0.7.json", BASE),
-  policySidecar: new URL("contracts/privacy-policy.v1.0.7.sha256", BASE),
-  classificationContract: new URL("contracts/privacy-policy.v1.0.2.classification.json", BASE),
-  classificationSidecar: new URL("contracts/privacy-policy.v1.0.2.classification.sha256", BASE),
-  authorizingEvidenceContract: new URL("contracts/privacy-authorizing-evidence.v1.1.0.json", BASE),
-  authorizingEvidenceSidecar: new URL("contracts/privacy-authorizing-evidence.v1.1.0.sha256", BASE),
-  authorizationSubjectProfile: new URL("contracts/privacy-authorization-subject-profile.v1.0.0.json", BASE),
-  authorizationSubjectProfileSidecar: new URL("contracts/privacy-authorization-subject-profile.v1.0.0.sha256", BASE),
-  inputSchema: new URL("contracts/privacy-export.schema.v2.6.json", BASE),
-  outputSchema: new URL("contracts/privacy-export.schema.v2.6.output.json", BASE),
-  cliErrorSchema: new URL("contracts/privacy-cli-error.schema.v1.0.0.json", BASE),
-  classificationSchema: new URL("contracts/privacy-export.schema.v2.classification.json", BASE),
-  authority: new URL("contracts/authority-matrix.v1.3.1.json", BASE),
+  manifest: new URL("contracts/privacy-policy.v0.2.16.manifest.json", BASE),
+  manifestSidecar: new URL("contracts/privacy-policy.v0.2.16.manifest.sha256", BASE),
+  policy: new URL("contracts/privacy-policy.v0.2.16.json", BASE),
+  policySidecar: new URL("contracts/privacy-policy.v0.2.16.sha256", BASE),
+  classificationContract: new URL("contracts/privacy-policy.v0.2.16.classification.json", BASE),
+  classificationSidecar: new URL("contracts/privacy-policy.v0.2.16.classification.sha256", BASE),
+  authorizingEvidenceContract: new URL("contracts/privacy-authorizing-evidence.v0.2.16.json", BASE),
+  authorizingEvidenceSidecar: new URL("contracts/privacy-authorizing-evidence.v0.2.16.sha256", BASE),
+  authorizationSubjectProfile: new URL("contracts/privacy-authorization-subject-profile.v0.2.16.json", BASE),
+  authorizationSubjectProfileSidecar: new URL("contracts/privacy-authorization-subject-profile.v0.2.16.sha256", BASE),
+  inputSchema: new URL("contracts/privacy-export.schema.v0.2.16.json", BASE),
+  outputSchema: new URL("contracts/privacy-export.schema.v0.2.16.output.json", BASE),
+  cliErrorSchema: new URL("contracts/privacy-cli-error.schema.v0.2.16.json", BASE),
+  classificationSchema: new URL("contracts/privacy-export.schema.v0.2.16.classification.json", BASE),
+  authority: new URL("contracts/authority-matrix.v0.2.16.json", BASE),
 };
 
-const TRUSTED_MANIFEST_SHA256 = "54fc48c63d1562baa0fa63c6e339d08202c77b12a25ca8fc5415175576c1aaa8";
-const POLICY_RAW_SHA256 = "bc07f38737ddf0f00d5326edb87c39117787b5a45a87e843f744c1cb4c9c3f42";
-const CLASSIFICATION_CONTRACT_RAW_SHA256 = "58626d1889990bf6120874fcd194c9fc68f2d81f05af1f3b8f7d04336fb3aa9e";
-const AUTHORIZING_EVIDENCE_RAW_SHA256 = "6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4";
-const AUTHORIZATION_SUBJECT_PROFILE_RAW_SHA256 = "825546e4a4df4551e122c2cd548ae81c1fa2063d0bd8f256d728bffc089676a1";
-const INPUT_SCHEMA_RAW_SHA256 = "e40a03c96472ff961b3aef5cddc682c6ec30c5e618a984d442f1c094fb5c73d7";
-const OUTPUT_SCHEMA_RAW_SHA256 = "380bcb9b5f91d0d95e6f6eb01bb23f6c5942cd7789ec0cc91cad0b4aeae19cb6";
-const CLI_ERROR_SCHEMA_RAW_SHA256 = "8b9525ff8c5431a09546c06baa36e1afe29ecedd14b80c99275509b7b0e13cfd";
-const CLASSIFICATION_SCHEMA_RAW_SHA256 = "b996f62f23eb3341518ba3c4d917757814d27200c2ab410f2c127b4f161d50cb";
-const AUTHORITY_RAW_SHA256 = "5c96ed68fe27956512b6de37e0fa23d223e4430d391b6a5869b12d2a8cb522d3";
+const TRUSTED_MANIFEST_SHA256 = "376b5c6365ab9f4dd0d2f35533394e997ebbf52a484eb45bf9879ba7bc734946";
+const POLICY_RAW_SHA256 = "f7fd703b431681bd9aa9d7936642907ca100ab5761b0db1547c1b5f2b7cfed38";
+const CLASSIFICATION_CONTRACT_RAW_SHA256 = "78de535f02b6a8065579b43798ed650849aca0b7edf1aa08b2e0219fc744dde6";
+const AUTHORIZING_EVIDENCE_RAW_SHA256 = "cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e";
+const AUTHORIZATION_SUBJECT_PROFILE_RAW_SHA256 = "11c3c6ddea482ba5cf1bca27f08d602801d7739f1bd57ed5efb15e100584dec0";
+const INPUT_SCHEMA_RAW_SHA256 = "56b4a0ccbd8347a0e0e72c44e769e0e1ac94d171b3a18e0dfc1df62a1ecbf833";
+const OUTPUT_SCHEMA_RAW_SHA256 = "f65ce24d1335a4bd12ae3f7887b8c1629b93512eca54968dc087cdb9ed5519f6";
+const CLI_ERROR_SCHEMA_RAW_SHA256 = "46305d2c886f81e6793f4981814d1bb940bd4fffe0a02d25f6d0a615ea7fdf57";
+const CLASSIFICATION_SCHEMA_RAW_SHA256 = "a6d871bb9159e104667afe7543423d665dd3f30498e22b0d7ae63426da8f2741";
+const AUTHORITY_RAW_SHA256 = "141641cfbc1fbf6a07add99feafb877f9f544687ad558ab91d619ec7dd78d1b4";
 
 export const POLICY_REF = Object.freeze({
   policyId: "dev.lekalo.privacy-export-policy",
-  version: "1.0.7",
-  digest: "sha256:008ec26caac4771ee14f1f3cd6c1a8e24a714643b2efb8daffd7a4064bac0129",
+  version: "0.2.16",
+  digest: "sha256:430ba543098c91f70d0c4e37c32ac8e41b3de65498f119ecf85188919c095c93",
 });
 export const AUTHORITY_REF = Object.freeze({
   contractId: "dev.lekalo.authority-matrix",
-  version: "1.3.1",
+  version: "0.2.16",
   digest: `sha256:${AUTHORITY_RAW_SHA256}`,
 });
 export const CLASSIFICATION_CONTRACT_REF = Object.freeze({
   contractId: "dev.lekalo.privacy-classification-decision",
-  version: "1.0.0",
+  version: "0.2.16",
   digest: `sha256:${CLASSIFICATION_CONTRACT_RAW_SHA256}`,
 });
 export const AUTHORIZING_EVIDENCE_CONTRACT_REF = Object.freeze({
   contractId: "dev.lekalo.privacy-authorizing-evidence",
-  version: "1.1.0",
+  version: "0.2.16",
   digest: `sha256:${AUTHORIZING_EVIDENCE_RAW_SHA256}`,
 });
 export const AUTHORIZATION_SUBJECT_PROFILE_REF = Object.freeze({
   profileId: "dev.lekalo.privacy-authorization-subject-profile",
-  version: "1.0.0",
+  version: "0.2.16",
   digest: `sha256:${AUTHORIZATION_SUBJECT_PROFILE_RAW_SHA256}`,
 });
-export const DECISION_REF = Object.freeze({ contractId: "dev.lekalo.privacy-export-decision", version: "1.6.0" });
-export const INPUT_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-export-input-schema", version: "2.6.0" });
-export const OUTPUT_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-export-output-schema", version: "1.6.0" });
-export const CLI_ERROR_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-cli-error-schema", version: "1.0.0" });
-export const CLASSIFICATION_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-classification-decision-schema", version: "1.0.0" });
+export const DECISION_REF = Object.freeze({ contractId: "dev.lekalo.privacy-export-decision", version: "0.2.16" });
+export const INPUT_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-export-input-schema", version: "0.2.16" });
+export const OUTPUT_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-export-output-schema", version: "0.2.16" });
+export const CLI_ERROR_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-cli-error-schema", version: "0.2.16" });
+export const CLASSIFICATION_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-classification-decision-schema", version: "0.2.16" });
 
 const TRANSFORM_REQUIREMENTS = Object.freeze([
   "new-artifact",
@@ -255,18 +255,18 @@ export async function loadTrustedContext(options = {}) {
     authorizingEvidenceBytes, authorizingEvidenceSidecarBytes, authorizationSubjectProfileBytes, authorizationSubjectProfileSidecarBytes,
     inputBytes, outputBytes, cliErrorSchemaBytes, classificationSchemaBytes, authorityBytes] = bytes;
   requireCondition(rawSha256(manifestBytes) === TRUSTED_MANIFEST_SHA256, "custody.manifest-untrusted");
-  requireCondition(sidecarMatches(manifestSidecarBytes, TRUSTED_MANIFEST_SHA256, "privacy-policy.v1.0.7.manifest.json"), "custody.manifest-sidecar-mismatch");
+  requireCondition(sidecarMatches(manifestSidecarBytes, TRUSTED_MANIFEST_SHA256, "privacy-policy.v0.2.16.manifest.json"), "custody.manifest-sidecar-mismatch");
   requireCondition(rawSha256(policyBytes) === POLICY_RAW_SHA256, "custody.policy-bytes-mismatch");
-  requireCondition(sidecarMatches(policySidecarBytes, POLICY_RAW_SHA256, "privacy-policy.v1.0.7.json"), "custody.policy-sidecar-mismatch");
+  requireCondition(sidecarMatches(policySidecarBytes, POLICY_RAW_SHA256, "privacy-policy.v0.2.16.json"), "custody.policy-sidecar-mismatch");
   requireCondition(rawSha256(classificationBytes) === CLASSIFICATION_CONTRACT_RAW_SHA256, "custody.classification-contract-bytes-mismatch");
-  requireCondition(sidecarMatches(classificationSidecarBytes, CLASSIFICATION_CONTRACT_RAW_SHA256, "privacy-policy.v1.0.2.classification.json"), "custody.classification-sidecar-mismatch");
+  requireCondition(sidecarMatches(classificationSidecarBytes, CLASSIFICATION_CONTRACT_RAW_SHA256, "privacy-policy.v0.2.16.classification.json"), "custody.classification-sidecar-mismatch");
   requireCondition(rawSha256(authorizingEvidenceBytes) === AUTHORIZING_EVIDENCE_RAW_SHA256, "custody.authorizing-evidence-bytes-mismatch");
-  requireCondition(sidecarMatches(authorizingEvidenceSidecarBytes, AUTHORIZING_EVIDENCE_RAW_SHA256, "privacy-authorizing-evidence.v1.1.0.json"),
+  requireCondition(sidecarMatches(authorizingEvidenceSidecarBytes, AUTHORIZING_EVIDENCE_RAW_SHA256, "privacy-authorizing-evidence.v0.2.16.json"),
     "custody.authorizing-evidence-sidecar-mismatch");
   requireCondition(rawSha256(authorizationSubjectProfileBytes) === AUTHORIZATION_SUBJECT_PROFILE_RAW_SHA256,
     "custody.subject-profile-bytes-mismatch");
   requireCondition(sidecarMatches(authorizationSubjectProfileSidecarBytes, AUTHORIZATION_SUBJECT_PROFILE_RAW_SHA256,
-    "privacy-authorization-subject-profile.v1.0.0.json"), "custody.subject-profile-sidecar-mismatch");
+    "privacy-authorization-subject-profile.v0.2.16.json"), "custody.subject-profile-sidecar-mismatch");
   requireCondition(rawSha256(inputBytes) === INPUT_SCHEMA_RAW_SHA256, "custody.input-schema-bytes-mismatch");
   requireCondition(rawSha256(outputBytes) === OUTPUT_SCHEMA_RAW_SHA256, "custody.output-schema-bytes-mismatch");
   requireCondition(rawSha256(cliErrorSchemaBytes) === CLI_ERROR_SCHEMA_RAW_SHA256, "custody.cli-error-schema-bytes-mismatch");
@@ -303,41 +303,10 @@ export async function loadTrustedContext(options = {}) {
   "custody.subject-profile-ref-mismatch");
   requireCondition(authority.contractId === AUTHORITY_REF.contractId && authority.version === AUTHORITY_REF.version, "custody.authority-ref-mismatch");
   const accepted = manifest.acceptedContracts?.[0];
-  requireCondition(manifest.formatVersion === "1.6.0" && manifest.status === "accepted" && manifest.accepted === true
+  requireCondition(manifest.formatVersion === "0.2.16" && manifest.status === "accepted" && manifest.accepted === true
     && manifest.acceptedContracts?.length === 1 && accepted?.status === "accepted" && accepted?.accepted === true
     && sameObject(accepted?.policyRef, POLICY_REF) && accepted?.policyFileDigest === `sha256:${POLICY_RAW_SHA256}`
     && sameObject(manifest.currentAcceptedRef, POLICY_REF), "custody.manifest-policy-mismatch");
-  requireCondition(manifest.yankedCandidates?.length === 6 && manifest.yankedCandidates[0]?.accepted === false
-    && manifest.yankedCandidates[0]?.policyRef?.version === "1.0.1"
-    && manifest.yankedCandidates[0]?.policyRef?.digest === "sha256:f8faab0908fb1bc2da8c173969921000d6424a1f900ab0b04f2b57fa058d0ffb"
-    && manifest.yankedCandidates[0]?.policyFileDigest === "sha256:462df7a5c92b676deda7d315e9304695f3563295ffa41775246341fb99970622"
-    && manifest.yankedCandidates[1]?.accepted === false
-    && manifest.yankedCandidates[1]?.policyRef?.version === "1.0.2"
-    && manifest.yankedCandidates[1]?.policyRef?.digest === "sha256:207117a6a064c2341d95087b208b8dbc7f0953be08eb8c59b5da7eb905e25be1"
-    && manifest.yankedCandidates[1]?.policyFileDigest === "sha256:de8f7495087d8b2890ed00efddc448f99563f32c68e753b43dc73646ab7e5719"
-    && manifest.yankedCandidates[1]?.manifestFileDigest === "sha256:5739d80bde351b85c6ba8b7eedff1ef25f562c6649a7a1364027d4a308b4d530"
-    && manifest.yankedCandidates[2]?.accepted === false
-    && manifest.yankedCandidates[2]?.policyRef?.version === "1.0.3"
-    && manifest.yankedCandidates[2]?.policyRef?.digest === "sha256:868ced73748caa4ad80a74df0e5d6ad8d3c5463a6593caa4ead09d872160280f"
-    && manifest.yankedCandidates[2]?.policyFileDigest === "sha256:9179ced3d5d9c07f2fb9ed5bb7c40c5c5c1e072bb65eb077229fb040c55cac1c"
-    && manifest.yankedCandidates[2]?.manifestFileDigest === "sha256:fe58cfc9fe3323b5fdb0d9be9f1610c50681e376e7fe9529812f117e80b5f112"
-    && manifest.yankedCandidates[3]?.accepted === false
-    && manifest.yankedCandidates[3]?.policyRef?.version === "1.0.4"
-    && manifest.yankedCandidates[3]?.policyRef?.digest === "sha256:259cf596fcdc38423fa45d1df0937e85591569621c481197f3940f894bbc4ce5"
-    && manifest.yankedCandidates[3]?.policyFileDigest === "sha256:76702466ddd1d54f1c542e73b63995de7dcc81861bc641914e4bf862623bbed1"
-    && manifest.yankedCandidates[3]?.manifestFileDigest === "sha256:82ad6a16080dbe7fe8555d6726312f7123a6e0682d50d4ed30d0ce95d4fdc026"
-    && manifest.yankedCandidates[4]?.accepted === false
-    && manifest.yankedCandidates[4]?.policyRef?.version === "1.0.5"
-    && manifest.yankedCandidates[4]?.policyRef?.digest === "sha256:bebd0631c2b978cd2a8264877525f5047354781e26cfe60cbc3b9d9f2aefa87a"
-    && manifest.yankedCandidates[4]?.policyFileDigest === "sha256:59052a176eb61d6a4dd7676f0f73938404a69d37825f83bcc3566f6f9330e9e3"
-    && manifest.yankedCandidates[4]?.manifestFileDigest === "sha256:7db5aecafce8d13966299d8071bf9c5eac17d02069cf208cceee160ef6b9768a"
-    && manifest.yankedCandidates[5]?.accepted === false
-    && manifest.yankedCandidates[5]?.status === "yanked-after-constraint-intersection-audit"
-    && manifest.yankedCandidates[5]?.policyRef?.version === "1.0.6"
-    && manifest.yankedCandidates[5]?.policyRef?.digest === "sha256:99a813a89efbdf336340390c9589a4f05d0dbbc8805748708b455a3d7a329ca7"
-    && manifest.yankedCandidates[5]?.policyFileDigest === "sha256:29bf9a669a775442bf393b359a92c219eb1365014ad915b312768ff24414fbe6"
-    && manifest.yankedCandidates[5]?.manifestFileDigest === "sha256:3cbc9b428d47218872c62124c36fb15eeda5df2fe565ca8d3afbf477b5e16747",
-  "custody.yanked-candidate-mismatch");
   requireCondition(sameObject(manifest.authorityRef, AUTHORITY_REF), "custody.manifest-authority-mismatch");
   requireCondition(accepted?.classificationContractRef?.digest === CLASSIFICATION_CONTRACT_REF.digest
     && accepted?.authorizingEvidenceContractRef?.digest === AUTHORIZING_EVIDENCE_CONTRACT_REF.digest
@@ -531,7 +500,7 @@ function decisionShape(value, type, context) {
     : ["policyRef", "decisionRef", "version", "outcome", "removedSensitivities"];
   return exactKeys(value, required) && sameObject(value.policyRef, POLICY_REF)
     && authorizingEvidenceShape(value.decisionRef, AUTHORIZING_EVIDENCE_SPECS[type], context)
-    && value.version === "1.0.0"
+    && value.version === "0.2.16"
     && ["approved", "rejected"].includes(value.outcome)
     && (type !== "aggregation" || (value.removesSourceRows === true && value.removesSourceIdentities === true))
     && (type !== "declassification" || uniqueKnown(value.removedSensitivities, policy.vocabularies.dataSensitivity));
@@ -762,7 +731,7 @@ function validateDerived(input, context) {
     const decision = derived.declassificationDecision;
     if (!decision) return "derived.declassification-required";
     if (!sameObject(decision.policyRef, POLICY_REF)) return "derived.declassification-policy-ref-mismatch";
-    if (decision.version !== "1.0.0") return "derived.declassification-version-mismatch";
+    if (decision.version !== "0.2.16") return "derived.declassification-version-mismatch";
     if (decision.outcome !== "approved") return "derived.declassification-outcome-denied";
     const actual = [...decision.removedSensitivities].sort();
     if (actual.join("\n") !== removed.sort().join("\n")) return "derived.declassification-labels-mismatch";
@@ -775,7 +744,7 @@ function validateDerived(input, context) {
     if (!derived.appliedTransforms.some((entry) => entry.transformId === "aggregate-no-source-rows")) return "derived.aggregate-transform-missing";
     if (!derived.aggregationDecision) return "derived.aggregation-decision-required";
     if (!sameObject(derived.aggregationDecision.policyRef, POLICY_REF)) return "derived.aggregation-policy-ref-mismatch";
-    if (derived.aggregationDecision.version !== "1.0.0") return "derived.aggregation-version-mismatch";
+    if (derived.aggregationDecision.version !== "0.2.16") return "derived.aggregation-version-mismatch";
     if (derived.aggregationDecision.outcome !== "approved") return "derived.aggregation-outcome-denied";
   } else if (derived.aggregationDecision !== null) {
     return "derived.unexpected-aggregation-decision";

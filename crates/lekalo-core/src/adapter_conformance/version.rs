@@ -8,10 +8,10 @@
 use crate::target_protocol::version;
 
 /// The report wire schema discriminator.
-pub const SCHEMA_VERSION: &str = "lekalo/adapter-conformance/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/adapter-conformance/v0.2.16";
 
 /// The published suite identity.
-pub const IDENTITY: &str = "dev.lekalo.adapter-conformance@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.adapter-conformance@0.2.16";
 /// Default per-exchange adapter deadline. The suite bounds every child
 /// exchange far below the protocol's 600 s default so a hung adapter is
 /// classified in seconds, not minutes.

@@ -12,16 +12,16 @@
 pub const FAMILY: &str = "dev.lekalo.query-model";
 
 /// The exact query-model contract version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.query-model@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.query-model@0.2.16";
 
 /// The exact wire discriminator of the query-model contract.
-pub const SCHEMA_VERSION: &str = "lekalo/query-model/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/query-model/v0.2.16";
 
 /// The exact IR identity this attachment binds (`irRef`).
-pub const IR_IDENTITY: &str = "dev.lekalo.ir@0.1.0";
+pub const IR_IDENTITY: &str = "dev.lekalo.ir@0.2.16";
 
 /// The maximum number of tenancy declarations one attachment may carry.
 pub const MAX_TENANCY: usize = 256;

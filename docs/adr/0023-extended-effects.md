@@ -8,8 +8,8 @@ every accepted path (workspace `Cargo.toml`, both `lekalo` packages in
 `Cargo.lock`, the regenerated committed golden lock and its digest, the
 `--version` behavior and its pinning tests, `README.md`, `docs/cli.md`);
 issue #62 published product 0.1.29 (annotated tag `v0.1.29` on `de6f8a7`).
-The extended-effects contract version (`lekalo/extended-effects/v1.0.0`,
-identity `dev.lekalo.extended-effects@1.0.0`) is independent of the
+The extended-effects contract version (`lekalo/extended-effects/v0.2.16`,
+identity `dev.lekalo.extended-effects@0.2.16`) is independent of the
 product release, of the Model/IR/effect/Scenario contract versions, of
 the error-contract family, and of the diagnostic registry by design.
 The publication-order version may differ at integration; the
@@ -26,7 +26,7 @@ non-database effects**: what an event delivery guarantee promises, when
 a job may retry, which provider errors an external call can return,
 what a cache key means, and under which consent a publication happens.
 Issue #26 owns that surface as one independent closed attachment, per
-the recorded research decision: Model v0.1.0 stays immutable, and no
+the recorded research decision: Model v0.2.16 stays immutable, and no
 source syntax, runtime execution, queue, provider, adapter, or report
 surface is introduced here.
 
@@ -34,9 +34,9 @@ surface is introduced here.
 
 ### 1. One closed, immutable wire contract
 
-[`contracts/extended-effects.schema.v1.0.0.json`](../../contracts/extended-effects.schema.v1.0.0.json)
-(discriminator `lekalo/extended-effects/v1.0.0`, identity
-`dev.lekalo.extended-effects@1.0.0`) is a closed Draft 2020-12 document
+[`contracts/extended-effects.schema.v0.2.16.json`](../../contracts/extended-effects.schema.v0.2.16.json)
+(discriminator `lekalo/extended-effects/v0.2.16`, identity
+`dev.lekalo.extended-effects@0.2.16`) is a closed Draft 2020-12 document
 binding one project identity to one exact Model pin, one exact IR
 digest, and an optional effect-graph digest. Everything is typed
 qualified references and bounded enums; source text, physical paths,
@@ -162,7 +162,7 @@ identity stays #62, #14 stays read-only.
 The contract adds its own rule family — reusing `graph.*` would blur
 contract families. The registry takes its next wire-shape-preserving
 minor increment to
-[`diagnostic-registry.v1.8.0.json`](../../contracts/diagnostic-registry.v1.8.0.json)
+[`diagnostic-registry.v0.2.16.json`](../../contracts/diagnostic-registry.v0.2.16.json)
 with `extended.input-invalid`, `event.contract-invalid`,
 `job.contract-invalid`, `call.contract-invalid`,
 `cache.contract-invalid`, `publication.consent-missing`,
@@ -173,7 +173,7 @@ additions only, zero mutations of the 189 published entries, strictly
 id-sorted, assembled through the shared registry-backed constructor
 with bounded fixed tokens only. Every bound rejects with no partial
 result. The validation profiles and their schema pin the registry
-version and move with it, exactly as in the 1.6.0 → 1.7.0 increment.
+version and move with it, exactly as in the 0.2.16 → 1.7.0 increment.
 
 ### 13. Determinism, canonical form, and bounds (v1, owner-approved)
 

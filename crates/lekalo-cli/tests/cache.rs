@@ -104,7 +104,7 @@ fn cache_status_reports_missing_then_ok() {
     let json = stdout_text(&ok);
     assert!(json.contains("\"state\":\"ok\""), "{json}");
     assert!(
-        json.contains("\"identity\":\"dev.lekalo.cache@1.0.0\""),
+        json.contains("\"identity\":\"dev.lekalo.cache@0.2.16\""),
         "{json}"
     );
     assert!(json.contains("\"backend\":\"sqlite\""), "{json}");

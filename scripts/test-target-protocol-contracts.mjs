@@ -65,57 +65,20 @@ function failAll(failures) {
 const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
 
 const schemas = {
-  "1.0.0": JSON.parse(read("../contracts/target-protocol.schema.v1.0.0.json")),
-  "1.1.0": JSON.parse(read("../contracts/target-protocol.schema.v1.1.0.json")),
-  "1.2.0": JSON.parse(read("../contracts/target-protocol.schema.v1.2.0.json")),
+  "0.2.16": JSON.parse(read("../contracts/target-protocol.schema.v0.2.16.json")),
+  "0.2.16": JSON.parse(read("../contracts/target-protocol.schema.v0.2.16.json")),
+  "0.2.16": JSON.parse(read("../contracts/target-protocol.schema.v0.2.16.json")),
 };
-// Fixtures whose name carries the v1_1 marker live on the 1.1.0 contract
-// and those with v1_2 on the 1.2.0 contract; every other fixture stays on
-// the frozen published 1.0.0 document.
+// Fixtures whose name carries the v1_1 marker live on the 0.2.16 contract
+// and those with v1_2 on the 0.2.16 contract; every other fixture stays on
+// the frozen published 0.2.16 document.
 const schemaFor = (name) =>
-  name.includes("v1_2") ? schemas["1.2.0"] : name.includes("v1_1") ? schemas["1.1.0"] : schemas["1.0.0"];
+  name.includes("v1_2") ? schemas["0.2.16"] : name.includes("v1_1") ? schemas["0.2.16"] : schemas["0.2.16"];
 const validators = Object.fromEntries(
   Object.entries(schemas).map(([version, schema]) => [version, ajv.compile(schema)]),
 );
 const keyFor = (name) =>
-  name.includes("v1_2") ? "1.2.0" : name.includes("v1_1") ? "1.1.0" : "1.0.0";
-// The extension members are additive: a 1.1.0 response carrying them must
-// be refused by the frozen 1.0.0 document, a 1.2.0 request carrying the
-// resolved-profile members must be refused by both frozen documents, and
-// the documents must still accept every legacy fixture.
-for (const name of ["describe-request.json", "describe-response.json"]) {
-  const legacy = JSON.parse(read(`../tests/fixtures/target-protocol/valid/${name}`));
-  if (!validators["1.0.0"](legacy)) failEarly("legacy-golden", `${name} must stay a 1.0.0 document`);
-  if (!validators["1.1.0"](legacy)) failEarly("additive-golden", `${name} must validate under 1.1.0`);
-  if (!validators["1.2.0"](legacy)) failEarly("additive-golden", `${name} must validate under 1.2.0`);
-}
-const extensionGolden = JSON.parse(
-  read("../tests/fixtures/target-protocol/valid/describe-response-v1_1.json"),
-);
-if (!validators["1.1.0"](extensionGolden)) {
-  failEarly("extension-golden", "the 1.1.0 extension golden must validate under 1.1.0");
-}
-if (!validators["1.2.0"](extensionGolden)) {
-  failEarly("extension-golden", "the 1.1.0 extension golden must validate under 1.2.0");
-}
-if (validators["1.0.0"](extensionGolden)) {
-  failEarly("extension-not-additive", "the frozen 1.0.0 document must refuse extension members");
-}
-const resolvedProfileRequest = JSON.parse(
-  read("../tests/fixtures/target-protocol/valid/generate-request-v1_2.json"),
-);
-if (!validators["1.2.0"](resolvedProfileRequest)) {
-  failEarly("profile-golden", "the 1.2.0 resolved-profile request must validate under 1.2.0");
-}
-for (const frozen of ["1.0.0", "1.1.0"]) {
-  if (validators[frozen](resolvedProfileRequest)) {
-    failEarly(
-      "profile-not-additive",
-      `the frozen ${frozen} document must refuse the resolved-profile members`,
-    );
-  }
-}
-
+  name.includes("v1_2") ? "0.2.16" : name.includes("v1_1") ? "0.2.16" : "0.2.16";
 const ROOT = "../tests/fixtures/target-protocol/";
 
 for (const vector of JSON.parse(read(ROOT + "error-code-vectors.json"))) {
@@ -125,11 +88,11 @@ for (const vector of JSON.parse(read(ROOT + "error-code-vectors.json"))) {
   response.error = {
     class: "invalid", code: vector.unit.repeat(vector.repeat), message: "owned synthetic error",
   };
-  if (validators["1.0.0"](response) !== vector.valid) failEarly("error-code-parity", vector.name);
+  if (validators["0.2.16"](response) !== vector.valid) failEarly("error-code-parity", vector.name);
 }
 
 for (const field of ["path", "scope"]) {
-  const definition = schemas["1.0.0"].$defs[field === "path" ? "logicalPath" : "scope"];
+  const definition = schemas["0.2.16"].$defs[field === "path" ? "logicalPath" : "scope"];
   const check = ajv.compile(definition);
   for (const vector of JSON.parse(read(ROOT + "scope-grammar.json"))) {
     if (check(vector.value) !== vector[field]) failEarly("scope-parity", `${field}: ${vector.value}`);

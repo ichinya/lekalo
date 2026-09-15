@@ -6,7 +6,7 @@
 //! and the deterministic frontier, and a valid symbol with no facts in
 //! one section is `empty` — never an absent key or a silent omission.
 //! Top-level fields and sections follow the fixed wire order of
-//! `contracts/inspect.schema.v1.0.0.json`; set-like arrays are sorted
+//! `contracts/inspect.schema.v0.2.16.json`; set-like arrays are sorted
 //! by unsigned UTF-8 bytes of their typed ids.
 
 /// One finished inspect invocation: canonical payload bytes plus the

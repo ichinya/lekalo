@@ -8,7 +8,7 @@
 //! or constraint coverage; external-entity storage exclusion; and the
 //! projection-to-domain mapping (total mapping of local entities,
 //! column collision freedom, resolvable keys, complete join and
-//! polymorphic materializations, and resolvable migration history).
+//! polymorphic materializations).
 //! Every violation is one registered diagnostic over the typed rule
 //! set with no partial result. Pure and read-only.
 
@@ -186,7 +186,7 @@ fn check_detach_minimum(relation: &Relation, subject: &str) -> Result<(), Diagno
 /// Projection-level rules: namespace identity, total mapping of local
 /// entities with external exclusion, table-name uniqueness, column
 /// collision freedom, resolvable keys and indexes, complete join and
-/// polymorphic materializations, and resolvable migration history.
+/// polymorphic materializations.
 fn check_projections(attachment: &StorageProjectionAttachment) -> Result<(), DiagnosticSet> {
     for projection in attachment.projections() {
         check_mapping(attachment, projection)?;
@@ -194,7 +194,6 @@ fn check_projections(attachment: &StorageProjectionAttachment) -> Result<(), Dia
         check_joins(attachment, projection)?;
         check_join_coverage(attachment, projection)?;
         check_polymorphics(attachment, projection)?;
-        check_migrations(projection)?;
     }
     Ok(())
 }
@@ -497,27 +496,6 @@ fn check_polymorphics(
                 "polymorphic-materialization-missing",
                 relation.relation_id().as_str(),
             ));
-        }
-    }
-    Ok(())
-}
-
-/// Migration-history rules: every named table exists in this
-/// projection. Identifier uniqueness is enforced at normalization.
-fn check_migrations(projection: &Projection) -> Result<(), DiagnosticSet> {
-    for migration in projection.migration_history() {
-        for table in migration.tables() {
-            if !projection
-                .tables()
-                .iter()
-                .any(|declared| declared.table() == table)
-                && !projection.joins().iter().any(|join| join.table() == table)
-            {
-                return Err(projection_invalid_subject(
-                    "migration-unknown-table",
-                    table.as_str(),
-                ));
-            }
         }
     }
     Ok(())

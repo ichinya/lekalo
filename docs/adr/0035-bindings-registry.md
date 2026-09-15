@@ -44,9 +44,9 @@ through an accepted seam. Rejected alternatives:
    issue's closed relations by section: symbol bindings `implements`,
    endpoint bindings `exposes`, native test bindings `verifies`.
 2. **Additive wire, frozen predecessors.** The observed-scan and
-   observed-index contracts publish additive 1.1.0 successors: the
+   observed-index contracts publish additive 0.2.16 successors: the
    declared target and adapter profile (set once per registry), per-symbol
-   candidate sets, and native test bindings. The frozen 1.0.0 documents
+   candidate sets, and native test bindings. The frozen 0.2.16 documents
    keep their exact meanings and their fixture-era documents still decode.
 3. **Ambiguity is data, never a pick.** An adapter that finds two
    plausible native identities for one semantic id reports both as

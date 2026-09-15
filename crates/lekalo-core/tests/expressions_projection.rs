@@ -530,7 +530,7 @@ fn every_generated_program_refuses_binding_stage_shapes_identically() {
     let mut document = serde_json::Map::new();
     document.insert(
         "schemaVersion".to_owned(),
-        serde_json::json!("lekalo/expressions/vectors/v1.0.0"),
+        serde_json::json!("lekalo/expressions/vectors/v0.2.16"),
     );
     let rows: Vec<serde_json::Value> = probes
         .iter()
@@ -656,7 +656,7 @@ fn the_reference_refuses_a_malformed_clock_at_decode() {
     // epoch on the reference side: the document itself is refused.
     let json: serde_json::Value = serde_json::from_str(
         r#"{
-        "schemaVersion": "lekalo/expressions/vectors/v1.0.0",
+        "schemaVersion": "lekalo/expressions/vectors/v0.2.16",
         "vectors": [{
             "id": "bad-clock",
             "expression": "expr.planner/overdue-check",
@@ -758,7 +758,7 @@ fn every_generated_program_refuses_malformed_clocks_identically() {
     ];
     let reference_refuses = |clock_raw: &str| {
         let document_text = format!(
-            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{{\"id\":\"probe\",\"expression\":\"expr.planner/overdue-check\",\"clock\":{clock_raw},\"bindings\":{{\"input\":{{\"due\":\"2026-01-01T00:00:00Z\",\"state\":\"todo\"}}}},\"expect\":{{\"value\":true}}}}]}}"
+            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{{\"id\":\"probe\",\"expression\":\"expr.planner/overdue-check\",\"clock\":{clock_raw},\"bindings\":{{\"input\":{{\"due\":\"2026-01-01T00:00:00Z\",\"state\":\"todo\"}}}},\"expect\":{{\"value\":true}}}}]}}"
         );
         let json: serde_json::Value = serde_json::from_str(&document_text).expect("document json");
         VectorsDocument::from_value(&json).is_err()
@@ -809,7 +809,7 @@ fn every_generated_program_refuses_malformed_clocks_identically() {
                 "{\"input\":{\"left\":\"a\",\"right\":\"b\"}}"
             };
             let document = format!(
-                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{{\"id\":\"probe\",\"expression\":\"{expression}\",\"clock\":{clock_raw},\"bindings\":{bindings}}}]}}"
+                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{{\"id\":\"probe\",\"expression\":\"{expression}\",\"clock\":{clock_raw},\"bindings\":{bindings}}}]}}"
             );
             assert!(
                 reference_refuses(clock_raw),
@@ -980,7 +980,7 @@ fn every_generated_program_refuses_raw_binding_shapes() {
             _ => "{\"input\":{\"left\":__RAW__}}".to_owned(),
         };
         format!(
-            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{{\"id\":\"probe\",\"expression\":\"{expr}\",\"bindings\":{position}}}]}}",
+            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{{\"id\":\"probe\",\"expression\":\"{expr}\",\"bindings\":{position}}}]}}",
             expr = case.expression,
             position = position.replace("__RAW__", case.raw),
         )
@@ -1135,7 +1135,7 @@ fn every_generated_program_distinguishes_binding_roots_identically() {
 
     let reference_refuses = |vector_json: &str| -> bool {
         let document_text = format!(
-            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{vector_json}]}}"
+            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{vector_json}]}}"
         );
         let json: serde_json::Value = serde_json::from_str(&document_text).expect("document json");
         VectorsDocument::from_value(&json).is_err()
@@ -1186,7 +1186,7 @@ fn every_generated_program_distinguishes_binding_roots_identically() {
         let program = write_program(&dir, &attachment, target);
         for (id, vector_json, node_expect, php_expect, go_expect) in probes {
             let document = format!(
-                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{vector_json}]}}"
+                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{vector_json}]}}"
             );
             let expected = match target {
                 Target::Node => *node_expect,
@@ -1301,7 +1301,7 @@ fn every_generated_program_refuses_malformed_utf8_bytes() {
     let document_of = |case: &Utf8Case| -> Vec<u8> {
         let mut document = Vec::new();
         document.extend_from_slice(
-            b"{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{\"id\":\"probe\",\"expression\":\"",
+            b"{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{\"id\":\"probe\",\"expression\":\"",
         );
         document.extend_from_slice(case.expression.as_bytes());
         document.extend_from_slice(b"\",\"bindings\":");
@@ -1409,7 +1409,7 @@ fn every_generated_program_consumes_exactly_one_json_document() {
     let attachment = parse();
     // The expect member is included so the reference decode accepts
     // the control document; every generated target ignores it.
-    let control = "{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{},\"expect\":{\"value\":\"1969-12-31T23:59:59Z\"}}]}";
+    let control = "{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{},\"expect\":{\"value\":\"1969-12-31T23:59:59Z\"}}]}";
     let value = Outcome::Value("\"1969-12-31T23:59:59Z\"");
     // (id, document, node, php, go)
     let probes: &[(&str, String, Outcome, Outcome, Outcome)] = &[
@@ -1526,7 +1526,7 @@ fn every_generated_program_consumes_exactly_one_json_document() {
 fn every_generated_program_enforces_exact_envelope_member_names() {
     let attachment = parse();
     let wrap = |vector_json: &str| {
-        format!("{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{vector_json}]}}")
+        format!("{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{vector_json}]}}")
     };
     let value = Outcome::Value("\"1969-12-31T23:59:59Z\"");
     // (id, full document, node, php, go). The control carries the
@@ -1556,7 +1556,7 @@ fn every_generated_program_enforces_exact_envelope_member_names() {
         ),
         (
             "exact-vectors-title",
-            "{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"Vectors\":[{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{}}]}".to_owned(),
+            "{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"Vectors\":[{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{}}]}".to_owned(),
             Outcome::Doc,
             Outcome::Doc,
             Outcome::Doc,
@@ -1660,7 +1660,7 @@ fn every_generated_program_refuses_malformed_documents_privately() {
     // after the complete document) whose binding carries the
     // synthetic marker: the refusal must never echo it.
     let mut document = serde_json::to_string(&serde_json::json!({
-        "schemaVersion": "lekalo/expressions/vectors/v1.0.0",
+        "schemaVersion": "lekalo/expressions/vectors/v0.2.16",
         "vectors": [{
             "id": "probe",
             "expression": "expr.planner/copy-tag",
@@ -1764,7 +1764,7 @@ fn every_generated_program_refuses_clock_before_unknown_expression() {
     // Reference: the malformed clock refuses the whole document at
     // decode, before the per-vector expression lookup.
     let json: serde_json::Value = serde_json::from_str(
-        "{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{\"id\":\"probe\",\"expression\":\"expr.planner/nonexistent\",\"clock\":\"2026-13-45T99:99:99Z\",\"bindings\":{}}]}",
+        "{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{\"id\":\"probe\",\"expression\":\"expr.planner/nonexistent\",\"clock\":\"2026-13-45T99:99:99Z\",\"bindings\":{}}]}",
     )
     .expect("document json");
     let rejection = VectorsDocument::from_value(&json)
@@ -1825,7 +1825,7 @@ fn every_generated_program_refuses_clock_before_unknown_expression() {
         let program = write_program(&dir, &attachment, target);
         for (id, vector_json, node_expect, php_expect, go_expect) in probes {
             let document = format!(
-                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{vector_json}]}}"
+                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{vector_json}]}}"
             );
             let expected = match target {
                 Target::Node => *node_expect,
@@ -1959,7 +1959,7 @@ fn every_generated_program_refuses_non_string_expression_selectors() {
             )
         };
         let document_text = format!(
-            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{reference_vector}]}}"
+            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{reference_vector}]}}"
         );
         let json: serde_json::Value = serde_json::from_str(&document_text).expect("document json");
         let refused = VectorsDocument::from_value(&json).is_err();
@@ -2006,7 +2006,7 @@ fn every_generated_program_refuses_non_string_expression_selectors() {
         let program = write_program(&dir, &attachment, target);
         for (id, vector_json, node_expect, php_expect, go_expect) in probes {
             let document = format!(
-                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{vector_json}]}}"
+                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{vector_json}]}}"
             );
             let expected = match target {
                 Target::Node => *node_expect,
@@ -2071,7 +2071,7 @@ fn every_generated_program_treats_prototype_names_as_unknown_expressions() {
     // vectors carry the harness-owned expect member.
     for (id, selector, ..) in probes {
         let document_text = format!(
-            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{{\"id\":\"probe\",\"expression\":\"{selector}\",\"bindings\":{{}},\"expect\":{{\"value\":true}}}}]}}"
+            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{{\"id\":\"probe\",\"expression\":\"{selector}\",\"bindings\":{{}},\"expect\":{{\"value\":true}}}}]}}"
         );
         let json: serde_json::Value = serde_json::from_str(&document_text).expect("document json");
         let refused = VectorsDocument::from_value(&json).is_err();
@@ -2118,7 +2118,7 @@ fn every_generated_program_treats_prototype_names_as_unknown_expressions() {
         let program = write_program(&dir, &attachment, target);
         for (id, selector, node_expect, php_expect, go_expect) in probes {
             let document = format!(
-                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{{\"id\":\"probe\",\"expression\":\"{selector}\",\"bindings\":{{}},\"expect\":{{\"value\":\"1969-12-31T23:59:59Z\"}}}}]}}"
+                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{{\"id\":\"probe\",\"expression\":\"{selector}\",\"bindings\":{{}},\"expect\":{{\"value\":\"1969-12-31T23:59:59Z\"}}}}]}}"
             );
             let expected = match target {
                 Target::Node => *node_expect,
@@ -2191,7 +2191,7 @@ fn every_generated_program_requires_primitive_string_vector_ids() {
             &vector_json[..vector_json.len() - 1]
         );
         let document_text = format!(
-            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{reference_vector}]}}"
+            "{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{reference_vector}]}}"
         );
         let json: serde_json::Value = serde_json::from_str(&document_text).expect("document json");
         assert!(
@@ -2199,7 +2199,7 @@ fn every_generated_program_requires_primitive_string_vector_ids() {
             "{id}: the reference must refuse the malformed id"
         );
     }
-    let control_text = "{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{},\"expect\":{\"value\":\"1969-12-31T23:59:59Z\"}}]}";
+    let control_text = "{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{\"id\":\"probe\",\"expression\":\"expr.planner/history-stamp\",\"bindings\":{},\"expect\":{\"value\":\"1969-12-31T23:59:59Z\"}}]}";
     let control_json: serde_json::Value = serde_json::from_str(control_text).expect("control json");
     let control_document = VectorsDocument::from_value(&control_json).expect("control decodes");
     {
@@ -2252,7 +2252,7 @@ fn every_generated_program_requires_primitive_string_vector_ids() {
         let program = write_program(&dir, &attachment, target);
         for (id, vector_json) in probes {
             let document = format!(
-                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":[{vector_json}]}}"
+                "{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":[{vector_json}]}}"
             );
             assert_target_outcome(
                 tool,
@@ -2317,7 +2317,7 @@ fn every_generated_program_requires_a_vector_object_array() {
     const MARKER: &str = "SYNTHETIC_PRIVATE_MARKER_66_C5_VECTORS";
     let attachment = parse();
     let wrap = |vectors_json: &str| {
-        format!("{{\"schemaVersion\":\"lekalo/expressions/vectors/v1.0.0\",\"vectors\":{vectors_json}}}")
+        format!("{{\"schemaVersion\":\"lekalo/expressions/vectors/v0.2.16\",\"vectors\":{vectors_json}}}")
     };
     // (id, document, distinct texts that must never reach stderr)
     let probes: &[(&str, String, &[&str])] = &[

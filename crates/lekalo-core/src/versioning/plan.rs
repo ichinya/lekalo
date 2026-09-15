@@ -321,8 +321,7 @@ pub(crate) fn compile(
 /// registry entry is one of the finite decodable versions.
 pub(crate) fn finite_target(target: &ContractVersion<ModelContract>) -> Option<ModelVersion> {
     match target.as_str() {
-        "0.1.0" => Some(ModelVersion::V0_1_0),
-        "1.0.0" => Some(ModelVersion::V1_0_0),
+        "0.2.16" => Some(ModelVersion::Current),
         _ => None,
     }
 }

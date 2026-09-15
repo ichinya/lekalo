@@ -11,16 +11,16 @@
 pub const FAMILY: &str = "dev.lekalo.scenario-ir";
 
 /// The exact Scenario IR contract version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.scenario-ir@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.scenario-ir@0.2.16";
 
 /// The exact wire discriminator of the Scenario IR contract.
-pub const SCHEMA_VERSION: &str = "lekalo/scenario-ir/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/scenario-ir/v0.2.16";
 
 /// The exact identity of the source-map sidecar family the IR references.
-pub const SOURCE_MAP_IDENTITY: &str = "dev.lekalo.scenario-sourcemap@1.0.0";
+pub const SOURCE_MAP_IDENTITY: &str = "dev.lekalo.scenario-sourcemap@0.2.16";
 
 /// The exact identities of the accepted #8 IR contract the IR references.
 pub const IR_IDENTITY: &str = crate::ir::IDENTITY;
@@ -96,10 +96,10 @@ mod tests {
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
         assert_eq!(FAMILY, "dev.lekalo.scenario-ir");
-        assert_eq!(VERSION, "1.0.0");
-        assert_eq!(SCHEMA_VERSION, "lekalo/scenario-ir/v1.0.0");
-        assert_eq!(SOURCE_MAP_IDENTITY, "dev.lekalo.scenario-sourcemap@1.0.0");
-        assert_eq!(IR_IDENTITY, "dev.lekalo.ir@0.1.0");
+        assert_eq!(VERSION, "0.2.16");
+        assert_eq!(SCHEMA_VERSION, "lekalo/scenario-ir/v0.2.16");
+        assert_eq!(SOURCE_MAP_IDENTITY, "dev.lekalo.scenario-sourcemap@0.2.16");
+        assert_eq!(IR_IDENTITY, "dev.lekalo.ir@0.2.16");
     }
 
     #[test]

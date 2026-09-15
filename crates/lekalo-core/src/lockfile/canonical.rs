@@ -307,9 +307,9 @@ pub(crate) fn payload_bytes(lock: &Lockfile) -> Vec<u8> {
 
 /// The lock digest: SHA-256 of the canonical payload bytes.
 pub(crate) fn lock_digest(lock: &Lockfile) -> LockDigest {
-    LockDigest::new(super::Sha256Digest::from_hex(
-        &crate::versioning::plan::sha256_hex(&payload_bytes(lock)),
-    ))
+    LockDigest::new(super::Sha256Digest::from_hex(&crate::digest::sha256_hex(
+        &payload_bytes(lock),
+    )))
 }
 
 /// The canonical bytes of one `#9` adapter compatibility manifest: the

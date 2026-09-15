@@ -10,7 +10,7 @@ Date: 2026-08-31
 
 Issue #4 must fix portable file homes and safe root/path behavior before the
 Rust CLI (#3), Model v0.1 (#5), loader (#7) and lock implementation (#10). The
-published authority matrix `dev.lekalo.authority-matrix` `1.3.1` already owns
+published authority matrix `dev.lekalo.authority-matrix` `0.2.16` already owns
 `lekalo/**` and a closed set of `.lekalo/**` paths. #4 must fit that accepted
 contract, not replace it.
 
@@ -46,7 +46,7 @@ The closed decisions are:
    path aliases are denied before content access.
 6. **Authority-compatible canonical/runtime split.** Canonical inputs live in
    `lekalo/**` and `lekalo.lock`. Runtime homes exactly cover every Lekalo-owned
-   `.lekalo/**` path registered by authority 1.3.1: `import`, `cache`,
+   `.lekalo/**` path registered by authority 0.2.16: `import`, `cache`,
    `generated`, `consumer/{model,bindings}` and the closed privacy subtree.
 7. **Nested roots are nearest-root projects, not governed-tree content.** Child
    roots in ordinary source subtrees are allowed and independent. Any nested

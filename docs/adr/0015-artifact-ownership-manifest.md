@@ -1,5 +1,7 @@
 # ADR-0015: The generated-artifact ownership manifest and drift detection
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-05
 Status: accepted for issue #21
 
@@ -19,8 +21,8 @@ packages in `Cargo.lock` including the regenerated committed golden lock
 and its digests, the `--version` behavior and its pinning tests,
 `README.md`, `docs/cli.md`); issue #13 published product 0.1.11
 (annotated tag `v0.1.11` on `007c01d`). The artifact-manifest contract
-version (`lekalo/artifact-manifest/v1.0.0`, identity
-`dev.lekalo.artifact-manifest@1.0.0`) is independent of the product
+version (`lekalo/artifact-manifest/v0.2.16`, identity
+`dev.lekalo.artifact-manifest@0.2.16`) is independent of the product
 release, of the Model/IR/graph/lock/protocol contract versions, and of
 the diagnostic registry by design.
 
@@ -45,9 +47,9 @@ against the exact parent commit `81666da` before implementation.
 ### 1. One independent closed contract at one fixed location
 
 The manifest publishes its own wire contract,
-[`contracts/artifact-manifest.schema.v1.0.0.json`](../../contracts/artifact-manifest.schema.v1.0.0.json)
-(discriminator `lekalo/artifact-manifest/v1.0.0`, identity
-`dev.lekalo.artifact-manifest@1.0.0`), independent of every other
+[`contracts/artifact-manifest.schema.v0.2.16.json`](../../contracts/artifact-manifest.schema.v0.2.16.json)
+(discriminator `lekalo/artifact-manifest/v0.2.16`, identity
+`dev.lekalo.artifact-manifest@0.2.16`), independent of every other
 contract family. `contracts/` gains exactly this one new file. Owner
 decision: one deterministic global manifest at
 `.lekalo/generated/manifests/ownership.json` — target/profile identity
@@ -136,7 +138,7 @@ validates maps; it does not replace the accepted #8 SourceMap producer.
 
 ### 8. Diagnostics through the accepted #11 seam, registry unchanged
 
-The registry stays at 1.2.0 and gains no rules: verdicts are typed result
+The registry stays at 0.2.16 and gains no rules: verdicts are typed result
 data, and failures reuse the closest registered rules with bounded tokens
 (`lock.noncanonical`, `lock.schema-invalid`,
 `lock.unsupported-schema-version`, `lock.digest-mismatch`, `lock.stale`,

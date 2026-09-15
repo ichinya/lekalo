@@ -17,7 +17,7 @@ process protocol: adapters as separate executables in any language.
 ## Decision
 
 1. One closed wire contract, `lekalo.target/v1`, exact contract version
-   1.0.0, identity `dev.lekalo.protocol@1.0.0`, published in the version
+   0.2.16, identity `dev.lekalo.protocol@0.2.16`, published in the version
    registry's `protocol` family with the `v1` selector alias. Publication is
    the semantic act of this issue: it turns on the protocol pins in the
    lockfile, the adapter compatibility preflight, and the artifact adapter
@@ -67,7 +67,7 @@ process protocol: adapters as separate executables in any language.
 
 - The version-registry bytes change, so every committed lock that pins the
   registry digest had to move to the published world (`contract-only.lock.json`
-  now pins `dev.lekalo.protocol@1.0.0`); the publication-gate tests stay
+  now pins `dev.lekalo.protocol@0.2.16`); the publication-gate tests stay
   alive against synthetic unpublished registries.
 - With the protocol published, artifact manifests whose entries carry no
   adapter ref are unbound when the lock names adapters; locks that name no
@@ -80,7 +80,7 @@ process protocol: adapters as separate executables in any language.
   exit 5/stderr outcome; an adapter's incompatible wire handshake uses the
   issue's explicit `unsupported`, exit 4/stdout outcome. These are distinct
   shared status classes, and their global taxonomy is unchanged.
-- Adapter authors target a frozen 1.0.0 wire: closed shapes mean every
+- Adapter authors target a frozen 0.2.16 wire: closed shapes mean every
   future member is a reviewed protocol version, never a silent extension.
 
 ## References

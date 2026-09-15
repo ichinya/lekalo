@@ -113,7 +113,7 @@ fn the_scan_document_merges_with_target_profile_and_test_bindings() {
     assert_eq!(index.target.as_deref(), Some("node-typescript"));
     assert_eq!(index.profile.as_deref(), Some("default"));
     assert_eq!(index.test_bindings.len(), 3);
-    // The frozen 1.0.0 spellings keep merging through the same seam.
+    // The frozen 0.2.16 spellings keep merging through the same seam.
     let legacy = Sandbox::new("merge-legacy");
     let receipt = legacy.merge("tests/fixtures/observed/task-domain/scans/initial.json");
     assert_eq!(receipt.symbols, 7);

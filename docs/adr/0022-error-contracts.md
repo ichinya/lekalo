@@ -1,5 +1,7 @@
 # ADR-0022: Explicit error contracts and typed results
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-07
 Status: accepted for issue #62
 
@@ -11,9 +13,9 @@ digests, the `--version` behavior and its pinning tests, `README.md`,
 `v0.1.28` on `967bf52`); issue #24 published product 0.1.27 (annotated
 tag `v0.1.27` on `ef7680d`); issue #18 published product 0.1.26
 (annotated tag `v0.1.26` on `3710179`). The error-contract and error-registry versions
-(`lekalo/error-contract/v1.0.0`, `lekalo/error-registry/v1.0.0`,
-identities `dev.lekalo.error-contract@1.0.0` and
-`dev.lekalo.error-registry@1.0.0`) are independent of the product
+(`lekalo/error-contract/v0.2.16`, `lekalo/error-registry/v0.2.16`,
+identities `dev.lekalo.error-contract@0.2.16` and
+`dev.lekalo.error-registry@0.2.16`) are independent of the product
 release, of the Model/IR/diagnostic/protocol contract versions, and of
 every other registered family by design. The placeholder 0.1.29 was
 reconciled to the publication-order version at integration.
@@ -41,15 +43,15 @@ attachment instead of in-place IR embedding.
 ### 1. An independent closed contract family, not a Model successor
 
 Two immutable wire contracts are published:
-[`contracts/error-contract.schema.v1.0.0.json`](../../contracts/error-contract.schema.v1.0.0.json)
-(discriminator `lekalo/error-contract/v1.0.0`) for one typed operation
+[`contracts/error-contract.schema.v0.2.16.json`](../../contracts/error-contract.schema.v0.2.16.json)
+(discriminator `lekalo/error-contract/v0.2.16`) for one typed operation
 binding, and
-[`contracts/error-registry.schema.v1.0.0.json`](../../contracts/error-registry.schema.v1.0.0.json)
-(discriminator `lekalo/error-registry/v1.0.0`, identity
-`dev.lekalo.error-registry@1.0.0`) for the registry envelope, plus the
+[`contracts/error-registry.schema.v0.2.16.json`](../../contracts/error-registry.schema.v0.2.16.json)
+(discriminator `lekalo/error-registry/v0.2.16`, identity
+`dev.lekalo.error-registry@0.2.16`) for the registry envelope, plus the
 canonical registry instance
-[`contracts/error-registry.v1.0.0.json`](../../contracts/error-registry.v1.0.0.json).
-Model v0.1.0 and v1.0.0 are untouched; IR v1 is untouched — the binding
+[`contracts/error-registry.v0.2.16.json`](../../contracts/error-registry.v0.2.16.json).
+Model v0.2.16 and v0.2.16 are untouched; IR v1 is untouched — the binding
 is a typed sidecar, and any future IR embedding requires a reviewed IR
 successor.
 
@@ -102,11 +104,11 @@ cannot witness reachability of an unbound error. Scenario and test
 references stay opaque until #23 publishes its registry; #62 never
 defines scenario steps or executes tests.
 
-### 7. Diagnostics through the #11 seam: registry minor 1.6.0 → 1.7.0
+### 7. Diagnostics through the #11 seam: registry minor 0.2.16 → 1.7.0
 
 The contract adds its own rule family — typed `error.*` identities — so
 the diagnostic registry takes its next wire-shape-preserving minor
-increment to [`diagnostic-registry.v1.7.0.json`](../../contracts/diagnostic-registry.v1.7.0.json)
+increment to [`diagnostic-registry.v0.2.16.json`](../../contracts/diagnostic-registry.v0.2.16.json)
 with `error.contract-invalid`, `error.binding-invalid`,
 `error.payload-invalid`, `error.unreachable`, `error.code-reused`,
 `error.retry-idempotency-conflict`, `error.coverage-invalid`,

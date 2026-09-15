@@ -10,13 +10,13 @@
 pub const FAMILY: &str = "contracted";
 
 /// The conformed-binding registry wire version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact `schema_version` literal of a persisted registry.
-pub const SCHEMA_VERSION: &str = "lekalo/conformed-binding-registry/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/conformed-binding-registry/v0.2.16";
 
 /// The registry identity of the conformed-binding wire.
-pub const IDENTITY: &str = "dev.lekalo.conformed-binding-registry@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.conformed-binding-registry@0.2.16";
 
 /// The single mode this issue records; `observed` mode (issue #39) is a
 /// separate surface and never appears here.

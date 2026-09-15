@@ -14,28 +14,28 @@
 pub const FAMILY: &str = "dev.lekalo.expressions";
 
 /// The exact expression contract version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.expressions@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.expressions@0.2.16";
 /// The exact IR identity this attachment binds (`irRef`).
-pub const IR_IDENTITY: &str = "dev.lekalo.ir@0.1.0";
+pub const IR_IDENTITY: &str = "dev.lekalo.ir@0.2.16";
 
 /// The exact wire discriminator of the expression contract.
-pub const SCHEMA_VERSION: &str = "lekalo/expressions/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/expressions/v0.2.16";
 
 /// The exact wire discriminator of the shared evaluation-vector
 /// document (the cross-target fixture format).
-pub const VECTORS_SCHEMA_VERSION: &str = "lekalo/expressions/vectors/v1.0.0";
+pub const VECTORS_SCHEMA_VERSION: &str = "lekalo/expressions/vectors/v0.2.16";
 
 /// The exact wire discriminator of a built-in capability snapshot
 /// (the managed-mode support declaration a target or adapter supplies).
-pub const SUPPORT_SCHEMA_VERSION: &str = "lekalo/expressions/builtin-support/v1.0.0";
+pub const SUPPORT_SCHEMA_VERSION: &str = "lekalo/expressions/builtin-support/v0.2.16";
 
 /// The versioned semantics of every built-in function. Bumping this
 /// is a behavioral contract change: accepted attachments pin the
 /// version they were authored against.
-pub const BUILTIN_SEMANTICS_VERSION: &str = "1.0.0";
+pub const BUILTIN_SEMANTICS_VERSION: &str = "0.2.16";
 
 /// The capability token of the closed core grammar (everything
 /// outside the built-in registry).

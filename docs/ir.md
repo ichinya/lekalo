@@ -1,5 +1,7 @@
 # Lekalo IR: typed, deterministic, target-neutral
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Status: implemented for issue #8 on product candidate 0.1.6. The IR consumes
 the accepted #7 loader output (#4 structure, #5 Model shapes, #6 semantic
 IDs) and never rewrites them. Migration (#9) and every downstream consumer
@@ -30,7 +32,7 @@ the CLI: `loader::normalize_model` + `ir::compile`.
 
 ## Contract identity
 
-The IR contract is `dev.lekalo.ir@0.1.0` (`FAMILY`/`VERSION`/`IDENTITY` in
+The IR contract is `dev.lekalo.ir@0.2.16` (`FAMILY`/`VERSION`/`IDENTITY` in
 `ir::version`). It is its own family: independent of the product version,
 of the source Model versions, and of every other contract family. Every
 compilation binds the exact source Model version it was built from
@@ -58,10 +60,10 @@ it at compile time.
   effect kind; `Decision`, `Visibility`, `Portability`, `ScalarBase`, and
   `HttpMethod` are closed enums with exact source literals.
 - `renamed_from` and the project `id_registry` (rename history, tombstones)
-  are accepted only under Model 1.0.0; under 0.1.0 they are unknown fields
+  are accepted only under Model 0.2.16; under 0.2.16 they are unknown fields
   and fail closed.
 - Identifier grammars are the exact JSON Schema patterns of the active Model
-  version (0.1.0 module names allow hyphens; 1.0.0 symbol IDs are two or
+  version (0.2.16 module names allow hyphens; 0.2.16 symbol IDs are two or
   three segments). Reserved words stay accepted here, as in the loader; the
   Model validator owns them.
 
@@ -71,7 +73,7 @@ Unknown keys fail closed with `ir.unknown-field`; nothing is ignored and
 nothing is parked in a side channel. Extension metadata can only arrive
 through a reviewed Model successor whose extension keys the decoder accepts
 explicitly, so foreign keys can never reach core enums. There is no
-namespaced extension container in IR 0.1.0 because no accepted source Model
+namespaced extension container in IR 0.2.16 because no accepted source Model
 version defines one; adding one is a reviewed IR contract successor, never a
 silent widening.
 
@@ -131,7 +133,7 @@ appends the array as the sorted `sourceMap` sibling of `ir`.
 - with `--ir`: success is one compact line with the fixed key order
   `status`, `modelVersion`, `ir`, `sourceMap?`, where `ir` is exactly the
   canonical IR bytes; the human line is
-  `compiled ir dev.lekalo.ir@0.1.0: <modules> modules, <definitions> definitions`;
+  `compiled ir dev.lekalo.ir@0.2.16: <modules> modules, <definitions> definitions`;
 - IR decode failures replace success with the `invalid` envelope (exit 1,
   stderr) naming the sorted `ir.*` codes.
 

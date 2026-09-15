@@ -120,8 +120,8 @@ fn the_json_envelope_carries_the_closed_capsule_shape() {
         serde_json::from_str(stdout_text(&output).trim()).expect("envelope json");
     assert_eq!(document["status"], "valid");
     let capsule = &document["context"];
-    assert_eq!(capsule["schemaVersion"], "lekalo/context/v1.0.0");
-    assert_eq!(capsule["identity"], "dev.lekalo.context@1.0.0");
+    assert_eq!(capsule["schemaVersion"], "lekalo/context/v0.2.16");
+    assert_eq!(capsule["identity"], "dev.lekalo.context@0.2.16");
     assert_eq!(capsule["mode"], "symbol");
     assert_eq!(capsule["project"], "planner");
     assert_eq!(capsule["roots"][0], "operation:planner.focus_task");
@@ -132,7 +132,7 @@ fn the_json_envelope_carries_the_closed_capsule_shape() {
     );
     assert_eq!(
         capsule["estimator"]["identity"],
-        "dev.lekalo.estimator.chars-4@1.0.0"
+        "dev.lekalo.estimator.chars-4@0.2.16"
     );
     assert_eq!(capsule["coverage"]["candidates"], 13);
     assert_eq!(capsule["coverage"]["included"], 13);

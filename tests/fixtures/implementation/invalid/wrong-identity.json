@@ -1,13 +1,13 @@
 {
-  "schemaVersion": "lekalo/implementation/v1.0.0",
-  "identity": "dev.lekalo.implementation@1.1.0",
+  "schemaVersion": "lekalo/implementation/v9.9.9",
+  "identity": "dev.lekalo.implementation@9.9.9",
   "projectId": "schedule",
   "modelRef": {
-    "modelVersion": "1.0.0",
+    "modelVersion": "9.9.9",
     "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "irRef": {
-    "identity": "dev.lekalo.ir@0.1.0",
+    "identity": "dev.lekalo.ir@9.9.9",
     "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
   "contracts": [

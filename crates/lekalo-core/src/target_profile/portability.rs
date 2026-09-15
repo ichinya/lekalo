@@ -176,11 +176,11 @@ mod tests {
     }
 
     const MONOREPO: &str = r#"{
-        "schema_version": "lekalo/target-profile/v1.0.0",
+        "schema_version": "lekalo/target-profile/v0.2.16",
         "profiles": [
             {
                 "id": "node-postgres-http",
-                "version": "1.0.0",
+                "version": "0.2.16",
                 "components": {
                     "runtime": "node-typescript",
                     "storage": "postgres-sql",
@@ -192,7 +192,7 @@ mod tests {
             },
             {
                 "id": "laravel-postgres-http",
-                "version": "1.0.0",
+                "version": "0.2.16",
                 "components": {
                     "runtime": "php-laravel",
                     "storage": "postgres-sql",

@@ -43,8 +43,8 @@ use super::component::{self, Axis, Support};
 use super::document::{ProfileDeclaration, ProfileDocument};
 use super::version;
 use super::{CapabilityGap, ProfileFailure};
+use crate::digest::sha256_hex;
 use crate::lockfile::SemVer;
-use crate::versioning::plan::sha256_hex;
 
 /// One resolved axis: the component and the definition version its
 /// semantics were read under.
@@ -131,7 +131,7 @@ impl ResolvedProfile {
 }
 
 impl ResolvedProfile {
-    /// Project the snapshot onto the adapter protocol's 1.2.0 resolved
+    /// Project the snapshot onto the adapter protocol's 0.2.16 resolved
     /// profile request members: the snapshot digest plus the capability
     /// pairs in canonical id order. This is the only path by which a
     /// profile reaches an adapter — never raw YAML.
@@ -489,10 +489,10 @@ mod tests {
     use crate::target_profile::document::decode;
 
     const NODE: &str = r#"{
-        "schema_version": "lekalo/target-profile/v1.0.0",
+        "schema_version": "lekalo/target-profile/v0.2.16",
         "profiles": [{
             "id": "node-postgres-http",
-            "version": "1.0.0",
+            "version": "0.2.16",
             "components": {
                 "runtime": "node-typescript",
                 "storage": "postgres-sql",
@@ -551,10 +551,10 @@ mod tests {
         let component_of = |runtime: &str, testing: &str, analysis: &str| {
             let text = format!(
                 r#"{{
-                    "schema_version": "lekalo/target-profile/v1.0.0",
+                    "schema_version": "lekalo/target-profile/v0.2.16",
                     "profiles": [{{
                         "id": "profile",
-                        "version": "1.0.0",
+                        "version": "0.2.16",
                         "components": {{
                             "runtime": "{runtime}",
                             "storage": "postgres-sql",
@@ -588,10 +588,10 @@ mod tests {
         // grpc-proto needs runtime.async full; php-laravel provides only
         // partial, and the testing component still pins the runtime.
         let text = r#"{
-            "schema_version": "lekalo/target-profile/v1.0.0",
+            "schema_version": "lekalo/target-profile/v0.2.16",
             "profiles": [{
                 "id": "laravel-grpc",
-                "version": "1.0.0",
+                "version": "0.2.16",
                 "components": {
                     "runtime": "php-laravel",
                     "storage": "postgres-sql",
@@ -617,10 +617,10 @@ mod tests {
         // Identity constraints: serverless cannot host a file database
         // and needs the pooled storage guarantee.
         let text = r#"{
-            "schema_version": "lekalo/target-profile/v1.0.0",
+            "schema_version": "lekalo/target-profile/v0.2.16",
             "profiles": [{
                 "id": "edge-sqlite",
-                "version": "1.0.0",
+                "version": "0.2.16",
                 "components": {
                     "runtime": "node-typescript",
                     "storage": "sqlite-file",
@@ -645,10 +645,10 @@ mod tests {
         // A wrong-ecosystem analysis under a Laravel testing framework
         // is refused by identity, not by capabilities.
         let text = r#"{
-            "schema_version": "lekalo/target-profile/v1.0.0",
+            "schema_version": "lekalo/target-profile/v0.2.16",
             "profiles": [{
                 "id": "laravel-ts",
-                "version": "1.0.0",
+                "version": "0.2.16",
                 "components": {
                     "runtime": "php-laravel",
                     "storage": "postgres-sql",
@@ -679,10 +679,10 @@ mod tests {
         let resolve_with_storage = |storage: &str| {
             let text = format!(
                 r#"{{
-                    "schema_version": "lekalo/target-profile/v1.0.0",
+                    "schema_version": "lekalo/target-profile/v0.2.16",
                     "profiles": [{{
                         "id": "edge-sql",
-                        "version": "1.0.0",
+                        "version": "0.2.16",
                         "components": {{
                             "runtime": "node-typescript",
                             "storage": "{storage}",
@@ -717,10 +717,10 @@ mod tests {
     #[test]
     fn unknown_components_and_bases_are_refused() {
         let text = r#"{
-            "schema_version": "lekalo/target-profile/v1.0.0",
+            "schema_version": "lekalo/target-profile/v0.2.16",
             "profiles": [{
                 "id": "ghost",
-                "version": "1.0.0",
+                "version": "0.2.16",
                 "components": {
                     "runtime": "deno-typescript",
                     "storage": "postgres-sql",
@@ -740,10 +740,10 @@ mod tests {
             })
         );
         let text = r#"{
-            "schema_version": "lekalo/target-profile/v1.0.0",
+            "schema_version": "lekalo/target-profile/v0.2.16",
             "profiles": [{
                 "id": "derived",
-                "version": "1.0.0",
+                "version": "0.2.16",
                 "extends": "missing-base",
                 "components": { "runtime": "node-typescript" }
             }]
@@ -760,17 +760,17 @@ mod tests {
     #[test]
     fn inheritance_cycles_and_depth_are_refused() {
         let text = r#"{
-            "schema_version": "lekalo/target-profile/v1.0.0",
+            "schema_version": "lekalo/target-profile/v0.2.16",
             "profiles": [
                 {
                     "id": "a",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "extends": "b",
                     "components": { "runtime": "node-typescript" }
                 },
                 {
                     "id": "b",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "extends": "a",
                     "components": { "runtime": "node-typescript" }
                 }
@@ -788,11 +788,11 @@ mod tests {
     #[test]
     fn deep_chains_inherit_with_explicit_precedence() {
         let text = r#"{
-            "schema_version": "lekalo/target-profile/v1.0.0",
+            "schema_version": "lekalo/target-profile/v0.2.16",
             "profiles": [
                 {
                     "id": "base-web",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "components": {
                         "runtime": "node-typescript",
                         "storage": "postgres-sql",
@@ -804,7 +804,7 @@ mod tests {
                 },
                 {
                     "id": "derived-serverless",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "extends": "base-web",
                     "components": { "deployment": "serverless" },
                     "overrides": [
@@ -814,7 +814,7 @@ mod tests {
                 },
                 {
                     "id": "derived-serverless-observed",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "extends": "derived-serverless",
                     "components": { "deployment": "container" }
                 }
@@ -887,7 +887,7 @@ mod tests {
         let base = r#"
                 {
                     "id": "base",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "components": {
                         "runtime": "node-typescript",
                         "storage": "postgres-sql",
@@ -898,10 +898,10 @@ mod tests {
                     }
                 }"#;
         let weakened = format!(
-            r#"{{ "schema_version": "lekalo/target-profile/v1.0.0", "profiles": [{base},
+            r#"{{ "schema_version": "lekalo/target-profile/v0.2.16", "profiles": [{base},
                 {{
                     "id": "weakened",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "extends": "base",
                     "components": {{ "deployment": "serverless" }}
                 }}] }}"#
@@ -921,10 +921,10 @@ mod tests {
         // the same resolution legal, and the evidence names what was
         // accepted.
         let explicit = format!(
-            r#"{{ "schema_version": "lekalo/target-profile/v1.0.0", "profiles": [{base},
+            r#"{{ "schema_version": "lekalo/target-profile/v0.2.16", "profiles": [{base},
                 {{
                     "id": "weakened",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "extends": "base",
                     "components": {{ "deployment": "serverless" }},
                     "overrides": [
@@ -957,7 +957,7 @@ mod tests {
         let grpc_base = r#"
                 {
                     "id": "base",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "components": {
                         "runtime": "node-typescript",
                         "storage": "postgres-sql",
@@ -968,10 +968,10 @@ mod tests {
                     }
                 }"#;
         let removal = format!(
-            r#"{{ "schema_version": "lekalo/target-profile/v1.0.0", "profiles": [{grpc_base},
+            r#"{{ "schema_version": "lekalo/target-profile/v0.2.16", "profiles": [{grpc_base},
                 {{
                     "id": "downgraded",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "extends": "base",
                     "components": {{ "transport": "http-json" }},
                     "overrides": [
@@ -997,11 +997,11 @@ mod tests {
         // The analysis switch weakens types full->partial, which the
         // explicit override does accept.
         let text = r#"{
-            "schema_version": "lekalo/target-profile/v1.0.0",
+            "schema_version": "lekalo/target-profile/v0.2.16",
             "profiles": [
                 {
                     "id": "base",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "components": {
                         "runtime": "node-typescript",
                         "storage": "postgres-sql",
@@ -1013,7 +1013,7 @@ mod tests {
                 },
                 {
                     "id": "derived",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "extends": "base",
                     "components": {
                         "runtime": "go-standard",
@@ -1039,11 +1039,11 @@ mod tests {
     #[test]
     fn overrides_must_name_base_capabilities() {
         let text = r#"{
-            "schema_version": "lekalo/target-profile/v1.0.0",
+            "schema_version": "lekalo/target-profile/v0.2.16",
             "profiles": [
                 {
                     "id": "base",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "components": {
                         "runtime": "node-typescript",
                         "storage": "postgres-sql",
@@ -1055,7 +1055,7 @@ mod tests {
                 },
                 {
                     "id": "derived",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "extends": "base",
                     "components": { "deployment": "container" },
                     "overrides": [
@@ -1076,11 +1076,11 @@ mod tests {
     #[test]
     fn multiple_profiles_resolve_independently() {
         let text = r#"{
-            "schema_version": "lekalo/target-profile/v1.0.0",
+            "schema_version": "lekalo/target-profile/v0.2.16",
             "profiles": [
                 {
                     "id": "zeta-node",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "components": {
                         "runtime": "node-typescript",
                         "storage": "postgres-sql",
@@ -1092,7 +1092,7 @@ mod tests {
                 },
                 {
                     "id": "alpha-laravel",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "components": {
                         "runtime": "php-laravel",
                         "storage": "postgres-sql",
@@ -1115,11 +1115,11 @@ mod tests {
     #[test]
     fn digests_bind_effective_semantics_only() {
         let text = r#"{
-            "schema_version": "lekalo/target-profile/v1.0.0",
+            "schema_version": "lekalo/target-profile/v0.2.16",
             "profiles": [
                 {
                     "id": "base",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "components": {
                         "runtime": "node-typescript",
                         "storage": "postgres-sql",
@@ -1131,7 +1131,7 @@ mod tests {
                 },
                 {
                     "id": "same",
-                    "version": "1.0.0",
+                    "version": "0.2.16",
                     "extends": "base",
                     "components": {
                         "runtime": "node-typescript",
@@ -1164,10 +1164,10 @@ mod tests {
         // A profile that violates two stages reports the earlier stage:
         // An unknown component (stage 2) beats a conflict (stage 4).
         let text = r#"{
-            "schema_version": "lekalo/target-profile/v1.0.0",
+            "schema_version": "lekalo/target-profile/v0.2.16",
             "profiles": [{
                 "id": "messy",
-                "version": "1.0.0",
+                "version": "0.2.16",
                 "components": {
                     "runtime": "ghost-runtime",
                     "storage": "postgres-sql",

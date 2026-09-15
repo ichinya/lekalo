@@ -2,39 +2,32 @@
 //! (issues #27, #28, and #29).
 //!
 //! The wire token `lekalo.target/v1` names the protocol line. The line
-//! carries three exact contract versions: the base `1.0.0` envelope every
-//! v1-line adapter accepts, the `1.1.0` describe-response extension, and
-//! the `1.2.0` resolved-profile request extension. The client probes at
-//! the base version and upgrades only to a version the adapter
-//! explicitly declared, so the session always runs on a version both
-//! sides named. The identity follows the house
+//! supports the exact current contract version `0.2.16`. The client probes
+//! this version and requires an explicit adapter declaration. The identity uses
 //! `dev.lekalo.<topic>@<version>` spelling. Every bound here has a
 //! matching JSON Schema constraint; the paired test pins them together.
 
 /// The stable wire token of the target protocol line.
 pub const PROTOCOL_TOKEN: &str = "lekalo.target/v1";
 
-/// The base wire version (`1.0.0`): the describe probe version every
-/// v1-line adapter accepts, and the frozen published contract document.
-pub const BASE_VERSION: &str = "1.0.0";
+/// The describe probe version of the current contract.
+pub const BASE_VERSION: &str = "0.2.16";
 
-/// The current protocol contract version
-/// (`dev.lekalo.protocol@1.2.0`): the additive resolved-profile request
-/// extension negotiated by issue #29.
-pub const VERSION: &str = "1.2.0";
+/// The current protocol contract version, including resolved profiles.
+pub const VERSION: &str = "0.2.16";
 
 /// The closed, ascending set of protocol versions this core decodes and
 /// negotiates. The registry may only publish versions from this set;
 /// anything else is a registry/decoder drift refused as a developer
 /// fault before any adapter is launched.
-pub const SUPPORTED_VERSIONS: [&str; 3] = ["1.0.0", "1.1.0", "1.2.0"];
+pub const SUPPORTED_VERSIONS: [&str; 1] = ["0.2.16"];
 
 /// The identity of the schema artifact for the current protocol version.
-pub const IDENTITY: &str = "dev.lekalo.target-protocol@1.2.0";
+pub const IDENTITY: &str = "dev.lekalo.target-protocol@0.2.16";
 
 /// The schema identity of the current wire contract
-/// (`lekalo/target-protocol/v1.2.0`).
-pub const SCHEMA_VERSION: &str = "lekalo/target-protocol/v1.2.0";
+/// (`lekalo/target-protocol/v0.2.16`).
+pub const SCHEMA_VERSION: &str = "lekalo/target-protocol/v0.2.16";
 
 /// Whether one exact spelling is in the supported negotiation set.
 pub fn is_supported_version(value: &str) -> bool {
@@ -101,10 +94,10 @@ mod tests {
     #[test]
     fn identity_is_the_published_contract_version() {
         assert_eq!(PROTOCOL_TOKEN, "lekalo.target/v1");
-        assert_eq!(BASE_VERSION, "1.0.0");
-        assert_eq!(VERSION, "1.2.0");
-        assert_eq!(IDENTITY, "dev.lekalo.target-protocol@1.2.0");
-        assert_eq!(SCHEMA_VERSION, "lekalo/target-protocol/v1.2.0");
+        assert_eq!(BASE_VERSION, "0.2.16");
+        assert_eq!(VERSION, "0.2.16");
+        assert_eq!(IDENTITY, "dev.lekalo.target-protocol@0.2.16");
+        assert_eq!(SCHEMA_VERSION, "lekalo/target-protocol/v0.2.16");
     }
 
     #[test]
@@ -124,20 +117,13 @@ mod tests {
             None,
             "unsupported spellings never negotiate"
         );
-        assert_eq!(declared(&["1.0.0"]).as_deref(), Some("1.0.0"));
-        assert_eq!(declared(&["1.1.0"]).as_deref(), Some("1.1.0"));
-        assert_eq!(declared(&["1.2.0"]).as_deref(), Some("1.2.0"));
-        assert_eq!(
-            declared(&["1.1.0", "1.2.0", "1.0.0"]).as_deref(),
-            Some("1.2.0"),
-            "declaration order never decides the negotiated version"
-        );
-        assert!(
-            is_supported_version("1.0.0")
-                && is_supported_version("1.1.0")
-                && is_supported_version("1.2.0")
-        );
-        assert!(!is_supported_version("1.0.1") && !is_supported_version("0.9.0"));
+        assert_eq!(declared(&["0.2.16"]).as_deref(), Some("0.2.16"));
+        for old in ["0.2.15", "1.0.0", "1.1.0", "1.2.0"] {
+            assert_eq!(declared(&[old]), None);
+            assert!(!is_supported_version(old));
+            assert_eq!(declared(&[old, "0.2.16"]).as_deref(), Some("0.2.16"));
+        }
+        assert!(is_supported_version("0.2.16"));
     }
 
     #[test]

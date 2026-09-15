@@ -218,8 +218,7 @@ fn model_ref_field(json: Option<&Json>) -> Result<ModelRef, DiagnosticSet> {
         return Err(diagnostic::input_invalid("model-ref-shape", None));
     }
     let version = match object.get("modelVersion").and_then(Json::as_str) {
-        Some("0.1.0") => ModelPin::V0_1_0,
-        Some("1.0.0") => ModelPin::V1_0_0,
+        Some("0.2.16") => ModelPin::Current,
         _ => return Err(diagnostic::input_invalid("model-ref-version", None)),
     };
     Ok(ModelRef {

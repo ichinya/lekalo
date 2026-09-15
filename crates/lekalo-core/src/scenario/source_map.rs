@@ -77,7 +77,7 @@ mod tests {
     fn source_map_references_pin_identity_digest_and_entries() {
         let reference = SourceMapRef::from_json(
             &json!({
-                "identity": "dev.lekalo.scenario-sourcemap@1.0.0",
+                "identity": "dev.lekalo.scenario-sourcemap@0.2.16",
                 "digest": format!("sha256:{}", "ab".repeat(32)),
                 "entries": 7
             }),
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn wrong_identity_counts_and_digests_are_rejected() {
         let base = json!({
-            "identity": "dev.lekalo.scenario-sourcemap@1.0.0",
+            "identity": "dev.lekalo.scenario-sourcemap@0.2.16",
             "digest": format!("sha256:{}", "ab".repeat(32)),
             "entries": 7
         });

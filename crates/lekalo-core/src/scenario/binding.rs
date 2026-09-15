@@ -322,7 +322,7 @@ mod tests {
         json!({
             "backend": "fake-reference",
             "runner": "core.runners/fake-reference",
-            "runnerVersion": "1.0.0",
+            "runnerVersion": "0.2.16",
             "capabilities": ["core.capabilities/entity-state"],
             "capabilityDigest": digest("aa"),
             "test": "core.fake/planner-switch-focus"
@@ -338,7 +338,7 @@ mod tests {
             "backend": "native",
             "runner": "adapters.typescript/vitest",
             "runnerVersion": "2.1.0",
-            "protocol": {"id": "adapters.protocol/test", "version": "1.0.0"},
+            "protocol": {"id": "adapters.protocol/test", "version": "0.2.16"},
             "profile": {"id": "adapters.profile/node", "version": "24.0.0"},
             "capabilities": ["core.capabilities/entity-state", "core.capabilities/events"],
             "capabilityDigest": digest("bb"),

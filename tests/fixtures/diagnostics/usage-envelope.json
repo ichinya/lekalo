@@ -2,8 +2,8 @@
   "status": "invalid",
   "diagnostics": [
     {
-      "schema_version": "lekalo/diagnostic/v1.0.0",
-      "registry_version": "1.25.0",
+      "schema_version": "lekalo/diagnostic/v0.2.16",
+      "registry_version": "0.2.16",
       "id": "cli.usage",
       "code": "LEK-CLI-001",
       "severity": "error",

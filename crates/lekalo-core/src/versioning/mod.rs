@@ -33,8 +33,6 @@ pub mod registry;
 pub mod support;
 pub mod version;
 
-mod model_v0_1_0_to_v1_0_0;
-
 use crate::loader::ModelVersion;
 use crate::project_fs::Fs;
 use crate::result::DomainResult;

@@ -150,12 +150,12 @@ function aggregate(seed) {
       dataSensitivity: ["internal"],
       exportDisposition: "shareable-with-redaction",
     }],
-    appliedTransforms: [{ transformId: "aggregate-no-source-rows", version: "1.0.0", evidenceDigest: sha("d") }],
+    appliedTransforms: [{ transformId: "aggregate-no-source-rows", version: "0.2.16", evidenceDigest: sha("d") }],
     declassificationDecision: {
-      policyRef: clone(POLICY_REF), decisionRef: null, version: "1.0.0", outcome: "approved", removedSensitivities: ["internal"],
+      policyRef: clone(POLICY_REF), decisionRef: null, version: "0.2.16", outcome: "approved", removedSensitivities: ["internal"],
     },
     aggregationDecision: {
-      policyRef: clone(POLICY_REF), decisionRef: null, version: "1.0.0", outcome: "approved",
+      policyRef: clone(POLICY_REF), decisionRef: null, version: "0.2.16", outcome: "approved",
       removesSourceRows: true, removesSourceIdentities: true,
     },
     containsSourceRows: false,
@@ -336,22 +336,14 @@ try {
   }
   assert.equal(matrixCases, 70);
 
-  const oldManifest = invoke([
-    "--manifest", join(root, "contracts/privacy-policy.v1.0.3.manifest.json"),
-    "--manifest-sidecar", join(root, "contracts/privacy-policy.v1.0.3.manifest.sha256"),
-  ]);
-  assert.equal(oldManifest.status, 1);
-  assert.equal(JSON.parse(oldManifest.stderr).reasonCodes[0], "custody.manifest-untrusted");
-  subprocessCases += 1;
-
-  const evidenceContract = JSON.parse(await readFile(join(root, "contracts/privacy-authorizing-evidence.v1.0.0.json"), "utf8"));
+  const evidenceContract = JSON.parse(await readFile(join(root, "contracts/privacy-authorizing-evidence.v0.2.16.json"), "utf8"));
   evidenceContract.registry[0].expectedOutcome = "denied";
   const evidenceContractPath = join(temp, "mutated-evidence-contract.json");
   const evidenceContractBytes = Buffer.from(`${JSON.stringify(evidenceContract, null, 2)}\n`);
   const evidenceSidecarPath = join(temp, "mutated-evidence-contract.sha256");
   await writeFile(evidenceContractPath, evidenceContractBytes);
   await writeFile(evidenceSidecarPath,
-    `${createHash("sha256").update(evidenceContractBytes).digest("hex")}  privacy-authorizing-evidence.v1.0.0.json\n`);
+    `${createHash("sha256").update(evidenceContractBytes).digest("hex")}  privacy-authorizing-evidence.v0.2.16.json\n`);
   const recomputedEvidence = invoke([
     "--authorizing-evidence-contract", evidenceContractPath,
     "--authorizing-evidence-sidecar", evidenceSidecarPath,
@@ -360,14 +352,14 @@ try {
   assert.equal(JSON.parse(recomputedEvidence.stderr).reasonCodes[0], "custody.authorizing-evidence-bytes-mismatch");
   subprocessCases += 1;
 
-  const currentManifest = JSON.parse(await readFile(join(root, "contracts/privacy-policy.v1.0.4.manifest.json"), "utf8"));
+  const currentManifest = JSON.parse(await readFile(join(root, "contracts/privacy-policy.v0.2.16.manifest.json"), "utf8"));
   currentManifest.acceptedContracts[0].authorizingEvidenceContractRef.digest = sha("0");
   const mutatedManifestPath = join(temp, "mutated-manifest.json");
   const mutatedManifestBytes = Buffer.from(`${JSON.stringify(currentManifest, null, 2)}\n`);
   const mutatedManifestSidecarPath = join(temp, "mutated-manifest.sha256");
   await writeFile(mutatedManifestPath, mutatedManifestBytes);
   await writeFile(mutatedManifestSidecarPath,
-    `${createHash("sha256").update(mutatedManifestBytes).digest("hex")}  privacy-policy.v1.0.4.manifest.json\n`);
+    `${createHash("sha256").update(mutatedManifestBytes).digest("hex")}  privacy-policy.v0.2.16.manifest.json\n`);
   const recomputedManifest = invoke(["--manifest", mutatedManifestPath, "--manifest-sidecar", mutatedManifestSidecarPath]);
   assert.equal(recomputedManifest.status, 1);
   assert.equal(JSON.parse(recomputedManifest.stderr).reasonCodes[0], "custody.manifest-untrusted");

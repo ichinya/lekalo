@@ -11,13 +11,13 @@
 pub const FAMILY: &str = "dev.lekalo.extended-effects";
 
 /// The exact extended-effects contract version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.extended-effects@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.extended-effects@0.2.16";
 
 /// The exact wire discriminator of the extended-effects contract.
-pub const SCHEMA_VERSION: &str = "lekalo/extended-effects/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/extended-effects/v0.2.16";
 
 /// The maximum number of contracts one kind may carry in one attachment.
 pub const MAX_CONTRACTS: usize = 10_000;
@@ -62,9 +62,9 @@ mod tests {
     #[test]
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
-        assert_eq!(SCHEMA_VERSION, "lekalo/extended-effects/v1.0.0");
+        assert_eq!(SCHEMA_VERSION, "lekalo/extended-effects/v0.2.16");
         assert_eq!(FAMILY, "dev.lekalo.extended-effects");
-        assert_eq!(VERSION, "1.0.0");
+        assert_eq!(VERSION, "0.2.16");
     }
 
     #[test]

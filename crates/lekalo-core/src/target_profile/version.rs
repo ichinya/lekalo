@@ -1,25 +1,25 @@
 //! The identity, bound, and grammar constants of the target profile
 //! contract (issue #29).
 //!
-//! The profile contract (`dev.lekalo.target-profile@1.0.0`) is independent
+//! The profile contract (`dev.lekalo.target-profile@0.2.16`) is independent
 //! of the product release, the Model/IR/protocol contract versions, the
 //! diagnostic registry, and the adapter process protocol. The embedded
-//! component definition registry (`dev.lekalo.target-components@1.0.0`)
+//! component definition registry (`dev.lekalo.target-components@0.2.16`)
 //! is likewise independently versioned. Every bound here has a matching
 //! JSON Schema constraint; the paired Node gate pins them together.
 
 /// The identity of the published profile contract artifact.
-pub const IDENTITY: &str = "dev.lekalo.target-profile@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.target-profile@0.2.16";
 
 /// The schema identity of the profile contract
-/// (`lekalo/target-profile/v1.0.0`).
-pub const SCHEMA_VERSION: &str = "lekalo/target-profile/v1.0.0";
+/// (`lekalo/target-profile/v0.2.16`).
+pub const SCHEMA_VERSION: &str = "lekalo/target-profile/v0.2.16";
 
 /// The identity of the embedded component definition registry.
-pub const COMPONENTS_IDENTITY: &str = "dev.lekalo.target-components@1.0.0";
+pub const COMPONENTS_IDENTITY: &str = "dev.lekalo.target-components@0.2.16";
 
 /// The definition version every embedded component was written under.
-pub const COMPONENTS_DEFINITION_VERSION: &str = "1.0.0";
+pub const COMPONENTS_DEFINITION_VERSION: &str = "0.2.16";
 
 /// Maximum number of profiles in one profile document.
 pub const MAX_PROFILES: usize = 64;
@@ -67,10 +67,10 @@ mod tests {
         for identity in [IDENTITY, COMPONENTS_IDENTITY] {
             let (name, version) = identity.rsplit_once('@').expect("identity spelling");
             assert!(name.starts_with("dev.lekalo."), "{identity}");
-            assert_eq!(version, "1.0.0");
+            assert_eq!(version, "0.2.16");
         }
-        assert_eq!(SCHEMA_VERSION, "lekalo/target-profile/v1.0.0");
-        assert_eq!(COMPONENTS_DEFINITION_VERSION, "1.0.0");
+        assert_eq!(SCHEMA_VERSION, "lekalo/target-profile/v0.2.16");
+        assert_eq!(COMPONENTS_DEFINITION_VERSION, "0.2.16");
     }
 
     #[test]

@@ -12,7 +12,7 @@ use super::document::{
     SymbolDecl,
 };
 use super::version::{IDENTITY, PROFILE_IDENTITY, SCHEMA_VERSION};
-use crate::versioning::plan::sha256_hex;
+use crate::digest::sha256_hex;
 use serde_json::{json, Map, Value as Json};
 
 fn string_list(values: &[String]) -> Json {

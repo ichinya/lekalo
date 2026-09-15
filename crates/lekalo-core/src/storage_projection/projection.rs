@@ -5,12 +5,11 @@
 //! exactly one table with explicit storage facts: primary key,
 //! technical and generated columns, soft-delete and tenant policies,
 //! audit timestamps, indexes, join tables, polymorphic materializa-
-//! tions, and the migration history with a visible data risk per
-//! record. External entities are never mapped. Nothing here changes
+//! tions. External entities are never mapped. Nothing here changes
 //! the domain model; a storage change is always classifiable sepa-
 //! rately from a domain change.
 
-use crate::scenario::id::{NamespacedId, SemanticId};
+use crate::scenario::id::SemanticId;
 
 use super::id::{EntityKey, StorageName};
 
@@ -431,31 +430,6 @@ impl DataRisk {
     }
 }
 
-/// One declared migration-history record with visible data risk.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Migration {
-    pub(crate) migration_id: NamespacedId,
-    pub(crate) tables: Vec<StorageName>,
-    pub(crate) risk: DataRisk,
-}
-
-impl Migration {
-    /// The stable migration identifier.
-    pub fn migration_id(&self) -> &NamespacedId {
-        &self.migration_id
-    }
-
-    /// The named tables, canonical (byte-sorted) order.
-    pub fn tables(&self) -> &[StorageName] {
-        &self.tables
-    }
-
-    /// The declared data risk.
-    pub const fn risk(&self) -> DataRisk {
-        self.risk
-    }
-}
-
 /// One declared target-namespaced storage projection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Projection {
@@ -463,7 +437,6 @@ pub struct Projection {
     pub(crate) tables: Vec<Table>,
     pub(crate) joins: Vec<Join>,
     pub(crate) polymorphics: Vec<Polymorphic>,
-    pub(crate) migration_history: Vec<Migration>,
 }
 
 impl Projection {
@@ -485,10 +458,5 @@ impl Projection {
     /// The declared polymorphic materializations.
     pub fn polymorphics(&self) -> &[Polymorphic] {
         &self.polymorphics
-    }
-
-    /// The declared migration history.
-    pub fn migration_history(&self) -> &[Migration] {
-        &self.migration_history
     }
 }

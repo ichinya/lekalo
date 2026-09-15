@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "lekalo/expressions/builtin-support/v1.0.0",
+  "schemaVersion": "lekalo/expressions/builtin-support/v0.2.16",
   "supported": [
     "expression.builtin/cast-int-to-string",
     "expression.builtin/cast-string-to-int",

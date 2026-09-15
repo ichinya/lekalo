@@ -1,7 +1,7 @@
 //! The artifacts → diagnostic wire adapter (issue #21).
 //!
 //! Maps every closed [`ArtifactFailure`] onto its registered rule with
-//! bounded tokens. The registry is closed at v1.2.0 and this issue adds no
+//! bounded tokens. The registry is closed at v0.2.16 and this issue adds no
 //! rules: drift verdicts ride the closest registered lock/structure rules,
 //! one diagnostic per finding, and every echoed token passes the bounded
 //! token invariant so hostile input can neither scale the envelope nor

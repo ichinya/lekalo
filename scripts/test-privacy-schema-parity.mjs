@@ -17,7 +17,7 @@ const context = await loadTrustedContext();
 const schema = context.inputSchema;
 const clone = (value) => structuredClone(value);
 const digest = (character) => `sha256:${character.repeat(64)}`;
-const audit = (id, character) => ({ id, version: "1.0.0", evidenceDigest: digest(character) });
+const audit = (id, character) => ({ id, version: "0.2.16", evidenceDigest: digest(character) });
 const classification = (character) => ({
   ...CLASSIFICATION_CONTRACT_REF,
   decisionId: `classification-sha256:${character.repeat(64)}`,
@@ -77,12 +77,12 @@ aggregate.derivedArtifact = {
     authorityRef: clone(AUTHORITY_REF), policyRef: clone(POLICY_REF), classificationRef: classification("c"),
     dataSensitivity: ["internal"], exportDisposition: "shareable-with-redaction",
   }],
-  appliedTransforms: [{ transformId: "aggregate-no-source-rows", version: "1.0.0", evidenceDigest: digest("d") }],
+  appliedTransforms: [{ transformId: "aggregate-no-source-rows", version: "0.2.16", evidenceDigest: digest("d") }],
   declassificationDecision: {
-    policyRef: clone(POLICY_REF), decisionRef: null, version: "1.0.0", outcome: "approved", removedSensitivities: ["internal"],
+    policyRef: clone(POLICY_REF), decisionRef: null, version: "0.2.16", outcome: "approved", removedSensitivities: ["internal"],
   },
   aggregationDecision: {
-    policyRef: clone(POLICY_REF), decisionRef: null, version: "1.0.0", outcome: "approved", removesSourceRows: true, removesSourceIdentities: true,
+    policyRef: clone(POLICY_REF), decisionRef: null, version: "0.2.16", outcome: "approved", removesSourceRows: true, removesSourceIdentities: true,
   },
   containsSourceRows: false, containsSourceIdentities: false, reevaluated: true,
 };
@@ -251,7 +251,7 @@ for (const [state, hasRef, outcome] of [
 }
 
 for (const [name, grant] of [
-  ["grant-generic-audit", { id: "grant.reviewed", version: "1.0.0", evidenceDigest: digest("8") }],
+  ["grant-generic-audit", { id: "grant.reviewed", version: "0.2.16", evidenceDigest: digest("8") }],
   ["grant-empty-object", {}],
   ["grant-string", "caller-grant"],
 ]) {

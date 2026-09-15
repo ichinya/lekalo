@@ -1243,7 +1243,7 @@ impl Document {
                 let schema_version = string_property(model, "schema_version")
                     .unwrap_or_default()
                     .to_owned();
-                if schema_version != "0.1.0" && schema_version != "1.0.0" {
+                if schema_version != "0.2.16" {
                     collector.push(diag::document_invalid("model-version", None));
                 }
                 let ir_digest = string_property(model, "ir_digest").unwrap_or_default();

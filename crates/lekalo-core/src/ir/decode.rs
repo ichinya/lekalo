@@ -448,7 +448,7 @@ fn common_keys(extra: &[&'static str], version: ModelVersion) -> Vec<&'static st
         "visibility",
         "portability",
     ];
-    if version == ModelVersion::V1_0_0 {
+    if version == ModelVersion::Current {
         keys.push("renamed_from");
     }
     keys.extend_from_slice(extra);

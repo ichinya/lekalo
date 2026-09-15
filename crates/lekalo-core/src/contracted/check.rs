@@ -390,7 +390,7 @@ pub(super) fn read_fingerprint(
     match fs.read_file_opt(dir, name, MAX_SOURCE_BYTES) {
         Ok(Some(bytes)) => Ok(Some(format!(
             "sha256:{}",
-            crate::versioning::plan::sha256_hex(&bytes)
+            crate::digest::sha256_hex(&bytes)
         ))),
         Ok(None) => Ok(None),
         Err(_) => Ok(None),

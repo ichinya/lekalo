@@ -11,7 +11,7 @@
 //! explicitly confirmed, fully revalidated file operation — the plan
 //! phase computes only, and only the confirm phase deletes.
 //!
-//! Wire contract: [`contracts/artifact-manifest.schema.v1.0.0.json`].
+//! Wire contract: [`contracts/artifact-manifest.schema.v0.2.16.json`].
 //! Diagnostics reuse the accepted closed registry (no new rules); drift
 //! verdicts are typed result data mapped onto registered rules with
 //! bounded tokens only.

@@ -791,7 +791,7 @@ pub struct BuiltinSupport {
 
 impl BuiltinSupport {
     /// Decode one support document
-    /// (`lekalo/expressions/builtin-support/v1.0.0`).
+    /// (`lekalo/expressions/builtin-support/v0.2.16`).
     pub fn from_value(json: &Json) -> Result<Self, DiagnosticSet> {
         let object = json
             .as_object()
@@ -903,7 +903,7 @@ pub struct VectorsDocument {
 
 impl VectorsDocument {
     /// Decode one vectors document
-    /// (`lekalo/expressions/vectors/v1.0.0`).
+    /// (`lekalo/expressions/vectors/v0.2.16`).
     pub fn from_value(json: &Json) -> Result<Self, DiagnosticSet> {
         let object = json
             .as_object()
@@ -1057,10 +1057,10 @@ mod tests {
         serde_json::json!({
             "schemaVersion": SCHEMA_VERSION,
             "identity": IDENTITY,
-            "attachmentRevision": "1.0.0",
+            "attachmentRevision": "0.2.16",
             "projectId": "planner",
             "modelRef": {
-                "modelVersion": "1.0.0",
+                "modelVersion": "0.2.16",
                 "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
             },
             "irRef": {

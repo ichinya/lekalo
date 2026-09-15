@@ -42,7 +42,7 @@ if (ajvVersion !== "8.17.1") {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
-const schema = read("contracts/semantic-diff.schema.v1.0.0.json");
+const schema = read("contracts/semantic-diff.schema.v0.2.16.json");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validate = ajv.compile(schema);
 
@@ -93,7 +93,7 @@ const checkDocument = (where_, document) => {
   if (!validate(document)) {
     fail("schema-invalid", { where_, errors: validate.errors });
   }
-  if (document.identity !== "dev.lekalo.semantic-diff@1.0.0") fail("identity-drift", where_);
+  if (document.identity !== "dev.lekalo.semantic-diff@0.2.16") fail("identity-drift", where_);
   if (!CHANGE_ID.test(document.comparisonId)) fail("comparison-id-shape", where_);
   if (document.equal !== (document.changes.length === 0)) fail("equality-invariant", where_);
   if (document.complete !== true) fail("incomplete-golden", where_);

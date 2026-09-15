@@ -9,12 +9,12 @@ Date: 2026-09-02
 ## Context
 
 Issue #6 requires a target-neutral primary identity for application elements.
-Model 0.1.0 deliberately shipped a provisional one-or-two-segment definition
+Model 0.2.16 deliberately shipped a provisional one-or-two-segment definition
 ID coupled to a module directory. The final contract must survive file moves,
 generated-name changes, and semantic renames while preventing ambiguous
 resolution or reuse of a retired meaning.
 
-Model 0.1.0 is already published at commit
+Model 0.2.16 is already published at commit
 b2ace5e893ffd62c80250099792d2e33a0aff3a7 under annotated product tag
 v0.1.2. Its schema bytes cannot change. The ID grammar change is breaking
 under ADR-0004, so it requires a major Model schema successor even though the
@@ -23,8 +23,8 @@ semantic-ID data contract begins at 0.1.0.
 ## Decision
 
 Adopt
-[dev.lekalo.semantic-ids@0.1.0](../../contracts/semantic-ids.v0.1.0.json)
-and [Model schema 1.0.0](../../contracts/model.schema.v1.0.0.json).
+[dev.lekalo.semantic-ids@0.2.16](../../contracts/semantic-ids.v0.2.16.json)
+and [Model schema 0.2.16](../../contracts/model.schema.v0.2.16.json).
 
 1. Human-readable dotted IDs are the sole primary approach. Opaque IDs are
    rejected for M1 because reviews and traces must expose stable,
@@ -58,15 +58,15 @@ and [Model schema 1.0.0](../../contracts/model.schema.v1.0.0.json).
    purpose is traceability.
 10. Target adapters retain the exact semantic ID as their canonical key.
     Target-side names are additional metadata and cannot rewrite identity.
-11. The reference checker dispatches only exact Model 0.1.0 and 1.0.0
+11. The reference checker dispatches only exact Model 0.2.16 and 0.2.16
     documents and rejects mixed projects. This bounded dispatch does not
     implement the generic loader or migration system owned by later issues.
 
 ## Consequences
 
-- Model schema 0.1.0 remains byte-identical and published. Existing 0.1.0
+- Model schema 0.2.16 remains byte-identical and published. Existing 0.2.16
   projects continue through their exact legacy validation path.
-- Model schema 1.0.0 changes only version identity, ID-bearing fields, and
+- Model schema 0.2.16 changes only version identity, ID-bearing fields, and
   the symbol-history/project-registry additions. All fourteen kind shapes,
   finite type depth, string limits, file homes, and reference kinds are
   preserved.

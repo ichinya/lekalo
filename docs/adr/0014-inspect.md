@@ -1,5 +1,7 @@
 # ADR-0014: The single-symbol inspect projection
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-05
 Status: accepted for issue #15
 
@@ -18,7 +20,7 @@ lock and its digest, the `--version` behavior and its pinning tests,
 `v0.1.20` on `eef1863`); issue #22 published product 0.1.19 (annotated
 tag `v0.1.19` on `31468e9`); issue #14 published product 0.1.12
 (annotated tag `v0.1.12` on `81666da`). The inspect contract version
-(`lekalo/inspect/v1.0.0`, identity `dev.lekalo.inspect@1.0.0`) is
+(`lekalo/inspect/v0.2.16`, identity `dev.lekalo.inspect@0.2.16`) is
 independent of the product release, of the Model/IR/graph/effect/protocol
 contract versions, and of the diagnostic registry by design.
 
@@ -39,7 +41,7 @@ owner decisions this ADR adopts.
 
 ### 1. Independent closed contract over accepted APIs only
 
-`contracts/inspect.schema.v1.0.0.json` is the single new contract file.
+`contracts/inspect.schema.v0.2.16.json` is the single new contract file.
 The projection consumes exactly the accepted #8 IR, #13 dependency graph,
 and #14 effect graph (plus the loader's source map for the one logical
 source location). It never parses source bytes, never reads target files,
@@ -70,7 +72,7 @@ The briefs name four stable inspect diagnostics. The accepted #11 registry
 is the only source of rule identity, and its lifecycle rule defines the
 mechanism: adding a rule without a wire-shape change is a registry minor
 increment. This issue therefore extends the embedded registry
-`1.2.0` → `1.3.0` with exactly four additive entries —
+`0.2.16` → `1.3.0` with exactly four additive entries —
 `inspect.symbol-unknown` (`LEK-INS-001`),
 `inspect.short-name-unknown` (`LEK-INS-002`),
 `inspect.short-name-ambiguous` (`LEK-INS-003`),
@@ -107,7 +109,7 @@ Model can declare; nothing else is invented.
 
 Section items returned: 256. Ambiguity candidates: 32 (plus the exact
 `matched` total). Semantic id echo: 192 bytes — the briefs recommended 129,
-but that would reject valid Model 1.0.0 symbol ids (191 bytes), so the cap
+but that would reject valid Model 0.2.16 symbol ids (191 bytes), so the cap
 follows the #13 `NodeId` bound instead; the brief's intent (bounded ids) is
 preserved. Description/message echo: 4 096 bytes. Provenance refs per item:
 8. Whole payload: 1 MiB. Only the payload bound fails the invocation

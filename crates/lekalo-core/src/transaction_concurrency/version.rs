@@ -12,13 +12,13 @@
 pub const FAMILY: &str = "dev.lekalo.transaction-concurrency";
 
 /// The exact transaction-concurrency contract version.
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "0.2.16";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.transaction-concurrency@1.0.0";
+pub const IDENTITY: &str = "dev.lekalo.transaction-concurrency@0.2.16";
 
 /// The exact wire discriminator of the transaction-concurrency contract.
-pub const SCHEMA_VERSION: &str = "lekalo/transaction-concurrency/v1.0.0";
+pub const SCHEMA_VERSION: &str = "lekalo/transaction-concurrency/v0.2.16";
 
 /// The maximum number of operation contracts one attachment may carry.
 pub const MAX_OPERATIONS: usize = 10_000;
@@ -79,8 +79,8 @@ mod tests {
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
         assert_eq!(FAMILY, "dev.lekalo.transaction-concurrency");
-        assert_eq!(VERSION, "1.0.0");
-        assert_eq!(SCHEMA_VERSION, "lekalo/transaction-concurrency/v1.0.0");
+        assert_eq!(VERSION, "0.2.16");
+        assert_eq!(SCHEMA_VERSION, "lekalo/transaction-concurrency/v0.2.16");
     }
 
     #[test]

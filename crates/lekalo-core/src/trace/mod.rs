@@ -2,7 +2,7 @@
 //!
 //! A read-only, typed validation of the requirement -> symbol ->
 //! binding/artifact -> scenario/native-test -> gate chain, expressed in
-//! the closed `lekalo/trace-manifest/v1.0.0` wire. Lekalo owns the
+//! the closed `lekalo/trace-manifest/v0.2.16` wire. Lekalo owns the
 //! contract, the typed validation semantics, the canonical writer, and
 //! the derived reverse queries; persisted `trace.manifest` instances
 //! remain AI Factory-owned direct evidence under the accepted authority

@@ -114,7 +114,7 @@ pub(crate) fn from_value(json: &Json) -> Result<InvariantTransitionAttachment, D
         object
             .get("irRef")
             .ok_or_else(|| diagnostic::input_invalid("ir-ref"))?,
-        "dev.lekalo.ir@0.1.0",
+        "dev.lekalo.ir@0.2.16",
     )?;
     let source_map_ref = match object.get("sourceMapRef") {
         Some(value) => Some(
@@ -190,8 +190,7 @@ fn model_pin(json: &Json) -> Result<ModelPin, DiagnosticSet> {
         .and_then(Json::as_str)
         .ok_or_else(|| diagnostic::input_invalid("model-version"))?;
     let pin = match pin_version {
-        "0.1.0" => crate::scenario::ModelPin::V0_1_0,
-        "1.0.0" => crate::scenario::ModelPin::V1_0_0,
+        "0.2.16" => crate::scenario::ModelPin::Current,
         _ => return Err(diagnostic::input_invalid("model-version")),
     };
     let digest = Sha256Digest::parse(

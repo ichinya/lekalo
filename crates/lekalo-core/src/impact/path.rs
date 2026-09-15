@@ -61,7 +61,7 @@ pub fn path_id(root: &NodeId, subject: &NodeId, ordered_edges: &[String]) -> Str
         canonical.push('|');
         canonical.push_str(edge);
     }
-    let hex = crate::versioning::plan::sha256_hex(canonical.as_bytes());
+    let hex = crate::digest::sha256_hex(canonical.as_bytes());
     format!("impact.path.{}", &hex[..16])
 }
 
@@ -138,7 +138,7 @@ mod tests {
             crate::graph::model::EdgeProvenance::AdapterEvidence {
                 adapter_id: "test.adapter/edge".to_owned(),
                 target_id: "test.target/edge".to_owned(),
-                protocol_version: "1.0.0".to_owned(),
+                protocol_version: "0.2.16".to_owned(),
                 evidence_digest: format!("sha256:{}", "0".repeat(64)),
                 evidence_status: "fresh".to_owned(),
             },

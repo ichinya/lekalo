@@ -1,5 +1,7 @@
 # ADR-0004: Lekalo Model v0.1
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Status: issue #3 is accepted and published as product 0.1.3 at exact commit `9c35c8f61a87e89ed15471e7f12012946916e8d5`, with immutable annotated tag `v0.1.3`; issue #6 is only the prospective product 0.1.4 candidate until fresh independent PASS, publication, remote verification and closure evidence. Product versions remain independent from Model, schema, semantic-ID, IR and other contract versions.
 
 Date: 2026-08-31
@@ -15,9 +17,9 @@ be equally usable from TypeScript, PHP and Go targets.
 
 ## Decision
 
-The proposed contract is [`contracts/model.schema.v0.1.0.json`](../../contracts/model.schema.v0.1.0.json)
-(`$id https://lekalo.dev/schemas/model/0.1.0/schema.json`, `schema_version`
-const `0.1.0`) with [`scripts/check-model.mjs`](../../scripts/check-model.mjs) as the reference validator,
+The proposed contract is [`contracts/model.schema.v0.2.16.json`](../../contracts/model.schema.v0.2.16.json)
+(`$id https://lekalo.dev/schemas/model/0.2.16/schema.json`, `schema_version`
+const `0.2.16`) with [`scripts/check-model.mjs`](../../scripts/check-model.mjs) as the reference validator,
 `tests/fixtures/model/valid-planner` as the example model and twelve
 invalid fixtures. The closed decisions:
 

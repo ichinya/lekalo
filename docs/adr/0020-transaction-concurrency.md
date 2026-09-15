@@ -1,5 +1,7 @@
 # ADR-0020: Transaction and concurrency contracts
 
+> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+
 Date: 2026-09-06
 Status: accepted for issue #24
 
@@ -11,8 +13,8 @@ the candidate was published as product 0.1.27 (annotated tag `v0.1.27` on
 `ef7680d`); issue #18 published product 0.1.26 (annotated tag `v0.1.26` on
 `3710179`); issue #62 published product 0.1.29 (annotated tag `v0.1.29` on `de6f8a7`); issue #26 now carries the **prospective product candidate 0.1.30** in every accepted path.
 The transaction-concurrency contract version
-(`lekalo/transaction-concurrency/v1.0.0`, identity
-`dev.lekalo.transaction-concurrency@1.0.0`) is independent of the product
+(`lekalo/transaction-concurrency/v0.2.16`, identity
+`dev.lekalo.transaction-concurrency@0.2.16`) is independent of the product
 release, of the Model/IR/effect/Scenario contract versions, of the
 error-contract family, and of the diagnostic registry by design. The
 publication-order version may differ at integration; the coordinator
@@ -27,7 +29,7 @@ statement of **how effects commit under failure and concurrency**:
 transaction semantics, atomicity, optimistic and pessimistic control,
 idempotency, retry, partial failure, and compensation. Issue #24 owns that
 surface as one independent closed attachment, per the recorded research
-decision: Model v0.1.0 stays immutable, and no source syntax, runtime
+decision: Model v0.2.16 stays immutable, and no source syntax, runtime
 execution, adapter, or report surface is introduced here.
 
 The research briefs (run run_088695f63032: worker_done msg_d1571b168e39
@@ -38,9 +40,9 @@ msg_ec06240d2fd6) recorded the owner decisions this ADR adopts.
 
 ### 1. One closed, immutable wire contract
 
-[`contracts/transaction-concurrency.schema.v1.0.0.json`](../../contracts/transaction-concurrency.schema.v1.0.0.json)
-(discriminator `lekalo/transaction-concurrency/v1.0.0`, identity
-`dev.lekalo.transaction-concurrency@1.0.0`) is a closed Draft 2020-12
+[`contracts/transaction-concurrency.schema.v0.2.16.json`](../../contracts/transaction-concurrency.schema.v0.2.16.json)
+(discriminator `lekalo/transaction-concurrency/v0.2.16`, identity
+`dev.lekalo.transaction-concurrency@0.2.16`) is a closed Draft 2020-12
 document binding one project identity to one exact Model pin, one exact
 IR digest, and an optional effect-graph digest. Everything is typed
 qualified references and bounded enums; source text, physical paths,
@@ -190,12 +192,12 @@ identities stay with #62 (only opaque typed `errors.*/name` references
 are carried); #24 allocates no ErrorId, no ErrorCode, and no second
 diagnostic envelope.
 
-### 11. Diagnostics through the #11 seam: registry minor 1.5.0 → 1.6.0
+### 11. Diagnostics through the #11 seam: registry minor 1.5.0 → 0.2.16
 
 The contract adds its own rule family — reusing `graph.*` would blur
 contract families. The registry takes its next wire-shape-preserving
 minor increment to
-[`diagnostic-registry.v1.6.0.json`](../../contracts/diagnostic-registry.v1.6.0.json)
+[`diagnostic-registry.v0.2.16.json`](../../contracts/diagnostic-registry.v0.2.16.json)
 with `transaction.input-invalid`, `transaction.group-missing`,
 `transaction.group-overlap`, `transaction.external-atomic`,
 `transaction.partial-unacknowledged`, `transaction.export-limit`,

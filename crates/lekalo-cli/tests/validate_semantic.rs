@@ -118,9 +118,9 @@ fn valid_base_is_exit_zero_and_byte_identical_across_reruns() {
     let document: serde_json::Value =
         serde_json::from_str(stdout_text(&first).trim()).expect("envelope");
     assert_eq!(document["status"], "valid");
-    assert_eq!(document["modelVersion"], "0.1.0");
+    assert_eq!(document["modelVersion"], "0.2.16");
     assert_eq!(document["validation"]["profile"], "strict");
-    assert_eq!(document["validation"]["registryVersion"], "1.25.0");
+    assert_eq!(document["validation"]["registryVersion"], "0.2.16");
     assert_eq!(document["validation"]["counts"]["error"], 0);
 }
 
