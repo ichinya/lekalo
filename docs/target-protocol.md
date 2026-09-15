@@ -240,6 +240,33 @@ avoid reading host ancestors of the already link-free copied script. The
 reference adapter is a standalone Node script; Go/PHP/Rust target packages
 and the future generation CLI are not qualified by these tests.
 
+## The Node/TypeScript kernel adapter (issue #43)
+
+`adapters/node-typescript/adapter.mjs` is the concrete observed MVP
+target adapter (`lekalo-target-node-typescript`, product version 0.3.0):
+a dependency-free, read-only, single-file Node kernel. It implements the
+mandatory `describe` handshake at protocol 0.2.16 and nothing else on
+the wire: `scan` belongs to #44, native gates to #48, and generation to
+#45–#47, so its operation surface is exactly `["describe"]` and its five
+declared capability ids are all `unsupported`. A direct request to an
+unimplemented operation returns one valid `unsupported` error envelope
+(fixed code `operation-unsupported`), and core refuses undeclared
+operations before launch as usual.
+
+Its limits are contractual, not incidental: read roots never come from
+the wire (the v0.2.16 resolved profile carries digest/capability pairs,
+not roots) but from an injected internal resolved project profile whose
+roots are validated lexically and physically — links, junctions, and
+escapes included — before any extension callback runs. Extension
+evidence is preserved completely in the internal envelope and a
+local-only sink; the closed public wire carries only what it can
+represent, and refuses lossy projections instead of truncating. Node
+runtime versions are reported by a local `--version-json` probe, not by
+the handshake, which has no slot for them. The strict conformance
+profile therefore fails `capability.surface` for this adapter by
+design; the applicable default-profile rows pass. Adding operations or
+wire members remains separately owned contract work.
+
 ## Failure classification and integration
 
 | Failure | Public status / exit / stream |

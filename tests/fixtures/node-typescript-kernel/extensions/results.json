@@ -1,0 +1,111 @@
+{
+  "comment": "Synthetic scanner/runner outcomes for the injected dispatch boundary. Every value is invented fixture vocabulary; no real consumer, URL, credential, or absolute path. The runner fake attaches via the same seam as the scanner fake and exercises framing only.",
+  "scanner": {
+    "complete": {
+      "state": "complete",
+      "data": {
+        "complete": true,
+        "entries": [
+          { "path": "src/example.ts", "kind": "source", "detail": "fixture symbol s=exported function" },
+          { "path": "test/example.test.ts", "kind": "source", "detail": "fixture harness" }
+        ]
+      },
+      "evidence": {
+        "revision": "fixture-scan-revision-0001",
+        "freshness": "current",
+        "confidence": "high",
+        "provenance": { "origin": "declared", "disposition": "public-fixture" },
+        "sourceSpans": [
+          { "path": "src/example.ts", "startLine": 5, "startColumn": 1, "endLine": 7, "endColumn": 2, "convention": "1-based-1-based" }
+        ],
+        "localReference": { "kind": "internal-symbol", "value": "fixtureGreeting" }
+      },
+      "diagnostics": []
+    },
+    "partial": {
+      "state": "partial",
+      "data": {
+        "complete": false,
+        "entries": [
+          { "path": "src/example.ts", "kind": "source", "detail": "fixture partial" }
+        ]
+      },
+      "evidence": { "revision": "fixture-scan-revision-0002", "freshness": "stale", "confidence": "low" },
+      "diagnostics": [{ "reason": "fixture-read-interrupted", "detail": "synthetic interruption" }]
+    },
+    "unknown": {
+      "state": "unknown",
+      "data": null,
+      "evidence": { "revision": "fixture-scan-revision-0003", "freshness": "unknown", "confidence": "unknown" },
+      "diagnostics": [{ "reason": "fixture-uninspectable", "detail": "synthetic dependency" }]
+    },
+    "ambiguous": {
+      "state": "complete",
+      "data": {
+        "complete": false,
+        "entries": [],
+        "candidates": [
+          { "path": "src/a.ts", "kind": "source" },
+          { "path": "src/b.ts", "kind": "source" }
+        ],
+        "reasons": ["fixture-colliding-declaration"]
+      },
+      "evidence": { "revision": "fixture-scan-revision-0004", "freshness": "current", "confidence": "medium" },
+      "diagnostics": [{ "reason": "fixture-ambiguous", "detail": "two synthetic candidates" }]
+    },
+    "malformed": {
+      "state": "complete",
+      "data": {
+        "complete": true,
+        "entries": [
+          { "path": "../escape.ts", "kind": "source" }
+        ]
+      },
+      "evidence": null,
+      "diagnostics": null
+    },
+    "error": {
+      "state": "failed",
+      "data": null,
+      "evidence": { "revision": "fixture-scan-revision-0005" },
+      "diagnostics": [{ "reason": "fixture-conflict", "detail": "synthetic controlled conflict" }]
+    },
+    "localOnlyCanary": {
+      "state": "complete",
+      "data": {
+        "complete": true,
+        "entries": [
+          { "path": "src/example.ts", "kind": "source", "detail": "fixture canary" }
+        ]
+      },
+      "evidence": {
+        "revision": "fixture-scan-revision-0006",
+        "localReference": { "kind": "canary", "value": "LOCAL-ONLY-CANARY-4f2a" }
+      },
+      "diagnostics": []
+    }
+  },
+  "runner": {
+    "complete": {
+      "state": "complete",
+      "data": {
+        "complete": true,
+        "entries": [
+          { "path": "test/example.test.ts", "kind": "harness", "detail": "fixture framing only" }
+        ]
+      },
+      "evidence": {
+        "revision": "fixture-run-revision-0001",
+        "freshness": "current",
+        "confidence": "high"
+      },
+      "diagnostics": []
+    },
+    "declined": {
+      "state": "unsupported",
+      "data": null,
+      "evidence": { "revision": "fixture-run-revision-0002" },
+      "diagnostics": [{ "reason": "fixture-runner-absent", "detail": "no runner in #43" }]
+    }
+  }
+}
