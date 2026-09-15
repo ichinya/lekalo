@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://dev.lekalo/target-protocol.schema.v0.2.16.json",
+  "$id": "https://dev.lekalo/target-protocol.schema.v0.3.1.json",
   "title": "Lekalo Target Protocol",
-  "description": "Closed wire contract for the lekalo.target/v1 process protocol that connects the Lekalo core to external target adapters running as separate executables in any language; one request on stdin or a bounded temporary file, one response envelope on stdout, diagnostics and logs on stderr only, with version and capability negotiation over the describe handshake, deterministic request identifiers, declared output plans verified against observed writes, and the infrastructure/protocol/operation error classification. Version 0.2.16 additively extends the describe response capabilities with declared IR contract versions, named capability support states, and optional declared constraints. Version 0.2.16 additively extends the request envelopes with the resolved profile digest and capability snapshot, so operations that carry a target profile carry its negotiated capabilities instead of arbitrary YAML; envelopes negotiate 0.2.16, 0.2.16, or 0.2.16, the resolved profile members are legal only on a 0.2.16 request together with a profile token, and the v0.2.16 and v0.2.16 documents keep their exact published meanings.",
+  "description": "Closed wire contract for the lekalo.target/v1 process protocol that connects the Lekalo core to external target adapters running as separate executables in any language; one request on stdin or a bounded temporary file, one response envelope on stdout, diagnostics and logs on stderr only, with version and capability negotiation over the describe handshake, deterministic request identifiers, declared output plans verified against observed writes, and the infrastructure/protocol/operation error classification. Version 0.3.1 additively extends the describe response capabilities with declared IR contract versions, named capability support states, and optional declared constraints. Version 0.3.1 additively extends the scan result entries with a closed typed evidence member (structural signature digest and outbound references). Version 0.3.1 additively extends the request envelopes with the resolved profile digest and capability snapshot, so operations that carry a target profile carry its negotiated capabilities instead of arbitrary YAML; envelopes negotiate 0.3.1, 0.3.1, or 0.3.1, the resolved profile members are legal only on a 0.3.1 request together with a profile token, and the v0.3.1 and v0.3.1 documents keep their exact published meanings.",
   "type": "object",
   "oneOf": [
     {
@@ -19,9 +19,9 @@
     "protocolVersion": {
       "type": "string",
       "enum": [
-        "0.2.16",
-        "0.2.16",
-        "0.2.16"
+        "0.3.1",
+        "0.3.1",
+        "0.3.1"
       ]
     },
     "operation": {
@@ -361,6 +361,9 @@
         },
         "detail": {
           "$ref": "#/$defs/detailToken"
+        },
+        "evidence": {
+          "$ref": "#/$defs/scanEntryEvidence"
         }
       }
     },
@@ -594,6 +597,60 @@
       "uniqueItems": true,
       "items": {
         "$ref": "#/$defs/profileCapability"
+      }
+    },
+    "scanEntryEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "signature": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "references": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/scanEntryReference"
+          }
+        }
+      }
+    },
+    "scanEntryReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "role",
+        "confidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,191}$",
+          "maxLength": 192
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "emit",
+            "call",
+            "reference"
+          ]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": [
+            "exact",
+            "high",
+            "medium",
+            "low",
+            "unknown"
+          ]
+        }
       }
     }
   }

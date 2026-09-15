@@ -2,7 +2,7 @@
 
 A dependency-free, read-only process kernel for the `lekalo.target/v1`
 protocol. Node built-ins only (`node:crypto`, `node:fs`, `node:path`),
-zero runtime dependencies, one physical file.
+no external runtime installation, one physical file.
 
 ## Invocation
 
@@ -50,9 +50,9 @@ intentionally not identical.
 - Adapter id: `lekalo-target-node-typescript`; version `0.3.0` (the
   reserved product version — not a protocol version); digest `sha256:`
   over the exact launched entry bytes, echoed on every response.
-- Protocol: `lekalo.target/v1`, the sole supported version `0.2.16`
+- Protocol: `lekalo.target/v1`, the sole supported version `0.3.1`
   (exact membership; no ranges, aliases, or fallbacks).
-- **Node runtime versions are not in the handshake.** The v0.2.16
+- **Node runtime versions are not in the handshake.** The v0.3.1
   describe response has no slot for them (and rejects `result`/
   `progress` there). They are reported by the local
   `--version-json` probe (exact `process.versions.node`, adapter
@@ -62,7 +62,7 @@ intentionally not identical.
 
 ## Profile authority
 
-The wire's resolved profile (v0.2.16) is a token plus digest/capability
+The wire's resolved profile (v0.3.1) is a token plus digest/capability
 pairs — it carries **no read roots**. Roots therefore come exclusively
 from the injected internal `ResolvedProjectProfile`
 (`createKernel({ resolvedProjectProfile })`), a separate in-process
@@ -124,7 +124,7 @@ boundary against malicious imported JavaScript.
 Evidence (revision, provenance, confidence, freshness, full source
 spans, original local references, dynamic candidate sets) is preserved
 completely in the internal outcome and the local-only sink. The public
-wire carries only what the closed v0.2.16 contract can represent;
+wire carries only what the closed v0.3.1 contract can represent;
 partial/unknown/ambiguous outcomes surface as honest in-envelope
 errors (`partial: true` where partial work exists — there is no
 invented `status: "partial"`), and unrepresentable values are refused

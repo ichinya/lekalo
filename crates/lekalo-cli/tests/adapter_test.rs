@@ -72,7 +72,7 @@ fn the_reference_adapter_passes_with_a_human_verdict() {
     assert_eq!(exit_code(&output), 0);
     let stdout = stdout_text(&output);
     assert!(stdout.contains("verdict pass"), "{stdout}");
-    assert!(stdout.contains("badge verified protocol=0.2.16 ir=0.2.16"));
+    assert!(stdout.contains("badge verified protocol=0.3.1 ir=0.2.16"));
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn the_json_report_is_a_valid_envelope_with_an_issued_badge() {
         "lekalo/adapter-conformance/v0.2.16"
     );
     assert_eq!(document["report"]["badge"]["issued"], true);
-    assert_eq!(document["report"]["badge"]["protocol"], "0.2.16");
+    assert_eq!(document["report"]["badge"]["protocol"], "0.3.1");
 }
 
 #[test]

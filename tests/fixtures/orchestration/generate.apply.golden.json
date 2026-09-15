@@ -4,7 +4,7 @@
   "mode": "apply",
   "identity": "dev.lekalo.orchestration-report@0.2.16",
   "project": "planner",
-  "lockDigest": "sha256:9cdd7a7004f8763e3ba6e662d5ec520e6178edfdcf84a603b825baaa6204a459",
+  "lockDigest": "sha256:aaf31843adce665c2a78eb47b995dbce6aeac2b8dd2c4f1f756cc69603e5ab4c",
   "locked": false,
   "inputs": {
     "modelVersion": "0.2.16",
@@ -27,8 +27,8 @@
       "profile": "default",
       "adapter": {
         "id": "node-typescript",
-        "version": "0.2.16",
-        "digest": "sha256:a9da0d1efce322f3dad4dfa0124044d2ed9649632dae3716b5249cb0be9ed518"
+        "version": "0.3.1",
+        "digest": "sha256:fbafe2773d6edf6f01f03d2518bdc87ad841dcc124e5b827cbfc1bb31a0c343f"
       },
       "state": "applied",
       "reasonCode": null,
@@ -37,10 +37,10 @@
         {
           "path": "src/generated/node-typescript/planner.ts",
           "action": "create",
-          "sha256": "sha256:a575cbf30a7de66e6b1c8810d5dfffd3207ca8a7df769bc2d238028d153bb7b9"
+          "sha256": "sha256:ddf82a49f327384f34cee34ce3674fe86f426672f5ba79ea0bcc512509c2bd47"
         }
       ],
-      "manifestDigest": "sha256:e07f4040bc3b9ee4c45c571eff5cfca227c819496ccdf08cfb35ff8480275bca"
+      "manifestDigest": "sha256:1631e734115ddd258153cbb4bfa8164b96172938566f6a6dfc347dc2bd2dd51b"
     }
   ],
   "counts": {

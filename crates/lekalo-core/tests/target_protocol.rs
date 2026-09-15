@@ -117,7 +117,7 @@ fn full_handshake_negotiates_the_published_protocol() {
         .capabilities
         .protocol_versions
         .iter()
-        .any(|v| v == "0.2.16"));
+        .any(|v| v == lekalo_core::target_protocol::version::VERSION));
     assert_eq!(outcome.capabilities.operations.len(), 8);
     assert!(outcome.capability_digest.starts_with("sha256:"));
 }

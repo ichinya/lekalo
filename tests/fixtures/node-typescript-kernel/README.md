@@ -22,7 +22,7 @@ Inventory (closed):
 | `project/package.json` | Poison tripwire package scripts; never read or run. |
 | `profiles/standalone.valid.json` | The explicit internal resolved project profile (`src/**`, `test/**` tree roots). |
 | `profiles/invalid.json` | Named invalid profiles: traversal, absolute/UNC/drive, sibling-prefix, digest/capability mismatches. |
-| `requests/describe.json` | One valid protocol 0.2.16 describe request with a deterministic request id. |
+| `requests/describe.json` | One valid protocol 0.3.1 describe request with a deterministic request id. |
 | `requests/invalid.json` | Raw request byte vectors: duplicate keys, invalid UTF-8, two documents, unknown keys. |
 | `extensions/results.json` | Synthetic scanner/runner outcomes: complete, partial, unknown, ambiguous, malformed, error, local-only canary. |
 | `expected/normalization.json` | Expected normalized internal evidence and allowed public projection/refusal outcomes. |

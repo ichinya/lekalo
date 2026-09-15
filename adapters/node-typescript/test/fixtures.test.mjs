@@ -70,7 +70,7 @@ function kernelWithFixtureOutcome(kind, sink) {
 
 const scanRequest = {
   protocol: "lekalo.target/v1",
-  protocol_version: "0.2.16",
+  protocol_version: "0.3.1",
   operation: "scan",
   request_id: REQUEST_ID,
   project_root: ".",

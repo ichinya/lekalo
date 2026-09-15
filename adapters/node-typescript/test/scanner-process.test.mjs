@@ -48,7 +48,7 @@ test("an invalid launch profile fails the launch with bounded stderr", () => {
 function scanRequest() {
   return {
     protocol: "lekalo.target/v1",
-    protocol_version: "0.2.16",
+    protocol_version: "0.3.1",
     operation: "scan",
     request_id: deterministicDescribeRequest().request_id,
     project_root: ".",

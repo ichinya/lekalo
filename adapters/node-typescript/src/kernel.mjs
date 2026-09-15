@@ -68,7 +68,7 @@ import { fileURLToPath } from "node:url";
 /** The stable wire token of the protocol line (issue #27). */
 export const PROTOCOL_TOKEN = "lekalo.target/v1";
 /** The sole protocol version this kernel speaks (the current contract). */
-export const VERSION = "0.2.16";
+export const VERSION = "0.3.1";
 /** The closed supported-version set: exact membership, never ranges. */
 export const SUPPORTED_VERSIONS = Object.freeze([VERSION]);
 /** The adapter identity token. */

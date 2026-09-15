@@ -130,7 +130,7 @@ export function deterministicDescribeRequest() {
     operation: "describe",
     project_root: ".",
     protocol: "lekalo.target/v1",
-    protocol_version: "0.2.16",
+    protocol_version: "0.3.1",
     request_id: "req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c",
   };
 }

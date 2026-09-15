@@ -1,17 +1,17 @@
 {
   "comment": "Raw request byte vectors the kernel must refuse; duplicates and invalid UTF-8 must not be pre-parsed away. Each entry is a string of the exact bytes (\\u0000-style escapes are literal byte escapes applied by the test runner; entries marked utf8Invalid use the given byte array).",
   "cases": {
-    "duplicate-key": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.2.16\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\",\"operation\":\"scan\"}",
-    "duplicate-key-escaped-alias": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.2.16\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\",\"\\u006fperation\":\"scan\"}",
-    "explicit-null": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.2.16\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\",\"target\":null}",
-    "unknown-key": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.2.16\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\",\"workspace\":\"pnpm\"}",
+    "duplicate-key": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.1\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\",\"operation\":\"scan\"}",
+    "duplicate-key-escaped-alias": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.1\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\",\"\\u006fperation\":\"scan\"}",
+    "explicit-null": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.1\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\",\"target\":null}",
+    "unknown-key": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.1\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\",\"workspace\":\"pnpm\"}",
     "two-documents": "{\"protocol\":\"lekalo.target/v1\"} {\"protocol\":\"lekalo.target/v1\"}",
-    "trailing-json": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.2.16\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\"}[]",
-    "wrong-token": "{\"protocol\":\"lekalo.target/v0\",\"protocol_version\":\"0.2.16\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\"}",
+    "trailing-json": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.1\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\"}[]",
+    "wrong-token": "{\"protocol\":\"lekalo.target/v0\",\"protocol_version\":\"0.3.1\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\"}",
     "wrong-version": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.0\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\"}",
-    "describe-with-profile": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.2.16\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\",\"profile\":\"standalone\"}",
-    "bad-request-id": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.2.16\",\"operation\":\"describe\",\"request_id\":\"req-deadbeef\",\"project_root\":\".\"}",
-    "absolute-project-root": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.2.16\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\"abs/project\"}",
+    "describe-with-profile": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.1\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\".\",\"profile\":\"standalone\"}",
+    "bad-request-id": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.1\",\"operation\":\"describe\",\"request_id\":\"req-deadbeef\",\"project_root\":\".\"}",
+    "absolute-project-root": "{\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.1\",\"operation\":\"describe\",\"request_id\":\"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c\",\"project_root\":\"abs/project\"}",
     "syntax-error": "{\"protocol\":",
     "utf8-invalid": { "bytesBase64": "eyJwcm90b2NvbCI6ICJsZWthbG8udGFyZ2V0L3YxIiwgIm5vdGUiOiAi/ff/ZA==" }
   }

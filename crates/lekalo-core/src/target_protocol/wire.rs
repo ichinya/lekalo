@@ -5,7 +5,7 @@
 //! response envelopes are parsed and semantically validated here. Unknown
 //! members are rejected on both sides: the protocol is closed. Wire names
 //! are snake_case exactly as the issue specifies; the schema artifact
-//! `contracts/target-protocol.schema.v0.2.16.json` mirrors every bound.
+//! `contracts/target-protocol.schema.v0.3.1.json` mirrors every bound.
 
 use serde::{Deserialize, Serialize};
 
@@ -447,8 +447,8 @@ pub struct RequestEnvelope {
     )]
     pub profile: Option<String>,
     /// The resolved profile snapshot digest (`sha256:…`, issue #29,
-    /// protocol 0.2.16). Legal only on a 0.2.16 request and only together
-    /// with `profile_capabilities`; a 0.2.16 or 0.2.16 request carrying it
+    /// protocol 0.3.1). Legal only on a 0.3.1 request and only together
+    /// with `profile_capabilities`; a 0.3.1 or 0.3.1 request carrying it
     /// is refused so the frozen documents keep their exact meanings.
     #[serde(
         default,
@@ -457,7 +457,7 @@ pub struct RequestEnvelope {
     )]
     pub profile_digest: Option<String>,
     /// The resolved profile capability snapshot (issue #29, protocol
-    /// 0.2.16), sorted strictly by capability id: the negotiated
+    /// 0.3.1), sorted strictly by capability id: the negotiated
     /// capabilities an adapter receives instead of arbitrary YAML.
     #[serde(
         default,
@@ -513,18 +513,18 @@ pub struct Capabilities {
     #[serde(default)]
     pub progress: bool,
     /// The IR contract versions the adapter accepts (issue #28, protocol
-    /// 0.2.16). Absent on a 0.2.16 session: IR compatibility is then
+    /// 0.3.1). Absent on a 0.3.1 session: IR compatibility is then
     /// governed upstream by the #9 compatibility preflight, never
     /// guessed here.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ir_versions: Vec<String>,
     /// The named capability support states the adapter declares
-    /// (issue #28, protocol 0.2.16). Canonical byte order comes from the
+    /// (issue #28, protocol 0.3.1). Canonical byte order comes from the
     /// `BTreeMap`; an absent id is undeclared, never optimistically
     /// available.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub capabilities: std::collections::BTreeMap<String, SupportState>,
-    /// Optional declared constraints (issue #28, protocol 0.2.16).
+    /// Optional declared constraints (issue #28, protocol 0.3.1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub constraints: Option<AdapterConstraints>,
 }
@@ -569,7 +569,7 @@ pub struct AdapterConstraints {
     pub max_writes: Option<u64>,
 }
 
-/// One resolved profile capability carried on a 0.2.16 request (issue
+/// One resolved profile capability carried on a 0.3.1 request (issue
 /// #29): the support state the whole profile guarantees for the id.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -684,6 +684,56 @@ pub struct Finding {
     pub detail: Option<String>,
 }
 
+/// One typed evidence row of one scan entry (issue #44): an outbound
+/// semantic reference with the confidence the adapter claims.
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScanEntryReference {
+    pub target: String,
+    pub role: ScanEntryReferenceRole,
+    pub confidence: ScanEntryConfidence,
+}
+
+/// The closed role set of one scan entry reference.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScanEntryReferenceRole {
+    Read,
+    Create,
+    Update,
+    Delete,
+    Emit,
+    Call,
+    Reference,
+}
+
+/// The closed confidence set of one scan entry fact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScanEntryConfidence {
+    Exact,
+    High,
+    Medium,
+    Low,
+    Unknown,
+}
+
+/// The closed typed evidence of one scan entry (issue #44): the
+/// structural signature digest and up to eight outbound references.
+/// Missing members mean unknown, never absence.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScanEntryEvidence {
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<ScanEntryReference>,
+}
+
 /// One scan entry (scan results).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -696,6 +746,12 @@ pub struct ScanEntry {
         skip_serializing_if = "Option::is_none"
     )]
     pub detail: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub evidence: Option<ScanEntryEvidence>,
 }
 
 /// One binding proposal (bind results).
@@ -1162,7 +1218,7 @@ mod tests {
         request.profile_capabilities = Some(resolution.capabilities.clone());
         assert!(
             validate_request(&request).is_ok(),
-            "legal on a 0.2.16 request"
+            "legal on a 0.3.1 request"
         );
 
         // Pair rule: one member without the other is invalid.

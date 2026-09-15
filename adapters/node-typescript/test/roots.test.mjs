@@ -64,7 +64,7 @@ function kernelWithCounters(permittedRoot, profile, extraRoots = []) {
 
 const scanRequest = (requestId) => ({
   protocol: "lekalo.target/v1",
-  protocol_version: "0.2.16",
+  protocol_version: "0.3.1",
   operation: "scan",
   request_id: requestId,
   project_root: ".",
@@ -224,7 +224,7 @@ test("the runner fake attaches independently and its counters stay zero on refus
   const requestId = "req-" + "d".repeat(64);
   const verifyRequest = {
     protocol: "lekalo.target/v1",
-    protocol_version: "0.2.16",
+    protocol_version: "0.3.1",
     operation: "verify",
     request_id: requestId,
     project_root: ".",

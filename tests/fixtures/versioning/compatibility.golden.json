@@ -32,13 +32,13 @@
     },
     {
       "family": "protocol",
-      "current": "0.2.16",
-      "min": "0.2.16",
-      "max": "0.2.16",
+      "current": "0.3.1",
+      "min": "0.3.1",
+      "max": "0.3.1",
       "aliases": [],
       "versions": [
         {
-          "version": "0.2.16",
+          "version": "0.3.1",
           "state": "supported",
           "classification": "breaking"
         }

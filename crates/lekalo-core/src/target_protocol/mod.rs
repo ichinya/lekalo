@@ -5,7 +5,7 @@
 //! the client side of the published `lekalo.target/v1` process protocol:
 //!
 //! - the closed wire envelopes ([`wire`]) and their schema artifact
-//!   `contracts/target-protocol.schema.v0.2.16.json`;
+//!   `contracts/target-protocol.schema.v0.3.1.json`;
 //! - the direct, shell-free process transport with deadline, cancellation,
 //!   and output-size limits ([`transport`]);
 //! - scope grammar, protected canonical homes, and coverage checks
@@ -42,7 +42,7 @@ use wire::{Operation, RequestEnvelope, ResponseEnvelope, ResponseInvalidity, Res
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DescribeOutcome {
     /// The capabilities the adapter declared (identity, versions,
-    /// operations, transports, scopes, and — on a 0.2.16 session — IR
+    /// operations, transports, scopes, and — on a 0.3.1 session — IR
     /// versions, named capability support states, and constraints).
     pub capabilities: wire::Capabilities,
     /// The digest over the canonical capability bytes: the evidence anchor
@@ -76,7 +76,7 @@ pub struct CallRequest<'a> {
     pub target: Option<&'a str>,
     pub profile: Option<&'a str>,
     /// The resolved profile snapshot the operation binds to (issue #29).
-    /// Only a session negotiated at protocol 0.2.16 accepts it; on older
+    /// Only a session negotiated at protocol 0.3.1 accepts it; on older
     /// sessions the caller is refused instead of silently dropping the
     /// resolution, so an adapter always receives negotiated capabilities
     /// or nothing.
@@ -380,7 +380,7 @@ impl TargetClient {
         {
             return Err(TargetFailure::IrUnsupported);
         }
-        // A resolved profile (issue #29) is bound to 0.2.16 sessions only:
+        // A resolved profile (issue #29) is bound to 0.3.1 sessions only:
         // an older session refuses the caller rather than silently
         // dropping the resolution.
         if request.profile_resolution.is_some() && described.negotiated_version != version::VERSION
