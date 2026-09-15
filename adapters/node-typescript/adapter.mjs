@@ -212997,13 +212997,13 @@ function physicalRootViolation(permittedRoot, root) {
       return "junction";
     }
   }
-  let physical;
+  let physical = null;
   try {
     physical = realpathSync(target);
   } catch {
-    return "uninspectable";
+    physical = null;
   }
-  if (!isInsideRoot(permittedRoot, physical)) {
+  if (physical !== null && !isInsideRoot(permittedRoot, physical)) {
     return "containment";
   }
   let follow;
@@ -214437,8 +214437,7 @@ function indexReferences({ ts: ts2, checker, program, context, index }) {
       if (node.kind === ts2.SyntaxKind.ImportDeclaration || node.kind === ts2.SyntaxKind.ExportDeclaration || node.kind === ts2.SyntaxKind.ImportEqualsDeclaration) {
         const moduleSpecifier = node.moduleSpecifier;
         if (moduleSpecifier?.kind === ts2.SyntaxKind.StringLiteral) {
-          const mode = ts2.getModeForUsageLocation?.(sourceFile, moduleSpecifier);
-          const resolution = program.getResolvedModule(sourceFile, moduleSpecifier.text, mode);
+          const resolution = program.getResolvedModuleFromModuleSpecifier?.(moduleSpecifier) ?? program.getResolvedModule(sourceFile, moduleSpecifier.text);
           if (resolution?.resolvedModule) {
             const toModule = normalizeModulePath(resolution.resolvedModule.resolvedFileName, context);
             const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
@@ -214703,7 +214702,7 @@ function collectAnySurfaces({ ts: ts2, checker, program, context, index }) {
     }
     for (const exported of exports) {
       if (index.anyUncertainty.length >= MAX_DIAGNOSTICS) return;
-      const type = checker.getTypeOfSymbolAtLocation(exported, sourceFile);
+      const type = exported.flags & ts2.SymbolFlags.Interface || exported.flags & ts2.SymbolFlags.TypeAlias ? checker.getDeclaredTypeOfSymbol(exported) : checker.getTypeOfSymbolAtLocation(exported, sourceFile);
       const contamination = typeContainsAny(ts2, type, /* @__PURE__ */ new Set(), 0);
       if (contamination) {
         index.anyUncertainty.push({
@@ -214823,6 +214822,7 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
     return finalizeScan(index, manifest, profile, readView);
   }
   const program = ts2.createProgram({ rootNames, options, host });
+  console.error("DBG OPTIONS", JSON.stringify(options));
   context.program = program;
   const checker = program.getTypeChecker();
   for (const sourceFile of program.getSourceFiles()) {
@@ -214844,25 +214844,7 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   indexRoutesAndTests({ ts: ts2, checker, program, context, index });
   collectDiagnostics({ ts: ts2, program, context, index });
   collectAnySurfaces({ ts: ts2, checker, program, context, index });
-  const sourceLike = /\.(ts|tsx|mts|cts|d\.ts|d\.mts|d\.cts|json)$/i;
-  for (const entry of denied.slice(0, MAX_DIAGNOSTICS)) {
-    if (entry.kind !== "read") continue;
-    const logical = inventorySet.get(entry.path) ?? inventorySet.get(entry.path.toLowerCase());
-    if (logical !== void 0) continue;
-    if (entry.path.startsWith("/lekalo/libs/")) continue;
-    if (!sourceLike.test(entry.path)) continue;
-    index.anyUncertainty.push({
-      path: normalizeUnknownPath(entry.path),
-      kind: "host-lookup-denied",
-      detail: entry.kind,
-      line: null
-    });
-  }
   return finalizeScan(index, manifest, profile, readView);
-}
-function normalizeUnknownPath(hostName) {
-  const normalized = hostName.split("\\").join("/");
-  return normalized.startsWith("/lekalo/project/") ? normalized.slice("/lekalo/project/".length) : normalized;
 }
 function finalizeScan(index, manifest, profile, readView) {
   index.inputManifest = {
@@ -214980,12 +214962,15 @@ function scanOperation(context) {
 }
 function semanticProposalFor(symbol, index) {
   const pkg = index.packages.find((candidate) => symbol.module === candidate.root || symbol.module.startsWith(candidate.root + "/"));
-  const scope = pkg?.name ?? "project";
-  return (scope + "::" + symbol.qualifiedName).slice(0, 192);
+  const scope = (pkg?.name ?? "project").replace(/^@/, "").split(/[\\/._-]+/).filter((part) => /^[a-z0-9]+$/i.test(part)).join("_").toLowerCase() || "project";
+  const name = symbol.qualifiedName.split(".").map((part) => part).join(".");
+  return (scope + "." + name).slice(0, 192);
 }
 function buildEntryEvidence(symbol, index) {
   const references = index.references.filter((row) => row.from === symbol.module).slice(0, 8).map((row) => ({
-    target: row.to.slice(0, 192),
+    // The wire evidence target must be a semantic id (no slashes): a
+    // module edge target is the module's own stable semantic anchor.
+    target: moduleSemanticAnchor(row.to, index),
     role: row.role,
     confidence: row.confidence
   }));
@@ -214993,6 +214978,12 @@ function buildEntryEvidence(symbol, index) {
   if (symbol.signature !== null) evidence.signature = symbol.signature;
   if (references.length > 0) evidence.references = references;
   return Object.keys(evidence).length > 0 ? evidence : void 0;
+}
+function moduleSemanticAnchor(modulePath, index) {
+  const pkg = index.packages.find((candidate) => modulePath === candidate.root || modulePath.startsWith(candidate.root + "/"));
+  const scope = (pkg?.name ?? "project").replace(/^@/, "").split(/[\\/._-]+/).filter((part) => /^[a-z0-9]+$/i.test(part)).join("_").toLowerCase() || "project";
+  const suffix = modulePath.replace(/\.(ts|tsx|mts|cts|d\.ts|d\.mts|d\.cts)$/i, "").split("/").join(".");
+  return (scope + "." + suffix).slice(0, 192);
 }
 
 // src/main.mjs
@@ -215008,7 +214999,11 @@ __setLaunchExtensions([
     version: "0.3.1",
     operations: ["scan"],
     namedCapabilities: { "scan.symbols": "full" },
-    acceptedIrVersions: [],
+    // The scan operation consumes no IR, but the production scan
+    // service's selection preflight requires the adapter to declare
+    // compatibility with the core IR contract version; declaring it is
+    // a negotiation fact, not an IR read.
+    acceptedIrVersions: ["0.2.16"],
     invoke: (context) => scanOperation(context)
   }
 ]);

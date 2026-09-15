@@ -636,7 +636,7 @@ impl TargetClient {
                     .unwrap_or(&[]);
                 wire::validate_writes(writes, scopes)?;
             }
-            return Err(TargetFailure::OperationFailed {
+                return Err(TargetFailure::OperationFailed {
                 class: error.class,
                 code: error.code.clone(),
                 partial: error.partial.unwrap_or(false),

@@ -133,7 +133,11 @@ kernel.__setLaunchExtensions([
     version: "0.3.1",
     operations: ["scan"],
     namedCapabilities: { "scan.symbols": "full" },
-    acceptedIrVersions: [],
+    // The scan operation consumes no IR, but the production scan
+    // service's selection preflight requires the adapter to declare
+    // compatibility with the core IR contract version; declaring it is
+    // a negotiation fact, not an IR read.
+    acceptedIrVersions: ["0.2.16"],
     invoke: (context) => scanner.scanOperation(context),
   },
 ]);

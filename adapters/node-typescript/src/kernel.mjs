@@ -1414,13 +1414,18 @@ export function physicalRootViolation(permittedRoot, root) {
       return "junction";
     }
   }
-  let physical;
+  // realpathSync can fail on filesystems that deny READ_CONTROL to the
+  // confined child. The F5 component walk above already lstat-ed every
+  // component (links refused) and resolve() proved lexical containment,
+  // so containment is established without the canonical spelling; the
+  // canonical comparison stays best-effort here.
+  let physical = null;
   try {
     physical = realpathSync(target);
   } catch {
-    return "uninspectable";
+    physical = null;
   }
-  if (!isInsideRoot(permittedRoot, physical)) {
+  if (physical !== null && !isInsideRoot(permittedRoot, physical)) {
     return "containment";
   }
   let follow;

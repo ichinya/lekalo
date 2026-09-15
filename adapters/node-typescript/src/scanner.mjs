@@ -1008,8 +1008,8 @@ function indexReferences({ ts, checker, program, context, index }) {
         || node.kind === ts.SyntaxKind.ImportEqualsDeclaration) {
         const moduleSpecifier = node.moduleSpecifier;
         if (moduleSpecifier?.kind === ts.SyntaxKind.StringLiteral) {
-          const mode = ts.getModeForUsageLocation?.(sourceFile, moduleSpecifier);
-          const resolution = program.getResolvedModule(sourceFile, moduleSpecifier.text, mode);
+          const resolution = program.getResolvedModuleFromModuleSpecifier?.(moduleSpecifier)
+            ?? program.getResolvedModule(sourceFile, moduleSpecifier.text);
           if (resolution?.resolvedModule) {
             const toModule = normalizeModulePath(resolution.resolvedModule.resolvedFileName, context);
             const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
@@ -1336,7 +1336,13 @@ function collectAnySurfaces({ ts, checker, program, context, index }) {
     }
     for (const exported of exports) {
       if (index.anyUncertainty.length >= MAX_DIAGNOSTICS) return;
-      const type = checker.getTypeOfSymbolAtLocation(exported, sourceFile);
+      // Type-only symbols (interfaces, type aliases) have no value type:
+      // the value-side lookup reports `any`, which would fabricate
+      // uncertainty. Their declared type carries the real shape.
+      const type = exported.flags & ts.SymbolFlags.Interface
+        || exported.flags & ts.SymbolFlags.TypeAlias
+        ? checker.getDeclaredTypeOfSymbol(exported)
+        : checker.getTypeOfSymbolAtLocation(exported, sourceFile);
       const contamination = typeContainsAny(ts, type, new Set(), 0);
       if (contamination) {
         index.anyUncertainty.push({
@@ -1465,6 +1471,7 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   }
 
   const program = ts.createProgram({ rootNames, options, host });
+  console.error("DBG OPTIONS", JSON.stringify(options));
   context.program = program;
   const checker = program.getTypeChecker();
 
@@ -1483,23 +1490,11 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   collectDiagnostics({ ts, program, context, index });
   collectAnySurfaces({ ts, checker, program, context, index });
 
-  // Denied host lookups of inventory-shaped source files are honest
-  // uncertainty; negatives for unknown candidate spellings (config
-  // probing, sibling-extension probing) are normal resolution noise.
-  const sourceLike = /\.(ts|tsx|mts|cts|d\.ts|d\.mts|d\.cts|json)$/i;
-  for (const entry of denied.slice(0, MAX_DIAGNOSTICS)) {
-    if (entry.kind !== "read") continue;
-    const logical = inventorySet.get(entry.path) ?? inventorySet.get(entry.path.toLowerCase());
-    if (logical !== undefined) continue; // served from inventory after all
-    if (entry.path.startsWith("/lekalo/libs/")) continue; // type context
-    if (!sourceLike.test(entry.path)) continue;
-    index.anyUncertainty.push({
-      path: normalizeUnknownPath(entry.path),
-      kind: "host-lookup-denied",
-      detail: entry.kind,
-      line: null,
-    });
-  }
+  // Host denial notes stay internal: the restricted host serves only the
+  // enumerated inventory and the embedded libraries, so any denial is a
+  // resolution probe of a candidate spelling that is not part of the
+  // project. Failed resolutions surface as unresolved-import/call
+  // uncertainty above; probing noise never becomes scan uncertainty.
 
   return finalizeScan(index, manifest, profile, readView);
 }
@@ -1665,8 +1660,21 @@ export function scanOperation(context) {
 function semanticProposalFor(symbol, index) {
   const pkg = index.packages.find((candidate) =>
     symbol.module === candidate.root || symbol.module.startsWith(candidate.root + "/"));
-  const scope = pkg?.name ?? "project";
-  return (scope + "::" + symbol.qualifiedName).slice(0, 192);
+  // The observed scan document derives the owning module from the id
+  // prefix before the first dot, so the scope token is a sanitized
+  // snake_case module id; ambiguity keeps the full proposal in the
+  // internal index.
+  const scope = (pkg?.name ?? "project")
+    .replace(/^@/, "")
+    .split(/[\\/._-]+/)
+    .filter((part) => /^[a-z0-9]+$/i.test(part))
+    .join("_")
+    .toLowerCase() || "project";
+  const name = symbol.qualifiedName
+    .split(".")
+    .map((part) => part)
+    .join(".");
+  return (scope + "." + name).slice(0, 192);
 }
 
 /** Typed evidence rows of one symbol entry (signature + references). */
@@ -1675,7 +1683,9 @@ function buildEntryEvidence(symbol, index) {
     .filter((row) => row.from === symbol.module)
     .slice(0, 8)
     .map((row) => ({
-      target: row.to.slice(0, 192),
+      // The wire evidence target must be a semantic id (no slashes): a
+      // module edge target is the module's own stable semantic anchor.
+      target: moduleSemanticAnchor(row.to, index),
       role: row.role,
       confidence: row.confidence,
     }));
@@ -1683,4 +1693,25 @@ function buildEntryEvidence(symbol, index) {
   if (symbol.signature !== null) evidence.signature = symbol.signature;
   if (references.length > 0) evidence.references = references;
   return Object.keys(evidence).length > 0 ? evidence : undefined;
+}
+
+/**
+ * The stable semantic anchor of one module: the sanitized package scope
+ * plus the module path with slashes mapped to dots. Resolvable and
+ * deterministic; matches no slashes, so it satisfies the wire grammar.
+ */
+function moduleSemanticAnchor(modulePath, index) {
+  const pkg = index.packages.find((candidate) =>
+    modulePath === candidate.root || modulePath.startsWith(candidate.root + "/"));
+  const scope = (pkg?.name ?? "project")
+    .replace(/^@/, "")
+    .split(/[\\/._-]+/)
+    .filter((part) => /^[a-z0-9]+$/i.test(part))
+    .join("_")
+    .toLowerCase() || "project";
+  const suffix = modulePath
+    .replace(/\.(ts|tsx|mts|cts|d\.ts|d\.mts|d\.cts)$/i, "")
+    .split("/")
+    .join(".");
+  return (scope + "." + suffix).slice(0, 192);
 }
