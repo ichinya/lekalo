@@ -1744,7 +1744,7 @@ var require_typescript = __commonJS({
         isSingleOrDoubleQuote: () => isSingleOrDoubleQuote,
         isSolutionConfig: () => isSolutionConfig,
         isSourceElement: () => isSourceElement,
-        isSourceFile: () => isSourceFile,
+        isSourceFile: () => isSourceFile2,
         isSourceFileFromLibrary: () => isSourceFileFromLibrary,
         isSourceFileJS: () => isSourceFileJS,
         isSourceFileNotJson: () => isSourceFileNotJson,
@@ -16057,7 +16057,7 @@ ${lanes.join("\n")}
         }
       }
       function isFunctionOrModuleBlock(node) {
-        return isSourceFile(node) || isModuleBlock(node) || isBlock(node) && isFunctionLike(node.parent);
+        return isSourceFile2(node) || isModuleBlock(node) || isBlock(node) && isFunctionLike(node.parent);
       }
       function isClassElement(node) {
         const kind = node.kind;
@@ -16785,7 +16785,7 @@ ${lanes.join("\n")}
           const res = callback(node);
           if (res === "quit") return void 0;
           if (res !== void 0) return res;
-          if (isSourceFile(node)) return void 0;
+          if (isSourceFile2(node)) return void 0;
           node = node.parent;
         }
       }
@@ -17825,7 +17825,7 @@ ${lanes.join("\n")}
           case 308:
             return isExternalModule(node.parent);
           case 269:
-            return isAmbientModule(node.parent.parent) && isSourceFile(node.parent.parent.parent) && !isExternalModule(node.parent.parent.parent);
+            return isAmbientModule(node.parent.parent) && isSourceFile2(node.parent.parent.parent) && !isExternalModule(node.parent.parent.parent);
         }
         return false;
       }
@@ -18677,7 +18677,7 @@ ${lanes.join("\n")}
           /*includeClassComputedPropertyName*/
           false
         );
-        return isSourceFile(container);
+        return isSourceFile2(container);
       }
       function getNewTargetContainer(node) {
         const container = getThisContainer(
@@ -19852,7 +19852,7 @@ ${lanes.join("\n")}
         return false;
       }
       function isDeclarationName(name) {
-        return !isSourceFile(name) && !isBindingPattern(name) && isDeclaration(name.parent) && name.parent.name === name;
+        return !isSourceFile2(name) && !isBindingPattern(name) && isDeclaration(name.parent) && name.parent.name === name;
       }
       function getDeclarationFromName(name) {
         const parent2 = name.parent;
@@ -24367,7 +24367,7 @@ ${lanes.join("\n")}
                     meaning & 2623475
                     /* ModuleMember */
                   ))) {
-                    if (isSourceFile(location) && location.commonJsModuleIndicator && !((_b = result.declarations) == null ? void 0 : _b.some(isJSDocTypeAlias))) {
+                    if (isSourceFile2(location) && location.commonJsModuleIndicator && !((_b = result.declarations) == null ? void 0 : _b.some(isJSDocTypeAlias))) {
                       result = void 0;
                     } else {
                       break loop;
@@ -24563,7 +24563,7 @@ ${lanes.join("\n")}
           }
           if (!result) {
             if (lastLocation) {
-              Debug.assertNode(lastLocation, isSourceFile);
+              Debug.assertNode(lastLocation, isSourceFile2);
               if (lastLocation.commonJsModuleIndicator && name === "exports" && meaning & lastLocation.symbol.flags) {
                 return lastLocation.symbol;
               }
@@ -29874,10 +29874,10 @@ ${lanes.join("\n")}
           setOriginal(node, source);
           return node;
         }
-        function cloneSourceFileWithChanges(source, statements, isDeclarationFile, referencedFiles, typeReferences, hasNoDefaultLib, libReferences) {
+        function cloneSourceFileWithChanges(source, statements, isDeclarationFile2, referencedFiles, typeReferences, hasNoDefaultLib, libReferences) {
           const node = cloneSourceFile(source);
           node.statements = createNodeArray(statements);
-          node.isDeclarationFile = isDeclarationFile;
+          node.isDeclarationFile = isDeclarationFile2;
           node.referencedFiles = referencedFiles;
           node.typeReferenceDirectives = typeReferences;
           node.hasNoDefaultLib = hasNoDefaultLib;
@@ -29885,8 +29885,8 @@ ${lanes.join("\n")}
           node.transformFlags = propagateChildrenFlags(node.statements) | propagateChildFlags(node.endOfFileToken);
           return node;
         }
-        function updateSourceFile2(node, statements, isDeclarationFile = node.isDeclarationFile, referencedFiles = node.referencedFiles, typeReferenceDirectives = node.typeReferenceDirectives, hasNoDefaultLib = node.hasNoDefaultLib, libReferenceDirectives = node.libReferenceDirectives) {
-          return node.statements !== statements || node.isDeclarationFile !== isDeclarationFile || node.referencedFiles !== referencedFiles || node.typeReferenceDirectives !== typeReferenceDirectives || node.hasNoDefaultLib !== hasNoDefaultLib || node.libReferenceDirectives !== libReferenceDirectives ? update(cloneSourceFileWithChanges(node, statements, isDeclarationFile, referencedFiles, typeReferenceDirectives, hasNoDefaultLib, libReferenceDirectives), node) : node;
+        function updateSourceFile2(node, statements, isDeclarationFile2 = node.isDeclarationFile, referencedFiles = node.referencedFiles, typeReferenceDirectives = node.typeReferenceDirectives, hasNoDefaultLib = node.hasNoDefaultLib, libReferenceDirectives = node.libReferenceDirectives) {
+          return node.statements !== statements || node.isDeclarationFile !== isDeclarationFile2 || node.referencedFiles !== referencedFiles || node.typeReferenceDirectives !== typeReferenceDirectives || node.hasNoDefaultLib !== hasNoDefaultLib || node.libReferenceDirectives !== libReferenceDirectives ? update(cloneSourceFileWithChanges(node, statements, isDeclarationFile2, referencedFiles, typeReferenceDirectives, hasNoDefaultLib, libReferenceDirectives), node) : node;
         }
         function createBundle(sourceFiles) {
           const node = createBaseNode(
@@ -30025,7 +30025,7 @@ ${lanes.join("\n")}
           if (node === void 0) {
             return node;
           }
-          if (isSourceFile(node)) {
+          if (isSourceFile2(node)) {
             return cloneSourceFile(node);
           }
           if (isGeneratedIdentifier(node)) {
@@ -32771,7 +32771,7 @@ ${lanes.join("\n")}
       function isEnumMember(node) {
         return node.kind === 307;
       }
-      function isSourceFile(node) {
+      function isSourceFile2(node) {
         return node.kind === 308;
       }
       function isBundle(node) {
@@ -33357,12 +33357,12 @@ ${lanes.join("\n")}
         );
       }
       function getExternalHelpersModuleName(node) {
-        const parseNode = getOriginalNode(node, isSourceFile);
+        const parseNode = getOriginalNode(node, isSourceFile2);
         const emitNode = parseNode && parseNode.emitNode;
         return emitNode && emitNode.externalHelpersModuleName;
       }
       function hasRecordedExternalHelpers(sourceFile) {
-        const parseNode = getOriginalNode(sourceFile, isSourceFile);
+        const parseNode = getOriginalNode(sourceFile, isSourceFile2);
         const emitNode = parseNode && parseNode.emitNode;
         return !!emitNode && (!!emitNode.externalHelpersModuleName || !!emitNode.externalHelpers);
       }
@@ -33396,7 +33396,7 @@ ${lanes.join("\n")}
                     helperFactory.getUnscopedHelperName(name)
                   ))
                 );
-                const parseNode = getOriginalNode(sourceFile, isSourceFile);
+                const parseNode = getOriginalNode(sourceFile, isSourceFile2);
                 const emitNode = getOrCreateEmitNode(parseNode);
                 emitNode.externalHelpers = true;
                 const externalHelpersImportDeclaration = nodeFactory.createImportDeclaration(
@@ -33452,7 +33452,7 @@ ${lanes.join("\n")}
         }
         const create = some(helpers) || (hasExportStarsToExportValues || getESModuleInterop(compilerOptions) && hasImportStarOrImportDefault) && getEmitModuleFormatOfFileWorker(node, compilerOptions) < 4;
         if (create) {
-          const parseNode = getOriginalNode(node, isSourceFile);
+          const parseNode = getOriginalNode(node, isSourceFile2);
           const emitNode = getOrCreateEmitNode(parseNode);
           return emitNode.externalHelpersModuleName || (emitNode.externalHelpersModuleName = factory2.createUniqueName(externalHelpersModuleNameText));
         }
@@ -35533,8 +35533,8 @@ ${lanes.join("\n")}
           topLevel = true;
         }
         function parseSourceFileWorker(languageVersion2, setParentNodes, scriptKind2, setExternalModuleIndicator2, jsDocParsingMode) {
-          const isDeclarationFile = isDeclarationFileName(fileName);
-          if (isDeclarationFile) {
+          const isDeclarationFile2 = isDeclarationFileName(fileName);
+          if (isDeclarationFile2) {
             contextFlags |= 33554432;
           }
           sourceFlags = contextFlags;
@@ -35546,7 +35546,7 @@ ${lanes.join("\n")}
           );
           const endHasJSDoc = hasPrecedingJSDocComment();
           const endOfFileToken = withJSDoc(parseTokenNode(), endHasJSDoc);
-          const sourceFile = createSourceFile2(fileName, languageVersion2, scriptKind2, isDeclarationFile, statements, endOfFileToken, sourceFlags, setExternalModuleIndicator2);
+          const sourceFile = createSourceFile2(fileName, languageVersion2, scriptKind2, isDeclarationFile2, statements, endOfFileToken, sourceFlags, setExternalModuleIndicator2);
           processCommentPragmas(sourceFile, sourceText);
           processPragmasIntoFields(sourceFile, reportPragmaDiagnostic);
           sourceFile.commentDirectives = scanner2.getCommentDirectives();
@@ -35674,11 +35674,11 @@ ${lanes.join("\n")}
           );
         }
         Parser2.fixupParentReferences = fixupParentReferences;
-        function createSourceFile2(fileName2, languageVersion2, scriptKind2, isDeclarationFile, statements, endOfFileToken, flags, setExternalModuleIndicator2) {
+        function createSourceFile2(fileName2, languageVersion2, scriptKind2, isDeclarationFile2, statements, endOfFileToken, flags, setExternalModuleIndicator2) {
           let sourceFile = factory2.createSourceFile(statements, endOfFileToken, flags);
           setTextRangePosWidth(sourceFile, 0, sourceText.length);
           setFields(sourceFile);
-          if (!isDeclarationFile && isExternalModule(sourceFile) && sourceFile.transformFlags & 67108864) {
+          if (!isDeclarationFile2 && isExternalModule(sourceFile) && sourceFile.transformFlags & 67108864) {
             const oldSourceFile = sourceFile;
             sourceFile = reparseTopLevelAwait(sourceFile);
             if (oldSourceFile !== sourceFile) setFields(sourceFile);
@@ -35691,7 +35691,7 @@ ${lanes.join("\n")}
             sourceFile2.languageVersion = languageVersion2;
             sourceFile2.fileName = fileName2;
             sourceFile2.languageVariant = getLanguageVariant(scriptKind2);
-            sourceFile2.isDeclarationFile = isDeclarationFile;
+            sourceFile2.isDeclarationFile = isDeclarationFile2;
             sourceFile2.scriptKind = scriptKind2;
             setExternalModuleIndicator2(sourceFile2);
             sourceFile2.setExternalModuleIndicator = setExternalModuleIndicator2;
@@ -50058,7 +50058,7 @@ ${lanes.join("\n")}
         }
         let p = specifier.parent;
         while (p) {
-          if (isBlock(p) || isModuleBlock(p) || isSourceFile(p)) {
+          if (isBlock(p) || isModuleBlock(p) || isSourceFile2(p)) {
             const statements = p.statements;
             let found;
             for (const statement of statements) {
@@ -51621,7 +51621,7 @@ ${lanes.join("\n")}
           );
         }
         function hasExportDeclarations(node) {
-          const body = isSourceFile(node) ? node : tryCast(node.body, isModuleBlock);
+          const body = isSourceFile2(node) ? node : tryCast(node.body, isModuleBlock);
           return !!body && body.statements.some((s) => isExportDeclaration(s) || isExportAssignment(s));
         }
         function setExportContextFlag(node) {
@@ -52428,7 +52428,7 @@ ${lanes.join("\n")}
           if (some(node.modifiers)) {
             file.bindDiagnostics.push(createDiagnosticForNode2(node, Diagnostics.Modifiers_cannot_appear_here));
           }
-          const diag2 = !isSourceFile(node.parent) ? Diagnostics.Global_module_exports_may_only_appear_at_top_level : !isExternalModule(node.parent) ? Diagnostics.Global_module_exports_may_only_appear_in_module_files : !node.parent.isDeclarationFile ? Diagnostics.Global_module_exports_may_only_appear_in_declaration_files : void 0;
+          const diag2 = !isSourceFile2(node.parent) ? Diagnostics.Global_module_exports_may_only_appear_at_top_level : !isExternalModule(node.parent) ? Diagnostics.Global_module_exports_may_only_appear_in_module_files : !node.parent.isDeclarationFile ? Diagnostics.Global_module_exports_may_only_appear_in_declaration_files : void 0;
           if (diag2) {
             file.bindDiagnostics.push(createDiagnosticForNode2(node, diag2));
           } else {
@@ -53307,7 +53307,7 @@ ${lanes.join("\n")}
         if (local) {
           return local.exportSymbol ?? local;
         }
-        if (isSourceFile(container) && container.jsGlobalAugmentations && container.jsGlobalAugmentations.has(name)) {
+        if (isSourceFile2(container) && container.jsGlobalAugmentations && container.jsGlobalAugmentations.has(name)) {
           return container.jsGlobalAugmentations.get(name);
         }
         if (canHaveSymbol(container)) {
@@ -54045,7 +54045,7 @@ ${lanes.join("\n")}
           var _a2, _b, _c, _d;
           if (!isModuleDeclaration(d)) return;
           const topNamespace = getTopNamespace(d);
-          if (!(((_a2 = topNamespace == null ? void 0 : topNamespace.parent) == null ? void 0 : _a2.parent) && isModuleBlock(topNamespace.parent) && isAmbientModule(topNamespace.parent.parent) && isSourceFile(topNamespace.parent.parent.parent))) return;
+          if (!(((_a2 = topNamespace == null ? void 0 : topNamespace.parent) == null ? void 0 : _a2.parent) && isModuleBlock(topNamespace.parent) && isAmbientModule(topNamespace.parent.parent) && isSourceFile2(topNamespace.parent.parent.parent))) return;
           const exportAssignment = (_d = (_c = (_b = topNamespace.parent.parent.symbol.exports) == null ? void 0 : _b.get("export=")) == null ? void 0 : _c.valueDeclaration) == null ? void 0 : _d.expression;
           if (!exportAssignment) return;
           const exportSymbol = checker.getSymbolAtLocation(exportAssignment);
@@ -55190,7 +55190,7 @@ ${lanes.join("\n")}
             return node && getTypeArgumentConstraint(node);
           },
           getSuggestionDiagnostics: (fileIn, ct) => {
-            const file = getParseTreeNode(fileIn, isSourceFile) || Debug.fail("Could not determine parsed source file.");
+            const file = getParseTreeNode(fileIn, isSourceFile2) || Debug.fail("Could not determine parsed source file.");
             if (skipTypeChecking(file, compilerOptions, host)) {
               return emptyArray;
             }
@@ -56541,7 +56541,7 @@ ${lanes.join("\n")}
           addLazyDiagnostic(() => {
             var _a;
             const name = result.escapedName;
-            const isInExternalModule = lastLocation && isSourceFile(lastLocation) && isExternalOrCommonJsModule(lastLocation);
+            const isInExternalModule = lastLocation && isSourceFile2(lastLocation) && isExternalOrCommonJsModule(lastLocation);
             if (errorLocation && (meaning & 2 || (meaning & 32 || meaning & 384) && (meaning & 111551) === 111551)) {
               const exportOrLocalSymbol = getExportSymbolOfValueSymbolIfExported(result);
               if (exportOrLocalSymbol.flags & 2 || exportOrLocalSymbol.flags & 32 || exportOrLocalSymbol.flags & 384) {
@@ -56550,7 +56550,7 @@ ${lanes.join("\n")}
             }
             if (isInExternalModule && (meaning & 111551) === 111551 && !(errorLocation.flags & 16777216)) {
               const merged = getMergedSymbol(result);
-              if (length(merged.declarations) && every(merged.declarations, (d) => isNamespaceExportDeclaration(d) || isSourceFile(d) && !!d.symbol.globalExports)) {
+              if (length(merged.declarations) && every(merged.declarations, (d) => isNamespaceExportDeclaration(d) || isSourceFile2(d) && !!d.symbol.globalExports)) {
                 errorOrSuggestion(!compilerOptions.allowUmdGlobalAccess, errorLocation, Diagnostics._0_refers_to_a_UMD_global_but_the_current_file_is_a_module_Consider_adding_an_import_instead, unescapeLeadingUnderscores(name));
               }
             }
@@ -56581,7 +56581,7 @@ ${lanes.join("\n")}
             }
             if (compilerOptions.isolatedModules && result && isInExternalModule && (meaning & 111551) === 111551) {
               const isGlobal = getSymbol2(globals, name, meaning) === result;
-              const nonValueSymbol = isGlobal && isSourceFile(lastLocation) && lastLocation.locals && getSymbol2(
+              const nonValueSymbol = isGlobal && isSourceFile2(lastLocation) && lastLocation.locals && getSymbol2(
                 lastLocation.locals,
                 name,
                 ~111551
@@ -57052,7 +57052,7 @@ ${lanes.join("\n")}
         }
         function getTargetofModuleDefault(moduleSymbol, node, dontResolveAlias) {
           var _a;
-          const file = (_a = moduleSymbol.declarations) == null ? void 0 : _a.find(isSourceFile);
+          const file = (_a = moduleSymbol.declarations) == null ? void 0 : _a.find(isSourceFile2);
           const specifier = getModuleSpecifierForImportOrExport(node);
           let exportDefaultSymbol;
           let exportModuleDotExportsSymbol;
@@ -57291,7 +57291,7 @@ ${lanes.join("\n")}
               symbolFromVariable = resolveSymbol(symbolFromVariable, dontResolveAlias);
               let symbolFromModule = getExportOfModule(targetSymbol, nameText, specifier, dontResolveAlias);
               if (symbolFromModule === void 0 && nameText === "default") {
-                const file = (_a = moduleSymbol.declarations) == null ? void 0 : _a.find(isSourceFile);
+                const file = (_a = moduleSymbol.declarations) == null ? void 0 : _a.find(isSourceFile2);
                 if (isOnlyImportableAsDefault(moduleSpecifier, moduleSymbol) || canHaveSyntheticDefault(file, moduleSymbol, dontResolveAlias, moduleSpecifier)) {
                   symbolFromModule = resolveExternalModuleSymbol(moduleSymbol, dontResolveAlias) || resolveSymbol(moduleSymbol, dontResolveAlias);
                 }
@@ -58170,7 +58170,7 @@ ${lanes.join("\n")}
               if (defaultOnlyType) {
                 return cloneTypeAsModuleType(symbol, defaultOnlyType, referenceParent);
               }
-              const targetFile = (_a = moduleSymbol == null ? void 0 : moduleSymbol.declarations) == null ? void 0 : _a.find(isSourceFile);
+              const targetFile = (_a = moduleSymbol == null ? void 0 : moduleSymbol.declarations) == null ? void 0 : _a.find(isSourceFile2);
               const usageMode = getEmitSyntaxForModuleSpecifierExpression(reference);
               let exportModuleDotExportsSymbol;
               if (namespaceImport && targetFile && 102 <= moduleKind && moduleKind <= 199 && usageMode === 1 && host.getImpliedNodeFormatForEmit(targetFile) === 99 && (exportModuleDotExportsSymbol = resolveExportByName(symbol, "module.exports", namespaceImport, dontResolveAlias))) {
@@ -62711,7 +62711,7 @@ ${lanes.join("\n")}
               statements = flattenExportAssignedNamespace(statements);
               statements = mergeExportDeclarations(statements);
               statements = inlineExportModifiers(statements);
-              if (enclosingDeclaration && (isSourceFile(enclosingDeclaration) && isExternalOrCommonJsModule(enclosingDeclaration) || isModuleDeclaration(enclosingDeclaration)) && (!some(statements, isExternalModuleIndicator) || !hasScopeMarker(statements) && some(statements, needsScopeMarker))) {
+              if (enclosingDeclaration && (isSourceFile2(enclosingDeclaration) && isExternalOrCommonJsModule(enclosingDeclaration) || isModuleDeclaration(enclosingDeclaration)) && (!some(statements, isExternalModuleIndicator) || !hasScopeMarker(statements) && some(statements, needsScopeMarker))) {
                 statements.push(createEmptyExports(factory));
               }
               return statements;
@@ -62820,14 +62820,14 @@ ${lanes.join("\n")}
                   } else if (!(symbol.flags & 16) && isTypeRepresentableAsFunctionNamespaceMerge(type, symbol)) {
                     serializeAsFunctionNamespaceMerge(type, symbol, localName, modifierFlags);
                   } else {
-                    const flags = !(symbol.flags & 2) ? ((_c = symbol.parent) == null ? void 0 : _c.valueDeclaration) && isSourceFile((_d = symbol.parent) == null ? void 0 : _d.valueDeclaration) ? 2 : void 0 : isConstantVariable(symbol) ? 2 : 1;
+                    const flags = !(symbol.flags & 2) ? ((_c = symbol.parent) == null ? void 0 : _c.valueDeclaration) && isSourceFile2((_d = symbol.parent) == null ? void 0 : _d.valueDeclaration) ? 2 : void 0 : isConstantVariable(symbol) ? 2 : 1;
                     const name = needsPostExportDefault || !(symbol.flags & 4) ? localName : getUnusedName(localName, symbol);
                     let textRange = symbol.declarations && find(symbol.declarations, (d) => isVariableDeclaration(d));
                     if (textRange && isVariableDeclarationList(textRange.parent) && textRange.parent.declarations.length === 1) {
                       textRange = textRange.parent.parent;
                     }
                     const propertyAccessRequire = (_e = symbol.declarations) == null ? void 0 : _e.find(isPropertyAccessExpression);
-                    if (propertyAccessRequire && isBinaryExpression(propertyAccessRequire.parent) && isIdentifier(propertyAccessRequire.parent.right) && ((_f = type.symbol) == null ? void 0 : _f.valueDeclaration) && isSourceFile(type.symbol.valueDeclaration)) {
+                    if (propertyAccessRequire && isBinaryExpression(propertyAccessRequire.parent) && isIdentifier(propertyAccessRequire.parent.right) && ((_f = type.symbol) == null ? void 0 : _f.valueDeclaration) && isSourceFile2(type.symbol.valueDeclaration)) {
                       const alias = localName === propertyAccessRequire.parent.right.escapedText ? void 0 : propertyAccessRequire.parent.right;
                       context.approximateLength += 12 + (((_g = alias == null ? void 0 : alias.escapedText) == null ? void 0 : _g.length) ?? 0);
                       addResult(
@@ -62990,7 +62990,7 @@ ${lanes.join("\n")}
               deferredPrivatesStack[isExternalImportAlias ? 0 : deferredPrivatesStack.length - 1].set(getSymbolId(symbol), symbol);
             }
             function isExportingScope(enclosingDeclaration2) {
-              return isSourceFile(enclosingDeclaration2) && (isExternalOrCommonJsModule(enclosingDeclaration2) || isJsonSourceFile(enclosingDeclaration2)) || isAmbientModule(enclosingDeclaration2) && !isGlobalScopeAugmentation(enclosingDeclaration2);
+              return isSourceFile2(enclosingDeclaration2) && (isExternalOrCommonJsModule(enclosingDeclaration2) || isJsonSourceFile(enclosingDeclaration2)) || isAmbientModule(enclosingDeclaration2) && !isGlobalScopeAugmentation(enclosingDeclaration2);
             }
             function addResult(node, additionalModifierFlags) {
               if (canHaveModifiers(node)) {
@@ -63654,7 +63654,7 @@ ${lanes.join("\n")}
                   }
                 // else fall through and treat commonjs require just like import=
                 case 272:
-                  if (target.escapedName === "export=" && some(target.declarations, (d) => isSourceFile(d) && isJsonSourceFile(d))) {
+                  if (target.escapedName === "export=" && some(target.declarations, (d) => isSourceFile2(d) && isJsonSourceFile(d))) {
                     serializeMaybeAliasAssignment(symbol);
                     break;
                   }
@@ -64545,7 +64545,7 @@ ${lanes.join("\n")}
               case 339:
               case 347:
               case 341:
-                return !!(node.parent && node.parent.parent && node.parent.parent.parent && isSourceFile(node.parent.parent.parent));
+                return !!(node.parent && node.parent.parent && node.parent.parent.parent && isSourceFile2(node.parent.parent.parent));
               case 209:
                 return isDeclarationVisible(node.parent.parent);
               case 261:
@@ -65663,7 +65663,7 @@ ${lanes.join("\n")}
           }
           Debug.assertIsDefined(symbol.valueDeclaration);
           const declaration = symbol.valueDeclaration;
-          if (isSourceFile(declaration) && isJsonSourceFile(declaration)) {
+          if (isSourceFile2(declaration) && isJsonSourceFile(declaration)) {
             if (!declaration.statements.length) {
               return emptyObjectType;
             }
@@ -65687,7 +65687,7 @@ ${lanes.join("\n")}
             type = widenTypeForVariableLikeDeclaration(tryGetTypeFromEffectiveTypeNode(declaration) || checkExpressionCached(declaration.expression), declaration);
           } else if (isBinaryExpression(declaration) || isInJSFile(declaration) && (isCallExpression(declaration) || (isPropertyAccessExpression(declaration) || isBindableStaticElementAccessExpression(declaration)) && isBinaryExpression(declaration.parent))) {
             type = getWidenedTypeForAssignmentDeclaration(symbol);
-          } else if (isPropertyAccessExpression(declaration) || isElementAccessExpression(declaration) || isIdentifier(declaration) || isStringLiteralLike(declaration) || isNumericLiteral(declaration) || isClassDeclaration(declaration) || isFunctionDeclaration(declaration) || isMethodDeclaration(declaration) && !isObjectLiteralMethod(declaration) || isMethodSignature(declaration) || isSourceFile(declaration)) {
+          } else if (isPropertyAccessExpression(declaration) || isElementAccessExpression(declaration) || isIdentifier(declaration) || isStringLiteralLike(declaration) || isNumericLiteral(declaration) || isClassDeclaration(declaration) || isFunctionDeclaration(declaration) || isMethodDeclaration(declaration) && !isObjectLiteralMethod(declaration) || isMethodSignature(declaration) || isSourceFile2(declaration)) {
             if (symbol.flags & (16 | 8192 | 32 | 384 | 512)) {
               return getTypeOfFuncClassEnumModule(symbol);
             }
@@ -65873,7 +65873,7 @@ ${lanes.join("\n")}
             return anyType;
           } else if (declaration && (declaration.kind === 227 || isAccessExpression(declaration) && declaration.parent.kind === 227)) {
             return getWidenedTypeForAssignmentDeclaration(symbol);
-          } else if (symbol.flags & 512 && declaration && isSourceFile(declaration) && declaration.commonJsModuleIndicator) {
+          } else if (symbol.flags & 512 && declaration && isSourceFile2(declaration) && declaration.commonJsModuleIndicator) {
             const resolvedModule = resolveExternalModuleSymbol(symbol);
             if (resolvedModule !== symbol) {
               if (!pushTypeResolution(
@@ -71235,8 +71235,8 @@ ${lanes.join("\n")}
           if (!links.resolvedType) {
             const aliasSymbol = getAliasSymbolForTypeNode(node);
             const types = map(node.types, getTypeFromTypeNode);
-            const emptyIndex = types.length === 2 ? types.indexOf(emptyTypeLiteralType) : -1;
-            const t = emptyIndex >= 0 ? types[1 - emptyIndex] : unknownType;
+            const emptyIndex2 = types.length === 2 ? types.indexOf(emptyTypeLiteralType) : -1;
+            const t = emptyIndex2 >= 0 ? types[1 - emptyIndex2] : unknownType;
             const noSupertypeReduction = !!(t.flags & (4 | 8 | 64) || t.flags & 134217728 && isPatternLiteralType(t));
             links.resolvedType = getIntersectionType(types, noSupertypeReduction ? 1 : 0, aliasSymbol, getTypeArgumentsForAliasSymbol(aliasSymbol));
           }
@@ -81435,7 +81435,7 @@ ${lanes.join("\n")}
           return !!findAncestor(node.parent, (node2) => isFunctionOrSourceFile(node2) && !!(getNodeLinks(node2).flags & 131072));
         }
         function isFunctionOrSourceFile(node) {
-          return isFunctionLikeDeclaration(node) || isSourceFile(node);
+          return isFunctionLikeDeclaration(node) || isSourceFile2(node);
         }
         function markNodeAssignments(node) {
           switch (node.kind) {
@@ -82210,7 +82210,7 @@ ${lanes.join("\n")}
           ));
         }
         function checkNestedBlockScopedBinding(node, symbol) {
-          if (languageVersion >= 2 || (symbol.flags & (2 | 32)) === 0 || !symbol.valueDeclaration || isSourceFile(symbol.valueDeclaration) || symbol.valueDeclaration.parent.kind === 300) {
+          if (languageVersion >= 2 || (symbol.flags & (2 | 32)) === 0 || !symbol.valueDeclaration || isSourceFile2(symbol.valueDeclaration) || symbol.valueDeclaration.parent.kind === 300) {
             return;
           }
           const container = getEnclosingBlockScopeContainer(symbol.valueDeclaration);
@@ -82379,7 +82379,7 @@ ${lanes.join("\n")}
               error2(node, Diagnostics.The_containing_arrow_function_captures_the_global_value_of_this);
             } else if (!type) {
               const diag2 = error2(node, Diagnostics.this_implicitly_has_type_any_because_it_does_not_have_a_type_annotation);
-              if (!isSourceFile(container)) {
+              if (!isSourceFile2(container)) {
                 const outsideThis = tryGetThisTypeAt(container);
                 if (outsideThis && outsideThis !== globalThisType2) {
                   addRelatedInfo(diag2, createDiagnosticForNode(container, Diagnostics.An_outer_value_of_this_is_shadowed_by_this_container));
@@ -82420,7 +82420,7 @@ ${lanes.join("\n")}
             const type = isStatic(container) ? getTypeOfSymbol(symbol) : getDeclaredTypeOfSymbol(symbol).thisType;
             return getFlowTypeOfReference(node, type);
           }
-          if (isSourceFile(container)) {
+          if (isSourceFile2(container)) {
             if (container.commonJsModuleIndicator) {
               const fileSymbol = getSymbolOfDeclaration(container);
               return fileSymbol && getTypeOfSymbol(fileSymbol);
@@ -82531,7 +82531,7 @@ ${lanes.join("\n")}
             nodeCheckFlag = 32;
             if (!isCallExpression2 && languageVersion >= 2 && languageVersion <= 8 && (isPropertyDeclaration(container) || isClassStaticBlockDeclaration(container))) {
               forEachEnclosingBlockScopeContainer(node.parent, (current) => {
-                if (!isSourceFile(current) || isExternalOrCommonJsModule(current)) {
+                if (!isSourceFile2(current) || isExternalOrCommonJsModule(current)) {
                   getNodeLinks(current).flags |= 2097152;
                 }
               });
@@ -88174,7 +88174,7 @@ ${lanes.join("\n")}
           if (allowSyntheticDefaultImports && type && !isErrorType(type)) {
             const synthType = type;
             if (!synthType.syntheticType) {
-              const file = (_a = originalSymbol.declarations) == null ? void 0 : _a.find(isSourceFile);
+              const file = (_a = originalSymbol.declarations) == null ? void 0 : _a.find(isSourceFile2);
               const hasSyntheticDefault = canHaveSyntheticDefault(
                 file,
                 originalSymbol,
@@ -98521,7 +98521,7 @@ ${lanes.join("\n")}
           }
         }
         function getSymbolAtLocation(node, ignoreErrors) {
-          if (isSourceFile(node)) {
+          if (isSourceFile2(node)) {
             return isExternalModule(node) ? getMergedSymbol(node.symbol) : void 0;
           }
           const { parent: parent2 } = node;
@@ -98684,7 +98684,7 @@ ${lanes.join("\n")}
           }
         }
         function getTypeOfNode(node) {
-          if (isSourceFile(node) && !isExternalModule(node)) {
+          if (isSourceFile2(node) && !isExternalModule(node)) {
             return errorType;
           }
           if (node.flags & 67108864) {
@@ -98937,7 +98937,7 @@ ${lanes.join("\n")}
           return symbol.valueDeclaration && isBindingElement(symbol.valueDeclaration) && walkUpBindingElementsAndPatterns(symbol.valueDeclaration).parent.kind === 300;
         }
         function isSymbolOfDeclarationWithCollidingName(symbol) {
-          if (symbol.flags & 418 && symbol.valueDeclaration && !isSourceFile(symbol.valueDeclaration)) {
+          if (symbol.flags & 418 && symbol.valueDeclaration && !isSourceFile2(symbol.valueDeclaration)) {
             const links = getSymbolLinks(symbol);
             if (links.isDeclarationWithCollidingName === void 0) {
               const container = getEnclosingBlockScopeContainer(symbol.valueDeclaration);
@@ -107314,7 +107314,7 @@ ${lanes.join("\n")}
         function onEmitNode(hint, node, emitCallback) {
           const savedApplicableSubstitutions = applicableSubstitutions;
           const savedCurrentSourceFile = currentSourceFile;
-          if (isSourceFile(node)) {
+          if (isSourceFile2(node)) {
             currentSourceFile = node;
           }
           if (enabledSubstitutions & 2 && isTransformedModuleDeclaration(node)) {
@@ -115418,7 +115418,7 @@ ${lanes.join("\n")}
           if (node.isDeclarationFile) {
             return node;
           }
-          const visited = visitNode(node, visitor, isSourceFile);
+          const visited = visitNode(node, visitor, isSourceFile2);
           addEmitHelpers(visited, context.readEmitHelpers());
           exportVars = void 0;
           exportBindings = void 0;
@@ -116393,7 +116393,7 @@ ${lanes.join("\n")}
           }
           if (compilerOptions.jsx === 5) {
             const originalFile = getOriginalNode(currentSourceFile);
-            if (originalFile && isSourceFile(originalFile)) {
+            if (originalFile && isSourceFile2(originalFile)) {
               if (keyAttr === void 0) {
                 args.push(factory2.createVoidZero());
               }
@@ -126561,7 +126561,7 @@ ${lanes.join("\n")}
           return [importDecl, exportDecl];
         }
         function onEmitNode(hint, node, emitCallback) {
-          if (isSourceFile(node)) {
+          if (isSourceFile2(node)) {
             if ((isExternalModule(node) || getIsolatedModules(compilerOptions)) && compilerOptions.importHelpers) {
               helperNameSubstitutions = /* @__PURE__ */ new Map();
             }
@@ -126629,7 +126629,7 @@ ${lanes.join("\n")}
         let currentSourceFile;
         return transformSourceFileOrBundle;
         function onSubstituteNode(hint, node) {
-          if (isSourceFile(node)) {
+          if (isSourceFile2(node)) {
             currentSourceFile = node;
             return previousOnSubstituteNode(hint, node);
           } else {
@@ -126643,7 +126643,7 @@ ${lanes.join("\n")}
           }
         }
         function onEmitNode(hint, node, emitCallback) {
-          if (isSourceFile(node)) {
+          if (isSourceFile2(node)) {
             currentSourceFile = node;
           }
           if (!currentSourceFile) {
@@ -126664,7 +126664,7 @@ ${lanes.join("\n")}
           currentSourceFile = node;
           const result = getModuleTransformForFile(node)(node);
           currentSourceFile = void 0;
-          Debug.assert(isSourceFile(result));
+          Debug.assert(isSourceFile2(result));
           return result;
         }
         function transformSourceFileOrBundle(node) {
@@ -127787,7 +127787,7 @@ ${lanes.join("\n")}
           ) ? void 0 : visitNodes2(params, visitDeclarationSubtree, isTypeParameterDeclaration);
         }
         function isEnclosingDeclaration(node) {
-          return isSourceFile(node) || isTypeAliasDeclaration(node) || isModuleDeclaration(node) || isClassDeclaration(node) || isInterfaceDeclaration(node) || isFunctionLike(node) || isIndexSignatureDeclaration(node) || isMappedTypeNode(node);
+          return isSourceFile2(node) || isTypeAliasDeclaration(node) || isModuleDeclaration(node) || isClassDeclaration(node) || isInterfaceDeclaration(node) || isFunctionLike(node) || isIndexSignatureDeclaration(node) || isMappedTypeNode(node);
         }
         function checkEntityNameVisibility(entityName, enclosingDeclaration2) {
           const visibilityResult = resolver.isEntityNameVisible(entityName, enclosingDeclaration2);
@@ -127916,7 +127916,7 @@ ${lanes.join("\n")}
               return Debug.fail(`Late replaced statement was found which is not handled by the declaration transformer!: ${Debug.formatSyntaxKind(i.kind)}`);
             }
             const priorNeedsDeclare = needsDeclare;
-            needsDeclare = i.parent && isSourceFile(i.parent) && !(isExternalModule(i.parent) && isBundledEmit);
+            needsDeclare = i.parent && isSourceFile2(i.parent) && !(isExternalModule(i.parent) && isBundledEmit);
             const result = transformTopLevelDeclaration(i);
             needsDeclare = priorNeedsDeclare;
             lateStatementReplacementMap.set(getOriginalNodeId(i), result);
@@ -127932,7 +127932,7 @@ ${lanes.join("\n")}
                   if (isArray(result) ? some(result, needsScopeMarker) : needsScopeMarker(result)) {
                     needsScopeFixMarker = true;
                   }
-                  if (isSourceFile(statement.parent) && (isArray(result) ? some(result, isExternalModuleIndicator) : isExternalModuleIndicator(result))) {
+                  if (isSourceFile2(statement.parent) && (isArray(result) ? some(result, isExternalModuleIndicator) : isExternalModuleIndicator(result))) {
                     resultHasExternalModuleIndicator = true;
                   }
                 }
@@ -128285,7 +128285,7 @@ ${lanes.join("\n")}
           if (shouldStripInternal(input)) return;
           switch (input.kind) {
             case 279: {
-              if (isSourceFile(input.parent)) {
+              if (isSourceFile2(input.parent)) {
                 resultHasExternalModuleIndicator = true;
               }
               resultHasScopeMarker = true;
@@ -128299,7 +128299,7 @@ ${lanes.join("\n")}
               );
             }
             case 278: {
-              if (isSourceFile(input.parent)) {
+              if (isSourceFile2(input.parent)) {
                 resultHasExternalModuleIndicator = true;
               }
               resultHasScopeMarker = true;
@@ -128549,7 +128549,7 @@ ${lanes.join("\n")}
                   false,
                   namespaceDecl.name
                 );
-                if (isSourceFile(input.parent)) {
+                if (isSourceFile2(input.parent)) {
                   resultHasExternalModuleIndicator = true;
                 }
                 resultHasScopeMarker = true;
@@ -129160,7 +129160,7 @@ ${lanes.join("\n")}
           diagnostics
         };
         function transformRoot(node) {
-          return node && (!isSourceFile(node) || !node.isDeclarationFile) ? transformation(node) : node;
+          return node && (!isSourceFile2(node) || !node.isDeclarationFile) ? transformation(node) : node;
         }
         function enableSubstitution(kind) {
           Debug.assert(state < 2, "Cannot modify the transformation context after transformation has completed.");
@@ -129732,7 +129732,7 @@ ${lanes.join("\n")}
             emitSkipped = true;
             return;
           }
-          (isSourceFile(sourceFileOrBundle) ? [sourceFileOrBundle] : filter(sourceFileOrBundle.sourceFiles, isSourceFileNotJson)).forEach(
+          (isSourceFile2(sourceFileOrBundle) ? [sourceFileOrBundle] : filter(sourceFileOrBundle.sourceFiles, isSourceFileNotJson)).forEach(
             (sourceFile) => {
               if (compilerOptions.noCheck || !canIncludeBindAndCheckDiagnostics(sourceFile, compilerOptions)) markLinkedReferences(sourceFile);
             }
@@ -129783,7 +129783,7 @@ ${lanes.join("\n")}
             if (emitOnly || compilerOptions.emitDeclarationOnly) emitSkipped = true;
             return;
           }
-          const sourceFiles = isSourceFile(sourceFileOrBundle) ? [sourceFileOrBundle] : sourceFileOrBundle.sourceFiles;
+          const sourceFiles = isSourceFile2(sourceFileOrBundle) ? [sourceFileOrBundle] : sourceFileOrBundle.sourceFiles;
           const filesForEmit = forceDtsEmit ? sourceFiles : filter(sourceFiles, isSourceFileNotJson);
           const inputListOrBundle = compilerOptions.outFile ? [factory.createBundle(filesForEmit)] : filesForEmit;
           filesForEmit.forEach((sourceFile) => {
@@ -130129,7 +130129,7 @@ ${lanes.join("\n")}
         function printNode(hint, node, sourceFile) {
           switch (hint) {
             case 0:
-              Debug.assert(isSourceFile(node), "Expected a SourceFile node.");
+              Debug.assert(isSourceFile2(node), "Expected a SourceFile node.");
               break;
             case 2:
               Debug.assert(isIdentifier(node), "Expected an Identifier node.");
@@ -130321,10 +130321,10 @@ ${lanes.join("\n")}
           currentParenthesizerRule = void 0;
         }
         function shouldEmitComments(node) {
-          return !commentsDisabled && !isSourceFile(node);
+          return !commentsDisabled && !isSourceFile2(node);
         }
         function shouldEmitSourceMaps(node) {
-          return !sourceMapsDisabled && !isSourceFile(node) && !isInJsonFile(node);
+          return !sourceMapsDisabled && !isSourceFile2(node) && !isInJsonFile(node);
         }
         function getPipelinePhase(phase, emitHint, node) {
           switch (phase) {
@@ -130384,7 +130384,7 @@ ${lanes.join("\n")}
               return emitSnippetNode(hint, node, snippet);
             }
           }
-          if (hint === 0) return emitSourceFile(cast(node, isSourceFile));
+          if (hint === 0) return emitSourceFile(cast(node, isSourceFile2));
           if (hint === 2) return emitIdentifier(cast(node, isIdentifier));
           if (hint === 6) return emitLiteral(
             cast(node, isStringLiteral),
@@ -130869,9 +130869,9 @@ ${lanes.join("\n")}
           const numNodes = bundle ? bundle.sourceFiles.length : 1;
           for (let i = 0; i < numNodes; i++) {
             const currentNode = bundle ? bundle.sourceFiles[i] : node;
-            const sourceFile = isSourceFile(currentNode) ? currentNode : currentSourceFile;
+            const sourceFile = isSourceFile2(currentNode) ? currentNode : currentSourceFile;
             const shouldSkip = printerOptions.noEmitHelpers || !!sourceFile && hasRecordedExternalHelpers(sourceFile);
-            const shouldBundle = isSourceFile(currentNode) && !isOwnFileEmit;
+            const shouldBundle = isSourceFile2(currentNode) && !isOwnFileEmit;
             const helpers = getSortedEmitHelpers(currentNode);
             if (helpers) {
               for (const helper of helpers) {
@@ -133118,7 +133118,7 @@ ${lanes.join("\n")}
           return statements.length;
         }
         function emitPrologueDirectivesIfNeeded(sourceFileOrBundle) {
-          if (isSourceFile(sourceFileOrBundle)) {
+          if (isSourceFile2(sourceFileOrBundle)) {
             emitPrologueDirectives(sourceFileOrBundle.statements, sourceFileOrBundle);
           } else {
             const seenPrologueDirectives = /* @__PURE__ */ new Set();
@@ -133129,7 +133129,7 @@ ${lanes.join("\n")}
           }
         }
         function emitShebangIfNeeded(sourceFileOrBundle) {
-          if (isSourceFile(sourceFileOrBundle)) {
+          if (isSourceFile2(sourceFileOrBundle)) {
             const shebang = getShebang(sourceFileOrBundle.text);
             if (shebang) {
               writeComment(shebang);
@@ -139127,7 +139127,7 @@ ${lanes.join("\n")}
       function resolveProjectReferencePath(ref) {
         return resolveConfigFileProjectName(ref.path);
       }
-      function getResolutionDiagnostic(options, { extension }, { isDeclarationFile }) {
+      function getResolutionDiagnostic(options, { extension }, { isDeclarationFile: isDeclarationFile2 }) {
         switch (extension) {
           case ".ts":
           case ".d.ts":
@@ -139159,7 +139159,7 @@ ${lanes.join("\n")}
           return getResolveJsonModule(options) ? void 0 : Diagnostics.Module_0_was_resolved_to_1_but_resolveJsonModule_is_not_used;
         }
         function needAllowArbitraryExtensions() {
-          return isDeclarationFile || options.allowArbitraryExtensions ? void 0 : Diagnostics.Module_0_was_resolved_to_1_but_allowArbitraryExtensions_is_not_set;
+          return isDeclarationFile2 || options.allowArbitraryExtensions ? void 0 : Diagnostics.Module_0_was_resolved_to_1_but_allowArbitraryExtensions_is_not_set;
         }
       }
       function getModuleNames({ imports, moduleAugmentations }) {
@@ -150439,7 +150439,7 @@ ${lanes.join("\n")}
       function getParentNodeInSpan(node, file, span) {
         if (!node) return void 0;
         while (node.parent) {
-          if (isSourceFile(node.parent) || !spanContainsNode(span, node.parent, file)) {
+          if (isSourceFile2(node.parent) || !spanContainsNode(span, node.parent, file)) {
             return node;
           }
           node = node.parent;
@@ -154022,7 +154022,7 @@ ${lanes.join("\n")}
       }
       function getSourceFileToImport(importedModuleSymbol, importLiteral, importingSourceFile, program, host, oldToNew) {
         if (importedModuleSymbol) {
-          const oldFileName = find(importedModuleSymbol.declarations, isSourceFile).fileName;
+          const oldFileName = find(importedModuleSymbol.declarations, isSourceFile2).fileName;
           const newFileName = oldToNew(oldFileName);
           return newFileName === void 0 ? { newFileName: oldFileName, updated: false } : { newFileName, updated: true };
         } else {
@@ -156296,7 +156296,7 @@ interface Symbol {
         const span = getRefactorContextSpan(context);
         const token = getTokenAtPosition(file, span.start);
         const exportNode = !!(token.parent && getSyntacticModifierFlags(token.parent) & 32) && considerPartialSpans ? token.parent : getParentNodeInSpan(token, file, span);
-        if (!exportNode || !isSourceFile(exportNode.parent) && !(isModuleBlock(exportNode.parent) && isAmbientModule(exportNode.parent.parent))) {
+        if (!exportNode || !isSourceFile2(exportNode.parent) && !(isModuleBlock(exportNode.parent) && isAmbientModule(exportNode.parent.parent))) {
           return { error: getLocaleSpecificMessage(Diagnostics.Could_not_find_export_statement) };
         }
         const checker = program.getTypeChecker();
@@ -156494,7 +156494,7 @@ interface Symbol {
         );
       }
       function getExportingModuleSymbol(parent2, checker) {
-        if (isSourceFile(parent2)) {
+        if (isSourceFile2(parent2)) {
           return parent2.symbol;
         }
         const symbol = parent2.parent.symbol;
@@ -157131,7 +157131,7 @@ interface Symbol {
           if (context.triggerReason === "implicit" && context.endPosition !== void 0) {
             const startNodeAncestor = findAncestor(getTokenAtPosition(file, context.startPosition), isBlockLike);
             const endNodeAncestor = findAncestor(getTokenAtPosition(file, context.endPosition), isBlockLike);
-            if (startNodeAncestor && !isSourceFile(startNodeAncestor) && endNodeAncestor && !isSourceFile(endNodeAncestor)) {
+            if (startNodeAncestor && !isSourceFile2(startNodeAncestor) && endNodeAncestor && !isSourceFile2(endNodeAncestor)) {
               return emptyArray;
             }
           }
@@ -157472,7 +157472,7 @@ interface Symbol {
         });
       }
       function isTopLevelDeclarationStatement(node) {
-        Debug.assert(isSourceFile(node.parent), "Node parent should be a SourceFile");
+        Debug.assert(isSourceFile2(node.parent), "Node parent should be a SourceFile");
         return isNonVariableTopLevelDeclaration(node) || isVariableStatement(node);
       }
       function addExport(decl, useEs6Exports) {
@@ -157817,14 +157817,14 @@ interface Symbol {
         }
       }
       function isVariableDeclarationInImport(decl) {
-        return isSourceFile(decl.parent.parent.parent) && !!decl.initializer && isRequireCall(
+        return isSourceFile2(decl.parent.parent.parent) && !!decl.initializer && isRequireCall(
           decl.initializer,
           /*requireStringLiteralLikeArgument*/
           true
         );
       }
       function isTopLevelDeclaration(node) {
-        return isNonVariableTopLevelDeclaration(node) && isSourceFile(node.parent) || isVariableDeclaration(node) && isSourceFile(node.parent.parent.parent);
+        return isNonVariableTopLevelDeclaration(node) && isSourceFile2(node.parent) || isVariableDeclaration(node) && isSourceFile2(node.parent.parent.parent);
       }
       function sourceFileOfTopLevelDeclaration(node) {
         return isVariableDeclaration(node) ? node.parent.parent.parent : node.parent;
@@ -158166,7 +158166,7 @@ interface Symbol {
           if (context.triggerReason === "implicit" && context.endPosition !== void 0) {
             const startNodeAncestor = findAncestor(getTokenAtPosition(file, context.startPosition), isBlockLike);
             const endNodeAncestor = findAncestor(getTokenAtPosition(file, context.endPosition), isBlockLike);
-            if (startNodeAncestor && !isSourceFile(startNodeAncestor) && endNodeAncestor && !isSourceFile(endNodeAncestor)) {
+            if (startNodeAncestor && !isSourceFile2(startNodeAncestor) && endNodeAncestor && !isSourceFile2(endNodeAncestor)) {
               return emptyArray;
             }
           }
@@ -160143,7 +160143,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
               // falls through
               case 264:
               case 263:
-                if (isSourceFile(node2.parent) && node2.parent.externalModuleIndicator === void 0) {
+                if (isSourceFile2(node2.parent) && node2.parent.externalModuleIndicator === void 0) {
                   (errors2 || (errors2 = [])).push(createDiagnosticForNode(node2, Messages.functionWillNotBeVisibleInTheNewScope));
                 }
               // falls through
@@ -160251,7 +160251,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
         return void 0;
       }
       function isScope2(node) {
-        return isArrowFunction(node) ? isFunctionBody(node.body) : isFunctionLikeDeclaration(node) || isSourceFile(node) || isModuleBlock(node) || isClassLike(node);
+        return isArrowFunction(node) ? isFunctionBody(node.body) : isFunctionLikeDeclaration(node) || isSourceFile2(node) || isModuleBlock(node) || isClassLike(node);
       }
       function collectEnclosingScopes(range) {
         let current = isReadonlyArray(range.range) ? first(range.range) : range.range;
@@ -161061,7 +161061,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           if (isBlock(body)) {
             return body.statements;
           }
-        } else if (isModuleBlock(scope) || isSourceFile(scope)) {
+        } else if (isModuleBlock(scope) || isSourceFile2(scope)) {
           return scope.statements;
         } else if (isClassLike(scope)) {
           return scope.members;
@@ -161782,9 +161782,9 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           decl = getDeclarationForBindingElement(decl);
         }
         if (isVariableDeclaration(decl)) {
-          return (!isSourceFile(decl.parent.parent.parent) || isCatchClause(decl.parent)) && decl.getSourceFile() === sourceFile;
+          return (!isSourceFile2(decl.parent.parent.parent) || isCatchClause(decl.parent)) && decl.getSourceFile() === sourceFile;
         } else if (isFunctionDeclaration(decl)) {
-          return !isSourceFile(decl.parent) && decl.getSourceFile() === sourceFile;
+          return !isSourceFile2(decl.parent) && decl.getSourceFile() === sourceFile;
         }
         return false;
       }
@@ -163201,7 +163201,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           if (file.end === span.start + span.length) {
             nodes.push(file.endOfFileToken);
           }
-          if (some(nodes, isSourceFile)) {
+          if (some(nodes, isSourceFile2)) {
             return void 0;
           }
           return nodes;
@@ -164848,13 +164848,13 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
         return (isFunctionExpression(node) || isArrowFunction(node) || isClassExpression(node)) && isVariableLike2(node.parent) && node === node.parent.initializer && isIdentifier(node.parent.name) && (!!(getCombinedNodeFlags(node.parent) & 2) || isPropertyDeclaration(node.parent));
       }
       function isPossibleCallHierarchyDeclaration(node) {
-        return isSourceFile(node) || isModuleDeclaration(node) || isFunctionDeclaration(node) || isFunctionExpression(node) || isClassDeclaration(node) || isClassExpression(node) || isClassStaticBlockDeclaration(node) || isMethodDeclaration(node) || isMethodSignature(node) || isGetAccessorDeclaration(node) || isSetAccessorDeclaration(node);
+        return isSourceFile2(node) || isModuleDeclaration(node) || isFunctionDeclaration(node) || isFunctionExpression(node) || isClassDeclaration(node) || isClassExpression(node) || isClassStaticBlockDeclaration(node) || isMethodDeclaration(node) || isMethodSignature(node) || isGetAccessorDeclaration(node) || isSetAccessorDeclaration(node);
       }
       function isValidCallHierarchyDeclaration(node) {
-        return isSourceFile(node) || isModuleDeclaration(node) && isIdentifier(node.name) || isFunctionDeclaration(node) || isClassDeclaration(node) || isClassStaticBlockDeclaration(node) || isMethodDeclaration(node) || isMethodSignature(node) || isGetAccessorDeclaration(node) || isSetAccessorDeclaration(node) || isNamedExpression(node) || isAssignedExpression(node);
+        return isSourceFile2(node) || isModuleDeclaration(node) && isIdentifier(node.name) || isFunctionDeclaration(node) || isClassDeclaration(node) || isClassStaticBlockDeclaration(node) || isMethodDeclaration(node) || isMethodSignature(node) || isGetAccessorDeclaration(node) || isSetAccessorDeclaration(node) || isNamedExpression(node) || isAssignedExpression(node);
       }
       function getCallHierarchyDeclarationReferenceNode(node) {
-        if (isSourceFile(node)) return node;
+        if (isSourceFile2(node)) return node;
         if (isNamedDeclaration(node)) return node.name;
         if (isAssignedExpression(node)) return node.parent.name;
         return Debug.checkDefined(node.modifiers && find(node.modifiers, isDefaultModifier3));
@@ -164867,7 +164867,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
         return location && typeChecker.getSymbolAtLocation(location);
       }
       function getCallHierarchyItemName(program, node) {
-        if (isSourceFile(node)) {
+        if (isSourceFile2(node)) {
           return { text: node.fileName, pos: 0, end: 0 };
         }
         if ((isFunctionDeclaration(node) || isClassDeclaration(node)) && !isNamedDeclaration(node)) {
@@ -165089,7 +165089,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
         return createCallHierarchyIncomingCall(createCallHierarchyItem(program, entries[0].declaration), map(entries, (entry) => createTextSpanFromRange(entry.range)));
       }
       function getIncomingCalls(program, declaration, cancellationToken) {
-        if (isSourceFile(declaration) || isModuleDeclaration(declaration) || isClassStaticBlockDeclaration(declaration)) {
+        if (isSourceFile2(declaration) || isModuleDeclaration(declaration) || isClassStaticBlockDeclaration(declaration)) {
           return [];
         }
         const location = getCallHierarchyDeclarationReferenceNode(declaration);
@@ -170445,7 +170445,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           false
         );
         if (!isFunctionDeclaration(fn) && !isFunctionExpression(fn)) return void 0;
-        if (!isSourceFile(getThisContainer(
+        if (!isSourceFile2(getThisContainer(
           fn,
           /*includeArrowFunctions*/
           false,
@@ -171236,7 +171236,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           if (moduleDeclaration && moduleDeclarationSourceFile && !isSourceFileFromLibrary(program, moduleDeclarationSourceFile)) {
             return { kind: 2, token, call: parent2.parent, sourceFile: moduleDeclarationSourceFile, modifierFlags: 32, parentDeclaration: moduleDeclaration };
           }
-          const moduleSourceFile = find(symbol.declarations, isSourceFile);
+          const moduleSourceFile = find(symbol.declarations, isSourceFile2);
           if (sourceFile.commonJsModuleIndicator) return void 0;
           if (moduleSourceFile && !isSourceFileFromLibrary(program, moduleSourceFile)) {
             return { kind: 2, token, call: parent2.parent, sourceFile: moduleSourceFile, modifierFlags: 32, parentDeclaration: moduleSourceFile };
@@ -177750,7 +177750,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           return void 0;
         }
       }
-      function getJSDocParamAnnotation(paramName, initializer, dotDotDotToken, isJs, isObject, isSnippet, checker, options, preferences, tabstopCounter) {
+      function getJSDocParamAnnotation(paramName, initializer, dotDotDotToken, isJs, isObject2, isSnippet, checker, options, preferences, tabstopCounter) {
         if (isSnippet) {
           Debug.assertIsDefined(tabstopCounter);
         }
@@ -177762,7 +177762,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
         }
         if (isJs) {
           let type = "*";
-          if (isObject) {
+          if (isObject2) {
             Debug.assert(!dotDotDotToken, `Cannot annotate a rest parameter with type 'Object'.`);
             type = "Object";
           } else {
@@ -177798,7 +177798,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
               type = `\${${tabstopCounter.tabstop++}:${type}}`;
             }
           }
-          const dotDotDot = !isObject && dotDotDotToken ? "..." : "";
+          const dotDotDot = !isObject2 && dotDotDotToken ? "..." : "";
           const description3 = isSnippet ? `\${${tabstopCounter.tabstop++}}` : "";
           return `@param {${dotDotDot}${type}} ${paramName} ${description3}`;
         } else {
@@ -180105,7 +180105,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
             return isImportable(
               info.isFromPackageJson ? packageJsonAutoImportProvider : program,
               sourceFile,
-              tryCast(info.moduleSymbol.valueDeclaration, isSourceFile),
+              tryCast(info.moduleSymbol.valueDeclaration, isSourceFile2),
               info.moduleSymbol,
               preferences,
               packageJsonFilter,
@@ -180454,7 +180454,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           if (!namedExports) {
             return 0;
           }
-          const localsContainer = findAncestor(namedExports, or(isSourceFile, isModuleDeclaration));
+          const localsContainer = findAncestor(namedExports, or(isSourceFile2, isModuleDeclaration));
           completionKind = 5;
           isNewIdentifierLocation = false;
           (_a = localsContainer.locals) == null ? void 0 : _a.forEach((symbol, name) => {
@@ -181122,7 +181122,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           case 353:
             return tryCast(location.parent, isObjectTypeDeclaration);
           case 1:
-            const cls = tryCast(lastOrUndefined(cast(location.parent, isSourceFile).statements), isObjectTypeDeclaration);
+            const cls = tryCast(lastOrUndefined(cast(location.parent, isSourceFile2).statements), isObjectTypeDeclaration);
             if (cls && !findChildOfKind(cls, 20, sourceFile)) {
               return cls;
             }
@@ -181336,7 +181336,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
             keywordCompletion = 161;
             return void 0;
           }
-          if (isImportKeyword(contextToken) && isSourceFile(parent2)) {
+          if (isImportKeyword(contextToken) && isSourceFile2(parent2)) {
             keywordCompletion = 156;
             return contextToken;
           }
@@ -183051,7 +183051,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           return (_a = tryCast(decl.expression, canHaveSymbol)) == null ? void 0 : _a.symbol;
         } else if (isBinaryExpression(decl)) {
           return (_b = tryCast(decl.right, canHaveSymbol)) == null ? void 0 : _b.symbol;
-        } else if (isSourceFile(decl)) {
+        } else if (isSourceFile2(decl)) {
           return decl.symbol;
         }
         return void 0;
@@ -183633,7 +183633,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
         function getReferencedSymbolsForNode(position, node, program, sourceFiles, cancellationToken, options = {}, sourceFilesSet = new Set(sourceFiles.map((f) => f.fileName))) {
           var _a, _b;
           node = getAdjustedNode2(node, options);
-          if (isSourceFile(node)) {
+          if (isSourceFile2(node)) {
             const resolvedRef = ts_GoToDefinition_exports.getReferenceAtPosition(node, position, program);
             if (!(resolvedRef == null ? void 0 : resolvedRef.file)) {
               return void 0;
@@ -183756,7 +183756,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           return void 0;
         }
         function getReferencedSymbolsForModuleIfDeclaredBySourceFile(symbol, program, sourceFiles, cancellationToken, options, sourceFilesSet) {
-          const moduleSourceFile = symbol.flags & 1536 && symbol.declarations && find(symbol.declarations, isSourceFile);
+          const moduleSourceFile = symbol.flags & 1536 && symbol.declarations && find(symbol.declarations, isSourceFile2);
           if (!moduleSourceFile) return void 0;
           const exportEquals = symbol.exports.get(
             "export="
@@ -183969,7 +183969,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
               search,
               state,
               /*addReferencesHere*/
-              !(isSourceFile(scope) && !contains(state.sourceFiles, scope))
+              !(isSourceFile2(scope) && !contains(state.sourceFiles, scope))
             );
           } else {
             for (const sourceFile of state.sourceFiles) {
@@ -184014,7 +184014,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
         })(SpecialSearchKind || (SpecialSearchKind = {}));
         function getNonModuleSymbolOfMergedModuleSymbol(symbol) {
           if (!(symbol.flags & (1536 | 33554432))) return void 0;
-          const decl = symbol.declarations && find(symbol.declarations, (d) => !isSourceFile(d) && !isModuleDeclaration(d));
+          const decl = symbol.declarations && find(symbol.declarations, (d) => !isSourceFile2(d) && !isModuleDeclaration(d));
           return decl && decl.symbol;
         }
         class State {
@@ -184801,7 +184801,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           }
           const references = flatMap(searchSpaceNode.kind === 308 ? sourceFiles : [searchSpaceNode.getSourceFile()], (sourceFile) => {
             cancellationToken.throwIfCancellationRequested();
-            return getPossibleSymbolReferenceNodes(sourceFile, "this", isSourceFile(searchSpaceNode) ? sourceFile : searchSpaceNode).filter((node) => {
+            return getPossibleSymbolReferenceNodes(sourceFile, "this", isSourceFile2(searchSpaceNode) ? sourceFile : searchSpaceNode).filter((node) => {
               if (!isThis(node)) {
                 return false;
               }
@@ -187060,7 +187060,7 @@ ${content}
         for (const location of focusLocations) {
           const scope = findAncestor(
             getTokenAtPosition(originalFile, location.start),
-            (block) => or(isBlock, isSourceFile)(block) && some(block.statements, (origStmt) => changes.some((newStmt) => matchNode(newStmt, origStmt)))
+            (block) => or(isBlock, isSourceFile2)(block) && some(block.statements, (origStmt) => changes.some((newStmt) => matchNode(newStmt, origStmt)))
           );
           if (scope) {
             const start = scope.statements.find((stmt) => changes.some((node) => matchNode(node, stmt)));
@@ -188316,7 +188316,7 @@ ${content}
         if (!isExternalModuleNameRelative(node.text)) {
           return getRenameInfoError(Diagnostics.You_cannot_rename_a_module_via_a_global_import);
         }
-        const moduleSourceFile = moduleSymbol.declarations && find(moduleSymbol.declarations, isSourceFile);
+        const moduleSourceFile = moduleSymbol.declarations && find(moduleSymbol.declarations, isSourceFile2);
         if (!moduleSourceFile) return void 0;
         const withoutIndex = endsWith(node.text, "/index") || endsWith(node.text, "/index.js") ? void 0 : tryRemoveSuffix(removeFileExtension(moduleSourceFile.fileName), "/index");
         const fileName = withoutIndex === void 0 ? moduleSourceFile.fileName : withoutIndex;
@@ -188730,7 +188730,7 @@ ${content}
         return createTextSpan(applicableSpanStart, applicableSpanEnd - applicableSpanStart);
       }
       function getContainingArgumentInfo(node, position, sourceFile, checker, isManuallyInvoked) {
-        for (let n = node; !isSourceFile(n) && (isManuallyInvoked || !isBlock(n)); n = n.parent) {
+        for (let n = node; !isSourceFile2(n) && (isManuallyInvoked || !isBlock(n)); n = n.parent) {
           Debug.assert(rangeContainsRange(n.parent, n), "Not a subspan", () => `Child: ${Debug.formatSyntaxKind(n.kind)}, parent: ${Debug.formatSyntaxKind(n.parent.kind)}`);
           const argumentInfo = getImmediatelyContainingArgumentOrContextualParameterInfo(n, position, sourceFile, checker);
           if (argumentInfo) {
@@ -189017,7 +189017,7 @@ ${content}
       var isImport2 = or(isImportDeclaration, isImportEqualsDeclaration);
       function getSelectionChildren(node) {
         var _a;
-        if (isSourceFile(node)) {
+        if (isSourceFile2(node)) {
           return groupChildren(node.getChildAt(0).getChildren(), isImport2);
         }
         if (isMappedTypeNode(node)) {
@@ -197247,7 +197247,7 @@ ${options.prefix}` : "\n" : options.prefix
         isSingleOrDoubleQuote: () => isSingleOrDoubleQuote,
         isSolutionConfig: () => isSolutionConfig,
         isSourceElement: () => isSourceElement,
-        isSourceFile: () => isSourceFile,
+        isSourceFile: () => isSourceFile2,
         isSourceFileFromLibrary: () => isSourceFileFromLibrary,
         isSourceFileJS: () => isSourceFileJS,
         isSourceFileNotJson: () => isSourceFileNotJson,
@@ -198000,7 +198000,7 @@ ${options.prefix}` : "\n" : options.prefix
         hasNoTypeScriptSource: () => hasNoTypeScriptSource,
         indent: () => indent2,
         isBackgroundProject: () => isBackgroundProject,
-        isConfigFile: () => isConfigFile,
+        isConfigFile: () => isConfigFile2,
         isConfiguredProject: () => isConfiguredProject,
         isDynamicFileName: () => isDynamicFileName,
         isExternalProject: () => isExternalProject,
@@ -205688,7 +205688,7 @@ Dynamic files must always be opened with service's current directory or service 
           }
         };
       }
-      function isConfigFile(config) {
+      function isConfigFile2(config) {
         return config.kind !== void 0;
       }
       function printProjectWithoutFileNames(project) {
@@ -209688,7 +209688,7 @@ Additional information: BADCLIENT: Bad error code, ${badCode} not found in range
         return { start: positionToLineOffset(scriptInfo, change.span.start), end: positionToLineOffset(scriptInfo, textSpanEnd(change.span)), newText: change.newText };
       }
       function positionToLineOffset(info, position) {
-        return isConfigFile(info) ? locationFromLineAndCharacter(info.getLineAndCharacterOfPosition(position)) : info.positionToLineOffset(position);
+        return isConfigFile2(info) ? locationFromLineAndCharacter(info.getLineAndCharacterOfPosition(position)) : info.positionToLineOffset(position);
       }
       function convertLinkedEditInfoToRanges(linkedEdit, scriptInfo) {
         const ranges = linkedEdit.ranges.map(
@@ -210739,7 +210739,7 @@ Additional information: BADCLIENT: Bad error code, ${badCode} not found in range
         hasNoTypeScriptSource: () => hasNoTypeScriptSource,
         indent: () => indent2,
         isBackgroundProject: () => isBackgroundProject,
-        isConfigFile: () => isConfigFile,
+        isConfigFile: () => isConfigFile2,
         isConfiguredProject: () => isConfiguredProject,
         isDynamicFileName: () => isDynamicFileName,
         isExternalProject: () => isExternalProject,
@@ -213653,6 +213653,1207 @@ function runIfEntry(entryUrl) {
   return void 0;
 }
 
+// src/scanner.mjs
+var scanner_exports = {};
+__export(scanner_exports, {
+  IDENTITY_DOMAIN: () => IDENTITY_DOMAIN,
+  SIGNATURE_DOMAIN: () => SIGNATURE_DOMAIN,
+  SUPPORTED_KIND_WIRE: () => SUPPORTED_KIND_WIRE,
+  ScannerSession: () => ScannerSession,
+  assertCompilerAvailable: () => assertCompilerAvailable,
+  buildInputManifest: () => buildInputManifest,
+  enumerateInventory: () => enumerateInventory,
+  nativeId: () => nativeId,
+  nativeIdentityTuple: () => nativeIdentityTuple,
+  runScan: () => runScan,
+  signatureDigest: () => signatureDigest,
+  signatureGraphOfSymbol: () => signatureGraphOfSymbol,
+  sortIndex: () => sortIndex
+});
+import { createHash as createHash2 } from "node:crypto";
+import { lstatSync as lstatSync2, readdirSync } from "node:fs";
+import { join } from "node:path";
+var IDENTITY_DOMAIN = "lekalo.ts.native.v1";
+var SIGNATURE_DOMAIN = "lekalo.ts.signature.v1";
+var SIGNATURE_POLICY_VERSION = 1;
+var MAX_SCAN_SOURCE_BYTES = 16 * 1024 * 1024;
+var MAX_SCAN_FILES = 4096;
+var MAX_ENUMERATION_DEPTH = 24;
+var MAX_DIAGNOSTICS = 4096;
+function isEmbeddedLibBase(fileName) {
+  return /^lib\..+\.d\.ts$/.test(fileName.split("/").pop());
+}
+function isObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function sha256Hex2(text) {
+  return createHash2("sha256").update(text, "utf8").digest("hex");
+}
+function canonicalText(value) {
+  if (value === null) return "null";
+  switch (typeof value) {
+    case "boolean":
+      return value ? "true" : "false";
+    case "number":
+      if (!Number.isFinite(value)) {
+        throw new RequestRefusal("syntax", "non-finite number cannot be canonicalized");
+      }
+      return Number.isInteger(value) && Math.abs(value) < 1e15 ? String(value) : JSON.stringify(value);
+    case "string":
+      return JSON.stringify(value);
+    case "object":
+      break;
+    default:
+      throw new RequestRefusal("syntax", "unserializable value cannot be canonicalized");
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalText).join(",")}]`;
+  }
+  const keys = Object.keys(value).sort((left, right) => {
+    const a = Buffer.from(left, "utf8");
+    const b = Buffer.from(right, "utf8");
+    const length = Math.min(a.length, b.length);
+    for (let index = 0; index < length; index += 1) {
+      if (a[index] !== b[index]) return a[index] - b[index];
+    }
+    return a.length - b.length;
+  });
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalText(value[key])}`).join(",")}}`;
+}
+function utf8Compare(left, right) {
+  const a = Buffer.from(left, "utf8");
+  const b = Buffer.from(right, "utf8");
+  const length = Math.min(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    if (a[index] !== b[index]) return a[index] - b[index];
+  }
+  return a.length - b.length;
+}
+function assertCompilerAvailable() {
+  const ts2 = vendoredTs();
+  if (!ts2) {
+    throw new RequestRefusal(
+      "compiler-absent",
+      "the vendored TypeScript compiler is not attached to this deployment"
+    );
+  }
+  for (const name of [
+    "createProgram",
+    "createSourceFile",
+    "resolveModuleName",
+    "getCombinedModifierFlags",
+    "readConfigFile",
+    "parseJsonConfigFileContent"
+  ]) {
+    if (typeof ts2[name] !== "function") {
+      throw new RequestRefusal("compiler", `the vendored compiler lacks ${name}`);
+    }
+  }
+  return ts2;
+}
+function enumerateInventory(permittedRoot, roots, profile) {
+  const exclusions = profile.exclusions ?? [];
+  const excluded = (logicalPath) => {
+    const segments = logicalPath.split("/");
+    for (let depth = 1; depth <= segments.length; depth += 1) {
+      const prefix = segments.slice(0, depth).join("/");
+      for (const exclusion of exclusions) {
+        if (exclusion === prefix) return true;
+        if (exclusion.endsWith("/**")) {
+          const head = exclusion.slice(0, -3);
+          if (prefix === head || prefix.startsWith(`${head}/`)) return true;
+        }
+      }
+    }
+    return false;
+  };
+  const files = [];
+  const directories = [];
+  const walk = (rootPath, relative, depth) => {
+    if (depth > MAX_ENUMERATION_DEPTH) {
+      throw new RequestRefusal("enumeration", "directory depth exceeds the scan bound");
+    }
+    if (files.length + directories.length > MAX_SCAN_FILES * 2) {
+      throw new RequestRefusal("enumeration", "enumeration exceeds the scan bound");
+    }
+    const absoluteDirectory = relative === "" ? join(permittedRoot, ...rootPath.split("/")) : join(permittedRoot, ...relative.split("/"));
+    let names;
+    try {
+      names = readdirSync(absoluteDirectory, { withFileTypes: true });
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        throw new RequestRefusal("root-invalid", "a resolved root vanished before enumeration");
+      }
+      throw new RequestRefusal("enumeration", "a directory could not be enumerated");
+    }
+    names.sort((left, right) => utf8Compare(left.name, right.name));
+    for (const entry of names) {
+      const logicalPath = relative === "" ? `${rootPath}/${entry.name}` : `${relative}/${entry.name}`;
+      if (excluded(logicalPath)) continue;
+      const absolute = join(permittedRoot, ...logicalPath.split("/"));
+      let metadata;
+      try {
+        metadata = lstatSync2(absolute);
+      } catch (error) {
+        if (error?.code === "ENOENT") continue;
+        throw new RequestRefusal("enumeration", "an entry could not be inspected");
+      }
+      if (metadata.isSymbolicLink()) {
+        throw new RequestRefusal("link", "a link appeared inside a resolved root");
+      }
+      if (metadata.isDirectory()) {
+        directories.push(logicalPath);
+        walk(rootPath, logicalPath, depth + 1);
+      } else if (metadata.isFile()) {
+        files.push({ path: logicalPath, size: metadata.size });
+      } else {
+        throw new RequestRefusal("special", "a special file appeared inside a resolved root");
+      }
+    }
+  };
+  for (const root of roots) {
+    if (root.kind === "file") {
+      if (excluded(root.path)) continue;
+      try {
+        const absolute = join(permittedRoot, ...root.path.split("/"));
+        const metadata = lstatSync2(absolute);
+        if (metadata.isSymbolicLink()) throw new RequestRefusal("link", "file root is a link");
+        if (!metadata.isFile()) throw new RequestRefusal("kind", "file root is not a file");
+        files.push({ path: root.path, size: metadata.size });
+      } catch (error) {
+        if (error instanceof RequestRefusal) throw error;
+        if (error?.code === "ENOENT") {
+          throw new RequestRefusal("root-invalid", "a resolved root vanished before enumeration");
+        }
+        throw new RequestRefusal("enumeration", "a file root could not be inspected");
+      }
+      continue;
+    }
+    walk(root.path, "", 1);
+  }
+  return { files, directories };
+}
+var SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".d.ts", ".d.mts", ".d.cts"];
+var CONFIG_NAMES = ["tsconfig.json", "jsconfig.json"];
+var PACKAGE_NAME = "package.json";
+function isSourceFile(path) {
+  return SOURCE_EXTENSIONS.some((extension) => path.endsWith(extension)) && !path.endsWith(".d.ts");
+}
+function isDeclarationFile(path) {
+  return path.endsWith(".d.ts") || path.endsWith(".d.mts") || path.endsWith(".d.cts");
+}
+function isConfigFile(path) {
+  const base = path.split("/").pop();
+  return CONFIG_NAMES.includes(base);
+}
+function buildInputManifest(inventory, readBytes) {
+  const sourceFiles = [];
+  const configFiles = [];
+  const packageFiles = [];
+  const otherFiles = [];
+  let totalBytes = 0;
+  for (const file of inventory.files) {
+    if (totalBytes + file.size > MAX_SCAN_SOURCE_BYTES) {
+      throw new RequestRefusal("read-denied", "byte cap exhausted");
+    }
+    totalBytes += file.size;
+    const base = file.path.split("/").pop();
+    const digest = sha256Hex2(readBytes(file.path).toString("utf8"));
+    if (isSourceFile(file.path) || isDeclarationFile(file.path)) {
+      sourceFiles.push({ path: file.path, digest, declaration: isDeclarationFile(file.path) });
+    } else if (isConfigFile(file.path)) {
+      configFiles.push({ path: file.path, digest });
+    } else if (base === PACKAGE_NAME) {
+      packageFiles.push({ path: file.path, digest });
+    } else {
+      otherFiles.push({ path: file.path, digest });
+    }
+  }
+  sourceFiles.sort((a, b) => utf8Compare(a.path, b.path));
+  configFiles.sort((a, b) => utf8Compare(a.path, b.path));
+  packageFiles.sort((a, b) => utf8Compare(a.path, b.path));
+  otherFiles.sort((a, b) => utf8Compare(a.path, b.path));
+  return { sourceFiles, configFiles, packageFiles, otherFiles, totalBytes };
+}
+function parsePackageManifest(text) {
+  let document;
+  try {
+    document = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!isObject(document)) return null;
+  const manifest = {};
+  if (typeof document.name === "string" && document.name.length <= 214) {
+    manifest.name = document.name;
+  }
+  if (document.type === "module" || document.type === "commonjs") {
+    manifest.type = document.type;
+  }
+  if (typeof document.main === "string") manifest.main = document.main;
+  if (isObject(document.exports)) manifest.exports = document.exports;
+  if (isObject(document.dependencies)) manifest.dependencies = Object.keys(document.dependencies).sort();
+  return manifest;
+}
+function discoverPackagesAndProjects(manifest, readBytes, ts2, diagnostics) {
+  const packages = [];
+  const projects = [];
+  const packageByRoot = /* @__PURE__ */ new Map();
+  for (const entry of manifest.packageFiles) {
+    const text = readBytes(entry.path).toString("utf8");
+    const parsed = parsePackageManifest(text);
+    if (!parsed) {
+      diagnostics.push({
+        code: "package-manifest-invalid",
+        path: entry.path,
+        severity: "warning",
+        detail: "package.json is not a valid manifest object"
+      });
+      continue;
+    }
+    const root = entry.path.slice(0, -PACKAGE_NAME.length).replace(/\/$/, "");
+    const pkg = {
+      root: root === "" ? "." : root,
+      manifestPath: entry.path,
+      name: parsed.name ?? null,
+      type: parsed.type ?? null,
+      exports: parsed.exports ? canonicalText(parsed.exports) : null,
+      digest: entry.digest
+    };
+    packages.push(pkg);
+    packageByRoot.set(pkg.root, pkg);
+  }
+  for (const entry of manifest.configFiles) {
+    const text = readBytes(entry.path).toString("utf8");
+    const result = ts2.readConfigFile(entry.path, () => text);
+    if (result.error) {
+      diagnostics.push({
+        code: "config-parse",
+        path: entry.path,
+        severity: "error",
+        detail: ts2.flattenDiagnosticMessageText(result.error.messageText, " ").slice(0, 256)
+      });
+      continue;
+    }
+    const directory = entry.path.slice(0, -"tsconfig.json".length).replace(/\/$/, "");
+    const raw = result.config ?? {};
+    const references = Array.isArray(raw.references) ? raw.references.filter((reference) => isObject(reference) && typeof reference.path === "string").map((reference) => ({
+      path: reference.path,
+      resolved: resolveConfigReference(entry.path, reference.path)
+    })).filter((reference) => reference.resolved !== null) : [];
+    const extendsChain = [];
+    let currentExtends = typeof raw.extends === "string" ? raw.extends : null;
+    while (currentExtends && extendsChain.length < 8) {
+      const resolved = resolveConfigReference(entry.path, currentExtends);
+      if (resolved === null || !manifest.configFiles.some((config) => config.path === resolved)) {
+        extendsChain.push({ path: currentExtends, resolved, inScope: resolved !== null });
+        break;
+      }
+      extendsChain.push({ path: currentExtends, resolved, inScope: true });
+      currentExtends = null;
+    }
+    projects.push({
+      configPath: entry.path,
+      directory: directory === "" ? "." : directory,
+      references,
+      extendsChain,
+      digest: entry.digest,
+      raw
+    });
+  }
+  projects.sort((a, b) => utf8Compare(a.configPath, b.configPath));
+  packages.sort((a, b) => utf8Compare(a.root, b.root));
+  return { packages, projects, packageByRoot };
+}
+function resolveConfigReference(fromConfigPath, reference) {
+  if (typeof reference !== "string" || reference.length === 0) return null;
+  const directory = fromConfigPath.includes("/") ? fromConfigPath.slice(0, fromConfigPath.lastIndexOf("/")) : "";
+  const segments = directory === "" ? [] : directory.split("/");
+  let candidate = reference;
+  if (candidate.startsWith("./") || candidate.startsWith("../")) {
+    for (const segment of candidate.split("/")) {
+      if (segment === ".") continue;
+      if (segment === "..") segments.pop();
+      else segments.push(segment);
+    }
+    candidate = segments.join("/");
+  } else if (candidate.startsWith("/")) {
+    return null;
+  } else {
+    return null;
+  }
+  if (candidate.endsWith("/")) candidate = candidate.slice(0, -1);
+  return candidate === "" ? null : candidate;
+}
+function createRestrictedHost({ ts: ts2, inventorySet, readBytes, libMap, logicalToHost }) {
+  const sourceFileCache = /* @__PURE__ */ new Map();
+  const existsCache = /* @__PURE__ */ new Map();
+  const denied = [];
+  const currentDirectory = "lekalo/project";
+  const deny = (kind, hostName) => {
+    if (denied.length < MAX_DIAGNOSTICS) denied.push({ kind, path: hostName });
+    return void 0;
+  };
+  const resolveInventory = (hostName) => inventorySet.get(hostName) ?? inventorySet.get(hostName.toLowerCase());
+  const host = {
+    useCaseSensitiveFileNames: () => false,
+    getCanonicalFileName: (name) => name.toLowerCase(),
+    getCurrentDirectory: () => currentDirectory,
+    getNewLine: () => "\n",
+    getDefaultLibFileName: () => "lekalo/libs/lib.d.ts",
+    getDefaultLibLocation: () => "lekalo/libs",
+    fileExists(hostName) {
+      const normalized = hostName.replaceAll("\\", "/");
+      const key = normalized.toLowerCase();
+      if (existsCache.has(key)) return existsCache.get(key);
+      let result;
+      if (resolveInventory(normalized) !== void 0) {
+        result = true;
+      } else if (/^lekalo\/libs\/lib\..+\.d\.ts$/.test(normalized) && libMap.has(normalized.split("/").pop())) {
+        result = true;
+      } else {
+        result = false;
+        deny("unknown", normalized);
+      }
+      existsCache.set(key, result);
+      return result;
+    },
+    readFile(hostName) {
+      const normalized = hostName.replaceAll("\\", "/");
+      const logical = resolveInventory(normalized);
+      if (logical !== void 0) {
+        return readBytes(logical).toString("utf8");
+      }
+      if (/^lekalo\/libs\/lib\..+\.d\.ts$/.test(normalized)) {
+        const text = libMap.get(normalized.split("/").pop());
+        if (text !== void 0) return text;
+      }
+      return deny("read", normalized);
+    },
+    getSourceFile(hostName, languageVersion) {
+      const normalized = hostName.replaceAll("\\", "/");
+      const key = normalized.toLowerCase();
+      const cached = sourceFileCache.get(key);
+      if (cached) return cached;
+      const text = host.readFile(normalized);
+      if (text === void 0) return void 0;
+      const sourceFile = ts2.createSourceFile(normalized, text, languageVersion, true);
+      sourceFileCache.set(key, sourceFile);
+      return sourceFile;
+    },
+    directoryExists(hostName) {
+      const normalized = hostName.replaceAll("\\", "/").replace(/\/$/, "");
+      if (normalized === currentDirectory || normalized === "lekalo" || normalized === "lekalo/libs") {
+        return true;
+      }
+      for (const logical of inventorySet.keys()) {
+        if (logical.startsWith(`${normalized}/`)) return true;
+      }
+      return false;
+    },
+    getDirectories() {
+      return [];
+    },
+    readDirectory() {
+      return [];
+    },
+    getEnvironmentVariable: () => "",
+    realpath: void 0,
+    trace: void 0
+  };
+  return { host, denied, currentDirectory };
+}
+function buildInventorySet(manifest) {
+  const set = /* @__PURE__ */ new Map();
+  const addLogical = (logical) => {
+    set.set(logical, logical);
+    set.set(logical.toLowerCase(), logical);
+  };
+  for (const file of [
+    ...manifest.sourceFiles,
+    ...manifest.configFiles,
+    ...manifest.packageFiles,
+    ...manifest.otherFiles
+  ]) {
+    addLogical(file.path);
+    const host = `lekalo/project/${file.path}`;
+    set.set(host, file.path);
+    set.set(host.toLowerCase(), file.path);
+  }
+  return set;
+}
+var SUPPORTED_KIND_WIRE = /* @__PURE__ */ new Set([
+  "entity",
+  "value-object",
+  "command",
+  "query",
+  "event",
+  "policy",
+  "effect",
+  "endpoint",
+  "test"
+]);
+function packageLocatorFor(path, packageIndex) {
+  let best = null;
+  for (const [root, pkg] of packageIndex) {
+    if (root === "." || path === root || path.startsWith(`${root}/`)) {
+      if (best === null || root.length > best.root.length) best = pkg;
+    }
+  }
+  if (best) {
+    return { kind: "package", name: best.name ?? "", root: best.root };
+  }
+  return { kind: "project", root: "." };
+}
+function declarationFamily(ts2, symbol) {
+  const flags = symbol.flags;
+  const parts = [];
+  if (flags & ts2.SymbolFlags.Interface) parts.push("interface");
+  if (flags & ts2.SymbolFlags.Class) parts.push("class");
+  if (flags & ts2.SymbolFlags.Enum) parts.push("enum");
+  if (flags & ts2.SymbolFlags.TypeAlias) parts.push("type-alias");
+  if (flags & ts2.SymbolFlags.Function) parts.push("function");
+  if (flags & ts2.SymbolFlags.Method) parts.push("method");
+  if (flags & ts2.SymbolFlags.Variable) parts.push("variable");
+  if (flags & ts2.SymbolFlags.Property) parts.push("property");
+  if (flags & ts2.SymbolFlags.ConstEnum) parts.push("const-enum");
+  if (flags & ts2.SymbolFlags.NamespaceModule || flags & ts2.SymbolFlags.ValueModule) parts.push("module");
+  if (parts.length === 0) parts.push("symbol");
+  return parts.sort().join("+");
+}
+function nativeIdentityTuple({ locator, modulePath, qualifiedName, family, slot }) {
+  return [
+    IDENTITY_DOMAIN,
+    `${locator.kind}:${locator.name}:${locator.root}`,
+    modulePath,
+    qualifiedName,
+    family,
+    slot
+  ];
+}
+function nativeId(tuple) {
+  return `ts1-${sha256Hex2(canonicalText(tuple))}`;
+}
+function signatureGraphOfSymbol({ ts: ts2, checker, symbol, program, depthBudget }) {
+  const seen = /* @__PURE__ */ new Set();
+  const visit = (type2, depth) => {
+    if (type2 === void 0 || depth > 6) return { kind: "cutoff" };
+    const id = type2.id ?? type2;
+    if (typeof id === "number") {
+      if (seen.has(id)) return { kind: "anchor" };
+      seen.add(id);
+    }
+    if (type2.flags & ts2.TypeFlags.Any) return { kind: "any" };
+    if (type2.flags & ts2.TypeFlags.Unknown) return { kind: "unknown" };
+    if (type2.flags & ts2.TypeFlags.Never) return { kind: "never" };
+    if (type2.flags & ts2.TypeFlags.Void) return { kind: "void" };
+    if (type2.flags & ts2.TypeFlags.Undefined) return { kind: "undefined" };
+    if (type2.flags & ts2.TypeFlags.Null) return { kind: "null" };
+    if (type2.flags & ts2.TypeFlags.BooleanLiteral || type2.flags & ts2.TypeFlags.Boolean) {
+      return { kind: "boolean" };
+    }
+    if (type2.flags & ts2.TypeFlags.NumberLiteral || type2.flags & ts2.TypeFlags.Number) {
+      return { kind: "number" };
+    }
+    if (type2.flags & ts2.TypeFlags.StringLiteral) {
+      return { kind: "string-literal", value: String(type2.value ?? "") };
+    }
+    if (type2.flags & ts2.TypeFlags.String) return { kind: "string" };
+    if (type2.flags & ts2.TypeFlags.BigInt) return { kind: "bigint" };
+    if (type2.flags & ts2.TypeFlags.ESSymbol) return { kind: "symbol" };
+    if (type2.flags & ts2.TypeFlags.Union || type2.flags & ts2.TypeFlags.Intersection) {
+      const members = (type2.types ?? []).map((member) => visit(member, depth + 1)).sort((left, right) => utf8Compare(canonicalText(left), canonicalText(right)));
+      return { kind: type2.flags & ts2.TypeFlags.Union ? "union" : "intersection", members };
+    }
+    const reference = {
+      kind: "reference",
+      target: type2.symbol ? qualifiedNameOfSymbol(type2.symbol, ".") : checker.typeToString(type2, void 0, ts2.TypeFormatFlags.NoTruncation | ts2.TypeFormatFlags.UseFullyQualifiedType),
+      arguments: (type2.typeArguments ?? []).map((argument) => visit(argument, depth + 1))
+    };
+    return reference;
+  };
+  const callGraph = (signatures) => signatures.map((signature) => {
+    const parameters = signature.parameters.map((parameter) => {
+      const declaration = parameter.valueDeclaration;
+      const optional = Boolean(declaration && (ts2.getCombinedModifierFlags(declaration) & ts2.ModifierFlags.Optional || declaration?.questionToken || declaration?.initializer));
+      const isRest = Boolean(declaration && declaration.dotDotDotToken);
+      return {
+        name: parameter.name,
+        optional,
+        rest: isRest,
+        type: visit(checker.getTypeOfSymbol(parameter), 0)
+      };
+    });
+    const returnType = visit(checker.getReturnTypeOfSignature(signature), 0);
+    const async = Boolean(signature.declaration?.modifiers?.some(
+      (modifier) => modifier.kind === ts2.SyntaxKind.AsyncKeyword
+    ));
+    return { parameters, returnType: async ? { kind: "promise", value: returnType } : returnType, async };
+  });
+  const type = checker.getTypeOfSymbolAtLocation(symbol, symbol.declarations?.[0] ?? program.getSourceFiles()[0]);
+  const callSignatures = checker.getSignaturesOfType(type, ts2.SignatureKind.Call);
+  const constructSignatures = checker.getSignaturesOfType(type, ts2.SignatureKind.Construct);
+  const graph = {
+    policy: SIGNATURE_POLICY_VERSION,
+    call: callGraph(callSignatures),
+    construct: callGraph(constructSignatures),
+    properties: (type.flags & ts2.TypeFlags.Object) === 0 ? [] : checker.getPropertiesOfType(type).filter((member) => !(member.flags & (ts2.SymbolFlags.Method | ts2.SymbolFlags.Function))).map((member) => ({
+      name: member.name,
+      type: visit(checker.getTypeOfSymbol(member), 0),
+      optional: Boolean(member.declarations?.[0]?.questionToken)
+    })).sort((left, right) => utf8Compare(left.name, right.name))
+  };
+  return graph;
+}
+function qualifiedNameOfSymbol(symbol, separator, guard = /* @__PURE__ */ new Set()) {
+  if (!symbol || guard.has(symbol)) return symbol?.name ?? "?";
+  guard.add(symbol);
+  const name = symbol.name ?? "?";
+  void separator;
+  return name;
+}
+function lexicalQualifiedName(ts2, checker, symbol) {
+  const parts = [symbol.name];
+  let node = symbol.declarations?.[0]?.parent;
+  while (node) {
+    if (node.kind === ts2.SyntaxKind.ClassDeclaration || node.kind === ts2.SyntaxKind.InterfaceDeclaration || node.kind === ts2.SyntaxKind.EnumDeclaration || node.kind === ts2.SyntaxKind.ModuleDeclaration || node.kind === ts2.SyntaxKind.FunctionDeclaration) {
+      const parentSymbol = node.symbol ?? (node.name ? void 0 : void 0);
+      if (parentSymbol?.name) {
+        parts.unshift(parentSymbol.name);
+      } else {
+        break;
+      }
+    } else if (node.kind === ts2.SyntaxKind.SourceFile) {
+      break;
+    }
+    node = node.parent;
+  }
+  return parts.join(".");
+}
+function signatureDigest(graph) {
+  return `sha256:${sha256Hex2(canonicalText([SIGNATURE_DOMAIN, graph]))}`;
+}
+function emptyIndex(compilerMeta) {
+  return {
+    state: "complete",
+    packages: [],
+    projects: [],
+    symbols: [],
+    exports: [],
+    references: [],
+    routes: [],
+    tests: [],
+    diagnostics: [],
+    anyUncertainty: [],
+    inputManifest: null,
+    compiler: compilerMeta
+  };
+}
+function sortIndex(index) {
+  const byPath = (a, b) => utf8Compare(a.path, b.path);
+  index.packages.sort((a, b) => utf8Compare(a.root, b.root));
+  index.projects.sort((a, b) => utf8Compare(a.configPath, b.configPath));
+  index.symbols.sort((a, b) => utf8Compare(a.native, b.native));
+  index.exports.sort((a, b) => utf8Compare(`${a.module}\0${a.name}`, `${b.module}\0${b.name}`));
+  index.references.sort((a, b) => utf8Compare(`${a.from}\0${a.to}\0${a.role}`, `${b.from}\0${b.to}\0${b.role}`));
+  index.routes.sort((a, b) => utf8Compare(`${a.method}\0${a.path}`, `${b.method}\0${b.path}`));
+  index.tests.sort((a, b) => utf8Compare(`${a.path}\0${a.name}`, `${b.path}\0${b.name}`));
+  index.diagnostics.sort((a, b) => utf8Compare(canonicalText(a), canonicalText(b)));
+  index.anyUncertainty.sort(byPath);
+  return index;
+}
+function makeSymbolRow({ native, family, qualifiedName, modulePath, line, endLine, signature, isDeclaration, slot, jsdoc, memberOf }) {
+  return {
+    native,
+    family,
+    qualifiedName,
+    module: modulePath,
+    line,
+    endLine,
+    signature,
+    declarationOnly: isDeclaration,
+    slot,
+    jsdoc: jsdoc ?? null,
+    memberOf: memberOf ?? null
+  };
+}
+function indexSourceFile({ ts: ts2, checker, sourceFile, modulePath, packageIndex, index, context }) {
+  const isDeclaration = isDeclarationFile(modulePath);
+  const walk = (node, parentNative, parentName) => {
+    if (context.exceeded()) return;
+    let symbol = null;
+    let family = null;
+    let slot = "instance";
+    if (node.kind === ts2.SyntaxKind.ClassDeclaration || node.kind === ts2.SyntaxKind.ClassExpression) {
+      symbol = node.name ? checker.getSymbolAtLocation(node.name) : null;
+      family = "class";
+      slot = "static";
+    } else if (node.kind === ts2.SyntaxKind.InterfaceDeclaration) {
+      symbol = checker.getSymbolAtLocation(node.name);
+      family = "interface";
+    } else if (node.kind === ts2.SyntaxKind.TypeAliasDeclaration) {
+      symbol = checker.getSymbolAtLocation(node.name);
+      family = "type-alias";
+    } else if (node.kind === ts2.SyntaxKind.EnumDeclaration) {
+      symbol = checker.getSymbolAtLocation(node.name);
+      family = "enum";
+    } else if (node.kind === ts2.SyntaxKind.FunctionDeclaration) {
+      symbol = node.name ? checker.getSymbolAtLocation(node.name) : null;
+      family = "function";
+    } else if (node.kind === ts2.SyntaxKind.VariableDeclaration || node.kind === ts2.SyntaxKind.PropertySignature || node.kind === ts2.SyntaxKind.PropertyDeclaration) {
+      const nameNode = node.name;
+      if (nameNode && nameNode.kind === ts2.SyntaxKind.Identifier) {
+        symbol = checker.getSymbolAtLocation(nameNode);
+        family = node.kind === ts2.SyntaxKind.PropertySignature || node.kind === ts2.SyntaxKind.PropertyDeclaration ? "property" : "variable";
+        if (node.kind === ts2.SyntaxKind.PropertyDeclaration && ts2.getCombinedModifierFlags(node) & ts2.ModifierFlags.Static) {
+          slot = "static";
+        }
+      }
+    } else if (node.kind === ts2.SyntaxKind.MethodDeclaration || node.kind === ts2.SyntaxKind.MethodSignature || node.kind === ts2.SyntaxKind.GetAccessor || node.kind === ts2.SyntaxKind.SetAccessor) {
+      if (node.name?.kind === ts2.SyntaxKind.Identifier) {
+        symbol = checker.getSymbolAtLocation(node.name);
+        family = "method";
+        if (ts2.getCombinedModifierFlags(node) & ts2.ModifierFlags.Static) {
+          slot = "static";
+        }
+      }
+    }
+    if (symbol && symbol.name && family) {
+      const locator = packageLocatorFor(modulePath, packageIndex);
+      const qualifiedName = parentName ? `${parentName}.${symbol.name}` : lexicalQualifiedName(ts2, checker, symbol);
+      const tuple = nativeIdentityTuple({
+        locator,
+        modulePath,
+        qualifiedName,
+        family: declarationFamily(ts2, symbol) === "symbol" ? family : declarationFamily(ts2, symbol),
+        slot
+      });
+      const native = nativeId(tuple);
+      if (!index.symbols.some((row) => row.native === native && row.module === modulePath)) {
+        const start = node.getStart(sourceFile);
+        const end = node.getEnd();
+        const startLine = sourceFile.getLineAndCharacterOfPosition(start);
+        const endLine = sourceFile.getLineAndCharacterOfPosition(end);
+        const signatureGraph = family === "class" || family === "interface" ? null : signatureGraphOfSymbol({ ts: ts2, checker, symbol, program: context.program, depthBudget: 6 });
+        const signature = signatureGraph ? signatureDigest(signatureGraph) : null;
+        const jsdoc = symbol.getDocumentationComment ? symbol.getDocumentationComment(checker).map((part) => part.text ?? "").join("").slice(0, 256) : null;
+        index.symbols.push(makeSymbolRow({
+          native,
+          family: declarationFamily(ts2, symbol) === "symbol" ? family : declarationFamily(ts2, symbol),
+          qualifiedName,
+          modulePath,
+          line: startLine.line + 1,
+          endLine: endLine.line + 1,
+          signature,
+          isDeclaration,
+          slot,
+          jsdoc: jsdoc === "" ? null : jsdoc,
+          memberOf: parentNative
+        }));
+        (context.nativeByDeclaration ??= /* @__PURE__ */ new Map()).set(node, native);
+        parentNative = native;
+        parentName = qualifiedName;
+      }
+    }
+    ts2.forEachChild(node, (child) => walk(child, parentNative, parentName));
+  };
+  walk(sourceFile, null, null);
+}
+function indexExports({ ts: ts2, checker, program, packageIndex, index, context }) {
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile && isEmbeddedLibBase(sourceFile.fileName)) continue;
+    const modulePath = normalizeModulePath(sourceFile.fileName, context);
+    if (modulePath === null) continue;
+    const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
+    if (!moduleSymbol) continue;
+    const locator = packageLocatorFor(modulePath, packageIndex);
+    let exports;
+    try {
+      exports = checker.getExportsOfModule(moduleSymbol);
+    } catch {
+      continue;
+    }
+    for (const exported of exports) {
+      const resolved = exported.flags & ts2.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported;
+      const targetDeclarations = resolved.declarations ?? [];
+      const first = targetDeclarations[0];
+      const targetModule = first ? normalizeModulePath(first.getSourceFile().fileName, context) : null;
+      const isAlias = exported !== resolved && (exported.declarations?.some((declaration) => declaration.kind === ts2.SyntaxKind.ExportSpecifier || declaration.kind === ts2.SyntaxKind.ExportAssignment) ?? false);
+      const family = declarationFamily(ts2, resolved);
+      const tuple = nativeIdentityTuple({
+        locator: targetModule ? packageLocatorFor(targetModule, packageIndex) : locator,
+        modulePath: targetModule ?? modulePath,
+        qualifiedName: lexicalQualifiedName(ts2, checker, resolved),
+        family,
+        slot: "static"
+      });
+      index.exports.push({
+        module: modulePath,
+        name: exported.name,
+        native: isAlias || targetDeclarations.length === 0 ? null : nativeId(tuple),
+        aliasOf: isAlias && targetModule !== null ? { module: targetModule, name: resolved.name } : null,
+        declarationOnly: targetDeclarations.length > 0 && targetDeclarations.every((declaration) => {
+          const declarationModule = normalizeModulePath(declaration.getSourceFile().fileName, context);
+          return declarationModule === null ? false : isDeclarationFile(declarationModule);
+        }),
+        star: exported.declarations?.some((declaration) => declaration.kind === ts2.SyntaxKind.ExportDeclaration && declaration.exportClause?.kind === ts2.SyntaxKind.NamespaceExport) ?? false
+      });
+    }
+  }
+}
+function indexReferences({ ts: ts2, checker, program, context, index }) {
+  const record = (row) => {
+    if (index.references.length < 8192) index.references.push(row);
+  };
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile && isEmbeddedLibBase(sourceFile.fileName)) continue;
+    const fromModule = normalizeModulePath(sourceFile.fileName, context);
+    if (fromModule === null) continue;
+    const visit = (node) => {
+      if (context.exceeded()) return;
+      if (node.kind === ts2.SyntaxKind.ImportDeclaration || node.kind === ts2.SyntaxKind.ExportDeclaration || node.kind === ts2.SyntaxKind.ImportEqualsDeclaration) {
+        const moduleSpecifier = node.moduleSpecifier;
+        if (moduleSpecifier?.kind === ts2.SyntaxKind.StringLiteral) {
+          const resolution = program.getResolvedModule(sourceFile, moduleSpecifier.text);
+          if (resolution?.resolvedModule) {
+            const toModule = normalizeModulePath(resolution.resolvedModule.resolvedFileName, context);
+            const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+            if (toModule !== null) {
+              record(makeReference({
+                fromModule,
+                toModule,
+                role: "reference",
+                confidence: "exact",
+                line
+              }));
+            } else {
+              record(makeReference({
+                fromModule,
+                toModule: null,
+                toExternal: resolution.resolvedModule.resolvedFileName,
+                role: "reference",
+                confidence: "low",
+                line
+              }));
+            }
+          } else {
+            index.anyUncertainty.push({
+              path: fromModule,
+              kind: "unresolved-import",
+              detail: moduleSpecifier.text.slice(0, 128),
+              line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+            });
+          }
+        }
+      } else if (node.kind === ts2.SyntaxKind.CallExpression) {
+        const signature = checker.getResolvedSignature(node);
+        const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+        if (signature?.declaration) {
+          const toModule = normalizeModulePath(signature.declaration.getSourceFile().fileName, context);
+          if (toModule !== null) {
+            record(makeReference({ fromModule, toModule, role: "call", confidence: "exact", line }));
+          } else {
+            record(makeReference({
+              fromModule,
+              toModule: null,
+              toExternal: signature.declaration.getSourceFile().fileName,
+              role: "call",
+              confidence: "medium",
+              line
+            }));
+          }
+        } else if (node.expression.kind === ts2.SyntaxKind.Identifier) {
+          index.anyUncertainty.push({
+            path: fromModule,
+            kind: "unresolved-call",
+            detail: node.expression.text.slice(0, 64),
+            line
+          });
+        }
+      }
+      ts2.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+}
+function makeReference({ fromModule, fromNative, toModule, toNative, toExternal, role, confidence, line }) {
+  return {
+    from: fromModule,
+    fromNative: fromNative ?? null,
+    to: toModule ?? toExternal,
+    toNative: toNative ?? null,
+    external: toModule === null || toModule === void 0,
+    role,
+    confidence,
+    line
+  };
+}
+function normalizeModulePath(hostFileName, context) {
+  if (typeof hostFileName !== "string") return null;
+  const normalized = hostFileName.split("\\").join("/");
+  if (context.inventorySet.has(normalized)) {
+    return context.inventorySet.get(normalized);
+  }
+  const lowered = normalized.toLowerCase();
+  if (context.inventorySet.has(lowered)) {
+    return context.inventorySet.get(lowered);
+  }
+  return null;
+}
+var ROUTE_RULES = [
+  {
+    id: "route.get-static-v1",
+    method: "get",
+    moduleVocabulary: ["router"],
+    calleeNames: ["get"]
+  },
+  {
+    id: "route.post-static-v1",
+    method: "post",
+    moduleVocabulary: ["router"],
+    calleeNames: ["post"]
+  }
+];
+var TEST_RULE = {
+  id: "test.describe-it-static-v1",
+  calleeNames: /* @__PURE__ */ new Set(["describe", "it", "test"]),
+  skipNames: /* @__PURE__ */ new Set(["xdescribe", "xit", "xtest"])
+};
+function staticStringValue(node) {
+  if (node?.kind === 11 && typeof node.text === "string") {
+    return node.text;
+  }
+  if (node?.kind === 10 && typeof node.text === "string") {
+    return node.text;
+  }
+  return null;
+}
+function indexRoutesAndTests({ ts: ts2, checker, program, context, index }) {
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile && isEmbeddedLibBase(sourceFile.fileName)) continue;
+    const fromModule = normalizeModulePath(sourceFile.fileName, context);
+    if (fromModule === null) continue;
+    const visit = (node) => {
+      if (context.exceeded()) return;
+      if (node.kind === ts2.SyntaxKind.CallExpression) {
+        const expression = node.expression;
+        const calleeSymbol = checker.getSymbolAtLocation(
+          expression.kind === ts2.SyntaxKind.Identifier ? expression : expression.property ?? expression
+        );
+        if (calleeSymbol && calleeSymbol.declarations?.length) {
+          const declarationFile = normalizeModulePath(
+            calleeSymbol.declarations[0].getSourceFile().fileName,
+            context
+          );
+          const calleeName = expression.kind === ts2.SyntaxKind.Identifier ? expression.text : expression.property?.text ?? null;
+          const rule = ROUTE_RULES.find((candidate) => candidate.calleeNames.includes(calleeName) && declarationFile !== null && candidate.moduleVocabulary.some((vocabulary) => declarationFile.includes(vocabulary)));
+          if (rule && node.arguments.length >= 2) {
+            const pathValue = staticStringValue(node.arguments[0]);
+            const handler = node.arguments[1];
+            const handlerSymbol = handler && (handler.kind === ts2.SyntaxKind.Identifier || handler.kind === ts2.SyntaxKind.PropertyAccessExpression) ? checker.getSymbolAtLocation(handler.kind === ts2.SyntaxKind.Identifier ? handler : handler.property) : null;
+            if (pathValue !== null) {
+              index.routes.push({
+                method: rule.method,
+                path: pathValue.slice(0, 256),
+                handler: handlerSymbol?.name ?? null,
+                handlerNative: null,
+                module: fromModule,
+                rule: rule.id,
+                confidence: handlerSymbol ? "high" : "medium",
+                provenance: "rule",
+                line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+              });
+            } else {
+              index.anyUncertainty.push({
+                path: fromModule,
+                kind: "dynamic-route",
+                detail: rule.id,
+                line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+              });
+            }
+          }
+          if (calleeName && TEST_RULE.calleeNames.has(calleeName) && declarationFile !== null) {
+            const nameArgument = node.arguments[0];
+            const nameValue = staticStringValue(nameArgument);
+            const callback = node.arguments.find((argument) => argument.kind === ts2.SyntaxKind.ArrowFunction || argument.kind === ts2.SyntaxKind.FunctionExpression);
+            if (nameValue !== null) {
+              index.tests.push({
+                path: fromModule,
+                name: nameValue.slice(0, 256),
+                suite: null,
+                rule: TEST_RULE.id,
+                confidence: "high",
+                line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+              });
+              if (callback) {
+                const walk = (inner) => {
+                  if (inner.kind === ts2.SyntaxKind.CallExpression) {
+                    const innerExpression = inner.expression;
+                    const innerSymbol = checker.getSymbolAtLocation(
+                      innerExpression.kind === ts2.SyntaxKind.Identifier ? innerExpression : innerExpression.property ?? innerExpression
+                    );
+                    if (innerSymbol && innerSymbol.declarations?.length) {
+                      const targetModule = normalizeModulePath(
+                        innerSymbol.declarations[0].getSourceFile().fileName,
+                        context
+                      );
+                      if (targetModule !== null) {
+                        index.references.push(makeReference({
+                          fromModule,
+                          toModule: targetModule,
+                          role: "call",
+                          confidence: "medium",
+                          line: sourceFile.getLineAndCharacterOfPosition(inner.getStart(sourceFile)).line + 1
+                        }));
+                      }
+                    }
+                  }
+                  ts2.forEachChild(inner, walk);
+                };
+                ts2.forEachChild(callback, walk);
+              }
+            } else {
+              index.anyUncertainty.push({
+                path: fromModule,
+                kind: "dynamic-test-name",
+                detail: calleeName,
+                line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+              });
+            }
+          }
+        }
+      }
+      ts2.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+}
+function collectDiagnostics({ ts: ts2, program, context, index }) {
+  const push = (diagnostic, sourceFile) => {
+    if (index.diagnostics.length >= MAX_DIAGNOSTICS) return;
+    const file = diagnostic.file ?? sourceFile;
+    const path = file ? normalizeModulePath(file.fileName, context) : null;
+    if (file && path === null) return;
+    const position = file && diagnostic.start !== void 0 ? file.getLineAndCharacterOfPosition(diagnostic.start) : null;
+    index.diagnostics.push({
+      code: String(diagnostic.code),
+      severity: diagnostic.category === ts2.DiagnosticCategory.Error ? "error" : diagnostic.category === ts2.DiagnosticCategory.Warning ? "warning" : "suggestion",
+      path,
+      line: position ? position.line + 1 : null,
+      message: ts2.flattenDiagnosticMessageText(diagnostic.messageText, " ").slice(0, 256)
+    });
+  };
+  for (const diagnostic of program.getConfigFileParsingDiagnostics()) push(diagnostic);
+  for (const diagnostic of program.getOptionsDiagnostics()) push(diagnostic);
+  for (const diagnostic of program.getGlobalDiagnostics()) push(diagnostic);
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile && isEmbeddedLibBase(sourceFile.fileName)) continue;
+    for (const diagnostic of program.getSyntacticDiagnostics(sourceFile)) push(diagnostic, sourceFile);
+    for (const diagnostic of program.getSemanticDiagnostics(sourceFile)) push(diagnostic, sourceFile);
+  }
+}
+function collectAnySurfaces({ ts: ts2, checker, program, context, index }) {
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile && isEmbeddedLibBase(sourceFile.fileName)) continue;
+    const fromModule = normalizeModulePath(sourceFile.fileName, context);
+    if (fromModule === null) continue;
+    const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
+    if (!moduleSymbol) continue;
+    let exports;
+    try {
+      exports = checker.getExportsOfModule(moduleSymbol);
+    } catch {
+      continue;
+    }
+    for (const exported of exports) {
+      if (index.anyUncertainty.length >= MAX_DIAGNOSTICS) return;
+      const type = checker.getTypeOfSymbolAtLocation(exported, sourceFile);
+      const contamination = typeContainsAny(ts2, type, /* @__PURE__ */ new Set(), 0);
+      if (contamination) {
+        index.anyUncertainty.push({
+          path: fromModule,
+          kind: "any-surface",
+          detail: exported.name.slice(0, 64),
+          line: exported.declarations?.[0] ? sourceFile.getLineAndCharacterOfPosition(exported.declarations[0].getStart(sourceFile)).line + 1 : null
+        });
+      }
+    }
+  }
+}
+function typeContainsAny(ts2, type, seen, depth) {
+  if (!type || depth > 6) return false;
+  if (typeof type.id === "number") {
+    if (seen.has(type.id)) return false;
+    seen.add(type.id);
+  }
+  if (type.flags & ts2.TypeFlags.Any) return true;
+  if (type.flags & ts2.TypeFlags.Unknown) return true;
+  if (type.flags & (ts2.TypeFlags.Union | ts2.TypeFlags.Intersection)) {
+    return (type.types ?? []).some((member) => typeContainsAny(ts2, member, seen, depth + 1));
+  }
+  if (type.flags & ts2.TypeFlags.Object) {
+    return (type.typeArguments ?? []).some((argument) => typeContainsAny(ts2, argument, seen, depth + 1)) || (type.properties ?? []).some((member) => typeContainsAny(
+      ts2,
+      member.type ?? { flags: 0 },
+      seen,
+      depth + 1
+    ));
+  }
+  return false;
+}
+function runScan({ profile, readView, permittedProjectRoot, limits }) {
+  const ts2 = assertCompilerAvailable();
+  const compilerMeta = {
+    typescript: vendoredTs().version,
+    embedded: true
+  };
+  const roots = readView.roots;
+  const inventory = enumerateInventory(permittedProjectRoot, roots, profile);
+  const readBytes = (logicalPath) => readView.readFile(logicalPath, {
+    files: limits?.files ?? MAX_SCAN_FILES,
+    bytes: limits?.bytes ?? MAX_SCAN_SOURCE_BYTES
+  });
+  const manifest = buildInputManifest(inventory, readBytes);
+  const diagnostics = [];
+  const { packages, projects, packageByRoot } = discoverPackagesAndProjects(
+    manifest,
+    readBytes,
+    ts2,
+    diagnostics
+  );
+  const packageIndex = new Map(packages.map((pkg) => [pkg.root, pkg]));
+  const index = emptyIndex(compilerMeta);
+  index.packages = packages;
+  index.projects = projects.map(({ configPath, directory, references, extendsChain, digest }) => ({
+    configPath,
+    directory,
+    references,
+    extendsChain,
+    digest
+  }));
+  index.diagnostics = diagnostics;
+  const inventorySet = buildInventorySet(manifest);
+  const { host, denied } = createRestrictedHost({
+    ts: ts2,
+    inventorySet,
+    readBytes,
+    libMap: embeddedLibFiles()
+  });
+  const context = {
+    inventorySet,
+    program: null,
+    exceeded: () => false
+  };
+  const rootNames = [];
+  for (const project of projects) {
+    const parsed = ts2.parseJsonConfigFileContent(
+      project.raw ?? {},
+      host,
+      `lekalo/project/${project.directory}`,
+      void 0,
+      `lekalo/project/${project.configPath}`
+    );
+    for (const fileName of parsed.fileNames) rootNames.push(fileName);
+    for (const diagnostic of parsed.errors) {
+      if (index.diagnostics.length < MAX_DIAGNOSTICS) {
+        index.diagnostics.push({
+          code: String(diagnostic.code),
+          severity: "error",
+          path: project.configPath,
+          line: null,
+          message: ts2.flattenDiagnosticMessageText(diagnostic.messageText, " ").slice(0, 256)
+        });
+      }
+    }
+  }
+  const configured = new Set(rootNames.map((name) => name.toLowerCase()));
+  for (const file of manifest.sourceFiles) {
+    const hostName = `lekalo/project/${file.path}`;
+    if (!configured.has(hostName.toLowerCase()) && !configured.has(file.path.toLowerCase())) {
+      rootNames.push(hostName);
+    }
+  }
+  if (rootNames.length === 0) {
+    return finalizeScan(index, manifest, profile, readView);
+  }
+  const options = { noEmit: true, skipLibCheck: false, allowJs: false };
+  const program = ts2.createProgram({ rootNames, options, host });
+  context.program = program;
+  const checker = program.getTypeChecker();
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile && isEmbeddedLibBase(sourceFile.fileName)) continue;
+    const modulePath = normalizeModulePath(sourceFile.fileName, context);
+    if (modulePath === null) continue;
+    indexSourceFile({
+      ts: ts2,
+      checker,
+      sourceFile,
+      modulePath,
+      packageIndex,
+      index,
+      context
+    });
+  }
+  indexExports({ ts: ts2, checker, program, packageIndex, index, context });
+  indexReferences({ ts: ts2, checker, program, context, index });
+  indexRoutesAndTests({ ts: ts2, checker, program, context, index });
+  collectDiagnostics({ ts: ts2, program, context, index });
+  collectAnySurfaces({ ts: ts2, checker, program, context, index });
+  for (const entry of denied.slice(0, MAX_DIAGNOSTICS)) {
+    const logical = inventorySet.get(entry.path) ?? inventorySet.get(entry.path.toLowerCase());
+    if (logical !== void 0) continue;
+    index.anyUncertainty.push({
+      path: normalizeUnknownPath(entry.path),
+      kind: "host-lookup-denied",
+      detail: entry.kind,
+      line: null
+    });
+  }
+  return finalizeScan(index, manifest, profile, readView);
+}
+function normalizeUnknownPath(hostName) {
+  const normalized = hostName.split("\\").join("/");
+  return normalized.startsWith("lekalo/project/") ? normalized.slice("lekalo/project/".length) : normalized;
+}
+function finalizeScan(index, manifest, profile, readView) {
+  index.inputManifest = {
+    sourceFiles: manifest.sourceFiles.length,
+    configFiles: manifest.configFiles.length,
+    packageFiles: manifest.packageFiles.length,
+    otherFiles: manifest.otherFiles.length,
+    totalBytes: manifest.totalBytes,
+    files: [...manifest.sourceFiles, ...manifest.configFiles, ...manifest.packageFiles]
+  };
+  index.readCounters = {
+    filesRead: manifest.sourceFiles.length + manifest.configFiles.length + manifest.packageFiles.length + manifest.otherFiles.length,
+    bytesRead: manifest.totalBytes
+  };
+  index.profileDigest = sha256Hex2(canonicalText({
+    id: profile.id,
+    readRoots: profile.readRoots.map((root) => ({ ...root }))
+  }));
+  sortIndex(index);
+  return index;
+}
+var ScannerSession = class {
+  constructor() {
+    this.retain = null;
+    this.scans = 0;
+  }
+  /**
+   * One scan; records warm/cold reuse status against the retained key
+   * (the digest of the complete input manifest).
+   */
+  scan(options) {
+    this.scans += 1;
+    const index = runScan(options);
+    const key = sha256Hex2(canonicalText(index.inputManifest));
+    const result = { index, key, warm: this.retain?.key === key };
+    this.retain = { key, index };
+    return result;
+  }
+};
+
 // src/main.mjs
 __setCompilerMetadata({
   vendored: true,
@@ -213662,9 +214863,11 @@ __setCompilerMetadata({
 __attachVendoredCompiler(ts, LIB_FILES);
 var compilerHostApi = ts;
 var __lekaloKernel = kernel_exports;
+var __lekaloScanner = scanner_exports;
 await runIfEntry(import.meta.url);
 export {
   __lekaloKernel,
+  __lekaloScanner,
   compilerHostApi
 };
 /*! Bundled license information:
