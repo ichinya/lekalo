@@ -1,0 +1,110 @@
+{
+  "comment": "Named invalid resolved-project profiles; each must be refused by validateResolvedProjectProfile before any filesystem or extension work.",
+  "cases": {
+    "traversal-root": {
+      "id": "standalone",
+      "mode": "observed",
+      "target": "node-typescript",
+      "readRoots": [{ "path": "src/../leak", "kind": "tree" }],
+      "provenance": { "origin": "declared", "revision": "r1", "disposition": "public-fixture" }
+    },
+    "dot-root": {
+      "id": "standalone",
+      "mode": "observed",
+      "target": "node-typescript",
+      "readRoots": [{ "path": ".", "kind": "tree" }],
+      "provenance": { "origin": "declared", "revision": "r1", "disposition": "public-fixture" }
+    },
+    "empty-path-root": {
+      "id": "standalone",
+      "mode": "observed",
+      "target": "node-typescript",
+      "readRoots": [{ "path": "", "kind": "tree" }],
+      "provenance": { "origin": "declared", "revision": "r1", "disposition": "public-fixture" }
+    },
+    "absolute-unix-root": {
+      "id": "standalone",
+      "mode": "observed",
+      "target": "node-typescript",
+      "readRoots": [{ "path": "/etc", "kind": "tree" }],
+      "provenance": { "origin": "declared", "revision": "r1", "disposition": "public-fixture" }
+    },
+    "drive-root": {
+      "id": "standalone",
+      "mode": "observed",
+      "target": "node-typescript",
+      "readRoots": [{ "path": "c:/windows", "kind": "tree" }],
+      "provenance": { "origin": "declared", "revision": "r1", "disposition": "public-fixture" }
+    },
+    "unc-root": {
+      "id": "standalone",
+      "mode": "observed",
+      "target": "node-typescript",
+      "readRoots": [{ "path": "\\\\server/share", "kind": "tree" }],
+      "provenance": { "origin": "declared", "revision": "r1", "disposition": "public-fixture" }
+    },
+    "overlapping-roots": {
+      "id": "standalone",
+      "mode": "observed",
+      "target": "node-typescript",
+      "readRoots": [
+        { "path": "src", "kind": "tree" },
+        { "path": "src/inner", "kind": "tree" }
+      ],
+      "provenance": { "origin": "declared", "revision": "r1", "disposition": "public-fixture" }
+    },
+    "wrong-mode": {
+      "id": "standalone",
+      "mode": "contracted",
+      "target": "node-typescript",
+      "readRoots": [{ "path": "src", "kind": "tree" }],
+      "provenance": { "origin": "declared", "revision": "r1", "disposition": "public-fixture" }
+    },
+    "wrong-target": {
+      "id": "standalone",
+      "mode": "observed",
+      "target": "other-target",
+      "readRoots": [{ "path": "src", "kind": "tree" }],
+      "provenance": { "origin": "declared", "revision": "r1", "disposition": "public-fixture" }
+    },
+    "resolution-digest-mismatch": {
+      "id": "standalone",
+      "mode": "observed",
+      "target": "node-typescript",
+      "readRoots": [{ "path": "src", "kind": "tree" }],
+      "targetResolution": {
+        "digest": "sha256:short",
+        "capabilities": [{ "id": "scan.symbols", "support": "full" }]
+      },
+      "provenance": { "origin": "declared", "revision": "r1", "disposition": "public-fixture" }
+    },
+    "resolution-capability-mismatch": {
+      "id": "standalone",
+      "mode": "observed",
+      "target": "node-typescript",
+      "readRoots": [{ "path": "src", "kind": "tree" }],
+      "targetResolution": {
+        "digest": "sha256:9f2c0a4b9f2c0a4b9f2c0a4b9f2c0a4b9f2c0a4b9f2c0a4b9f2c0a4b9f2c0a4b",
+        "capabilities": [
+          { "id": "scan.symbols", "support": "full" },
+          { "id": "generate.zod", "support": "full" }
+        ]
+      },
+      "provenance": { "origin": "declared", "revision": "r1", "disposition": "public-fixture" }
+    },
+    "missing-provenance": {
+      "id": "standalone",
+      "mode": "observed",
+      "target": "node-typescript",
+      "readRoots": [{ "path": "src", "kind": "tree" }]
+    },
+    "unknown-member": {
+      "id": "standalone",
+      "mode": "observed",
+      "target": "node-typescript",
+      "readRoots": [{ "path": "src", "kind": "tree" }],
+      "discovery": "package-json-walk",
+      "provenance": { "origin": "declared", "revision": "r1", "disposition": "public-fixture" }
+    }
+  }
+}

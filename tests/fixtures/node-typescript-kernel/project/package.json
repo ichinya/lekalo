@@ -1,0 +1,10 @@
+{
+  "name": "synthetic-kernel-fixture",
+  "private": true,
+  "scripts": {
+    "preinstall": "echo poison-preinstall-must-never-run",
+    "postinstall": "echo poison-postinstall-must-never-run",
+    "prepare": "echo poison-prepare-must-never-run",
+    "test": "echo poison-test-must-never-run"
+  }
+}

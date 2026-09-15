@@ -1,0 +1,54 @@
+{
+  "comment": "Expected normalized internal evidence and the allowed public wire projection/refusal per fixture outcome. C ties tests to these rows; a row without publicOutcome must produce an honest in-envelope error, never a success.",
+  "outcomes": {
+    "complete": {
+      "internalState": "complete",
+      "internalEvidenceKeys": ["revision", "freshness", "confidence", "provenance", "sourceSpans", "localReference"],
+      "publicOutcome": { "status": "ok", "resultEntries": 2 },
+      "localOnlyMustStayLocal": true
+    },
+    "partial": {
+      "internalState": "partial",
+      "publicOutcome": { "status": "error", "class": "invalid", "partial": true },
+      "mustNotClaimSuccess": true
+    },
+    "unknown": {
+      "internalState": "unknown",
+      "publicOutcome": { "status": "error", "class": "invalid", "partial": false },
+      "mustNotClaimSuccess": true
+    },
+    "ambiguous": {
+      "internalState": "complete",
+      "publicOutcome": { "status": "error", "partial": true },
+      "mustNotClaimSuccess": true,
+      "reason": "candidate sets and reasons cannot enter the closed result shape"
+    },
+    "malformed": {
+      "internalState": "complete",
+      "publicOutcome": { "status": "error", "class": "conflict" },
+      "mustNotClaimSuccess": true,
+      "reason": "a traversal entry path is refused, never truncated into a logical path"
+    },
+    "error": {
+      "internalState": "failed",
+      "publicOutcome": { "status": "error", "class": "conflict" },
+      "mustNotClaimSuccess": true
+    },
+    "localOnlyCanary": {
+      "internalState": "complete",
+      "publicOutcome": { "status": "ok", "resultEntries": 1 },
+      "localOnlyMustStayLocal": true,
+      "canary": "LOCAL-ONLY-CANARY-4f2a",
+      "canaryMustBeAbsentFromPublicBytes": true
+    },
+    "runnerComplete": {
+      "internalState": "complete",
+      "publicOutcome": { "status": "ok", "resultEntries": 1 }
+    },
+    "runnerDeclined": {
+      "internalState": "unsupported",
+      "publicOutcome": { "status": "error", "class": "unsupported" },
+      "mustNotClaimSuccess": true
+    }
+  }
+}
