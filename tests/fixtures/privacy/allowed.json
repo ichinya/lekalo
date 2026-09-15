@@ -4,7 +4,7 @@
     "decision": {
       "decisionContractRef": {
         "contractId": "dev.lekalo.privacy-export-decision",
-        "version": "1.5.0"
+        "version": "1.6.0"
       },
       "authorityRef": {
         "contractId": "dev.lekalo.authority-matrix",
@@ -13,8 +13,8 @@
       },
       "policyRef": {
         "policyId": "dev.lekalo.privacy-export-policy",
-        "version": "1.0.6",
-        "digest": "sha256:99a813a89efbdf336340390c9589a4f05d0dbbc8805748708b455a3d7a329ca7"
+        "version": "1.0.7",
+        "digest": "sha256:008ec26caac4771ee14f1f3cd6c1a8e24a714643b2efb8daffd7a4064bac0129"
       },
       "artifactKind": "fixture",
       "operation": {
@@ -94,7 +94,7 @@
     "decision": {
       "decisionContractRef": {
         "contractId": "dev.lekalo.privacy-export-decision",
-        "version": "1.5.0"
+        "version": "1.6.0"
       },
       "authorityRef": {
         "contractId": "dev.lekalo.authority-matrix",
@@ -103,8 +103,8 @@
       },
       "policyRef": {
         "policyId": "dev.lekalo.privacy-export-policy",
-        "version": "1.0.6",
-        "digest": "sha256:99a813a89efbdf336340390c9589a4f05d0dbbc8805748708b455a3d7a329ca7"
+        "version": "1.0.7",
+        "digest": "sha256:008ec26caac4771ee14f1f3cd6c1a8e24a714643b2efb8daffd7a4064bac0129"
       },
       "artifactKind": "ai.prompt",
       "operation": {

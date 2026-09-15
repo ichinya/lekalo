@@ -1,8 +1,9 @@
 # ADR-0002: Exact-custody privacy decision contract
 
-Status: accepted privacy-contract successor for issue #120; #120 passed cold
-review and was closed on 2026-08-30, and the accepted product release is
-`0.0.2`
+Status: accepted corrective privacy-contract successor for issue #120; #120
+passed cold review and was closed on 2026-08-30, and the accepted product
+release is `0.0.2`. Amended on 2026-09-02 after the M0 constraint-intersection
+audit; historical release bytes remain immutable.
 
 Date: 2026-08-30
 
@@ -21,19 +22,22 @@ The accepted M0 product is `0.0.1`; acceptance of #120 would produce product
 
 ## Decision
 
-Adopt privacy policy `dev.lekalo.privacy-export-policy@1.0.6`, input schema
-`2.5.0`, output schema `1.5.0`, decision contract
-`dev.lekalo.privacy-export-decision@1.5.0`, exact classification contract
+Adopt privacy policy `dev.lekalo.privacy-export-policy@1.0.7`, input schema
+`2.6.0`, output schema `1.6.0`, decision contract
+`dev.lekalo.privacy-export-decision@1.6.0`, exact classification contract
 `dev.lekalo.privacy-classification-decision@1.0.0`, bound exclusively to
 authority `1.3.1` and its exact digest, and exact authorizing-evidence registry
 `dev.lekalo.privacy-authorizing-evidence@1.1.0`, and authorization subject
 profile `dev.lekalo.privacy-authorization-subject-profile@1.0.0`.
 
-Output schema `1.5.0` corrects the frozen `1.4.0` schema's swapped version
-constraints: emitted classification refs are exactly contract `1.0.0`, while
-emitted authorizing-evidence refs are exactly registry `1.1.0`. Input `2.5.0`
-has the same closed shape and Authorization Subject Profile semantics as
-`2.4.0`; only its exact policy/decision refs advance. Pre-evaluation startup
+Policy `1.0.7` corrects frozen `1.0.6`: local constraint broadening is checked
+against the intersection with every applicable sensitivity rule, not merely
+against disposition, operation and destination profiles. Input `2.6.0` and
+output `1.6.0` retain the closed shapes and Authorization Subject Profile
+semantics of `2.5.0`/`1.5.0`; their exact policy and decision refs advance.
+Output schema `1.5.0` had already corrected frozen `1.4.0` so emitted
+classification refs are exactly contract `1.0.0` and authorizing-evidence refs
+are exactly registry `1.1.0`. Pre-evaluation startup
 and custody failures use the separate closed CLI error schema `1.0.0` and are
 not represented as `ExportDecisionOutput`.
 
@@ -46,9 +50,12 @@ alternate taxonomies, aliases and extensions fail before evaluation.
 
 The decision input and output are strict closed objects. Sensitivity labels are
 orthogonal to one exact disposition. Multi-label permissions intersect and any
-applicable deny dominates. Local constraints may only narrow. Broader policy
-requires a reviewed versioned grant embedded in the trusted policy; this
-accepted policy embeds none.
+applicable deny dominates. Local constraint operations are compared with the
+disposition/sensitivity intersection, boundaries with the operation-profile/
+sensitivity intersection, and audiences with the destination-profile/
+sensitivity intersection. Local constraints may only narrow those effective
+sets. Broader policy requires a reviewed versioned grant embedded in the
+trusted policy; this accepted policy embeds none.
 
 Derivation never mutates or transfers a source merely because transformation
 is required. Repository contexts use opaque `repo-sha256:` refs and enforce
@@ -93,9 +100,9 @@ overrides.
 - A cosmetic policy edit intentionally changes raw custody, while a semantic
   policy edit also changes the canonical policy identity.
 - The rejected `1.0.0` WIP, frozen rejected `1.0.1` candidate and frozen/yanked
-  accepted `1.0.2`, `1.0.3`, `1.0.4` and `1.0.5` remain auditable at exact old
-  policy/manifest/schema bytes. Accepted `1.0.6` is an explicit successor
-  rather than a silent replacement.
+  accepted `1.0.2`, `1.0.3`, `1.0.4`, `1.0.5` and `1.0.6` remain auditable at
+  exact old policy/manifest/schema bytes. Accepted `1.0.7` is an explicit
+  successor rather than a silent replacement.
 - Input/output schema versions advance because nested exact-ref validation,
   conflict-state coupling, duplicate-set closure and effective current refs
   change wire bytes.

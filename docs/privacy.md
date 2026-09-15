@@ -1,15 +1,17 @@
 # Privacy and export policy
 
-Status: accepted privacy-contract successor for issue #120. Issue #120 passed
-cold review and was closed on 2026-08-30; the accepted product release is
-`0.0.2`. The `0.0.1`/`0.0.2` pair frozen inside the accepted manifest is an
-acceptance-time snapshot, not living product state; the living release is
-governed by the versioning policy artifact.
+Status: accepted corrective privacy-contract successor for issue #120. Issue
+#120 passed cold review and was closed on 2026-08-30; a post-acceptance M0
+audit found a constraint/sensitivity intersection defect and produced policy
+`1.0.7` without rewriting the historical product release. The accepted M0
+product release remains `0.0.2`. The `0.0.1`/`0.0.2` pair frozen inside the
+accepted manifest is an acceptance-time snapshot, not living product state;
+the living release is governed by the versioning policy artifact.
 
 The normative files are:
 
-- `contracts/privacy-policy.v1.0.6.json`: accepted policy `1.0.6`;
-- `contracts/privacy-policy.v1.0.6.manifest.json` and its `.sha256` sidecars: exact
+- `contracts/privacy-policy.v1.0.7.json`: accepted policy `1.0.7`;
+- `contracts/privacy-policy.v1.0.7.manifest.json` and its `.sha256` sidecars: exact
   custody anchors;
 - `contracts/privacy-authorizing-evidence.v1.1.0.json` and its sidecar: exact,
   purpose-bound authorizing-evidence registry;
@@ -17,8 +19,8 @@ The normative files are:
   exact canonical authorization-subject projection;
 - `contracts/privacy-policy.v1.0.2.classification.json`: exact classification
   decision contract `1.0.0`;
-- `contracts/privacy-export.schema.v2.5.json`: strict input schema `2.5.0`;
-- `contracts/privacy-export.schema.v2.5.output.json`: strict output schema `1.5.0`;
+- `contracts/privacy-export.schema.v2.6.json`: strict input schema `2.6.0`;
+- `contracts/privacy-export.schema.v2.6.output.json`: strict output schema `1.6.0`;
 - `contracts/privacy-cli-error.schema.v1.0.0.json`: separate closed startup/custody
   exit-1 protocol; it is not an `ExportDecisionOutput`;
 - `contracts/privacy-export.schema.v2.classification.json`: classification-ref
@@ -34,10 +36,10 @@ broaden policy.
 | Identity | Current value | Meaning |
 |---|---|---|
 | Accepted product release | `0.0.2` | Current M0 product state after #120 acceptance (`0.0.1` is the historical M0 release); a product number, never a policy or schema version |
-| Privacy policy | `dev.lekalo.privacy-export-policy@1.0.6` | Accepted corrective successor |
-| Decision contract | `dev.lekalo.privacy-export-decision@1.5.0` | Evaluator I/O semantics |
-| Input schema | `dev.lekalo.privacy-export-input-schema@2.5.0` | Strict input shape; exact refs refreshed, semantics unchanged |
-| Output schema | `dev.lekalo.privacy-export-output-schema@1.5.0` | Strict output shape with corrected current classification/evidence refs |
+| Privacy policy | `dev.lekalo.privacy-export-policy@1.0.7` | Accepted constraint-intersection corrective successor |
+| Decision contract | `dev.lekalo.privacy-export-decision@1.6.0` | Corrected evaluator constraint semantics |
+| Input schema | `dev.lekalo.privacy-export-input-schema@2.6.0` | Strict input shape; exact refs refreshed, shape unchanged |
+| Output schema | `dev.lekalo.privacy-export-output-schema@1.6.0` | Strict output shape; exact refs refreshed, shape unchanged |
 | CLI startup error schema | `dev.lekalo.privacy-cli-error-schema@1.0.0` | Separate pre-evaluation exit-1 JSON |
 | Classification contract/schema | `dev.lekalo.privacy-classification-decision@1.0.0` / schema `1.0.0` | Exact classification custody |
 | Authorizing-evidence contract | `dev.lekalo.privacy-authorizing-evidence@1.1.0` | Exact field/purpose/outcome registry |
@@ -54,12 +56,14 @@ independent review, with its exact policy, manifest, schemas and sidecars
 preserved byte-for-byte. Frozen accepted `1.0.4` is yanked after exact review
 and preserved byte-for-byte. Frozen accepted `1.0.5`, including its output
 schema `1.4.0`, is yanked after exact review and preserved byte-for-byte.
-Accepted `1.0.6` is an explicit successor, not a silent
+Frozen accepted `1.0.6` is yanked after the M0 constraint-intersection audit
+and preserved byte-for-byte. Accepted `1.0.7` is an explicit successor, not a silent
 mutation. See the [1.0.1 to 1.0.2 migration](privacy-policy-migration-1.0.1-to-1.0.2.md)
 and the [1.0.2 to 1.0.3 migration](privacy-policy-migration-1.0.2-to-1.0.3.md),
 the [1.0.3 to 1.0.4 migration](privacy-policy-migration-1.0.3-to-1.0.4.md), then
 the [1.0.4 to 1.0.5 migration](privacy-policy-migration-1.0.4-to-1.0.5.md), then
-the [1.0.5 to 1.0.6 migration](privacy-policy-migration-1.0.5-to-1.0.6.md).
+the [1.0.5 to 1.0.6 migration](privacy-policy-migration-1.0.5-to-1.0.6.md), then
+the [1.0.6 to 1.0.7 migration](privacy-policy-migration-1.0.6-to-1.0.7.md).
 M0 uses product `0.0.x`; M1 later starts product `0.1.0`.
 
 Exact accepted reference:
@@ -67,8 +71,8 @@ Exact accepted reference:
 ```json
 {
   "policyId": "dev.lekalo.privacy-export-policy",
-  "version": "1.0.6",
-  "digest": "sha256:99a813a89efbdf336340390c9589a4f05d0dbbc8805748708b455a3d7a329ca7"
+  "version": "1.0.7",
+  "digest": "sha256:008ec26caac4771ee14f1f3cd6c1a8e24a714643b2efb8daffd7a4064bac0129"
 }
 ```
 
@@ -249,9 +253,15 @@ path rules, derived-source custody, and disposition branching then apply in
 the machine-readable order. No matching allow means deny.
 
 Project, profile and operation constraints are set intersections with the
-baseline. They may only narrow it and cannot introduce vocabulary. Broader
-values deny. Broadening would require an exact reviewed grant already embedded
-in the trusted policy, and the accepted policy contains no grants. A caller-provided
+effective baseline. For operations that baseline is the disposition rule
+intersected with every applicable sensitivity rule; for trust boundaries it is
+the operation profile intersected with every sensitivity rule; for audiences
+it is the selected destination profile intersected with every sensitivity
+rule. A constraint must be a subset of all three effective sets before its
+current-point narrowing is evaluated. It may only narrow and cannot introduce
+vocabulary; any broader value denies with `constraint.broadening-forbidden`.
+Broadening would require an exact reviewed grant already embedded in the
+trusted policy, and the accepted policy contains no grants. A caller-provided
 or recomputed local policy cannot legalize broadening.
 
 Secrets never become public or cross-repository. Direct PII does not become

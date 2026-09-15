@@ -44,16 +44,18 @@ digest alone is never authoritative.
 
 ## Privacy and export policy
 
-The fail-closed privacy/export baseline accepted for issue #120:
+The fail-closed privacy/export baseline for issue #120, corrected after the M0
+post-acceptance audit:
 
 ```text
-dev.lekalo.privacy-export-policy@1.0.6@sha256:99a813a89efbdf336340390c9589a4f05d0dbbc8805748708b455a3d7a329ca7
+dev.lekalo.privacy-export-policy@1.0.7@sha256:008ec26caac4771ee14f1f3cd6c1a8e24a714643b2efb8daffd7a4064bac0129
 ```
 
 - [Privacy and export policy](docs/privacy.md)
 - [ADR-0002: exact-custody privacy decision contract](docs/adr/0002-privacy-export-policy.md)
-- Accepted policy: `contracts/privacy-policy.v1.0.6.json` with its manifest and sidecars
-- Frozen history: `1.0.0` rejected-unaccepted WIP; `1.0.1`–`1.0.5` yanked candidates, preserved byte-for-byte
+- Accepted policy: `contracts/privacy-policy.v1.0.7.json` with its manifest and sidecars
+- Frozen history: `1.0.0` rejected-unaccepted WIP; `1.0.1`-`1.0.6` yanked candidates, preserved byte-for-byte
+- Corrective migration: `docs/privacy-policy-migration-1.0.6-to-1.0.7.md`
 - Migration notes: `docs/privacy-policy-migration-*.md` for every step of the ladder
 
 Validate one export decision or run the full protocol suites:

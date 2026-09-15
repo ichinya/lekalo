@@ -4,7 +4,7 @@
     "decision": {
       "decisionContractRef": {
         "contractId": "dev.lekalo.privacy-export-decision",
-"version": "1.5.0"
+        "version": "1.6.0"
       },
       "authorityRef": {
         "contractId": "dev.lekalo.authority-matrix",
@@ -13,8 +13,8 @@
       },
       "policyRef": {
         "policyId": "dev.lekalo.privacy-export-policy",
-        "version": "1.0.6",
-"digest": "sha256:99a813a89efbdf336340390c9589a4f05d0dbbc8805748708b455a3d7a329ca7"
+        "version": "1.0.7",
+        "digest": "sha256:008ec26caac4771ee14f1f3cd6c1a8e24a714643b2efb8daffd7a4064bac0129"
       },
       "artifactKind": "generated.summary",
       "operation": {
@@ -71,7 +71,7 @@
               "version": "1.0.0",
               "digest": "sha256:825546e4a4df4551e122c2cd548ae81c1fa2063d0bd8f256d728bffc089676a1"
             },
-            "subjectDigest": "subject-sha256:96cf0aa81541d75775f65d1238874f2ee1a0c8b7762db1edb78fc1ca33e04324"
+            "subjectDigest": "subject-sha256:9af5b14e3362302f063871c2229be8e8232f77229090b4afed09070bb48da21f"
           }
         }
       },
@@ -88,7 +88,7 @@
       "authorizingEvidenceContractRef": {
         "contractId": "dev.lekalo.privacy-authorizing-evidence",
         "version": "1.1.0",
-"digest": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
+        "digest": "sha256:6402f7918f23edc06d68101341d0ebf44039c2e17351da97f506f688d4a6e4f4"
       },
       "authorizationSubjectProfileRef": {
         "profileId": "dev.lekalo.privacy-authorization-subject-profile",

@@ -2,7 +2,7 @@
 
 Status: superseded corrective successor. Frozen accepted `1.0.5` was yanked
 after an exact re-review found an output-schema conformance blocker; the
-accepted line continues at `1.0.6`. Issue #120 closed on 2026-08-30 and the
+accepted line continues at `1.0.7`. Issue #120 closed on 2026-08-30 and the
 accepted product release is `0.0.2`.
 
 Frozen accepted policy `1.0.4` remains byte-for-byte at its versioned paths.

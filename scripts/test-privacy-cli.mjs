@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { AUTHORITY_REF, CLASSIFICATION_CONTRACT_REF, POLICY_REF } from "./check-privacy.mjs";
 import { authorizingEvidence, refreshEvidenceBindings, setProvenanceEvidence } from "./privacy-test-helpers.mjs";
 
@@ -46,13 +46,23 @@ async function invokeDecision(name, decision) {
 }
 
 try {
+  const importRun = spawnSync(process.execPath, [
+    "--input-type=module",
+    "--eval",
+    `await import(${JSON.stringify(pathToFileURL(checker).href)})`,
+  ], { cwd: root, encoding: "utf8", windowsHide: true });
+  assert.equal(importRun.status, 0, importRun.stderr || importRun.stdout);
+  assert.equal(importRun.stdout, "");
+  assert.equal(importRun.stderr, "");
+  subprocessCases += 1;
+
   const defaultRun = invoke([]);
   assert.equal(defaultRun.status, 0, defaultRun.stderr);
   const defaultOutput = JSON.parse(defaultRun.stdout);
   assert.equal(defaultOutput.status, "valid");
   assert.equal(defaultOutput.policyLifecycle, "accepted");
   assert.equal(defaultOutput.accepted, true);
-  assert.equal(defaultOutput.policyRef.version, "1.0.6");
+  assert.equal(defaultOutput.policyRef.version, "1.0.7");
   subprocessCases += 1;
 
   for (const group of ["allowed", "ambiguous", "malformed", "forbidden", "transform-required"]) {
@@ -83,6 +93,26 @@ try {
 
   const base = JSON.parse(await readFile(join(root, "tests/fixtures/privacy/allowed.json"), "utf8"))[0].decision;
   const repoOne = `repo-sha256:${"1".repeat(64)}`;
+  const sensitivityBroadening = clone(base);
+  sensitivityBroadening.artifactKind = "metrics.evaluation-evidence";
+  sensitivityBroadening.exportDisposition = "shareable-with-redaction";
+  sensitivityBroadening.operation.id = "local-use";
+  sensitivityBroadening.destination = {
+    repositoryRole: "local-workspace", repositoryRef: null, trustBoundary: "same-local-workspace",
+    repositoryRelation: "not-applicable", tenantRelation: "same-tenant",
+  };
+  sensitivityBroadening.audience = "operator-only";
+  sensitivityBroadening.dataSensitivity = ["internal"];
+  sensitivityBroadening.constraints = [{
+    scope: "profile",
+    constraintRef: { id: "constraint.sensitivity-operation", version: "1.0.0", evidenceDigest: digest("b") },
+    allowedOperations: ["local-use", "publish"],
+    allowedTrustBoundaries: ["same-local-workspace"],
+    allowedAudiences: ["operator-only"],
+  }];
+  assertDecisionRun(await invokeDecision("constraint-sensitivity-broadening", sensitivityBroadening),
+    3, "deny", "constraint.broadening-forbidden");
+
   const contradictory = clone(base);
   contradictory.artifactKind = "consumer.model";
   contradictory.exportDisposition = "consumer-repository-only";

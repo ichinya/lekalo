@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const checker = join(root, "scripts/check-privacy.mjs");
-const outputSchema = JSON.parse(readFileSync(join(root, "contracts/privacy-export.schema.v2.5.output.json"), "utf8"));
+const outputSchema = JSON.parse(readFileSync(join(root, "contracts/privacy-export.schema.v2.6.output.json"), "utf8"));
 const cliErrorSchema = JSON.parse(readFileSync(join(root, "contracts/privacy-cli-error.schema.v1.0.0.json"), "utf8"));
 const temp = mkdtempSync(join(tmpdir(), "lekalo-output-schema-"));
 
@@ -211,14 +211,14 @@ const cliErrorCustody = invoke(["--cli-error-schema", mutatedCliErrorPath]);
 assert.equal(cliErrorCustody.status, 1);
 assert.equal(parsed(cliErrorCustody.stderr, "CLI error schema custody").reasonCodes[0], "custody.cli-error-schema-bytes-mismatch");
 
-const manifest = JSON.parse(readFileSync(join(root, "contracts/privacy-policy.v1.0.6.manifest.json"), "utf8"));
+const manifest = JSON.parse(readFileSync(join(root, "contracts/privacy-policy.v1.0.7.manifest.json"), "utf8"));
 manifest.acceptedContracts[0].outputSchemaRef.digest = `sha256:${"0".repeat(64)}`;
 const mutatedManifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
 const mutatedManifestPath = join(temp, "mutated-manifest.json");
 const mutatedManifestSidecarPath = join(temp, "mutated-manifest.sha256");
 writeFileSync(mutatedManifestPath, mutatedManifestBytes);
 writeFileSync(mutatedManifestSidecarPath,
-  `${createHash("sha256").update(mutatedManifestBytes).digest("hex")}  privacy-policy.v1.0.6.manifest.json\n`);
+  `${createHash("sha256").update(mutatedManifestBytes).digest("hex")}  privacy-policy.v1.0.7.manifest.json\n`);
 const manifestCustody = invoke(["--manifest", mutatedManifestPath, "--manifest-sidecar", mutatedManifestSidecarPath]);
 assert.equal(manifestCustody.status, 1);
 assert.equal(parsed(manifestCustody.stderr, "manifest custody").reasonCodes[0], "custody.manifest-untrusted");

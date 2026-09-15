@@ -89,6 +89,11 @@ try {
     "fail-closed-before-evaluator-invocation-or-decision-acceptance");
   assert.equal(context.policy.constraintPolicy.localVocabularyOverridesAllowed, false);
   assert.deepEqual(context.policy.constraintPolicy.reviewedBroadeningGrants, []);
+  assert.deepEqual(context.policy.constraintPolicy.effectiveBaseline, {
+    allowedOperations: ["disposition-rule", "all-sensitivity-rules"],
+    allowedTrustBoundaries: ["operation-profile", "all-sensitivity-rules"],
+    allowedAudiences: ["destination-profile", "all-sensitivity-rules"],
+  });
   assert.equal(context.inputSchema.additionalProperties, false);
   assert.equal(context.outputSchema.additionalProperties, false);
   assert.deepEqual(context.inputSchema.$defs.authorityRef.properties.digest.const, AUTHORITY_REF.digest);
@@ -131,7 +136,7 @@ try {
   }
   assert.equal(context.manifest.acceptedContracts.length, 1);
   assert.deepEqual(context.manifest.currentAcceptedRef, POLICY_REF);
-  assert.equal(context.manifest.yankedCandidates.length, 5);
+  assert.equal(context.manifest.yankedCandidates.length, 6);
   assert.equal(context.manifest.yankedCandidates[0].policyRef.version, "1.0.1");
   assert.equal(context.manifest.yankedCandidates[0].accepted, false);
   assert.equal(context.manifest.yankedCandidates[1].policyRef.version, "1.0.2");
@@ -142,6 +147,9 @@ try {
   assert.equal(context.manifest.yankedCandidates[3].accepted, false);
   assert.equal(context.manifest.yankedCandidates[4].policyRef.version, "1.0.5");
   assert.equal(context.manifest.yankedCandidates[4].accepted, false);
+  assert.equal(context.manifest.yankedCandidates[5].policyRef.version, "1.0.6");
+  assert.equal(context.manifest.yankedCandidates[5].status, "yanked-after-constraint-intersection-audit");
+  assert.equal(context.manifest.yankedCandidates[5].accepted, false);
   assert.deepEqual(context.inputSchema.properties.operation.properties.id.enum, context.policy.vocabularies.operation);
   assert.deepEqual(context.inputSchema.properties.dataSensitivity.items.enum, context.policy.vocabularies.dataSensitivity);
   assert.deepEqual(context.inputSchema.properties.exportDisposition.enum, context.policy.vocabularies.exportDisposition);
@@ -232,6 +240,9 @@ try {
   await expectPolicyMutation("repository-binding-seam-weakened", (policy) => {
     policy.repositoryIdentityPolicy.trustedBinding.missingStaleOrUnverified = "caller-declared-equality-accepted";
   });
+  await expectPolicyMutation("constraint-effective-baseline-weakened", (policy) => {
+    policy.constraintPolicy.effectiveBaseline.allowedOperations.pop();
+  });
 
   const weakenedClassificationContract = clone(context.classificationContract);
   weakenedClassificationContract.rules.contractRefExact = false;
@@ -260,7 +271,7 @@ try {
   await writeFile(mutatedSubjectProfileSidecar, `${"0".repeat(64)}  privacy-authorization-subject-profile.v1.0.0.json\n`);
   await expectCustodyFailure({ authorizationSubjectProfileSidecar: mutatedSubjectProfileSidecar }, "custody.subject-profile-sidecar-mismatch");
   const mutatedPolicySidecar = join(temp, "mutated-policy.sha256");
-  await writeFile(mutatedPolicySidecar, `${"0".repeat(64)}  privacy-policy.v1.0.6.json\n`);
+  await writeFile(mutatedPolicySidecar, `${"0".repeat(64)}  privacy-policy.v1.0.7.json\n`);
   await expectCustodyFailure({ policySidecar: mutatedPolicySidecar }, "custody.policy-sidecar-mismatch");
 
   const allowedFixtures = JSON.parse(await readFile(join(root, "tests/fixtures/privacy/allowed.json"), "utf8"));

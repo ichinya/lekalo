@@ -7,7 +7,7 @@ identities only; product `0.0.2` is conditional on cold-review PASS and issue
 acceptance.
 
 Superseded: `1.0.2` was later yanked after the third independent review; the
-ladder continues through `1.0.6`, which is the accepted policy. Issue #120
+ladder continues through `1.0.7`, which is the accepted policy. Issue #120
 closed on 2026-08-30 and the accepted product release is `0.0.2`.
 
 ## Preserved predecessor custody

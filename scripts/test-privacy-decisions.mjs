@@ -279,6 +279,32 @@ expect(narrowedDeny, "deny", "constraint.narrowed-deny");
 const localBroadening = clone(narrowedAllow);
 localBroadening.constraints[0].allowedTrustBoundaries.push("same-repository");
 expect(localBroadening, "deny", "constraint.broadening-forbidden");
+const sensitivityOperationBroadening = localFor(
+  "metrics.evaluation-evidence",
+  "shareable-with-redaction",
+  ["internal"]
+);
+sensitivityOperationBroadening.constraints = [{
+  scope: "profile",
+  constraintRef: audit("constraint.sensitivity-operation"),
+  allowedOperations: ["local-use", "publish"],
+  allowedTrustBoundaries: ["same-local-workspace"],
+  allowedAudiences: ["operator-only"],
+}];
+expect(sensitivityOperationBroadening, "deny", "constraint.broadening-forbidden");
+const sensitivityBoundaryBroadening = destination(localFor(
+  "metrics.evaluation-evidence",
+  "shareable-with-redaction",
+  ["internal"]
+), "same-tenant");
+sensitivityBoundaryBroadening.constraints = [{
+  scope: "profile",
+  constraintRef: audit("constraint.sensitivity-boundary"),
+  allowedOperations: ["transfer"],
+  allowedTrustBoundaries: ["same-tenant", "cross-repository"],
+  allowedAudiences: ["tenant-members"],
+}];
+expect(sensitivityBoundaryBroadening, "deny", "constraint.broadening-forbidden");
 const callerGrant = clone(base);
 callerGrant.broadeningGrant = {
   grantId: "caller.local-grant", version: "1.0.0", policyRef: clone(context.policy.policyRef), reviewRef: audit("caller.review"),

@@ -1,7 +1,8 @@
 # Privacy policy migration 1.0.5 to 1.0.6
 
-Status: accepted corrective contract successor; it passed cold review, issue
-#120 was closed on 2026-08-30, and the accepted product release is `0.0.2`.
+Status: frozen/yanked historical corrective successor. It passed cold review,
+issue #120 was closed on 2026-08-30, and the accepted product release was
+`0.0.2`; the accepted policy line now continues at `1.0.7`.
 
 Frozen accepted policy `1.0.5` remains byte-for-byte at its versioned paths.
 Its semantic identity is
@@ -27,7 +28,7 @@ Authority `1.3.1`, classification `1.0.0`, evidence `1.1.0`, subject profile
 `1.0.0`, evaluator branches and Authorization Subject Profile semantics are
 otherwise unchanged.
 
-Current identities are:
+The `1.0.6` identities were:
 
 - policy `dev.lekalo.privacy-export-policy@1.0.6`, semantic digest
   `sha256:99a813a89efbdf336340390c9589a4f05d0dbbc8805748708b455a3d7a329ca7`,
@@ -49,3 +50,6 @@ projection are unchanged from `2.4.0`. Trusted #119 runtime envelopes and #89
 adapters must mint evidence against the refreshed exact input refs; #120 still
 validates declared metadata only and does not prove physical or cryptographic
 authenticity.
+
+The later M0 audit correction is documented in the
+[1.0.6 to 1.0.7 migration](privacy-policy-migration-1.0.6-to-1.0.7.md).
