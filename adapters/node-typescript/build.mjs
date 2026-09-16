@@ -45,6 +45,9 @@ const repoRoot = resolve(adapterRoot, "..", "..");
 const artifactPath = join(adapterRoot, "adapter.mjs");
 const kernelPath = join(adapterRoot, "src", "kernel.mjs");
 const scannerPath = join(adapterRoot, "src", "scanner.mjs");
+const workspacePath = join(adapterRoot, "src", "workspace.mjs");
+const nativePlanPath = join(adapterRoot, "src", "native-plan.mjs");
+const nativeContractPath = join(adapterRoot, "src", "native-contract.mjs");
 const libsPath = join(adapterRoot, "src", "libs.mjs");
 const scratchRoot = join(adapterRoot, ".build");
 
@@ -120,6 +123,8 @@ import { LIB_FILES } from "./libs.mjs";
 import * as ts from "typescript";
 import * as kernel from "./kernel.mjs";
 import * as scanner from "./scanner.mjs";
+import * as workspace from "./workspace.mjs";
+import * as nativePlan from "./native-plan.mjs";
 
 kernel.__setCompilerMetadata({
   vendored: true,
@@ -177,6 +182,9 @@ async function buildArtifact() {
   writeFileSync(join(scratchRoot, "src", "kernel.mjs"), kernelSource);
   const scannerSource = readFileSync(scannerPath, "utf8").replace(stripShebang, "");
   writeFileSync(join(scratchRoot, "src", "scanner.mjs"), scannerSource);
+  writeFileSync(join(scratchRoot, "src", "workspace.mjs"), readFileSync(workspacePath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "native-plan.mjs"), readFileSync(nativePlanPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "native-contract.mjs"), readFileSync(nativeContractPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "main.mjs"), entryText);
   // The exact compiler pin must resolve from the adapter's own provisioning.
   const tsPackageDir = dirname(require.resolve("typescript/package.json"));

@@ -211860,6 +211860,7 @@ __export(kernel_exports, {
   sha256Hex: () => sha256Hex,
   stderrDiagnostic: () => stderrDiagnostic,
   validateExtensionDescriptor: () => validateExtensionDescriptor,
+  validateNativeRequest: () => validateNativeRequest,
   validateProfileBinding: () => validateProfileBinding,
   validateRequestObject: () => validateRequestObject,
   validateResolvedProjectProfile: () => validateResolvedProjectProfile,
@@ -211916,7 +211917,8 @@ var OPERATION_TOKENS = Object.freeze([
   "generate",
   "verify",
   "clean",
-  "plan-clean"
+  "plan-clean",
+  "plan-native"
 ]);
 var SUPPORT_STATES = Object.freeze(["full", "partial", "unsupported", "unknown"]);
 var CAPABILITY_IDS = Object.freeze([
@@ -212439,6 +212441,79 @@ function canonicalJsonText(value) {
   });
   return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJsonText(value[key])}`).join(",")}}`;
 }
+function validateNativeRequest(nativeRequest) {
+  if (typeof nativeRequest !== "object" || nativeRequest === null || Array.isArray(nativeRequest)) {
+    throw new RequestRefusal("native-request", "native_request must be an object");
+  }
+  for (const key of Object.keys(nativeRequest)) {
+    if (!NATIVE_REQUEST_KEYS.includes(key)) {
+      throw new RequestRefusal("native-request", "unknown native_request member");
+    }
+  }
+  for (const key of [
+    "changes",
+    "scan_ref",
+    "execution_policy_ref",
+    "input_manifest_digest",
+    "tool_catalog_digest",
+    "capability_snapshot_digest"
+  ]) {
+    if (!hasOwn(nativeRequest, key)) {
+      throw new RequestRefusal("native-request", "missing native_request member");
+    }
+  }
+  const changes = nativeRequest.changes;
+  if (typeof changes !== "object" || changes === null || Array.isArray(changes)) {
+    throw new RequestRefusal("native-request", "changes must be an object");
+  }
+  if (!Array.isArray(changes.files) || changes.files.length > 1024) {
+    throw new RequestRefusal("native-request", "changes.files bound");
+  }
+  for (const file of changes.files) {
+    if (typeof file !== "object" || file === null || Array.isArray(file)) {
+      throw new RequestRefusal("native-request", "changes.files entry");
+    }
+    if (!isLogicalPath(file.path)) {
+      throw new RequestRefusal("native-request", "changes.files path");
+    }
+    if (!["added", "modified", "deleted", "renamed"].includes(file.change)) {
+      throw new RequestRefusal("native-request", "changes.files change");
+    }
+    if (file.before_digest !== void 0 && !isSha256Digest(file.before_digest)) {
+      throw new RequestRefusal("native-request", "changes.files before_digest");
+    }
+    if (file.after_digest !== void 0 && !isSha256Digest(file.after_digest)) {
+      throw new RequestRefusal("native-request", "changes.files after_digest");
+    }
+  }
+  if (!Array.isArray(changes.symbols) || changes.symbols.length > 1024) {
+    throw new RequestRefusal("native-request", "changes.symbols bound");
+  }
+  validateNativeContentRef(nativeRequest.scan_ref);
+  if (nativeRequest.observed_ref !== void 0) {
+    validateNativeContentRef(nativeRequest.observed_ref);
+  }
+  const policy = nativeRequest.execution_policy_ref;
+  if (typeof policy !== "object" || policy === null || Array.isArray(policy) || typeof policy.id !== "string" || policy.id.length === 0 || policy.id.length > 128 || !isContractVersion(policy.version) || !isSha256Digest(policy.digest)) {
+    throw new RequestRefusal("native-request", "execution_policy_ref");
+  }
+  for (const key of ["input_manifest_digest", "tool_catalog_digest", "capability_snapshot_digest"]) {
+    if (!isSha256Digest(nativeRequest[key])) {
+      throw new RequestRefusal("native-request", key);
+    }
+  }
+}
+function validateNativeContentRef(reference) {
+  if (typeof reference !== "object" || reference === null || Array.isArray(reference) || !isSha256Digest(reference.digest)) {
+    throw new RequestRefusal("native-request", "content reference");
+  }
+  if (reference.revision !== void 0 && (typeof reference.revision !== "string" || reference.revision.length === 0 || reference.revision.length > 128)) {
+    throw new RequestRefusal("native-request", "content reference revision");
+  }
+  if (reference.adapter !== void 0 && !isToken(reference.adapter)) {
+    throw new RequestRefusal("native-request", "content reference adapter");
+  }
+}
 var REQUEST_KEYS = Object.freeze([
   "protocol",
   "protocol_version",
@@ -212452,7 +212527,17 @@ var REQUEST_KEYS = Object.freeze([
   "profile_capabilities",
   "dry_run",
   "limits",
-  "plan_id"
+  "plan_id",
+  "native_request"
+]);
+var NATIVE_REQUEST_KEYS = Object.freeze([
+  "changes",
+  "scan_ref",
+  "observed_ref",
+  "execution_policy_ref",
+  "input_manifest_digest",
+  "tool_catalog_digest",
+  "capability_snapshot_digest"
 ]);
 function validateRequestObject(document) {
   if (typeof document !== "object" || document === null || Array.isArray(document)) {
@@ -212521,6 +212606,18 @@ function validateRequestObject(document) {
   const apply = operation === "clean" || operation === "generate" && request.dry_run === false;
   if (apply !== hasOwn(request, "plan_id") || hasOwn(request, "plan_id") && !isPlanId(document.plan_id)) {
     throw new RequestRefusal("plan-id", "plan identity pairing is wrong");
+  }
+  if (operation === "plan-native" !== hasOwn(request, "native_request")) {
+    throw new RequestRefusal("native-request", "native_request pairing is wrong");
+  }
+  if (operation === "plan-native") {
+    if (hasOwn(request, "dry_run") || hasOwn(request, "plan_id")) {
+      throw new RequestRefusal("plan-id", "plan-native is read-only");
+    }
+    if (request.protocol_version !== VERSION) {
+      throw new RequestRefusal("member", "plan-native requires the current version");
+    }
+    validateNativeRequest(request.native_request);
   }
   if (operation === "generate" !== hasOwn(request, "dry_run")) {
     throw new RequestRefusal("dry-run", "dry_run pairing is wrong");
@@ -214998,6 +215095,9 @@ function moduleSemanticAnchor(modulePath, index) {
   const suffix = modulePath.replace(/\.(ts|tsx|mts|cts|d\.ts|d\.mts|d\.cts)$/i, "").split("/").join(".");
   return (scope + "." + suffix).slice(0, 192);
 }
+
+// src/workspace.mjs
+var MAX_WORKSPACE_DOC_BYTES = 1024 * 1024;
 
 // src/main.mjs
 __setCompilerMetadata({
