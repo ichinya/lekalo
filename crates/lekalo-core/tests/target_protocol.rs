@@ -99,6 +99,7 @@ fn call_request<'a>(
         ir_path,
         dry_run,
         plan_id,
+        native_request: None,
     }
 }
 
@@ -118,7 +119,7 @@ fn full_handshake_negotiates_the_published_protocol() {
         .protocol_versions
         .iter()
         .any(|v| v == lekalo_core::target_protocol::version::VERSION));
-    assert_eq!(outcome.capabilities.operations.len(), 8);
+    assert_eq!(outcome.capabilities.operations.len(), 9);
     assert!(outcome.capability_digest.starts_with("sha256:"));
 }
 

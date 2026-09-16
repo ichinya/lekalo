@@ -30,7 +30,7 @@ import {
   snapshotProject,
 } from "./helpers.mjs";
 
-const REQUEST_ID = "req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c";
+const REQUEST_ID = "req-5dbe2c61e7fc4929c34ebd7c3092342324cd54296bf14b99f41aa186cea56338";
 
 /** The committed request fixture decodes and validates exactly. */
 test("the committed describe request fixture is byte-valid protocol input", () => {
@@ -70,7 +70,7 @@ function kernelWithFixtureOutcome(kind, sink) {
 
 const scanRequest = {
   protocol: "lekalo.target/v1",
-  protocol_version: "0.3.1",
+  protocol_version: "0.3.2",
   operation: "scan",
   request_id: REQUEST_ID,
   project_root: ".",

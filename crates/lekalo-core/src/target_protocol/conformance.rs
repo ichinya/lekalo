@@ -114,6 +114,7 @@ fn invalid_apply_plan_is_refused_before_the_actual_os_launch() {
         ir_path: Some(".lekalo/ir/planner.json"),
         dry_run: Some(false),
         plan_id: Some(&id),
+        native_request: None,
     };
     let fs = Fs::open(project.path()).unwrap();
     assert!(client
@@ -123,6 +124,7 @@ fn invalid_apply_plan_is_refused_before_the_actual_os_launch() {
     let planning = CallRequest {
         dry_run: Some(true),
         plan_id: None,
+        native_request: None,
         ..call.clone()
     };
     client
@@ -154,6 +156,28 @@ fn response_request(response: &wire::ResponseEnvelope) -> RequestEnvelope {
     request.target = Some("node-typescript".into());
     request.profile = Some("default".into());
     request.ir_path = Some(".lekalo/ir/planner.json".into());
+    if response.operation == Operation::PlanNative {
+        // A plan-native response is validated against a request carrying
+        // the paired native_request member (required by the decoder).
+        request.ir_path = None;
+        request.native_request = Some(wire::NativeRequest {
+            changes: wire::NativeChanges::default(),
+            scan_ref: wire::NativeContentRef {
+                digest: format!("sha256:{}", "0".repeat(64)),
+                revision: None,
+                adapter: None,
+            },
+            observed_ref: None,
+            execution_policy_ref: wire::NativeContentRef {
+                digest: format!("sha256:{}", "0".repeat(64)),
+                revision: None,
+                adapter: None,
+            },
+            input_manifest_digest: format!("sha256:{}", "0".repeat(64)),
+            tool_catalog_digest: format!("sha256:{}", "0".repeat(64)),
+            capability_snapshot_digest: format!("sha256:{}", "0".repeat(64)),
+        });
+    }
     if response.operation == Operation::Generate {
         request.dry_run = Some(false);
         request.plan_id = Some(
@@ -207,6 +231,7 @@ fn validate_raw_response(
             ir_path: request.ir_path.as_deref(),
             dry_run: request.dry_run,
             plan_id: request.plan_id.as_deref(),
+            native_request: None,
         };
         client.validate_response_payload(&call, &response, caps)
     }

@@ -8,11 +8,11 @@ const arg = key => { const i = process.argv.indexOf(key); return i < 0 ? undefin
 const mode = arg('--mode') ?? 'normal';
 const host = arg('--host-root');
 const digest = bytes => 'sha256:' + createHash('sha256').update(bytes).digest('hex');
-const adapter = { id:'test', version:'0.3.1', digest:digest('boundary adapter v1') };
+const adapter = { id:'test', version:'0.3.2', digest:digest('boundary adapter v1') };
 const file = arg('--lekalo-request-file');
 const req = JSON.parse(fs.readFileSync(file ?? 0, 'utf8'));
-const res = { protocol:'lekalo.target/v1', protocol_version:'0.3.1', operation:req.operation, request_id:req.request_id, status:'ok', evidence:{adapter} };
-const caps = { adapter, protocol_versions:['0.3.1'], ir_versions:['0.2.16'], operations:['describe','scan','bind','validate','verify','generate','plan-clean','clean'], transports:['stdin','file'], targets:['test'], profiles:['default','other'], read_scopes:['.lekalo/ir/**'], write_scopes:['out/**'], progress:false };
+const res = { protocol:'lekalo.target/v1', protocol_version:'0.3.2', operation:req.operation, request_id:req.request_id, status:'ok', evidence:{adapter} };
+const caps = { adapter, protocol_versions:['0.3.2'], ir_versions:['0.2.16'], operations:['describe','scan','bind','validate','verify','generate','plan-clean','clean'], transports:['stdin','file'], targets:['test'], profiles:['default','other'], read_scopes:['.lekalo/ir/**'], write_scopes:['out/**'], progress:false };
 const output = arg('--output') ?? 'out/file.txt';
 if (arg('--write-scopes')) caps.write_scopes = arg('--write-scopes').split(',');
 function attempt(fn) { try { fn(); return 'allowed'; } catch { return 'denied'; } }

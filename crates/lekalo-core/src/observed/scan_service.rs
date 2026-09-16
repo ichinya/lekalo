@@ -138,6 +138,7 @@ pub fn run(
             ir_path: None,
             dry_run: None,
             plan_id: None,
+            native_request: None,
         },
         &ctx.root,
         &fs,

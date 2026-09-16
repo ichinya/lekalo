@@ -86,6 +86,10 @@ pub struct CallRequest<'a> {
     pub dry_run: Option<bool>,
     /// Required for apply operations; must equal the bound plan identity.
     pub plan_id: Option<&'a str>,
+    /// The read-only native gate planning input; required for
+    /// `plan-native`, refused elsewhere (issue #48). The borrowed value
+    /// is serialized into the envelope; ownership stays with the caller.
+    pub native_request: Option<&'a wire::NativeRequest>,
 }
 
 /// One completed, verified adapter operation.
@@ -458,6 +462,9 @@ impl TargetClient {
         envelope.profile = request.profile.map(str::to_owned);
         envelope.dry_run = dry_run;
         envelope.plan_id = plan_request;
+        if let Some(native) = request.native_request {
+            envelope.native_request = Some(native.clone());
+        }
         if let Some(resolution) = request.profile_resolution {
             envelope.profile_digest = Some(resolution.digest.clone());
             envelope.profile_capabilities = Some(resolution.capabilities.clone());
@@ -671,6 +678,17 @@ impl TargetClient {
         if request.operation != Operation::Generate && request.dry_run.is_some() {
             return invalid("dry-run");
         }
+        if request.operation == Operation::PlanNative {
+            // Read-only planning: no plan echo, no target/profile binding
+            // requirements beyond the shared grammar. The native_request
+            // member pairing is validated by the wire decoder.
+            if request.plan_id.is_some() {
+                return invalid("plan-id");
+            }
+            if request.native_request.is_none() {
+                return invalid("native-request");
+            }
+        }
         let apply = request.operation.is_destructive_apply()
             || (request.operation == Operation::Generate && request.dry_run == Some(false));
         if apply != request.plan_id.is_some() {
@@ -793,12 +811,24 @@ impl TargetClient {
             if result.truncated.is_some() && request.operation != Operation::Scan {
                 return invalid(ResponseInvalidity::UnexpectedMember);
             }
+            // Issue #48: the native_plan member is forbidden on every
+            // operation but plan-native; a plan-native result missing it
+            // falls through to the completeness check below.
+            if result.native_plan.is_some() && request.operation != Operation::PlanNative {
+                return invalid(ResponseInvalidity::UnexpectedMember);
+            }
+            if result.entries.is_some()
+                && request.operation == Operation::PlanNative
+            {
+                return invalid(ResponseInvalidity::UnexpectedMember);
+            }
         }
         let result = response.result.as_ref();
         let complete = match request.operation {
             Operation::Scan => result.is_some_and(|r| r.entries.is_some()),
             Operation::Bind => result.is_some_and(|r| r.bindings.is_some()),
             Operation::Validate | Operation::Verify => result.is_some_and(|r| r.ok.is_some()),
+            Operation::PlanNative => result.is_some_and(|r| r.native_plan.is_some()),
             _ => result.is_none(),
         };
         if !complete {
@@ -873,6 +903,7 @@ fn base_envelope(
         dry_run: None,
         limits: Some(limits),
         plan_id: None,
+        native_request: None,
     }
 }
 

@@ -211879,7 +211879,7 @@ import {
 import { isAbsolute, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 var PROTOCOL_TOKEN = "lekalo.target/v1";
-var VERSION = "0.3.1";
+var VERSION = "0.3.2";
 var SUPPORTED_VERSIONS = Object.freeze([VERSION]);
 var ADAPTER_ID = "lekalo-target-node-typescript";
 var ADAPTER_VERSION = "0.3.2";

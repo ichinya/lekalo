@@ -35,7 +35,7 @@ test("one-shot stdin describe produces exactly one valid response", () => {
   assert.equal(envelope.status, "ok");
   assert.equal(envelope.operation, "describe");
   assert.equal(envelope.request_id, request.request_id);
-  assert.equal(envelope.protocol_version, "0.3.1");
+  assert.equal(envelope.protocol_version, "0.3.2");
   // The kernel writes the canonical bytes only: no trailing whitespace noise.
   assert.equal(result.stdout.toString("utf8"), canonicalJson(envelope));
   assert.equal(result.stderr.toString("utf8"), "");
@@ -82,8 +82,8 @@ test("malformed bytes exit nonzero with bounded stderr and no fabricated envelop
 
 test("duplicate decoded keys exit nonzero, never collapse", () => {
   const bytes = Buffer.from(
-    '{"protocol":"lekalo.target/v1","protocol_version":"0.3.1","operation":"describe",'
-    + '"request_id":"req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c",'
+    '{"protocol":"lekalo.target/v1","protocol_version":"0.3.2","operation":"describe",'
+    + '"request_id":"req-5dbe2c61e7fc4929c34ebd7c3092342324cd54296bf14b99f41aa186cea56338",'
     + '"project_root":".","operation":"scan"}',
     "utf8",
   );
@@ -105,7 +105,7 @@ test("the metadata probe prints exact runtime fields on stdout", () => {
   assert.equal(result.status, 0);
   const probe = JSON.parse(result.stdout.toString("utf8"));
   assert.equal(probe.adapter.id, "lekalo-target-node-typescript");
-  assert.equal(probe.adapter.version, "0.3.1");
+  assert.equal(probe.adapter.version, "0.3.2");
   assert.match(probe.adapter.digest, /^sha256:[0-9a-f]{64}$/);
   assert.equal(probe.node, process.versions.node);
 });
@@ -113,9 +113,9 @@ test("the metadata probe prints exact runtime fields on stdout", () => {
 test("an unsupported operation through the wire yields one valid error envelope", () => {
   const request = {
     protocol: "lekalo.target/v1",
-    protocol_version: "0.3.1",
+    protocol_version: "0.3.2",
     operation: "scan",
-    request_id: "req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c",
+    request_id: "req-5dbe2c61e7fc4929c34ebd7c3092342324cd54296bf14b99f41aa186cea56338",
     project_root: ".",
     profile: "standalone",
   };

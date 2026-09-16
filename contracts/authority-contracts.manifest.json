@@ -1,10 +1,18 @@
 {
   "manifestId": "dev.lekalo.authority-contract-manifest",
-  "formatVersion": "0.2.16",
+  "formatVersion": "0.3.2",
   "digestAlgorithm": "sha256",
   "digestInput": "exact-file-bytes",
   "selfReferential": false,
   "acceptedContracts": [
+    {
+      "contractId": "dev.lekalo.authority-matrix",
+      "version": "0.3.2",
+      "digest": "sha256:cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4",
+      "path": "contracts/authority-matrix.v0.3.2.json",
+      "sidecar": "contracts/authority-matrix.v0.3.2.sha256",
+      "status": "accepted"
+    },
     {
       "contractId": "dev.lekalo.authority-matrix",
       "version": "0.2.16",
@@ -16,7 +24,7 @@
   ],
   "currentAuthorityRef": {
     "contractId": "dev.lekalo.authority-matrix",
-    "version": "0.2.16",
-    "digest": "sha256:141641cfbc1fbf6a07add99feafb877f9f544687ad558ab91d619ec7dd78d1b4"
+    "version": "0.3.2",
+    "digest": "sha256:cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4"
   }
 }

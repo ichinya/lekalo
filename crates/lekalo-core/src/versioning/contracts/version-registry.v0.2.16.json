@@ -29,14 +29,14 @@
       "migrations": []
     },
     "protocol": {
-      "current": "0.3.1",
+      "current": "0.3.2",
       "aliases": [],
       "versions": [
         {
-          "version": "0.3.1",
+          "version": "0.3.2",
           "state": "supported",
           "classification": "breaking",
-          "reason": "Issue #44 additive typed scan-entry evidence member at product 0.3.1. Only the current contract is supported."
+          "reason": "Issue #48 native gates: the read-only plan-native operation with typed native_request/native_plan members at product 0.3.2. Only the current contract is supported."
         }
       ],
       "migrations": []
