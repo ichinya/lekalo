@@ -13,8 +13,7 @@ use std::sync::Mutex;
 const TASK_DOMAIN: &str = "tests/fixtures/observed/task-domain";
 const INITIAL_SCAN: &str = "tests/fixtures/observed/task-domain/scans/initial.json";
 const MOVED_SCAN: &str = "tests/fixtures/observed/task-domain/scans/moved.json";
-const SIGNATURE_DRIFT_SCAN: &str =
-  "tests/fixtures/observed/task-domain/scans/signature-drift.json";
+const SIGNATURE_DRIFT_SCAN: &str = "tests/fixtures/observed/task-domain/scans/signature-drift.json";
 
 /// Serializes tests that change the process working directory.
 static CWD_LOCK: Mutex<()> = Mutex::new(());
@@ -349,14 +348,21 @@ fn signature_drift_stales_a_confirmed_binding_pending_reconfirmation() {
     // stale the binding.
     let receipt = observed::update_index(&ctx, &sandbox.scan_bytes(SIGNATURE_DRIFT_SCAN))
         .expect("drift scan merges");
-    assert_eq!(receipt.staled, Vec::<String>::new(), "first adoption is not drift");
+    assert_eq!(
+        receipt.staled,
+        Vec::<String>::new(),
+        "first adoption is not drift"
+    );
     let adopted = sandbox.index();
     let adopted_record = adopted
         .symbols
         .iter()
         .find(|record| record.id == "taskboard.create_task")
         .expect("present after adoption");
-    assert_eq!(adopted_record.status, observed::types::BindingStatus::Confirmed);
+    assert_eq!(
+        adopted_record.status,
+        observed::types::BindingStatus::Confirmed
+    );
     assert_eq!(adopted_record.state, observed::types::BindingState::Current);
     assert_eq!(
         adopted_record.evidence.signature.as_deref(),
@@ -371,24 +377,18 @@ fn signature_drift_stales_a_confirmed_binding_pending_reconfirmation() {
         .expect("identical scan is not drift");
     assert_eq!(receipt.staled, Vec::<String>::new());
 
-    let mut drifted_scan = serde_json::from_slice::<serde_json::Value>(
-        &sandbox.scan_bytes(SIGNATURE_DRIFT_SCAN),
-    )
-    .expect("drift scan parses");
-    drifted_scan["revision"] = serde_json::Value::String(format!(
-        "sha256:{}",
-        "c".repeat(64)
-    ));
+    let mut drifted_scan =
+        serde_json::from_slice::<serde_json::Value>(&sandbox.scan_bytes(SIGNATURE_DRIFT_SCAN))
+            .expect("drift scan parses");
+    drifted_scan["revision"] = serde_json::Value::String(format!("sha256:{}", "c".repeat(64)));
     let drifted_symbol = drifted_scan["symbols"]
         .as_array_mut()
         .expect("symbols array")
         .iter_mut()
         .find(|symbol| symbol["id"] == "taskboard.create_task")
         .expect("create_task present");
-    drifted_symbol["evidence"]["signature"] = serde_json::Value::String(format!(
-        "sha256:{}",
-        "7".repeat(64)
-    ));
+    drifted_symbol["evidence"]["signature"] =
+        serde_json::Value::String(format!("sha256:{}", "7".repeat(64)));
     let drifted_bytes = serde_json::to_vec(&drifted_scan).expect("drifted scan serializes");
     let receipt = observed::update_index(&ctx, &drifted_bytes)
         .expect("a changed structural signature still merges");
@@ -406,7 +406,10 @@ fn signature_drift_stales_a_confirmed_binding_pending_reconfirmation() {
         .iter()
         .find(|record| record.id == "taskboard.create_task")
         .expect("present after drift");
-    assert_eq!(drifted_record.status, observed::types::BindingStatus::Confirmed);
+    assert_eq!(
+        drifted_record.status,
+        observed::types::BindingStatus::Confirmed
+    );
     assert_eq!(
         drifted_record.state,
         observed::types::BindingState::Stale,
