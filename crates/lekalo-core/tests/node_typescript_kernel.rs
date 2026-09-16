@@ -74,7 +74,7 @@ fn the_kernel_describes_itself_through_the_production_client() {
         described.capabilities.adapter.id,
         "lekalo-target-node-typescript"
     );
-    assert_eq!(described.capabilities.adapter.version, "0.3.1");
+    assert_eq!(described.capabilities.adapter.version, "0.3.2");
     assert!(described.capabilities.adapter.digest.starts_with("sha256:"));
     // The kernel advertises describe only, with truthful emptiness.
     assert_eq!(described.capabilities.operations, vec![Operation::Describe]);

@@ -135,7 +135,7 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
         described.capabilities.adapter.id,
         "lekalo-target-node-typescript"
     );
-    assert_eq!(described.capabilities.adapter.version, "0.3.1");
+    assert_eq!(described.capabilities.adapter.version, "0.3.2");
     assert_eq!(described.capabilities.operations.len(), 2);
     assert!(described.capabilities.operations.contains(&Operation::Scan));
     assert_eq!(
