@@ -519,7 +519,14 @@ mod fixture_execution_tests {
         let tool = which_node(&node)?;
         Some(FixtureCatalogEntry {
             root,
-            catalog_digest: format!("sha256:{}", "e".repeat(64)),
+            catalog_digest: {
+                let plan: serde_json::Value =
+                    serde_json::from_slice(&golden_plan_bytes()).expect("golden plan json");
+                plan["tool_catalog_digest"]
+                    .as_str()
+                    .expect("catalog digest")
+                    .to_owned()
+            },
             tool_path: tool,
             tool_id: "fixture-node".to_owned(),
         })
