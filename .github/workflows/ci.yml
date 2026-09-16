@@ -175,6 +175,16 @@ jobs:
           node adapters/node-typescript/build.mjs --check
       - name: Run the TypeScript scanner suite (issue #44)
         run: node scripts/test-node-typescript-scanner.mjs
+      - name: Run the native gate suite (issue #48)
+        run: node scripts/test-node-native-gates.mjs
+      - name: Run the native gate contract gate (issue #48)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-native-gate-contracts.mjs
+      - name: Execute the native gate host suites (issue #48)
+        run: cargo test --locked -p lekalo-core --lib native_gate
       - name: Run the applicable conformance battery against the kernel adapter (bare)
         run: cargo run --locked -p lekalo-cli -- adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs
       - name: Run the conformance battery against the configured scanner adapter (issue #44)
