@@ -1,7 +1,6 @@
 # Target adapter process protocol
 
-`lekalo.target/v1`, contract 0.2.16 with the additive 0.2.16 and 0.2.16
-extensions, connects core to separate executables. Adapters may be
+`lekalo.target/v1`, contract 0.3.1, connects core to separate executables. Adapters may be
 written in any language; core loads no native plugin ABI. The operations
 are describe, scan, bind, validate, generate, verify, plan-clean and
 clean. Product 0.2.5, Model 0.2.16, IR 0.2.16 and diagnostic registry
@@ -13,10 +12,10 @@ carries the `init.*` adoption entries introduced in 1.13.0 and the
 
 ## Version negotiation and capability discovery (issue #28)
 
-The v1 line carries two exact contract versions. The base `0.2.16`
+The v1 line carries two exact contract versions. The base `0.3.1`
 envelope is what every v1-line adapter accepts and what the frozen
-`contracts/target-protocol.schema.v0.2.16.json` document describes. The
-current `0.2.16` (`contracts/target-protocol.schema.v0.2.16.json`)
+`contracts/target-protocol.schema.v0.3.1.json` document describes. The
+current `0.3.1` (`contracts/target-protocol.schema.v0.3.1.json`)
 additively extends the describe response's `capabilities` object with:
 
 - `ir_versions` — the IR contract versions the adapter accepts
@@ -34,19 +33,19 @@ declared `protocol_versions`, and — only when that is higher than the
 base — re-describes at exactly that version. The session's negotiated
 version is the request version of the final describe, and every later
 exchange runs at it. A response claiming the base version may not carry
-extension members (the frozen 0.2.16 meaning is preserved byte for
+extension members (the frozen base meaning is preserved byte for
 byte), and declared capability ids must carry versioned definitions in
 the embedded capability registry
-(`dev.lekalo.target-capabilities@0.2.16`); unknown ids refuse the
+(`dev.lekalo.target-capabilities@0.3.1`); unknown ids refuse the
 response.
 
 Discovery (`target_protocol::discovery`) is safe by construction: it
 sends `describe` only — no IR path, no target or profile, no write
 operation — so an incompatible adapter is characterized and filtered
-before any project IR could be disclosed to it. An adapter on a 0.2.16
+before any project IR could be disclosed to it. An adapter on a 0.3.1
 session that did not declare the core IR contract version can never
 receive an IR-carrying operation (`target.ir-unsupported`, exit
-4/stdout); a legacy 0.2.16 session keeps the #27 contract, where IR
+4/stdout); a base-only session keeps the #27 contract, where IR
 compatibility is governed upstream by the #9 compatibility preflight and
 the lock. Discovery distinguishes the adapter's declared digest from the
 verified digest over the launched entry bytes (the executable, or its
@@ -70,14 +69,29 @@ digest); any change misses. The resolved capability snapshot lands in
 the committed `lekalo.lock` through the #10 resolver, with each entry
 bound to its capability definition version.
 
+## Scan entry evidence extension (issue #44)
+
+The 0.3.1 contract additively extends every scan result entry with an
+optional closed `evidence` member: the structural `signature` digest
+(`sha256:…`) of the native symbol's call/value shape and up to eight
+`references` rows `{target, role, confidence}` describing outbound
+semantic edges. The member is typed data, never arbitrary JSON; the
+closed role set is `read`, `create`, `update`, `delete`, `emit`, `call`,
+`reference`, and the closed confidence set is `exact`, `high`, `medium`,
+`low`, `unknown`. Missing members mean unknown, never absence. The core
+merges the member into the observed evidence of the merged binding, so
+scanner references and signature digests reach the dependency graph
+end to end; a signature digest change invalidates a recorded binding
+mapping instead of silently refreshing it.
+
 ## Resolved profile request extension (issue #29)
 
-The 0.2.16 contract is additive to the request side only: an operation
+The 0.3.1 contract is additive to the request side only: an operation
 that already carries a `profile` token may also carry
 `profile_digest` (`sha256:…`) and `profile_capabilities` (a bounded,
 id-sorted list of `{id, support}` pairs). Both members are legal only
 together, only with a profile token, and only on a session negotiated
-at exactly 0.2.16; the frozen 0.2.16 and 0.2.16 documents refuse them, so
+at exactly 0.3.1; the frozen base documents refuse them, so
 their published meanings are unchanged. The members carry the resolved
 target profile — the digest over the canonical resolved snapshot bytes
 (the lock's `profiles.digest` domain) plus the capability set the whole
@@ -245,7 +259,7 @@ and the future generation CLI are not qualified by these tests.
 `adapters/node-typescript/adapter.mjs` is the concrete observed MVP
 target adapter (`lekalo-target-node-typescript`, product version 0.3.0):
 a dependency-free, read-only, single-file Node kernel. It implements the
-mandatory `describe` handshake at protocol 0.2.16 and nothing else on
+mandatory `describe` handshake at protocol 0.3.1 and nothing else on
 the wire: `scan` belongs to #44, native gates to #48, and generation to
 #45–#47, so its operation surface is exactly `["describe"]` and its five
 declared capability ids are all `unsupported`. A direct request to an
@@ -254,7 +268,7 @@ unimplemented operation returns one valid `unsupported` error envelope
 operations before launch as usual.
 
 Its limits are contractual, not incidental: read roots never come from
-the wire (the v0.2.16 resolved profile carries digest/capability pairs,
+the wire (the base resolved profile carries digest/capability pairs,
 not roots) but from an injected internal resolved project profile whose
 roots are validated lexically and physically — links, junctions, and
 escapes included — before any extension callback runs. Extension

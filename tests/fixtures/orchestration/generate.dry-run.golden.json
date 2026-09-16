@@ -4,7 +4,7 @@
   "mode": "dry-run",
   "identity": "dev.lekalo.orchestration-report@0.2.16",
   "project": "planner",
-  "lockDigest": "sha256:63877d9336a8ce0c3d323bbe22b383d07465b8fe32f867b38e2efd1c90095c6c",
+  "lockDigest": "sha256:aaf31843adce665c2a78eb47b995dbce6aeac2b8dd2c4f1f756cc69603e5ab4c",
   "locked": false,
   "inputs": {
     "modelVersion": "0.2.16",
@@ -27,8 +27,8 @@
       "profile": "default",
       "adapter": {
         "id": "node-typescript",
-        "version": "0.2.16",
-        "digest": "sha256:a9da0d1efce322f3dad4dfa0124044d2ed9649632dae3716b5249cb0be9ed518"
+        "version": "0.3.1",
+        "digest": "sha256:fbafe2773d6edf6f01f03d2518bdc87ad841dcc124e5b827cbfc1bb31a0c343f"
       },
       "state": "planned",
       "reasonCode": null,
@@ -37,7 +37,7 @@
         {
           "path": "src/generated/node-typescript/planner.ts",
           "action": "create",
-          "sha256": "sha256:a575cbf30a7de66e6b1c8810d5dfffd3207ca8a7df769bc2d238028d153bb7b9"
+          "sha256": "sha256:ddf82a49f327384f34cee34ce3674fe86f426672f5ba79ea0bcc512509c2bd47"
         }
       ],
       "manifestDigest": null

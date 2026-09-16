@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "strict": false, "noEmit": true, "skipLibCheck": true, "target": "es2022" },
+  "include": ["src"]
+}

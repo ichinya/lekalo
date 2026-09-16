@@ -90,13 +90,13 @@ fn discovery_negotiates_the_extension_and_records_provenance() {
     let mut client = TargetClient::default();
     let discovered = Discovery::run(&mut client, &variant_command("fluent"), &sandbox.dir)
         .expect("fluent discovery");
-    assert_eq!(discovered.negotiated_version, "0.2.16");
+    assert_eq!(discovered.negotiated_version, "0.3.1");
     assert_eq!(discovered.ir_versions, vec!["0.2.16".to_owned()]);
     assert!(discovered.ir_compatible("0.2.16"));
     assert_eq!(discovered.adapter.id, "node-typescript");
     let openapi = discovered.capability("generate.openapi").expect("declared");
     assert_eq!(openapi.state, SupportState::Partial);
-    assert_eq!(openapi.definition_version, "0.2.16");
+    assert_eq!(openapi.definition_version, "0.3.1");
     assert_eq!(openapi.provenance, Provenance::Declared);
     assert_eq!(
         discovered
@@ -127,7 +127,7 @@ fn legacy_adapter_stays_on_the_frozen_base_contract() {
     let command = variant_command("legacy");
     let mut client = TargetClient::default();
     let discovered = Discovery::run(&mut client, &command, &sandbox.dir).expect("legacy");
-    assert_eq!(discovered.negotiated_version, "0.2.16");
+    assert_eq!(discovered.negotiated_version, "0.3.1");
     assert!(discovered.ir_versions.is_empty());
     assert!(discovered.capabilities.is_empty());
     assert!(!discovered.ir_compatible("0.2.16"));
@@ -232,7 +232,7 @@ fn selection_covers_full_partial_unknown_and_incompatible() {
     assert!(all_reasons.contains(&reasons::PARTIAL_POLICY));
     assert!(all_reasons.contains(&reasons::CAPABILITY_UNKNOWN));
     assert!(all_reasons.contains(&reasons::IR_UNDECLARED));
-    assert_eq!(selected.capabilities[0].definition_version, "0.2.16");
+    assert_eq!(selected.capabilities[0].definition_version, "0.3.1");
     let report_bytes = serde_json::to_vec(&strict).expect("machine-readable");
     let value: serde_json::Value = serde_json::from_slice(&report_bytes).unwrap();
     assert!(value["selected"]["capability_digest"].is_string());
@@ -360,8 +360,10 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
         ContractVersion::parse_canonical("0.2.16").unwrap(),
         ContractVersion::parse_canonical("0.2.16").unwrap(),
         Some(ProtocolBounds {
-            min: ContractVersion::parse_canonical("0.2.16").unwrap(),
-            max: ContractVersion::parse_canonical("0.2.16").unwrap(),
+            min: ContractVersion::parse_canonical(lekalo_core::target_protocol::version::VERSION)
+                .unwrap(),
+            max: ContractVersion::parse_canonical(lekalo_core::target_protocol::version::VERSION)
+                .unwrap(),
         }),
         vec![],
         vec![],
@@ -407,7 +409,7 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
     assert_eq!(zod.support(), lekalo_core::lockfile::Support::Full);
     assert_eq!(
         zod.version().as_str(),
-        "0.2.16",
+        "0.3.1",
         "bound to the capability definition version"
     );
     assert_eq!(zod.provider().id().as_str(), "node-typescript");
@@ -420,7 +422,10 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
     assert!(CompatibilityPreflight::check(
         registry,
         &ContractVersion::parse_canonical("0.2.16").unwrap(),
-        Some(&ContractVersion::parse_canonical("0.2.16").unwrap()),
+        Some(
+            &ContractVersion::parse_canonical(lekalo_core::target_protocol::version::VERSION)
+                .unwrap()
+        ),
         &manifest,
     )
     .is_compatible());
@@ -430,7 +435,7 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
 fn capability_definitions_are_versioned_and_closed() {
     assert_eq!(
         capability::REGISTRY_IDENTITY,
-        "dev.lekalo.target-capabilities@0.2.16"
+        "dev.lekalo.target-capabilities@0.3.1"
     );
     for id in [
         "scan.symbols",
@@ -441,7 +446,7 @@ fn capability_definitions_are_versioned_and_closed() {
     ] {
         assert_eq!(
             capability::definition(id).unwrap().definition_version,
-            "0.2.16"
+            "0.3.1"
         );
     }
     assert!(capability::definition("scan.nonexistent").is_none());
@@ -474,7 +479,7 @@ fn resolved_profiles_reach_current_adapters() {
     let command = variant_command("fluent");
     let mut client = TargetClient::default();
     let discovered = Discovery::run(&mut client, &command, &sandbox.dir).expect("discovery");
-    assert_eq!(discovered.negotiated_version, "0.2.16");
+    assert_eq!(discovered.negotiated_version, "0.3.1");
 
     // Resolve the issue's Node profile through the production seam and
     // project it onto the wire shape.

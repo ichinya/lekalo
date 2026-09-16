@@ -14,6 +14,9 @@ import { fileURLToPath } from "node:url";
 export const repoRoot = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../.."));
 
 export const adapterPath = join(repoRoot, "adapters/node-typescript/adapter.mjs");
+/** The unbundled source entry used by the in-process suites. */
+export const sourceEntryPath = join(repoRoot, "adapters/node-typescript/main.mjs");
+export const kernelSourcePath = join(repoRoot, "adapters/node-typescript/src/kernel.mjs");
 export const fixtureRoot = join(repoRoot, "tests/fixtures/node-typescript-kernel");
 
 export function readFixture(relative) {
@@ -127,7 +130,7 @@ export function deterministicDescribeRequest() {
     operation: "describe",
     project_root: ".",
     protocol: "lekalo.target/v1",
-    protocol_version: "0.2.16",
+    protocol_version: "0.3.1",
     request_id: "req-1b2c9180d660f980e22741574e778fa6dcd11fd7a960b9ad89f7a48485e5988c",
   };
 }

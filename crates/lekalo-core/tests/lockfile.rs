@@ -34,7 +34,7 @@ use lekalo_core::versioning::{ContractVersion, VersionRegistry};
 const GOLDEN: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:a234c7144d35ac7d9fb44c34efc4d63639d32d33278d6b529a170dea20fab78a";
+    "sha256:6392f1b8d3786bcc11ddd5c22878aefa622d93384355f58e360d3992eef2a96f";
 const MULTI: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/multi-adapter.lock.json");
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/lockfile/project";
@@ -50,7 +50,10 @@ fn model_1_0() -> ContractVersion<ModelContract> {
 /// The synthetic published-protocol world's current version: the
 /// candidate-resolution tests below declare manifest bounds inside it.
 fn protocol_version() -> ContractVersion<ProtocolContract> {
-    ContractVersion::<ProtocolContract>::parse_canonical("0.2.16").expect("0.2.16 is canonical")
+    ContractVersion::<ProtocolContract>::parse_canonical(
+        lekalo_core::target_protocol::version::VERSION,
+    )
+    .expect("the current protocol version is canonical")
 }
 
 /// A synthetic registry identical to the embedded one except that the
@@ -224,9 +227,9 @@ fn golden_contract_only_lock_parses_and_matches_its_independent_digest() {
     let lock = Lockfile::parse_canonical(GOLDEN).expect("golden lock parses");
     assert_eq!(lock.digest().as_str(), GOLDEN_DIGEST);
     assert_eq!(lock.resolver_version().as_str(), RESOLVER_VERSION);
-    assert_eq!(lock.core_version().as_str(), "0.3.0");
+    assert_eq!(lock.core_version().as_str(), "0.3.1");
     let protocol = lock.target_protocol().expect("published protocol");
-    assert_eq!(protocol.version().as_str(), "0.2.16");
+    assert_eq!(protocol.version().as_str(), "0.3.1");
     // Round-trip: canonical bytes are byte-identical to the committed file.
     assert_eq!(lock.canonical_bytes().as_ref(), GOLDEN);
 }
@@ -295,17 +298,17 @@ fn wire_refusals_carry_the_closed_reason_codes() {
         ),
         (
             "v-prefixed version",
-            tampered("\"version\":\"0.3.0\"", "\"version\":\"v0.1.9\""),
+            tampered("\"version\":\"0.3.1\"", "\"version\":\"v0.1.9\""),
             "lock.schema-invalid",
         ),
         (
             "build metadata version",
-            tampered("\"version\":\"0.3.0\"", "\"version\":\"0.1.9+meta\""),
+            tampered("\"version\":\"0.3.1\"", "\"version\":\"0.1.9+meta\""),
             "lock.schema-invalid",
         ),
         (
             "range version",
-            tampered("\"version\":\"0.3.0\"", "\"version\":\"^0.1\""),
+            tampered("\"version\":\"0.3.1\"", "\"version\":\"^0.1\""),
             "lock.schema-invalid",
         ),
         (

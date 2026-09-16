@@ -290,6 +290,34 @@ fn string_member(map: &serde_json::Map<String, Json>, key: &str) -> Result<Strin
         .ok_or_else(|| invalid_set("entry-detail"))
 }
 
+/**
+ * Resolve one entry evidence reference target: when the adapter's
+ * native-id proposal matches another scanned entry's native id, the
+ * reference points at that entry's proposed semantic id (an internal
+ * graph edge); otherwise the adapter's spelling is kept as the edge
+ * target verbatim (an external or unresolved edge). Either way the
+ * edge survives into the merged evidence.
+ */
+fn resolve_reference_target(target: &str, entries: &[wire::ScanEntry]) -> String {
+    for entry in entries {
+        let Some(detail_text) = &entry.detail else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Json>(detail_text) else {
+            continue;
+        };
+        let Some(map) = value.as_object() else {
+            continue;
+        };
+        if map.get("n").and_then(Json::as_str) == Some(target) {
+            if let Some(semantic) = map.get("s").and_then(Json::as_str) {
+                return semantic.to_owned();
+            }
+        }
+    }
+    target.to_owned()
+}
+
 /// The sha256 of one project file through the confined filesystem; a
 /// missing or over-large file is `None` (the binding then carries no
 /// freshness evidence, which the audit reports as `unknown`).
@@ -394,6 +422,37 @@ fn build_document(
                 "fingerprint".to_owned(),
                 serde_json::json!(file_fingerprint(&fs, &entry.path)),
             );
+        }
+        // Issue #44: the typed scan-entry evidence member flows into the
+        // merged binding's observed evidence, so signature digests and
+        // outbound references reach the dependency graph end to end. The
+        // references' `target` spellings are native stable keys of other
+        // scanned symbols where they can be resolved; unresolved targets
+        // keep the adapter's proposal as an external edge.
+        if let Some(evidence) = &entry.evidence {
+            let mut evidence_map = serde_json::Map::new();
+            if let Some(signature) = &evidence.signature {
+                evidence_map.insert("signature".to_owned(), Json::String(signature.clone()));
+            }
+            if !evidence.references.is_empty() {
+                let references: Vec<Json> = evidence
+                    .references
+                    .iter()
+                    .map(|reference| {
+                        serde_json::json!({
+                            "target": resolve_reference_target(
+                                &reference.target, entries,
+                            ),
+                            "role": reference.role,
+                            "confidence": reference.confidence,
+                        })
+                    })
+                    .collect();
+                evidence_map.insert("references".to_owned(), Json::Array(references));
+            }
+            if !evidence_map.is_empty() {
+                symbol.insert("evidence".to_owned(), Json::Object(evidence_map));
+            }
         }
         symbol.insert("candidates".to_owned(), Json::Array(candidates));
         symbols.push(Json::Object(symbol));

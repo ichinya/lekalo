@@ -31,7 +31,7 @@ import {
   validateExtensionDescriptor,
   validateRequestObject,
   validateResolvedProjectProfile,
-} from "../adapter.mjs";
+} from "../main.mjs";
 import {
   deterministicDescribeRequest,
   expectedNormalization,
@@ -58,10 +58,10 @@ function baseRequest(overrides = {}) {
 
 test("identity constants are the frozen #43 values", () => {
   assert.equal(PROTOCOL_TOKEN, "lekalo.target/v1");
-  assert.deepEqual(SUPPORTED_VERSIONS, ["0.2.16"]);
-  assert.equal(VERSION, "0.2.16");
+  assert.deepEqual(SUPPORTED_VERSIONS, ["0.3.1"]);
+  assert.equal(VERSION, "0.3.1");
   assert.equal(ADAPTER_ID, "lekalo-target-node-typescript");
-  assert.equal(ADAPTER_VERSION, "0.3.0");
+  assert.equal(ADAPTER_VERSION, "0.3.1");
   assert.match(entryDigest(), /^sha256:[0-9a-f]{64}$/);
 });
 
@@ -76,7 +76,7 @@ test("runtime metadata probe reports the exact running node", () => {
 test("the descriptor advertises describe only, with honest capability states", () => {
   const capabilities = describeCapabilities();
   assert.deepEqual(capabilities.operations, ["describe"]);
-  assert.deepEqual(capabilities.protocol_versions, ["0.2.16"]);
+  assert.deepEqual(capabilities.protocol_versions, ["0.3.1"]);
   assert.deepEqual(capabilities.ir_versions, []);
   assert.equal(capabilities.progress, false);
   assert.deepEqual(capabilities.read_scopes, []);
@@ -382,7 +382,7 @@ test("extension descriptors are validated; unknown capability ids are refused", 
     version: "0.1.0",
     operations: ["scan"],
     namedCapabilities: { "scan.symbols": "partial" },
-    acceptedIrVersions: ["0.2.16"],
+    acceptedIrVersions: ["0.3.1"],
     invoke: () => ({ state: "complete" }),
   };
   const validated = validateExtensionDescriptor(descriptor);

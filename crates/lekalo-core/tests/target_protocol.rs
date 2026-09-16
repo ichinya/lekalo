@@ -117,7 +117,7 @@ fn full_handshake_negotiates_the_published_protocol() {
         .capabilities
         .protocol_versions
         .iter()
-        .any(|v| v == "0.2.16"));
+        .any(|v| v == lekalo_core::target_protocol::version::VERSION));
     assert_eq!(outcome.capabilities.operations.len(), 8);
     assert!(outcome.capability_digest.starts_with("sha256:"));
 }
@@ -858,4 +858,100 @@ fn protected_homes_and_scope_rules_never_yield_to_adapters() {
             ..
         }
     ));
+}
+
+/// Issue #44 fix F-5: the wire layer enforces the 0.3.1 evidence bounds
+/// declared by the schema — references maxItems 8, sha256 signature
+/// pattern, semantic-id target grammar — against a rogue adapter's
+/// response. Pure decode-level probes over the committed golden shape.
+mod evidence_bounds {
+    use super::*;
+    use lekalo_core::target_protocol::wire;
+
+    /// A minimal valid scan response envelope with one evidence row.
+    fn scan_response(evidence: serde_json::Value) -> Vec<u8> {
+        let envelope = serde_json::json!({
+            "protocol": "lekalo.target/v1",
+            "protocol_version": "0.3.1",
+            "operation": "scan",
+            "request_id": format!("req-{}", "1".repeat(64)),
+            "status": "ok",
+            "evidence": {
+                "adapter": {
+                    "id": "node-typescript",
+                    "version": "0.1.0",
+                    "digest": format!("sha256:{}", "0".repeat(64)),
+                }
+            },
+            "result": {
+                "entries": [{
+                    "path": "src/main.ts",
+                    "kind": "entity",
+                    "detail": "{\"s\":\"mod.symbol\",\"n\":\"ts1-abc\",\"l\":1,\"q\":\"medium\"}",
+                    "evidence": evidence,
+                }]
+            }
+        });
+        serde_json::to_vec(&envelope).expect("envelope serializes")
+    }
+
+    #[test]
+    fn bounded_evidence_decodes() {
+        let evidence = serde_json::json!({
+            "signature": format!("sha256:{}", "a".repeat(64)),
+            "references": [
+                { "target": "mod.helper", "role": "call", "confidence": "exact" },
+                { "target": "mod.other", "role": "reference", "confidence": "low" },
+            ],
+        });
+        assert!(wire::decode_response(&scan_response(evidence)).is_ok());
+    }
+
+    #[test]
+    fn nine_references_are_refused_at_the_wire_layer() {
+        let evidence = serde_json::json!({
+            "references": (0..9).map(|index| serde_json::json!({
+                "target": format!("mod.target{index}"),
+                "role": "call",
+                "confidence": "exact",
+            })).collect::<Vec<_>>(),
+        });
+        assert_eq!(
+            wire::decode_response(&scan_response(evidence)),
+            Err(ResponseInvalidity::Shape),
+            "references maxItems 8 is a wire bound, not a registry nicety",
+        );
+    }
+
+    #[test]
+    fn malformed_signature_is_refused_at_the_wire_layer() {
+        let evidence = serde_json::json!({
+            "signature": "sha256:not-hex",
+        });
+        assert_eq!(
+            wire::decode_response(&scan_response(evidence)),
+            Err(ResponseInvalidity::Shape),
+            "the signature must be sha256:<64 lowercase hex>",
+        );
+    }
+
+    #[test]
+    fn slashed_or_oversized_targets_are_refused_at_the_wire_layer() {
+        for target in [
+            "src/helper.ts".to_owned(),
+            String::new(),
+            format!("mod.{}", "x".repeat(200)),
+        ] {
+            let evidence = serde_json::json!({
+                "references": [
+                    { "target": target, "role": "call", "confidence": "exact" },
+                ],
+            });
+            assert_eq!(
+                wire::decode_response(&scan_response(evidence)),
+                Err(ResponseInvalidity::Shape),
+                "target {target:?} violates the semantic-id grammar",
+            );
+        }
+    }
 }

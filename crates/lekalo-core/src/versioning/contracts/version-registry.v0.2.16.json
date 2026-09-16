@@ -29,14 +29,14 @@
       "migrations": []
     },
     "protocol": {
-      "current": "0.2.16",
+      "current": "0.3.1",
       "aliases": [],
       "versions": [
         {
-          "version": "0.2.16",
+          "version": "0.3.1",
           "state": "supported",
           "classification": "breaking",
-          "reason": "Development baseline at product 0.2.16. Only the current contract is supported."
+          "reason": "Issue #44 additive typed scan-entry evidence member at product 0.3.1. Only the current contract is supported."
         }
       ],
       "migrations": []

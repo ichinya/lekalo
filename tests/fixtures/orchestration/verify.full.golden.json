@@ -4,7 +4,7 @@
   "mode": "full",
   "identity": "dev.lekalo.orchestration-report@0.2.16",
   "project": "planner",
-  "lockDigest": "sha256:63877d9336a8ce0c3d323bbe22b383d07465b8fe32f867b38e2efd1c90095c6c",
+  "lockDigest": "sha256:aaf31843adce665c2a78eb47b995dbce6aeac2b8dd2c4f1f756cc69603e5ab4c",
   "locked": false,
   "inputs": {
     "modelVersion": "0.2.16",
