@@ -5,8 +5,12 @@
   "description": "Closed contract for one native gate run request and its terminal receipt (issue #48). The run request names one exact approved plan digest with an explicit or checked-in approval that lives outside the hashed plan — a plan can never approve itself — plus the trusted fixture catalog reference for the test-only runner. The receipt is the terminal, exactly-once result: the closed outcome set distinguishes passed, failed, missing, blocked, unsupported, infrastructure and security; per-command results carry valueState measurements (a never-executed command reports unknown, never a fabricated zero); mutation, original-verification and cleanup sections propagate security and cleanup defects over any gate exit; and portable evidence carries repository-relative paths only.",
   "type": "object",
   "oneOf": [
-    { "$ref": "#/$defs/runRequest" },
-    { "$ref": "#/$defs/runResult" }
+    {
+      "$ref": "#/$defs/runRequest"
+    },
+    {
+      "$ref": "#/$defs/runResult"
+    }
   ],
   "$defs": {
     "sha256Digest": {
@@ -21,7 +25,7 @@
     },
     "packageId": {
       "type": "string",
-      "pattern": "^[a-z0-9.][a-z0-9._-]{0,63}=[a-z0-9@/._-]{1,192}$",
+      "pattern": "^[a-z0-9.][a-z0-9._/-]{0,63}=[a-z0-9@/._-]{1,192}$",
       "maxLength": 256
     },
     "logicalPath": {
@@ -42,35 +46,67 @@
     "authorityRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["contractId", "version", "digest"],
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
       "properties": {
-        "contractId": { "const": "dev.lekalo.authority-matrix" },
-        "version": { "type": "string", "minLength": 1, "maxLength": 32 },
-        "digest": { "$ref": "#/$defs/sha256Digest" }
+        "contractId": {
+          "const": "dev.lekalo.authority-matrix"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
       }
     },
     "policyRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["policyId", "version", "digest"],
+      "required": [
+        "policyId",
+        "version",
+        "digest"
+      ],
       "properties": {
-        "policyId": { "const": "dev.lekalo.privacy-export-policy" },
-        "version": { "type": "string", "minLength": 1, "maxLength": 32 },
-        "digest": { "$ref": "#/$defs/sha256Digest" }
+        "policyId": {
+          "const": "dev.lekalo.privacy-export-policy"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
       }
     },
     "executionPolicyRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "version", "digest"],
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
       "properties": {
         "id": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9._-]*$",
           "maxLength": 128
         },
-        "version": { "$ref": "#/$defs/contractVersion" },
-        "digest": { "$ref": "#/$defs/sha256Digest" }
+        "version": {
+          "$ref": "#/$defs/contractVersion"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
       }
     },
     "runRequest": {
@@ -91,27 +127,44 @@
         "kind": {
           "const": "native-run-request"
         },
-        "plan_ref": { "$ref": "#/$defs/logicalPath" },
-        "approved_plan_digest": { "$ref": "#/$defs/sha256Digest" },
+        "plan_ref": {
+          "$ref": "#/$defs/logicalPath"
+        },
+        "approved_plan_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
         "approval": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["mode", "subject_ref", "policy_digest"],
+          "required": [
+            "mode",
+            "subject_ref",
+            "policy_digest"
+          ],
           "properties": {
             "mode": {
               "type": "string",
-              "enum": ["explicit", "checked-in-policy"]
+              "enum": [
+                "explicit",
+                "checked-in-policy"
+              ]
             },
             "subject_ref": {
               "type": "string",
               "minLength": 1,
               "maxLength": 256
             },
-            "policy_digest": { "$ref": "#/$defs/sha256Digest" },
-            "rule_ref": { "$ref": "#/$defs/sha256Digest" }
+            "policy_digest": {
+              "$ref": "#/$defs/sha256Digest"
+            },
+            "rule_ref": {
+              "$ref": "#/$defs/sha256Digest"
+            }
           }
         },
-        "fixture_catalog_ref": { "$ref": "#/$defs/sha256Digest" }
+        "fixture_catalog_ref": {
+          "$ref": "#/$defs/sha256Digest"
+        }
       }
     },
     "runResult": {
@@ -139,10 +192,18 @@
         "kind": {
           "const": "native-run-result"
         },
-        "plan_digest": { "$ref": "#/$defs/sha256Digest" },
-        "execution_policy_ref": { "$ref": "#/$defs/executionPolicyRef" },
-        "authority_ref": { "$ref": "#/$defs/authorityRef" },
-        "policy_ref": { "$ref": "#/$defs/policyRef" },
+        "plan_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "execution_policy_ref": {
+          "$ref": "#/$defs/executionPolicyRef"
+        },
+        "authority_ref": {
+          "$ref": "#/$defs/authorityRef"
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/policyRef"
+        },
         "outcome": {
           "$ref": "#/$defs/outcome"
         },
@@ -159,13 +220,25 @@
         "commands": {
           "type": "array",
           "maxItems": 128,
-          "items": { "$ref": "#/$defs/commandResult" }
+          "items": {
+            "$ref": "#/$defs/commandResult"
+          }
         },
-        "mutation_summary": { "$ref": "#/$defs/mutationSummary" },
-        "original_verification": { "$ref": "#/$defs/originalVerification" },
-        "cleanup": { "$ref": "#/$defs/cleanup" },
-        "capability_evidence": { "$ref": "#/$defs/capabilityEvidence" },
-        "provenance": { "$ref": "#/$defs/sha256Digest" }
+        "mutation_summary": {
+          "$ref": "#/$defs/mutationSummary"
+        },
+        "original_verification": {
+          "$ref": "#/$defs/originalVerification"
+        },
+        "cleanup": {
+          "$ref": "#/$defs/cleanup"
+        },
+        "capability_evidence": {
+          "$ref": "#/$defs/capabilityEvidence"
+        },
+        "provenance": {
+          "$ref": "#/$defs/sha256Digest"
+        }
       }
     },
     "outcome": {
@@ -198,14 +271,20 @@
           "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
           "maxLength": 128
         },
-        "package_id": { "$ref": "#/$defs/packageId" },
-        "cwd": { "$ref": "#/$defs/logicalPath" },
+        "package_id": {
+          "$ref": "#/$defs/packageId"
+        },
+        "cwd": {
+          "$ref": "#/$defs/logicalPath"
+        },
         "tool_ref": {
           "type": "string",
           "minLength": 1,
           "maxLength": 128
         },
-        "argv": { "$ref": "#/$defs/argv" },
+        "argv": {
+          "$ref": "#/$defs/argv"
+        },
         "env_names": {
           "type": "array",
           "maxItems": 32,
@@ -216,16 +295,28 @@
             "maxLength": 64
           }
         },
-        "env_recipe_digest": { "$ref": "#/$defs/sha256Digest" },
+        "env_recipe_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
         "tool_version": {
           "oneOf": [
-            { "$ref": "#/$defs/contractVersion" },
-            { "const": "unknown" }
+            {
+              "$ref": "#/$defs/contractVersion"
+            },
+            {
+              "const": "unknown"
+            }
           ]
         },
-        "exit": { "$ref": "#/$defs/valueState" },
-        "duration_ms": { "$ref": "#/$defs/valueState" },
-        "outcome": { "$ref": "#/$defs/outcome" },
+        "exit": {
+          "$ref": "#/$defs/valueState"
+        },
+        "duration_ms": {
+          "$ref": "#/$defs/valueState"
+        },
+        "outcome": {
+          "$ref": "#/$defs/outcome"
+        },
         "reason_codes": {
           "type": "array",
           "maxItems": 16,
@@ -238,15 +329,22 @@
         },
         "output_ref": {
           "oneOf": [
-            { "$ref": "#/$defs/sha256Digest" },
+            {
+              "$ref": "#/$defs/sha256Digest"
+            },
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["state"],
+              "required": [
+                "state"
+              ],
               "properties": {
                 "state": {
                   "type": "string",
-                  "enum": ["withheld", "unknown"]
+                  "enum": [
+                    "withheld",
+                    "unknown"
+                  ]
                 }
               }
             }
@@ -260,20 +358,34 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["state", "value"],
+          "required": [
+            "state",
+            "value"
+          ],
           "properties": {
-            "state": { "const": "known" },
-            "value": { "type": "integer", "minimum": 0 }
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["state"],
+          "required": [
+            "state"
+          ],
           "properties": {
             "state": {
               "type": "string",
-              "enum": ["unknown", "unsupported", "withheld"]
+              "enum": [
+                "unknown",
+                "unsupported",
+                "withheld"
+              ]
             }
           }
         }
@@ -282,7 +394,12 @@
     "mutationSummary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["created", "modified", "deleted", "unexpected"],
+      "required": [
+        "created",
+        "modified",
+        "deleted",
+        "unexpected"
+      ],
       "properties": {
         "created": {
           "type": "array",
@@ -290,10 +407,16 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["path"],
+            "required": [
+              "path"
+            ],
             "properties": {
-              "path": { "$ref": "#/$defs/logicalPath" },
-              "digest": { "$ref": "#/$defs/sha256Digest" }
+              "path": {
+                "$ref": "#/$defs/logicalPath"
+              },
+              "digest": {
+                "$ref": "#/$defs/sha256Digest"
+              }
             }
           }
         },
@@ -303,10 +426,16 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["path"],
+            "required": [
+              "path"
+            ],
             "properties": {
-              "path": { "$ref": "#/$defs/logicalPath" },
-              "digest": { "$ref": "#/$defs/sha256Digest" }
+              "path": {
+                "$ref": "#/$defs/logicalPath"
+              },
+              "digest": {
+                "$ref": "#/$defs/sha256Digest"
+              }
             }
           }
         },
@@ -314,41 +443,60 @@
           "type": "array",
           "maxItems": 10000,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/logicalPath" }
+          "items": {
+            "$ref": "#/$defs/logicalPath"
+          }
         },
         "unexpected": {
           "type": "array",
           "maxItems": 10000,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/logicalPath" }
+          "items": {
+            "$ref": "#/$defs/logicalPath"
+          }
         }
       }
     },
     "originalVerification": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["state"],
+      "required": [
+        "state"
+      ],
       "properties": {
         "state": {
           "type": "string",
-          "enum": ["unchanged", "mutated", "unverifiable"]
+          "enum": [
+            "unchanged",
+            "mutated",
+            "unverifiable"
+          ]
         },
         "mutated_paths": {
           "type": "array",
           "maxItems": 10000,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/logicalPath" }
+          "items": {
+            "$ref": "#/$defs/logicalPath"
+          }
         }
       }
     },
     "cleanup": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["state"],
+      "required": [
+        "state"
+      ],
       "properties": {
         "state": {
           "type": "string",
-          "enum": ["complete", "failed", "deferred", "unknown"]
+          "enum": [
+            "complete",
+            "failed",
+            "deferred",
+            "unknown"
+          ]
         },
         "detail": {
           "type": "string",
@@ -359,22 +507,35 @@
     "capabilityEvidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["network_denial", "process_containment"],
+      "required": [
+        "network_denial",
+        "process_containment"
+      ],
       "properties": {
         "network_denial": {
           "type": "string",
-          "enum": ["enforced", "unavailable", "unknown"]
+          "enum": [
+            "enforced",
+            "unavailable",
+            "unknown"
+          ]
         },
         "process_containment": {
           "type": "string",
-          "enum": ["enforced", "unavailable", "unknown"]
+          "enum": [
+            "enforced",
+            "unavailable",
+            "unknown"
+          ]
         },
         "backend": {
           "type": "string",
           "minLength": 1,
           "maxLength": 64
         },
-        "receipt_digest": { "$ref": "#/$defs/sha256Digest" }
+        "receipt_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
       }
     }
   }

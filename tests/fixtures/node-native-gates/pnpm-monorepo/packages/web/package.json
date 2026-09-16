@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/web",
+  "version": "1.0.0",
+  "scripts": {
+    "preinstall": "node -e \"process.stderr.write('poison')\" && exit 1",
+    "gate:build": "node -e \"process.exit(0)\""
+  }
+}

@@ -456,6 +456,32 @@ enum Commands {
         #[command(subcommand)]
         command: ContractCommands,
     },
+    /// Plan native build/test gates over a Node workspace (issue #48).
+    /// Planning is read-only: it produces the immutable proposed plan
+    /// with its digest. Execution of trusted synthetic fixtures is
+    /// owned by the test-only harness — the production binary never
+    /// launches a gate command and answers with a typed refusal.
+    Native {
+        #[command(subcommand)]
+        command: NativeCommands,
+    },
+}
+
+/// The `native` subcommands (issue #48).
+#[derive(Debug, Subcommand)]
+enum NativeCommands {
+    /// Propose the immutable native gate plan over the current
+    /// workspace: workspace inventory, affected closure, confirmed
+    /// commands, and the plan digest. Read-only; never launches a
+    /// command. The plan document is read from stdin.
+    Run {
+        /// The plan document path; use `-` for stdin. The plan must
+        /// carry a current trusted-fixture custody, and execution still
+        /// requires the test-only harness — this production command
+        /// answers with a typed blocked/unsupported refusal.
+        #[arg(value_name = "PLAN")]
+        plan: String,
+    },
 }
 
 /// The per-exchange scan deadline default (issue #42).
@@ -1238,6 +1264,9 @@ fn main() -> ExitCode {
             ),
             Commands::Bindings { command } => run_bindings(command),
             Commands::Contract { command } => run_contract(command),
+            Commands::Native { command } => match command {
+                NativeCommands::Run { plan } => run_native_run(&plan),
+            },
             Commands::Init {
                 adopt,
                 target,
@@ -4355,6 +4384,41 @@ use std::path::PathBuf;
 /// produced inventory into the binding registry through the accepted #39
 /// seam. The adapter program is spawned directly (no shell); a missing
 /// program is the stable usage failure.
+/// Run `lekalo native run` (issue #48): the production execution
+/// surface. The core independently validates the plan document and the
+/// approval binding, then answers with the typed refusal for this
+/// repository trust: private/untrusted is plan-only until #89
+/// (confinement-required) and a trusted synthetic fixture plan is
+/// answered unsupported (fixture-runner-not-shipped) because the real
+/// fixture runner is compiled only into the test harness. No gate
+/// command is ever launched from this binary.
+fn run_native_run(plan_ref: &str) -> DomainResult {
+    let bytes = if plan_ref == "-" {
+        let mut buffer = Vec::new();
+        use std::io::Read;
+        if io::stdin().lock().read_to_end(&mut buffer).is_err() {
+            return DomainResult::usage_error();
+        }
+        buffer
+    } else {
+        match std::fs::read(plan_ref) {
+            Ok(bytes) => bytes,
+            Err(_) => return DomainResult::usage_error(),
+        }
+    };
+    match lekalo_core::native_gate::production_run(&bytes) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!(
+                "native run : {} (plan {})",
+                receipt.outcome,
+                receipt.plan_digest.get(..19).unwrap_or("")
+            ),
+        ),
+        Err(failure) => DomainResult::from(&failure),
+    }
+}
+
 fn run_scan(
     target: &str,
     profile: Option<&str>,

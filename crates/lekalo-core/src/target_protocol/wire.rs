@@ -115,8 +115,7 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
     // Issue #48: `native_request` is required on plan-native and forbidden
     // on every other operation. plan-native is read-only: dry_run and
     // plan_id are forbidden there and it requires the current version.
-    if (request.operation == Operation::PlanNative) != request.native_request.is_some()
-    {
+    if (request.operation == Operation::PlanNative) != request.native_request.is_some() {
         return invalid("native-request");
     }
     if request.operation == Operation::PlanNative {
@@ -473,10 +472,7 @@ impl Operation {
 
     /// Operations whose response declares writes (plans or applied writes).
     pub fn declares_writes(self) -> bool {
-        matches!(
-            self,
-            Self::Generate | Self::Clean | Self::PlanClean
-        )
+        matches!(self, Self::Generate | Self::Clean | Self::PlanClean)
     }
 
     /// Whether the operation carries the closed `native_request` member

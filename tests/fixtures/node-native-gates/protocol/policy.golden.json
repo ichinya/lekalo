@@ -1,0 +1,141 @@
+{
+  "schema_version": "lekalo/native-gate-policy/v0.3.2",
+  "kind": "native-gate-policy",
+  "policy_digest": "sha256:e9693f6e80410624cdc0cc23d546f3fff3202797fa3c3eaa6928eceb51df230a",
+  "identity": {
+    "id": "fixture-native-policy",
+    "version": "0.3.2"
+  },
+  "repository_role": "consumer-repository",
+  "trust": {
+    "mode": "public-fixture",
+    "fixture_ref": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "provenance_ref": "sha256:a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+  },
+  "authority_ref": {
+    "contractId": "dev.lekalo.authority-matrix",
+    "version": "0.3.2",
+    "digest": "sha256:cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4"
+  },
+  "policy_ref": {
+    "policyId": "dev.lekalo.privacy-export-policy",
+    "version": "0.3.2",
+    "digest": "sha256:5643547b96e1ca9f422e91e699c8d04e676e6eb820b4ef21a88860c74133c3b9"
+  },
+  "classification_ref": {
+    "contractId": "dev.lekalo.privacy-classification-decision",
+    "version": "0.2.16",
+    "digest": "sha256:78de535f02b6a8065579b43798ed650849aca0b7edf1aa08b2e0219fc744dde6"
+  },
+  "allowed_gate_kinds": [
+    "build",
+    "typecheck",
+    "lint",
+    "test"
+  ],
+  "confirmations": [
+    {
+      "package_id": "packages/planner=@fixture/planner",
+      "gate": "test",
+      "script_name": "gate:test",
+      "manifest_digest": "sha256:b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "script_digest": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "test"
+      ],
+      "tool_ref": {
+        "id": "fixture-node",
+        "artifact_digest": "sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+        "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+        "version": "unknown"
+      },
+      "rule_version": "0.3.2",
+      "rule_digest": "sha256:d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
+    },
+    {
+      "package_id": "packages/api=@fixture/api",
+      "gate": "typecheck",
+      "script_name": "gate:typecheck",
+      "manifest_digest": "sha256:b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3",
+      "script_digest": "sha256:b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "typecheck"
+      ],
+      "tool_ref": {
+        "id": "fixture-node",
+        "artifact_digest": "sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+        "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+        "version": "unknown"
+      },
+      "rule_version": "0.3.2",
+      "rule_digest": "sha256:d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2"
+    },
+    {
+      "package_id": "packages/cli=@fixture/cli",
+      "gate": "test",
+      "script_name": "gate:test",
+      "manifest_digest": "sha256:b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5",
+      "script_digest": "sha256:b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "test"
+      ],
+      "tool_ref": {
+        "id": "fixture-node",
+        "artifact_digest": "sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+        "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+        "version": "unknown"
+      },
+      "rule_version": "0.3.2",
+      "rule_digest": "sha256:d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3"
+    },
+    {
+      "package_id": ".=@fixture/standalone",
+      "gate": "test",
+      "script_name": "gate:test",
+      "manifest_digest": "sha256:b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7",
+      "script_digest": "sha256:b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "test"
+      ],
+      "tool_ref": {
+        "id": "fixture-node",
+        "artifact_digest": "sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+        "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+        "version": "unknown"
+      },
+      "rule_version": "0.3.2",
+      "rule_digest": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+    }
+  ],
+  "fallback_rule": {
+    "mode": "none"
+  },
+  "env_recipe": {
+    "allowed_names": [
+      "FIXTURE_MODE"
+    ],
+    "bindings": []
+  },
+  "limits": {
+    "timeout_ms_per_command": 10000,
+    "timeout_ms_per_run": 60000,
+    "max_stdout_bytes": 65536,
+    "max_stderr_bytes": 65536,
+    "max_output_bytes_per_run": 1048576
+  },
+  "write_policy": {
+    "mode": "stage-only"
+  }
+}

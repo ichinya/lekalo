@@ -1,0 +1,3 @@
+# Synthetic membership fixture (public-fixture). Acceptance subset only.
+packages:
+  - "packages/*"

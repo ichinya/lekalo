@@ -35,7 +35,10 @@
     "identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "version"],
+      "required": [
+        "id",
+        "version"
+      ],
       "properties": {
         "id": {
           "type": "string",
@@ -81,13 +84,19 @@
     },
     "fallback_rule": {
       "oneOf": [
-        { "$ref": "#/$defs/fallbackRule" },
+        {
+          "$ref": "#/$defs/fallbackRule"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["mode"],
+          "required": [
+            "mode"
+          ],
           "properties": {
-            "mode": { "const": "none" }
+            "mode": {
+              "const": "none"
+            }
           }
         }
       ]
@@ -130,49 +139,100 @@
     "trust": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["private", "untrusted", "public-fixture"]
+          "enum": [
+            "private",
+            "untrusted",
+            "public-fixture"
+          ]
         },
-        "fixture_ref": { "$ref": "#/$defs/sha256Digest" },
-        "provenance_ref": { "$ref": "#/$defs/sha256Digest" }
+        "fixture_ref": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "provenance_ref": {
+          "$ref": "#/$defs/sha256Digest"
+        }
       }
     },
     "authorityRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["contractId", "version", "digest"],
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
       "properties": {
-        "contractId": { "const": "dev.lekalo.authority-matrix" },
-        "version": { "type": "string", "minLength": 1, "maxLength": 32 },
-        "digest": { "$ref": "#/$defs/sha256Digest" }
+        "contractId": {
+          "const": "dev.lekalo.authority-matrix"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
       }
     },
     "policyRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["policyId", "version", "digest"],
+      "required": [
+        "policyId",
+        "version",
+        "digest"
+      ],
       "properties": {
-        "policyId": { "const": "dev.lekalo.privacy-export-policy" },
-        "version": { "type": "string", "minLength": 1, "maxLength": 32 },
-        "digest": { "$ref": "#/$defs/sha256Digest" }
+        "policyId": {
+          "const": "dev.lekalo.privacy-export-policy"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
       }
     },
     "classificationRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["contractId", "version", "digest"],
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
       "properties": {
-        "contractId": { "const": "dev.lekalo.privacy-classification-decision" },
-        "version": { "type": "string", "minLength": 1, "maxLength": 32 },
-        "digest": { "$ref": "#/$defs/sha256Digest" }
+        "contractId": {
+          "const": "dev.lekalo.privacy-classification-decision"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
       }
     },
     "gateKind": {
       "type": "string",
-      "enum": ["build", "typecheck", "lint", "test"]
+      "enum": [
+        "build",
+        "typecheck",
+        "lint",
+        "test"
+      ]
     },
     "confirmation": {
       "type": "object",
@@ -189,27 +249,45 @@
         "rule_digest"
       ],
       "properties": {
-        "package_id": { "$ref": "#/$defs/packageId" },
-        "gate": { "$ref": "#/$defs/gateKind" },
+        "package_id": {
+          "$ref": "#/$defs/packageId"
+        },
+        "gate": {
+          "$ref": "#/$defs/gateKind"
+        },
         "script_name": {
           "type": "string",
           "minLength": 1,
           "maxLength": 64,
           "pattern": "^[A-Za-z0-9_][A-Za-z0-9._:-]*$"
         },
-        "manifest_digest": { "$ref": "#/$defs/sha256Digest" },
-        "script_digest": { "$ref": "#/$defs/sha256Digest" },
-        "argv": { "$ref": "#/$defs/argv" },
-        "tool_ref": { "$ref": "#/$defs/toolRef" },
-        "tsconfig_ref": { "$ref": "#/$defs/logicalPath" },
-        "rule_version": { "$ref": "#/$defs/contractVersion" },
-        "rule_digest": { "$ref": "#/$defs/sha256Digest" }
+        "manifest_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "script_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "argv": {
+          "$ref": "#/$defs/argv"
+        },
+        "tool_ref": {
+          "$ref": "#/$defs/toolRef"
+        },
+        "tsconfig_ref": {
+          "$ref": "#/$defs/logicalPath"
+        },
+        "rule_version": {
+          "$ref": "#/$defs/contractVersion"
+        },
+        "rule_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
       }
     },
     "packageId": {
       "description": "The stable native package id: the workspace-relative root with its declared package name, joined by '=' (lowercase portable segments only).",
       "type": "string",
-      "pattern": "^[a-z0-9.][a-z0-9._-]{0,63}=[a-z0-9@/._-]{1,192}$",
+      "pattern": "^[a-z0-9.][a-z0-9._/-]{0,63}=[a-z0-9@/._-]{1,192}$",
       "maxLength": 256
     },
     "argv": {
@@ -225,19 +303,30 @@
     "toolRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "artifact_digest"],
+      "required": [
+        "id",
+        "artifact_digest"
+      ],
       "properties": {
         "id": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9._-]*$",
           "maxLength": 128
         },
-        "artifact_digest": { "$ref": "#/$defs/sha256Digest" },
-        "entry_digest": { "$ref": "#/$defs/sha256Digest" },
+        "artifact_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "entry_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
         "version": {
           "oneOf": [
-            { "$ref": "#/$defs/contractVersion" },
-            { "const": "unknown" }
+            {
+              "$ref": "#/$defs/contractVersion"
+            },
+            {
+              "const": "unknown"
+            }
           ]
         }
       }
@@ -245,27 +334,43 @@
     "fallbackRule": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "trigger", "gate_kinds", "rule_digest"],
+      "required": [
+        "mode",
+        "trigger",
+        "gate_kinds",
+        "rule_digest"
+      ],
       "properties": {
-        "mode": { "const": "release-full" },
+        "mode": {
+          "const": "release-full"
+        },
         "trigger": {
           "type": "string",
-          "enum": ["explicit-release-invocation"]
+          "enum": [
+            "explicit-release-invocation"
+          ]
         },
         "gate_kinds": {
           "type": "array",
           "minItems": 1,
           "maxItems": 4,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/gateKind" }
+          "items": {
+            "$ref": "#/$defs/gateKind"
+          }
         },
-        "rule_digest": { "$ref": "#/$defs/sha256Digest" }
+        "rule_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
       }
     },
     "envRecipe": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["allowed_names", "bindings"],
+      "required": [
+        "allowed_names",
+        "bindings"
+      ],
       "properties": {
         "allowed_names": {
           "type": "array",
@@ -281,14 +386,19 @@
         "bindings": {
           "type": "array",
           "maxItems": 32,
-          "items": { "$ref": "#/$defs/envBinding" }
+          "items": {
+            "$ref": "#/$defs/envBinding"
+          }
         }
       }
     },
     "envBinding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "kind"],
+      "required": [
+        "name",
+        "kind"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -297,7 +407,12 @@
         },
         "kind": {
           "type": "string",
-          "enum": ["literal", "execution-temp", "execution-home", "platform-system-root"]
+          "enum": [
+            "literal",
+            "execution-temp",
+            "execution-home",
+            "platform-system-root"
+          ]
         },
         "value": {
           "type": "string",
@@ -309,7 +424,13 @@
     "limits": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["timeout_ms_per_command", "timeout_ms_per_run", "max_stdout_bytes", "max_stderr_bytes", "max_output_bytes_per_run"],
+      "required": [
+        "timeout_ms_per_command",
+        "timeout_ms_per_run",
+        "max_stdout_bytes",
+        "max_stderr_bytes",
+        "max_output_bytes_per_run"
+      ],
       "properties": {
         "timeout_ms_per_command": {
           "type": "integer",
@@ -341,11 +462,16 @@
     "writePolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["stage-only", "scoped"]
+          "enum": [
+            "stage-only",
+            "scoped"
+          ]
         },
         "scopes": {
           "type": "array",
@@ -354,11 +480,23 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["root"],
+            "required": [
+              "root"
+            ],
             "properties": {
-              "root": { "$ref": "#/$defs/logicalPath" },
-              "max_files": { "type": "integer", "minimum": 1, "maximum": 10000 },
-              "max_bytes": { "type": "integer", "minimum": 1, "maximum": 67108864 }
+              "root": {
+                "$ref": "#/$defs/logicalPath"
+              },
+              "max_files": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000
+              },
+              "max_bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 67108864
+              }
             }
           }
         }

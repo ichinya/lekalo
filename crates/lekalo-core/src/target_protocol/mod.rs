@@ -817,9 +817,7 @@ impl TargetClient {
             if result.native_plan.is_some() && request.operation != Operation::PlanNative {
                 return invalid(ResponseInvalidity::UnexpectedMember);
             }
-            if result.entries.is_some()
-                && request.operation == Operation::PlanNative
-            {
+            if result.entries.is_some() && request.operation == Operation::PlanNative {
                 return invalid(ResponseInvalidity::UnexpectedMember);
             }
         }
