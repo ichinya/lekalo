@@ -7,13 +7,17 @@
 
 use lekalo_core::loader::{normalize_model, LoadSelection};
 use lekalo_core::observed;
+use lekalo_core::observed::types::{BindingState, BindingStatus};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 const TASK_DOMAIN: &str = "tests/fixtures/observed/task-domain";
 const INITIAL_SCAN: &str = "tests/fixtures/observed/task-domain/scans/initial.json";
 const MOVED_SCAN: &str = "tests/fixtures/observed/task-domain/scans/moved.json";
-const SIGNATURE_DRIFT_SCAN: &str = "tests/fixtures/observed/task-domain/scans/signature-drift.json";
+const SIGNATURE_DRIFT_SCAN: &str =
+  "tests/fixtures/observed/task-domain/scans/signature-drift.json";
+const SIGNATURE_RESCAN: &str =
+  "tests/fixtures/observed/task-domain/scans/signature-rescan.json";
 
 /// Serializes tests that change the process working directory.
 static CWD_LOCK: Mutex<()> = Mutex::new(());
@@ -454,6 +458,128 @@ fn signature_drift_stales_a_confirmed_binding_pending_reconfirmation() {
     assert!(
         audit.is_err(),
         "the drifted file fails the file-truth staleness gate"
+    );
+}
+
+/// Review round 2, R-1 regression: `observe bind` → signature-carrying
+/// rescan with NO source change ⇒ the explicit binding stays CURRENT,
+/// never falsely stale.
+///
+/// Semantics chosen (fix option a): `bind_explicit` no longer writes the
+/// file fingerprint into `evidence.signature` — that field carries only
+/// structural-shape truth from the 0.3.1 wire, so the F-1 drift check
+/// compares like domains. The bind's file fingerprint stays in its own
+/// `fingerprint` field where the audit uses it. Because a bind record
+/// starts with `signature: None`, the first signature-carrying rescan is
+/// an adoption (there is no prior shape to protect), exactly like the
+/// confirm path; the companion test right below proves a GENUINE
+/// structural change after adoption still stales an explicit binding.
+#[test]
+fn observe_bind_then_signature_carrying_rescan_stays_current() {
+    let sandbox = Sandbox::new("r1bind");
+    let ctx = sandbox.context();
+    observed::update_index(&ctx, &sandbox.scan_bytes(INITIAL_SCAN)).expect("initial scan");
+
+    // Bind: the inferred record becomes an explicit user-owned fact.
+    let receipt = observed::bind_explicit(&ctx, "taskboard.create_task", None, "src/tasks.ts", Some(14))
+        .expect("bind");
+    assert_eq!(receipt.state, BindingState::Current);
+
+    let index = sandbox.index();
+    let record = index
+        .symbols
+        .iter()
+        .find(|record| record.id == "taskboard.create_task")
+        .expect("bound record present");
+    assert_eq!(record.status, BindingStatus::Explicit);
+    assert_eq!(record.state, BindingState::Current);
+    assert!(record.fingerprint.is_some(), "bind records the file fingerprint");
+    assert_eq!(
+        record.evidence.signature, None,
+        "R-1: bind no longer poisons evidence.signature with a file hash"
+    );
+
+    // Signature-carrying rescan, ZERO source change: the record must
+    // stay explicit/current — no false staleness, facts refreshed along
+    // the same binding (the pre-fix behavior staled it here).
+    let rescan = observed::update_index(&ctx, &sandbox.scan_bytes(SIGNATURE_RESCAN))
+        .expect("signature rescan merges");
+    assert_eq!(
+        rescan.staled,
+        Vec::<String>::new(),
+        "R-1: a bind record is never falsely staled by a structural signature"
+    );
+    let after = sandbox.index();
+    let after_record = after
+        .symbols
+        .iter()
+        .find(|record| record.id == "taskboard.create_task")
+        .expect("record present after rescan");
+    assert_eq!(after_record.status, BindingStatus::Explicit);
+    assert_eq!(after_record.state, BindingState::Current);
+    // The explicit record follows the scan's structural truth once
+    // bound (same binding, same source), so the signature adopts.
+    assert_eq!(
+        after_record.evidence.signature.as_deref(),
+        Some("sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+    );
+    assert_eq!(after_record.fingerprint, record.fingerprint);
+}
+
+/// R-1 companion: an explicit binding that has ADOPTED a structural
+/// signature still stales when that signature GENUINELY changes — the
+/// F-1 protection is preserved under the chosen fix semantics.
+#[test]
+fn observe_bind_then_genuine_signature_change_still_stales() {
+    let sandbox = Sandbox::new("r1drift");
+    let ctx = sandbox.context();
+    observed::update_index(&ctx, &sandbox.scan_bytes(INITIAL_SCAN)).expect("initial scan");
+    observed::bind_explicit(&ctx, "taskboard.create_task", None, "src/tasks.ts", Some(14))
+        .expect("bind");
+
+    // Adopt the signature first (same-binding adoption, not drift).
+    observed::update_index(&ctx, &sandbox.scan_bytes(SIGNATURE_RESCAN)).expect("adoption");
+    let index = sandbox.index();
+    let record = index
+        .symbols
+        .iter()
+        .find(|record| record.id == "taskboard.create_task")
+        .expect("adopted record");
+    assert_eq!(record.state, BindingState::Current);
+    assert_eq!(record.status, BindingStatus::Explicit);
+
+    // Genuine structural change on the explicit binding ⇒ stale.
+    let mut drifted = serde_json::from_slice::<serde_json::Value>(
+        &sandbox.scan_bytes(SIGNATURE_RESCAN),
+    )
+    .expect("rescan parses");
+    drifted["revision"] = serde_json::Value::String(format!("sha256:{}", "f".repeat(64)));
+    let drifted_symbol = drifted["symbols"]
+        .as_array_mut()
+        .expect("symbols array")
+        .iter_mut()
+        .find(|symbol| symbol["id"] == "taskboard.create_task")
+        .expect("create_task present");
+    drifted_symbol["evidence"]["signature"] =
+        serde_json::Value::String(format!("sha256:{}", "9".repeat(64)));
+    let receipt = observed::update_index(&ctx, &serde_json::to_vec(&drifted).expect("serializes"))
+        .expect("drift scan merges");
+    assert_eq!(
+        receipt.staled,
+        vec!["taskboard.create_task".to_owned()],
+        "a genuine signature change on an explicit binding still stales"
+    );
+    let after = sandbox.index();
+    let drifted_record = after
+        .symbols
+        .iter()
+        .find(|record| record.id == "taskboard.create_task")
+        .expect("drifted record");
+    assert_eq!(drifted_record.state, BindingState::Stale);
+    assert_eq!(
+        drifted_record.evidence.signature.as_deref(),
+        Some("sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
+        "the adopted signature is kept verbatim, never silently refreshed"
     );
 }
 

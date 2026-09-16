@@ -1191,10 +1191,12 @@ export function validateResolvedProjectProfile(candidate) {
       // F3 (sharpened by review F-4): exclusions have exactly one
       // meaning, shared by the kernel read view and the scanner
       // inventory walk — `dir/**` excludes the whole subtree, and a
-      // bare logical path excludes ONLY the exact entry (an exact-file
-      // exclusion). A bare directory name would otherwise resolve
-      // differently in the two consumers, so both use the same
-      // spelling-based rule: subtree pruning requires the /** tail.
+      // bare logical path excludes the named entry together with
+      // everything below it (both consumers prune the subtree of a
+      // bare-excluded directory, and an exact file is its own entry).
+      // Both use the same spelling-based rule: subtree pruning works
+      // with or without the /** tail — bare names are simply the
+      // concise spelling of the same subtree exclusion.
       if (typeof exclusion !== "string"
         || !(isScope(exclusion) && exclusion.endsWith("/**") || isLogicalPath(exclusion))) {
         invalid("exclusions entries");

@@ -526,7 +526,15 @@ pub fn bind_explicit(
         line,
     });
     record.fingerprint = fingerprint.clone();
-    record.evidence.signature = fingerprint;
+    // Review round 2, R-1: the file fingerprint lives in its proper
+    // `fingerprint` field only. `evidence.signature` is structural-shape
+    // truth carried by the 0.3.1 wire; writing a file hash here would
+    // poison the F-1 drift comparison (file-hash vs structural-hash are
+    // different domains and would always differ, falsely staling every
+    // explicit binding on the next signature-carrying scan). The
+    // structural signature, if the record carries one from a scan, is
+    // preserved verbatim — the user's bind does not invent shape truth.
+    record.evidence.signature = None;
     record.provenance = Provenance {
         origin: super::types::Origin::Declared,
         confidence: Confidence::Exact,
