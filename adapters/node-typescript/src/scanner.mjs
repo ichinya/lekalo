@@ -1343,7 +1343,7 @@ function collectAnySurfaces({ ts, checker, program, context, index }) {
         || exported.flags & ts.SymbolFlags.TypeAlias
         ? checker.getDeclaredTypeOfSymbol(exported)
         : checker.getTypeOfSymbolAtLocation(exported, sourceFile);
-      const contamination = typeContainsAny(ts, type, new Set(), 0);
+      const contamination = typeContainsAny(ts, checker, type, new Set(), 0);
       if (contamination) {
         index.anyUncertainty.push({
           path: fromModule,
@@ -1358,7 +1358,19 @@ function collectAnySurfaces({ ts, checker, program, context, index }) {
   }
 }
 
-function typeContainsAny(ts, type, seen, depth) {
+/**
+ * Whether one type (or anything reachable from it — object members, call
+ * and construct signatures with their return types, type arguments)
+ * contains `any`/`unknown` contamination (issue #44 fix F-3).
+ *
+ * Walks through the CHECKER — `getPropertiesOfType` + `getTypeOfSymbol`
+ * for members and `getSignaturesOfType`/`getReturnTypeOfSignature` for
+ * callables — because the raw type object never populates member types
+ * itself. Bounded: depth ≤ 6 and a visited-type-id set keeps recursion
+ * cycle-safe; the fanout is additionally capped so pathological types
+ * cannot blow the scan budget.
+ */
+function typeContainsAny(ts, checker, type, seen, depth) {
   if (!type || depth > 6) return false;
   if (typeof type.id === 'number') {
     if (seen.has(type.id)) return false;
@@ -1367,12 +1379,29 @@ function typeContainsAny(ts, type, seen, depth) {
   if (type.flags & ts.TypeFlags.Any) return true;
   if (type.flags & ts.TypeFlags.Unknown) return true;
   if (type.flags & (ts.TypeFlags.Union | ts.TypeFlags.Intersection)) {
-    return (type.types ?? []).some((member) => typeContainsAny(ts, member, seen, depth + 1));
+    return (type.types ?? []).some((member) => typeContainsAny(ts, checker, member, seen, depth + 1));
   }
   if (type.flags & ts.TypeFlags.Object) {
-    return (type.typeArguments ?? []).some((argument) => typeContainsAny(ts, argument, seen, depth + 1))
-      || (type.properties ?? []).some((member) => typeContainsAny(
-        ts, member.type ?? { flags: 0 }, seen, depth + 1));
+    // Generic type arguments (e.g. the `any` inside `Promise<any>`).
+    if ((type.typeArguments ?? []).some((argument) => typeContainsAny(ts, checker, argument, seen, depth + 1))) {
+      return true;
+    }
+    // Callable surfaces: call/construct signatures and their return
+    // types (e.g. `() => Promise<any>`).
+    const signatures = [
+      ...checker.getSignaturesOfType(type, ts.SignatureKind.Call),
+      ...checker.getSignaturesOfType(type, ts.SignatureKind.Construct),
+    ].slice(0, 32);
+    if (signatures.some((signature) =>
+      typeContainsAny(ts, checker, checker.getReturnTypeOfSignature(signature), seen, depth + 1)
+      || (signature.parameters ?? []).slice(0, 32).some((parameter) =>
+        typeContainsAny(ts, checker, checker.getTypeOfSymbol(parameter), seen, depth + 1)))) {
+      return true;
+    }
+    // Declared members via the checker (e.g. `{ nested: { value: any } }`).
+    const members = checker.getPropertiesOfType(type).slice(0, 64);
+    return members.some((member) =>
+      typeContainsAny(ts, checker, checker.getTypeOfSymbol(member), seen, depth + 1));
   }
   return false;
 }
@@ -1386,6 +1415,7 @@ function typeContainsAny(ts, type, seen, depth) {
  * the kernel read view (scope/exclusion/link/byte-budget checks).
  */
 function runScan({ profile, readView, permittedProjectRoot, limits }) {
+  let programOptions = null;
   const ts = assertCompilerAvailable();
   const compilerMeta = {
     typescript: vendoredTs().version,
@@ -1424,8 +1454,23 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   // source file no config covers. The parsed compiler options (paths,
   // baseUrl, moduleResolution, target …) drive the Program so module
   // resolution follows the project's real configuration.
+  //
+  // Option fidelity (issue #44 fix F-2): `defaults` are only a fallback
+  // seed — every key a config EXPLICITLY sets (via parsed.options) wins,
+  // for every project that sets it (last config wins on conflict). Only
+  // `noEmit` and `disableSourceOfProjectReferenceRedirect` are forced:
+  // the scanner never emits and never follows project-reference output
+  // redirects. Keys no config set keep the seed, so config-less
+  // projects still analyze with deterministic ESM/Bundler defaults.
   const rootNames = [];
-  let options = { module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, noEmit: true, skipLibCheck: false, allowJs: false };
+  const defaults = {
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    noEmit: true,
+    skipLibCheck: false,
+    allowJs: false,
+  };
+  const options = { ...defaults };
   for (const project of projects) {
     const parsed = ts.parseJsonConfigFileContent(
       project.raw ?? {},
@@ -1436,16 +1481,9 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
     );
     for (const fileName of parsed.fileNames) rootNames.push(fileName);
     if (parsed.options && Object.keys(parsed.options).length > 0) {
-      // Merge across configs: a config that explicitly sets a key wins;
-      // a config that leaves a key unset never clobbers another
-      // config's setting. multi-root workspaces share one Program.
       for (const [key, value] of Object.entries(parsed.options)) {
-        if (!(key in options) || options[key] === undefined) {
-          options[key] = value;
-        }
+        options[key] = value;
       }
-      options.noEmit = true;
-      options.disableSourceOfProjectReferenceRedirect = true;
     }
     for (const diagnostic of parsed.errors) {
       if (index.diagnostics.length < MAX_DIAGNOSTICS) {
@@ -1459,6 +1497,12 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
       }
     }
   }
+  // Forced keys: never emit, never follow project-reference redirects.
+  options.noEmit = true;
+  options.disableSourceOfProjectReferenceRedirect = true;
+  // Recorded evidence of the analysis configuration (issue #44 fix F-2):
+  // tests and hosts can prove the parsed tsconfig options reached the Program.
+  programOptions = options;
   const configured = new Set(rootNames.map((name) => name.toLowerCase()));
   for (const file of manifest.sourceFiles) {
     const hostName = `/lekalo/project/${file.path}`;
@@ -1467,7 +1511,7 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
     }
   }
   if (rootNames.length === 0) {
-    return finalizeScan(index, manifest, profile, readView);
+    return finalizeScan(index, manifest, profile, readView, programOptions);
   }
 
   const program = ts.createProgram({ rootNames, options, host });
@@ -1495,7 +1539,7 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   // project. Failed resolutions surface as unresolved-import/call
   // uncertainty above; probing noise never becomes scan uncertainty.
 
-  return finalizeScan(index, manifest, profile, readView);
+  return finalizeScan(index, manifest, profile, readView, programOptions);
 }
 
 function normalizeUnknownPath(hostName) {
@@ -1506,7 +1550,7 @@ function normalizeUnknownPath(hostName) {
 }
 
 /** Deterministic finalization: manifest, digests, canonical order. */
-function finalizeScan(index, manifest, profile, readView) {
+function finalizeScan(index, manifest, profile, readView, programOptions) {
   index.inputManifest = {
     sourceFiles: manifest.sourceFiles.length,
     configFiles: manifest.configFiles.length,
@@ -1524,16 +1568,27 @@ function finalizeScan(index, manifest, profile, readView) {
     id: profile.id,
     readRoots: profile.readRoots.map((root) => ({ ...root })),
   }));
+  index.programOptions = programOptions === null ? null : canonicalText(programOptions);
   sortIndex(index);
   return index;
 }
 
 /**
- * The internal incremental session (plan §5/§6). Cold == warm byte
- * parity is enforced by construction: the session keys its retained
- * Program on the content digests of every input and re-runs the same
- * deterministic pipeline; identical inputs produce identical bytes.
- * No .tsbuildinfo, no watchers, no disk cache, no cross-process claims.
+ * The scan session (plan §5/§6 — honestly scoped, see below).
+ *
+ * This is a DETERMINISTIC RE-SCAN PARITY CHECKER, not an incremental
+ * compiler session. Every `scan()` runs the full cold pipeline; the
+ * session only records the content-digest key of the previous input
+ * manifest so callers can tell a warm (unchanged-inputs) run from a
+ * cold one. No Program, no `oldProgram`, no module-resolution cache,
+ * and no dependency/reverse-dependency graph is retained — true
+ * incremental reuse was deferred: the process boundary (a fresh child
+ * per exchange) and the read-only scan (no writable cache) make a
+ * parent-owned cache transport a separately designed acceptance item,
+ * and shipping a fake retained-Program claim would be worse than an
+ * honest full re-scan. The correctness property this delivers —
+ * identical inputs produce byte-identical indexes, any edit produces a
+ * new manifest key — is the parity contract the tests assert.
  */
 export class ScannerSession {
   constructor() {

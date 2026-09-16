@@ -11,3 +11,7 @@
 # observed-mode staleness gate fingerprints the exact working-tree bytes
 # against scan-pinned digests, so any CRLF conversion fails the gate.
 *.ts text eol=lf
+
+# The generated adapter artifact embeds vendored license text byte-for-byte
+# (trailing spaces inside the Apache header are upstream content, not errors).
+adapters/node-typescript/adapter.mjs -whitespace

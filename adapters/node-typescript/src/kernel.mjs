@@ -1188,9 +1188,13 @@ export function validateResolvedProjectProfile(candidate) {
       invalid("exclusions");
     }
     for (const exclusion of candidate.exclusions) {
-      // F3: an exclusion must cover a subtree (`vendor/**`) or name one
-      // exact file; a bare directory name would silently exclude only
-      // the unreadable directory itself, so it is refused here.
+      // F3 (sharpened by review F-4): exclusions have exactly one
+      // meaning, shared by the kernel read view and the scanner
+      // inventory walk — `dir/**` excludes the whole subtree, and a
+      // bare logical path excludes ONLY the exact entry (an exact-file
+      // exclusion). A bare directory name would otherwise resolve
+      // differently in the two consumers, so both use the same
+      // spelling-based rule: subtree pruning requires the /** tail.
       if (typeof exclusion !== "string"
         || !(isScope(exclusion) && exclusion.endsWith("/**") || isLogicalPath(exclusion))) {
         invalid("exclusions entries");
@@ -2000,7 +2004,12 @@ export function createReadView(permittedRoot, roots, profile) {
     const segments = logicalPath.split("/");
     for (let depth = 1; depth < segments.length; depth += 1) {
       const ancestor = segments.slice(0, depth).join("/");
-      if (exclusions.some((exclusion) => scopeCovers(exclusion, `${ancestor}/probe`))) {
+      // F-4 shared semantics: a /** exclusion covers everything under
+      // its head, AND a bare-excluded ancestor (the exact-entry
+      // spelling) prunes the whole subtree below it in this read view
+      // exactly as the scanner inventory walk does structurally.
+      if (exclusions.some((exclusion) => scopeCovers(exclusion, `${ancestor}/probe`)
+        || exclusion === ancestor)) {
         return true;
       }
     }

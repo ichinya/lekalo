@@ -8,8 +8,9 @@ fixture vocabulary only.
 
 ## Executions never run here
 
-The committed `package.json` files carry no scripts (and the adapter
-package carries poison scripts that must fail if ever run). The fixture
+Every committed `package.json` file carries poison sentinel scripts
+(preinstall/postinstall/prepare/test) that fail loudly if ever executed —
+and nothing in the kernel, scanner, or suites ever executes them. The fixture
 runner executes only the current Node interpreter and the committed
 lekalo test binaries. No package manager, no `tsc`, no framework runner,
 and no project hook is ever launched, during tests or during scans.

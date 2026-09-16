@@ -1,1 +1,11 @@
-{ "name": "@fixture/aliases", "type": "module", "version": "1.0.0" }
+{
+  "name": "@fixture/aliases",
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "preinstall": "node -e \"process.stderr.write('poison: fixture package scripts must never run')\" && exit 1",
+    "postinstall": "node -e \"process.stderr.write('poison: fixture package scripts must never run')\" && exit 1",
+    "prepare": "node -e \"process.stderr.write('poison: fixture package scripts must never run')\" && exit 1",
+    "test": "node -e \"process.stderr.write('poison: fixture package scripts must never run')\" && exit 1"
+  }
+}

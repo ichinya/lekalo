@@ -213455,7 +213455,7 @@ function createReadView(permittedRoot, roots, profile) {
     const segments = logicalPath.split("/");
     for (let depth = 1; depth < segments.length; depth += 1) {
       const ancestor = segments.slice(0, depth).join("/");
-      if (exclusions.some((exclusion) => scopeCovers(exclusion, `${ancestor}/probe`))) {
+      if (exclusions.some((exclusion) => scopeCovers(exclusion, `${ancestor}/probe`) || exclusion === ancestor)) {
         return true;
       }
     }
@@ -214703,7 +214703,7 @@ function collectAnySurfaces({ ts: ts2, checker, program, context, index }) {
     for (const exported of exports) {
       if (index.anyUncertainty.length >= MAX_DIAGNOSTICS) return;
       const type = exported.flags & ts2.SymbolFlags.Interface || exported.flags & ts2.SymbolFlags.TypeAlias ? checker.getDeclaredTypeOfSymbol(exported) : checker.getTypeOfSymbolAtLocation(exported, sourceFile);
-      const contamination = typeContainsAny(ts2, type, /* @__PURE__ */ new Set(), 0);
+      const contamination = typeContainsAny(ts2, checker, type, /* @__PURE__ */ new Set(), 0);
       if (contamination) {
         index.anyUncertainty.push({
           path: fromModule,
@@ -214715,7 +214715,7 @@ function collectAnySurfaces({ ts: ts2, checker, program, context, index }) {
     }
   }
 }
-function typeContainsAny(ts2, type, seen, depth) {
+function typeContainsAny(ts2, checker, type, seen, depth) {
   if (!type || depth > 6) return false;
   if (typeof type.id === "number") {
     if (seen.has(type.id)) return false;
@@ -214724,19 +214724,26 @@ function typeContainsAny(ts2, type, seen, depth) {
   if (type.flags & ts2.TypeFlags.Any) return true;
   if (type.flags & ts2.TypeFlags.Unknown) return true;
   if (type.flags & (ts2.TypeFlags.Union | ts2.TypeFlags.Intersection)) {
-    return (type.types ?? []).some((member) => typeContainsAny(ts2, member, seen, depth + 1));
+    return (type.types ?? []).some((member) => typeContainsAny(ts2, checker, member, seen, depth + 1));
   }
   if (type.flags & ts2.TypeFlags.Object) {
-    return (type.typeArguments ?? []).some((argument) => typeContainsAny(ts2, argument, seen, depth + 1)) || (type.properties ?? []).some((member) => typeContainsAny(
-      ts2,
-      member.type ?? { flags: 0 },
-      seen,
-      depth + 1
-    ));
+    if ((type.typeArguments ?? []).some((argument) => typeContainsAny(ts2, checker, argument, seen, depth + 1))) {
+      return true;
+    }
+    const signatures = [
+      ...checker.getSignaturesOfType(type, ts2.SignatureKind.Call),
+      ...checker.getSignaturesOfType(type, ts2.SignatureKind.Construct)
+    ].slice(0, 32);
+    if (signatures.some((signature) => typeContainsAny(ts2, checker, checker.getReturnTypeOfSignature(signature), seen, depth + 1) || (signature.parameters ?? []).slice(0, 32).some((parameter) => typeContainsAny(ts2, checker, checker.getTypeOfSymbol(parameter), seen, depth + 1)))) {
+      return true;
+    }
+    const members = checker.getPropertiesOfType(type).slice(0, 64);
+    return members.some((member) => typeContainsAny(ts2, checker, checker.getTypeOfSymbol(member), seen, depth + 1));
   }
   return false;
 }
 function runScan({ profile, readView, permittedProjectRoot, limits }) {
+  let programOptions = null;
   const ts2 = assertCompilerAvailable();
   const compilerMeta = {
     typescript: vendoredTs().version,
@@ -214780,7 +214787,14 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
     exceeded: () => false
   };
   const rootNames = [];
-  let options = { module: ts2.ModuleKind.ESNext, moduleResolution: ts2.ModuleResolutionKind.Bundler, noEmit: true, skipLibCheck: false, allowJs: false };
+  const defaults = {
+    module: ts2.ModuleKind.ESNext,
+    moduleResolution: ts2.ModuleResolutionKind.Bundler,
+    noEmit: true,
+    skipLibCheck: false,
+    allowJs: false
+  };
+  const options = { ...defaults };
   for (const project of projects) {
     const parsed = ts2.parseJsonConfigFileContent(
       project.raw ?? {},
@@ -214792,12 +214806,8 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
     for (const fileName of parsed.fileNames) rootNames.push(fileName);
     if (parsed.options && Object.keys(parsed.options).length > 0) {
       for (const [key, value] of Object.entries(parsed.options)) {
-        if (!(key in options) || options[key] === void 0) {
-          options[key] = value;
-        }
+        options[key] = value;
       }
-      options.noEmit = true;
-      options.disableSourceOfProjectReferenceRedirect = true;
     }
     for (const diagnostic of parsed.errors) {
       if (index.diagnostics.length < MAX_DIAGNOSTICS) {
@@ -214811,6 +214821,9 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
       }
     }
   }
+  options.noEmit = true;
+  options.disableSourceOfProjectReferenceRedirect = true;
+  programOptions = options;
   const configured = new Set(rootNames.map((name) => name.toLowerCase()));
   for (const file of manifest.sourceFiles) {
     const hostName = `/lekalo/project/${file.path}`;
@@ -214819,7 +214832,7 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
     }
   }
   if (rootNames.length === 0) {
-    return finalizeScan(index, manifest, profile, readView);
+    return finalizeScan(index, manifest, profile, readView, programOptions);
   }
   const program = ts2.createProgram({ rootNames, options, host });
   context.program = program;
@@ -214843,9 +214856,9 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   indexRoutesAndTests({ ts: ts2, checker, program, context, index });
   collectDiagnostics({ ts: ts2, program, context, index });
   collectAnySurfaces({ ts: ts2, checker, program, context, index });
-  return finalizeScan(index, manifest, profile, readView);
+  return finalizeScan(index, manifest, profile, readView, programOptions);
 }
-function finalizeScan(index, manifest, profile, readView) {
+function finalizeScan(index, manifest, profile, readView, programOptions) {
   index.inputManifest = {
     sourceFiles: manifest.sourceFiles.length,
     configFiles: manifest.configFiles.length,
@@ -214862,6 +214875,7 @@ function finalizeScan(index, manifest, profile, readView) {
     id: profile.id,
     readRoots: profile.readRoots.map((root) => ({ ...root }))
   }));
+  index.programOptions = programOptions === null ? null : canonicalText(programOptions);
   sortIndex(index);
   return index;
 }

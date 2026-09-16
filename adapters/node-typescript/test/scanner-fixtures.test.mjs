@@ -139,9 +139,24 @@ test("uncertainty fixture: any surfaces, unresolved imports, dynamic calls recor
     // A fully-typed optional call resolves honestly; the unresolved
     // import itself is the recorded dynamic surface.
     assert.ok(index.anyUncertainty.some((u) => u.detail === "missing" || u.kind === "unresolved-import"));
+    // Issue #44 fix F-3: the deep/generic contamination walk must fire —
+    // assert the specific fixture exports by name, not just the kind.
+    const anySurfaces = index.anyUncertainty
+      .filter((u) => u.kind === "any-surface")
+      .map((u) => u.detail);
+    assert.ok(anySurfaces.includes("anyValue"), "direct any recorded");
+    assert.ok(anySurfaces.includes("unknownValue"), "direct unknown recorded");
+    assert.ok(
+      anySurfaces.includes("maybe"),
+      "Promise<any> return type recorded (signature return traversal)",
+    );
+    assert.ok(
+      anySurfaces.includes("deepContainer"),
+      "nested {value:any} recorded (member traversal via checker)",
+    );
     // Uncertainty never blocks the complete inventory, but it is never
     // silently dropped either.
-    assert.ok(index.anyUncertainty.length >= 3);
+    assert.ok(index.anyUncertainty.length >= 5);
     // The unresolved import is NOT fabricated into a reference row.
     const fabricated = index.references.find((r) => r.to.includes("does-not-exist") && r.external === false);
     assert.equal(fabricated, undefined);
@@ -242,6 +257,106 @@ test("incremental: body edits keep identity+signature; signature edits move sign
     assert.equal(afterSig.native, before.native, "native id survives signature edits");
     assert.notEqual(afterSig.signature, before.signature, "signature moves on signature edits");
     assert.equal(sigEdit.warm, false, "content change ⇒ cold re-scan");
+  } finally {
+    dispose(root);
+  }
+});
+
+test("cjs fixture: the parsed tsconfig options reach the Program (F-2)", async () => {
+  const { index, root } = await scanFixture("cjs-opts", "cjs");
+  try {
+    assert.equal(index.state, "complete");
+    // The recorded analysis configuration proves the fixture tsconfig's
+    // parsed compilerOptions (module commonjs, moduleResolution node,
+    // skipLibCheck true) were applied over the seeded defaults — the
+    // Program analyzed CommonJS/Node10, not the ESNext/Bundler seed.
+    const options = JSON.parse(index.programOptions);
+    assert.equal(options.module, 1, "module=CommonJS from the cjs tsconfig");
+    assert.equal(options.moduleResolution, 2, "moduleResolution=Node10 from the cjs tsconfig");
+    assert.equal(options.skipLibCheck, true, "skipLibCheck=true from the cjs tsconfig");
+    // The forced keys stay forced regardless of config.
+    assert.equal(options.noEmit, true, "noEmit is always forced");
+    assert.equal(
+      options.disableSourceOfProjectReferenceRedirect, true,
+      "redirect following is always disabled",
+    );
+    // Config-less default check: the esm fixture sets its own options,
+    // so prove the seed only through a config-less scan below.
+  } finally {
+    dispose(root);
+  }
+});
+
+test("config-less project: the seeded defaults apply and are recorded (F-2)", async () => {
+  const adapter = await fresh();
+  const kernel = adapter.__lekaloKernel;
+  const scanner = adapter.__lekaloScanner;
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const os = await import("node:os");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lekalo-s44-noconfig-"));
+  const project = path.join(root, "project");
+  fs.mkdirSync(path.join(project, "src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(project, "src", "only.ts"),
+    "export const value = 1;\n",
+  );
+  try {
+    const roots = [{ kind: "tree", path: "src", scope: "src/**" }];
+    const profile = kernel.validateResolvedProjectProfile({
+      id: "standalone", mode: "observed", target: "node-typescript",
+      readRoots: roots.map(({ kind, path: p }) => ({ kind, path: p })),
+      exclusions: [],
+      provenance: { origin: "declared", revision: "noconfig", disposition: "public-fixture" },
+    });
+    const readView = kernel.createReadView(project, roots, profile);
+    const index = scanner.runScan({ profile, readView, permittedProjectRoot: project });
+    assert.equal(index.state, "complete");
+    // With no tsconfig, the recorded options are exactly the seeds.
+    const options = JSON.parse(index.programOptions);
+    assert.equal(options.module, 99, "seed module=ESNext applies without a config");
+    assert.equal(options.moduleResolution, 100, "seed moduleResolution=Bundler applies");
+    assert.equal(options.skipLibCheck, false);
+    assert.equal(options.allowJs, false);
+    assert.equal(options.noEmit, true);
+  } finally {
+    dispose(root);
+  }
+});
+
+test("F-4 shared semantics: a bare-directory exclusion behaves identically in both consumers", async () => {
+  // The committed excluded fixture's tree: src/clean.ts (indexed) plus
+  // vendor/lib/poison.ts, node_modules/pkg/poison.ts, dist/poison.ts.
+  // With the BARE spellings (vendor, node_modules, dist) — no /** tails —
+  // both consumers must agree: the excluded directories and everything
+  // under them are invisible.
+  const { index, kernel, project, root } = await scanFixture("bare-excl", "excluded", {
+    exclusions: ["vendor", "node_modules", "dist"],
+  });
+  try {
+    assert.equal(index.state, "complete");
+    const all = JSON.stringify(index);
+    for (const canary of ["VENDOR_POISON", "MODULES_POISON", "DIST_POISON", "poison-77"]) {
+      assert.equal(all.includes(canary), false, `${canary} stays out of the index`);
+    }
+    // The kernel read view agrees: reading under a bare-excluded dir is refused.
+    const roots = [
+      { kind: "tree", path: "src", scope: "src/**" },
+      { kind: "tree", path: "vendor", scope: "vendor/**" },
+    ];
+    const profile = kernel.validateResolvedProjectProfile({
+      id: "standalone", mode: "observed", target: "node-typescript",
+      readRoots: roots.map(({ kind, path: p }) => ({ kind, path: p })),
+      exclusions: ["vendor"],
+      provenance: { origin: "declared", revision: "bare", disposition: "public-fixture" },
+    });
+    const view = kernel.createReadView(project, roots, profile);
+    assert.equal(view.canRead("vendor/lib/poison.ts"), false, "read view prunes the bare-excluded subtree");
+    assert.throws(
+      () => view.readFile("vendor/lib/poison.ts"),
+      (error) => error.code === "read-denied",
+      "read under a bare-excluded dir is refused",
+    );
   } finally {
     dispose(root);
   }
