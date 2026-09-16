@@ -14,10 +14,8 @@ use std::sync::Mutex;
 const TASK_DOMAIN: &str = "tests/fixtures/observed/task-domain";
 const INITIAL_SCAN: &str = "tests/fixtures/observed/task-domain/scans/initial.json";
 const MOVED_SCAN: &str = "tests/fixtures/observed/task-domain/scans/moved.json";
-const SIGNATURE_DRIFT_SCAN: &str =
-  "tests/fixtures/observed/task-domain/scans/signature-drift.json";
-const SIGNATURE_RESCAN: &str =
-  "tests/fixtures/observed/task-domain/scans/signature-rescan.json";
+const SIGNATURE_DRIFT_SCAN: &str = "tests/fixtures/observed/task-domain/scans/signature-drift.json";
+const SIGNATURE_RESCAN: &str = "tests/fixtures/observed/task-domain/scans/signature-rescan.json";
 
 /// Serializes tests that change the process working directory.
 static CWD_LOCK: Mutex<()> = Mutex::new(());
@@ -481,8 +479,14 @@ fn observe_bind_then_signature_carrying_rescan_stays_current() {
     observed::update_index(&ctx, &sandbox.scan_bytes(INITIAL_SCAN)).expect("initial scan");
 
     // Bind: the inferred record becomes an explicit user-owned fact.
-    let receipt = observed::bind_explicit(&ctx, "taskboard.create_task", None, "src/tasks.ts", Some(14))
-        .expect("bind");
+    let receipt = observed::bind_explicit(
+        &ctx,
+        "taskboard.create_task",
+        None,
+        "src/tasks.ts",
+        Some(14),
+    )
+    .expect("bind");
     assert_eq!(receipt.state, BindingState::Current);
 
     let index = sandbox.index();
@@ -493,7 +497,10 @@ fn observe_bind_then_signature_carrying_rescan_stays_current() {
         .expect("bound record present");
     assert_eq!(record.status, BindingStatus::Explicit);
     assert_eq!(record.state, BindingState::Current);
-    assert!(record.fingerprint.is_some(), "bind records the file fingerprint");
+    assert!(
+        record.fingerprint.is_some(),
+        "bind records the file fingerprint"
+    );
     assert_eq!(
         record.evidence.signature, None,
         "R-1: bind no longer poisons evidence.signature with a file hash"
@@ -534,8 +541,14 @@ fn observe_bind_then_genuine_signature_change_still_stales() {
     let sandbox = Sandbox::new("r1drift");
     let ctx = sandbox.context();
     observed::update_index(&ctx, &sandbox.scan_bytes(INITIAL_SCAN)).expect("initial scan");
-    observed::bind_explicit(&ctx, "taskboard.create_task", None, "src/tasks.ts", Some(14))
-        .expect("bind");
+    observed::bind_explicit(
+        &ctx,
+        "taskboard.create_task",
+        None,
+        "src/tasks.ts",
+        Some(14),
+    )
+    .expect("bind");
 
     // Adopt the signature first (same-binding adoption, not drift).
     observed::update_index(&ctx, &sandbox.scan_bytes(SIGNATURE_RESCAN)).expect("adoption");
@@ -549,10 +562,9 @@ fn observe_bind_then_genuine_signature_change_still_stales() {
     assert_eq!(record.status, BindingStatus::Explicit);
 
     // Genuine structural change on the explicit binding ⇒ stale.
-    let mut drifted = serde_json::from_slice::<serde_json::Value>(
-        &sandbox.scan_bytes(SIGNATURE_RESCAN),
-    )
-    .expect("rescan parses");
+    let mut drifted =
+        serde_json::from_slice::<serde_json::Value>(&sandbox.scan_bytes(SIGNATURE_RESCAN))
+            .expect("rescan parses");
     drifted["revision"] = serde_json::Value::String(format!("sha256:{}", "f".repeat(64)));
     let drifted_symbol = drifted["symbols"]
         .as_array_mut()
