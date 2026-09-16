@@ -318,6 +318,20 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                     !scopes::is_logical_path(&e.path)
                         || !bounded(&e.kind, 128)
                         || e.detail.as_ref().is_some_and(|v| !bounded(v, 128))
+                        // Issue #44: the typed evidence member is
+                        // bounded exactly as the 0.3.1 schema declares
+                        // (references maxItems 8, sha256 signature,
+                        // semantic-id target ≤192).
+                        || e.evidence.as_ref().is_some_and(|ev| {
+                            ev.references.len() > 8
+                                || ev
+                                    .signature
+                                    .as_ref()
+                                    .is_some_and(|digest| !is_sha256_digest(digest))
+                                || ev.references.iter().any(|reference| {
+                                    !crate::trace::id::is_semantic_id(&reference.target)
+                                })
+                        })
                 })
         }) || result.findings.as_ref().is_some_and(|entries| {
             entries.len() > 10000
