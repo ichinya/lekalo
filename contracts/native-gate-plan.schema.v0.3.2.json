@@ -781,9 +781,7 @@
           "maxItems": 128,
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
-            "maxLength": 128
+            "$ref": "#/$defs/packageId"
           }
         },
         "affected_reason_refs": {

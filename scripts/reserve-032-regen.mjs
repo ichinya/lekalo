@@ -34,7 +34,7 @@ assert.notEqual(bytes.at(-2), 10);
 assert.equal(bytes.includes(13), false);
 const lock = JSON.parse(bytes.toString('utf8'));
 assert.equal(lock.core.version, '0.3.2');
-assert.equal(lock.contracts.target_protocol.version, '0.3.1');
+assert.equal(lock.contracts.target_protocol.version, '0.3.2');
 assert.equal(lock.resolver.version, '0.2.16');
 const hash = createHash('sha256').update(bytes.subarray(0, -1)).digest('hex');
 const digest = `sha256:${hash}`;

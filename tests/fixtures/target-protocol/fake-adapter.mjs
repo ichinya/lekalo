@@ -120,6 +120,7 @@ const ALL_OPERATIONS = [
   "verify",
   "clean",
   "plan-clean",
+  "plan-native",
 ];
 const OPERATIONS = OPS_FILTER
   ? ALL_OPERATIONS.filter((op) => OPS_FILTER.includes(op))

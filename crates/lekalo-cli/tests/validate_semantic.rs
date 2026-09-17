@@ -120,7 +120,7 @@ fn valid_base_is_exit_zero_and_byte_identical_across_reruns() {
     assert_eq!(document["status"], "valid");
     assert_eq!(document["modelVersion"], "0.2.16");
     assert_eq!(document["validation"]["profile"], "strict");
-    assert_eq!(document["validation"]["registryVersion"], "0.2.16");
+    assert_eq!(document["validation"]["registryVersion"], "0.3.2");
     assert_eq!(document["validation"]["counts"]["error"], 0);
 }
 

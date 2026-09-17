@@ -25,6 +25,11 @@ fn is_sha256(value: &str) -> bool {
     })
 }
 
+/// Whether one string is the closed package id spelling (root=name).
+pub fn package_id_is_valid(value: &str) -> bool {
+    is_package_id(value)
+}
+
 fn is_package_id(value: &str) -> bool {
     let Some((root, name)) = value.split_once('=') else {
         return false;

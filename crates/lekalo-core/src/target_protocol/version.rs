@@ -12,7 +12,7 @@
 pub const PROTOCOL_TOKEN: &str = "lekalo.target/v1";
 
 /// The describe probe version of the current contract.
-pub const BASE_VERSION: &str = "0.3.1";
+pub const BASE_VERSION: &str = "0.3.2";
 
 /// The current protocol contract version, including resolved profiles
 /// and the read-only native gate plan exchange.
@@ -22,7 +22,7 @@ pub const VERSION: &str = "0.3.2";
 /// negotiates. The registry may only publish versions from this set;
 /// anything else is a registry/decoder drift refused as a developer
 /// fault before any adapter is launched.
-pub const SUPPORTED_VERSIONS: [&str; 2] = ["0.3.1", "0.3.2"];
+pub const SUPPORTED_VERSIONS: [&str; 1] = ["0.3.2"];
 
 /// The identity of the schema artifact for the current protocol version.
 pub const IDENTITY: &str = "dev.lekalo.target-protocol@0.3.2";
@@ -96,7 +96,7 @@ mod tests {
     #[test]
     fn identity_is_the_published_contract_version() {
         assert_eq!(PROTOCOL_TOKEN, "lekalo.target/v1");
-        assert_eq!(BASE_VERSION, "0.3.1");
+        assert_eq!(BASE_VERSION, "0.3.2");
         assert_eq!(VERSION, "0.3.2");
         assert_eq!(IDENTITY, "dev.lekalo.target-protocol@0.3.2");
         assert_eq!(SCHEMA_VERSION, "lekalo/target-protocol/v0.3.2");
@@ -120,19 +120,22 @@ mod tests {
             "unsupported spellings never negotiate"
         );
         assert_eq!(declared(&["0.3.2"]).as_deref(), Some("0.3.2"));
-        assert_eq!(declared(&["0.3.1"]).as_deref(), Some("0.3.1"));
+        assert_eq!(declared(&["0.3.1"]).as_deref(), None, "0.3.1 is refused");
         for old in ["0.2.15", "1.0.0", "1.1.0", "1.2.0"] {
             assert_eq!(declared(&[old]), None);
             assert!(!is_supported_version(old));
             assert_eq!(declared(&[old, "0.3.2"]).as_deref(), Some("0.3.2"));
         }
-        assert!(is_supported_version("0.3.1"));
+        assert!(
+            !is_supported_version("0.3.1"),
+            "current-only: 0.3.1 refused"
+        );
         assert!(is_supported_version("0.3.2"));
-        // A session that declares both raises to the current exact version.
+        // A session that declares both still negotiates the only supported
         assert_eq!(
             declared(&["0.3.1", "0.3.2"]).as_deref(),
             Some("0.3.2"),
-            "negotiation prefers the highest supported spelling"
+            "negotiation prefers the supported spelling"
         );
     }
 

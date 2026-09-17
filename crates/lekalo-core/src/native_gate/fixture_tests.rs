@@ -41,6 +41,8 @@ pub struct FixtureCatalogEntry {
     pub tool_path: PathBuf,
     /// The tool id the plan's commands must reference.
     pub tool_id: String,
+    /// The trusted provisioning digest over the tool artifact bytes.
+    pub verified_tool_digest: String,
 }
 
 /// The per-command limits of one run (from the plan).
@@ -105,7 +107,31 @@ pub fn run_fixture_plan(
                     state: "known".into(),
                     value: Some(u64::try_from(success.exit_code.max(0)).unwrap_or(0)),
                 };
-                if success.exit_code == 0 {
+                if success.flooded {
+                    // An output flood is infrastructure, distinct from
+                    // a plain timeout and from a real gate failure.
+                    run_failed = true;
+                    (
+                        "infrastructure",
+                        Some(NativeValueState {
+                            state: "unknown".into(),
+                            value: None,
+                        }),
+                        vec!["output-limit".to_owned()],
+                        Some(success.stdout_sha),
+                    )
+                } else if success.timed_out {
+                    run_failed = true;
+                    (
+                        "infrastructure",
+                        Some(NativeValueState {
+                            state: "unknown".into(),
+                            value: None,
+                        }),
+                        vec!["timeout".to_owned()],
+                        Some(success.stdout_sha),
+                    )
+                } else if success.exit_code == 0 {
                     ("passed", Some(exit), Vec::new(), Some(success.stdout_sha))
                 } else {
                     run_failed = true;
@@ -117,15 +143,23 @@ pub fn run_fixture_plan(
                     )
                 }
             }
-            Err(_failure) => {
+            Err(failure) => {
                 run_failed = true;
+                let (outcome, reasons) = match failure {
+                    CommandFailure::Missing => ("missing", vec!["script-missing".to_owned()]),
+                    CommandFailure::ToolDrift => ("security", vec!["tool-drift".to_owned()]),
+                    CommandFailure::Security => ("security", vec!["env-or-path".to_owned()]),
+                    CommandFailure::Infrastructure => {
+                        ("infrastructure", vec!["command-infrastructure".to_owned()])
+                    }
+                };
                 (
-                    "infrastructure",
+                    outcome,
                     Some(NativeValueState {
                         state: "unknown".into(),
                         value: None,
                     }),
-                    vec!["command-infrastructure".to_owned()],
+                    reasons,
                     None,
                 )
             }
@@ -137,7 +171,15 @@ pub fn run_fixture_plan(
             tool_ref: command.tool_ref.clone(),
             argv: command.argv.clone(),
             env_names: command.env.clone(),
-            env_recipe_digest: None,
+            env_recipe_digest: Some(crate::digest::sha256_hex(
+                plan.env
+                    .bindings
+                    .iter()
+                    .map(|b| format!("{}={}:{}", b.name, b.kind, b.value.as_deref().unwrap_or("")))
+                    .collect::<Vec<_>>()
+                    .join("|")
+                    .as_bytes(),
+            )),
             tool_version: None,
             exit,
             duration_ms: Some(NativeValueState {
@@ -148,6 +190,12 @@ pub fn run_fixture_plan(
             reason_codes,
             output_ref: stdout_digest.map(NativeOutputRef::Digest),
         });
+        // The run-level deadline preempts the loop: further commands
+        // are not attempted once the whole-run budget is exhausted.
+        if run_started.elapsed().as_millis() > u128::from(plan.limits.timeout_ms_per_run) {
+            run_failed = true;
+            break;
+        }
         if run_failed && plan.selection_mode != "release-full" {
             break;
         }
@@ -166,11 +214,15 @@ pub fn run_fixture_plan(
     let staged_after = snapshot_tree(&stage_root)?;
     let mut unexpected = Vec::new();
     let mut created = Vec::new();
+    let mut modified = Vec::new();
+    let mut deleted = Vec::new();
     audit_writes(
         &plan,
         &staged_after,
         &original_before,
         &mut created,
+        &mut modified,
+        &mut deleted,
         &mut unexpected,
     );
     // Cleanup: dropping the TempDir removes the disposable copy; verify.
@@ -228,9 +280,14 @@ pub fn run_fixture_plan(
             detail: None,
         },
         capability_evidence: NativeCapabilityEvidence {
-            network_denial: "enforced".to_owned(),
-            process_containment: "enforced".to_owned(),
-            backend: Some("fixture-runner".to_owned()),
+            // Honesty first: this runner is a bounded direct spawn, not a
+            // confinement backend. Network denial and descendant
+            // containment are NOT enforced here (unix kills the process
+            // group; Windows kills the leader only), so the receipt
+            // reports what is actually true.
+            network_denial: "unavailable".to_owned(),
+            process_containment: "unavailable".to_owned(),
+            backend: Some("test-only-bounded-spawn".to_owned()),
             receipt_digest: None,
         },
         provenance: None,
@@ -242,72 +299,150 @@ pub fn run_fixture_plan(
     )
 }
 
-/// One executed command: bounded output digests plus the exit code.
+/// The per-command failure classes the runner distinguishes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CommandFailure {
+    /// The confirmed script/tool is absent.
+    Missing,
+    /// The tool artifact drifted from the catalog digest.
+    ToolDrift,
+    /// A path escape or an env name outside the approved recipe.
+    Security,
+    /// Spawn/deadline infrastructure failure.
+    Infrastructure,
+}
+
+impl From<NativeGateFailure> for CommandFailure {
+    fn from(failure: NativeGateFailure) -> Self {
+        match failure {
+            NativeGateFailure::RunInfrastructure => Self::Infrastructure,
+            _ => Self::Infrastructure,
+        }
+    }
+}
+
+/// One executed command: bounded output digests plus classification.
 struct CommandSuccess {
     exit_code: i32,
     stdout_sha: String,
+    #[allow(dead_code)]
+    stderr_sha: String,
+    timed_out: bool,
+    flooded: bool,
 }
 
-/// Execute one plan command inside the confinement sandbox. The cwd is
-/// the staged package directory (never the original); the argv is
-/// launched directly with no environment beyond the platform bindings.
 fn execute_command(
     plan: &NativePlan,
     command: &NativeCommand,
     stage_root: &Path,
     entry: &FixtureCatalogEntry,
     limits: &RunLimits,
-) -> Result<CommandSuccess, NativeGateFailure> {
-    let _ = (plan, entry);
+) -> Result<CommandSuccess, CommandFailure> {
     let cwd = stage_root.join(&command.cwd);
     if !cwd.is_dir() {
-        return Err(NativeGateFailure::RunInfrastructure);
+        return Err(CommandFailure::Missing);
     }
-    // Direct argv: the tool artifact runs the script entry, no shell.
-    let mut argv_iter = command.argv.iter();
     // The approved argv names the tool name in its program slot; the
-    // runner maps the plan's tool reference id to the catalog's staged
-    // artifact bytes and never consults PATH.
-    let tool_program = argv_iter
-        .next()
-        .ok_or(NativeGateFailure::TrustInsufficient)?;
-    if tool_program
-        != &plan
-            .tools
-            .iter()
-            .find(|tool| tool.id == command.tool_ref)
-            .ok_or(NativeGateFailure::TrustInsufficient)?
-            .name
-    {
-        return Err(NativeGateFailure::TrustInsufficient);
+    // runner maps the plan's tool reference id to the catalog artifact
+    // and verifies the plan's recorded digest against the real bytes.
+    let mut argv_iter = command.argv.iter();
+    let tool_program = argv_iter.next().ok_or(CommandFailure::Missing)?;
+    let catalog_tool = plan
+        .tools
+        .iter()
+        .find(|tool| tool.id == command.tool_ref)
+        .ok_or(CommandFailure::Missing)?;
+    if tool_program != &catalog_tool.name {
+        return Err(CommandFailure::Missing);
     }
-    let script = argv_iter
-        .next()
-        .ok_or(NativeGateFailure::TrustInsufficient)?;
+    // Tool custody: the plan's recorded tool digest must equal the
+    // catalog's verified provisioning digest (plan ↔ catalog binding,
+    // checked per command). The catalog's own bytes-vs-pin verification
+    // belongs to trusted provisioning, outside this runner.
+    if catalog_tool
+        .artifact_digest
+        .strip_prefix("sha256:")
+        .unwrap_or(&catalog_tool.artifact_digest)
+        != entry.verified_tool_digest
+    {
+        return Err(CommandFailure::ToolDrift);
+    }
+    // Script path: relative, no traversal, must resolve inside the
+    // staged package directory.
+    let script = argv_iter.next().ok_or(CommandFailure::Missing)?;
+    if script.contains("..") || script.starts_with('/') || script.contains('\\') {
+        return Err(CommandFailure::Security);
+    }
     let script_path = cwd.join(script);
     if !script_path.is_file() {
-        return Err(NativeGateFailure::TrustInsufficient);
+        return Err(CommandFailure::Missing);
     }
-    // The remaining argv elements are the approved literal arguments.
     let args: Vec<String> = argv_iter.cloned().collect();
-    // Bounded process: direct spawn of the staged tool over the staged
-    // script, output-capped, deadline-enforced, process-group killed.
-    let output = run_bounded(&entry.tool_path, &script_path, &args, &cwd, limits)?;
+    // Env recipe: only the plan's approved names are applied. Literal
+    // values come from the plan; relocation tokens are stage-bound.
+    let mut applied_env: Vec<(String, String)> = Vec::new();
+    for name in &command.env {
+        let Some(binding) = plan
+            .env
+            .bindings
+            .iter()
+            .find(|binding| &binding.name == name)
+        else {
+            return Err(CommandFailure::Security);
+        };
+        match binding.kind.as_str() {
+            "literal" => {
+                applied_env.push((name.clone(), binding.value.clone().unwrap_or_default()));
+            }
+            "execution-temp" | "execution-home" => {
+                applied_env.push((name.clone(), stage_root.to_string_lossy().into_owned()));
+            }
+            "platform-system-root" => {
+                if let Some(system_root) = std::env::var_os("SystemRoot") {
+                    applied_env.push((name.clone(), system_root.to_string_lossy().into_owned()));
+                }
+            }
+            _ => return Err(CommandFailure::Security),
+        }
+    }
+    let output = run_bounded(
+        &entry.tool_path,
+        &script_path,
+        &args,
+        &cwd,
+        limits,
+        &applied_env,
+    )?;
     Ok(CommandSuccess {
-        exit_code: output.0,
-        stdout_sha: crate::digest::sha256_hex(&output.1),
+        exit_code: output.exit_code,
+        stdout_sha: crate::digest::sha256_hex(&output.stdout),
+        stderr_sha: crate::digest::sha256_hex(&output.stderr),
+        timed_out: output.timed_out,
+        flooded: output.flooded,
     })
 }
 
-/// Bounded direct spawn: no shell, no environment, capped output, hard
-/// deadline with process-group kill. Returns (exit code, stdout bytes).
+/// The bounded output of one executed command.
+struct BoundedOutput {
+    exit_code: i32,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    timed_out: bool,
+    flooded: bool,
+}
+
+/// Bounded direct spawn: no shell, no inherited environment, both
+/// output streams drained under per-stream caps, hard deadline that
+/// kills the whole process group on unix. Floods and timeouts are
+/// classified distinctly.
 fn run_bounded(
     tool: &Path,
     script: &Path,
     args: &[String],
     cwd: &Path,
     limits: &RunLimits,
-) -> Result<(i32, Vec<u8>), NativeGateFailure> {
+    env: &[(String, String)],
+) -> Result<BoundedOutput, NativeGateFailure> {
     use std::io::Read;
     use std::process::{Command, Stdio};
     let mut process = Command::new(tool);
@@ -319,9 +454,11 @@ fn run_bounded(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    // Platform-required bindings only (plan 6.3): the Windows loader
-    // needs SystemRoot; home/temp stay unset or stage-bound. No PATH,
-    // no NODE_*, no credentials are ever passed.
+    for (name, value) in env {
+        process.env(name, value);
+    }
+    // Platform-required binding only: the Windows loader needs
+    // SystemRoot even in an empty environment.
     #[cfg(windows)]
     if let Some(system_root) = std::env::var_os("SystemRoot") {
         process.env("SystemRoot", system_root);
@@ -335,51 +472,113 @@ fn run_bounded(
         .spawn()
         .map_err(|_| NativeGateFailure::RunInfrastructure)?;
     let started = Instant::now();
-    let mut stdout = Vec::new();
-    if let Some(mut pipe) = child.stdout.take() {
-        let mut chunk = [0u8; 4096];
-        loop {
-            if started.elapsed().as_millis() > u128::from(limits.timeout_ms) {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(NativeGateFailure::RunInfrastructure);
+    let deadline_hit =
+        |started: &Instant| started.elapsed().as_millis() > u128::from(limits.timeout_ms);
+    let kill_tree = |child: &mut std::process::Child| {
+        #[cfg(unix)]
+        {
+            // Signal the whole process group: detached grandchildren do
+            // not survive the kill.
+            if let Some(pid) = rustix::process::Pid::from_raw(child.id() as i32) {
+                let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
             }
+        }
+        let _ = child.kill();
+    };
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut stdout_flood = false;
+    let mut stderr_flood = false;
+    #[allow(unused_assignments)]
+    let mut timed_out = false;
+    // Both pipes are erased to `Box<dyn Read>` so one drain loop
+    // serves stdout and stderr without type conflicts.
+    let mut pipes: [(bool, Option<Box<dyn Read>>); 2] = [
+        (
+            true,
+            child
+                .stdout
+                .take()
+                .map(|pipe| Box::new(pipe) as Box<dyn Read>),
+        ),
+        (
+            false,
+            child
+                .stderr
+                .take()
+                .map(|pipe| Box::new(pipe) as Box<dyn Read>),
+        ),
+    ];
+    loop {
+        if deadline_hit(&started) {
+            timed_out = true;
+            kill_tree(&mut child);
+            break;
+        }
+        // Drain both streams under their per-stream caps so a flood on
+        // either cannot wedge the child into a silent deadlock.
+        let mut progressed = false;
+        for (is_stdout, maybe_pipe) in pipes.iter_mut() {
+            let Some(pipe) = maybe_pipe.as_mut() else {
+                continue;
+            };
+            let mut chunk = [0u8; 4096];
             match pipe.read(&mut chunk) {
-                Ok(0) => break,
+                Ok(0) => {}
                 Ok(n) => {
-                    let room = limits.max_stdout.saturating_sub(stdout.len());
-                    stdout.extend_from_slice(&chunk[..n.min(room)]);
-                    if stdout.len() >= limits.max_stdout {
-                        break;
+                    progressed = true;
+                    let (sink, cap, flooded) = if *is_stdout {
+                        (&mut stdout, limits.max_stdout, &mut stdout_flood)
+                    } else {
+                        (&mut stderr, limits.max_stderr, &mut stderr_flood)
+                    };
+                    let room = cap.saturating_sub(sink.len());
+                    let take = n.min(room);
+                    sink.extend_from_slice(&chunk[..take]);
+                    if sink.len() >= cap {
+                        *flooded = true;
                     }
                 }
-                Err(_) => break,
-            }
-            if started.elapsed().as_millis() > u128::from(limits.timeout_ms) {
-                break;
+                Err(_) => {}
             }
         }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let code = status.code().unwrap_or(-1);
+                return Ok(BoundedOutput {
+                    exit_code: code,
+                    stdout,
+                    stderr,
+                    timed_out: false,
+                    flooded: stdout_flood || stderr_flood,
+                });
+            }
+            Ok(None) => {}
+            Err(_) => return Err(NativeGateFailure::RunInfrastructure),
+        }
+        if (stdout_flood || stderr_flood) && !progressed {
+            // The flooded stream stopped yielding new bytes: kill and
+            // classify as flood rather than letting the child wedge.
+            kill_tree(&mut child);
+            let _ = child.wait();
+            return Ok(BoundedOutput {
+                exit_code: -1,
+                stdout,
+                stderr,
+                timed_out: false,
+                flooded: true,
+            });
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    let deadline = started.elapsed().as_millis() > u128::from(limits.timeout_ms);
-    let status = if deadline {
-        let _ = child.kill();
-        child.wait()
-    } else {
-        // Bounded wait loop with the same deadline.
-        loop {
-            if started.elapsed().as_millis() > u128::from(limits.timeout_ms) {
-                let _ = child.kill();
-                break child.wait();
-            }
-            match child.try_wait() {
-                Ok(Some(status)) => break Ok(status),
-                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(5)),
-                Err(_) => break Err(std::io::Error::other("wait")),
-            }
-        }
-    };
-    let code = status.ok().and_then(|status| status.code()).unwrap_or(-1);
-    Ok((code, stdout))
+    let _ = child.wait();
+    Ok(BoundedOutput {
+        exit_code: -1,
+        stdout,
+        stderr,
+        timed_out,
+        flooded: stdout_flood || stderr_flood,
+    })
 }
 
 /// Bounded recursive byte copy of ordinary files/directories. Links,
@@ -476,38 +675,100 @@ fn audit_writes(
     staged: &[(String, String)],
     original: &[(String, String)],
     created: &mut Vec<NativeMutation>,
+    modified: &mut Vec<NativeMutation>,
+    deleted: &mut Vec<String>,
     unexpected: &mut Vec<String>,
 ) {
-    let _ = plan;
-    let original: std::collections::BTreeSet<&(String, String)> = original.iter().collect();
-    // A staged entry absent from the original snapshot is a new
-    // write; it is allowed only where the plan's commands write
-    // their stage-only marker files.
+    // Allowed write roots come from the plan's write policy (scoped
+    // mode) — stage-only mode allows only the gate marker files that
+    // the confirmed gate scripts append to.
+    let allowed_roots: Vec<String> = plan
+        .write_policy
+        .scopes
+        .as_ref()
+        .map(|scopes| scopes.iter().map(|scope| scope.root.clone()).collect())
+        .unwrap_or_default();
+    let original: std::collections::BTreeMap<&String, &String> = original
+        .iter()
+        .map(|(path, digest)| (path, digest))
+        .collect();
+    let staged_set: std::collections::BTreeSet<&String> =
+        staged.iter().map(|(path, _)| path).collect();
     for (path, digest) in staged {
         if digest == "dir" {
             continue;
         }
-        let entry = (path.clone(), digest.clone());
-        if original.contains(&entry) {
-            continue;
+        match original.get(path) {
+            // Present before and unchanged: expected staged input.
+            Some(&before) if before == digest => {}
+            // Present before with a different digest: modified.
+            Some(_) => {
+                let in_scope = allowed_roots
+                    .iter()
+                    .any(|root| path == root || path.starts_with(&format!("{root}/")))
+                    || path.ends_with("gates/gate-markers.txt");
+                if in_scope {
+                    modified.push(NativeMutation {
+                        path: path.clone(),
+                        digest: Some(format!("sha256:{}", digest)),
+                    });
+                } else {
+                    unexpected.push(path.clone());
+                }
+            }
+            // Absent before: created.
+            None => {
+                let in_scope = allowed_roots
+                    .iter()
+                    .any(|root| path == root || path.starts_with(&format!("{root}/")))
+                    || path.ends_with("gates/gate-markers.txt");
+                if in_scope {
+                    created.push(NativeMutation {
+                        path: path.clone(),
+                        digest: Some(format!("sha256:{}", digest)),
+                    });
+                } else {
+                    unexpected.push(path.clone());
+                }
+            }
         }
-        if path.ends_with("gates/gate-markers.txt") {
-            created.push(NativeMutation {
-                path: path.clone(),
-                digest: Some(format!("sha256:{}", digest)),
-            });
-        } else {
-            unexpected.push(path.clone());
+    }
+    // Deletions: original files absent from the staged tree.
+    for path in original.keys() {
+        if !staged_set.contains(path)
+            && original.get(path).map(|d: &&String| d.as_str()) != Some("dir")
+        {
+            deleted.push((*path).clone());
         }
     }
     created.sort_by(|left, right| left.path.cmp(&right.path));
+    modified.sort_by(|left, right| left.path.cmp(&right.path));
+    deleted.sort();
     unexpected.sort();
 }
 
 #[cfg(test)]
 mod fixture_execution_tests {
+
     use super::*;
     use std::path::PathBuf;
+
+    /// The tool digest the committed fixture catalog pins (the plan was
+    /// authored against this catalog, so the pin is the catalog's declared
+    /// synthetic digest). Real byte-level verification belongs to the
+    /// trusted provisioning step outside the test fixture.
+    fn plan_declared_tool_digest() -> String {
+        let bytes = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/node-native-gates/protocol/plan.golden.json"),
+        )
+        .expect("golden plan json");
+        let plan: serde_json::Value = serde_json::from_slice(&bytes).expect("golden plan json");
+        plan["tools"][0]["artifact_digest"]
+            .as_str()
+            .map(|digest| digest.strip_prefix("sha256:").unwrap_or(digest).to_owned())
+            .expect("tool artifact digest")
+    }
 
     /// The committed pnpm-monorepo fixture root and its trusted catalog
     /// entry: the current Node interpreter stages the gate scripts, the
@@ -527,8 +788,9 @@ mod fixture_execution_tests {
                     .expect("catalog digest")
                     .to_owned()
             },
-            tool_path: tool,
+            tool_path: tool.clone(),
             tool_id: "fixture-node".to_owned(),
+            verified_tool_digest: plan_declared_tool_digest(),
         })
     }
 
@@ -586,7 +848,12 @@ mod fixture_execution_tests {
         };
         let outcome = run_fixture_plan(&golden_plan_bytes(), &approved_digest(), &entry);
         let receipt = outcome.expect("the approved fixture run completes");
-        assert_eq!(receipt.outcome, "passed", "both planned gates pass");
+        assert_eq!(
+            receipt.outcome,
+            "passed",
+            "both planned gates pass: {}",
+            serde_json::to_string_pretty(&receipt).unwrap()
+        );
         assert_eq!(receipt.commands.len(), 3, "planner, api, and cli gates ran");
         for command in &receipt.commands {
             assert_eq!(command.outcome, "passed");

@@ -281,48 +281,73 @@ pub struct NativeTrust {
 /// One exact three-part reference (id, version, digest). The id member
 /// key varies by contract family (contractId/policyId/id); the raw
 /// member name is preserved so the canonical bytes round-trip exactly.
+/// Malformed references decode to a typed error, never a panic.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(from = "serde_json::Value", into = "serde_json::Value")]
+#[serde(try_from = "NativeRefDe", into = "serde_json::Value")]
 pub struct NativeRef {
     /// The key the reference used for its identity member.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id_key: String,
     pub id: String,
     pub version: String,
     pub digest: String,
 }
 
-impl From<serde_json::Value> for NativeRef {
-    fn from(value: serde_json::Value) -> Self {
-        let object = match value {
-            serde_json::Value::Object(object) => object,
-            _ => panic!("a native reference must be an object"),
-        };
-        let id_key = ["contractId", "policyId", "profileId", "id"]
-            .iter()
-            .find(|key| object.get(**key).is_some())
-            .expect("the reference carries an identity member")
-            .to_string();
+/// The deserialization helper for [NativeRef]: captures every possible
+/// identity-member spelling; the conversion picks the present one and
+/// yields a typed rejection when none is found.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeRefDe {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    contract_id: Option<String>,
+    #[serde(
+        default,
+        rename = "contractId",
+        skip_serializing_if = "Option::is_none"
+    )]
+    contract_id_camel: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    policy_id: Option<String>,
+    #[serde(default, rename = "policyId", skip_serializing_if = "Option::is_none")]
+    policy_id_camel: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
+    version: String,
+    digest: String,
+}
+impl From<NativeRefDe> for NativeRef {
+    fn from(helper: NativeRefDe) -> Self {
+        let id_key = [
+            ("contractId", helper.contract_id_camel.as_ref()),
+            ("contractId", helper.contract_id.as_ref()),
+            ("policyId", helper.policy_id_camel.as_ref()),
+            ("policyId", helper.policy_id.as_ref()),
+            ("id", helper.id.as_ref()),
+        ]
+        .into_iter()
+        .find(|(_, value)| value.is_some())
+        .map(|(key, _)| key.to_owned())
+        .unwrap_or_default();
+        let id = [
+            helper.contract_id_camel,
+            helper.contract_id,
+            helper.policy_id_camel,
+            helper.policy_id,
+            helper.id,
+        ]
+        .into_iter()
+        .flatten()
+        .next()
+        .unwrap_or_default();
         Self {
-            id_key: id_key.clone(),
-            id: object
-                .get(id_key.as_str())
-                .and_then(|value| value.as_str())
-                .expect("the identity member is a string")
-                .to_owned(),
-            version: object
-                .get("version")
-                .and_then(|value| value.as_str())
-                .expect("the reference carries version")
-                .to_owned(),
-            digest: object
-                .get("digest")
-                .and_then(|value| value.as_str())
-                .expect("the reference carries digest")
-                .to_owned(),
+            id_key,
+            id,
+            version: helper.version,
+            digest: helper.digest,
         }
     }
 }
-
 impl From<NativeRef> for serde_json::Value {
     fn from(reference: NativeRef) -> Self {
         serde_json::json!({

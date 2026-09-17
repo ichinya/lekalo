@@ -48,6 +48,8 @@ const scannerPath = join(adapterRoot, "src", "scanner.mjs");
 const workspacePath = join(adapterRoot, "src", "workspace.mjs");
 const nativePlanPath = join(adapterRoot, "src", "native-plan.mjs");
 const nativeContractPath = join(adapterRoot, "src", "native-contract.mjs");
+const nativeExtensionPath = join(adapterRoot, "src", "native-gate-extension.mjs");
+const nativePolicySrcPath = join(adapterRoot, "src", "native-policy.mjs");
 const libsPath = join(adapterRoot, "src", "libs.mjs");
 const scratchRoot = join(adapterRoot, ".build");
 
@@ -124,6 +126,8 @@ import * as ts from "typescript";
 import * as kernel from "./kernel.mjs";
 import * as scanner from "./scanner.mjs";
 import * as workspace from "./workspace.mjs";
+import * as nativeGate from "./native-gate-extension.mjs";
+import nativePolicy from "./native-policy.mjs";
 import * as nativePlan from "./native-plan.mjs";
 
 kernel.__setCompilerMetadata({
@@ -132,6 +136,7 @@ kernel.__setCompilerMetadata({
   esbuild: ${JSON.stringify(ESBUILD_VERSION)},
 });
 kernel.__attachVendoredCompiler(ts, LIB_FILES);
+nativeGate.setLaunchPolicy(nativePolicy);
 kernel.__setLaunchExtensions([
   {
     id: "typescript-symbol-scanner",
@@ -144,6 +149,15 @@ kernel.__setLaunchExtensions([
     // a negotiation fact, not an IR read.
     acceptedIrVersions: ["0.2.16"],
     invoke: (context) => scanner.scanOperation(context),
+  },
+  {
+    id: "native-gate-planner",
+    version: "0.3.2",
+    operations: ["plan-native"],
+    namedCapabilities: { "plan.native-gates": "full" },
+    acceptedIrVersions: ["0.2.16"],
+    invoke: (context) =>
+      nativeGate.planNativeOperation(context, nativeGate.launchPolicy),
   },
 ]);
 export const compilerHostApi = ts;
@@ -184,6 +198,8 @@ async function buildArtifact() {
   writeFileSync(join(scratchRoot, "src", "scanner.mjs"), scannerSource);
   writeFileSync(join(scratchRoot, "src", "workspace.mjs"), readFileSync(workspacePath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "native-plan.mjs"), readFileSync(nativePlanPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "native-gate-extension.mjs"), readFileSync(nativeExtensionPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "native-policy.mjs"), readFileSync(nativePolicySrcPath, "utf8"));
   writeFileSync(join(scratchRoot, "src", "native-contract.mjs"), readFileSync(nativeContractPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "main.mjs"), entryText);
   // The exact compiler pin must resolve from the adapter's own provisioning.

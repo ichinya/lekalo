@@ -128,6 +128,7 @@ const buildArgs = (overrides = {}) => ({
   scanRef: { id: "scan", version: "0.3.2", digest: D("22") },
   observedRef: { id: "observed", version: "0.3.2", digest: D("33") },
   inputManifestDigest: D("55"),
+  toolCatalogDigest: D("66"),
   capabilitySnapshotDigest: D("77"),
   ...overrides,
 });

@@ -1,4 +1,7 @@
-{
+// The committed synthetic-fixture execution policy bundled into the
+// adapter artifact (trusted synthetic fixture data, issue #48). The
+// policy is confirmation data only — never execution authority.
+export default {
   "schema_version": "lekalo/native-gate-policy/v0.3.2",
   "kind": "native-gate-policy",
   "policy_digest": "sha256:ba1eb9bf6e1df8a4bf76e66873c547468b6d4c886628911861c36255826340e2",
@@ -138,4 +141,4 @@
   "write_policy": {
     "mode": "stage-only"
   }
-}
+};

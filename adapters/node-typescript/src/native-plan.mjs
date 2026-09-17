@@ -16,7 +16,11 @@
 import { createHash } from "node:crypto";
 
 export const PLAN_DIGEST_DOMAIN = "lekalo.native-plan.v0.3.2";
+/** The planner capability id declared in every produced plan. */
+export const PLAN_CAPABILITY = "plan.native-gates";
 export const CANONICALIZATION_VERSION = "0.3.2";
+/** The planner version recorded in every produced plan. */
+export const PLANNER_VERSION = "0.3.2";
 
 /** Shell metacharacters and interpolation syntax refused in literals. */
 const SHELL_METACHARACTERS = new Set([
@@ -240,7 +244,7 @@ export function buildNativePlan({
   observedRef,
   inputManifestDigest,
   capabilitySnapshotDigest,
-  selectionMode = "targeted",
+  toolCatalogDigest,
 }) {
   if (!isObject(inventory) || !Array.isArray(inventory.packages)) {
     throw new PlanRefusal("plan-inventory-invalid", "the workspace inventory is missing");
@@ -327,6 +331,44 @@ export function buildNativePlan({
     }
   }
   excluded.sort((left, right) => utf8Compare(left.package_id, right.package_id));
+  // Selection mode derives from the checked-in policy's fallback rule:
+  // targeted unless an explicit release-full rule with a recorded rule
+  // digest exists. Caller input is never trusted.
+  const derivedSelectionMode =
+    isObject(policy.fallback_rule) && policy.fallback_rule.mode === "release-full"
+      ? "release-full"
+      : "targeted";
+  const fallbackRuleRef =
+    isObject(policy.fallback_rule) && typeof policy.fallback_rule.rule_digest === "string"
+      ? policy.fallback_rule.rule_digest
+      : undefined;
+  // Build-prerequisite ordering: commands of a selected package depend
+  // on the commands of every selected package it consumes.
+  const forwardPrerequisites = new Map();
+  for (const edge of inventory.edges) {
+    if (!forwardPrerequisites.has(edge.from)) forwardPrerequisites.set(edge.from, []);
+    forwardPrerequisites.get(edge.from).push(edge.to);
+  }
+  const selectedIds = new Set(sortedAffected.map((entry) => entry.package_id));
+  const dependsOnByPackage = new Map();
+  for (const packageId of selectedIds) {
+    const chain = [];
+    for (const prerequisite of forwardPrerequisites.get(packageId) ?? []) {
+      if (!selectedIds.has(prerequisite)) continue;
+      chain.push(prerequisite);
+      for (const nested of dependsOnByPackage.get(prerequisite) ?? []) {
+        chain.push(nested);
+      }
+    }
+    if (chain.length > 0) dependsOnByPackage.set(packageId, [...new Set(chain)]);
+  }
+  for (const [packageId, dependencies] of dependsOnByPackage) {
+    for (const command of commands) {
+      if (command.package_id === packageId) {
+        command.depends_on = [...dependencies].sort(utf8Compare);
+      }
+    }
+  }
   const plan = {
     schema_version: "lekalo/native-gate-plan/v0.3.2",
     kind: "native-plan",
@@ -339,12 +381,12 @@ export function buildNativePlan({
     authority_ref: policy.authority_ref,
     policy_ref: policy.policy_ref,
     classification_ref: policy.classification_ref,
-    execution_policy_ref: policy.identity,
+    execution_policy_ref: { ...policy.identity, digest: policy.policy_digest },
     profile_ref: { id: profileRef, digest: profileDigest },
     input_manifest_digest: inputManifestDigest,
     scan_ref: scanRef,
     observed_ref: observedRef,
-    tool_catalog_digest: policy.identity ? `sha256:${"0".repeat(64)}` : `sha256:${"0".repeat(64)}`,
+    tool_catalog_digest: toolCatalogDigest,
     capability_snapshot_digest: capabilitySnapshotDigest,
     workspace: {
       manager: inventory.manager,
@@ -366,7 +408,8 @@ export function buildNativePlan({
     changes: changes ?? { files: [], symbols: [] },
     affected: sortedAffected,
     excluded,
-    selection_mode: selectionMode,
+    selection_mode: derivedSelectionMode,
+    ...(fallbackRuleRef !== undefined ? { fallback_rule_ref: fallbackRuleRef } : {}),
     commands,
     env: policy.env_recipe,
     tools: (toolCatalog ?? []).map((tool) => ({
@@ -379,7 +422,7 @@ export function buildNativePlan({
       provenance: tool.provenance ?? "fixture-catalog",
     })),
     required_capabilities: ["plan.native-gates"],
-    capabilities: [],
+    capabilities: [{ id: "plan.native-gates", definition_version: PLANNER_VERSION, state: "full", source: "declared" }],
     run_eligibility: {
       state: commands.length > 0 ? "plan-only" : "blocked",
       reason_codes: commands.length > 0 ? ["fixture-runner-not-in-production"] : ["no-commands"],

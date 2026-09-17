@@ -245,13 +245,57 @@ export function buildWorkspaceInventory({ readView, permittedRoot, directories }
       compatibilityPath: "supported",
       root: ".",
       workspaceManifestDigest: null,
+      lockDigestState: "absent",
       packages: [],
       edges: [],
-      uncertainties: [{ kind: "no-workspace-config", detail: "no in-scope pnpm-workspace.yaml; standalone layout assumed" }],
+      uncertainties: [{ kind: "no-workspace-config", detail: "no root package manifest in scope" }],
       completeness: "unknown",
     };
   }
   if (!readView.canRead(WORKSPACE_FILE)) {
+    // Standalone npm layout: root-only membership (plan §4.2).
+    let manifest;
+    try {
+      manifest = JSON.parse(readView.readFile(PACKAGE_MANIFEST, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
+    } catch {
+      return {
+        manager: "npm-standalone",
+        compatibilityPath: "supported",
+        root: ".",
+        workspaceManifestDigest: null,
+        lockDigestState: "absent",
+        packages: [],
+        edges: [],
+        uncertainties: [{ kind: "unknown", detail: "root package manifest unparsable" }],
+        completeness: "unknown",
+      };
+    }
+    const rootName = typeof manifest.name === "string" && manifest.name.length > 0 && manifest.name.length <= 192
+      ? manifest.name
+      : null;
+    return {
+      manager: "npm-standalone",
+      compatibilityPath: "supported",
+      root: ".",
+      workspaceManifestDigest: null,
+      lockDigestState: lockState(readView),
+      lockDigest: lockDigest(readView),
+      packages: [{
+        id: ".=" + (rootName ?? "(unnamed)"),
+        name: rootName,
+        root: ".",
+        manifestPath: PACKAGE_MANIFEST,
+        manifestDigest: sha256Text(JSON.stringify(sortDeep(manifest))),
+        dependencies: manifest.dependencies ?? {},
+        devDependencies: manifest.devDependencies ?? {},
+        optionalDependencies: manifest.optionalDependencies ?? {},
+        peerDependencies: manifest.peerDependencies ?? {},
+      }],
+      edges: [],
+      uncertainties: [],
+      completeness: "complete",
+    };
+  }  if (!readView.canRead(WORKSPACE_FILE)) {
     return {
       manager: "npm-standalone",
       compatibilityPath: "supported",
@@ -265,13 +309,14 @@ export function buildWorkspaceInventory({ readView, permittedRoot, directories }
   }
   let workspaceText;
   try {
-    workspaceText = readView.readFile(WORKSPACE_FILE, { files: 1, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8");
+    workspaceText = readView.readFile(WORKSPACE_FILE, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8");
   } catch (error) {
     throw new WorkspaceRefusal("workspace-read-denied", "the workspace document exists but cannot be read in scope");
   }
   const parsed = parseWorkspaceYaml(workspaceText);
   const patterns = parsed.packages ?? [];
   const inclusions = [];
+  const exclusions = [];
   const uncertainties = [];
   for (const pattern of patterns) {
     const classification = classifyWorkspacePattern(pattern);
@@ -280,7 +325,11 @@ export function buildWorkspaceInventory({ readView, permittedRoot, directories }
       continue;
     }
     if (classification.negated) {
-      uncertainties.push({ kind: "pattern-partial", detail: `exclusion patterns are not part of the M3 membership subset: ${pattern}` });
+      // A negated pattern is a real exclusion applied to the member
+      // list; the application is recorded as an uncertainty so the
+      // plan shows that membership was narrowed.
+      exclusions.push(classification.body);
+      uncertainties.push({ kind: "pattern-partial", detail: `exclusion applied: ${pattern}` });
       continue;
     }
     inclusions.push(classification.body);
@@ -299,8 +348,22 @@ export function buildWorkspaceInventory({ readView, permittedRoot, directories }
     }
   }
   // The root package is included only when a valid root manifest exists.
-  const rootIncluded = readView.canRead(PACKAGE_MANIFEST) && members.includes(".");
-  void rootIncluded;
+  // Apply negated exclusions to the collected members.
+  for (let index = members.length - 1; index >= 0; index -= 1) {
+    for (const body of exclusions) {
+      if (patternMatchesDirectory(body, members[index])) {
+        members.splice(index, 1);
+        break;
+      }
+    }
+  }
+
+  // Root included when a valid root manifest exists (plan §4.2): the
+  // root is an explicit special case, never a wildcard grant.
+  const rootIncluded = readView.canRead(PACKAGE_MANIFEST);
+  if (rootIncluded && !members.includes(".")) {
+    members.unshift(".");
+  }
   if (members.length > MAX_PACKAGES) {
     throw new WorkspaceRefusal("workspace-package-limit", "the workspace exceeds the package bound");
   }
@@ -311,7 +374,7 @@ export function buildWorkspaceInventory({ readView, permittedRoot, directories }
     const manifestPath = root === "." ? PACKAGE_MANIFEST : `${root}/${PACKAGE_MANIFEST}`;
     let manifest;
     try {
-      manifest = JSON.parse(readView.readFile(manifestPath, { files: 1, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
+      manifest = JSON.parse(readView.readFile(manifestPath, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
     } catch {
       uncertainties.push({ kind: "unknown", detail: `package manifest unreadable: ${manifestPath}` });
       continue;
@@ -380,6 +443,68 @@ export function buildWorkspaceInventory({ readView, permittedRoot, directories }
       }
     }
   }
+  // workspace: version-rule compatibility (declared subset): a plain
+  // semver specifier must equal the dependency's exact version; a
+  // mismatch is an uncertainty, never a silently-linked edge.
+  for (const consumer of packages) {
+    for (const scopeKey of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
+      for (const [dependencyName, specifier] of Object.entries(consumer[scopeKey])) {
+        if (typeof specifier !== "string" || !specifier.startsWith("workspace:")) continue;
+        const wanted = specifier.slice("workspace:".length);
+        if (wanted === "*" || wanted === "^" || wanted === "~") continue;
+        const target = packageByName.get(dependencyName);
+        if (!target) continue;
+        let targetVersion = null;
+        try {
+          targetVersion = JSON.parse(readView.readFile(target.manifestPath, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8")).version ?? null;
+        } catch {
+          continue;
+        }
+        if (typeof targetVersion !== "string") continue;
+        if (wanted !== targetVersion) {
+          uncertainties.push({
+            kind: "version-mismatch",
+            detail: `workspace specifier ${specifier} does not match ${targetVersion}`.slice(0, 256),
+            package_id: consumer.id,
+          });
+        }
+      }
+    }
+  }
+  // TS project-reference edges: read each package tsconfig.json when
+  // in scope and link referenced relative configs back to members.
+  for (const consumer of packages) {
+    const tsconfigPath = consumer.root === "." ? "tsconfig.json" : `${consumer.root}/tsconfig.json`;
+    if (!readView.canRead(tsconfigPath)) continue;
+    let config;
+    try {
+      config = JSON.parse(readView.readFile(tsconfigPath, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(config.references)) continue;
+    for (const reference of config.references) {
+      if (typeof reference !== "object" || reference === null || typeof reference.path !== "string") continue;
+      const base = consumer.root === "." ? "" : `${consumer.root}/`;
+      const referencePath = reference.path;
+      if (referencePath.includes("..") || referencePath.includes("\\") || referencePath.startsWith("/")) continue;
+      const target = (base + referencePath).replace(/\/+$/u, "");
+      if (target.length === 0) continue;
+      const targetPkg = packages.find((candidate) =>
+        candidate.root === target || target.startsWith(`${candidate.root}/`));
+      if (!targetPkg || targetPkg.id === consumer.id) continue;
+      if (edges.length >= MAX_EDGES) {
+        throw new WorkspaceRefusal("workspace-edge-limit", "the workspace exceeds the edge bound");
+      }
+      edges.push({
+        from: consumer.id,
+        to: targetPkg.id,
+        kind: "ts-reference",
+        specifier: referencePath.slice(0, 128),
+        provenance: "manifest-evidence",
+      });
+    }
+  }
   edges.sort((left, right) =>
     utf8Compare(left.from, right.from) || utf8Compare(left.to, right.to) || utf8Compare(left.kind, right.kind));
   return {
@@ -387,12 +512,33 @@ export function buildWorkspaceInventory({ readView, permittedRoot, directories }
     compatibilityPath: "supported",
     root: ".",
     workspaceManifestDigest: sha256Text(workspaceText),
-    lockDigestState: "absent",
+    lockDigestState: lockState(readView),
+    lockDigest: lockDigest(readView),
     packages,
     edges,
     uncertainties: uncertainties.slice(0, MAX_UNCERTAINTIES),
     completeness: uncertainties.length === 0 ? "complete" : "incomplete",
   };
+}
+
+/**
+ * Lockfile custody: `pnpm-lock.yaml` is evidence only (never a
+ * command); its presence and digest are recorded when readable.
+ */
+const LOCKFILE = "pnpm-lock.yaml";
+
+function lockState(readView) {
+  if (!readView.canRead(LOCKFILE)) return "absent";
+  return "present";
+}
+
+function lockDigest(readView) {
+  if (!readView.canRead(LOCKFILE)) return undefined;
+  try {
+    return sha256Text(readView.readFile(LOCKFILE, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
+  } catch {
+    return undefined;
+  }
 }
 
 /** Canonical (key-sorted) JSON for manifest digests. */

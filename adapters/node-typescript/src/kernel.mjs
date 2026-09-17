@@ -135,6 +135,7 @@ const CAPABILITY_IDS = Object.freeze([
   "generate.zod",
   "scan.symbols",
   "verify.scenarios",
+  "plan.native-gates",
 ]);
 
 /** The exact entry digest: sha256 over the launched script's own bytes. */
@@ -1977,6 +1978,14 @@ function projectOutcome(request, outcome) {
 function projectResult(data) {
   if (data === undefined || data === null || typeof data !== "object") {
     return undefined;
+  }
+  // Issue #48: plan-native results carry the closed native_plan summary.
+  if (data.native_plan !== undefined) {
+    const np = data.native_plan;
+    if (typeof np !== "object" || np === null || np.kind !== "native-plan" || !isSha256Digest(np.plan_digest)) {
+      return undefined;
+    }
+    return { native_plan: { digest: np.plan_digest, kind: np.kind } };
   }
   if (!Array.isArray(data.entries)) {
     return undefined;
