@@ -215718,7 +215718,9 @@ function parseConfirmedScript(scriptText, confirmedArgv) {
     if (!isSafeLiteral(element)) return { ok: false, reason: "script-unsafe-element" };
     if (FORBIDDEN_ARG_EXACT.has(element)) return { ok: false, reason: "script-node-flag" };
     for (const prefix of FORBIDDEN_ARG_PREFIXES) {
-      if (element === prefix) return { ok: false, reason: "script-node-flag" };
+      if (element === prefix || element.startsWith(prefix)) {
+        return { ok: false, reason: "script-node-flag" };
+      }
     }
     for (const suffix of FORBIDDEN_ARG_SUFFIXES) {
       if (element.toLowerCase().endsWith(suffix)) return { ok: false, reason: "script-shell-executable" };
