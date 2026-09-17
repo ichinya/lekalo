@@ -247,6 +247,12 @@ export function listInventoryDirectories(readView, inclusionPatterns, out = {}) 
   const candidates = new Set(treeRootPaths);
   const MAX_CANDIDATES = 4096;
   const MAX_DEPTH = 8;
+  // A `**` segment recurses over the vocabulary at every depth, so the
+  // call budget — not the depth bound — is what actually bounds the
+  // work: 8^depth nodes would otherwise multiply into minutes of
+  // lstat-backed canRead probes.
+  const MAX_EXPANSIONS = 65536;
+  let expansions = 0;
   let truncated = false;
   const segmentAllows = (segment, name) => {
     if (!segment.includes("*") && !segment.includes("?")) return segment === name;
@@ -259,7 +265,10 @@ export function listInventoryDirectories(readView, inclusionPatterns, out = {}) 
     return new RegExp("^(?:" + regexText + ")$").test(name);
   };
   const expand = (prefix, segments, depth) => {
-    if (candidates.size >= MAX_CANDIDATES || depth > MAX_DEPTH) {
+    expansions += 1;
+    if (expansions > MAX_EXPANSIONS
+      || candidates.size >= MAX_CANDIDATES
+      || depth > MAX_DEPTH) {
       truncated = true;
       return;
     }

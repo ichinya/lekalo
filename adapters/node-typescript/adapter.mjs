@@ -216162,6 +216162,8 @@ function listInventoryDirectories(readView, inclusionPatterns, out = {}) {
   const candidates = new Set(treeRootPaths);
   const MAX_CANDIDATES = 4096;
   const MAX_DEPTH = 8;
+  const MAX_EXPANSIONS = 65536;
+  let expansions = 0;
   let truncated = false;
   const segmentAllows = (segment, name) => {
     if (!segment.includes("*") && !segment.includes("?")) return segment === name;
@@ -216169,7 +216171,8 @@ function listInventoryDirectories(readView, inclusionPatterns, out = {}) {
     return new RegExp("^(?:" + regexText + ")$").test(name);
   };
   const expand = (prefix, segments, depth) => {
-    if (candidates.size >= MAX_CANDIDATES || depth > MAX_DEPTH) {
+    expansions += 1;
+    if (expansions > MAX_EXPANSIONS || candidates.size >= MAX_CANDIDATES || depth > MAX_DEPTH) {
       truncated = true;
       return;
     }
