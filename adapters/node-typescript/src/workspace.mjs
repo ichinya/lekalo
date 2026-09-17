@@ -87,8 +87,11 @@ export function parseWorkspaceYaml(text) {
     if (/^\s*---(\s|$)/.test(line) || /^(\s*)\.\.\.(\s|$)/.test(line)) {
       throw new WorkspaceRefusal("workspace-yaml-unsupported", "document markers are outside the accepted subset");
     }
+    // Tags/anchors/aliases refuse only outside quoted scalars: a quoted
+    // '!x'/'&x'/'*x' is a pattern value the classifier handles (negation
+    // or a charset-unsupported uncertainty), never YAML semantics.
     const unquotedLine = line.replace(/'[^']*'|"[^"]*"/g, "");
-    if (/!(?!=)/.test(unquotedLine) || /&(?!&)/.test(line) || /(^|\s)\*[A-Za-z0-9_]/.test(line)) {
+    if (/!(?!=)/.test(unquotedLine) || /&(?!&)/.test(unquotedLine) || /(^|\s)\*[A-Za-z0-9_]/.test(unquotedLine)) {
       throw new WorkspaceRefusal("workspace-yaml-unsupported", "tags/anchors/aliases are outside the accepted subset");
     }
     if (/[|>]/.test(line.replace(/^[^:]*:/, "")) && /\s[|>][-++]?\s*$/.test(line)) {
@@ -234,7 +237,7 @@ export function candidateDirectoriesFromInventory(directories) {
  * the validated absolute project root. Every path stays repository-
  * relative; nothing outside the declared inventory is read.
  */
-export function buildWorkspaceInventory({ readView, directories }) {
+export function buildWorkspaceInventory({ readView, directories, discoveryTruncated = false }) {
   if (!readView || !readView.canRead(PACKAGE_MANIFEST)) {
     return {
       manager: "npm-standalone",
@@ -319,6 +322,12 @@ export function buildWorkspaceInventory({ readView, directories }) {
     }
     inclusions.push(classification.body);
   }
+  if (discoveryTruncated) {
+    uncertainties.push({
+      kind: "pattern-partial",
+      detail: "bounded directory discovery truncated at candidate/depth limits",
+    });
+  }
   // Membership: every in-scope directory matched by an inclusion pattern.
   const members = [];
   const seenRoots = new Set();
@@ -331,6 +340,15 @@ export function buildWorkspaceInventory({ readView, directories }) {
         break;
       }
     }
+  }
+  if (inclusions.length > 0 && members.length === 0) {
+    // Declared inclusion patterns matched nothing in scope: the plan
+    // must not present a root-only inventory as complete — the member
+    // dirs may exist but lie outside the granted read roots.
+    uncertainties.push({
+      kind: "pattern-partial",
+      detail: "declared workspace patterns matched no in-scope directories",
+    });
   }
   // The root package is included only when a valid root manifest exists.
   // Apply negated exclusions to the collected members.

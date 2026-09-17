@@ -86,6 +86,83 @@ test("unsupported `!` bodies refuse through classification, never match", () => 
   assert.equal(classifyWorkspacePattern("!").supported, false);
 });
 
+test("workspace YAML: quoted `&`/`*` are pattern values; bare anchors/aliases refuse", () => {
+  const parsed = parseWorkspaceYaml('packages:\n  - "&x"\n  - "*x"\n');
+  assert.deepEqual(parsed.packages, ["&x", "*x"]);
+  assert.throws(
+    () => parseWorkspaceYaml("packages:\n  - &x\n"),
+    WorkspaceRefusal,
+    "unquoted `&` is a YAML anchor, not a pattern",
+  );
+  assert.throws(
+    () => parseWorkspaceYaml("packages:\n  - *x\n"),
+    WorkspaceRefusal,
+    "unquoted `*` is a YAML alias, not a pattern",
+  );
+});
+
+test("a quoted `&x` pattern classifies unsupported and degrades the inventory", () => {
+  const files = {
+    "package.json": JSON.stringify({ name: "monorepo", private: true }),
+    "pnpm-workspace.yaml": 'packages:\n  - "&x"\n  - "packages/*"\n',
+    "packages/api/package.json": JSON.stringify({ name: "api" }),
+  };
+  const readView = {
+    canRead: (path) => Object.prototype.hasOwnProperty.call(files, path),
+    readFile: (path) => Buffer.from(files[path], "utf8"),
+  };
+  const inventory = buildWorkspaceInventory({
+    readView,
+    directories: ["packages/api"],
+  });
+  assert.deepEqual(
+    inventory.packages.map((record) => record.root).sort(),
+    [".", "packages/api"],
+  );
+  assert.equal(inventory.completeness, "incomplete");
+  assert.ok(
+    inventory.uncertainties.some(
+      (entry) => entry.kind === "pattern-partial"
+        && entry.detail.includes("&x"),
+    ),
+    "the quoted anchor-shaped value is an unsupported pattern, not YAML",
+  );
+});
+
+test("a quoted `*x` value is a legal one-level glob", () => {
+  const classification = classifyWorkspacePattern("*x");
+  assert.equal(classification.supported, true);
+  assert.equal(patternMatchesDirectory("*x", "ax"), true);
+  assert.equal(patternMatchesDirectory("*x", "bx"), true);
+  assert.equal(patternMatchesDirectory("*x", "ab"), false);
+  assert.equal(patternMatchesDirectory("*x", "a/bx"), false, "one level only");
+});
+
+test("truncated bounded discovery degrades completeness", () => {
+  const files = {
+    "package.json": JSON.stringify({ name: "monorepo", private: true }),
+    "pnpm-workspace.yaml": 'packages:\n  - "packages/*"\n',
+    "packages/api/package.json": JSON.stringify({ name: "api" }),
+  };
+  const readView = {
+    canRead: (path) => Object.prototype.hasOwnProperty.call(files, path),
+    readFile: (path) => Buffer.from(files[path], "utf8"),
+  };
+  const inventory = buildWorkspaceInventory({
+    readView,
+    directories: ["packages/api"],
+    discoveryTruncated: true,
+  });
+  assert.equal(inventory.completeness, "incomplete");
+  assert.ok(
+    inventory.uncertainties.some(
+      (entry) => entry.kind === "pattern-partial"
+        && entry.detail.includes("truncated"),
+    ),
+    "a cut-off candidate expansion records pattern-partial",
+  );
+});
+
 test("workspace pattern classification accepts the closed subset only", () => {
   assert.equal(classifyWorkspacePattern("packages/*").supported, true);
   assert.equal(classifyWorkspacePattern("packages/**").supported, true);

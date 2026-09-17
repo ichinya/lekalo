@@ -290,6 +290,9 @@ export function buildNativePlan({
       kind: "unknown",
       detail: `changed symbol without package attribution: ${symbol}`.slice(0, 256),
     });
+    // A pushed uncertainty must degrade the inventory completeness —
+    // never leave `complete` beside non-empty uncertainties.
+    inventory.completeness = "incomplete";
   }
   const confirmationByPackage = new Map();
   for (const confirmation of policy.confirmations) {

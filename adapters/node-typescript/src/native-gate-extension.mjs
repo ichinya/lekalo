@@ -139,10 +139,12 @@ export function planNativeOperation(context, policyDocument) {
     // Derive candidate directories from the declared workspace patterns
     // (in-scope pnpm-workspace.yaml) over the read view.
     const inclusionPatterns = readDeclaredPatterns(readView);
-    const directories = listInventoryDirectories(readView, inclusionPatterns);
+    const discovery = {};
+    const directories = listInventoryDirectories(readView, inclusionPatterns, discovery);
     inventory = buildWorkspaceInventory({
       readView,
       directories,
+      discoveryTruncated: discovery.truncated === true,
     });
   } catch (error) {
     const reason = error instanceof WorkspaceRefusal ? error.code : "workspace-refused";
@@ -207,7 +209,7 @@ export function planNativeOperation(context, policyDocument) {
  * pnpm-workspace.yaml via the read view. Returns [] when absent or
  * unreadable (standalone layouts).
  */
-function readDeclaredPatterns(readView) {
+export function readDeclaredPatterns(readView) {
   const WORKSPACE_FILE = "pnpm-workspace.yaml";
   const MAX_DOC = 1024 * 1024;
   if (!readView.canRead(WORKSPACE_FILE)) return [];
@@ -225,13 +227,27 @@ const CHILD_VOCABULARY = Object.freeze([
   "packages", "apps", "libs", "tools", "services", "modules", "lib", "src",
 ]);
 
-export function listInventoryDirectories(readView, inclusionPatterns) {
+/**
+ * Candidate member directories for workspace inventory. The read view
+ * cannot list directories, so the enumeration set is the union of:
+ *   - the profile's declared tree roots (the granted member dirs), and
+ *   - bounded expansion of the declared workspace patterns: literal
+ *     segments descend directly; `*`/`?`/`**` segments probe the bounded
+ *     CHILD_VOCABULARY and are confirmed by a readable package.json.
+ * `out.truncated` is set true when the candidate or depth bound cut the
+ * expansion short, so the caller can record partial discovery.
+ */
+export function listInventoryDirectories(readView, inclusionPatterns, out = {}) {
+  const treeRootPaths = (readView.roots ?? [])
+    .filter((root) => root.kind === "tree" && typeof root.path === "string" && root.path !== "")
+    .map((root) => root.path);
   const patterns = inclusionPatterns.length > 0
     ? inclusionPatterns
-    : readView.roots.filter((root) => root.kind === "tree").map((root) => root.path + "/**");
-  const candidates = new Set();
+    : treeRootPaths.map((path) => path + "/**");
+  const candidates = new Set(treeRootPaths);
   const MAX_CANDIDATES = 4096;
   const MAX_DEPTH = 8;
+  let truncated = false;
   const segmentAllows = (segment, name) => {
     if (!segment.includes("*") && !segment.includes("?")) return segment === name;
     const regexText = segment
@@ -243,7 +259,10 @@ export function listInventoryDirectories(readView, inclusionPatterns) {
     return new RegExp("^(?:" + regexText + ")$").test(name);
   };
   const expand = (prefix, segments, depth) => {
-    if (candidates.size >= MAX_CANDIDATES || depth > MAX_DEPTH) return;
+    if (candidates.size >= MAX_CANDIDATES || depth > MAX_DEPTH) {
+      truncated = true;
+      return;
+    }
     if (segments.length === 0) {
       if (prefix !== "" && readView.canRead(prefix + "/package.json")) {
         candidates.add(prefix);
@@ -275,6 +294,7 @@ export function listInventoryDirectories(readView, inclusionPatterns) {
     const body = pattern.startsWith("!") ? pattern.slice(1) : pattern;
     expand("", body.split("/"), 0);
   }
+  out.truncated = truncated;
   return [...candidates].sort();
 }
 function verifyConfirmations(inventory, policyDocument, readView) {
@@ -352,7 +372,7 @@ export function buildToolCatalog(policyDocument) {
  * The real tool catalog digest: sha256 over the canonical JSON of the
  * catalog entries (id/version/digests/platform), not a placeholder.
  */
-function computeToolCatalogDigest(catalog) {
+export function computeToolCatalogDigest(catalog) {
   const canonical = (value) => {
     if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
     if (value !== null && typeof value === "object") {

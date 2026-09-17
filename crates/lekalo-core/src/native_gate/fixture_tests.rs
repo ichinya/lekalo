@@ -757,12 +757,21 @@ fn audit_writes(
             }
         }
     }
-    // Deletions: original files absent from the staged tree.
+    // Deletions: original files absent from the staged tree. The same
+    // write-policy scope check as created/modified applies — a deletion
+    // outside the allowed roots is unexpected and maps to security.
     for path in original.keys() {
         if !staged_set.contains(path)
             && original.get(path).map(|d: &&String| d.as_str()) != Some("dir")
         {
-            deleted.push((*path).clone());
+            let in_scope = allowed_roots.iter().any(|root| {
+                path.as_str() == root || path.as_str().starts_with(&format!("{root}/"))
+            }) || path.ends_with("gates/gate-markers.txt");
+            if in_scope {
+                deleted.push((*path).clone());
+            } else {
+                unexpected.push((*path).clone());
+            }
         }
     }
     created.sort_by(|left, right| left.path.cmp(&right.path));
@@ -919,6 +928,71 @@ mod fixture_execution_tests {
             matches!(outcome, Err(NativeGateFailure::PlanInvalid { .. })),
             "a tampered plan is refused before any launch"
         );
+    }
+
+    #[test]
+    fn an_out_of_scope_deletion_is_unexpected_not_deleted() {
+        // Stage-only policy (the golden plan): no write scopes, so any
+        // deletion outside the gate-marker exception is unexpected —
+        // it must never land in `deleted` and must force a security
+        // outcome downstream (unexpected -> security at the outcome
+        // decision in run_fixture_plan).
+        let plan: NativePlan = serde_json::from_slice(&golden_plan_bytes()).expect("plan");
+        let original = vec![
+            ("package.json".to_owned(), "a".repeat(64)),
+            ("gates/gate-markers.txt".to_owned(), "b".repeat(64)),
+            ("packages/api/index.ts".to_owned(), "c".repeat(64)),
+        ];
+        // The staged copy lost package.json (out of scope) and the
+        // marker file (the append-target exception, so in-scope).
+        let staged = vec![("packages/api/index.ts".to_owned(), "c".repeat(64))];
+        let (mut created, mut modified, mut deleted, mut unexpected) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        audit_writes(
+            &plan,
+            &staged,
+            &original,
+            &mut created,
+            &mut modified,
+            &mut deleted,
+            &mut unexpected,
+        );
+        assert_eq!(deleted, vec!["gates/gate-markers.txt".to_owned()]);
+        assert_eq!(unexpected, vec!["package.json".to_owned()]);
+        assert!(created.is_empty() && modified.is_empty());
+    }
+
+    #[test]
+    fn a_scoped_deletion_is_audited_as_deleted() {
+        // With a bounded write scope, deleting inside the scope is a
+        // legitimate audited mutation, not a security violation.
+        let mut plan: NativePlan = serde_json::from_slice(&golden_plan_bytes()).expect("plan");
+        plan.write_policy = crate::native_gate::types::NativeWritePolicy {
+            mode: "scoped".to_owned(),
+            scopes: Some(vec![crate::native_gate::types::NativeWriteScope {
+                root: "gates".to_owned(),
+                max_files: None,
+                max_bytes: None,
+            }]),
+        };
+        let original = vec![
+            ("gates/log.txt".to_owned(), "a".repeat(64)),
+            ("package.json".to_owned(), "b".repeat(64)),
+        ];
+        let staged = vec![];
+        let (mut created, mut modified, mut deleted, mut unexpected) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        audit_writes(
+            &plan,
+            &staged,
+            &original,
+            &mut created,
+            &mut modified,
+            &mut deleted,
+            &mut unexpected,
+        );
+        assert_eq!(deleted, vec!["gates/log.txt".to_owned()]);
+        assert_eq!(unexpected, vec!["package.json".to_owned()]);
     }
 
     #[test]

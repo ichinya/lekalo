@@ -15,6 +15,7 @@ const files = [
   "native-workspace.test.mjs",
   "native-plan.test.mjs",
   "native-contract.test.mjs",
+  "native-extension.test.mjs",
 ];
 
 let failed = false;

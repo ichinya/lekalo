@@ -38,7 +38,9 @@ seam is never reused, and a native plan can never authorize a publish.
   and duplicate keys are structured refusals, never approximations.
   Dot directories never match; a leading `!` marks a negated
   exclusion that narrows membership and is recorded as an
-  uncertainty.
+  uncertainty. The negated value must be a quoted scalar
+  (`- "!packages/x"`); an unquoted `!x` is a YAML tag and
+  refuses like any other tag.
 - Package manifests are strict-JSON objects from the read view; every
   package id is `<root>=<name>`. Duplicate names and oversized
   inventories are refusals.
@@ -93,7 +95,6 @@ by a gate exit.
 | --- | --- | --- |
 | Windows (verified) | bounded direct spawn: deadline+kill, both pipes drained under caps, process-group kill on unix; capability evidence reports `unavailable` honestly | Network denial and descendant containment are NOT enforced — confinement is #89 |
 | Linux/macOS | not exercised on this runner | capability reported `unavailable`; confinement stays with #89/the backend suites |
-| macOS | sandbox-exec profile route | Unproven backend → blocked |
 
 Network denial is NOT enforced by this runner; the receipt reports
 `network_denial: unavailable` honestly. True confinement is #89.

@@ -280,6 +280,9 @@ for (const [id, code] of expectedExpressionRules) {
   const entry = currentEntries.get(id);
   if (!entry) fail("expression-rule-not-preserved", id);
   if (entry.code !== code) fail("expression-code-drift", { id, code: entry.code });
+  if (entry.lifecycle !== "active") fail("expression-rule-lifecycle", id);
+  if (entry.default_severity !== "error") fail("expression-rule-severity", id);
+  if (entry.category !== "semantic") fail("expression-rule-category", id);
 }
 // ---------------------------------------------------------------------------
 // 4. The compiled Rust identity constants, hard bounds, and built-in

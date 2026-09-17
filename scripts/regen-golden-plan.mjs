@@ -58,27 +58,21 @@ const roots = [
 const readView = kernelNs.createReadView(project, roots, profile);
 readView.permittedProjectRoot = project;
 
-// The real pipeline: inventory discovery + build via the extension's
-// own helpers, and the plan from buildNativePlan with the extension's
-// real tool catalog (derived from the policy confirmations' argv) and
-// a computed catalog digest.
-const inclusionPatterns = launchPolicy
-  ? (launchPolicy.packages ?? [])
-  : [];
-const dirs = nativeGate.listInventoryDirectories(readView, inclusionPatterns);
+// The real pipeline: the same declared-pattern discovery the extension
+// runs (readDeclaredPatterns → listInventoryDirectories →
+// buildWorkspaceInventory), and the plan from buildNativePlan with the
+// extension's real tool catalog and the production canonical catalog
+// digest — identical inputs to planNativeOperation, not approximations.
+const inclusionPatterns = nativeGate.readDeclaredPatterns(readView);
+const discovery = {};
+const dirs = nativeGate.listInventoryDirectories(readView, inclusionPatterns, discovery);
 const inv = workspace.buildWorkspaceInventory({
   readView,
   directories: dirs,
+  discoveryTruncated: discovery.truncated === true,
 });
 const toolCatalog = nativeGate.buildToolCatalog(launchPolicy);
-const toolCatalogCanonical = JSON.stringify(
-  JSON.parse(JSON.stringify(toolCatalog)),
-  Object.keys(toolCatalog[0] ?? {}).sort(),
-);
-const { createHash } = await import("node:crypto");
-const toolCatalogDigest =
-  "sha256:" +
-  createHash("sha256").update(JSON.stringify(toolCatalog), "utf8").digest("hex");
+const toolCatalogDigest = nativeGate.computeToolCatalogDigest(toolCatalog);
 
 const plan = nativePlan.buildNativePlan({
   inventory: inv,

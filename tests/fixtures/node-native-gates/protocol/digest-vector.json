@@ -2,7 +2,7 @@
   "plan": {
     "schema_version": "lekalo/native-gate-plan/v0.3.2",
     "kind": "native-plan",
-    "plan_digest": "sha256:728233f14c04a17774d05200047a16a5be0b40055d763d82617bdf7a36e626be",
+    "plan_digest": "sha256:9737ce0d46a7d432fa0c8b28f41db7a2549070fd214953fd9be2c40b6da76bc7",
     "adapter": {
       "id": "lekalo-target-node-typescript",
       "version": "0.3.2",
@@ -51,7 +51,7 @@
       "version": "0.3.2",
       "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
     },
-    "tool_catalog_digest": "sha256:9981b1cf86b50f5045ba01686eceeae3689457e8ae18bc05ef444227b6e27516",
+    "tool_catalog_digest": "sha256:e10e95241446ec79a52414544ed749e34ebbdda4b200eddf7298e23d51796e8f",
     "capability_snapshot_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
     "workspace": {
       "manager": "pnpm-workspace",
@@ -312,5 +312,5 @@
       "mode": "stage-only"
     }
   },
-  "digest": "sha256:728233f14c04a17774d05200047a16a5be0b40055d763d82617bdf7a36e626be"
+  "digest": "sha256:9737ce0d46a7d432fa0c8b28f41db7a2549070fd214953fd9be2c40b6da76bc7"
 }

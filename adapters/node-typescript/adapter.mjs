@@ -215171,7 +215171,7 @@ function parseWorkspaceYaml(text) {
       throw new WorkspaceRefusal("workspace-yaml-unsupported", "document markers are outside the accepted subset");
     }
     const unquotedLine = line.replace(/'[^']*'|"[^"]*"/g, "");
-    if (/!(?!=)/.test(unquotedLine) || /&(?!&)/.test(line) || /(^|\s)\*[A-Za-z0-9_]/.test(line)) {
+    if (/!(?!=)/.test(unquotedLine) || /&(?!&)/.test(unquotedLine) || /(^|\s)\*[A-Za-z0-9_]/.test(unquotedLine)) {
       throw new WorkspaceRefusal("workspace-yaml-unsupported", "tags/anchors/aliases are outside the accepted subset");
     }
     if (/[|>]/.test(line.replace(/^[^:]*:/, "")) && /\s[|>][-++]?\s*$/.test(line)) {
@@ -215281,7 +215281,7 @@ function patternMatchesDirectory(body, directory) {
 function candidateDirectoriesFromInventory(directories) {
   return [...directories].sort(utf8Compare2);
 }
-function buildWorkspaceInventory({ readView, directories }) {
+function buildWorkspaceInventory({ readView, directories, discoveryTruncated = false }) {
   if (!readView || !readView.canRead(PACKAGE_MANIFEST)) {
     return {
       manager: "npm-standalone",
@@ -215360,6 +215360,12 @@ function buildWorkspaceInventory({ readView, directories }) {
     }
     inclusions.push(classification.body);
   }
+  if (discoveryTruncated) {
+    uncertainties.push({
+      kind: "pattern-partial",
+      detail: "bounded directory discovery truncated at candidate/depth limits"
+    });
+  }
   const members = [];
   const seenRoots = /* @__PURE__ */ new Set();
   for (const directory of candidateDirectoriesFromInventory(directories ?? [])) {
@@ -215371,6 +215377,12 @@ function buildWorkspaceInventory({ readView, directories }) {
         break;
       }
     }
+  }
+  if (inclusions.length > 0 && members.length === 0) {
+    uncertainties.push({
+      kind: "pattern-partial",
+      detail: "declared workspace patterns matched no in-scope directories"
+    });
   }
   for (let index = members.length - 1; index >= 0; index -= 1) {
     for (const body of exclusions) {
@@ -215561,9 +215573,11 @@ __export(native_gate_extension_exports, {
   PLAN_NATIVE_OPERATION: () => PLAN_NATIVE_OPERATION,
   adapterIdentity: () => adapterIdentity,
   buildToolCatalog: () => buildToolCatalog,
+  computeToolCatalogDigest: () => computeToolCatalogDigest,
   launchPolicy: () => launchPolicy,
   listInventoryDirectories: () => listInventoryDirectories,
   planNativeOperation: () => planNativeOperation,
+  readDeclaredPatterns: () => readDeclaredPatterns,
   setAdapterIdentity: () => setAdapterIdentity,
   setLaunchPolicy: () => setLaunchPolicy
 });
@@ -215825,6 +215839,7 @@ function buildNativePlan({
       kind: "unknown",
       detail: `changed symbol without package attribution: ${symbol}`.slice(0, 256)
     });
+    inventory.completeness = "incomplete";
   }
   const confirmationByPackage = /* @__PURE__ */ new Map();
   for (const confirmation of policy.confirmations) {
@@ -216059,10 +216074,12 @@ function planNativeOperation(context, policyDocument) {
   let inventory;
   try {
     const inclusionPatterns = readDeclaredPatterns(readView);
-    const directories = listInventoryDirectories(readView, inclusionPatterns);
+    const discovery = {};
+    const directories = listInventoryDirectories(readView, inclusionPatterns, discovery);
     inventory = buildWorkspaceInventory({
       readView,
-      directories
+      directories,
+      discoveryTruncated: discovery.truncated === true
     });
   } catch (error) {
     const reason = error instanceof WorkspaceRefusal ? error.code : "workspace-refused";
@@ -216139,18 +216156,23 @@ var CHILD_VOCABULARY = Object.freeze([
   "lib",
   "src"
 ]);
-function listInventoryDirectories(readView, inclusionPatterns) {
-  const patterns = inclusionPatterns.length > 0 ? inclusionPatterns : readView.roots.filter((root) => root.kind === "tree").map((root) => root.path + "/**");
-  const candidates = /* @__PURE__ */ new Set();
+function listInventoryDirectories(readView, inclusionPatterns, out = {}) {
+  const treeRootPaths = (readView.roots ?? []).filter((root) => root.kind === "tree" && typeof root.path === "string" && root.path !== "").map((root) => root.path);
+  const patterns = inclusionPatterns.length > 0 ? inclusionPatterns : treeRootPaths.map((path) => path + "/**");
+  const candidates = new Set(treeRootPaths);
   const MAX_CANDIDATES = 4096;
   const MAX_DEPTH = 8;
+  let truncated = false;
   const segmentAllows = (segment, name) => {
     if (!segment.includes("*") && !segment.includes("?")) return segment === name;
     const regexText = segment.replace(/[.+^${}()|[\\]\\\\]/g, "\\\\$&").split("**").join("\0").split("*").join("[^/]*").split("?").join("[^/]").split("\0").join(".*");
     return new RegExp("^(?:" + regexText + ")$").test(name);
   };
   const expand = (prefix, segments, depth) => {
-    if (candidates.size >= MAX_CANDIDATES || depth > MAX_DEPTH) return;
+    if (candidates.size >= MAX_CANDIDATES || depth > MAX_DEPTH) {
+      truncated = true;
+      return;
+    }
     if (segments.length === 0) {
       if (prefix !== "" && readView.canRead(prefix + "/package.json")) {
         candidates.add(prefix);
@@ -216182,6 +216204,7 @@ function listInventoryDirectories(readView, inclusionPatterns) {
     const body = pattern.startsWith("!") ? pattern.slice(1) : pattern;
     expand("", body.split("/"), 0);
   }
+  out.truncated = truncated;
   return [...candidates].sort();
 }
 function verifyConfirmations(inventory, policyDocument, readView) {
