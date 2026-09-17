@@ -215170,7 +215170,8 @@ function parseWorkspaceYaml(text) {
     if (/^\s*---(\s|$)/.test(line) || /^(\s*)\.\.\.(\s|$)/.test(line)) {
       throw new WorkspaceRefusal("workspace-yaml-unsupported", "document markers are outside the accepted subset");
     }
-    if (/!(?!=)/.test(line) || /&(?!&)/.test(line) || /(^|\s)\*[A-Za-z0-9_]/.test(line)) {
+    const unquotedLine = line.replace(/'[^']*'|"[^"]*"/g, "");
+    if (/!(?!=)/.test(unquotedLine) || /&(?!&)/.test(line) || /(^|\s)\*[A-Za-z0-9_]/.test(line)) {
       throw new WorkspaceRefusal("workspace-yaml-unsupported", "tags/anchors/aliases are outside the accepted subset");
     }
     if (/[|>]/.test(line.replace(/^[^:]*:/, "")) && /\s[|>][-++]?\s*$/.test(line)) {
@@ -215209,8 +215210,6 @@ function parseWorkspaceYaml(text) {
         value = value.slice(1, -1);
       } else if (/["']/.test(value)) {
         throw new WorkspaceRefusal("workspace-yaml-unsupported", "unbalanced quotes in workspace pattern");
-      }
-      if (value.startsWith("!")) {
       }
       if (result.packages.length >= MAX_PATTERNS) {
         throw new WorkspaceRefusal("workspace-pattern-limit", "the workspace declares too many patterns");
@@ -215335,18 +215334,6 @@ function buildWorkspaceInventory({ readView, directories }) {
       edges: [],
       uncertainties: [],
       completeness: "complete"
-    };
-  }
-  if (!readView.canRead(WORKSPACE_FILE)) {
-    return {
-      manager: "npm-standalone",
-      compatibilityPath: "supported",
-      root: ".",
-      workspaceManifestDigest: null,
-      packages: [],
-      edges: [],
-      uncertainties: [],
-      completeness: "unknown"
     };
   }
   let workspaceText;

@@ -271,6 +271,16 @@ for (const [id, code] of expectedExpressionRules) {
   if (entry.default_severity !== "error") fail("expression-rule-severity", id);
   if (entry.category !== "semantic") fail("expression-rule-category", id);
 }
+// The registry chain is additive: the current embedded registry (the
+// version Rust compiles via include_bytes!) must still carry every
+// LEK-EXPR rule with the same code/lifecycle/severity/category.
+const currentRegistry = read("contracts/diagnostic-registry.v0.3.2.json");
+const currentEntries = new Map(currentRegistry.entries.map((entry) => [entry.id, entry]));
+for (const [id, code] of expectedExpressionRules) {
+  const entry = currentEntries.get(id);
+  if (!entry) fail("expression-rule-not-preserved", id);
+  if (entry.code !== code) fail("expression-code-drift", { id, code: entry.code });
+}
 // ---------------------------------------------------------------------------
 // 4. The compiled Rust identity constants, hard bounds, and built-in
 //    table agree with the published contract.
@@ -302,11 +312,11 @@ for (const constant of [
   if (!versionSource.includes(constant)) fail("rust-constant", constant);
 }
 const diagnosticsVersionSource = readText("crates/lekalo-core/src/diagnostics/version.rs");
-if (!diagnosticsVersionSource.includes('REGISTRY_VERSION: &str = "0.2.16"')) {
-  fail("rust-registry-version", "0.2.16");
+if (!diagnosticsVersionSource.includes('REGISTRY_VERSION: &str = "0.3.2"')) {
+  fail("rust-registry-version", "0.3.2");
 }
-if (!diagnosticsVersionSource.includes('REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.2.16"')) {
-  fail("rust-registry-identity", "0.2.16");
+if (!diagnosticsVersionSource.includes('REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.3.2"')) {
+  fail("rust-registry-identity", "0.3.2");
 }
 const builtinSource = readText("crates/lekalo-core/src/expressions/builtin.rs");
 for (const name of builtinNames) {
