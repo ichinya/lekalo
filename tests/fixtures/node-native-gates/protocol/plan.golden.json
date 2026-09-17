@@ -1,0 +1,313 @@
+{
+  "schema_version": "lekalo/native-gate-plan/v0.3.2",
+  "kind": "native-plan",
+  "plan_digest": "sha256:9737ce0d46a7d432fa0c8b28f41db7a2549070fd214953fd9be2c40b6da76bc7",
+  "adapter": {
+    "id": "lekalo-target-node-typescript",
+    "version": "0.3.2",
+    "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "planner_version": "0.3.2",
+  "canonicalization_version": "0.3.2",
+  "repository_role": "consumer-repository",
+  "trust": {
+    "mode": "public-fixture",
+    "fixture_ref": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "provenance_ref": "sha256:a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+  },
+  "authority_ref": {
+    "contractId": "dev.lekalo.authority-matrix",
+    "version": "0.3.2",
+    "digest": "sha256:cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4"
+  },
+  "policy_ref": {
+    "policyId": "dev.lekalo.privacy-export-policy",
+    "version": "0.3.2",
+    "digest": "sha256:5643547b96e1ca9f422e91e699c8d04e676e6eb820b4ef21a88860c74133c3b9"
+  },
+  "classification_ref": {
+    "contractId": "dev.lekalo.privacy-classification-decision",
+    "version": "0.2.16",
+    "digest": "sha256:78de535f02b6a8065579b43798ed650849aca0b7edf1aa08b2e0219fc744dde6"
+  },
+  "execution_policy_ref": {
+    "id": "fixture-native-policy",
+    "version": "0.3.2",
+    "digest": "sha256:ba1eb9bf6e1df8a4bf76e66873c547468b6d4c886628911861c36255826340e2"
+  },
+  "profile_ref": {
+    "id": "standalone",
+    "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "input_manifest_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "scan_ref": {
+    "id": "scan",
+    "version": "0.3.2",
+    "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "observed_ref": {
+    "id": "observed",
+    "version": "0.3.2",
+    "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "tool_catalog_digest": "sha256:e10e95241446ec79a52414544ed749e34ebbdda4b200eddf7298e23d51796e8f",
+  "capability_snapshot_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+  "workspace": {
+    "manager": "pnpm-workspace",
+    "declared_version": "unknown",
+    "compatibility_path": "supported",
+    "root": ".",
+    "manifest_digest": "sha256:6a2f4dca9a6813450551a4f41f53eaa1543738ca689d1477b6428f34371f26f2",
+    "lock_digest_state": "absent",
+    "packages": [
+      {
+        "id": ".=@fixture/native-monorepo",
+        "name": "@fixture/native-monorepo",
+        "root": ".",
+        "manifest_digest": "sha256:78dbda087cf1cc5b52b4fdddfb158a904dd25e801ac2f95e6c999c870c9577e4"
+      },
+      {
+        "id": "packages/api=@fixture/api",
+        "name": "@fixture/api",
+        "root": "packages/api",
+        "manifest_digest": "sha256:b20a1232cfc9fb4d167d24caff93c251c3bb2bdbba6049c284d25d58cf6b45b3"
+      },
+      {
+        "id": "packages/cli=@fixture/cli",
+        "name": "@fixture/cli",
+        "root": "packages/cli",
+        "manifest_digest": "sha256:4508f667dce936b2b49d928a61e41ed30889ce39410af8d646ec576f54d3e4dc"
+      },
+      {
+        "id": "packages/planner=@fixture/planner",
+        "name": "@fixture/planner",
+        "root": "packages/planner",
+        "manifest_digest": "sha256:978e8895e36987e3bd5f516452c739b80a50f46eda9d4aeb23d07977447314c9"
+      }
+    ],
+    "edges": [
+      {
+        "from": "packages/api=@fixture/api",
+        "to": "packages/planner=@fixture/planner",
+        "kind": "dependency",
+        "scope": "dependencies",
+        "specifier": "workspace:^",
+        "provenance": "workspace-specifier"
+      },
+      {
+        "from": "packages/cli=@fixture/cli",
+        "to": "packages/api=@fixture/api",
+        "kind": "dependency",
+        "scope": "dependencies",
+        "specifier": "workspace:*",
+        "provenance": "workspace-specifier"
+      }
+    ],
+    "completeness": "complete",
+    "uncertainties": []
+  },
+  "changes": {
+    "files": [
+      {
+        "path": "packages/planner/src/plan.ts",
+        "change": "modified",
+        "after_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    ],
+    "symbols": []
+  },
+  "affected": [
+    {
+      "package_id": "packages/api=@fixture/api",
+      "reasons": [
+        {
+          "kind": "dependent-closure",
+          "source_ref": "packages/planner=@fixture/planner",
+          "edge_path": [
+            "packages/planner=@fixture/planner"
+          ]
+        }
+      ]
+    },
+    {
+      "package_id": "packages/cli=@fixture/cli",
+      "reasons": [
+        {
+          "kind": "dependent-closure",
+          "source_ref": "packages/planner=@fixture/planner",
+          "edge_path": [
+            "packages/planner=@fixture/planner",
+            "packages/api=@fixture/api"
+          ]
+        }
+      ]
+    },
+    {
+      "package_id": "packages/planner=@fixture/planner",
+      "reasons": [
+        {
+          "kind": "changed-package",
+          "source_ref": "packages/planner=@fixture/planner",
+          "edge_path": []
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "package_id": ".=@fixture/native-monorepo",
+      "reason": "no-reason"
+    }
+  ],
+  "selection_mode": "targeted",
+  "commands": [
+    {
+      "id": "gate-packages_api__fixture_api-typecheck",
+      "package_id": "packages/api=@fixture/api",
+      "gate": "typecheck",
+      "script_name": "gate:typecheck",
+      "script_digest": "sha256:7b7d5c6042f2913345dfa260286398b9f8e09129bcff81327cfdda3602977fb5",
+      "confirmation_ref": "sha256:d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2",
+      "cwd": "packages/api",
+      "tool_ref": "fixture-node",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "typecheck"
+      ],
+      "env": [],
+      "depends_on": [
+        "packages/planner=@fixture/planner"
+      ],
+      "affected_reason_refs": [
+        "packages/api=@fixture/api#dependent-closure"
+      ],
+      "read_manifest_ref": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "allowed_writes": {
+        "mode": "stage-only"
+      },
+      "limits": {
+        "timeout_ms_per_command": 10000,
+        "timeout_ms_per_run": 60000,
+        "max_stdout_bytes": 65536,
+        "max_stderr_bytes": 65536,
+        "max_output_bytes_per_run": 1048576
+      },
+      "tsconfig_ref": "packages/api/tsconfig.json"
+    },
+    {
+      "id": "gate-packages_cli__fixture_cli-test",
+      "package_id": "packages/cli=@fixture/cli",
+      "gate": "test",
+      "script_name": "gate:test",
+      "script_digest": "sha256:cfad049df69aeb73066311f382c7f1a25167b13d1bbf17ec05408b03330d773d",
+      "confirmation_ref": "sha256:d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3",
+      "cwd": "packages/cli",
+      "tool_ref": "fixture-node",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "test"
+      ],
+      "env": [],
+      "depends_on": [
+        "packages/api=@fixture/api",
+        "packages/planner=@fixture/planner"
+      ],
+      "affected_reason_refs": [
+        "packages/cli=@fixture/cli#dependent-closure"
+      ],
+      "read_manifest_ref": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "allowed_writes": {
+        "mode": "stage-only"
+      },
+      "limits": {
+        "timeout_ms_per_command": 10000,
+        "timeout_ms_per_run": 60000,
+        "max_stdout_bytes": 65536,
+        "max_stderr_bytes": 65536,
+        "max_output_bytes_per_run": 1048576
+      },
+      "tsconfig_ref": "packages/cli/tsconfig.json"
+    },
+    {
+      "id": "gate-packages_planner__fixture_planner-test",
+      "package_id": "packages/planner=@fixture/planner",
+      "gate": "test",
+      "script_name": "gate:test",
+      "script_digest": "sha256:cfad049df69aeb73066311f382c7f1a25167b13d1bbf17ec05408b03330d773d",
+      "confirmation_ref": "sha256:d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "cwd": "packages/planner",
+      "tool_ref": "fixture-node",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "test"
+      ],
+      "env": [],
+      "depends_on": [],
+      "affected_reason_refs": [
+        "packages/planner=@fixture/planner#changed-package"
+      ],
+      "read_manifest_ref": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "allowed_writes": {
+        "mode": "stage-only"
+      },
+      "limits": {
+        "timeout_ms_per_command": 10000,
+        "timeout_ms_per_run": 60000,
+        "max_stdout_bytes": 65536,
+        "max_stderr_bytes": 65536,
+        "max_output_bytes_per_run": 1048576
+      },
+      "tsconfig_ref": "packages/planner/tsconfig.json"
+    }
+  ],
+  "env": {
+    "allowed_names": [
+      "FIXTURE_MODE"
+    ],
+    "bindings": []
+  },
+  "tools": [
+    {
+      "id": "fixture-node",
+      "name": "node",
+      "version": "unknown",
+      "artifact_digest": "sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+      "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+      "platform": "windows",
+      "provenance": "fixture-catalog"
+    }
+  ],
+  "required_capabilities": [
+    "plan.native-gates"
+  ],
+  "capabilities": [
+    {
+      "id": "plan.native-gates",
+      "definition_version": "0.3.2",
+      "state": "full",
+      "source": "declared"
+    }
+  ],
+  "run_eligibility": {
+    "state": "plan-only",
+    "reason_codes": [
+      "fixture-runner-not-in-production"
+    ]
+  },
+  "limits": {
+    "timeout_ms_per_command": 10000,
+    "timeout_ms_per_run": 60000,
+    "max_stdout_bytes": 65536,
+    "max_stderr_bytes": 65536,
+    "max_output_bytes_per_run": 1048576
+  },
+  "write_policy": {
+    "mode": "stage-only"
+  }
+}

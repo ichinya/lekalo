@@ -1,0 +1,90 @@
+{
+  "manifestId": "dev.lekalo.privacy-contract-manifest",
+  "formatVersion": "0.3.2",
+  "status": "accepted",
+  "accepted": true,
+  "digestAlgorithm": "sha256",
+  "semanticDigestInput": "canonical-policy-projection-with-policyRef.digest-omitted",
+  "fileDigestInput": "exact-file-bytes",
+  "selfReferential": false,
+  "authorityRef": {
+    "contractId": "dev.lekalo.authority-matrix",
+    "version": "0.3.2",
+    "digest": "sha256:cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4"
+  },
+  "acceptedContracts": [
+    {
+      "policyRef": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "0.3.2",
+        "digest": "sha256:5643547b96e1ca9f422e91e699c8d04e676e6eb820b4ef21a88860c74133c3b9"
+      },
+      "status": "accepted",
+      "accepted": true,
+      "policyPath": "contracts/privacy-policy.v0.3.2.json",
+      "policyFileDigest": "sha256:5263fb4a54b4fd858690add5c55a6c2f7105c7d3a9108d4fb0c10fd7f0bedd1e",
+      "policySidecar": "contracts/privacy-policy.v0.3.2.sha256",
+      "classificationContractRef": {
+        "contractId": "dev.lekalo.privacy-classification-decision",
+        "version": "0.2.16",
+        "digest": "sha256:78de535f02b6a8065579b43798ed650849aca0b7edf1aa08b2e0219fc744dde6",
+        "path": "contracts/privacy-policy.v0.2.16.classification.json",
+        "sidecar": "contracts/privacy-policy.v0.2.16.classification.sha256"
+      },
+      "authorizingEvidenceContractRef": {
+        "contractId": "dev.lekalo.privacy-authorizing-evidence",
+        "version": "0.2.16",
+        "digest": "sha256:cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e",
+        "path": "contracts/privacy-authorizing-evidence.v0.2.16.json",
+        "sidecar": "contracts/privacy-authorizing-evidence.v0.2.16.sha256"
+      },
+      "authorizationSubjectProfileRef": {
+        "profileId": "dev.lekalo.privacy-authorization-subject-profile",
+        "version": "0.2.16",
+        "digest": "sha256:11c3c6ddea482ba5cf1bca27f08d602801d7739f1bd57ed5efb15e100584dec0",
+        "path": "contracts/privacy-authorization-subject-profile.v0.2.16.json",
+        "sidecar": "contracts/privacy-authorization-subject-profile.v0.2.16.sha256"
+      },
+      "inputSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-export-input-schema",
+        "version": "0.3.2",
+        "digest": "sha256:8884b669303be61a78bffb889530b238846e4469fc8d758364eaabffcc7e162b",
+        "path": "contracts/privacy-export.schema.v0.3.2.json"
+      },
+      "outputSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-export-output-schema",
+        "version": "0.3.2",
+        "digest": "sha256:13de85bede68b89a905e02ab9a136aedadf20e58afb6051fc13189f6666eb89e",
+        "path": "contracts/privacy-export.schema.v0.3.2.output.json"
+      },
+      "cliErrorSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-cli-error-schema",
+        "version": "0.2.16",
+        "digest": "sha256:46305d2c886f81e6793f4981814d1bb940bd4fffe0a02d25f6d0a615ea7fdf57",
+        "path": "contracts/privacy-cli-error.schema.v0.2.16.json"
+      },
+      "classificationSchemaRef": {
+        "schemaId": "dev.lekalo.privacy-classification-decision-schema",
+        "version": "0.2.16",
+        "digest": "sha256:a6d871bb9159e104667afe7543423d665dd3f30498e22b0d7ae63426da8f2741",
+        "path": "contracts/privacy-export.schema.v0.2.16.classification.json"
+      },
+      "decisionContractRef": {
+        "contractId": "dev.lekalo.privacy-export-decision",
+        "version": "0.2.16"
+      },
+      "predecessorPolicyRef": {
+        "policyId": "dev.lekalo.privacy-export-policy",
+        "version": "0.2.16",
+        "digest": "sha256:430ba543098c91f70d0c4e37c32ac8e41b3de65498f119ecf85188919c095c93"
+      },
+      "currentProductRelease": "0.3.2",
+      "targetProductReleaseAfterIssueAcceptance": "0.3.2"
+    }
+  ],
+  "currentAcceptedRef": {
+    "policyId": "dev.lekalo.privacy-export-policy",
+    "version": "0.3.2",
+    "digest": "sha256:5643547b96e1ca9f422e91e699c8d04e676e6eb820b4ef21a88860c74133c3b9"
+  }
+}

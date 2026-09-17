@@ -1,0 +1,11 @@
+{
+  "name": "@fixture/api",
+  "version": "1.0.0",
+  "dependencies": {
+    "@fixture/planner": "workspace:^"
+  },
+  "scripts": {
+    "preinstall": "node -e \"process.stderr.write('poison')\" && exit 1",
+    "gate:typecheck": "node gates/verify.mjs --mode typecheck"
+  }
+}

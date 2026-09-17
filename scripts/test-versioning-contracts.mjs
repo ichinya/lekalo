@@ -8,7 +8,7 @@ assert.equal(registry.registryVersion,'0.2.16');
 assert.deepEqual(Object.keys(registry.families), ['model','ir','protocol']);
 for(const family of Object.values(registry.families)) {
  assert.deepEqual(Object.keys(family).sort(), ['aliases','current','migrations','versions']);
- assert.equal(family.current, family === registry.families.protocol ? '0.3.1' : '0.2.16');
+ assert.equal(family.current, family === registry.families.protocol ? '0.3.2' : '0.2.16');
  assert.deepEqual(family.aliases,[]);
  assert.deepEqual(family.migrations,[]);
  assert.equal(family.versions.length,1);

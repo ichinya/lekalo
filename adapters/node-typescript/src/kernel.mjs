@@ -68,13 +68,13 @@ import { fileURLToPath } from "node:url";
 /** The stable wire token of the protocol line (issue #27). */
 export const PROTOCOL_TOKEN = "lekalo.target/v1";
 /** The sole protocol version this kernel speaks (the current contract). */
-export const VERSION = "0.3.1";
+export const VERSION = "0.3.2";
 /** The closed supported-version set: exact membership, never ranges. */
 export const SUPPORTED_VERSIONS = Object.freeze([VERSION]);
 /** The adapter identity token. */
 export const ADAPTER_ID = "lekalo-target-node-typescript";
 /** The adapter release version (the reserved product version). */
-export const ADAPTER_VERSION = "0.3.1";
+export const ADAPTER_VERSION = "0.3.2";
 /** The maximum request size this kernel reads (mirrors the core bound). */
 export const MAX_REQUEST_BYTES = 1024 * 1024;
 /** The maximum response size this kernel writes (mirrors the core cap). */
@@ -124,6 +124,7 @@ const OPERATION_TOKENS = Object.freeze([
   "verify",
   "clean",
   "plan-clean",
+  "plan-native",
 ]);
 
 const SUPPORT_STATES = Object.freeze(["full", "partial", "unsupported", "unknown"]);
@@ -134,6 +135,7 @@ const CAPABILITY_IDS = Object.freeze([
   "generate.zod",
   "scan.symbols",
   "verify.scenarios",
+  "plan.native-gates",
 ]);
 
 /** The exact entry digest: sha256 over the launched script's own bytes. */
@@ -756,11 +758,96 @@ function canonicalJsonText(value) {
   return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJsonText(value[key])}`).join(",")}}`;
 }
 
+/**
+ * Validate one closed native_request member (issue #48, protocol 0.3.2):
+ * bounded changed inputs plus digest-addressed custody references. A
+ * content reference is a digest plus optional provenance — never a
+ * command or an absolute URL.
+ */
+export function validateNativeRequest(nativeRequest) {
+  if (typeof nativeRequest !== "object" || nativeRequest === null || Array.isArray(nativeRequest)) {
+    throw new RequestRefusal("native-request", "native_request must be an object");
+  }
+  for (const key of Object.keys(nativeRequest)) {
+    if (!NATIVE_REQUEST_KEYS.includes(key)) {
+      throw new RequestRefusal("native-request", "unknown native_request member");
+    }
+  }
+  for (const key of ["changes", "scan_ref", "execution_policy_ref",
+    "input_manifest_digest", "tool_catalog_digest", "capability_snapshot_digest"]) {
+    if (!hasOwn(nativeRequest, key)) {
+      throw new RequestRefusal("native-request", "missing native_request member");
+    }
+  }
+  const changes = nativeRequest.changes;
+  if (typeof changes !== "object" || changes === null || Array.isArray(changes)) {
+    throw new RequestRefusal("native-request", "changes must be an object");
+  }
+  if (!Array.isArray(changes.files) || changes.files.length > 1024) {
+    throw new RequestRefusal("native-request", "changes.files bound");
+  }
+  for (const file of changes.files) {
+    if (typeof file !== "object" || file === null || Array.isArray(file)) {
+      throw new RequestRefusal("native-request", "changes.files entry");
+    }
+    if (!isLogicalPath(file.path)) {
+      throw new RequestRefusal("native-request", "changes.files path");
+    }
+    if (!["added", "modified", "deleted", "renamed"].includes(file.change)) {
+      throw new RequestRefusal("native-request", "changes.files change");
+    }
+    if (file.before_digest !== undefined && !isSha256Digest(file.before_digest)) {
+      throw new RequestRefusal("native-request", "changes.files before_digest");
+    }
+    if (file.after_digest !== undefined && !isSha256Digest(file.after_digest)) {
+      throw new RequestRefusal("native-request", "changes.files after_digest");
+    }
+  }
+  if (!Array.isArray(changes.symbols) || changes.symbols.length > 1024) {
+    throw new RequestRefusal("native-request", "changes.symbols bound");
+  }
+  validateNativeContentRef(nativeRequest.scan_ref);
+  if (nativeRequest.observed_ref !== undefined) {
+    validateNativeContentRef(nativeRequest.observed_ref);
+  }
+  const policy = nativeRequest.execution_policy_ref;
+  if (typeof policy !== "object" || policy === null || Array.isArray(policy)
+    || typeof policy.id !== "string" || policy.id.length === 0 || policy.id.length > 128
+    || !isContractVersion(policy.version) || !isSha256Digest(policy.digest)) {
+    throw new RequestRefusal("native-request", "execution_policy_ref");
+  }
+  for (const key of ["input_manifest_digest", "tool_catalog_digest", "capability_snapshot_digest"]) {
+    if (!isSha256Digest(nativeRequest[key])) {
+      throw new RequestRefusal("native-request", key);
+    }
+  }
+}
+
+function validateNativeContentRef(reference) {
+  if (typeof reference !== "object" || reference === null || Array.isArray(reference)
+    || !isSha256Digest(reference.digest)) {
+    throw new RequestRefusal("native-request", "content reference");
+  }
+  if (reference.revision !== undefined
+    && (typeof reference.revision !== "string" || reference.revision.length === 0 || reference.revision.length > 128)) {
+    throw new RequestRefusal("native-request", "content reference revision");
+  }
+  if (reference.adapter !== undefined && !isToken(reference.adapter)) {
+    throw new RequestRefusal("native-request", "content reference adapter");
+  }
+}
+
 /** The closed request envelope keys and their per-operation legality. */
 const REQUEST_KEYS = Object.freeze([
   "protocol", "protocol_version", "operation", "request_id", "project_root",
   "ir_path", "target", "profile", "profile_digest", "profile_capabilities",
-  "dry_run", "limits", "plan_id",
+  "dry_run", "limits", "plan_id", "native_request",
+]);
+
+/** The closed native_request member keys (issue #48, protocol 0.3.2). */
+const NATIVE_REQUEST_KEYS = Object.freeze([
+  "changes", "scan_ref", "observed_ref", "execution_policy_ref",
+  "input_manifest_digest", "tool_catalog_digest", "capability_snapshot_digest",
 ]);
 
 /**
@@ -839,6 +926,21 @@ export function validateRequestObject(document) {
   if (apply !== hasOwn(request, "plan_id")
     || (hasOwn(request, "plan_id") && !isPlanId(document.plan_id))) {
     throw new RequestRefusal("plan-id", "plan identity pairing is wrong");
+  }
+  // Issue #48: native_request is required on plan-native and forbidden
+  // on every other operation; plan-native is read-only (no dry_run,
+  // no plan_id) and requires the current version.
+  if ((operation === "plan-native") !== hasOwn(request, "native_request")) {
+    throw new RequestRefusal("native-request", "native_request pairing is wrong");
+  }
+  if (operation === "plan-native") {
+    if (hasOwn(request, "dry_run") || hasOwn(request, "plan_id")) {
+      throw new RequestRefusal("plan-id", "plan-native is read-only");
+    }
+    if (request.protocol_version !== VERSION) {
+      throw new RequestRefusal("member", "plan-native requires the current version");
+    }
+    validateNativeRequest(request.native_request);
   }
   if ((operation === "generate") !== hasOwn(request, "dry_run")) {
     throw new RequestRefusal("dry-run", "dry_run pairing is wrong");
@@ -1876,6 +1978,14 @@ function projectOutcome(request, outcome) {
 function projectResult(data) {
   if (data === undefined || data === null || typeof data !== "object") {
     return undefined;
+  }
+  // Issue #48: plan-native results carry the closed native_plan summary.
+  if (data.native_plan !== undefined) {
+    const np = data.native_plan;
+    if (typeof np !== "object" || np === null || np.kind !== "native-plan" || !isSha256Digest(np.plan_digest)) {
+      return undefined;
+    }
+    return { native_plan: { digest: np.plan_digest, kind: np.kind } };
   }
   if (!Array.isArray(data.entries)) {
     return undefined;

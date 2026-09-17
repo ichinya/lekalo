@@ -52,8 +52,9 @@ pub use version::{
     MIN_REPEATS, MIN_TIMEOUT_MS, SCHEMA_VERSION,
 };
 
-/// The closed v1 operation set in catalog order.
-const ALL_OPERATIONS: [Operation; 8] = [
+/// The closed operation set: describe, scan, bind, validate, generate,
+/// verify, clean, plan-clean, and the read-only plan-native (issue #48).
+const ALL_OPERATIONS: [Operation; 9] = [
     Operation::Describe,
     Operation::Scan,
     Operation::Bind,
@@ -62,6 +63,7 @@ const ALL_OPERATIONS: [Operation; 8] = [
     Operation::Verify,
     Operation::Clean,
     Operation::PlanClean,
+    Operation::PlanNative,
 ];
 
 /// The suite options, clamped into the closed bounds.
@@ -1233,6 +1235,7 @@ impl CallShape {
             ir_path: self.ir_path.as_deref(),
             dry_run: self.dry_run,
             plan_id: self.plan_id.as_deref(),
+            native_request: None,
         }
     }
 }

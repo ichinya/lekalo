@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const checker = join(root, "scripts/check-privacy.mjs");
-const outputSchema = JSON.parse(readFileSync(join(root, "contracts/privacy-export.schema.v0.2.16.output.json"), "utf8"));
+const outputSchema = JSON.parse(readFileSync(join(root, "contracts/privacy-export.schema.v0.3.2.output.json"), "utf8"));
 const cliErrorSchema = JSON.parse(readFileSync(join(root, "contracts/privacy-cli-error.schema.v0.2.16.json"), "utf8"));
 const temp = mkdtempSync(join(tmpdir(), "lekalo-output-schema-"));
 

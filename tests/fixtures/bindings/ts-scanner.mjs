@@ -46,7 +46,7 @@ import { join } from "node:path";
 
 const ADAPTER = {
   id: "lekalo-target-node-typescript",
-  version: "0.3.1",
+  version: "0.3.2",
   digest: "sha256:" + "0".repeat(64),
 };
 
@@ -90,7 +90,7 @@ function readRequest() {
 function capabilities(requestedVersion) {
   const declared = {
     adapter: ADAPTER,
-    protocol_versions: ["0.3.1"],
+    protocol_versions: ["0.3.2"],
     operations: ["describe", "scan"],
     transports: ["stdin", "file"],
     progress: false,
@@ -262,7 +262,7 @@ function scan(request) {
 const request = JSON.parse(readRequest());
 if (request.protocol !== "lekalo.target/v1") {
   fail(request, "invalid", "protocol-token", "unknown protocol token");
-} else if (!["0.3.1"].includes(request.protocol_version)) {
+} else if (!["0.3.2"].includes(request.protocol_version)) {
   fail(request, "invalid", "protocol-version", "unsupported protocol version");
 } else if (request.operation === "describe") {
   respond(request, { capabilities: capabilities(request.protocol_version) });

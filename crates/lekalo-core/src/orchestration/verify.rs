@@ -482,6 +482,7 @@ fn adapter_component(
             ir_path: Some(&evidence_path),
             dry_run: None,
             plan_id: None,
+            native_request: None,
         },
         prepared.root(),
         prepared.fs(),

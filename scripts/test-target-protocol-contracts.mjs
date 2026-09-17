@@ -65,16 +65,16 @@ function failAll(failures) {
 const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
 
 const schemas = {
-  "0.3.1": JSON.parse(read("../contracts/target-protocol.schema.v0.3.1.json")),
+  "0.3.2": JSON.parse(read("../contracts/target-protocol.schema.v0.3.2.json")),
 };
 // Every committed fixture lives on the current 0.3.1 document; the
 // historical v1_1/v1_2 fixture markers name superseded contract
 // generations and no longer select a different schema file.
-const schemaFor = () => schemas["0.3.1"];
+const schemaFor = () => schemas["0.3.2"];
 const validators = Object.fromEntries(
   Object.entries(schemas).map(([version, schema]) => [version, ajv.compile(schema)]),
 );
-const keyFor = () => "0.3.1";
+const keyFor = () => "0.3.2";
 const ROOT = "../tests/fixtures/target-protocol/";
 
 for (const vector of JSON.parse(read(ROOT + "error-code-vectors.json"))) {
@@ -84,11 +84,11 @@ for (const vector of JSON.parse(read(ROOT + "error-code-vectors.json"))) {
   response.error = {
     class: "invalid", code: vector.unit.repeat(vector.repeat), message: "owned synthetic error",
   };
-  if (validators["0.3.1"](response) !== vector.valid) failEarly("error-code-parity", vector.name);
+  if (validators["0.3.2"](response) !== vector.valid) failEarly("error-code-parity", vector.name);
 }
 
 for (const field of ["path", "scope"]) {
-  const definition = schemas["0.3.1"].$defs[field === "path" ? "logicalPath" : "scope"];
+  const definition = schemas["0.3.2"].$defs[field === "path" ? "logicalPath" : "scope"];
   const check = ajv.compile(definition);
   for (const vector of JSON.parse(read(ROOT + "scope-grammar.json"))) {
     if (check(vector.value) !== vector[field]) failEarly("scope-parity", `${field}: ${vector.value}`);

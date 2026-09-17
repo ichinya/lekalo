@@ -1,0 +1,1 @@
+{"limits":{"max_output_bytes":8388608,"timeout_ms":600000},"operation":"plan-native","project_root":".","protocol":"lekalo.target/v1","protocol_version":"0.3.2","dry_run":true,"request_id":"req-684e53f574d4125d829a8d5d9aa7f49f661b73f7b1679f84e6f98a7c4dfb30d6"}

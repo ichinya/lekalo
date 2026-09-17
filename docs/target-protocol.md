@@ -12,11 +12,12 @@ carries the `init.*` adoption entries introduced in 1.13.0 and the
 
 ## Version negotiation and capability discovery (issue #28)
 
-The v1 line carries two exact contract versions. The base `0.3.1`
-envelope is what every v1-line adapter accepts and what the frozen
-`contracts/target-protocol.schema.v0.3.1.json` document describes. The
-current `0.3.1` (`contracts/target-protocol.schema.v0.3.1.json`)
-additively extends the describe response's `capabilities` object with:
+The v1 line carries exact contract versions. The current `0.3.2`
+(`contracts/target-protocol.schema.v0.3.2.json`) is the version new
+integrations target; the frozen `0.3.1` document
+(`contracts/target-protocol.schema.v0.3.1.json`) keeps its exact
+published meaning and refuses the members added later. On a current
+session the describe response's `capabilities` object carries:
 
 - `ir_versions` — the IR contract versions the adapter accepts
   (exact-set membership, zero to eight entries);
@@ -122,6 +123,10 @@ names a fresh private project view, never an ambient grant to the real root.
 | verify | required | optional | optional | forbidden | forbidden |
 | plan-clean | optional | optional | optional | forbidden | forbidden |
 | clean | optional | optional | optional | forbidden | required |
+| plan-native | forbidden | forbidden | forbidden | forbidden | forbidden |
+
+The read-only plan-native exchange (issue #48) carries the closed
+`native_request`/`native_plan` members; see [native gates](native-gates.md).
 
 `wire::request_id` computes the canonical envelope digest. Operational
 client IDs additionally bind the private project identity, target/profile,

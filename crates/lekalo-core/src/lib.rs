@@ -23,6 +23,7 @@ pub mod invariant_transition;
 pub mod ir;
 pub mod loader;
 pub mod lockfile;
+pub mod native_gate;
 pub mod observed;
 pub mod orchestration;
 pub mod project_fs;

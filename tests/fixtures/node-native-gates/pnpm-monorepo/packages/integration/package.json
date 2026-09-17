@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/integration",
+  "version": "1.0.0",
+  "scripts": {
+    "preinstall": "node -e \"process.stderr.write('poison')\" && exit 1",
+    "gate:test": "echo should-never-run"
+  }
+}

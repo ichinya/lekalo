@@ -13,7 +13,7 @@ use serde::Serialize;
 
 /// The identity of the embedded capability definition registry
 /// (`dev.lekalo.target-capabilities@0.3.1`).
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.3.1";
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.3.2";
 
 /// One versioned capability definition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -62,6 +62,12 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         domain: "verify",
         semantics: "Verifies scenario coverage through the `verify` operation. `full` covers every declared scenario; `partial` covers a declared subset; `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
     },
+    CapabilityDefinition {
+        id: "plan.native-gates",
+        definition_version: "0.3.2",
+        domain: "plan",
+        semantics: "Plans native build/test gates over a detected Node workspace through the read-only `plan-native` operation. `full` produces the immutable plan over every confirmed gate; `partial` covers a declared subset; `unsupported` never plans; `unknown` is a declared state the core does not treat as available.",
+    },
 ];
 
 /// The exact definition of one capability id, or `None` when the id is
@@ -81,7 +87,7 @@ mod tests {
 
     #[test]
     fn registry_identity_and_definitions_are_pinned() {
-        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.3.1");
+        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.3.2");
         let ids: Vec<&str> = definitions().iter().map(|entry| entry.id).collect();
         assert_eq!(
             ids,
@@ -91,10 +97,14 @@ mod tests {
                 "generate.zod",
                 "scan.symbols",
                 "verify.scenarios",
+                "plan.native-gates",
             ]
         );
         for entry in definitions() {
-            assert_eq!(entry.definition_version, "0.3.1");
+            assert!(
+                entry.definition_version == "0.3.1" || entry.definition_version == "0.3.2",
+                "definition versions stay on the accepted generations"
+            );
             assert!(
                 crate::target_protocol::wire::is_capability_id(entry.id),
                 "every defined id satisfies the wire grammar"

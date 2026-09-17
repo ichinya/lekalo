@@ -90,7 +90,7 @@ fn discovery_negotiates_the_extension_and_records_provenance() {
     let mut client = TargetClient::default();
     let discovered = Discovery::run(&mut client, &variant_command("fluent"), &sandbox.dir)
         .expect("fluent discovery");
-    assert_eq!(discovered.negotiated_version, "0.3.1");
+    assert_eq!(discovered.negotiated_version, "0.3.2");
     assert_eq!(discovered.ir_versions, vec!["0.2.16".to_owned()]);
     assert!(discovered.ir_compatible("0.2.16"));
     assert_eq!(discovered.adapter.id, "node-typescript");
@@ -127,7 +127,7 @@ fn legacy_adapter_stays_on_the_frozen_base_contract() {
     let command = variant_command("legacy");
     let mut client = TargetClient::default();
     let discovered = Discovery::run(&mut client, &command, &sandbox.dir).expect("legacy");
-    assert_eq!(discovered.negotiated_version, "0.3.1");
+    assert_eq!(discovered.negotiated_version, "0.3.2");
     assert!(discovered.ir_versions.is_empty());
     assert!(discovered.capabilities.is_empty());
     assert!(!discovered.ir_compatible("0.2.16"));
@@ -143,6 +143,7 @@ fn legacy_adapter_stays_on_the_frozen_base_contract() {
                 ir_path: None,
                 dry_run: None,
                 plan_id: None,
+                native_request: None,
             },
             &sandbox.dir,
             &lekalo_core::project_fs::Fs::open(&sandbox.dir).unwrap(),
@@ -175,6 +176,7 @@ fn incompatible_adapter_is_filtered_before_any_ir_is_transferred() {
                 ir_path: Some(IR),
                 dry_run: None,
                 plan_id: None,
+                native_request: None,
             },
             &sandbox.dir,
             &lekalo_core::project_fs::Fs::open(&sandbox.dir).unwrap(),
@@ -435,7 +437,7 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
 fn capability_definitions_are_versioned_and_closed() {
     assert_eq!(
         capability::REGISTRY_IDENTITY,
-        "dev.lekalo.target-capabilities@0.3.1"
+        "dev.lekalo.target-capabilities@0.3.2"
     );
     for id in [
         "scan.symbols",
@@ -479,7 +481,7 @@ fn resolved_profiles_reach_current_adapters() {
     let command = variant_command("fluent");
     let mut client = TargetClient::default();
     let discovered = Discovery::run(&mut client, &command, &sandbox.dir).expect("discovery");
-    assert_eq!(discovered.negotiated_version, "0.3.1");
+    assert_eq!(discovered.negotiated_version, "0.3.2");
 
     // Resolve the issue's Node profile through the production seam and
     // project it onto the wire shape.
@@ -508,6 +510,7 @@ fn resolved_profiles_reach_current_adapters() {
                 ir_path: None,
                 dry_run: None,
                 plan_id: None,
+                native_request: None,
             },
             &sandbox.dir,
             &fs,

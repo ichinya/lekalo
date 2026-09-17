@@ -10,12 +10,15 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const checker = resolve(root, "scripts/check-authority.mjs");
 const baselinePath = resolve(root, "contracts/authority-matrix.v0.2.16.json");
-const successorPath = resolve(root, "contracts/authority-matrix.v0.2.16.json");
+const successorPath = resolve(root, "contracts/authority-matrix.v0.3.2.json");
 const baselineBytes = readFileSync(baselinePath);
 const successorBytes = readFileSync(successorPath);
 const baseline = JSON.parse(baselineBytes.toString("utf8"));
 const successor = JSON.parse(successorBytes.toString("utf8"));
-const profiles = { "0.2.16": {path: successorPath, digest: "141641cfbc1fbf6a07add99feafb877f9f544687ad558ab91d619ec7dd78d1b4"} };
+const profiles = {
+  "0.2.16": {path: baselinePath, digest: "141641cfbc1fbf6a07add99feafb877f9f544687ad558ab91d619ec7dd78d1b4"},
+  "0.3.2": {path: successorPath, digest: "cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4"}
+};
 const requiredAddedKindIds = [
   "authority.contract",
   "authority.contract-manifest",
@@ -121,7 +124,7 @@ function verifyRegistry() {
   const successorIds = successor.artifactKinds.map((kind) => kind.id);
   if (new Set(baselineIds).size !== baselineIds.length) fail("baseline registry IDs are not unique");
   if (new Set(successorIds).size !== successorIds.length) fail("successor registry IDs are not unique");
-  if (successorIds.length !== 49) fail(`successor registry expected 49 kinds, got ${successorIds.length}`);
+  if (successorIds.length !== 53) fail(`successor registry expected 53 kinds, got ${successorIds.length}`);
   if (JSON.stringify(successorIds.slice(0, baselineIds.length)) !== JSON.stringify(baselineIds)) {
     fail("successor did not preserve all baseline stable IDs in order");
   }
@@ -170,7 +173,7 @@ function verifyRegistry() {
 
 function verifyCustodyFiles() {
   const manifest = JSON.parse(readFileSync(resolve(root, "contracts/authority-contracts.manifest.json"), "utf8"));
-  if (!Array.isArray(manifest.acceptedContracts) || manifest.acceptedContracts.length !== 1) {
+  if (!Array.isArray(manifest.acceptedContracts) || manifest.acceptedContracts.length !== 2) {
     fail("manifest must list exactly baseline and successor");
   }
   for (const [version, profile] of Object.entries(profiles)) {
@@ -179,13 +182,13 @@ function verifyCustodyFiles() {
       fail(`manifest exact triple missing for ${version}`);
     }
     const sidecar = readFileSync(resolve(root, entry.sidecar), "utf8");
-    const expectedName = version === "0.2.16" ? "authority-matrix.v0.2.16.json" : "authority-matrix.v0.2.16.json";
+    const expectedName = `authority-matrix.v${version}.json`;
     if (sidecar !== `${profile.digest}  ${expectedName}\n`) fail(`${version} sidecar bytes are not exact`);
   }
   if (
     manifest.currentAuthorityRef.contractId !== "dev.lekalo.authority-matrix" ||
-    manifest.currentAuthorityRef.version !== "0.2.16" ||
-    manifest.currentAuthorityRef.digest !== `sha256:${profiles["0.2.16"].digest}`
+    manifest.currentAuthorityRef.version !== "0.3.2" ||
+    manifest.currentAuthorityRef.digest !== `sha256:${profiles["0.3.2"].digest}`
   ) {
     fail("manifest currentAuthorityRef is not the exact reviewed successor");
   }
@@ -205,7 +208,7 @@ try {
 
   const exactBaselineCopy = runCustomContract("exact-baseline-copy", baselineBytes, ref("0.2.16"));
   assertDecision("exact-baseline-copy", exactBaselineCopy, 3, "target.boundary-owner-mismatch");
-  const exactSuccessorCopy = runCustomContract("exact-successor-copy", successorBytes, ref("0.2.16"));
+  const exactSuccessorCopy = runCustomContract("exact-successor-copy", successorBytes, ref("0.3.2"));
   assertDecision("exact-successor-copy", exactSuccessorCopy, 3, "target.boundary-owner-mismatch");
   verifyRegistry();
   verifyCustodyFiles();

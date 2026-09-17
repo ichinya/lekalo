@@ -107,7 +107,7 @@ const CAPABILITY_PROFILES = {
 
 const ADAPTER = {
   id: IDENTITY ?? "node-typescript",
-  version: "0.3.1",
+  version: "0.3.2",
   digest: sha256("lekalo fake target adapter v1"),
 };
 
@@ -120,6 +120,7 @@ const ALL_OPERATIONS = [
   "verify",
   "clean",
   "plan-clean",
+  "plan-native",
 ];
 const OPERATIONS = OPS_FILTER
   ? ALL_OPERATIONS.filter((op) => OPS_FILTER.includes(op))
@@ -170,7 +171,7 @@ function planId(writes) {
 function capabilities(requestedVersion) {
   const declared = {
     adapter: ADAPTER,
-    protocol_versions: ["0.3.1"],
+    protocol_versions: ["0.3.2"],
     operations: OPERATIONS,
     targets: ["node-typescript"],
     profiles: ["default"],

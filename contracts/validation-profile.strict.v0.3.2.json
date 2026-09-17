@@ -1,9 +1,9 @@
 {
-  "schema_version": "lekalo/validation-profile/v0.2.16",
-  "identity": "dev.lekalo.validation-profile@0.2.16",
+  "schema_version": "lekalo/validation-profile/v0.3.2",
+  "identity": "dev.lekalo.validation-profile@0.3.2",
   "profile_id": "strict",
-  "version": "0.2.16",
-  "diagnostic_registry_version": "0.2.16",
+  "version": "0.3.2",
+  "diagnostic_registry_version": "0.3.2",
   "scope": "project",
   "rules": [
     {
