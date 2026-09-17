@@ -141,7 +141,9 @@ export function parseConfirmedScript(scriptText, confirmedArgv) {
     if (!isSafeLiteral(element)) return { ok: false, reason: "script-unsafe-element" };
     if (FORBIDDEN_ARG_EXACT.has(element)) return { ok: false, reason: "script-node-flag" };
     for (const prefix of FORBIDDEN_ARG_PREFIXES) {
-      if (element === prefix) return { ok: false, reason: "script-node-flag" };
+      if (element === prefix || element.startsWith(prefix)) {
+        return { ok: false, reason: "script-node-flag" };
+      }
     }
     for (const suffix of FORBIDDEN_ARG_SUFFIXES) {
       if (element.toLowerCase().endsWith(suffix)) return { ok: false, reason: "script-shell-executable" };
@@ -270,6 +272,24 @@ export function buildNativePlan({
       }
     }
     if (best !== null) changedRoots.add(best);
+  }
+  // Changed symbols drive selection too: a symbol entry of the form
+  // "<package_id>#<symbol>" attributes directly to its package; a
+  // bare symbol (no package attribution available in M3) is recorded
+  // as an uncertainty rather than silently ignored.
+  for (const symbol of changes?.symbols ?? []) {
+    const hashIndex = symbol.indexOf("#");
+    if (hashIndex > 0) {
+      const packageId = symbol.slice(0, hashIndex);
+      if (inventory.packages.some((pkg) => pkg.id === packageId)) {
+        changedRoots.add(packageId);
+        continue;
+      }
+    }
+    inventory.uncertainties.push({
+      kind: "unknown",
+      detail: `changed symbol without package attribution: ${symbol}`.slice(0, 256),
+    });
   }
   const confirmationByPackage = new Map();
   for (const confirmation of policy.confirmations) {

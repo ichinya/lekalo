@@ -97,6 +97,10 @@ test("confirmed-script parser: the literal form matches; shell forms refuse", ()
     "node tools/run.bat",
     "node --eval code",
     "node  a",
+    "node --eval=1",
+    "node --require=x",
+    "node --import=x",
+    "node --run=test",
   ]) {
     const result = parseConfirmedScript(hostileScript, undefined);
     assert.equal(result.ok, false, hostileScript);

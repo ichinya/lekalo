@@ -267,8 +267,8 @@ pub fn run_fixture_plan(
         commands: command_results,
         mutation_summary: NativeMutationSummary {
             created,
-            modified: Vec::new(),
-            deleted: Vec::new(),
+            modified,
+            deleted,
             unexpected,
         },
         original_verification: NativeOriginalVerification {
@@ -431,10 +431,17 @@ struct BoundedOutput {
     flooded: bool,
 }
 
-/// Bounded direct spawn: no shell, no inherited environment, both
-/// output streams drained under per-stream caps, hard deadline that
-/// kills the whole process group on unix. Floods and timeouts are
-/// classified distinctly.
+/// One drained stream: bounded bytes and its flood state.
+struct DrainedStream {
+    bytes: Vec<u8>,
+    flooded: bool,
+}
+
+/// Bounded direct spawn: no shell, no inherited environment. Each
+/// output stream is drained by its own thread feeding a channel, so
+/// the deadline always preempts a silent child and asymmetric output
+/// cannot wedge the drain. Floods and timeouts are classified
+/// distinctly.
 fn run_bounded(
     tool: &Path,
     script: &Path,
@@ -443,7 +450,6 @@ fn run_bounded(
     limits: &RunLimits,
     env: &[(String, String)],
 ) -> Result<BoundedOutput, NativeGateFailure> {
-    use std::io::Read;
     use std::process::{Command, Stdio};
     let mut process = Command::new(tool);
     process
@@ -485,99 +491,117 @@ fn run_bounded(
         }
         let _ = child.kill();
     };
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let mut stdout_flood = false;
-    let mut stderr_flood = false;
-    #[allow(unused_assignments)]
+    // One drain thread per stream: reads to EOF (or its cap) into its
+    // own buffer and reports flood state; the parent loop owns the
+    // deadline and never blocks on a quiet pipe.
+    let stdout_handle = drain_stdout(child.stdout.take(), limits.max_stdout);
+    let stderr_handle = drain_stderr(child.stderr.take(), limits.max_stderr);
+
+    // The parent loop owns the deadline and never blocks on a quiet
+    // pipe: it polls the child and checks the deadline each pass.
     let mut timed_out = false;
-    // Both pipes are erased to `Box<dyn Read>` so one drain loop
-    // serves stdout and stderr without type conflicts.
-    let mut pipes: [(bool, Option<Box<dyn Read>>); 2] = [
-        (
-            true,
-            child
-                .stdout
-                .take()
-                .map(|pipe| Box::new(pipe) as Box<dyn Read>),
-        ),
-        (
-            false,
-            child
-                .stderr
-                .take()
-                .map(|pipe| Box::new(pipe) as Box<dyn Read>),
-        ),
-    ];
-    loop {
+    let status = loop {
         if deadline_hit(&started) {
             timed_out = true;
             kill_tree(&mut child);
-            break;
-        }
-        // Drain both streams under their per-stream caps so a flood on
-        // either cannot wedge the child into a silent deadlock.
-        let mut progressed = false;
-        for (is_stdout, maybe_pipe) in pipes.iter_mut() {
-            let Some(pipe) = maybe_pipe.as_mut() else {
-                continue;
-            };
-            let mut chunk = [0u8; 4096];
-            match pipe.read(&mut chunk) {
-                Ok(0) => {}
-                Ok(n) => {
-                    progressed = true;
-                    let (sink, cap, flooded) = if *is_stdout {
-                        (&mut stdout, limits.max_stdout, &mut stdout_flood)
-                    } else {
-                        (&mut stderr, limits.max_stderr, &mut stderr_flood)
-                    };
-                    let room = cap.saturating_sub(sink.len());
-                    let take = n.min(room);
-                    sink.extend_from_slice(&chunk[..take]);
-                    if sink.len() >= cap {
-                        *flooded = true;
-                    }
-                }
-                Err(_) => {}
-            }
+            break child.wait();
         }
         match child.try_wait() {
-            Ok(Some(status)) => {
-                let code = status.code().unwrap_or(-1);
-                return Ok(BoundedOutput {
-                    exit_code: code,
-                    stdout,
-                    stderr,
-                    timed_out: false,
-                    flooded: stdout_flood || stderr_flood,
-                });
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(5)),
+            Err(_) => {
+                kill_tree(&mut child);
+                break child.wait();
             }
-            Ok(None) => {}
-            Err(_) => return Err(NativeGateFailure::RunInfrastructure),
         }
-        if (stdout_flood || stderr_flood) && !progressed {
-            // The flooded stream stopped yielding new bytes: kill and
-            // classify as flood rather than letting the child wedge.
-            kill_tree(&mut child);
-            let _ = child.wait();
-            return Ok(BoundedOutput {
-                exit_code: -1,
-                stdout,
-                stderr,
-                timed_out: false,
-                flooded: true,
-            });
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    let _ = child.wait();
+    };
+    let exit_code = status.ok().and_then(|status| status.code()).unwrap_or(-1);
+    let stdout = stdout_handle.join().unwrap_or(DrainedStream {
+        bytes: Vec::new(),
+        flooded: false,
+    });
+    let stderr = stderr_handle.join().unwrap_or(DrainedStream {
+        bytes: Vec::new(),
+        flooded: false,
+    });
     Ok(BoundedOutput {
-        exit_code: -1,
-        stdout,
-        stderr,
+        exit_code,
+        stdout: stdout.bytes,
+        stderr: stderr.bytes,
         timed_out,
-        flooded: stdout_flood || stderr_flood,
+        flooded: stdout.flooded || stderr.flooded,
+    })
+}
+
+/// Drain stdout to EOF (or cap) on a dedicated thread.
+fn drain_stdout(
+    pipe: Option<std::process::ChildStdout>,
+    cap: usize,
+) -> std::thread::JoinHandle<DrainedStream> {
+    use std::io::Read;
+    std::thread::spawn(move || {
+        let mut sink = Vec::new();
+        let mut flooded = false;
+        let Some(mut pipe) = pipe else {
+            return DrainedStream {
+                bytes: sink,
+                flooded,
+            };
+        };
+        let mut chunk = [0u8; 4096];
+        loop {
+            match pipe.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let room = cap.saturating_sub(sink.len());
+                    sink.extend_from_slice(&chunk[..n.min(room)]);
+                    if sink.len() >= cap {
+                        flooded = true;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        DrainedStream {
+            bytes: sink,
+            flooded,
+        }
+    })
+}
+
+/// Drain stderr to EOF (or cap) on a dedicated thread.
+fn drain_stderr(
+    pipe: Option<std::process::ChildStderr>,
+    cap: usize,
+) -> std::thread::JoinHandle<DrainedStream> {
+    use std::io::Read;
+    std::thread::spawn(move || {
+        let mut sink = Vec::new();
+        let mut flooded = false;
+        let Some(mut pipe) = pipe else {
+            return DrainedStream {
+                bytes: sink,
+                flooded,
+            };
+        };
+        let mut chunk = [0u8; 4096];
+        loop {
+            match pipe.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let room = cap.saturating_sub(sink.len());
+                    sink.extend_from_slice(&chunk[..n.min(room)]);
+                    if sink.len() >= cap {
+                        flooded = true;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        DrainedStream {
+            bytes: sink,
+            flooded,
+        }
     })
 }
 

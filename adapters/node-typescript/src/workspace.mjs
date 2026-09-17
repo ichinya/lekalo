@@ -234,11 +234,11 @@ export function candidateDirectoriesFromInventory(directories) {
 
 /**
  * Build the workspace inventory: membership, package records, and the
- * typed edge set. `readView` is the kernel read facade; `permittedRoot`
+ * typed edge set. `readView` is the kernel read facade`
  * the validated absolute project root. Every path stays repository-
  * relative; nothing outside the declared inventory is read.
  */
-export function buildWorkspaceInventory({ readView, permittedRoot, directories }) {
+export function buildWorkspaceInventory({ readView, directories }) {
   if (!readView || !readView.canRead(PACKAGE_MANIFEST)) {
     return {
       manager: "npm-standalone",

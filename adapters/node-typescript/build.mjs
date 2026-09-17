@@ -163,6 +163,11 @@ kernel.__setLaunchExtensions([
 export const compilerHostApi = ts;
 export const __lekaloKernel = kernel;
 export const __lekaloScanner = scanner;
+export const __lekaloNativeGate = nativeGate;
+export const __lekaloWorkspace = workspace;
+export const __lekaloNativePlan = nativePlan;
+export const __lekaloLaunchPolicy = nativePolicy;
+export const __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: "0.3.2", digest: kernel.entryDigest() };
 await kernel.runIfEntry(import.meta.url);
 `;
 

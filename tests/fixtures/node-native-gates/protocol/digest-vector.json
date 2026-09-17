@@ -2,7 +2,7 @@
   "plan": {
     "schema_version": "lekalo/native-gate-plan/v0.3.2",
     "kind": "native-plan",
-    "plan_digest": "sha256:2bdd305df6d3d7fd8a231217f1e6ce74973f44cb8c12ff944a06ec7796df56d2",
+    "plan_digest": "sha256:728233f14c04a17774d05200047a16a5be0b40055d763d82617bdf7a36e626be",
     "adapter": {
       "id": "lekalo-target-node-typescript",
       "version": "0.3.2",
@@ -34,7 +34,7 @@
     "execution_policy_ref": {
       "id": "fixture-native-policy",
       "version": "0.3.2",
-      "digest": "sha256:041e845bc257f69361e269346f9940d32a381e615a7b7ffb125648bafaf9b51c"
+      "digest": "sha256:ba1eb9bf6e1df8a4bf76e66873c547468b6d4c886628911861c36255826340e2"
     },
     "profile_ref": {
       "id": "standalone",
@@ -51,7 +51,7 @@
       "version": "0.3.2",
       "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
     },
-    "tool_catalog_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "tool_catalog_digest": "sha256:9981b1cf86b50f5045ba01686eceeae3689457e8ae18bc05ef444227b6e27516",
     "capability_snapshot_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
     "workspace": {
       "manager": "pnpm-workspace",
@@ -278,8 +278,8 @@
         "id": "fixture-node",
         "name": "node",
         "version": "unknown",
-        "artifact_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "entry_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "artifact_digest": "sha256:c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+        "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "platform": "windows",
         "provenance": "fixture-catalog"
       }
@@ -312,5 +312,5 @@
       "mode": "stage-only"
     }
   },
-  "digest": "sha256:2bdd305df6d3d7fd8a231217f1e6ce74973f44cb8c12ff944a06ec7796df56d2"
+  "digest": "sha256:728233f14c04a17774d05200047a16a5be0b40055d763d82617bdf7a36e626be"
 }

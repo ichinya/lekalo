@@ -24,8 +24,9 @@ The new protocol operation is `plan-native`: one read-only exchange
 whose request alone carries `native_request` (bounded changed
 files/symbols plus digest-addressed custody references) and whose
 successful result alone carries `native_plan` (the plan digest and a
-bounded summary). The frozen 0.3.1 documents keep their exact
-published meanings and refuse the operation. `dry_run`, `plan_id`,
+bounded summary). Negotiation is current-only 0.3.2: a 0.3.1 peer is refused at
+negotiation entirely (the frozen 0.3.1 documents keep their exact
+published meanings as superseded history). `dry_run`, `plan_id`,
 and `writes` stay forbidden on plan-native; the generation write-plan
 seam is never reused, and a native plan can never authorize a publish.
 
@@ -35,8 +36,9 @@ seam is never reused, and a native plan can never authorize a publish.
   with a strict bounded subset: canonical relative literals, `*`,
   `**`, `?`; tags, anchors, aliases, flow syntax, block scalars, tabs,
   and duplicate keys are structured refusals, never approximations.
-  Dot directories never match; `!` exclusions are recorded as
-  uncertainty, not silently applied.
+  Dot directories never match; a leading `!` marks a negated
+  exclusion that narrows membership and is recorded as an
+  uncertainty.
 - Package manifests are strict-JSON objects from the read view; every
   package id is `<root>=<name>`. Duplicate names and oversized
   inventories are refusals.
@@ -57,8 +59,9 @@ seam is never reused, and a native plan can never authorize a publish.
 - Only exact confirmed entries execute: the policy names
   package+script+manifest-hash+tool recipe. The confirmed script must
   match the full literal argv — prefix matches never confirm. Shell
-  metacharacters, interpolation, assignment prefixes, `node
-  --eval/--require/--import`, `pnpm/npm/yarn/bun/corepack/npx`,
+  metacharacters, interpolation, assignment prefixes, `node flags in bare or
+  attached-value form (`--eval`, `--eval=1`, `--require=x`,
+  `--import=y`, `--run=z`), `pnpm/npm/yarn/bun/corepack/npx`,
   shells, `.cmd/.bat/.ps1/.sh` refuse. Lifecycle hooks
   (`preinstall`/`postinstall`/`prepare`) never run; installation and
   updates never happen.
@@ -88,12 +91,12 @@ by a gate exit.
 
 | Platform | Base | Gap behavior |
 | --- | --- | --- |
-| Windows | LPAC no-network AppContainer, kill-on-close job, suspended launch, explicit env list | Unavailable LPAC/job/cwd support → blocked, never unconfined spawn |
-| Linux | bwrap unshare-all network/PID isolation, process-group teardown | Missing backend → blocked |
+| Windows (verified) | bounded direct spawn: deadline+kill, both pipes drained under caps, process-group kill on unix; capability evidence reports `unavailable` honestly | Network denial and descendant containment are NOT enforced — confinement is #89 |
+| Linux/macOS | not exercised on this runner | capability reported `unavailable`; confinement stays with #89/the backend suites |
 | macOS | sandbox-exec profile route | Unproven backend → blocked |
 
-Network denial is required for any fixture run; a denial signal
-without an enforcement backend is not proof and reports blocked.
+Network denial is NOT enforced by this runner; the receipt reports
+`network_denial: unavailable` honestly. True confinement is #89.
 
 ## M3 execution boundary (read this before running anything)
 

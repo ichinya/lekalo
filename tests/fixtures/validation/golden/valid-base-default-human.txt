@@ -1,1 +1,1 @@
-validated default profile v0.2.16: 23 rules, 0 errors, 0 warnings, 0 info
+validated default profile v0.3.2: 23 rules, 0 errors, 0 warnings, 0 info

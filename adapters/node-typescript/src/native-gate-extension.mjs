@@ -28,6 +28,8 @@ import {
   PlanRefusal,
 } from "./native-plan.mjs";
 import {
+  parseWorkspaceYaml,
+  MAX_WORKSPACE_DOC_BYTES,
   buildWorkspaceInventory,
   WorkspaceRefusal,
 } from "./workspace.mjs";
@@ -134,10 +136,12 @@ export function planNativeOperation(context, policyDocument) {
   try {
     // Membership over the read view: pnpm-workspace.yaml + every
     // package.json the inventory enumerates (both must be in scope).
-    const directories = listInventoryDirectories(readView);
+    // Derive candidate directories from the declared workspace patterns
+    // (in-scope pnpm-workspace.yaml) over the read view.
+    const inclusionPatterns = readDeclaredPatterns(readView);
+    const directories = listInventoryDirectories(readView, inclusionPatterns);
     inventory = buildWorkspaceInventory({
       readView,
-      permittedProjectRoot,
       directories,
     });
   } catch (error) {
@@ -199,49 +203,80 @@ export function planNativeOperation(context, policyDocument) {
 }
 
 /**
- * List the directories of the inventory (bounded, sorted): walks the
- * read view's roots breadth-first without following links (the read
- * view itself refuses links on any touched path).
+ * Read the declared workspace inclusion patterns from the in-scope
+ * pnpm-workspace.yaml via the read view. Returns [] when absent or
+ * unreadable (standalone layouts).
  */
-/**
- * Candidate directories from the trusted launch profile: every tree
- * read root is a candidate, and every direct child directory of a
- * tree root that contains a package manifest in scope is one too.
- * The kernel read view enforces scope/exclusions on every probe; no
- * ambient walk exists.
- */
-export function listInventoryDirectories(readView) {
+function readDeclaredPatterns(readView) {
+  const WORKSPACE_FILE = "pnpm-workspace.yaml";
+  const MAX_DOC = 1024 * 1024;
+  if (!readView.canRead(WORKSPACE_FILE)) return [];
+  try {
+    const parsed = parseWorkspaceYaml(
+      readView.readFile(WORKSPACE_FILE, { files: 4096, bytes: MAX_DOC }).toString("utf8"),
+    );
+    return parsed.packages ?? [];
+  } catch {
+    return [];
+  }
+}
+
+const CHILD_VOCABULARY = Object.freeze([
+  "packages", "apps", "libs", "tools", "services", "modules", "lib", "src",
+]);
+
+export function listInventoryDirectories(readView, inclusionPatterns) {
+  const patterns = inclusionPatterns.length > 0
+    ? inclusionPatterns
+    : readView.roots.filter((root) => root.kind === "tree").map((root) => root.path + "/**");
   const candidates = new Set();
-  for (const root of readView.roots ?? []) {
-    if (root.kind !== "tree") continue;
-    if (root.path !== ".") candidates.add(root.path);
-    for (const child of profileDeclaredChildren(root.path, readView)) {
-      candidates.add(child);
+  const MAX_CANDIDATES = 4096;
+  const MAX_DEPTH = 8;
+  const segmentAllows = (segment, name) => {
+    if (!segment.includes("*") && !segment.includes("?")) return segment === name;
+    const regexText = segment
+      .replace(/[.+^${}()|[\\]\\\\]/g, "\\\\$&")
+      .split("**").join("\u0000")
+      .split("*").join("[^/]*")
+      .split("?").join("[^/]")
+      .split("\u0000").join(".*");
+    return new RegExp("^(?:" + regexText + ")$").test(name);
+  };
+  const expand = (prefix, segments, depth) => {
+    if (candidates.size >= MAX_CANDIDATES || depth > MAX_DEPTH) return;
+    if (segments.length === 0) {
+      if (prefix !== "" && readView.canRead(prefix + "/package.json")) {
+        candidates.add(prefix);
+      }
+      return;
     }
+    const segment = segments[0];
+    if (segment === "**") {
+      if (prefix !== "") expand(prefix, [], depth);
+      for (const name of CHILD_VOCABULARY) {
+        const child = prefix === "" ? name : prefix + "/" + name;
+        expand(child, segments, depth + 1);
+      }
+      return;
+    }
+    if (!segment.includes("*") && !segment.includes("?")) {
+      const child = prefix === "" ? segment : prefix + "/" + segment;
+      expand(child, segments.slice(1), depth + 1);
+      return;
+    }
+    for (const name of CHILD_VOCABULARY) {
+      if (segmentAllows(segment, name)) {
+        const child = prefix === "" ? name : prefix + "/" + name;
+        expand(child, segments.slice(1), depth + 1);
+      }
+    }
+  };
+  for (const pattern of patterns) {
+    const body = pattern.startsWith("!") ? pattern.slice(1) : pattern;
+    expand("", body.split("/"), 0);
   }
   return [...candidates].sort();
 }
-
-/**
- * Direct child directory names discoverable in scope: a child counts
- * when a package manifest or a source file under it is readable.
- * Bounded to the known workspace layout vocabulary ("packages" and
- * siblings of the declared roots), never an ambient walk.
- */
-function profileDeclaredChildren(rootPath, readView) {
-  const children = [];
-  for (const name of ["packages", "apps", "libs", "tools"]) {
-    const childPath = rootPath === "." ? name : rootPath + "/" + name;
-    for (const leaf of ["package.json", "tsconfig.json", "src/main.ts"]) {
-      if (readView.canRead(childPath + "/" + leaf)) {
-        children.push(childPath);
-        break;
-      }
-    }
-  }
-  return children;
-}
-
 function verifyConfirmations(inventory, policyDocument, readView) {
   const unverifiable = [];
   const packageById = new Map(inventory.packages.map((pkg) => [pkg.id, pkg]));
@@ -295,14 +330,14 @@ function verifyConfirmations(inventory, policyDocument, readView) {
  * by id: name/version/provenance stay declared metadata; the digests
  * are the custody anchors the runner verifies.
  */
-function buildToolCatalog(policyDocument) {
+export function buildToolCatalog(policyDocument) {
   const seen = new Map();
   for (const confirmation of policyDocument.confirmations) {
     const tool = confirmation.tool_ref;
     if (!isObject(tool) || typeof tool.id !== "string" || seen.has(tool.id)) continue;
     seen.set(tool.id, {
       id: tool.id,
-      name: tool.id,
+      name: confirmation.argv[0] ?? tool.id,
       version: tool.version ?? "unknown",
       artifact_digest: tool.artifact_digest,
       entry_digest: tool.entry_digest,
@@ -328,4 +363,3 @@ function computeToolCatalogDigest(catalog) {
   };
   return sha256Text(canonical(catalog));
 }
-

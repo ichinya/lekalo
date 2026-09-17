@@ -1,14 +1,31 @@
-// Regenerate the golden plan through the kernel read view + bundle.
+// Regenerate the golden plan through the shipped pipeline: the bundled
+// adapter's real planner extension (listInventoryDirectories →
+// buildWorkspaceInventory → buildNativePlan), with the tool catalog
+// derived by the extension itself and all digests computed — no
+// hardcoded placeholder values. Path-resilient (works from any cwd).
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
-const repo = "C:/Users/User/orca/workspaces/lekalo/m3-issue-48";
-const adapter = await import(
-  pathToFileURL(repo + "/adapters/node-typescript/adapter.mjs").href
-);
-const kernel = adapter.__lekaloKernel;
+const repo = path.resolve(fileURLToPath(import.meta.url), "..", "..");
+const adapterPath = path.join(repo, "adapters/node-typescript/adapter.mjs");
+const adapter = await import(pathToFileURL(adapterPath).href);
+const kernelNs = adapter.__lekaloKernel;
+const nativeGate = adapter.__lekaloNativeGate;
+const workspace = adapter.__lekaloWorkspace;
+const nativePlan = adapter.__lekaloNativePlan;
+const launchPolicy = adapter.__lekaloLaunchPolicy;
+
+if (!nativeGate || !workspace || !nativePlan || !launchPolicy) {
+  process.stderr.write(
+    "regen-golden-plan: the adapter bundle does not export the planner " +
+      "symbols; rebuild with `node adapters/node-typescript/build.mjs`\n",
+  );
+  process.exit(1);
+}
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "plan-gen-"));
 const project = path.join(tmp, "project");
 fs.cpSync(
@@ -16,7 +33,8 @@ fs.cpSync(
   project,
   { recursive: true },
 );
-const profile = kernel.validateResolvedProjectProfile({
+
+const profile = kernelNs.validateResolvedProjectProfile({
   id: "standalone",
   mode: "observed",
   target: "node-typescript",
@@ -37,32 +55,32 @@ const roots = [
   { kind: "file", path: "package.json", scope: "package.json" },
   { kind: "file", path: "pnpm-workspace.yaml", scope: "pnpm-workspace.yaml" },
 ];
-const readView = kernel.createReadView(project, roots, profile);
+const readView = kernelNs.createReadView(project, roots, profile);
 readView.permittedProjectRoot = project;
-const dirs = adapter.__lekaloNativeGate.listInventoryDirectories(readView);
-const inv = adapter.__lekaloWorkspace.buildWorkspaceInventory({
+
+// The real pipeline: inventory discovery + build via the extension's
+// own helpers, and the plan from buildNativePlan with the extension's
+// real tool catalog (derived from the policy confirmations' argv) and
+// a computed catalog digest.
+const inclusionPatterns = launchPolicy
+  ? (launchPolicy.packages ?? [])
+  : [];
+const dirs = nativeGate.listInventoryDirectories(readView, inclusionPatterns);
+const inv = workspace.buildWorkspaceInventory({
   readView,
-  permittedProjectRoot: project,
   directories: dirs,
 });
-const policy = JSON.parse(
-  fs.readFileSync(
-    repo + "/tests/fixtures/node-native-gates/protocol/policy.golden.json",
-    "utf8",
-  ),
+const toolCatalog = nativeGate.buildToolCatalog(launchPolicy);
+const toolCatalogCanonical = JSON.stringify(
+  JSON.parse(JSON.stringify(toolCatalog)),
+  Object.keys(toolCatalog[0] ?? {}).sort(),
 );
-const toolCatalog = [
-  {
-    id: "fixture-node",
-    name: "node",
-    version: "unknown",
-    artifact_digest: "sha256:" + "c".repeat(64),
-    entry_digest: "sha256:" + "c".repeat(64),
-    platform: "windows",
-    provenance: "fixture-catalog",
-  },
-];
-const plan = adapter.__lekaloNativePlan.buildNativePlan({
+const { createHash } = await import("node:crypto");
+const toolCatalogDigest =
+  "sha256:" +
+  createHash("sha256").update(JSON.stringify(toolCatalog), "utf8").digest("hex");
+
+const plan = nativePlan.buildNativePlan({
   inventory: inv,
   changes: {
     files: [
@@ -74,12 +92,12 @@ const plan = adapter.__lekaloNativePlan.buildNativePlan({
     ],
     symbols: [],
   },
-  policy,
+  policy: launchPolicy,
   toolCatalog,
-  toolCatalogDigest: "sha256:" + "9".repeat(64),
+  toolCatalogDigest,
   profileRef: "standalone",
   profileDigest: "sha256:" + "f".repeat(64),
-  adapterIdentity: {
+  adapterIdentity: adapter.__lekaloKernelAdapterIdentity ?? {
     id: "lekalo-target-node-typescript",
     version: "0.3.2",
     digest: "sha256:" + "f".repeat(64),
@@ -89,12 +107,13 @@ const plan = adapter.__lekaloNativePlan.buildNativePlan({
   inputManifestDigest: "sha256:" + "5".repeat(64),
   capabilitySnapshotDigest: "sha256:" + "7".repeat(64),
 });
+
 fs.writeFileSync(
-  repo + "/tests/fixtures/node-native-gates/protocol/plan.golden.json",
+  path.join(repo, "tests/fixtures/node-native-gates/protocol/plan.golden.json"),
   JSON.stringify(plan, null, 2) + "\n",
 );
 fs.writeFileSync(
-  repo + "/tests/fixtures/node-native-gates/protocol/digest-vector.json",
+  path.join(repo, "tests/fixtures/node-native-gates/protocol/digest-vector.json"),
   JSON.stringify({ plan, digest: plan.plan_digest }, null, 2) + "\n",
 );
 console.log("plan regenerated:", plan.plan_digest);
@@ -103,5 +122,7 @@ console.log(
   plan.commands.length,
   "| root pkg:",
   plan.workspace.packages.some((p) => p.root === "."),
+  "| tools[0].name:",
+  plan.tools[0]?.name,
 );
 fs.rmSync(tmp, { recursive: true, force: true });

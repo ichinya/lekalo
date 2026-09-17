@@ -215105,6 +215105,20 @@ function moduleSemanticAnchor(modulePath, index) {
 }
 
 // src/workspace.mjs
+var workspace_exports = {};
+__export(workspace_exports, {
+  MAX_EDGES: () => MAX_EDGES,
+  MAX_PACKAGES: () => MAX_PACKAGES,
+  MAX_PATTERNS: () => MAX_PATTERNS,
+  MAX_UNCERTAINTIES: () => MAX_UNCERTAINTIES,
+  MAX_WORKSPACE_DOC_BYTES: () => MAX_WORKSPACE_DOC_BYTES,
+  WorkspaceRefusal: () => WorkspaceRefusal,
+  buildWorkspaceInventory: () => buildWorkspaceInventory,
+  candidateDirectoriesFromInventory: () => candidateDirectoriesFromInventory,
+  classifyWorkspacePattern: () => classifyWorkspacePattern,
+  parseWorkspaceYaml: () => parseWorkspaceYaml,
+  patternMatchesDirectory: () => patternMatchesDirectory
+});
 import { createHash as createHash3 } from "node:crypto";
 var MAX_PACKAGES = 1024;
 var MAX_EDGES = 8192;
@@ -215268,7 +215282,7 @@ function patternMatchesDirectory(body, directory) {
 function candidateDirectoriesFromInventory(directories) {
   return [...directories].sort(utf8Compare2);
 }
-function buildWorkspaceInventory({ readView, permittedRoot, directories }) {
+function buildWorkspaceInventory({ readView, directories }) {
   if (!readView || !readView.canRead(PACKAGE_MANIFEST)) {
     return {
       manager: "npm-standalone",
@@ -215553,11 +215567,39 @@ function sortDeep(value) {
 }
 
 // src/native-gate-extension.mjs
+var native_gate_extension_exports = {};
+__export(native_gate_extension_exports, {
+  PLANNER_VERSION: () => PLANNER_VERSION2,
+  PLAN_NATIVE_CAPABILITY: () => PLAN_NATIVE_CAPABILITY,
+  PLAN_NATIVE_OPERATION: () => PLAN_NATIVE_OPERATION,
+  adapterIdentity: () => adapterIdentity,
+  buildToolCatalog: () => buildToolCatalog,
+  launchPolicy: () => launchPolicy,
+  listInventoryDirectories: () => listInventoryDirectories,
+  planNativeOperation: () => planNativeOperation,
+  setAdapterIdentity: () => setAdapterIdentity,
+  setLaunchPolicy: () => setLaunchPolicy
+});
 import { createHash as createHash5 } from "node:crypto";
 
 // src/native-plan.mjs
+var native_plan_exports = {};
+__export(native_plan_exports, {
+  CANONICALIZATION_VERSION: () => CANONICALIZATION_VERSION,
+  PLANNER_VERSION: () => PLANNER_VERSION,
+  PLAN_CAPABILITY: () => PLAN_CAPABILITY,
+  PLAN_DIGEST_DOMAIN: () => PLAN_DIGEST_DOMAIN,
+  PlanRefusal: () => PlanRefusal,
+  buildNativePlan: () => buildNativePlan,
+  canonicalJsonText: () => canonicalJsonText2,
+  computeAffectedClosure: () => computeAffectedClosure,
+  isSafeLiteral: () => isSafeLiteral,
+  parseConfirmedScript: () => parseConfirmedScript,
+  planDigest: () => planDigest
+});
 import { createHash as createHash4 } from "node:crypto";
 var PLAN_DIGEST_DOMAIN = "lekalo.native-plan.v0.3.2";
+var PLAN_CAPABILITY = "plan.native-gates";
 var CANONICALIZATION_VERSION = "0.3.2";
 var PLANNER_VERSION = "0.3.2";
 var SHELL_METACHARACTERS = /* @__PURE__ */ new Set([
@@ -215781,6 +215823,20 @@ function buildNativePlan({
     }
     if (best !== null) changedRoots.add(best);
   }
+  for (const symbol of changes?.symbols ?? []) {
+    const hashIndex = symbol.indexOf("#");
+    if (hashIndex > 0) {
+      const packageId = symbol.slice(0, hashIndex);
+      if (inventory.packages.some((pkg) => pkg.id === packageId)) {
+        changedRoots.add(packageId);
+        continue;
+      }
+    }
+    inventory.uncertainties.push({
+      kind: "unknown",
+      detail: `changed symbol without package attribution: ${symbol}`.slice(0, 256)
+    });
+  }
   const confirmationByPackage = /* @__PURE__ */ new Map();
   for (const confirmation of policy.confirmations) {
     confirmationByPackage.set(confirmation.package_id, confirmation);
@@ -215934,9 +215990,13 @@ function buildNativePlan({
 
 // src/native-gate-extension.mjs
 var PLAN_NATIVE_CAPABILITY = "plan.native-gates";
+var PLAN_NATIVE_OPERATION = "plan-native";
 var PLANNER_VERSION2 = "0.3.2";
 var launchPolicy = null;
 var adapterIdentity = null;
+function setAdapterIdentity(identity) {
+  adapterIdentity = identity;
+}
 function setLaunchPolicy(policy) {
   launchPolicy = policy;
 }
@@ -216009,10 +216069,10 @@ function planNativeOperation(context, policyDocument) {
   const nativeRequest = decoded.value;
   let inventory;
   try {
-    const directories = listInventoryDirectories(readView);
+    const inclusionPatterns = readDeclaredPatterns(readView);
+    const directories = listInventoryDirectories(readView, inclusionPatterns);
     inventory = buildWorkspaceInventory({
       readView,
-      permittedProjectRoot,
       directories
     });
   } catch (error) {
@@ -216067,29 +216127,73 @@ function planNativeOperation(context, policyDocument) {
     }
   };
 }
-function listInventoryDirectories(readView) {
-  const candidates = /* @__PURE__ */ new Set();
-  for (const root of readView.roots ?? []) {
-    if (root.kind !== "tree") continue;
-    if (root.path !== ".") candidates.add(root.path);
-    for (const child of profileDeclaredChildren(root.path, readView)) {
-      candidates.add(child);
-    }
+function readDeclaredPatterns(readView) {
+  const WORKSPACE_FILE2 = "pnpm-workspace.yaml";
+  const MAX_DOC = 1024 * 1024;
+  if (!readView.canRead(WORKSPACE_FILE2)) return [];
+  try {
+    const parsed = parseWorkspaceYaml(
+      readView.readFile(WORKSPACE_FILE2, { files: 4096, bytes: MAX_DOC }).toString("utf8")
+    );
+    return parsed.packages ?? [];
+  } catch {
+    return [];
   }
-  return [...candidates].sort();
 }
-function profileDeclaredChildren(rootPath, readView) {
-  const children = [];
-  for (const name of ["packages", "apps", "libs", "tools"]) {
-    const childPath = rootPath === "." ? name : rootPath + "/" + name;
-    for (const leaf of ["package.json", "tsconfig.json", "src/main.ts"]) {
-      if (readView.canRead(childPath + "/" + leaf)) {
-        children.push(childPath);
-        break;
+var CHILD_VOCABULARY = Object.freeze([
+  "packages",
+  "apps",
+  "libs",
+  "tools",
+  "services",
+  "modules",
+  "lib",
+  "src"
+]);
+function listInventoryDirectories(readView, inclusionPatterns) {
+  const patterns = inclusionPatterns.length > 0 ? inclusionPatterns : readView.roots.filter((root) => root.kind === "tree").map((root) => root.path + "/**");
+  const candidates = /* @__PURE__ */ new Set();
+  const MAX_CANDIDATES = 4096;
+  const MAX_DEPTH = 8;
+  const segmentAllows = (segment, name) => {
+    if (!segment.includes("*") && !segment.includes("?")) return segment === name;
+    const regexText = segment.replace(/[.+^${}()|[\\]\\\\]/g, "\\\\$&").split("**").join("\0").split("*").join("[^/]*").split("?").join("[^/]").split("\0").join(".*");
+    return new RegExp("^(?:" + regexText + ")$").test(name);
+  };
+  const expand = (prefix, segments, depth) => {
+    if (candidates.size >= MAX_CANDIDATES || depth > MAX_DEPTH) return;
+    if (segments.length === 0) {
+      if (prefix !== "" && readView.canRead(prefix + "/package.json")) {
+        candidates.add(prefix);
+      }
+      return;
+    }
+    const segment = segments[0];
+    if (segment === "**") {
+      if (prefix !== "") expand(prefix, [], depth);
+      for (const name of CHILD_VOCABULARY) {
+        const child = prefix === "" ? name : prefix + "/" + name;
+        expand(child, segments, depth + 1);
+      }
+      return;
+    }
+    if (!segment.includes("*") && !segment.includes("?")) {
+      const child = prefix === "" ? segment : prefix + "/" + segment;
+      expand(child, segments.slice(1), depth + 1);
+      return;
+    }
+    for (const name of CHILD_VOCABULARY) {
+      if (segmentAllows(segment, name)) {
+        const child = prefix === "" ? name : prefix + "/" + name;
+        expand(child, segments.slice(1), depth + 1);
       }
     }
+  };
+  for (const pattern of patterns) {
+    const body = pattern.startsWith("!") ? pattern.slice(1) : pattern;
+    expand("", body.split("/"), 0);
   }
-  return children;
+  return [...candidates].sort();
 }
 function verifyConfirmations(inventory, policyDocument, readView) {
   const unverifiable = [];
@@ -216140,7 +216244,7 @@ function buildToolCatalog(policyDocument) {
     if (!isObject4(tool) || typeof tool.id !== "string" || seen.has(tool.id)) continue;
     seen.set(tool.id, {
       id: tool.id,
-      name: tool.id,
+      name: confirmation.argv[0] ?? tool.id,
       version: tool.version ?? "unknown",
       artifact_digest: tool.artifact_digest,
       entry_digest: tool.entry_digest,
@@ -216337,10 +216441,20 @@ __setLaunchExtensions([
 var compilerHostApi = ts;
 var __lekaloKernel = kernel_exports;
 var __lekaloScanner = scanner_exports;
+var __lekaloNativeGate = native_gate_extension_exports;
+var __lekaloWorkspace = workspace_exports;
+var __lekaloNativePlan = native_plan_exports;
+var __lekaloLaunchPolicy = native_policy_default;
+var __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: "0.3.2", digest: entryDigest() };
 await runIfEntry(import.meta.url);
 export {
+  __lekaloAdapterIdentity,
   __lekaloKernel,
+  __lekaloLaunchPolicy,
+  __lekaloNativeGate,
+  __lekaloNativePlan,
   __lekaloScanner,
+  __lekaloWorkspace,
   compilerHostApi
 };
 /*! Bundled license information:
