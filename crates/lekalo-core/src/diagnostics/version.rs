@@ -11,10 +11,10 @@ use serde::Serialize;
 pub const SCHEMA_VERSION: &str = "lekalo/diagnostic/v0.2.16";
 
 /// The exact wire discriminator of the diagnostic registry contract.
-pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v0.2.16";
+pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v0.3.2";
 
 /// The embedded diagnostic registry identity.
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.2.16";
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.3.2";
 
 /// The current diagnostic registry version. The integrated chain is
 /// additive end to end: 1.14.0 (issue #29) -> 1.16.0 (issue #39, the
@@ -29,7 +29,7 @@ pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.2.16";
 /// reserved by its parallel owner and is not part of this line) ->
 /// 0.2.16 (issue #66, the reserved `expression.*` family
 /// LEK-EXPR-001..009).
-pub const REGISTRY_VERSION: &str = "0.2.16";
+pub const REGISTRY_VERSION: &str = "0.3.2";
 
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,0 +1,332 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/native-gate-view.schema.v0.3.2.json",
+  "title": "Lekalo Native Gate Observed View",
+  "description": "Closed contract for the composite native gate observed view (issue #48): the read-only join of native gate receipts and the workspace package graph onto current observed records by native id, symbol, fingerprint and revision. The view links symbols to packages, packages to their required and selected gate commands, commands to their exact receipt results, and records freshness and completeness honestly: missing evidence is unknown, staleness degrades to incomplete, and nothing here extends the frozen observed-index or observed-scan JSON documents. This is impact evidence with cause-to-path-to-package-to-command linkage; it is never a canonical impact schema document and never grants execution authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "completeness",
+    "scan_revision",
+    "observed_ref",
+    "packages",
+    "symbols",
+    "gates",
+    "graph_evidence"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/native-gate-view/v0.3.2"
+    },
+    "kind": {
+      "const": "native-gate-view"
+    },
+    "completeness": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "incomplete",
+        "unknown"
+      ]
+    },
+    "completeness_detail": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "scan_revision": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    },
+    "observed_ref": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    },
+    "plan_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    },
+    "run_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    },
+    "packages": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "$ref": "#/$defs/packageView"
+      }
+    },
+    "symbols": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/symbolView"
+      }
+    },
+    "gates": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/gateView"
+      }
+    },
+    "graph_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "completeness",
+        "edges"
+      ],
+      "properties": {
+        "completeness": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "incomplete",
+            "unknown"
+          ]
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 8192,
+          "items": {
+            "$ref": "#/$defs/graphEdge"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    },
+    "packageId": {
+      "type": "string",
+      "pattern": "^[a-z0-9.][a-z0-9._/-]{0,63}=[a-z0-9@/._-]{1,192}$",
+      "maxLength": 256
+    },
+    "logicalPath": {
+      "type": "string",
+      "pattern": "^(?!(?:.*[/])?(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[./]|$))(?!(?:.*[/])?\\.{1,2}(?:/|$))(?!.*\\.(?:/|$))[a-z0-9.][a-z0-9._-]{0,63}(?:/[a-z0-9.][a-z0-9._-]{0,63})*$",
+      "maxLength": 512
+    },
+    "packageView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "root"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/packageId"
+        },
+        "root": {
+          "$ref": "#/$defs/logicalPath"
+        },
+        "affected": {
+          "type": "boolean"
+        },
+        "selected_commands": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+            "maxLength": 128
+          }
+        },
+        "reason_kinds": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "changed-package",
+              "dependent-closure",
+              "graph-bound-test",
+              "build-prerequisite",
+              "release-rule",
+              "explicit-binding"
+            ]
+          }
+        }
+      }
+    },
+    "symbolView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "native_id",
+        "package_id",
+        "freshness"
+      ],
+      "properties": {
+        "native_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "semantic_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,191}$",
+          "maxLength": 192
+        },
+        "package_id": {
+          "$ref": "#/$defs/packageId"
+        },
+        "module": {
+          "$ref": "#/$defs/logicalPath"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "freshness": {
+          "type": "string",
+          "enum": [
+            "current",
+            "stale",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "gateView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command_id",
+        "package_id",
+        "state"
+      ],
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+          "maxLength": 128
+        },
+        "package_id": {
+          "$ref": "#/$defs/packageId"
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "build",
+            "typecheck",
+            "lint",
+            "test"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "passed",
+            "failed",
+            "missing",
+            "blocked",
+            "unsupported",
+            "infrastructure",
+            "security",
+            "not-run"
+          ]
+        },
+        "exit": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            {
+              "type": "string",
+              "enum": [
+                "unknown",
+                "withheld"
+              ]
+            }
+          ]
+        },
+        "duration_ms": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "string",
+              "enum": [
+                "unknown",
+                "withheld"
+              ]
+            }
+          ]
+        },
+        "output_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "reason_codes": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+            "maxLength": 64
+          }
+        }
+      }
+    },
+    "graphEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "kind",
+        "provenance"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/packageId"
+        },
+        "to": {
+          "$ref": "#/$defs/packageId"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "dependency",
+            "dev-dependency",
+            "optional-dependency",
+            "peer-dependency",
+            "ts-reference",
+            "scanner-reference",
+            "target-binding"
+          ]
+        },
+        "provenance": {
+          "type": "string",
+          "enum": [
+            "workspace-specifier",
+            "manifest-evidence",
+            "lock-evidence",
+            "scan-evidence",
+            "explicit-binding"
+          ]
+        }
+      }
+    }
+  }
+}

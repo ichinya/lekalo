@@ -384,13 +384,18 @@ paths, actions, and digests are verified against the observed project
 state, with every deviation classified (`target.*` family, integrated
 registry 1.14.0). The contract, transport rules, and error taxonomy live in
 [docs/target-protocol.md](docs/target-protocol.md) and
-[ADR-0025](docs/adr/0025-target-protocol.md); the wire schemas are
-`contracts/target-protocol.schema.v0.2.16.json` (frozen base) and
-`contracts/target-protocol.schema.v0.2.16.json` (additive describe
-extension, issue #28) and
-`contracts/target-protocol.schema.v0.2.16.json` (additive resolved-profile
-request extension, issue #29); the language-neutral fake adapter and hermetic
+[ADR-0025](docs/adr/0025-target-protocol.md); the wire schema is
+`contracts/target-protocol.schema.v0.3.2.json` (issue #48 moved the
+family to the 0.3.1 product version by additively extending scan
+entries with a typed evidence member); the language-neutral fake adapter and hermetic
 fixtures are under `tests/fixtures/target-protocol/`.
+
+Issue #48 adds the native gate seam: read-only pnpm/npm workspace
+detection, an immutable execution plan over confirmed literal gates,
+and fixture-only execution through the test-only harness. The closed
+native contracts live in `contracts/native-gate-{policy,plan,run,view}.schema.v0.3.2.json`;
+the scope, digest/approval model, and honest platform matrix are in
+[docs/native-gates.md](docs/native-gates.md).
 
 Issue #28 adds capability discovery and version negotiation over the
 same wire: the describe handshake probes at the base version and

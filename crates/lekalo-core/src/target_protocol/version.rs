@@ -1,8 +1,9 @@
 //! The identity, wire, and bound constants of the target protocol
-//! (issues #27, #28, and #29).
+//! (issues #27, #28, and #29; issue #48 adds the read-only native gate
+//! seam).
 //!
 //! The wire token `lekalo.target/v1` names the protocol line. The line
-//! supports the exact current contract version `0.2.16`. The client probes
+//! supports the exact current contract version `0.3.2`. The client probes
 //! this version and requires an explicit adapter declaration. The identity uses
 //! `dev.lekalo.<topic>@<version>` spelling. Every bound here has a
 //! matching JSON Schema constraint; the paired test pins them together.
@@ -11,23 +12,24 @@
 pub const PROTOCOL_TOKEN: &str = "lekalo.target/v1";
 
 /// The describe probe version of the current contract.
-pub const BASE_VERSION: &str = "0.2.16";
+pub const BASE_VERSION: &str = "0.3.2";
 
-/// The current protocol contract version, including resolved profiles.
-pub const VERSION: &str = "0.2.16";
+/// The current protocol contract version, including resolved profiles
+/// and the read-only native gate plan exchange.
+pub const VERSION: &str = "0.3.2";
 
 /// The closed, ascending set of protocol versions this core decodes and
 /// negotiates. The registry may only publish versions from this set;
 /// anything else is a registry/decoder drift refused as a developer
 /// fault before any adapter is launched.
-pub const SUPPORTED_VERSIONS: [&str; 1] = ["0.2.16"];
+pub const SUPPORTED_VERSIONS: [&str; 1] = ["0.3.2"];
 
 /// The identity of the schema artifact for the current protocol version.
-pub const IDENTITY: &str = "dev.lekalo.target-protocol@0.2.16";
+pub const IDENTITY: &str = "dev.lekalo.target-protocol@0.3.2";
 
 /// The schema identity of the current wire contract
-/// (`lekalo/target-protocol/v0.2.16`).
-pub const SCHEMA_VERSION: &str = "lekalo/target-protocol/v0.2.16";
+/// (`lekalo/target-protocol/v0.3.2`).
+pub const SCHEMA_VERSION: &str = "lekalo/target-protocol/v0.3.2";
 
 /// Whether one exact spelling is in the supported negotiation set.
 pub fn is_supported_version(value: &str) -> bool {
@@ -94,10 +96,10 @@ mod tests {
     #[test]
     fn identity_is_the_published_contract_version() {
         assert_eq!(PROTOCOL_TOKEN, "lekalo.target/v1");
-        assert_eq!(BASE_VERSION, "0.2.16");
-        assert_eq!(VERSION, "0.2.16");
-        assert_eq!(IDENTITY, "dev.lekalo.target-protocol@0.2.16");
-        assert_eq!(SCHEMA_VERSION, "lekalo/target-protocol/v0.2.16");
+        assert_eq!(BASE_VERSION, "0.3.2");
+        assert_eq!(VERSION, "0.3.2");
+        assert_eq!(IDENTITY, "dev.lekalo.target-protocol@0.3.2");
+        assert_eq!(SCHEMA_VERSION, "lekalo/target-protocol/v0.3.2");
     }
 
     #[test]
@@ -117,13 +119,24 @@ mod tests {
             None,
             "unsupported spellings never negotiate"
         );
-        assert_eq!(declared(&["0.2.16"]).as_deref(), Some("0.2.16"));
+        assert_eq!(declared(&["0.3.2"]).as_deref(), Some("0.3.2"));
+        assert_eq!(declared(&["0.3.1"]).as_deref(), None, "0.3.1 is refused");
         for old in ["0.2.15", "1.0.0", "1.1.0", "1.2.0"] {
             assert_eq!(declared(&[old]), None);
             assert!(!is_supported_version(old));
-            assert_eq!(declared(&[old, "0.2.16"]).as_deref(), Some("0.2.16"));
+            assert_eq!(declared(&[old, "0.3.2"]).as_deref(), Some("0.3.2"));
         }
-        assert!(is_supported_version("0.2.16"));
+        assert!(
+            !is_supported_version("0.3.1"),
+            "current-only: 0.3.1 refused"
+        );
+        assert!(is_supported_version("0.3.2"));
+        // A session that declares both still negotiates the only supported
+        assert_eq!(
+            declared(&["0.3.1", "0.3.2"]).as_deref(),
+            Some("0.3.2"),
+            "negotiation prefers the supported spelling"
+        );
     }
 
     #[test]

@@ -24,7 +24,7 @@ import { dirname } from "node:path";
 
 const ADAPTER = {
   id: "node-typescript",
-  version: "0.2.16",
+  version: "0.3.1",
   digest: sha256("lekalo orchestration reference adapter v1"),
 };
 
@@ -73,7 +73,7 @@ function deterministicWrites(request) {
 function capabilities(requestedVersion) {
   const declared = {
     adapter: ADAPTER,
-    protocol_versions: ["0.2.16"],
+    protocol_versions: ["0.3.1"],
     operations: ["describe", "validate", "generate", "verify"],
     targets: ["node-typescript"],
     profiles: ["default"],

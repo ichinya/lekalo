@@ -5,7 +5,8 @@
 //! the client side of the published `lekalo.target/v1` process protocol:
 //!
 //! - the closed wire envelopes ([`wire`]) and their schema artifact
-//!   `contracts/target-protocol.schema.v0.2.16.json`;
+//!   `contracts/target-protocol.schema.v0.3.2.json` (the retired 0.3.1
+//!   document is archived under `tests/fixtures/target-protocol/frozen-0.3.1/`);
 //! - the direct, shell-free process transport with deadline, cancellation,
 //!   and output-size limits ([`transport`]);
 //! - scope grammar, protected canonical homes, and coverage checks
@@ -42,7 +43,7 @@ use wire::{Operation, RequestEnvelope, ResponseEnvelope, ResponseInvalidity, Res
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DescribeOutcome {
     /// The capabilities the adapter declared (identity, versions,
-    /// operations, transports, scopes, and — on a 0.2.16 session — IR
+    /// operations, transports, scopes, and — on a 0.3.1 session — IR
     /// versions, named capability support states, and constraints).
     pub capabilities: wire::Capabilities,
     /// The digest over the canonical capability bytes: the evidence anchor
@@ -76,7 +77,7 @@ pub struct CallRequest<'a> {
     pub target: Option<&'a str>,
     pub profile: Option<&'a str>,
     /// The resolved profile snapshot the operation binds to (issue #29).
-    /// Only a session negotiated at protocol 0.2.16 accepts it; on older
+    /// Only a session negotiated at protocol 0.3.1 accepts it; on older
     /// sessions the caller is refused instead of silently dropping the
     /// resolution, so an adapter always receives negotiated capabilities
     /// or nothing.
@@ -86,6 +87,10 @@ pub struct CallRequest<'a> {
     pub dry_run: Option<bool>,
     /// Required for apply operations; must equal the bound plan identity.
     pub plan_id: Option<&'a str>,
+    /// The read-only native gate planning input; required for
+    /// `plan-native`, refused elsewhere (issue #48). The borrowed value
+    /// is serialized into the envelope; ownership stays with the caller.
+    pub native_request: Option<&'a wire::NativeRequest>,
 }
 
 /// One completed, verified adapter operation.
@@ -380,7 +385,7 @@ impl TargetClient {
         {
             return Err(TargetFailure::IrUnsupported);
         }
-        // A resolved profile (issue #29) is bound to 0.2.16 sessions only:
+        // A resolved profile (issue #29) is bound to 0.3.1 sessions only:
         // an older session refuses the caller rather than silently
         // dropping the resolution.
         if request.profile_resolution.is_some() && described.negotiated_version != version::VERSION
@@ -458,6 +463,9 @@ impl TargetClient {
         envelope.profile = request.profile.map(str::to_owned);
         envelope.dry_run = dry_run;
         envelope.plan_id = plan_request;
+        if let Some(native) = request.native_request {
+            envelope.native_request = Some(native.clone());
+        }
         if let Some(resolution) = request.profile_resolution {
             envelope.profile_digest = Some(resolution.digest.clone());
             envelope.profile_capabilities = Some(resolution.capabilities.clone());
@@ -671,6 +679,17 @@ impl TargetClient {
         if request.operation != Operation::Generate && request.dry_run.is_some() {
             return invalid("dry-run");
         }
+        if request.operation == Operation::PlanNative {
+            // Read-only planning: no plan echo, no target/profile binding
+            // requirements beyond the shared grammar. The native_request
+            // member pairing is validated by the wire decoder.
+            if request.plan_id.is_some() {
+                return invalid("plan-id");
+            }
+            if request.native_request.is_none() {
+                return invalid("native-request");
+            }
+        }
         let apply = request.operation.is_destructive_apply()
             || (request.operation == Operation::Generate && request.dry_run == Some(false));
         if apply != request.plan_id.is_some() {
@@ -793,12 +812,22 @@ impl TargetClient {
             if result.truncated.is_some() && request.operation != Operation::Scan {
                 return invalid(ResponseInvalidity::UnexpectedMember);
             }
+            // Issue #48: the native_plan member is forbidden on every
+            // operation but plan-native; a plan-native result missing it
+            // falls through to the completeness check below.
+            if result.native_plan.is_some() && request.operation != Operation::PlanNative {
+                return invalid(ResponseInvalidity::UnexpectedMember);
+            }
+            if result.entries.is_some() && request.operation == Operation::PlanNative {
+                return invalid(ResponseInvalidity::UnexpectedMember);
+            }
         }
         let result = response.result.as_ref();
         let complete = match request.operation {
             Operation::Scan => result.is_some_and(|r| r.entries.is_some()),
             Operation::Bind => result.is_some_and(|r| r.bindings.is_some()),
             Operation::Validate | Operation::Verify => result.is_some_and(|r| r.ok.is_some()),
+            Operation::PlanNative => result.is_some_and(|r| r.native_plan.is_some()),
             _ => result.is_none(),
         };
         if !complete {
@@ -873,6 +902,7 @@ fn base_envelope(
         dry_run: None,
         limits: Some(limits),
         plan_id: None,
+        native_request: None,
     }
 }
 

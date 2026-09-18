@@ -1,0 +1,10 @@
+{
+  "name": "@fixture/standalone",
+  "version": "1.0.0",
+  "scripts": {
+    "preinstall": "node -e \"process.stderr.write('poison: standalone scripts must never run')\" && exit 1",
+    "postinstall": "node -e \"process.stderr.write('poison: standalone scripts must never run')\" && exit 1",
+    "prepare": "node -e \"process.stderr.write('poison: standalone scripts must never run')\" && exit 1",
+    "gate:test": "node gates/verify.mjs --mode test"
+  }
+}

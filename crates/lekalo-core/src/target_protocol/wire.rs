@@ -4,8 +4,10 @@
 //! JSON: sorted keys, no whitespace — `serde_json`'s `BTreeMap` ordering);
 //! response envelopes are parsed and semantically validated here. Unknown
 //! members are rejected on both sides: the protocol is closed. Wire names
-//! are snake_case exactly as the issue specifies; the schema artifact
-//! `contracts/target-protocol.schema.v0.2.16.json` mirrors every bound.
+//! are snake_case exactly as the issue specifies; the frozen schema artifact
+//! `tests/fixtures/target-protocol/frozen-0.3.1/target-protocol.schema.v0.3.1.json`
+//! documents the retired 0.3.1 bounds, and the current contract lives at
+//! `contracts/target-protocol.schema.v0.3.2.json`.
 
 use serde::{Deserialize, Serialize};
 
@@ -49,6 +51,17 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
         });
     }
     if !is_supported_version(&request.protocol_version) {
+        return Err(super::TargetFailure::ProtocolMismatch {
+            detail: ProtocolMismatch::Version,
+        });
+    }
+    // Issue #48: plan-native requires the current contract. A frozen
+    // 0.3.1 request naming the new operation is a version mismatch (the
+    // frozen documents keep their exact meanings), checked before the
+    // member pairing so the refusal names the protocol.
+    if request.operation == Operation::PlanNative
+        && request.protocol_version != super::version::VERSION
+    {
         return Err(super::TargetFailure::ProtocolMismatch {
             detail: ProtocolMismatch::Version,
         });
@@ -101,6 +114,59 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
     if request.operation.requires_ir() && request.ir_path.is_none() {
         return invalid("ir-path");
     }
+    // Issue #48: `native_request` is required on plan-native and forbidden
+    // on every other operation. plan-native is read-only: dry_run and
+    // plan_id are forbidden there and it requires the current version.
+    if (request.operation == Operation::PlanNative) != request.native_request.is_some() {
+        return invalid("native-request");
+    }
+    if request.operation == Operation::PlanNative {
+        if request.dry_run.is_some() || request.plan_id.is_some() {
+            return invalid("plan-id");
+        }
+        if request.protocol_version != super::version::VERSION {
+            return invalid("member");
+        }
+        let native = request.native_request.as_ref().expect("paired above");
+        if !is_sha256_digest(&native.input_manifest_digest)
+            || !is_sha256_digest(&native.tool_catalog_digest)
+            || !is_sha256_digest(&native.capability_snapshot_digest)
+        {
+            return invalid("native-request");
+        }
+        if native.changes.files.len() > 1024 || native.changes.symbols.len() > 1024 {
+            return invalid("native-request");
+        }
+        for file in &native.changes.files {
+            if !scopes::is_logical_path(&file.path) {
+                return invalid("native-request");
+            }
+            if file
+                .before_digest
+                .as_ref()
+                .is_some_and(|digest| !is_sha256_digest(digest))
+                || file
+                    .after_digest
+                    .as_ref()
+                    .is_some_and(|digest| !is_sha256_digest(digest))
+            {
+                return invalid("native-request");
+            }
+        }
+        for reference in std::iter::once(&native.scan_ref)
+            .chain(std::iter::once(&native.execution_policy_ref))
+            .chain(native.observed_ref.iter())
+        {
+            if !is_sha256_digest(&reference.digest)
+                || reference
+                    .adapter
+                    .as_ref()
+                    .is_some_and(|adapter| !scopes::is_token(adapter))
+            {
+                return invalid("native-request");
+            }
+        }
+    }
     if matches!(request.operation, Operation::Generate | Operation::Bind)
         && request.target.is_none()
     {
@@ -114,6 +180,7 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
             || request.profile.is_some()
             || request.profile_digest.is_some()
             || request.profile_capabilities.is_some()
+            || request.native_request.is_some()
             || request.ir_path.is_some())
     {
         return invalid("member");
@@ -260,7 +327,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
         if !identity_valid(&c.adapter)
             || !unique(&c.protocol_versions, 1, 8)
             || !c.protocol_versions.iter().all(|v| contract_version(v))
-            || !unique(&c.operations, 1, 8)
+            || !unique(&c.operations, 1, 9)
             || !unique(&c.transports, 1, 2)
             || !unique(&c.targets, 0, 64)
             || !unique(&c.profiles, 0, 64)
@@ -318,6 +385,20 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                     !scopes::is_logical_path(&e.path)
                         || !bounded(&e.kind, 128)
                         || e.detail.as_ref().is_some_and(|v| !bounded(v, 128))
+                        // Issue #44: the typed evidence member is
+                        // bounded exactly as the 0.3.1 schema declares
+                        // (references maxItems 8, sha256 signature,
+                        // semantic-id target ≤192).
+                        || e.evidence.as_ref().is_some_and(|ev| {
+                            ev.references.len() > 8
+                                || ev
+                                    .signature
+                                    .as_ref()
+                                    .is_some_and(|digest| !is_sha256_digest(digest))
+                                || ev.references.iter().any(|reference| {
+                                    !crate::trace::id::is_semantic_id(&reference.target)
+                                })
+                        })
                 })
         }) || result.findings.as_ref().is_some_and(|entries| {
             entries.len() > 10000
@@ -354,6 +435,12 @@ pub enum Operation {
     Clean,
     #[serde(rename = "plan-clean")]
     PlanClean,
+    /// The read-only native gate planning exchange (issue #48, protocol
+    /// 0.3.2): the adapter proposes one immutable native gate plan over
+    /// the changed inputs and never reads beyond its declared scopes or
+    /// executes anything.
+    #[serde(rename = "plan-native")]
+    PlanNative,
 }
 
 impl Operation {
@@ -368,6 +455,7 @@ impl Operation {
             Self::Verify => "verify",
             Self::Clean => "clean",
             Self::PlanClean => "plan-clean",
+            Self::PlanNative => "plan-native",
         }
     }
 
@@ -387,6 +475,18 @@ impl Operation {
     /// Operations whose response declares writes (plans or applied writes).
     pub fn declares_writes(self) -> bool {
         matches!(self, Self::Generate | Self::Clean | Self::PlanClean)
+    }
+
+    /// Whether the operation carries the closed `native_request` member
+    /// (required there, forbidden everywhere else).
+    pub fn carries_native_request(self) -> bool {
+        matches!(self, Self::PlanNative)
+    }
+
+    /// Whether a successful result may carry the closed `native_plan`
+    /// member (required exactly there, forbidden everywhere else).
+    pub fn carries_native_plan(self) -> bool {
+        matches!(self, Self::PlanNative)
     }
 }
 
@@ -447,8 +547,8 @@ pub struct RequestEnvelope {
     )]
     pub profile: Option<String>,
     /// The resolved profile snapshot digest (`sha256:…`, issue #29,
-    /// protocol 0.2.16). Legal only on a 0.2.16 request and only together
-    /// with `profile_capabilities`; a 0.2.16 or 0.2.16 request carrying it
+    /// protocol 0.3.1). Legal only on a 0.3.1 request and only together
+    /// with `profile_capabilities`; a 0.3.1 or 0.3.1 request carrying it
     /// is refused so the frozen documents keep their exact meanings.
     #[serde(
         default,
@@ -457,7 +557,7 @@ pub struct RequestEnvelope {
     )]
     pub profile_digest: Option<String>,
     /// The resolved profile capability snapshot (issue #29, protocol
-    /// 0.2.16), sorted strictly by capability id: the negotiated
+    /// 0.3.1), sorted strictly by capability id: the negotiated
     /// capabilities an adapter receives instead of arbitrary YAML.
     #[serde(
         default,
@@ -483,6 +583,16 @@ pub struct RequestEnvelope {
         skip_serializing_if = "Option::is_none"
     )]
     pub plan_id: Option<String>,
+    /// The read-only native gate planning input (issue #48, protocol
+    /// 0.3.2): the bounded changed inputs plus the custody and policy
+    /// references the planner may join. Required on `plan-native`, and
+    /// forbidden on every other operation.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub native_request: Option<NativeRequest>,
 }
 
 /// The adapter identity every response binds its evidence to.
@@ -513,18 +623,18 @@ pub struct Capabilities {
     #[serde(default)]
     pub progress: bool,
     /// The IR contract versions the adapter accepts (issue #28, protocol
-    /// 0.2.16). Absent on a 0.2.16 session: IR compatibility is then
+    /// 0.3.1). Absent on a 0.3.1 session: IR compatibility is then
     /// governed upstream by the #9 compatibility preflight, never
     /// guessed here.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ir_versions: Vec<String>,
     /// The named capability support states the adapter declares
-    /// (issue #28, protocol 0.2.16). Canonical byte order comes from the
+    /// (issue #28, protocol 0.3.1). Canonical byte order comes from the
     /// `BTreeMap`; an absent id is undeclared, never optimistically
     /// available.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub capabilities: std::collections::BTreeMap<String, SupportState>,
-    /// Optional declared constraints (issue #28, protocol 0.2.16).
+    /// Optional declared constraints (issue #28, protocol 0.3.1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub constraints: Option<AdapterConstraints>,
 }
@@ -569,7 +679,7 @@ pub struct AdapterConstraints {
     pub max_writes: Option<u64>,
 }
 
-/// One resolved profile capability carried on a 0.2.16 request (issue
+/// One resolved profile capability carried on a 0.3.1 request (issue
 /// #29): the support state the whole profile guarantees for the id.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -684,6 +794,56 @@ pub struct Finding {
     pub detail: Option<String>,
 }
 
+/// One typed evidence row of one scan entry (issue #44): an outbound
+/// semantic reference with the confidence the adapter claims.
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScanEntryReference {
+    pub target: String,
+    pub role: ScanEntryReferenceRole,
+    pub confidence: ScanEntryConfidence,
+}
+
+/// The closed role set of one scan entry reference.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScanEntryReferenceRole {
+    Read,
+    Create,
+    Update,
+    Delete,
+    Emit,
+    Call,
+    Reference,
+}
+
+/// The closed confidence set of one scan entry fact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScanEntryConfidence {
+    Exact,
+    High,
+    Medium,
+    Low,
+    Unknown,
+}
+
+/// The closed typed evidence of one scan entry (issue #44): the
+/// structural signature digest and up to eight outbound references.
+/// Missing members mean unknown, never absence.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScanEntryEvidence {
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<ScanEntryReference>,
+}
+
 /// One scan entry (scan results).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -696,6 +856,12 @@ pub struct ScanEntry {
         skip_serializing_if = "Option::is_none"
     )]
     pub detail: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub evidence: Option<ScanEntryEvidence>,
 }
 
 /// One binding proposal (bind results).
@@ -743,6 +909,17 @@ pub struct OperationResult {
         skip_serializing_if = "Option::is_none"
     )]
     pub bindings: Option<Vec<Binding>>,
+    /// The proposed immutable native gate plan reference (issue #48,
+    /// protocol 0.3.2): required on a successful `plan-native` result and
+    /// forbidden everywhere else. Carries the plan digest and bounded
+    /// summary only — the plan document itself travels through its own
+    /// contract family, never inside this envelope.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub native_plan: Option<NativePlanRef>,
 }
 
 /// The closed adapter error class set of an in-envelope operation error.
@@ -1034,6 +1211,150 @@ pub fn validate_writes(
     Ok(())
 }
 
+/// One bounded changed-file row of a native gate planning request
+/// (issue #48): the logical path, the change class, and the optional
+/// before/after content digests the caller can already prove.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeFileChange {
+    pub path: String,
+    pub change: NativeChangeKind,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub before_digest: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub after_digest: Option<String>,
+}
+
+/// The closed changed-input class set of one native gate file change.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NativeChangeKind {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+}
+
+/// One bounded content reference (digest plus optional revision/adapter
+/// provenance): a content reference, never a command or an absolute URL.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeContentRef {
+    pub digest: String,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub revision: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub adapter: Option<String>,
+}
+
+/// The closed `native_request` member of a `plan-native` request
+/// (issue #48): everything the planner may join, bounded and digest-
+/// addressed. The core verifies origin and shape before the adapter
+/// call and fixes the bytes; the adapter cannot raise its own trust.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeRequest {
+    pub changes: NativeChanges,
+    pub scan_ref: NativeContentRef,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub observed_ref: Option<NativeContentRef>,
+    pub execution_policy_ref: NativeContentRef,
+    pub input_manifest_digest: String,
+    pub tool_catalog_digest: String,
+    pub capability_snapshot_digest: String,
+}
+
+/// The bounded changed-input set of one native gate planning request.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeChanges {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<NativeFileChange>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub symbols: Vec<String>,
+}
+
+/// The closed `native_plan` result member of a successful `plan-native`
+/// exchange (issue #48): the digest of the proposed immutable plan over
+/// its own contract domain plus a bounded summary. Never a `plan_id`:
+/// the generation write-plan seam is not reused, and this member can
+/// never authorize a publish.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativePlanRef {
+    pub kind: NativePlanKind,
+    pub digest: String,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub commands: Option<u32>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub packages: Option<u32>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub completeness: Option<NativeCompleteness>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub run_eligibility: Option<NativeRunEligibility>,
+}
+
+/// The one legal `kind` spelling of a native plan reference.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativePlanKind {
+    NativePlan,
+}
+
+/// The closed completeness spelling of a native plan summary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NativeCompleteness {
+    Complete,
+    Incomplete,
+    Unknown,
+}
+
+/// The closed run-eligibility spelling of a native plan summary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeRunEligibility {
+    Runnable,
+    Blocked,
+    PlanOnly,
+}
+
 /// Whether one string is the canonical `sha256:<64 lowercase hex>` spelling.
 pub fn is_sha256_digest(value: &str) -> bool {
     let Some(hex) = value.strip_prefix("sha256:") else {
@@ -1072,6 +1393,7 @@ mod tests {
             dry_run: None,
             limits: None,
             plan_id: None,
+            native_request: None,
         }
     }
 
@@ -1162,7 +1484,7 @@ mod tests {
         request.profile_capabilities = Some(resolution.capabilities.clone());
         assert!(
             validate_request(&request).is_ok(),
-            "legal on a 0.2.16 request"
+            "legal on a 0.3.1 request"
         );
 
         // Pair rule: one member without the other is invalid.

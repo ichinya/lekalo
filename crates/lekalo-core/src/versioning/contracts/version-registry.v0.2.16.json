@@ -29,14 +29,14 @@
       "migrations": []
     },
     "protocol": {
-      "current": "0.2.16",
+      "current": "0.3.2",
       "aliases": [],
       "versions": [
         {
-          "version": "0.2.16",
+          "version": "0.3.2",
           "state": "supported",
           "classification": "breaking",
-          "reason": "Development baseline at product 0.2.16. Only the current contract is supported."
+          "reason": "Issue #48 native gates: the read-only plan-native operation with typed native_request/native_plan members at product 0.3.2. Only the current contract is supported."
         }
       ],
       "migrations": []

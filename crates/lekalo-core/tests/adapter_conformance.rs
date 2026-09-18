@@ -87,7 +87,7 @@ fn the_reference_adapter_passes_the_default_battery_with_an_exact_badge() {
         outcome.report.badge,
         lekalo_core::adapter_conformance::Badge {
             issued: true,
-            protocol: Some("0.2.16"),
+            protocol: Some("0.3.2"),
             ir: Some("0.2.16"),
         }
     );
@@ -110,8 +110,8 @@ fn the_fluent_adapter_passes_strict_with_the_current_badge() {
     let command = adapter_command(&["--lekalo-adapter-variant", "fluent"]);
     let outcome = run(&command, &timed_options("strict")).expect("the suite completes");
     assert_eq!(outcome.status, lekalo_core::result::Status::Valid);
-    assert_eq!(outcome.report.session.protocol, "0.2.16");
-    assert_eq!(outcome.report.badge.protocol, Some("0.2.16"));
+    assert_eq!(outcome.report.session.protocol, "0.3.2");
+    assert_eq!(outcome.report.badge.protocol, Some("0.3.2"));
     let (surface_state, _) = check(&outcome, "capability.surface");
     assert_eq!(surface_state, "pass");
     let (ir_state, _) = check(&outcome, "capability.ir-declaration");

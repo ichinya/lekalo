@@ -70,7 +70,7 @@ function evaluate(input, decision, code, malformed = false) {
 }
 
 try {
-  assert.equal(context.kindIds.length, 49);
+  assert.equal(context.kindIds.length, 53);
   assert.deepEqual(Object.keys(context.defaults), context.kindIds, "defaults must be the exact authority registry in exact order");
   assert.deepEqual(context.policy.authorityRef, AUTHORITY_REF);
   assert.deepEqual(context.policy.policyRef, POLICY_REF);

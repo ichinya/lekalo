@@ -1,0 +1,65 @@
+{
+  "schema_version": "lekalo/native-gate-view/v0.3.2",
+  "kind": "native-gate-view",
+  "completeness": "complete",
+  "scan_revision": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "observed_ref": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+  "plan_digest": "sha256:4848484848484848484848484848484848484848484848484848484848484848",
+  "packages": [
+    {
+      "id": "packages/planner=@fixture/planner",
+      "root": "packages/planner",
+      "affected": true,
+      "selected_commands": [
+        "gate-packages_planner__fixture_planner-test"
+      ],
+      "reason_kinds": [
+        "changed-package"
+      ]
+    },
+    {
+      "id": "packages/api=@fixture/api",
+      "root": "packages/api",
+      "affected": true,
+      "reason_kinds": [
+        "dependent-closure"
+      ]
+    },
+    {
+      "id": "packages/web=@fixture/web",
+      "root": "packages/web",
+      "affected": false
+    }
+  ],
+  "symbols": [
+    {
+      "native_id": "ts1-000000000000000000000000000000000000000000000000000000000000abc",
+      "semantic_id": "fixture_planner.planTask",
+      "package_id": "packages/planner=@fixture/planner",
+      "module": "packages/planner/src/plan.ts",
+      "fingerprint": "sha256:5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+      "freshness": "current"
+    }
+  ],
+  "gates": [
+    {
+      "command_id": "gate-packages_planner__fixture_planner-test",
+      "package_id": "packages/planner=@fixture/planner",
+      "gate": "test",
+      "state": "passed",
+      "exit": 0,
+      "duration_ms": 120
+    }
+  ],
+  "graph_evidence": {
+    "completeness": "complete",
+    "edges": [
+      {
+        "from": "packages/api=@fixture/api",
+        "to": "packages/planner=@fixture/planner",
+        "kind": "dependency",
+        "provenance": "workspace-specifier"
+      }
+    ]
+  }
+}

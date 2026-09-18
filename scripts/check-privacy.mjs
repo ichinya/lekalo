@@ -7,42 +7,42 @@ import { pathToFileURL } from "node:url";
 
 const BASE = new URL("../", import.meta.url);
 const DEFAULTS = {
-  manifest: new URL("contracts/privacy-policy.v0.2.16.manifest.json", BASE),
-  manifestSidecar: new URL("contracts/privacy-policy.v0.2.16.manifest.sha256", BASE),
-  policy: new URL("contracts/privacy-policy.v0.2.16.json", BASE),
-  policySidecar: new URL("contracts/privacy-policy.v0.2.16.sha256", BASE),
+  manifest: new URL("contracts/privacy-policy.v0.3.2.manifest.json", BASE),
+  manifestSidecar: new URL("contracts/privacy-policy.v0.3.2.manifest.sha256", BASE),
+  policy: new URL("contracts/privacy-policy.v0.3.2.json", BASE),
+  policySidecar: new URL("contracts/privacy-policy.v0.3.2.sha256", BASE),
   classificationContract: new URL("contracts/privacy-policy.v0.2.16.classification.json", BASE),
   classificationSidecar: new URL("contracts/privacy-policy.v0.2.16.classification.sha256", BASE),
   authorizingEvidenceContract: new URL("contracts/privacy-authorizing-evidence.v0.2.16.json", BASE),
   authorizingEvidenceSidecar: new URL("contracts/privacy-authorizing-evidence.v0.2.16.sha256", BASE),
   authorizationSubjectProfile: new URL("contracts/privacy-authorization-subject-profile.v0.2.16.json", BASE),
   authorizationSubjectProfileSidecar: new URL("contracts/privacy-authorization-subject-profile.v0.2.16.sha256", BASE),
-  inputSchema: new URL("contracts/privacy-export.schema.v0.2.16.json", BASE),
-  outputSchema: new URL("contracts/privacy-export.schema.v0.2.16.output.json", BASE),
+  inputSchema: new URL("contracts/privacy-export.schema.v0.3.2.json", BASE),
+  outputSchema: new URL("contracts/privacy-export.schema.v0.3.2.output.json", BASE),
   cliErrorSchema: new URL("contracts/privacy-cli-error.schema.v0.2.16.json", BASE),
   classificationSchema: new URL("contracts/privacy-export.schema.v0.2.16.classification.json", BASE),
-  authority: new URL("contracts/authority-matrix.v0.2.16.json", BASE),
+  authority: new URL("contracts/authority-matrix.v0.3.2.json", BASE),
 };
 
-const TRUSTED_MANIFEST_SHA256 = "376b5c6365ab9f4dd0d2f35533394e997ebbf52a484eb45bf9879ba7bc734946";
-const POLICY_RAW_SHA256 = "f7fd703b431681bd9aa9d7936642907ca100ab5761b0db1547c1b5f2b7cfed38";
+const TRUSTED_MANIFEST_SHA256 = "8d4a350a4bead32812237acd6a030b3f83cfa9043ca79b1a2a320f5272449129";
+const POLICY_RAW_SHA256 = "5263fb4a54b4fd858690add5c55a6c2f7105c7d3a9108d4fb0c10fd7f0bedd1e";
 const CLASSIFICATION_CONTRACT_RAW_SHA256 = "78de535f02b6a8065579b43798ed650849aca0b7edf1aa08b2e0219fc744dde6";
 const AUTHORIZING_EVIDENCE_RAW_SHA256 = "cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e";
 const AUTHORIZATION_SUBJECT_PROFILE_RAW_SHA256 = "11c3c6ddea482ba5cf1bca27f08d602801d7739f1bd57ed5efb15e100584dec0";
-const INPUT_SCHEMA_RAW_SHA256 = "56b4a0ccbd8347a0e0e72c44e769e0e1ac94d171b3a18e0dfc1df62a1ecbf833";
-const OUTPUT_SCHEMA_RAW_SHA256 = "f65ce24d1335a4bd12ae3f7887b8c1629b93512eca54968dc087cdb9ed5519f6";
+const INPUT_SCHEMA_RAW_SHA256 = "8884b669303be61a78bffb889530b238846e4469fc8d758364eaabffcc7e162b";
+const OUTPUT_SCHEMA_RAW_SHA256 = "13de85bede68b89a905e02ab9a136aedadf20e58afb6051fc13189f6666eb89e";
 const CLI_ERROR_SCHEMA_RAW_SHA256 = "46305d2c886f81e6793f4981814d1bb940bd4fffe0a02d25f6d0a615ea7fdf57";
 const CLASSIFICATION_SCHEMA_RAW_SHA256 = "a6d871bb9159e104667afe7543423d665dd3f30498e22b0d7ae63426da8f2741";
-const AUTHORITY_RAW_SHA256 = "141641cfbc1fbf6a07add99feafb877f9f544687ad558ab91d619ec7dd78d1b4";
+const AUTHORITY_RAW_SHA256 = "cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4";
 
 export const POLICY_REF = Object.freeze({
   policyId: "dev.lekalo.privacy-export-policy",
-  version: "0.2.16",
-  digest: "sha256:430ba543098c91f70d0c4e37c32ac8e41b3de65498f119ecf85188919c095c93",
+  version: "0.3.2",
+  digest: "sha256:5643547b96e1ca9f422e91e699c8d04e676e6eb820b4ef21a88860c74133c3b9",
 });
 export const AUTHORITY_REF = Object.freeze({
   contractId: "dev.lekalo.authority-matrix",
-  version: "0.2.16",
+  version: "0.3.2",
   digest: `sha256:${AUTHORITY_RAW_SHA256}`,
 });
 export const CLASSIFICATION_CONTRACT_REF = Object.freeze({
@@ -61,8 +61,8 @@ export const AUTHORIZATION_SUBJECT_PROFILE_REF = Object.freeze({
   digest: `sha256:${AUTHORIZATION_SUBJECT_PROFILE_RAW_SHA256}`,
 });
 export const DECISION_REF = Object.freeze({ contractId: "dev.lekalo.privacy-export-decision", version: "0.2.16" });
-export const INPUT_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-export-input-schema", version: "0.2.16" });
-export const OUTPUT_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-export-output-schema", version: "0.2.16" });
+export const INPUT_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-export-input-schema", version: "0.3.2" });
+export const OUTPUT_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-export-output-schema", version: "0.3.2" });
 export const CLI_ERROR_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-cli-error-schema", version: "0.2.16" });
 export const CLASSIFICATION_SCHEMA_REF = Object.freeze({ schemaId: "dev.lekalo.privacy-classification-decision-schema", version: "0.2.16" });
 
@@ -255,9 +255,9 @@ export async function loadTrustedContext(options = {}) {
     authorizingEvidenceBytes, authorizingEvidenceSidecarBytes, authorizationSubjectProfileBytes, authorizationSubjectProfileSidecarBytes,
     inputBytes, outputBytes, cliErrorSchemaBytes, classificationSchemaBytes, authorityBytes] = bytes;
   requireCondition(rawSha256(manifestBytes) === TRUSTED_MANIFEST_SHA256, "custody.manifest-untrusted");
-  requireCondition(sidecarMatches(manifestSidecarBytes, TRUSTED_MANIFEST_SHA256, "privacy-policy.v0.2.16.manifest.json"), "custody.manifest-sidecar-mismatch");
+  requireCondition(sidecarMatches(manifestSidecarBytes, TRUSTED_MANIFEST_SHA256, "privacy-policy.v0.3.2.manifest.json"), "custody.manifest-sidecar-mismatch");
   requireCondition(rawSha256(policyBytes) === POLICY_RAW_SHA256, "custody.policy-bytes-mismatch");
-  requireCondition(sidecarMatches(policySidecarBytes, POLICY_RAW_SHA256, "privacy-policy.v0.2.16.json"), "custody.policy-sidecar-mismatch");
+  requireCondition(sidecarMatches(policySidecarBytes, POLICY_RAW_SHA256, "privacy-policy.v0.3.2.json"), "custody.policy-sidecar-mismatch");
   requireCondition(rawSha256(classificationBytes) === CLASSIFICATION_CONTRACT_RAW_SHA256, "custody.classification-contract-bytes-mismatch");
   requireCondition(sidecarMatches(classificationSidecarBytes, CLASSIFICATION_CONTRACT_RAW_SHA256, "privacy-policy.v0.2.16.classification.json"), "custody.classification-sidecar-mismatch");
   requireCondition(rawSha256(authorizingEvidenceBytes) === AUTHORIZING_EVIDENCE_RAW_SHA256, "custody.authorizing-evidence-bytes-mismatch");
@@ -303,7 +303,7 @@ export async function loadTrustedContext(options = {}) {
   "custody.subject-profile-ref-mismatch");
   requireCondition(authority.contractId === AUTHORITY_REF.contractId && authority.version === AUTHORITY_REF.version, "custody.authority-ref-mismatch");
   const accepted = manifest.acceptedContracts?.[0];
-  requireCondition(manifest.formatVersion === "0.2.16" && manifest.status === "accepted" && manifest.accepted === true
+  requireCondition(manifest.formatVersion === "0.3.2" && manifest.status === "accepted" && manifest.accepted === true
     && manifest.acceptedContracts?.length === 1 && accepted?.status === "accepted" && accepted?.accepted === true
     && sameObject(accepted?.policyRef, POLICY_REF) && accepted?.policyFileDigest === `sha256:${POLICY_RAW_SHA256}`
     && sameObject(manifest.currentAcceptedRef, POLICY_REF), "custody.manifest-policy-mismatch");
@@ -358,13 +358,13 @@ export async function loadTrustedContext(options = {}) {
   "custody.subject-profile-semantic-inventory-mismatch");
 
   const authorityKinds = authority.artifactKinds?.map((entry) => entry.id);
-  requireCondition(Array.isArray(authorityKinds) && authorityKinds.length === 49 && new Set(authorityKinds).size === 49, "custody.authority-registry-not-closed-exact");
+  requireCondition(Array.isArray(authorityKinds) && authorityKinds.length === 53 && new Set(authorityKinds).size === 53, "custody.authority-registry-not-closed-exact");
   const defaults = policy.artifactDefaults;
-  requireCondition(Array.isArray(defaults) && defaults.length === 49, "custody.policy-default-count");
+  requireCondition(Array.isArray(defaults) && defaults.length === 53, "custody.policy-default-count");
   requireCondition(defaults.every((entry, index) => exactKeys(entry, ["artifactKind", "exportDisposition"])
     && entry.artifactKind === authorityKinds[index]
     && policy.vocabularies.exportDisposition.includes(entry.exportDisposition)), "custody.policy-default-registry-mismatch");
-  requireCondition(new Set(defaults.map((entry) => entry.artifactKind)).size === 49, "custody.policy-default-duplicate");
+  requireCondition(new Set(defaults.map((entry) => entry.artifactKind)).size === 53, "custody.policy-default-duplicate");
   requireCondition(policy.constraintPolicy?.localVocabularyOverridesAllowed === false
     && Array.isArray(policy.constraintPolicy?.reviewedBroadeningGrants)
     && policy.constraintPolicy.reviewedBroadeningGrants.length === 0

@@ -1,0 +1,9 @@
+{
+  "name": "@fixture/planner",
+  "version": "1.0.0",
+  "scripts": {
+    "preinstall": "node -e \"process.stderr.write('poison')\" && exit 1",
+    "test": "node -e \"process.stderr.write('poison')\" && exit 1",
+    "gate:test": "node gates/verify.mjs --mode test"
+  }
+}

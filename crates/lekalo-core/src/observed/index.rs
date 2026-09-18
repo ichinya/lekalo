@@ -277,6 +277,7 @@ pub fn update_index(
             &scan.adapter,
             &scan.revision,
             &mut moved,
+            &mut staled,
         );
         index.symbols.push(record);
     }
@@ -341,13 +342,16 @@ pub fn update_index(
     ))
 }
 
-/// Merge one scanned symbol with its previous record.
+/// Merge one scanned symbol with its previous record. `staled` collects
+/// the ids whose structural signature drifted on a user-owned binding
+/// (issue #44 AC4): those records go stale pending reconfirmation.
 fn merge_symbol(
     symbol: &super::types::ScanSymbol,
     previous: Option<&SymbolRecord>,
     adapter: &AdapterIdentity,
     revision: &str,
     moved: &mut Vec<String>,
+    staled: &mut Vec<String>,
 ) -> SymbolRecord {
     let provenance = Provenance {
         origin: super::types::Origin::Observed,
@@ -401,11 +405,38 @@ fn merge_symbol(
         next.history.push(HistoryEntry {
             event: HistoryEvent::Moved,
             revision: revision.to_owned(),
-            from: previous_path,
+            from: previous_path.clone(),
             to: next_path.clone(),
         });
     }
     next.kind = symbol.kind;
+    // Issue #44 AC4: for explicit/confirmed (user-owned) bindings, a
+    // CHANGED structural signature is semantic-shape drift — the binding
+    // must go stale pending reconfirmation. The recorded location and
+    // file fingerprint are NOT silently refreshed to the scanned values:
+    // the old facts stay on the record (the audit's file-truth gate keeps
+    // reporting the drift), the new evidence is held in the candidate set
+    // only, and the scan revision is recorded in history. Inferred
+    // bindings keep the old behavior (they follow the scan).
+    let signature_drift = next.status != BindingStatus::Inferred
+        && next.evidence.signature.is_some()
+        && symbol.evidence.signature.is_some()
+        && next.evidence.signature != symbol.evidence.signature;
+    if signature_drift {
+        next.state = BindingState::Stale;
+        next.history.push(HistoryEntry {
+            event: HistoryEvent::Staled,
+            revision: revision.to_owned(),
+            from: previous_path.clone(),
+            to: next_path,
+        });
+        staled.push(next.id.clone());
+        // Keep the user-owned record's location/fingerprint/evidence
+        // verbatim (never silently refreshed); expose the fresh scan as
+        // candidate material for reconfirmation.
+        next.candidates = symbol.candidates.clone();
+        return next;
+    }
     next.evidence = evidence;
     // A scan never downgrades a user-owned binding status, never erases
     // a user-owned fact's recorded location (an ambiguous scan carries
@@ -495,7 +526,15 @@ pub fn bind_explicit(
         line,
     });
     record.fingerprint = fingerprint.clone();
-    record.evidence.signature = fingerprint;
+    // Review round 2, R-1: the file fingerprint lives in its proper
+    // `fingerprint` field only. `evidence.signature` is structural-shape
+    // truth carried by the 0.3.1 wire; writing a file hash here would
+    // poison the F-1 drift comparison (file-hash vs structural-hash are
+    // different domains and would always differ, falsely staling every
+    // explicit binding on the next signature-carrying scan). The
+    // structural signature, if the record carries one from a scan, is
+    // preserved verbatim — the user's bind does not invent shape truth.
+    record.evidence.signature = None;
     record.provenance = Provenance {
         origin: super::types::Origin::Declared,
         confidence: Confidence::Exact,

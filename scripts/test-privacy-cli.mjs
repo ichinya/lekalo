@@ -62,7 +62,7 @@ try {
   assert.equal(defaultOutput.status, "valid");
   assert.equal(defaultOutput.policyLifecycle, "accepted");
   assert.equal(defaultOutput.accepted, true);
-  assert.equal(defaultOutput.policyRef.version, "0.2.16");
+  assert.equal(defaultOutput.policyRef.version, "0.3.2");
   subprocessCases += 1;
 
   for (const group of ["allowed", "ambiguous", "malformed", "forbidden", "transform-required"]) {

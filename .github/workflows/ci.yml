@@ -134,6 +134,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+    # Steps are written in bash; Windows runners default to pwsh otherwise.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -166,6 +170,39 @@ jobs:
         timeout-minutes: 3
         run: cargo test -p lekalo-core --test target_transport_unix --locked -- --test-threads=1
       - run: cargo test --workspace --locked --no-fail-fast
+      - name: Run the Node/TypeScript kernel suite (issue #43)
+        run: node scripts/test-node-typescript-kernel.mjs
+      - name: Provision the vendored compiler bundle custody (issue #44)
+        run: |
+          set -euo pipefail
+          npm ci --prefix adapters/node-typescript --ignore-scripts --no-audit --no-fund
+          node adapters/node-typescript/build.mjs --check
+      - name: Run the TypeScript scanner suite (issue #44)
+        run: node scripts/test-node-typescript-scanner.mjs
+      - name: Run the native gate suite (issue #48)
+        run: node scripts/test-node-native-gates.mjs
+      - name: Provision exact Ajv 8.17.1 outside the checkout (issue #48)
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1
+          export NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.17.1/node_modules"
+          test "$(node -p "require('ajv/package.json').version")" = "8.17.1"
+      - name: Run the native gate contract gate (issue #48)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-native-gate-contracts.mjs
+      - name: Execute the native gate host suites (issue #48)
+        run: cargo test --locked -p lekalo-core --lib native_gate
+      - name: Run the applicable conformance battery against the kernel adapter (bare)
+        run: cargo run --locked -p lekalo-cli -- adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs
+      - name: Run the conformance battery against the configured scanner adapter (issue #44)
+        run: |
+          set -euo pipefail
+          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-scanner/protocol/conformance.profile.json)
+          cargo run --locked -p lekalo-cli -- adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
+          cargo run --locked -p lekalo-cli -- adapter test --profile strict --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON" || test $? -eq 4
       - name: Run the target adapter conformance suite against the reference adapter
         timeout-minutes: 10
         run: cargo run --locked -p lekalo-cli -- adapter test --profile strict --report junit --timeout-ms 60000 node tests/fixtures/target-protocol/fake-adapter.mjs --lekalo-adapter-variant fluent

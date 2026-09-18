@@ -68,6 +68,7 @@ fn request(operation: Operation, dry: Option<bool>, id: Option<&str>) -> CallReq
         ir_path: Some(".lekalo/ir/input.json"),
         dry_run: dry,
         plan_id: id,
+        native_request: None,
     }
 }
 fn call(

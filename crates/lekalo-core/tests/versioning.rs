@@ -111,8 +111,8 @@ mod compatibility {
             ir("0.2.16"),
             ir("0.2.16"),
             Some(lekalo_core::versioning::compatibility::ProtocolBounds {
-                min: protocol("0.2.16"),
-                max: protocol("0.2.16"),
+                min: protocol("0.3.2"),
+                max: protocol("0.3.2"),
             }),
             Vec::new(),
             Vec::new(),
@@ -142,7 +142,7 @@ mod compatibility {
         assert!(historical.protocol().current().is_none());
         assert!(historical.protocol().resolve_alias("v1").is_none());
         assert_eq!(published.protocol().resolve_alias("v1"), None);
-        let selected = protocol("0.2.16");
+        let selected = protocol("0.3.2");
         for (registry, version, expected) in [
             (&historical, None, &["versioning.protocol-unpublished"][..]),
             (

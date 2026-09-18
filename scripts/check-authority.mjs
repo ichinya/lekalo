@@ -10,7 +10,7 @@ const manifestPath = resolve(root, "contracts/authority-contracts.manifest.json"
 const defaultAllowedPath = resolve(root, "tests/fixtures/authority/allowed.json");
 const defaultForbiddenPath = resolve(root, "tests/fixtures/authority/forbidden.json");
 const defaultMalformedPath = resolve(root, "tests/fixtures/authority/malformed.json");
-const trustedManifestSha256 = "3343240f93db67cd49a14f16cf72c3428ea81b9ee21213105aff008d7bd22371";
+const trustedManifestSha256 = "3411bd223d7ccdf65ee0df337860640e9ef82d3643f5da63367593aeb8a1a5a5";
 const baselinePathBoundaries = [
   { pattern: "openspec/specs/**", owner: "openspec" },
   { pattern: "openspec/changes/**", owner: "openspec" },
@@ -75,7 +75,27 @@ const successorAddedKindIds = [
   "aggregate.artifact",
   "aggregate.decision"
 ];
+// Issue #48: the reviewed native-gate artifact kinds, appended in exactly
+// this order to the 0.3.2 successor matrix (and to the privacy successor's
+// artifactDefaults). The 0.2.16 baseline does not carry them.
+const issue48KindIds = [
+  "lekalo.native-gate-policy",
+  "lekalo.native-execution-plan",
+  "lekalo.native-gate-result",
+  "lekalo.native-gate-output"
+];
 const acceptedProfiles = new Map([
+  ["0.3.2", {
+    contractId: "dev.lekalo.authority-matrix",
+    version: "0.3.2",
+    digest: "sha256:cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4",
+    semanticSha256: "fef84f1bdb19366325bfa29953e7c25f536d548d6090c1ca9be3530f80bfbdb9",
+    path: "contracts/authority-matrix.v0.3.2.json",
+    sidecar: "contracts/authority-matrix.v0.3.2.sha256",
+    kindIds: [...baselineKindIds, ...successorAddedKindIds, ...issue48KindIds],
+    readersRequired: true,
+    boundarySchema: "kind-bound"
+  }],
   ["0.2.16", {
     contractId: "dev.lekalo.authority-matrix",
     version: "0.2.16",
@@ -184,7 +204,7 @@ async function loadTrustedManifest() {
   );
   if (
     manifest.manifestId !== "dev.lekalo.authority-contract-manifest" ||
-    manifest.formatVersion !== "0.2.16" ||
+    manifest.formatVersion !== "0.3.2" ||
     manifest.digestAlgorithm !== "sha256" ||
     manifest.digestInput !== "exact-file-bytes" ||
     manifest.selfReferential !== false
@@ -224,7 +244,7 @@ async function loadTrustedManifest() {
     !currentProfile ||
     current.contractId !== currentProfile.contractId ||
     current.digest !== currentProfile.digest ||
-    current.version !== "0.2.16"
+    current.version !== "0.3.2"
   ) {
     fail("Authority manifest currentAuthorityRef must be the trusted reviewed successor");
   }
@@ -805,7 +825,14 @@ function validateContract(contract, profile) {
   );
   if (canonicalLekaloKinds.length === 0) fail("Canonical Lekalo artifact kinds are missing");
   for (const kind of canonicalLekaloKinds) {
-    if (kind.allowedPaths.some((pattern) => !pattern.startsWith("lekalo/"))) {
+    // Issue #48: the checked-in native gate policy kind is the one
+    // canonical Lekalo artifact whose reviewed home is the governed
+    // `.lekalo/native-gates/policies/**` runtime custody rather than the
+    // canonical `lekalo/**` model home; every other canonical Lekalo
+    // kind must stay under `lekalo/**`.
+    const policyKindExempt = kind.id === "lekalo.native-gate-policy"
+      && kind.allowedPaths.every((pattern) => pattern.startsWith(".lekalo/native-gates/"));
+    if (!policyKindExempt && kind.allowedPaths.some((pattern) => !pattern.startsWith("lekalo/"))) {
       fail(`Canonical Lekalo artifact ${kind.id} must stay under lekalo/**`);
     }
   }

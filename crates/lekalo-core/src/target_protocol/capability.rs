@@ -1,6 +1,6 @@
 //! The versioned capability definition registry (issue #28).
 //!
-//! Every named capability an adapter may declare on the 0.2.16 describe
+//! Every named capability an adapter may declare on the 0.3.1 describe
 //! response carries exactly one definition here: a stable dotted id, the
 //! semantic meaning of its support states, and the definition version the
 //! semantics were written under. The registry is embedded, closed, and
@@ -12,8 +12,8 @@
 use serde::Serialize;
 
 /// The identity of the embedded capability definition registry
-/// (`dev.lekalo.target-capabilities@0.2.16`).
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.2.16";
+/// (`dev.lekalo.target-capabilities@0.3.1`).
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.3.2";
 
 /// One versioned capability definition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -34,33 +34,39 @@ pub struct CapabilityDefinition {
 const DEFINITIONS: &[CapabilityDefinition] = &[
     CapabilityDefinition {
         id: "generate.openapi",
-        definition_version: "0.2.16",
+        definition_version: "0.3.1",
         domain: "generate",
         semantics: "Emits an OpenAPI document from the compiled project IR. `full` covers every declared operation and type; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
         id: "generate.ui",
-        definition_version: "0.2.16",
+        definition_version: "0.3.1",
         domain: "generate",
         semantics: "Emits a user-interface projection from the compiled project IR. `full` covers every declared screen and component; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
         id: "generate.zod",
-        definition_version: "0.2.16",
+        definition_version: "0.3.1",
         domain: "generate",
         semantics: "Emits Zod schemas from the compiled project IR. `full` covers every declared type and invariant; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
         id: "scan.symbols",
-        definition_version: "0.2.16",
+        definition_version: "0.3.1",
         domain: "scan",
         semantics: "Enumerates project symbols through the `scan` operation. `full` covers every declared module and entity; `partial` covers a declared subset; `unsupported` never scans; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
         id: "verify.scenarios",
-        definition_version: "0.2.16",
+        definition_version: "0.3.1",
         domain: "verify",
         semantics: "Verifies scenario coverage through the `verify` operation. `full` covers every declared scenario; `partial` covers a declared subset; `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "plan.native-gates",
+        definition_version: "0.3.2",
+        domain: "plan",
+        semantics: "Plans native build/test gates over a detected Node workspace through the read-only `plan-native` operation. `full` produces the immutable plan over every confirmed gate; `partial` covers a declared subset; `unsupported` never plans; `unknown` is a declared state the core does not treat as available.",
     },
 ];
 
@@ -81,7 +87,7 @@ mod tests {
 
     #[test]
     fn registry_identity_and_definitions_are_pinned() {
-        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.2.16");
+        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.3.2");
         let ids: Vec<&str> = definitions().iter().map(|entry| entry.id).collect();
         assert_eq!(
             ids,
@@ -91,10 +97,14 @@ mod tests {
                 "generate.zod",
                 "scan.symbols",
                 "verify.scenarios",
+                "plan.native-gates",
             ]
         );
         for entry in definitions() {
-            assert_eq!(entry.definition_version, "0.2.16");
+            assert!(
+                entry.definition_version == "0.3.1" || entry.definition_version == "0.3.2",
+                "definition versions stay on the accepted generations"
+            );
             assert!(
                 crate::target_protocol::wire::is_capability_id(entry.id),
                 "every defined id satisfies the wire grammar"

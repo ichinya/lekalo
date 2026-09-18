@@ -39,8 +39,8 @@ const FAULT =
 
 /**
  * The declared capability profile (issue #28): `legacy` (default) speaks
- * exactly the 0.2.16 contract; the fluent variants additionally declare
- * protocol 0.2.16 and answer a 0.2.16 describe with IR versions, named
+ * exactly the 0.3.1 contract; the fluent variants additionally declare
+ * protocol 0.3.1 and answer a 0.3.1 describe with IR versions, named
  * capability support states, and constraints. `unknown` declares unknown
  * states, `incompatible` declares an IR set without the core IR version,
  * and `partial` is the issue's example map.
@@ -107,7 +107,7 @@ const CAPABILITY_PROFILES = {
 
 const ADAPTER = {
   id: IDENTITY ?? "node-typescript",
-  version: "0.2.16",
+  version: "0.3.2",
   digest: sha256("lekalo fake target adapter v1"),
 };
 
@@ -120,6 +120,7 @@ const ALL_OPERATIONS = [
   "verify",
   "clean",
   "plan-clean",
+  "plan-native",
 ];
 const OPERATIONS = OPS_FILTER
   ? ALL_OPERATIONS.filter((op) => OPS_FILTER.includes(op))
@@ -170,7 +171,7 @@ function planId(writes) {
 function capabilities(requestedVersion) {
   const declared = {
     adapter: ADAPTER,
-    protocol_versions: ["0.2.16"],
+    protocol_versions: ["0.3.2"],
     operations: OPERATIONS,
     targets: ["node-typescript"],
     profiles: ["default"],
