@@ -25,7 +25,7 @@ import {
   setLaunchPolicy,
 } from "../src/native-gate-extension.mjs";
 import { buildWorkspaceInventory } from "../src/workspace.mjs";
-import { buildNativePlan } from "../src/native-plan.mjs";
+import { buildNativePlan, planDigest } from "../src/native-plan.mjs";
 import launchPolicy from "../src/native-policy.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -173,5 +173,15 @@ test("the production pipeline reproduces the committed golden plan byte-exact", 
   const golden = JSON.parse(
     readFileSync(join(repoRoot, "tests/fixtures/node-native-gates/protocol/plan.golden.json"), "utf8"),
   );
-  assert.deepEqual(plan, golden, "the golden must be the production pipeline output");
+  // The tool catalog binds the host platform honestly — a plan approved
+  // on Windows must not be byte-reproducible on POSIX. The expectation is
+  // the golden with the local platform substituted and the two derived
+  // digests recomputed through the production helpers; everything else
+  // must match byte-exactly.
+  const expected = structuredClone(golden);
+  const localPlatform = process.platform === "win32" ? "windows" : process.platform;
+  for (const tool of expected.tools) tool.platform = localPlatform;
+  expected.tool_catalog_digest = computeToolCatalogDigest(expected.tools);
+  expected.plan_digest = planDigest(expected);
+  assert.deepEqual(plan, expected, "the golden must be the production pipeline output modulo host platform");
 });
