@@ -86,6 +86,10 @@ impl ScanSandbox {
             b"export const tag = \"helper\";\n",
         )
         .expect("helper source");
+        // Canonicalize after creation: on Windows %TEMP% may spell
+        // ancestors with 8.3 short names (e.g. RUNNER~1), and the
+        // selection alias check refuses non-canonical spellings.
+        let dir = std::fs::canonicalize(&dir).expect("canonical sandbox");
         Self { dir }
     }
 }
