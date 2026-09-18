@@ -210,7 +210,11 @@ test("readView denies paths outside resolved roots and excluded paths", () => {
   void roots;
   // Facade denial is asserted through the kernel-level counters in the
   // dispatch tests; here the lexical containment invariant is pinned.
-  assert.ok(isInsideRoot(project, project + "\\src"));
+  // isInsideRoot is platform-dependent by design: on POSIX a backslash is a
+  // legal filename byte, not a separator, so only the platform separator
+  // may join a child path.
+  const sep = process.platform === "win32" ? "\\" : "/";
+  assert.ok(isInsideRoot(project, project + sep + "src"));
   assert.equal(isInsideRoot(project, project), false, "the root itself is never inside");
   dispose(root);
 });
