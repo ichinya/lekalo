@@ -4,8 +4,10 @@
 //! JSON: sorted keys, no whitespace — `serde_json`'s `BTreeMap` ordering);
 //! response envelopes are parsed and semantically validated here. Unknown
 //! members are rejected on both sides: the protocol is closed. Wire names
-//! are snake_case exactly as the issue specifies; the schema artifact
-//! `contracts/target-protocol.schema.v0.3.1.json` mirrors every bound.
+//! are snake_case exactly as the issue specifies; the frozen schema artifact
+//! `tests/fixtures/target-protocol/frozen-0.3.1/target-protocol.schema.v0.3.1.json`
+//! documents the retired 0.3.1 bounds, and the current contract lives at
+//! `contracts/target-protocol.schema.v0.3.2.json`.
 
 use serde::{Deserialize, Serialize};
 

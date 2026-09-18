@@ -15,7 +15,8 @@ carries the `init.*` adoption entries introduced in 1.13.0 and the
 The v1 line carries exact contract versions. The current `0.3.2`
 (`contracts/target-protocol.schema.v0.3.2.json`) is the version new
 integrations target; the frozen `0.3.1` document
-(`contracts/target-protocol.schema.v0.3.1.json`) keeps its exact
+(`tests/fixtures/target-protocol/frozen-0.3.1/target-protocol.schema.v0.3.1.json`)
+keeps its exact
 published meaning and refuses the members added later. On a current
 session the describe response's `capabilities` object carries:
 

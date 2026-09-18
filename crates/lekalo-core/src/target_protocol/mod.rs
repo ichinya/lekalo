@@ -5,7 +5,8 @@
 //! the client side of the published `lekalo.target/v1` process protocol:
 //!
 //! - the closed wire envelopes ([`wire`]) and their schema artifact
-//!   `contracts/target-protocol.schema.v0.3.1.json`;
+//!   `contracts/target-protocol.schema.v0.3.2.json` (the retired 0.3.1
+//!   document is archived under `tests/fixtures/target-protocol/frozen-0.3.1/`);
 //! - the direct, shell-free process transport with deadline, cancellation,
 //!   and output-size limits ([`transport`]);
 //! - scope grammar, protected canonical homes, and coverage checks
