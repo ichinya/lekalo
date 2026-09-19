@@ -350,3 +350,32 @@ fn the_report_canonical_bytes_carry_the_wire_identity() {
     let again = resolve_with(&attachment, &[&eu], &CapabilitySnapshot::unresolved());
     assert_eq!(bytes, again.report.canonical_bytes().unwrap());
 }
+
+#[test]
+fn the_golden_report_matches_the_production_bytes() {
+    let attachment = fixture_attachment();
+    let eu = fixture_evidence(EVIDENCE_EU);
+    let resolution = resolve_with(&attachment, &[&eu], &CapabilitySnapshot::unresolved());
+    let bytes = resolution
+        .report
+        .canonical_bytes()
+        .expect("canonical bytes");
+    let golden =
+        fs::read_to_string(workspace_root().join("tests/fixtures/nfr/golden/planner.report.json"))
+            .unwrap();
+    assert_eq!(
+        bytes, golden,
+        "the committed golden is the production bytes"
+    );
+    let sidecar = fs::read_to_string(
+        workspace_root().join("tests/fixtures/nfr/golden/planner.report.json.sha256"),
+    )
+    .unwrap();
+    assert_eq!(
+        sidecar.trim(),
+        format!(
+            "sha256:{}",
+            lekalo_core::digest::sha256_hex(bytes.as_bytes())
+        )
+    );
+}
