@@ -117,6 +117,9 @@ fn transport_suite_runs_from_the_workspace_root() {
         canonical_bytes_are_deterministic_and_reparseable();
         bounds_are_enforced_at_the_wire();
         capabilities_and_projection_invariants();
+        endpoint_bound_refuses_beyond_the_limit();
+        canonical_digest_is_pinned();
+        every_capability_kind_refuses_without_profile_support();
     });
     std::env::set_current_dir(original).expect("restore working dir");
     if let Err(payload) = result {
@@ -314,4 +317,98 @@ fn capabilities_and_projection_invariants() {
         .with_capabilities(&map)
         .strict();
     assert!(validate(&document, &with_map).is_ok());
+}
+
+/// The endpoint-list bound refuses one past the limit and accepts
+/// exactly at it; the wire bound is arrival-order independent.
+fn endpoint_bound_refuses_beyond_the_limit() {
+    let base = read_fixture("valid/planner.transport.json");
+    let template = base["endpoints"][0].clone();
+    let bound = lekalo_core::transport_http::version::MAX_ENDPOINTS;
+    let document = |count: usize| {
+        let mut doc = base.clone();
+        let mut endpoints = Vec::new();
+        for index in 0..count {
+            let mut endpoint = template.clone();
+            endpoint["endpoint"] =
+                serde_json::Value::String(format!("planner.endpoint_bulk_{index}"));
+            endpoints.push(endpoint);
+        }
+        doc["endpoints"] = serde_json::Value::Array(endpoints);
+        doc
+    };
+    assert!(
+        TransportDocument::from_value(&document(bound)).is_ok(),
+        "exactly the bound parses"
+    );
+    let refused = TransportDocument::from_value(&document(bound + 1))
+        .expect_err("one past the bound refuses");
+    assert_eq!(
+        refusal(&refused),
+        Some((
+            "transport.input-invalid".to_owned(),
+            "endpoint-bound".to_owned()
+        ))
+    );
+}
+
+/// The canonical digest is deterministic across parses of the same
+/// bytes; the pinned spelling is the closed sha256 form.
+fn canonical_digest_is_pinned() {
+    let document =
+        TransportDocument::from_value(&read_fixture("valid/planner.transport.json")).unwrap();
+    let digest = document.digest().expect("digest");
+    assert_eq!(
+        digest.as_str().len(),
+        "sha256:".len() + 64,
+        "the digest is the closed sha256 spelling"
+    );
+    let again = TransportDocument::from_value(&read_fixture("valid/planner.transport.json"))
+        .unwrap()
+        .digest()
+        .unwrap();
+    assert_eq!(digest, again);
+}
+
+/// Every capability kind is checked against the profile map
+/// independently: an empty map refuses each declared kind with the
+/// explicit capability id in the diagnostic data.
+fn every_capability_kind_refuses_without_profile_support() {
+    let (project, registry, query_model, _) = loaded();
+    let empty = CapabilityMap::empty();
+    let base = read_fixture("valid/planner.transport.json");
+    for (kind, detail) in [
+        ("streaming", "sse"),
+        ("upload", "multipart"),
+        ("download", "binary"),
+    ] {
+        let mut doc = base.clone();
+        let stream = doc["endpoints"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|endpoint| endpoint["endpoint"] == "planner.endpoint_task_stream")
+            .unwrap();
+        stream["capabilities"] = serde_json::json!([
+            { "capability": kind, "minimumSupport": "partial", "detail": detail }
+        ]);
+        let document = TransportDocument::from_value(&doc).expect("parses");
+        let context = ValidationContext::new(&project)
+            .with_errors(registry)
+            .with_query_model(&query_model)
+            .with_capabilities(&empty);
+        let set =
+            validate(&document, &context).expect_err(&format!("{kind} without support refuses"));
+        let one = set.as_slice().first().expect("one diagnostic");
+        assert_eq!(one.id(), "transport.capability-unsatisfied", "{kind}");
+        let capability = one
+            .data()
+            .get("capability")
+            .and_then(|value| match value {
+                lekalo_core::diagnostics::DataValue::Token(text) => Some(text.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        assert_eq!(capability, format!("transport.{kind}"));
+    }
 }

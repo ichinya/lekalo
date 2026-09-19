@@ -85,6 +85,11 @@ impl CapabilityMap {
         ])
     }
 
+    /// The empty map: no capability has any support.
+    pub fn empty() -> Self {
+        Self::from_sorted(Vec::new())
+    }
+
     /// The support of one capability id, or `Absent`.
     pub fn support(&self, id: &str) -> ProfileSupport {
         self.entries
