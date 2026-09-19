@@ -241,6 +241,13 @@ enum Commands {
         #[command(subcommand)]
         command: RequirementsCommands,
     },
+    /// Validate, inspect, project or compare HTTP/JSON transport
+    /// attachments (issue #70). The core owns every decision; this
+    /// binary only selects, renders, and maps exits.
+    Transport {
+        #[command(subcommand)]
+        command: TransportCommands,
+    },
     /// Validate one declarative query-model attachment against the
     /// project, or compare two attachments of the same family.
     QueryModel {
@@ -850,6 +857,48 @@ enum RequirementsCommands {
 /// path and every decision — wire validation, semantic self-check,
 /// Model custody, reference resolution, the strict tenant gate, and
 /// the plan projection — lives in the core. Nothing is ever written.
+/// The `transport` subcommands (issue #70): the thin
+/// validate/inspect/project/diff handoff over the core transport-http
+/// family. The attachment document is read at the given path and every
+/// decision — wire validation, semantic validation, the projection,
+/// and the diff classification — lives in the core.
+#[derive(Debug, Subcommand)]
+enum TransportCommands {
+    /// Validate the attachment against the selected project: wire
+    /// normalization, custody, the semantic pass, and — under
+    /// `--strict` — the mapping-completeness and capability gates.
+    Validate {
+        /// Path to the transport attachment JSON document.
+        path: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Path to the bound #62 error registry the error map checks
+        /// against; without it those checks are skipped.
+        #[arg(long, value_name = "FILE")]
+        errors: Option<String>,
+        /// Path to the bound #64 query-model attachment the query
+        /// endpoint checks resolve against.
+        #[arg(long, value_name = "FILE")]
+        query_model: Option<String>,
+        /// Enforce the strict profile gates.
+        #[arg(long)]
+        strict: bool,
+    },
+    /// Inspect one endpoint binding: the joined Model surface (method,
+    /// path, invokes) plus every declared transport member.
+    Inspect {
+        /// Path to the transport attachment JSON document.
+        path: String,
+        /// The endpoint symbol to inspect.
+        #[arg(long, value_name = "SYMBOL")]
+        endpoint: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 enum QueryModelCommands {
     /// Validate the attachment against the selected project and emit
@@ -1190,6 +1239,7 @@ fn main() -> ExitCode {
                 format: DiffFormat::Json,
             } => run_diff(first, second, base, profiles),
             Commands::QueryModel { command } => run_query_model(command),
+            Commands::Transport { command } => run_transport(command),
             Commands::Expressions { command } => run_expressions(command),
             Commands::Graph { command } => run_graph(command, cli.no_cache),
             Commands::Effects { command } => run_effects(command, cli.no_cache),
@@ -3012,6 +3062,250 @@ fn run_requirements(command: RequirementsCommands) -> DomainResult {
         RequirementsStep::Trace => requirements_trace(&resolution.report),
     }
 }
+/// Read one transport attachment document from disk with a classified
+/// read-only failure routed through the transport family.
+fn read_transport_document(path: &str) -> Result<serde_json::Value, DomainResult> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                io::ErrorKind::NotFound => "file-missing",
+                _ => "file-unreadable",
+            };
+            return Err(DomainResult::invalid(
+                lekalo_core::transport_http::io_failure(detail),
+            ));
+        }
+    };
+    serde_json::from_slice(&bytes)
+        .map_err(|_| DomainResult::invalid(lekalo_core::transport_http::io_failure("invalid-json")))
+}
+
+/// Run one `lekalo transport` operation. The core owns every
+/// decision; this binary only reads the documents, selects, renders,
+/// and maps exits.
+fn run_transport(command: TransportCommands) -> DomainResult {
+    match command {
+        TransportCommands::Validate {
+            path,
+            project,
+            errors,
+            query_model,
+            strict,
+        } => transport_validate(
+            &path,
+            &project,
+            errors.as_deref(),
+            query_model.as_deref(),
+            strict,
+        ),
+        TransportCommands::Inspect {
+            path,
+            endpoint,
+            project,
+        } => transport_inspect(&path, &endpoint, &project),
+    }
+}
+
+/// Read one optional context document from disk.
+fn read_context_document(path: Option<&str>) -> Result<Option<serde_json::Value>, DomainResult> {
+    match path {
+        None => Ok(None),
+        Some(path) => {
+            let bytes = match std::fs::read(path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    let detail = match error.kind() {
+                        io::ErrorKind::NotFound => "file-missing",
+                        _ => "file-unreadable",
+                    };
+                    return Err(DomainResult::invalid(
+                        lekalo_core::transport_http::io_failure(detail),
+                    ));
+                }
+            };
+            serde_json::from_slice(&bytes).map(Some).map_err(|_| {
+                DomainResult::invalid(lekalo_core::transport_http::io_failure("invalid-json"))
+            })
+        }
+    }
+}
+
+/// `lekalo transport validate`: wire normalization, custody, and the
+/// semantic pass against the selected project and every bound context.
+fn transport_validate(
+    path: &str,
+    project: &Option<String>,
+    errors_path: Option<&str>,
+    query_model_path: Option<&str>,
+    strict: bool,
+) -> DomainResult {
+    let document = match read_transport_document(path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let attachment = match lekalo_core::transport_http::TransportDocument::from_value(&document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let selection = selection_for(project);
+    // The bound #62 registry: explicit path, or the embedded seed.
+    let registry = match read_context_document(errors_path) {
+        Ok(value) => match value {
+            Some(json) => match serde_json::to_string(&json)
+                .map_err(|_| lekalo_core::transport_http::io_failure("errors-registry-invalid"))
+                .and_then(|canonical| {
+                    lekalo_core::error_contract::ErrorRegistry::from_bytes(canonical.as_bytes())
+                }) {
+                Ok(registry) => registry,
+                Err(diagnostics) => return DomainResult::invalid(diagnostics),
+            },
+            None => match lekalo_core::error_contract::ErrorRegistry::embedded() {
+                Ok(registry) => registry.clone(),
+                Err(diagnostics) => return DomainResult::invalid(diagnostics),
+            },
+        },
+        Err(result) => return result,
+    };
+    let query_model = match read_context_document(query_model_path) {
+        Ok(value) => match value {
+            Some(json) => match lekalo_core::query_model::QueryModelAttachment::from_value(&json) {
+                Ok(model) => Some(model),
+                Err(diagnostics) => return DomainResult::invalid(diagnostics),
+            },
+            None => None,
+        },
+        Err(result) => return result,
+    };
+    // The project: load, compile, and check custody exactly like the
+    // query-model resolver (project id, Model version, Model digest).
+    let model = match lekalo_core::loader::normalize_model(&selection) {
+        Ok(model) => model,
+        Err(result) => return result,
+    };
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Ok(compilation) => compilation,
+        Err(failure) => return failure.into_result(),
+    };
+    let model_json = match lekalo_core::loader::run(&selection, false) {
+        DomainResult::Valid {
+            payload: lekalo_core::result::SuccessPayload::Model { json, .. },
+            ..
+        } => json,
+        other => return other,
+    };
+    let computed = lekalo_core::digest::sha256_hex(model_json.as_bytes());
+    if attachment.model_ref().digest().as_str() != format!("sha256:{computed}") {
+        return DomainResult::invalid(lekalo_core::transport_http::rule_set(
+            "transport.contract-invalid",
+            "model-digest",
+            None,
+        ));
+    }
+    let capabilities = lekalo_core::transport_http::CapabilityMap::http_json();
+    let context = lekalo_core::transport_http::ValidationContext::new(&compilation.project)
+        .with_errors(&registry);
+    let context = match &query_model {
+        Some(model) => context.with_query_model(model),
+        None => context,
+    };
+    let context = context.with_capabilities(&capabilities);
+    let context = if strict { context.strict() } else { context };
+    if let Err(diagnostics) = lekalo_core::transport_http::validate(&attachment, &context) {
+        return DomainResult::invalid(diagnostics);
+    }
+    let digest = attachment
+        .digest()
+        .map(|digest| digest.as_str().to_owned())
+        .unwrap_or_default();
+    let json = format!(
+        "{{\"status\":\"valid\",\"transport\":{{\"projectId\":\"{}\",\"endpoints\":{},\"schemes\":{},\"canonicalDigest\":\"{}\"}}}}",
+        attachment.project_id().as_str(),
+        attachment.endpoints().len(),
+        attachment.schemes().len(),
+        digest,
+    );
+    let human = format!(
+        "transport {}: {} endpoints, {} schemes",
+        attachment.project_id().as_str(),
+        attachment.endpoints().len(),
+        attachment.schemes().len(),
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo transport inspect`: one endpoint's joined surface.
+fn transport_inspect(path: &str, endpoint: &str, project: &Option<String>) -> DomainResult {
+    let document = match read_transport_document(path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let attachment = match lekalo_core::transport_http::TransportDocument::from_value(&document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let binding = match attachment.endpoint(endpoint) {
+        Some(binding) => binding,
+        None => {
+            return DomainResult::invalid(lekalo_core::transport_http::rule_set(
+                "transport.endpoint-unresolved",
+                "endpoint-missing",
+                Some(endpoint),
+            ));
+        }
+    };
+    // The joined Model surface when a project is selected.
+    let joined = project.as_ref().and_then(|_| {
+        let selection = selection_for(project);
+        let model = lekalo_core::loader::normalize_model(&selection).ok()?;
+        let compilation = lekalo_core::ir::compile(&model).ok()?;
+        compilation
+            .project
+            .definitions
+            .iter()
+            .find_map(|definition| match definition {
+                lekalo_core::ir::Definition::Endpoint(def) if def.id.as_str() == endpoint => {
+                    Some(format!(
+                        "\"method\":\"{}\",\"path\":\"{}\",\"invokes\":\"{}\"",
+                        def.method.as_str(),
+                        def.path.as_str(),
+                        def.invokes.as_str()
+                    ))
+                }
+                _ => None,
+            })
+    });
+    let params: Vec<String> = binding
+        .params
+        .iter()
+        .map(|param| {
+            format!(
+                "\"{}\":{{\"in\":\"{}\",\"field\":\"{}\"}}",
+                param.name.as_str(),
+                param.location.as_str(),
+                param.field.as_str()
+            )
+        })
+        .collect();
+    let joined_text = match joined {
+        Some(surface) => format!("{surface},"),
+        None => String::new(),
+    };
+    let json = format!(
+        "{{\"status\":\"valid\",\"endpoint\":{{\"endpoint\":\"{}\",\"operationId\":\"{}\",{}\"params\":{{{}}}}}}}",
+        endpoint,
+        binding.effective_operation_id().as_str(),
+        joined_text,
+        params.join(","),
+    );
+    let human = format!(
+        "endpoint {}: operationId {}",
+        endpoint,
+        binding.effective_operation_id().as_str(),
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
 /// Run one `lekalo query-model` operation. The core owns every
 /// decision; this binary only reads the document, selects, renders,
 /// and maps exits.
