@@ -9,13 +9,17 @@
 
 pub mod canonical;
 mod diagnostic;
+pub mod drift;
 pub mod id;
+pub mod introspection;
 pub mod postgres;
 mod validate;
 pub(crate) mod version;
 pub(crate) mod wire;
 
+pub use drift::compare as compare_drift;
 pub use id::{ConnectionName, Engine, VersionPin};
+pub use introspection::IntrospectionEvidence;
 pub use version::{FAMILY, IDENTITY, SCHEMA_VERSION, VERSION};
 
 use crate::diagnostics::DiagnosticSet;

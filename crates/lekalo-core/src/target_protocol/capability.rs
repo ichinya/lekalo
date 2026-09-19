@@ -51,6 +51,12 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         semantics: "Emits Zod schemas from the compiled project IR. `full` covers every declared type and invariant; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
+        id: "scan.storage-schema",
+        definition_version: "0.4.0",
+        domain: "scan",
+        semantics: "Observes the declared schema scopes through the `scan` operation and produces one checked-mode storage-introspection evidence document. `full` reads every declared scope read-only; `partial` reads a declared subset; `unsupported` never observes; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
         id: "scan.symbols",
         definition_version: "0.3.1",
         domain: "scan",
@@ -95,6 +101,7 @@ mod tests {
                 "generate.openapi",
                 "generate.ui",
                 "generate.zod",
+                "scan.storage-schema",
                 "scan.symbols",
                 "verify.scenarios",
                 "plan.native-gates",
@@ -102,7 +109,9 @@ mod tests {
         );
         for entry in definitions() {
             assert!(
-                entry.definition_version == "0.3.1" || entry.definition_version == "0.3.2",
+                entry.definition_version == "0.3.1"
+                    || entry.definition_version == "0.3.2"
+                    || entry.definition_version == "0.4.0",
                 "definition versions stay on the accepted generations"
             );
             assert!(

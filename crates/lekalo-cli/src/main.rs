@@ -930,6 +930,21 @@ enum StorageCommands {
         #[arg(long, value_name = "PATH")]
         projection: String,
     },
+    /// Compare one checked-mode introspection evidence document
+    /// against its bound storage-projection attachment and report the
+    /// typed drift findings.
+    Drift {
+        /// Path to the storage-introspection evidence JSON document.
+        scan: String,
+        /// Path to the bound storage-projection attachment JSON
+        /// document.
+        #[arg(long, value_name = "ATTACHMENT")]
+        projection: String,
+        /// Path to the storage-engine profile attachment JSON document
+        /// whose projectionRef binds both sides.
+        #[arg(long, value_name = "PATH")]
+        profile: String,
+    },
     /// Project the engine capability snapshot, optionally mapped
     /// against one transaction-concurrency attachment's requirements.
     Capabilities {
@@ -3116,7 +3131,58 @@ fn run_storage(command: StorageCommands) -> DomainResult {
             profile,
             requirements,
         } => storage_capabilities(&path, &projection, profile, requirements.as_deref()),
+        StorageCommands::Drift {
+            scan,
+            projection,
+            profile,
+        } => storage_drift(&scan, &projection, &profile),
     }
+}
+
+/// `lekalo storage drift`: the declared-versus-observed comparison.
+/// The verdict stays data; exits stay envelope-owned.
+fn storage_drift(scan_path: &str, projection_path: &str, profile_path: &str) -> DomainResult {
+    let profile = match read_storage_profile(profile_path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let projection_document = match read_attachment_document(projection_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let projection = match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(
+        &projection_document,
+    ) {
+        Ok(projection) => projection,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let scan_document = match read_attachment_document(scan_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let evidence =
+        match lekalo_core::storage_engine::IntrospectionEvidence::from_value(&scan_document) {
+            Ok(evidence) => evidence,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let report = match lekalo_core::storage_engine::compare_drift(&profile, &projection, &evidence)
+    {
+        Ok(report) => report,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let bytes = match report.canonical_bytes() {
+        Ok(bytes) => bytes,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let human = if report.ok() {
+        "storage drift: the observed schema matches the declaration".to_owned()
+    } else {
+        format!(
+            "storage drift: {} finding(s); the verdict stays data",
+            report.findings().len()
+        )
+    };
+    DomainResult::graph(bytes, human, Vec::new())
 }
 
 /// `lekalo storage profile`: the owner-published matrix projection.

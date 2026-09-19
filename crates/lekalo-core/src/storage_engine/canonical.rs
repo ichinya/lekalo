@@ -257,7 +257,7 @@ pub(crate) fn string(text: &str) -> String {
 }
 
 /// One canonical JSON boolean.
-fn flag(value: bool) -> String {
+pub(crate) fn flag(value: bool) -> String {
     if value {
         "true".to_owned()
     } else {
@@ -266,12 +266,12 @@ fn flag(value: bool) -> String {
 }
 
 /// One canonical JSON array.
-fn array(members: &[String]) -> String {
+pub(crate) fn array(members: &[String]) -> String {
     format!("[{}]", members.join(","))
 }
 
 /// One canonical JSON array, or nothing when empty.
-fn optional_array(members: &[String]) -> Option<String> {
+pub(crate) fn optional_array(members: &[String]) -> Option<String> {
     if members.is_empty() {
         None
     } else {
