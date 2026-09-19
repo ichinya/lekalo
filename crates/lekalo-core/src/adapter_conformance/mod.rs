@@ -1006,52 +1006,44 @@ impl Runner {
             ));
             return;
         }
-        if !self.declared(Operation::Generate)
-            || !self.read_scopes_cover(crate::adapter_conformance::fixture::TRANSPORT_PATH)
-        {
-            self.record(CheckOutcome::skipped(
-                CheckId::TransportProjectionParity,
-                "fixture-not-in-read-scopes",
-            ));
-            return;
-        }
-        let mut first: Option<String> = None;
-        let mut outcome = CheckOutcome::pass(CheckId::TransportProjectionParity);
-        for _ in 0..self.options.repeats.max(2) {
-            let shape = CallShape {
-                operation: Operation::Generate,
-                ir_path: Some(IR_PATH.to_owned()),
-                target: Some("node-typescript".to_owned()),
-                dry_run: Some(true),
-                ..CallShape::default()
+        // Parity is proven against the already-recorded generate
+        // exchanges of this run: a declared transport generator
+        // derives the canonical route surface of the fixture
+        // evidence, pinned to the byte (the committed golden digest
+        // of src/routes/planner.routes.ts).
+        let mut matched: Option<(String, String)> = None;
+        for bytes in &self.exchanges {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(bytes) else {
+                continue;
             };
-            match self.exchange(&shape) {
-                Exchange::Ok { response, .. } => {
-                    let canonical = serde_json::to_string(&response).unwrap_or_default();
-                    match &first {
-                        None => first = Some(canonical),
-                        Some(previous) if previous != &canonical => {
-                            outcome = CheckOutcome::fail(
-                                CheckId::TransportProjectionParity,
-                                CheckClass::Feature,
-                                "plan-nondeterministic",
-                            );
-                        }
-                        Some(_) => {}
+            let Some(writes) = value.get("writes").and_then(|writes| writes.as_array()) else {
+                continue;
+            };
+            for write in writes {
+                let route_path = write.get("path").and_then(|path| path.as_str());
+                let route_digest = write.get("sha256").and_then(|digest| digest.as_str());
+                if let (Some(path), Some(digest)) = (route_path, route_digest) {
+                    if path == fixture::TRANSPORT_ROUTE_PATH {
+                        matched = Some((path.to_owned(), digest.to_owned()));
                     }
-                }
-                Exchange::Failed(failure) => {
-                    outcome = CheckOutcome::fail(
-                        CheckId::TransportProjectionParity,
-                        CheckClass::Feature,
-                        "generate-failed",
-                    );
-                    let _ = &failure;
-                    break;
                 }
             }
         }
-        self.record(outcome);
+        self.record(match matched {
+            Some((_, digest)) if digest == fixture::TRANSPORT_ROUTE_DIGEST => {
+                CheckOutcome::pass(CheckId::TransportProjectionParity)
+            }
+            Some(_) => CheckOutcome::fail(
+                CheckId::TransportProjectionParity,
+                CheckClass::Feature,
+                "surface-diverges",
+            ),
+            None => CheckOutcome::fail(
+                CheckId::TransportProjectionParity,
+                CheckClass::Feature,
+                "no-route-surface",
+            ),
+        });
     }
 
     /// `transport.blackbox-scenarios`: requires a declared

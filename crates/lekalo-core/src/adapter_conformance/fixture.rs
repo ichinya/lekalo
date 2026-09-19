@@ -56,7 +56,7 @@ pub const SCENARIO_PATH: &str = ".lekalo/ir/scenario-txn-concurrency.json";
 /// capability the `http-json` profile satisfies partially, and the
 /// black-box scenario coverage reference.
 pub const TRANSPORT_EVIDENCE: &str =
-    include_str!("../../../../tests/fixtures/adapter-conformance/inputs/transport-planner.json");
+    include_str!("../../../../tests/fixtures/adapter-conformance/inputs/transport-minimal.json");
 
 /// The committed breaking wire-diff pair of the transport fixture
 /// family (issue #70): an error entry disappears.
@@ -65,17 +65,30 @@ pub const TRANSPORT_DIFF_BASE: &str =
 pub const TRANSPORT_DIFF_BREAKING: &str =
     include_str!("../../../../tests/fixtures/transport-http/diff/candidate-remove-error.json");
 
+/// The canonical route surface the transport generator must derive
+/// from the fixture evidence: the path and the exact sha256 of the
+/// committed golden route module (parity is checkable by byte
+/// comparison because every runtime renders the same canonical
+/// surface).
+pub const TRANSPORT_ROUTE_PATH: &str = "src/routes/planner.routes.ts";
+pub const TRANSPORT_ROUTE_DIGEST: &str =
+    "sha256:a156b53c84474c6530d5b68e50f40a7345fc8e0a020e228db5951c93620ab2e4";
+
 /// The logical path of the transport evidence input.
-pub const TRANSPORT_PATH: &str = ".lekalo/cache/transport/planner.json";
+pub const TRANSPORT_PATH: &str = ".lekalo/cache/transport/minimal.json";
+
+/// The route-layer home marker the transport generator owns.
+pub const ROUTES_KEEP: &str = "";
 
 /// The fixture files, as logical path plus exact bytes.
-pub const FILES: [(&str, &str); 6] = [
+pub const FILES: [(&str, &str); 7] = [
     ("lekalo/project.yaml", PROJECT_MARKER),
     ("openspec/specs/conformance.md", OPENSPEC_MARKER),
     (IR_PATH, IR_MINIMAL),
     (IR_INVALID_PATH, IR_INVALID_REFS),
     (SCENARIO_PATH, SCENARIO_TXN),
     (TRANSPORT_PATH, TRANSPORT_EVIDENCE),
+    ("src/routes/.keep", ROUTES_KEEP),
 ];
 
 /// The observed fixture root: logical path to content digest, using the
