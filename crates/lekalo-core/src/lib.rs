@@ -37,6 +37,7 @@ pub mod target_profile;
 pub mod target_protocol;
 pub mod trace;
 pub mod transaction_concurrency;
+pub mod transport_http;
 pub mod validator;
 pub mod versioning;
 
