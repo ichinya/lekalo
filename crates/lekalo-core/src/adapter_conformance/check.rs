@@ -63,6 +63,23 @@ pub enum CheckId {
     /// A cancelled read-only exchange is classified, the child is
     /// reaped, and a fresh handshake recovers.
     ProcessCancellation,
+    /// The committed breaking wire-diff pair classifies breaking and
+    /// blocks the `wire-consumer` strict profile (issue #70).
+    TransportWireDiffBlock,
+    /// The transport evidence preserves the #62 error identity —
+    /// every entry resolves in the registry and all six category
+    /// defaults are declared (issue #70).
+    TransportErrorIdentity,
+    /// Declared capabilities the profile does not support are an
+    /// explicit refusal, never a silent downgrade (issue #70).
+    TransportUnsupportedCapability,
+    /// A declared transport generator derives its plan from the one
+    /// evidence file deterministically (issue #70).
+    TransportProjectionParity,
+    /// Black-box endpoint scenarios run through the declared backend
+    /// binding when the adapter declares transport verification
+    /// (issue #70; execution stays with #47/#56/#107 owners).
+    TransportBlackboxScenarios,
 }
 
 impl CheckId {
@@ -87,6 +104,11 @@ impl CheckId {
             Self::ArtifactManifestEvidence => "artifact.manifest-evidence",
             Self::RedactionEvidence => "redaction.evidence",
             Self::ProcessCancellation => "process.cancellation",
+            Self::TransportWireDiffBlock => "transport.wire-diff-block",
+            Self::TransportErrorIdentity => "transport.error-identity",
+            Self::TransportUnsupportedCapability => "transport.unsupported-capability",
+            Self::TransportProjectionParity => "transport.projection-parity",
+            Self::TransportBlackboxScenarios => "transport.blackbox-scenarios",
         }
     }
 
@@ -111,6 +133,11 @@ impl CheckId {
             Self::ArtifactManifestEvidence => "lekalo.adapter.artifact",
             Self::RedactionEvidence => "lekalo.adapter.redaction",
             Self::ProcessCancellation => "lekalo.adapter.process",
+            Self::TransportWireDiffBlock
+            | Self::TransportErrorIdentity
+            | Self::TransportUnsupportedCapability
+            | Self::TransportProjectionParity
+            | Self::TransportBlackboxScenarios => "lekalo.adapter.transport",
         }
     }
 
@@ -238,7 +265,7 @@ impl CheckOutcome {
 }
 
 /// The full catalog in its fixed order.
-pub const CATALOG: [CheckId; 18] = [
+pub const CATALOG: [CheckId; 23] = [
     CheckId::DescribeHandshake,
     CheckId::DescribeNegotiation,
     CheckId::CapabilityDeclaration,
@@ -257,6 +284,11 @@ pub const CATALOG: [CheckId; 18] = [
     CheckId::ArtifactManifestEvidence,
     CheckId::RedactionEvidence,
     CheckId::ProcessCancellation,
+    CheckId::TransportWireDiffBlock,
+    CheckId::TransportErrorIdentity,
+    CheckId::TransportUnsupportedCapability,
+    CheckId::TransportProjectionParity,
+    CheckId::TransportBlackboxScenarios,
 ];
 
 /// The aggregate verdict of one run, derived from the check outcomes.

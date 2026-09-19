@@ -153,6 +153,30 @@ impl<'a> ValidationContext<'a> {
     }
 }
 
+/// Check only the capability declarations of one attachment against
+/// a resolved-profile capability map: every declared capability must
+/// be satisfied. Pure and read-only; used by the conformance suite
+/// where no project binding exists.
+pub fn validate_capabilities(
+    document: &TransportDocument,
+    map: &CapabilityMap,
+) -> Result<(), DiagnosticSet> {
+    for binding in document.endpoints() {
+        for decl in &binding.capabilities {
+            let actual = map.support(decl.capability.profile_capability());
+            if !actual.satisfies(decl.minimum_support) {
+                return Err(diagnostic::capability_unsatisfied(
+                    binding.endpoint.as_str(),
+                    decl.capability.profile_capability(),
+                    decl.minimum_support.as_str(),
+                    actual.as_str(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Validate one attachment against the context. Pure and read-only;
 /// the first contradiction returns its typed registered refusal.
 pub fn validate(

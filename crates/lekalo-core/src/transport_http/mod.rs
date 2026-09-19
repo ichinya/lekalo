@@ -67,7 +67,9 @@ pub use project::{
     project, RouteSurface, NAMESPACE_GO, NAMESPACE_LARAVEL, NAMESPACE_NODE, NAMESPACE_RUST,
 };
 pub use source::{read_document, SOURCE_PATH};
-pub use validate::{validate, CapabilityMap, ProfileSupport, ValidationContext};
+pub use validate::{
+    validate, validate_capabilities, CapabilityMap, ProfileSupport, ValidationContext,
+};
 
 /// The bound source Model contract: exact accepted version plus
 /// digest.

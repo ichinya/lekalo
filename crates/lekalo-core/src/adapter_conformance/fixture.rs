@@ -50,13 +50,32 @@ pub const IR_INVALID_PATH: &str = ".lekalo/ir/invalid-refs.json";
 /// The logical path of the scenario input.
 pub const SCENARIO_PATH: &str = ".lekalo/ir/scenario-txn-concurrency.json";
 
+/// The canonical transport-http evidence fixture: one endpoint
+/// binding over the fixture project's `planner.api_focus` with the
+/// full #62 error map, explicit security, a declared streaming
+/// capability the `http-json` profile satisfies partially, and the
+/// black-box scenario coverage reference.
+pub const TRANSPORT_EVIDENCE: &str =
+    include_str!("../../../../tests/fixtures/adapter-conformance/inputs/transport-planner.json");
+
+/// The committed breaking wire-diff pair of the transport fixture
+/// family (issue #70): an error entry disappears.
+pub const TRANSPORT_DIFF_BASE: &str =
+    include_str!("../../../../tests/fixtures/transport-http/valid/planner.transport.json");
+pub const TRANSPORT_DIFF_BREAKING: &str =
+    include_str!("../../../../tests/fixtures/transport-http/diff/candidate-remove-error.json");
+
+/// The logical path of the transport evidence input.
+pub const TRANSPORT_PATH: &str = ".lekalo/cache/transport/planner.json";
+
 /// The fixture files, as logical path plus exact bytes.
-pub const FILES: [(&str, &str); 5] = [
+pub const FILES: [(&str, &str); 6] = [
     ("lekalo/project.yaml", PROJECT_MARKER),
     ("openspec/specs/conformance.md", OPENSPEC_MARKER),
     (IR_PATH, IR_MINIMAL),
     (IR_INVALID_PATH, IR_INVALID_REFS),
     (SCENARIO_PATH, SCENARIO_TXN),
+    (TRANSPORT_PATH, TRANSPORT_EVIDENCE),
 ];
 
 /// The observed fixture root: logical path to content digest, using the
