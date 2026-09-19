@@ -195,10 +195,8 @@ pub struct ConstraintRow {
     pub constraint_id: String,
     /// The closed kind.
     pub kind: &'static str,
-    /// The scope kind.
-    pub scope_kind: &'static str,
-    /// The scope reference.
-    pub scope_ref: String,
+    /// The scope as the schema spells it: `{kind, ref}`.
+    pub scope: ScopeWire,
     /// The enforcement.
     pub enforcement: &'static str,
     /// The declared requirement summary.
@@ -212,8 +210,10 @@ pub struct ConstraintRow {
     /// The declared method.
     pub method: &'static str,
     /// The declared gate reference, when the kind carries one.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub gate_ref: Option<String>,
     /// The source-requirement link `source:requirement`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source_requirement: Option<String>,
 }
 
@@ -246,7 +246,28 @@ pub struct RequirementWire {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window_unit: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub reference: Option<(String, String)>,
+    pub reference: Option<ReferenceWire>,
+}
+
+/// The owner-held reference wire.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceWire {
+    /// The namespaced reference id.
+    pub id: String,
+    /// The exact snapshot digest.
+    pub digest: String,
+}
+
+/// One per-environment row of an accepted environment.
+/// The scope wire of one constraint row.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopeWire {
+    /// The scope kind.
+    pub kind: &'static str,
+    /// The scope reference.
+    pub r#ref: String,
 }
 
 /// One per-environment row of an accepted environment.
@@ -590,8 +611,10 @@ fn evaluate(
     let row = ConstraintRow {
         constraint_id: constraint_id.to_owned(),
         kind: constraint.kind().as_str(),
-        scope_kind: constraint.scope().kind().as_str(),
-        scope_ref: constraint.scope().reference().to_owned(),
+        scope: ScopeWire {
+            kind: constraint.scope().kind().as_str(),
+            r#ref: constraint.scope().reference().to_owned(),
+        },
         enforcement: constraint.enforcement().as_str(),
         requirement: requirement_wire(constraint),
         revision: current_revision.to_owned(),
@@ -801,9 +824,10 @@ fn requirement_wire(constraint: &Constraint) -> RequirementWire {
             .window()
             .map(|(amount, _)| amount.as_str().to_owned()),
         window_unit: requirement.window().map(|(_, unit)| unit.as_str()),
-        reference: requirement
-            .reference()
-            .map(|reference| (reference.id().to_owned(), reference.digest().to_owned())),
+        reference: requirement.reference().map(|reference| ReferenceWire {
+            id: reference.id().to_owned(),
+            digest: reference.digest().to_owned(),
+        }),
     }
 }
 
@@ -837,6 +861,13 @@ impl Report {
     /// canonical report bytes.
     pub fn digest(&self) -> Result<String, DiagnosticSet> {
         Ok(sha256_hex(self.canonical_bytes()?.as_bytes()))
+    }
+
+    /// Project this report into the typed #22 neutral trace manifest,
+    /// re-validated by the accepted trace validator. Pure and
+    /// read-only.
+    pub fn trace_manifest(&self) -> Result<crate::trace::TraceManifest, DiagnosticSet> {
+        super::trace::validated_manifest(self)
     }
 }
 

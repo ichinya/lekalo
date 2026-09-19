@@ -562,6 +562,24 @@ enum NfrCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
+    /// Emit the neutral #22 trace-manifest projection of the resolved
+    /// NFR constraints: constraint, symbol, and gate nodes, the
+    /// implements and evidences edges, and the explicit gaps.
+    Trace {
+        /// Path to the NFR attachment JSON document.
+        path: String,
+        /// Path to one evidence document; repeat for several
+        /// environments.
+        #[arg(long = "evidence", value_name = "FILE")]
+        evidence: Vec<String>,
+        /// The reference date for expiry and validity evaluation
+        /// (`YYYY-MM-DD`).
+        #[arg(long, value_name = "DATE")]
+        as_of: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
     /// Compare two same-family NFR attachments semantically; the
     /// verdict stays data (breaking, non-breaking, policy-change).
     Diff {
@@ -3133,6 +3151,18 @@ fn run_nfr(command: NfrCommands) -> DomainResult {
     // its typed changed-input handoff from two documents.
     match &command {
         NfrCommands::Diff { base, candidate } => return nfr_diff(base, candidate),
+        NfrCommands::Trace {
+            path,
+            evidence,
+            as_of,
+            project,
+        } => {
+            let as_of = match lekalo_core::nfr::IsoDate::parse(as_of) {
+                Ok(as_of) => as_of,
+                Err(_) => return DomainResult::usage_error(),
+            };
+            return nfr_trace(path, evidence, &as_of, project);
+        }
         NfrCommands::Impact {
             path,
             base,
@@ -3162,8 +3192,8 @@ fn run_nfr(command: NfrCommands) -> DomainResult {
             as_of,
             project,
         } => (path, evidence, as_of, project, NfrStep::Query(selector)),
-        NfrCommands::Diff { .. } | NfrCommands::Impact { .. } => {
-            unreachable!("diff and impact are handled before the resolution path")
+        NfrCommands::Diff { .. } | NfrCommands::Impact { .. } | NfrCommands::Trace { .. } => {
+            unreachable!("diff, impact, and trace are handled before the resolution path")
         }
     };
     let as_of = match lekalo_core::nfr::IsoDate::parse(&as_of) {
@@ -3293,6 +3323,73 @@ fn nfr_diff(base_path: &str, candidate_path: &str) -> DomainResult {
         ));
     }
     DomainResult::diff(json, human, Vec::new())
+}
+
+/// `lekalo nfr trace`: the neutral #22 trace-manifest projection,
+/// validated by the accepted trace validator and emitted as canonical
+/// bytes with their digest.
+fn nfr_trace(
+    path: &str,
+    evidence_paths: &[String],
+    as_of: &lekalo_core::nfr::IsoDate,
+    project: &Option<String>,
+) -> DomainResult {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                io::ErrorKind::NotFound => "file-missing",
+                _ => "file-unreadable",
+            };
+            return DomainResult::invalid(lekalo_core::nfr::diagnostic::io_failure(detail));
+        }
+    };
+    let attachment = match lekalo_core::nfr::NfrAttachment::parse(&bytes) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let mut evidence: Vec<lekalo_core::nfr::EvidenceSet> = Vec::new();
+    for evidence_path in evidence_paths {
+        let bytes = match std::fs::read(evidence_path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let detail = match error.kind() {
+                    io::ErrorKind::NotFound => "file-missing",
+                    _ => "file-unreadable",
+                };
+                return DomainResult::unavailable(
+                    lekalo_core::nfr::diagnostic::evidence_unavailable(detail, None),
+                );
+            }
+        };
+        match lekalo_core::nfr::EvidenceSet::parse(&bytes) {
+            Ok(set) => evidence.push(set),
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        }
+    }
+    let refs: Vec<&lekalo_core::nfr::EvidenceSet> = evidence.iter().collect();
+    let capabilities = nfr_capability_snapshot(project);
+    let selection = selection_for(project);
+    let resolution =
+        match lekalo_core::nfr::resolve(&attachment, &refs, &capabilities, as_of, &selection) {
+            Ok(resolution) => resolution,
+            Err(result) => return result,
+        };
+    let manifest = match resolution.report.trace_manifest() {
+        Ok(manifest) => manifest,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let canonical = match manifest.canonical_bytes() {
+        Ok(canonical) => canonical,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let digest = match manifest.digest() {
+        Ok(digest) => digest,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let json =
+        format!("{{\"status\":\"valid\",\"trace\":{canonical},\"manifestDigest\":\"{digest}\"}}");
+    DomainResult::graph(json, canonical, Vec::new())
 }
 
 /// `lekalo nfr impact`: the changed constraints' scope symbols enter
@@ -3637,7 +3734,7 @@ fn nfr_query(resolution: &lekalo_core::nfr::Resolution, selector: &str) -> Domai
         }
         NfrSelection::Symbol(symbol) => {
             let ids: Vec<String> = all()
-                .filter(|row| row.scope_ref == symbol)
+                .filter(|row| row.scope.r#ref == symbol)
                 .map(|row| row.constraint_id.clone())
                 .collect();
             if ids.is_empty() {

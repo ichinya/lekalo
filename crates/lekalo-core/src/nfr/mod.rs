@@ -29,6 +29,7 @@ pub mod evidence;
 pub mod id;
 pub mod impact;
 pub mod report;
+pub mod trace;
 pub mod validate;
 pub mod version;
 
@@ -76,8 +77,9 @@ pub fn evidence_canonical_bytes(evidence: &EvidenceSet) -> Result<String, Diagno
 /// The exact `sha256:<64 lowercase hex>` digest of the canonical
 /// attachment bytes.
 pub fn attachment_digest(attachment: &NfrAttachment) -> Result<String, DiagnosticSet> {
-    Ok(canonical::sha256_hex(
-        attachment_canonical_bytes(attachment)?.as_bytes(),
+    Ok(format!(
+        "sha256:{}",
+        canonical::sha256_hex(attachment_canonical_bytes(attachment)?.as_bytes())
     ))
 }
 
