@@ -16,8 +16,24 @@ use crate::diagnostics::DiagnosticSet;
 pub(crate) fn semantic_self_check(
     attachment: &StorageEngineAttachment,
 ) -> Result<(), DiagnosticSet> {
+    check_version(attachment)?;
     check_tenancy(attachment)?;
     check_lifecycle(attachment)?;
+    Ok(())
+}
+
+/// The pinned engine version must resolve to one owner-published
+/// matrix row; an outside pin is unsupported, never clamped.
+fn check_version(attachment: &StorageEngineAttachment) -> Result<(), DiagnosticSet> {
+    if attachment.engine() == super::Engine::Postgres
+        && super::postgres::version_matrix::row_for(attachment.engine_version().major()).is_none()
+    {
+        return Err(diagnostic::rule_invalid(
+            diagnostic::VERSION_UNSUPPORTED,
+            "major-unpublished",
+            Some(attachment.engine_version().as_str()),
+        ));
+    }
     Ok(())
 }
 

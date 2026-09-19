@@ -10,6 +10,7 @@
 pub mod canonical;
 mod diagnostic;
 pub mod id;
+pub mod postgres;
 mod validate;
 pub(crate) mod version;
 pub(crate) mod wire;

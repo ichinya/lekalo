@@ -17,9 +17,7 @@ use crate::result::{singleton_set, Status};
 pub(crate) const INPUT_INVALID: &str = "storage-engine.input-invalid";
 /// The registered rule for an incoherent declared profile.
 pub(crate) const PROFILE_INVALID: &str = "storage-engine.profile-invalid";
-/// The registered rule for an unsupported engine version pin. Wired by
-/// the embedded version matrix (plan step S3).
-#[allow(dead_code)]
+/// The registered rule for an unsupported engine version pin.
 pub(crate) const VERSION_UNSUPPORTED: &str = "storage-engine.version-unsupported";
 /// The registered rule for an unmappable domain declaration. Wired by
 /// the DDL renderer (plan steps S4/S7).
