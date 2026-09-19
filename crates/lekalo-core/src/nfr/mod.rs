@@ -24,6 +24,7 @@
 
 pub mod constraint;
 pub mod diagnostic;
+pub mod diff;
 pub mod evidence;
 pub mod id;
 pub mod report;

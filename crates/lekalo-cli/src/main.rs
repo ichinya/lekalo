@@ -562,6 +562,14 @@ enum NfrCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
+    /// Compare two same-family NFR attachments semantically; the
+    /// verdict stays data (breaking, non-breaking, policy-change).
+    Diff {
+        /// Path to the base attachment JSON document.
+        base: String,
+        /// Path to the candidate attachment JSON document.
+        candidate: String,
+    },
 }
 
 /// The `module` subcommands: the module-authoring surface (issue #97).
@@ -3103,6 +3111,11 @@ enum NfrStep {
 /// the requested view. The core owns every decision; this binary only
 /// selects, renders, and maps exits.
 fn run_nfr(command: NfrCommands) -> DomainResult {
+    // The diff is a pure two-document comparison: no project, no
+    // evidence, no as-of date.
+    if let NfrCommands::Diff { base, candidate } = command {
+        return nfr_diff(&base, &candidate);
+    }
     let (path, evidence_paths, as_of, project, step) = match command {
         NfrCommands::Validate {
             path,
@@ -3124,6 +3137,7 @@ fn run_nfr(command: NfrCommands) -> DomainResult {
             as_of,
             project,
         } => (path, evidence, as_of, project, NfrStep::Query(selector)),
+        NfrCommands::Diff { .. } => unreachable!("diff is handled before the resolution path"),
     };
     let as_of = match lekalo_core::nfr::IsoDate::parse(&as_of) {
         Ok(as_of) => as_of,
@@ -3184,6 +3198,74 @@ fn run_nfr(command: NfrCommands) -> DomainResult {
         NfrStep::Report => nfr_report(&resolution.report),
         NfrStep::Query(selector) => nfr_query(&resolution, &selector),
     }
+}
+
+/// `lekalo nfr diff`: the pure semantic comparison of two same-family
+/// attachments; the verdict stays data.
+fn nfr_diff(base_path: &str, candidate_path: &str) -> DomainResult {
+    let read = |path: &str| -> Result<lekalo_core::nfr::NfrAttachment, DomainResult> {
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let detail = match error.kind() {
+                    io::ErrorKind::NotFound => "file-missing",
+                    _ => "file-unreadable",
+                };
+                return Err(DomainResult::invalid(
+                    lekalo_core::nfr::diagnostic::io_failure(detail),
+                ));
+            }
+        };
+        lekalo_core::nfr::NfrAttachment::parse(&bytes).map_err(DomainResult::invalid)
+    };
+    let base = match read(base_path) {
+        Ok(base) => base,
+        Err(result) => return result,
+    };
+    let candidate = match read(candidate_path) {
+        Ok(candidate) => candidate,
+        Err(result) => return result,
+    };
+    let diff = match lekalo_core::nfr::diff::compare(&base, &candidate) {
+        Ok(diff) => diff,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let paths: Vec<String> = diff
+        .paths()
+        .iter()
+        .map(|path| {
+            format!(
+                "{{\"path\":\"{}\",\"class\":\"{}\"}}",
+                path.path(),
+                path.class().key()
+            )
+        })
+        .collect();
+    let class = if diff
+        .paths()
+        .iter()
+        .any(|path| path.class() == lekalo_core::nfr::diff::DiffClass::Breaking)
+    {
+        "breaking"
+    } else {
+        "compatible"
+    };
+    let json = format!(
+        "{{\"status\":\"valid\",\"diff\":{{\"equal\":{},\"verdict\":\"{}\",\"paths\":[{}]}}}}",
+        diff.equal(),
+        class,
+        paths.join(","),
+    );
+    let mut human = format!("nfr diff equal {}", diff.equal());
+    for path in diff.paths() {
+        human.push_str(&format!(
+            "
+#   {} {}",
+            path.path(),
+            path.class().key()
+        ));
+    }
+    DomainResult::diff(json, human, Vec::new())
 }
 
 /// The resolved capability snapshot: the committed project lock's

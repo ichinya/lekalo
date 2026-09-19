@@ -249,3 +249,84 @@ fn tree_bytes(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     out.sort();
     out
 }
+
+// ---------------------------------------------------------------------------
+// S7: the semantic diff - the closed classification over the fixture.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_diff_classifies_the_closed_paths() {
+    use lekalo_core::nfr::diff::{self, DiffClass};
+
+    let base_json = attachment_json();
+    let base = NfrAttachment::parse(&serde_json::to_vec(&base_json).unwrap()).expect("parses");
+
+    // Equal inputs: no paths.
+    let same = diff::compare(&base, &base).expect("compares");
+    assert!(same.equal());
+
+    // A tightened bound is breaking.
+    let mut json = base_json.clone();
+    json["constraints"][1]["requirement"]["value"] = serde_json::json!("400");
+    let candidate = NfrAttachment::parse(&serde_json::to_vec(&json).unwrap()).expect("parses");
+    let result = diff::compare(&base, &candidate).expect("compares");
+    assert!(!result.equal());
+    let path = result
+        .paths()
+        .iter()
+        .find(|path| path.path() == "constraints/planner.nfr.api-focus-p95/requirement")
+        .expect("requirement path");
+    assert_eq!(path.class(), DiffClass::Breaking);
+
+    // mandatory -> advisory weakens; advisory -> mandatory strengthens.
+    let mut json = base_json.clone();
+    json["constraints"][1]["enforcement"] = serde_json::json!("advisory");
+    let candidate = NfrAttachment::parse(&serde_json::to_vec(&json).unwrap()).expect("parses");
+    let result = diff::compare(&base, &candidate).expect("compares");
+    assert!(result.paths().iter().any(|path| path.path()
+        == "constraints/planner.nfr.api-focus-p95/enforcement"
+        && path.class() == DiffClass::Breaking));
+
+    // A removed constraint is breaking, an added one non-breaking.
+    let mut json = base_json.clone();
+    json["constraints"].as_array_mut().unwrap().remove(2);
+    let candidate = NfrAttachment::parse(&serde_json::to_vec(&json).unwrap()).expect("parses");
+    let result = diff::compare(&base, &candidate).expect("compares");
+    assert!(result
+        .paths()
+        .iter()
+        .any(|path| path.path() == "constraints/planner.nfr.focus-memory"
+            && path.class() == DiffClass::Breaking));
+    let mut json = base_json.clone();
+    json["constraints"].as_array_mut().unwrap().push(serde_json::json!({
+        "constraintId": "planner.nfr.new-bound",
+        "dimension": "runtime",
+        "kind": "timeout",
+        "scope": {"kind": "operation", "ref": "planner.focus_task"},
+        "requirement": {"metric": "timeout", "comparator": "lte", "value": "5", "unit": "seconds"},
+        "enforcement": "advisory",
+        "measurement": {"method": "benchmark", "gateRef": "perf.gates/timeout"},
+        "validity": {"revision": "1.0.0"}
+    }));
+    let candidate = NfrAttachment::parse(&serde_json::to_vec(&json).unwrap()).expect("parses");
+    let result = diff::compare(&base, &candidate).expect("compares");
+    assert!(result
+        .paths()
+        .iter()
+        .any(|path| path.path() == "constraints/planner.nfr.new-bound"
+            && path.class() == DiffClass::NonBreaking));
+
+    // Foreign projects and mixed revisions are the typed error set.
+    let mut json = base_json.clone();
+    json["projectId"] = serde_json::json!("other");
+    let foreign = NfrAttachment::parse(&serde_json::to_vec(&json).unwrap()).expect("parses");
+    assert!(diff::compare(&base, &foreign).is_err());
+    let mut json = base_json;
+    json["attachmentRevision"] = serde_json::json!("2.0.0");
+    let mixed = NfrAttachment::parse(&serde_json::to_vec(&json).unwrap()).expect("parses");
+    let error = diff::compare(&base, &mixed).expect_err("mixed revision is invalid");
+    assert!(
+        error.reason_ids().contains(&"nfr.diff-invalid"),
+        "the diff rule fires"
+    );
+}

@@ -348,3 +348,23 @@ fn human_and_json_are_projections_of_one_result() {
     assert!(human_text.contains("constraints 4"));
     assert!(human_text.contains("satisfied 3"));
 }
+
+#[test]
+fn the_diff_reports_the_verdict_as_data() {
+    let dir = scratch();
+    // An unchanged candidate is equal.
+    let same = lekalo_in(
+        dir.path(),
+        &["--json", "nfr", "diff", ATTACHMENT, ATTACHMENT],
+    );
+    assert_eq!(exit_code(&same), 0);
+    let json = stdout_json(&same);
+    assert_eq!(json["diff"]["equal"], true);
+    // A foreign project is the typed invalid set.
+    fs::write(dir.path().join("broken-rev.json"), b"{}").unwrap();
+    let invalid = lekalo_in(
+        dir.path(),
+        &["--json", "nfr", "diff", ATTACHMENT, "broken-rev.json"],
+    );
+    assert_eq!(exit_code(&invalid), 1);
+}
