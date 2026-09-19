@@ -39,6 +39,10 @@ lekalo expressions validate PATH [--builtin-support FILE]
 lekalo expressions eval PATH --vectors FILE [--builtin-support FILE]
 lekalo expressions render PATH --target node|php|go [--builtin-support FILE]
 lekalo expressions diff BASE CANDIDATE
+lekalo transport validate PATH [--project DIR] [--errors FILE] [--query-model FILE] [--strict]
+lekalo transport inspect PATH --endpoint SYMBOL [--project DIR]
+lekalo transport project PATH --namespace node|laravel|go|rust [--project DIR] [--errors FILE] [--query-model FILE]
+lekalo transport diff BASE CANDIDATE
 lekalo graph show SYMBOL [--project DIR]
 lekalo graph callers SYMBOL [--transitive] [--project DIR]
 lekalo graph path FROM TO [--project DIR]

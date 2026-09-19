@@ -20,11 +20,6 @@ use serde::Serialize;
 
 use super::version::COMPONENTS_DEFINITION_VERSION;
 
-/// The definition version of the `http-json` transport component: its
-/// capability contract gained the upload and download ids in 0.4.0
-/// (issue #70); every unchanged component keeps the table version.
-const HTTP_JSON_DEFINITION_VERSION: &str = "0.4.0";
-
 /// The closed set of profile axes, byte-sorted by wire token.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -272,7 +267,7 @@ const DEFINITIONS: &[ComponentDefinition] = &[
     ComponentDefinition {
         id: "http-json",
         axis: Axis::Transport,
-        definition_version: HTTP_JSON_DEFINITION_VERSION,
+        definition_version: COMPONENTS_DEFINITION_VERSION,
         provides: &[
             ProvidedCapability {
                 id: "transport.download",
@@ -544,14 +539,7 @@ mod tests {
                 entry.id
             );
             assert!(codes.insert(entry.id), "duplicate id {}", entry.id);
-            assert_eq!(
-                entry.definition_version,
-                if entry.id == "http-json" {
-                    HTTP_JSON_DEFINITION_VERSION
-                } else {
-                    COMPONENTS_DEFINITION_VERSION
-                }
-            );
+            assert_eq!(entry.definition_version, COMPONENTS_DEFINITION_VERSION);
             assert!(!entry.provides.is_empty(), "{} provides nothing", entry.id);
             let mut provided_previous: Option<&str> = None;
             for provide in entry.provides {

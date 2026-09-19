@@ -287,6 +287,18 @@ profile therefore fails `capability.surface` for this adapter by
 design; the applicable default-profile rows pass. Adding operations or
 wire members remains separately owned contract work.
 
+The issue #70 transport extension adds one configured deployment
+surface: when the bound resolved profile reads the transport evidence
+home (`.lekalo/cache/transport/**`, written by `lekalo generate` from
+the canonical `lekalo/transport.yaml`), the kernel advertises the
+`generate` operation with `generate.transport-http: partial` and
+`generate.openapi: unsupported`, a declared `src/routes/**` write
+scope, and a deterministic route-layer plan derived from the single
+evidence file — explicit `unsupported` notes for declared
+streaming/upload/download capabilities it does not implement, never a
+silent downgrade. Profiles that do not read the evidence home never
+see the generator; the bare kernel keeps its `describe`-only surface.
+
 ## Failure classification and integration
 
 | Failure | Public status / exit / stream |

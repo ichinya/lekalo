@@ -66,6 +66,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-requirements-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-implementation-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-orchestration-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-transport-contracts.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites
@@ -181,6 +182,8 @@ jobs:
         run: node scripts/test-node-typescript-scanner.mjs
       - name: Run the native gate suite (issue #48)
         run: node scripts/test-node-native-gates.mjs
+      - name: Run the transport generator gate (issue #70)
+        run: node scripts/test-node-typescript-transport.mjs
       - name: Provision exact Ajv 8.17.1 outside the checkout (issue #48)
         run: |
           set -euo pipefail
@@ -203,6 +206,11 @@ jobs:
           PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-scanner/protocol/conformance.profile.json)
           cargo run --locked -p lekalo-cli -- adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
           cargo run --locked -p lekalo-cli -- adapter test --profile strict --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON" || test $? -eq 4
+      - name: Run the conformance battery against the transport-configured adapter (issue #70)
+        run: |
+          set -euo pipefail
+          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-transport/protocol/conformance.profile.json)
+          cargo run --locked -p lekalo-cli -- adapter test --profile default --report json -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
       - name: Run the target adapter conformance suite against the reference adapter
         timeout-minutes: 10
         run: cargo run --locked -p lekalo-cli -- adapter test --profile strict --report junit --timeout-ms 60000 node tests/fixtures/target-protocol/fake-adapter.mjs --lekalo-adapter-variant fluent
