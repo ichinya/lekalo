@@ -13,7 +13,9 @@ use lekalo_core::error_contract::ErrorRegistry;
 use lekalo_core::ir::{compile, CompiledProject};
 use lekalo_core::loader::{normalize_model, LoadSelection};
 use lekalo_core::query_model::QueryModelAttachment;
-use lekalo_core::transport_http::{validate, CapabilityMap, TransportDocument, ValidationContext};
+use lekalo_core::transport_http::{
+    compare, validate, CapabilityMap, TransportDocument, ValidationContext,
+};
 
 static CWD_LOCK: Mutex<()> = Mutex::new(());
 
@@ -120,6 +122,7 @@ fn transport_suite_runs_from_the_workspace_root() {
         projection_goldens_are_byte_pinned_and_parity_holds();
         endpoint_bound_refuses_beyond_the_limit();
         canonical_digest_is_pinned();
+        wire_diff_classifies_and_blocks_breaking_changes();
         every_capability_kind_refuses_without_profile_support();
     });
     std::env::set_current_dir(original).expect("restore working dir");
@@ -398,6 +401,83 @@ fn endpoint_bound_refuses_beyond_the_limit() {
 
 /// The canonical digest is deterministic across parses of the same
 /// bytes; the pinned spelling is the closed sha256 form.
+/// The wire-diff classification: every committed fixture pair pins
+/// its closed class and the wire-consumer blocking signal (AC-4).
+fn wire_diff_classifies_and_blocks_breaking_changes() {
+    let base = TransportDocument::from_value(&read_fixture("diff/base.json")).expect("base parses");
+    let cases = [
+        (
+            "candidate-add-endpoint",
+            vec![("endpoints/planner.endpoint_today", "non-breaking")],
+        ),
+        (
+            "candidate-add-required-param",
+            vec![("endpoints/planner.endpoint_list_tasks/params", "breaking")],
+        ),
+        (
+            "candidate-remove-endpoint",
+            vec![("endpoints/planner.endpoint_list_tasks", "breaking")],
+        ),
+        (
+            "candidate-remove-error",
+            vec![("endpoints/planner.endpoint_focus_task/errors", "breaking")],
+        ),
+        (
+            "candidate-security",
+            vec![(
+                "endpoints/planner.endpoint_task_stream/security",
+                "breaking",
+            )],
+        ),
+        (
+            "candidate-policy",
+            vec![
+                (
+                    "endpoints/planner.endpoint_list_tasks/operationId",
+                    "policy-change",
+                ),
+                (
+                    "endpoints/planner.endpoint_list_tasks/rateLimit",
+                    "policy-change",
+                ),
+            ],
+        ),
+    ];
+    for (name, expected) in cases {
+        let candidate = TransportDocument::from_value(&read_fixture(&format!("diff/{name}.json")))
+            .expect("candidate parses");
+        let diff = compare(&base, &candidate).expect("same family");
+        let actual: Vec<(String, String)> = diff
+            .paths()
+            .iter()
+            .map(|path| (path.path().to_owned(), path.class().key().to_owned()))
+            .collect();
+        let expected: Vec<(String, String)> = expected
+            .into_iter()
+            .map(|(path, class)| (path.to_owned(), class.to_owned()))
+            .collect();
+        assert_eq!(actual, expected, "{name}");
+        let blocked = expected.iter().any(|(_, class)| class == "breaking");
+        assert_eq!(diff.wire_consumer_blocked(), blocked, "{name}");
+    }
+    // The identical pair is equal and never blocks.
+    let equal = compare(&base, &base).expect("same family");
+    assert!(equal.equal());
+    assert!(!equal.wire_consumer_blocked());
+    // Mixed projects refuse instead of guessing.
+    let mut foreign = read_fixture("diff/base.json");
+    foreign["projectId"] = serde_json::json!("other");
+    let foreign = TransportDocument::from_value(&foreign).expect("parses");
+    let refused = compare(&base, &foreign).expect_err("project mismatch refuses");
+    assert_eq!(
+        refusal(&refused),
+        Some((
+            "transport.input-invalid".to_owned(),
+            "diff-project-mismatch".to_owned()
+        ))
+    );
+}
+
 fn canonical_digest_is_pinned() {
     let document =
         TransportDocument::from_value(&read_fixture("valid/planner.transport.json")).unwrap();

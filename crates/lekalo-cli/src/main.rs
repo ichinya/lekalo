@@ -915,6 +915,14 @@ enum TransportCommands {
         #[arg(long, value_name = "FILE")]
         query_model: Option<String>,
     },
+    /// Compare two same-family attachments and classify every changed
+    /// path; the verdict stays data, never an exit code.
+    Diff {
+        /// Path to the base attachment JSON document.
+        base: String,
+        /// Path to the candidate attachment JSON document.
+        candidate: String,
+    },
 }
 
 /// The closed projection namespace vocabulary.
@@ -3159,6 +3167,7 @@ fn run_transport(command: TransportCommands) -> DomainResult {
             errors.as_deref(),
             query_model.as_deref(),
         ),
+        TransportCommands::Diff { base, candidate } => transport_diff(&base, &candidate),
     }
 }
 
@@ -3351,6 +3360,70 @@ fn transport_project(
         attachment.endpoints().len(),
     );
     DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo transport diff`: the pure semantic comparison of two
+/// same-family attachments; the verdict stays data and the strict
+/// `wire-consumer` blocking signal rides along.
+fn transport_diff(base_path: &str, candidate_path: &str) -> DomainResult {
+    let base_document = match read_transport_document(base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let base = match lekalo_core::transport_http::TransportDocument::from_value(&base_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let candidate_document = match read_transport_document(candidate_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let candidate =
+        match lekalo_core::transport_http::TransportDocument::from_value(&candidate_document) {
+            Ok(attachment) => attachment,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let diff = match lekalo_core::transport_http::compare(&base, &candidate) {
+        Ok(diff) => diff,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let count = |class| -> usize {
+        diff.paths()
+            .iter()
+            .filter(|path| path.class() == class)
+            .count()
+    };
+    let breaking = count(lekalo_core::transport_http::DiffClass::Breaking);
+    let non_breaking = count(lekalo_core::transport_http::DiffClass::NonBreaking);
+    let policy_change = count(lekalo_core::transport_http::DiffClass::PolicyChange);
+    let paths: Vec<String> = diff
+        .paths()
+        .iter()
+        .map(|path| {
+            format!(
+                "{{\"path\":\"{}\",\"class\":\"{}\"}}",
+                path.path(),
+                path.class().key()
+            )
+        })
+        .collect();
+    let json = format!(
+        "{{\"status\":\"valid\",\"transportDiff\":{{\"equal\":{},\"breaking\":{},\"nonBreaking\":{},\"policyChange\":{},\"wireConsumerBlocked\":{},\"paths\":[{}]}}}}",
+        diff.equal(),
+        breaking,
+        non_breaking,
+        policy_change,
+        diff.wire_consumer_blocked(),
+        paths.join(","),
+    );
+    let human = format!(
+        "transport diff: {} breaking, {} non-breaking, {} policy-change (wire-consumer blocked: {})",
+        breaking,
+        non_breaking,
+        policy_change,
+        diff.wire_consumer_blocked(),
+    );
+    DomainResult::diff(json, human, Vec::new())
 }
 
 /// `lekalo transport inspect`: one endpoint's joined surface.

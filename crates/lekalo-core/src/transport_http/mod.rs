@@ -32,6 +32,7 @@
 
 pub mod canonical;
 mod diagnostic;
+mod diff;
 pub mod id;
 pub mod mapping;
 mod project;
@@ -60,6 +61,7 @@ use crate::lockfile::types::{SemVer, Sha256Digest};
 use crate::scenario::id::SemanticId;
 
 pub use diagnostic::{io_failure, rule_set};
+pub use diff::{compare, DiffClass, DiffPath, DiffResult};
 pub use project::{
     project, RouteSurface, NAMESPACE_GO, NAMESPACE_LARAVEL, NAMESPACE_NODE, NAMESPACE_RUST,
 };
