@@ -29,11 +29,12 @@ const DIGEST_IR = digest(2);
 const DIGEST_SCENARIO_A = digest(3);
 const DIGEST_SCENARIO_B = digest(4);
 
-const field = (name, type, visibility, required) => ({
+const field = (name, type, visibility, required, def) => ({
   field: name,
-  ...(required === undefined ? {} : { required }),
+  ...(required ? { required: true } : {}),
   type,
   visibility,
+  ...(def === undefined ? {} : { default: def }),
 });
 
 const uuid = (visibility, required = true) =>
@@ -63,6 +64,20 @@ const entities = [
     visibility: "internal",
   },
   {
+    description: "One named assignee roster of a planner task.",
+    entity: "planner.task_roster",
+    entityKey: "task_roster",
+    fields: [
+      field(
+        "members",
+        { element: { length: 64, name: "string" }, maxItems: 32, name: "array" },
+        "internal",
+      ),
+      uuid("internal"),
+    ],
+    visibility: "internal",
+  },
+  {
     description: "A remote issue owned by an external provider.",
     entity: "jira.issue",
     entityKey: "jira_issue",
@@ -74,7 +89,11 @@ const entities = [
     description: "A reusable label attached to planner tasks.",
     entity: "planner.tag",
     entityKey: "tag",
-    fields: [uuid("public"), field("label", { length: 64, name: "string" }, "public", true)],
+    fields: [
+      field("color", { members: ["blue", "green", "red"], name: "enum" }, "internal"),
+      field("label", { length: 64, name: "string" }, "public", true),
+      uuid("public"),
+    ],
     visibility: "public",
   },
   {
@@ -85,6 +104,13 @@ const entities = [
     fields: [
       field("due_date", { name: "date" }, "public"),
       uuid("public"),
+      field(
+        "minutes",
+        { name: "integer" },
+        "internal",
+        false,
+        { kind: "literal", value: 0 },
+      ),
       field("note", { name: "text" }, "internal"),
       field("status", { length: 16, name: "string" }, "internal", true),
       field("title", { length: 200, name: "string" }, "public", true),
@@ -122,7 +148,7 @@ const entities = [
 const scenario = (id) => ({
   irDigest: DIGEST_SCENARIO_A,
   scenarioId: id,
-  scenarioVersion: "0.2.16",
+  scenarioVersion: "0.4.0",
 });
 
 const relations = [
@@ -174,7 +200,7 @@ const relations = [
       {
         irDigest: DIGEST_SCENARIO_B,
         scenarioId: "planner.scenario.external_link_roundtrip",
-        scenarioVersion: "0.2.16",
+        scenarioVersion: "0.4.0",
       },
     ],
     target: "task_external_link",
@@ -250,6 +276,7 @@ const projections = [
       table("tag", "tag", {
         indexes: [{ columns: ["label"], unique: true }],
       }),
+      table("task_roster", "task_roster", {}),
       table("task", "task", {
         indexes: [
           { columns: ["due_date"], unique: false },
@@ -299,9 +326,22 @@ const projections = [
       table("tag", "tag", {
         indexes: [{ columns: ["label"], unique: true }],
       }),
+      table("task_roster", "task_roster", {}),
       table("task", "task", {
+        checks: [
+          {
+            name: "chk_task_window",
+            where: [{ column: "deleted_at", op: "is-null" }],
+          },
+        ],
         indexes: [
           { columns: ["due_date"], unique: false },
+          {
+            columns: ["due_date"],
+            name: "idx_task_due_open",
+            unique: false,
+            where: [{ column: "deleted_at", op: "is-null" }],
+          },
           { columns: ["tenant_id"], name: "idx_task_tenant", unique: false },
         ],
         softDelete: { column: "deleted_at" },
@@ -326,15 +366,15 @@ const projections = [
 ];
 
 const validAttachment = () => ({
-  attachmentRevision: "0.2.16",
+  attachmentRevision: "0.4.0",
   entities,
-  identity: "dev.lekalo.storage-projection@0.2.16",
+  identity: "dev.lekalo.storage-projection@0.4.0",
   irRef: { digest: DIGEST_IR, identity: "dev.lekalo.ir@0.2.16" },
   modelRef: { digest: DIGEST_MODEL, modelVersion: "0.2.16" },
   projectId: "planner",
   projections,
   relations,
-  schemaVersion: "lekalo/storage-projection/v0.2.16",
+  schemaVersion: "lekalo/storage-projection/v0.4.0",
 });
 
 // --- canonical form --------------------------------------------------------
@@ -357,6 +397,9 @@ const normalize = (attachment) => {
     entity.fields.sort(byKey("field"));
     entity.invariants?.sort();
     entity.stateSpaces?.sort();
+    for (const entry of entity.fields) {
+      if (entry.type?.name === "enum") entry.type.members.sort();
+    }
   }
   for (const relation of clone.relations) {
     relation.scenarios?.sort(byKey("scenarioId"));
@@ -369,6 +412,7 @@ const normalize = (attachment) => {
     for (const table of projection.tables) {
       table.technicalColumns?.sort(byName);
       table.generatedColumns?.sort(byName);
+      table.checks?.sort(byName);
       table.indexes?.sort((left, right) => {
         const leftKey = [left.name ?? "", ...left.columns].join("\u0000");
         const rightKey = [right.name ?? "", ...right.columns].join("\u0000");
@@ -530,7 +574,7 @@ addInvalid(
 write(
   "invalid/duplicate-json-key.json",
   null,
-  '{"attachmentRevision":"0.2.16","attachmentRevision":"0.2.16"}',
+  '{"attachmentRevision":"0.4.0","attachmentRevision":"0.4.0"}',
 );
 write(
   "invalid/duplicate-json-key.expect.json",
@@ -842,6 +886,74 @@ addInvalid(
   "storage.projection-invalid",
   "unknown-index-column",
   "tag",
+);
+addInvalid(
+  "unknown-index-predicate-column",
+  mutate({}, (clone) => {
+    findProjection(clone, "postgres").tables.find(
+      (entry) => entry.entity === "task",
+    ).indexes[1].where[0].column = "ghost";
+  }),
+  "storage.projection-invalid",
+  "unknown-index-predicate-column",
+  "task",
+);
+addInvalid(
+  "unknown-check-column",
+  mutate({}, (clone) => {
+    findProjection(clone, "postgres").tables.find(
+      (entry) => entry.entity === "task",
+    ).checks[0].where[0].column = "ghost";
+  }),
+  "storage.projection-invalid",
+  "unknown-check-column",
+  "task",
+);
+addInvalid(
+  "default-type-mismatch",
+  mutate({}, (clone) => {
+    findEntity(clone, "task").fields.find(
+      (entry) => entry.field === "minutes",
+    ).default = { kind: "literal", value: "zero" };
+  }),
+  "storage.domain-invalid",
+  "default-type-mismatch",
+  "minutes",
+);
+addInvalid(
+  "default-sequence-unresolved",
+  mutate({}, (clone) => {
+    findEntity(clone, "task").fields.find(
+      (entry) => entry.field === "minutes",
+    ).default = { kind: "sequence", ref: "ghost_seq" };
+  }),
+  "storage.projection-invalid",
+  "default-sequence-unresolved",
+  "task",
+);
+addInvalid(
+  "mapping-unsupported",
+  mutate({}, (clone) => {
+    findProjection(clone, "laravel").tables.find(
+      (entry) => entry.entity === "task",
+    ).checks = [{
+      name: "chk_task_window",
+      where: [{ column: "deleted_at", op: "is-null" }],
+    }];
+  }),
+  "storage.mapping-invalid",
+  "mapping-unsupported",
+  "task",
+);
+addInvalid(
+  "enum-member-empty",
+  mutate({}, (clone) => {
+    findEntity(clone, "tag").fields.find(
+      (entry) => entry.field === "color",
+    ).type = { members: [], name: "enum" };
+  }),
+  "storage.input-invalid",
+  "type-params",
 );
 addInvalid(
   "bad-storage-type",

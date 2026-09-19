@@ -163,7 +163,36 @@ fn field_payload(field: &super::entity::DomainField) -> String {
         ("type", Some(domain_type_payload(field.field_type()))),
         ("required", flag_if(field.required(), false)),
         ("visibility", Some(string(field.visibility().key()))),
+        ("default", field.default().map(field_default_payload)),
     ])
+}
+
+/// One canonical field default.
+fn field_default_payload(default: &super::entity::FieldDefault) -> String {
+    use super::entity::FieldDefault;
+    match default {
+        FieldDefault::Literal(literal) => object(vec![
+            ("kind", Some(string("literal"))),
+            ("value", Some(literal_payload(literal))),
+        ]),
+        FieldDefault::Now => object(vec![("kind", Some(string("now")))]),
+        FieldDefault::UuidGenerate => object(vec![("kind", Some(string("uuid_generate")))]),
+        FieldDefault::Sequence { column } => object(vec![
+            ("kind", Some(string("sequence"))),
+            ("ref", Some(string(column.as_str()))),
+        ]),
+    }
+}
+
+/// One canonical typed literal.
+fn literal_payload(literal: &super::entity::Literal) -> String {
+    use super::entity::Literal;
+    match literal {
+        Literal::Boolean(value) => flag(*value),
+        Literal::Integer(value) => integer(*value),
+        Literal::Decimal(text) => string(text),
+        Literal::Text(text) => string(text),
+    }
 }
 
 /// One canonical domain value type.
@@ -185,6 +214,23 @@ fn domain_type_payload(field_type: &DomainType) -> String {
             ("name", Some(string("decimal"))),
             ("precision", Some(integer(*precision))),
             ("scale", Some(integer(*scale))),
+        ]),
+        DomainType::Enum { members } => object(vec![
+            ("name", Some(string("enum"))),
+            (
+                "members",
+                Some(array(
+                    &members
+                        .iter()
+                        .map(|member| string(member))
+                        .collect::<Vec<String>>(),
+                )),
+            ),
+        ]),
+        DomainType::Array { element, max_items } => object(vec![
+            ("name", Some(string("array"))),
+            ("element", Some(domain_type_payload(element))),
+            ("maxItems", max_items.map(integer)),
         ]),
     }
 }
@@ -353,6 +399,16 @@ fn table_payload(table: &super::projection::Table) -> String {
                     .collect::<Vec<String>>(),
             ),
         ),
+        (
+            "checks",
+            optional_array(
+                &table
+                    .checks()
+                    .iter()
+                    .map(check_payload)
+                    .collect::<Vec<String>>(),
+            ),
+        ),
     ])
 }
 
@@ -395,6 +451,39 @@ fn index_payload(index: &super::projection::Index) -> String {
             )),
         ),
         ("unique", Some(flag(index.unique()))),
+        (
+            "where",
+            index
+                .where_()
+                .map(|predicates| predicate_conjunction_payload(predicates)),
+        ),
+    ])
+}
+
+/// One canonical predicate conjunction.
+fn predicate_conjunction_payload(predicates: &[super::projection::ColumnPredicate]) -> String {
+    array(
+        &predicates
+            .iter()
+            .map(|predicate| {
+                object(vec![
+                    ("column", Some(string(predicate.column().as_str()))),
+                    ("op", Some(string(predicate.op().key()))),
+                    ("value", predicate.value().map(literal_payload)),
+                ])
+            })
+            .collect::<Vec<String>>(),
+    )
+}
+
+/// One canonical CHECK constraint.
+fn check_payload(check: &super::projection::CheckConstraint) -> String {
+    object(vec![
+        ("name", Some(string(check.name().as_str()))),
+        (
+            "where",
+            Some(predicate_conjunction_payload(check.predicates())),
+        ),
     ])
 }
 
@@ -528,6 +617,10 @@ fn derived_column_payload(column: &super::derivation::DerivedColumn) -> String {
         ("nullable", Some(flag(column.nullable))),
         ("origin", Some(string(column.origin.key()))),
         ("visibility", Some(string(column.visibility.key()))),
+        (
+            "default",
+            column.default.as_ref().map(field_default_payload),
+        ),
     ])
 }
 

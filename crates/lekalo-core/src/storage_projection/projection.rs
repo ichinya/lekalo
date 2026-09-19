@@ -255,12 +255,102 @@ impl GeneratedColumn {
     }
 }
 
+/// The closed predicate operator of one column predicate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum PredicateOp {
+    /// The column holds no value.
+    IsNull,
+    /// The column holds a value.
+    IsNotNull,
+    /// The column equals the literal.
+    Eq,
+    /// The column differs from the literal.
+    Ne,
+}
+
+impl PredicateOp {
+    /// The exact wire key.
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::IsNull => "is-null",
+            Self::IsNotNull => "is-not-null",
+            Self::Eq => "eq",
+            Self::Ne => "ne",
+        }
+    }
+
+    /// Parse one wire key.
+    pub fn parse(text: &str) -> Result<Self, ShapeError> {
+        match text {
+            "is-null" => Ok(Self::IsNull),
+            "is-not-null" => Ok(Self::IsNotNull),
+            "eq" => Ok(Self::Eq),
+            "ne" => Ok(Self::Ne),
+            _ => Err(ShapeError::Shape),
+        }
+    }
+
+    /// Whether the operator carries a comparison literal.
+    pub const fn carries_value(self) -> bool {
+        matches!(self, Self::Eq | Self::Ne)
+    }
+}
+
+/// One closed column predicate over one declared column and a typed
+/// literal.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct ColumnPredicate {
+    pub(crate) column: StorageName,
+    pub(crate) op: PredicateOp,
+    pub(crate) value: Option<super::entity::Literal>,
+}
+
+impl ColumnPredicate {
+    /// The compared column.
+    pub fn column(&self) -> &StorageName {
+        &self.column
+    }
+
+    /// The closed operator.
+    pub const fn op(&self) -> PredicateOp {
+        self.op
+    }
+
+    /// The typed comparison literal, when the operator carries one.
+    pub fn value(&self) -> Option<&super::entity::Literal> {
+        self.value.as_ref()
+    }
+}
+
+/// One bounded conjunction of column predicates (the implicit AND).
+pub type PredicateConjunction = Vec<ColumnPredicate>;
+
+/// One declared named CHECK constraint.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct CheckConstraint {
+    pub(crate) name: StorageName,
+    pub(crate) where_: PredicateConjunction,
+}
+
+impl CheckConstraint {
+    /// The constraint name.
+    pub fn name(&self) -> &StorageName {
+        &self.name
+    }
+
+    /// The bounded predicate conjunction.
+    pub fn predicates(&self) -> &PredicateConjunction {
+        &self.where_
+    }
+}
+
 /// One declared index over resolved columns.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Index {
     pub(crate) name: Option<StorageName>,
     pub(crate) columns: Vec<StorageName>,
     pub(crate) unique: bool,
+    pub(crate) where_: Option<PredicateConjunction>,
 }
 
 impl Index {
@@ -278,6 +368,11 @@ impl Index {
     pub const fn unique(&self) -> bool {
         self.unique
     }
+
+    /// The optional partial-index predicate.
+    pub fn where_(&self) -> Option<&PredicateConjunction> {
+        self.where_.as_ref()
+    }
 }
 
 /// One declared table: the storage home of exactly one local entity.
@@ -292,6 +387,7 @@ pub struct Table {
     pub(crate) tenant_key: Option<(StorageName, StorageType)>,
     pub(crate) timestamps: Option<(StorageName, StorageName)>,
     pub(crate) indexes: Vec<Index>,
+    pub(crate) checks: Vec<CheckConstraint>,
 }
 
 impl Table {
@@ -338,6 +434,11 @@ impl Table {
     /// The declared indexes.
     pub fn indexes(&self) -> &[Index] {
         &self.indexes
+    }
+
+    /// The declared CHECK constraints, canonical (name) order.
+    pub fn checks(&self) -> &[CheckConstraint] {
+        &self.checks
     }
 }
 

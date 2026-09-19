@@ -16,6 +16,7 @@
 //! the typed error set, never a guessed classification. Paths are
 //! deterministic and byte-sorted.
 
+use super::entity::DomainType;
 use super::projection::{DataRisk, Projection, Table};
 use super::{diagnostic, StorageProjectionAttachment};
 use crate::diagnostics::DiagnosticSet;
@@ -299,7 +300,19 @@ fn compare_fields(
             } else {
                 DiffClass::Breaking
             };
-            push(paths, path.clone(), DiffLayer::Domain, class, None);
+            // An enum member removal rewrites or drops stored values:
+            // it is breaking and carries the destructive data risk
+            // explicitly, never silently.
+            let enum_narrowed = matches!(
+                (field.field_type(), other.field_type()),
+                (DomainType::Enum { .. }, DomainType::Enum { .. })
+            ) && !field.field_type().widens(other.field_type());
+            let risk = if enum_narrowed {
+                Some(DataRisk::Destructive)
+            } else {
+                None
+            };
+            push(paths, path.clone(), DiffLayer::Domain, class, risk);
         }
         if field.required() != other.required() {
             push(
@@ -308,6 +321,18 @@ fn compare_fields(
                 DiffLayer::Domain,
                 DiffClass::Breaking,
                 None,
+            );
+        }
+        if field.default() != other.default() {
+            // A default change is an explicit owner decision that
+            // moves the backfill obligation, so it carries the risk
+            // visibly.
+            push(
+                paths,
+                format!("{prefix}/fields/{name}/default"),
+                DiffLayer::Domain,
+                DiffClass::PolicyChange,
+                Some(DataRisk::BackfillRequired),
             );
         }
         compare_visibility(paths, &path, field.visibility(), other.visibility());
@@ -699,14 +724,21 @@ fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<
             );
         }
     }
-    // Indexes: one aggregate path; a pure addition is non-breaking.
+    // Indexes: one aggregate path; a pure addition is non-breaking and
+    // a partial-predicate change is an explicit storage policy change.
     if base.indexes() != candidate.indexes() {
         let pure_addition = candidate.indexes().len() > base.indexes().len()
             && candidate
                 .indexes()
                 .iter()
                 .all(|candidate| base.indexes().contains(candidate));
-        let class = if pure_addition {
+        let class = if pure_addition
+            && base.indexes().iter().all(|index| index.where_().is_none())
+            && candidate
+                .indexes()
+                .iter()
+                .all(|index| index.where_().is_none())
+        {
             DiffClass::NonBreaking
         } else {
             DiffClass::PolicyChange
@@ -716,6 +748,17 @@ fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<
             format!("{prefix}/indexes"),
             DiffLayer::Storage,
             class,
+            None,
+        );
+    }
+    // CHECK constraints: one aggregate path; changes are storage
+    // policy decisions over declared columns.
+    if base.checks() != candidate.checks() {
+        push(
+            paths,
+            format!("{prefix}/checks"),
+            DiffLayer::Storage,
+            DiffClass::PolicyChange,
             None,
         );
     }

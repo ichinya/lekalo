@@ -61,7 +61,7 @@ const derivedDir = "tests/fixtures/storage-projection/derived";
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const schema = JSON.parse(
   readFileSync(
-    resolve(root, "contracts/storage-projection.schema.v0.2.16.json"),
+    resolve(root, "contracts/storage-projection.schema.v0.4.0.json"),
     "utf8",
   ),
 );
@@ -82,6 +82,11 @@ const SEMANTIC_ONLY_DETAILS = new Set([
   "storage-type",
   "type-params",
   "decimal-scale-above-precision",
+  "default-sequence-unresolved",
+  "default-type-mismatch",
+  "mapping-unsupported",
+  "unknown-check-column",
+  "unknown-index-predicate-column",
   "duplicate-entity-key",
   "duplicate-field",
   "duplicate-namespace",

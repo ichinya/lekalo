@@ -10,7 +10,7 @@
 
 use crate::scenario::id::{FieldName, NamespacedId, SemanticId};
 
-use super::id::EntityKey;
+use super::id::{EntityKey, StorageName};
 
 /// Why one textual domain entity or field record is invalid.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -88,11 +88,18 @@ pub enum DomainType {
     Binary,
     /// A structured document.
     Json,
+    /// A closed enumeration with bounded lowercase members.
+    Enum { members: Vec<String> },
+    /// A bounded array of exactly one non-nested scalar element type.
+    Array {
+        element: Box<DomainType>,
+        max_items: Option<i64>,
+    },
 }
 
 impl DomainType {
     /// The exact wire name.
-    pub const fn name(self) -> &'static str {
+    pub fn name(&self) -> &'static str {
         match self {
             Self::Boolean => "boolean",
             Self::Integer => "integer",
@@ -104,7 +111,15 @@ impl DomainType {
             Self::Timestamp => "timestamp",
             Self::Binary => "binary",
             Self::Json => "json",
+            Self::Enum { .. } => "enum",
+            Self::Array { .. } => "array",
         }
+    }
+
+    /// Whether the type is one non-nested scalar (an array element
+    /// candidate).
+    pub const fn is_scalar(&self) -> bool {
+        !matches!(self, Self::Enum { .. } | Self::Array { .. })
     }
 
     /// Whether the candidate type accepts every value of `self`
@@ -125,19 +140,78 @@ impl DomainType {
             ) => np >= bp && ns >= bs,
             (Self::Integer, Self::Decimal { .. }) | (Self::Date, Self::Timestamp) => true,
             (Self::String { .. }, Self::Text) => true,
+            (Self::Enum { members: base }, Self::Enum { members: next }) => {
+                next.len() >= base.len() && base.iter().all(|member| next.contains(member))
+            }
+            (
+                Self::Array {
+                    element: base,
+                    max_items: base_max,
+                },
+                Self::Array {
+                    element: next,
+                    max_items: next_max,
+                },
+            ) => {
+                base.widens(next)
+                    && match (base_max, next_max) {
+                        (None, _) => false,
+                        (Some(_), None) => true,
+                        (Some(b), Some(n)) => n >= b,
+                    }
+            }
             _ => self == candidate,
         }
     }
 }
 
+/// The closed typed literal of a declared column default.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Literal {
+    /// A true or false literal.
+    Boolean(bool),
+    /// A signed integer literal.
+    Integer(i64),
+    /// A fixed-point decimal literal in canonical numeric spelling.
+    Decimal(String),
+    /// A bounded text literal.
+    Text(String),
+}
+
+/// The closed column-default vocabulary of one declared field.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum FieldDefault {
+    /// One typed literal matching the field's domain type.
+    Literal(Literal),
+    /// The engine's current timestamp.
+    Now,
+    /// The engine's UUID generator (requires the declared extension).
+    UuidGenerate,
+    /// One owned sequence column.
+    Sequence { column: StorageName },
+}
+
+impl FieldDefault {
+    /// The exact wire kind.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Literal(_) => "literal",
+            Self::Now => "now",
+            Self::UuidGenerate => "uuid_generate",
+            Self::Sequence { .. } => "sequence",
+        }
+    }
+}
+
 /// One declared domain field: name, target-neutral value type,
-/// optionality, and visibility.
+/// optionality, visibility, and the optional closed default.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DomainField {
     pub(crate) field: FieldName,
     pub(crate) field_type: DomainType,
     pub(crate) required: bool,
     pub(crate) visibility: Visibility,
+    pub(crate) default: Option<FieldDefault>,
 }
 
 impl DomainField {
@@ -159,6 +233,11 @@ impl DomainField {
     /// The declared visibility.
     pub const fn visibility(&self) -> Visibility {
         self.visibility
+    }
+
+    /// The declared closed default, when declared.
+    pub fn default(&self) -> Option<&FieldDefault> {
+        self.default.as_ref()
     }
 }
 

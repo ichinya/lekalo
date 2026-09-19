@@ -112,6 +112,7 @@ pub struct DerivedColumn {
     pub(crate) nullable: bool,
     pub(crate) origin: ColumnOrigin,
     pub(crate) visibility: Visibility,
+    pub(crate) default: Option<super::entity::FieldDefault>,
 }
 
 impl DerivedColumn {
@@ -133,6 +134,12 @@ impl DerivedColumn {
     /// Why the column exists.
     pub const fn origin(&self) -> ColumnOrigin {
         self.origin
+    }
+
+    /// The declared closed default, when the column derives from a
+    /// declared field with one.
+    pub fn default(&self) -> Option<&super::entity::FieldDefault> {
+        self.default.as_ref()
     }
 
     /// The domain visibility of the column's content. Technical and
@@ -376,10 +383,11 @@ fn derive_table(
     for field in entity.fields() {
         columns.push(DerivedColumn {
             name: column_name(field.name().as_str())?,
-            storage_type: map_type(projection.namespace(), field.field_type()),
+            storage_type: map_type(projection.namespace(), field.field_type())?,
             nullable: !field.required(),
             origin: ColumnOrigin::Field,
             visibility: field.visibility(),
+            default: field.default().cloned(),
         });
     }
     for technical in table.technical_columns() {
@@ -389,6 +397,7 @@ fn derive_table(
             nullable: technical.nullable(),
             origin: ColumnOrigin::Technical,
             visibility: Visibility::Private,
+            default: None,
         });
     }
     for generated in table.generated_columns() {
@@ -401,6 +410,7 @@ fn derive_table(
             nullable: false,
             origin: ColumnOrigin::Generated,
             visibility: Visibility::Private,
+            default: None,
         });
     }
     if let Some(column) = table.soft_delete() {
@@ -410,6 +420,7 @@ fn derive_table(
             nullable: true,
             origin: ColumnOrigin::SoftDelete,
             visibility: Visibility::Private,
+            default: None,
         });
     }
     if let Some((column, storage_type)) = table.tenant_key() {
@@ -419,6 +430,7 @@ fn derive_table(
             nullable: false,
             origin: ColumnOrigin::TenantKey,
             visibility: Visibility::Private,
+            default: None,
         });
     }
     if let Some((created_at, updated_at)) = table.timestamps() {
@@ -428,6 +440,7 @@ fn derive_table(
             nullable: false,
             origin: ColumnOrigin::CreatedAt,
             visibility: Visibility::Private,
+            default: None,
         });
         columns.push(DerivedColumn {
             name: updated_at.clone(),
@@ -435,6 +448,7 @@ fn derive_table(
             nullable: false,
             origin: ColumnOrigin::UpdatedAt,
             visibility: Visibility::Private,
+            default: None,
         });
     }
     let local_key = |table: &super::projection::Table, column: &StorageName| {
@@ -445,6 +459,19 @@ fn derive_table(
     let mut foreign_keys: Vec<DerivedForeignKey> = Vec::new();
     let mut derived_key_columns: Vec<DerivedColumn> = Vec::new();
     let mut unique_foreign_keys: Vec<StorageName> = Vec::new();
+    // The Laravel namespace refuses the 0.4.0 partial-index and CHECK
+    // surface explicitly instead of coercing it.
+    if projection.namespace() == Namespace::Laravel {
+        let refused = table.indexes().iter().any(|index| index.where_().is_some())
+            || !table.checks().is_empty();
+        if refused {
+            return Err(diagnostic::rule_invalid(
+                diagnostic::MAPPING_INVALID,
+                "mapping-unsupported",
+                Some(table.entity().as_str()),
+            ));
+        }
+    }
     for relation in attachment.relations() {
         let placed_here = (relation.kind().target_foreign_key()
             && relation.target() == &table.entity)
@@ -487,6 +514,7 @@ fn derive_table(
             nullable,
             origin: ColumnOrigin::ForeignKey,
             visibility: Visibility::Private,
+            default: None,
         });
         if relation.kind() == RelationKind::OneToOne {
             unique_foreign_keys.push(column.clone());
@@ -535,6 +563,7 @@ fn derive_table(
             nullable,
             origin: ColumnOrigin::DiscriminatorKey,
             visibility: Visibility::Private,
+            default: None,
         });
         columns.push(DerivedColumn {
             name: materialization.type_column().clone(),
@@ -542,6 +571,7 @@ fn derive_table(
             nullable,
             origin: ColumnOrigin::DiscriminatorType,
             visibility: Visibility::Private,
+            default: None,
         });
         polymorphics.push(DerivedPolymorphic {
             relation: materialization.relation().clone(),
@@ -570,6 +600,7 @@ fn derive_table(
             name: None,
             columns: vec![column],
             unique: true,
+            where_: None,
         });
     }
     indexes.sort_by(|left, right| {
@@ -632,6 +663,7 @@ fn derive_join(
             nullable: false,
             origin: ColumnOrigin::JoinKey,
             visibility: Visibility::Private,
+            default: None,
         });
     }
     Ok(DerivedJoin {
@@ -683,7 +715,7 @@ fn local_column_type(
     })?;
     for field in entity.fields() {
         if field.name().as_str() == column.as_str() {
-            return Ok(map_type(projection.namespace(), field.field_type()));
+            return map_type(projection.namespace(), field.field_type());
         }
     }
     for technical in table.technical_columns() {
@@ -720,9 +752,12 @@ fn local_column_type(
 }
 
 /// The published namespace type table: the exact rendering of one
-/// domain value type in one namespace.
-fn map_type(namespace: Namespace, field_type: &DomainType) -> String {
-    match namespace {
+/// domain value type in one namespace. Enum members render through a
+/// bounded varchar (the engine profile decides CHECK versus native
+/// enum type); arrays render natively where the namespace has them and
+/// as JSON documents where it does not.
+fn map_type(namespace: Namespace, field_type: &DomainType) -> Result<String, DiagnosticSet> {
+    let rendered = match namespace {
         Namespace::Postgres => match field_type {
             DomainType::Boolean => "boolean".to_owned(),
             DomainType::Integer => "bigint".to_owned(),
@@ -736,6 +771,10 @@ fn map_type(namespace: Namespace, field_type: &DomainType) -> String {
             DomainType::Timestamp => "timestamptz".to_owned(),
             DomainType::Binary => "bytea".to_owned(),
             DomainType::Json => "jsonb".to_owned(),
+            DomainType::Enum { .. } => "varchar(64)".to_owned(),
+            DomainType::Array { element, .. } => {
+                format!("{}[]", map_type(namespace, element)?)
+            }
         },
         Namespace::Laravel => match field_type {
             DomainType::Boolean => "boolean".to_owned(),
@@ -750,8 +789,11 @@ fn map_type(namespace: Namespace, field_type: &DomainType) -> String {
             DomainType::Timestamp => "datetime".to_owned(),
             DomainType::Binary => "binary".to_owned(),
             DomainType::Json => "json".to_owned(),
+            DomainType::Enum { .. } => "string(64)".to_owned(),
+            DomainType::Array { .. } => "json".to_owned(),
         },
-    }
+    };
+    Ok(rendered)
 }
 
 /// Parse one field name as a column name; the grammars coincide.
