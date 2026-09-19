@@ -1,0 +1,1153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/nfr.schema.v0.4.0.json",
+  "title": "Lekalo NFR Constraint Attachment",
+  "description": "Closed independent attachment contract declaring non-functional requirements as versioned semantic constraints bound to measurable evidence (issue #85). A constraint is a claim: satisfaction requires evidence bound to the exact constraint identity, revision, and a compatible environment, and a declaration without measurement is reported unverified, never silently proven. Runtime constraints and AI-generation budgets are separate dimensions that can never share a row. The contract is independent of the product release, of the Model/IR/trace/graph contract versions, and of the diagnostic registry; functional invariants stay in the invariant-transition family.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "constraints",
+    "openQuestions"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/nfr/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.nfr@0.4.0"
+    },
+    "attachmentRevision": {
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/projectId"
+    },
+    "modelRef": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "$ref": "#/$defs/irRef"
+    },
+    "constraints": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "$ref": "#/$defs/constraint"
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/openQuestion"
+      }
+    }
+  },
+  "$defs": {
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+      "not": {
+        "enum": [
+          "lekalo",
+          "dev"
+        ]
+      }
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+    },
+    "constraintId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z0-9_-]+)+$"
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)([-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$"
+    },
+    "sourceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "requirementId": {
+      "type": "string",
+      "minLength": 7,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}\\.REQ-[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "namespacedId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "boundedToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "irVersion",
+        "digest"
+      ],
+      "properties": {
+        "irVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
+      }
+    },
+    "dimension": {
+      "enum": [
+        "runtime",
+        "ai-budget"
+      ]
+    },
+    "runtimeKind": {
+      "enum": [
+        "latency",
+        "throughput",
+        "concurrency",
+        "availability",
+        "durability",
+        "timeout",
+        "retry-budget",
+        "resource-limit",
+        "retention",
+        "consistency",
+        "freshness",
+        "rpo",
+        "rto",
+        "deployment",
+        "runtime-constraint",
+        "accessibility-ref",
+        "security-ref",
+        "privacy-ref"
+      ]
+    },
+    "aiBudgetKind": {
+      "enum": [
+        "ai-cost",
+        "ai-token",
+        "ai-compute"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "project",
+            "module",
+            "operation",
+            "endpoint"
+          ]
+        },
+        "ref": {
+          "$ref": "#/$defs/semanticId"
+        }
+      }
+    },
+    "comparator": {
+      "enum": [
+        "lt",
+        "lte",
+        "eq",
+        "gte",
+        "gt",
+        "within",
+        "outside"
+      ]
+    },
+    "percentile": {
+      "enum": [
+        "p50",
+        "p95",
+        "p99"
+      ]
+    },
+    "unit": {
+      "enum": [
+        "milliseconds",
+        "seconds",
+        "minutes",
+        "hours",
+        "days",
+        "months",
+        "years",
+        "percent",
+        "nines",
+        "count",
+        "requests-per-second",
+        "operations-per-second",
+        "cores",
+        "megabytes",
+        "gigabytes",
+        "terabytes",
+        "tokens",
+        "currency"
+      ]
+    },
+    "resource": {
+      "enum": [
+        "cpu",
+        "memory",
+        "storage",
+        "connections",
+        "threads"
+      ]
+    },
+    "mode": {
+      "enum": [
+        "strong",
+        "bounded",
+        "stale-ok",
+        "platform",
+        "topology",
+        "region"
+      ]
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metric": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "percentile": {
+          "$ref": "#/$defs/percentile"
+        },
+        "comparator": {
+          "$ref": "#/$defs/comparator"
+        },
+        "value": {
+          "$ref": "#/$defs/decimal"
+        },
+        "range": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "min",
+            "max"
+          ],
+          "properties": {
+            "min": {
+              "$ref": "#/$defs/decimal"
+            },
+            "max": {
+              "$ref": "#/$defs/decimal"
+            }
+          }
+        },
+        "unit": {
+          "$ref": "#/$defs/unit"
+        },
+        "resource": {
+          "$ref": "#/$defs/resource"
+        },
+        "mode": {
+          "$ref": "#/$defs/mode"
+        },
+        "tokens": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/boundedToken"
+          }
+        },
+        "maxAttempts": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,8}$"
+        },
+        "window": {
+          "$ref": "#/$defs/decimal"
+        },
+        "windowUnit": {
+          "enum": [
+            "seconds",
+            "minutes",
+            "hours"
+          ]
+        },
+        "reference": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "digest"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/namespacedId"
+            },
+            "digest": {
+              "$ref": "#/$defs/sha256Digest"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "comparator": {
+                "enum": [
+                  "within",
+                  "outside"
+                ]
+              }
+            },
+            "required": [
+              "comparator"
+            ]
+          },
+          "then": {
+            "required": [
+              "range"
+            ],
+            "not": {
+              "properties": {
+                "value": {}
+              },
+              "required": [
+                "value"
+              ]
+            },
+            "properties": {
+              "range": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "min",
+                  "max"
+                ],
+                "properties": {
+                  "min": {
+                    "type": "string",
+                    "pattern": "^(0|[1-9][0-9]*)(.[0-9]+)?$"
+                  },
+                  "max": {
+                    "type": "string",
+                    "pattern": "^(0|[1-9][0-9]*)(.[0-9]+)?$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "comparator": {
+                "enum": [
+                  "lt",
+                  "lte",
+                  "eq",
+                  "gte",
+                  "gt"
+                ]
+              }
+            },
+            "required": [
+              "comparator"
+            ]
+          },
+          "then": {
+            "required": [
+              "value"
+            ],
+            "not": {
+              "properties": {
+                "range": {}
+              },
+              "required": [
+                "range"
+              ]
+            },
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/decimal"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "value"
+            ],
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/decimal"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "unit"
+            ],
+            "properties": {
+              "unit": {
+                "$ref": "#/$defs/unit"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "range"
+            ],
+            "properties": {
+              "range": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "min",
+                  "max"
+                ],
+                "properties": {
+                  "min": {
+                    "type": "string",
+                    "pattern": "^(0|[1-9][0-9]*)(.[0-9]+)?$"
+                  },
+                  "max": {
+                    "type": "string",
+                    "pattern": "^(0|[1-9][0-9]*)(.[0-9]+)?$"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "unit"
+            ],
+            "properties": {
+              "unit": {
+                "$ref": "#/$defs/unit"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "benchmark",
+            "load-test",
+            "soak-test",
+            "slo-report",
+            "chaos-experiment",
+            "synthetic-probe",
+            "audit-document",
+            "declaration"
+          ]
+        },
+        "gateRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "evidenceKinds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "enum": [
+              "benchmark",
+              "load-test",
+              "soak-test",
+              "slo-report",
+              "chaos-experiment",
+              "synthetic-probe",
+              "audit-document",
+              "declaration"
+            ]
+          }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "envId",
+        "profileRef",
+        "adapterRef",
+        "runtime",
+        "platform"
+      ],
+      "properties": {
+        "envId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+        },
+        "profileRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "digest"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/namespacedId"
+            },
+            "digest": {
+              "$ref": "#/$defs/sha256Digest"
+            }
+          }
+        },
+        "adapterRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "digest"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/namespacedId"
+            },
+            "digest": {
+              "$ref": "#/$defs/sha256Digest"
+            }
+          }
+        },
+        "runtime": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "platform": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "labels": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/boundedToken"
+          }
+        }
+      }
+    },
+    "capabilityRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "minimum"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+        },
+        "minimum": {
+          "enum": [
+            "partial",
+            "full"
+          ]
+        }
+      }
+    },
+    "validity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/semver"
+        },
+        "validFrom": {
+          "$ref": "#/$defs/date"
+        },
+        "validUntil": {
+          "$ref": "#/$defs/date"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "validFrom": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "validFrom"
+            ]
+          },
+          "then": {
+            "properties": {
+              "validUntil": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "validUntil"
+            ]
+          }
+        }
+      ]
+    },
+    "sourceRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "requirement"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/sourceId"
+        },
+        "requirement": {
+          "$ref": "#/$defs/requirementId"
+        }
+      }
+    },
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "constraintId",
+        "dimension",
+        "kind",
+        "scope",
+        "requirement",
+        "enforcement",
+        "measurement",
+        "validity"
+      ],
+      "properties": {
+        "constraintId": {
+          "$ref": "#/$defs/constraintId"
+        },
+        "dimension": {
+          "$ref": "#/$defs/dimension"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/runtimeKind"
+            },
+            {
+              "$ref": "#/$defs/aiBudgetKind"
+            }
+          ]
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "requirement": {
+          "$ref": "#/$defs/requirement"
+        },
+        "enforcement": {
+          "enum": [
+            "mandatory",
+            "advisory"
+          ]
+        },
+        "measurement": {
+          "$ref": "#/$defs/measurement"
+        },
+        "environments": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/environment"
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/capabilityRequirement"
+          }
+        },
+        "validity": {
+          "$ref": "#/$defs/validity"
+        },
+        "sourceRequirement": {
+          "$ref": "#/$defs/sourceRequirement"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "dimension": {
+                "const": "runtime"
+              }
+            },
+            "required": [
+              "dimension"
+            ]
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "$ref": "#/$defs/runtimeKind"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "dimension": {
+                "const": "ai-budget"
+              }
+            },
+            "required": [
+              "dimension"
+            ]
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "$ref": "#/$defs/aiBudgetKind"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "latency"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "requirement": {
+                "type": "object",
+                "properties": {
+                  "percentile": {
+                    "enum": [
+                      "p50",
+                      "p95",
+                      "p99"
+                    ]
+                  }
+                },
+                "required": [
+                  "percentile"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "throughput",
+                  "concurrency",
+                  "availability",
+                  "durability",
+                  "timeout",
+                  "resource-limit",
+                  "retention",
+                  "freshness",
+                  "rpo",
+                  "rto",
+                  "ai-cost",
+                  "ai-token",
+                  "ai-compute"
+                ]
+              },
+              "requirement": {
+                "type": "object",
+                "properties": {
+                  "percentile": {
+                    "enum": [
+                      "p50",
+                      "p95",
+                      "p99"
+                    ]
+                  }
+                },
+                "required": [
+                  "percentile"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "requirement"
+            ]
+          },
+          "then": {
+            "not": {}
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "resource-limit"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "requirement": {
+                "type": "object",
+                "properties": {
+                  "resource": {
+                    "$ref": "#/$defs/resource"
+                  }
+                },
+                "required": [
+                  "resource"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "retry-budget"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "requirement": {
+                "type": "object",
+                "properties": {
+                  "maxAttempts": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]{0,8}$"
+                  },
+                  "window": {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  "windowUnit": {
+                    "enum": [
+                      "seconds",
+                      "minutes",
+                      "hours"
+                    ]
+                  }
+                },
+                "required": [
+                  "maxAttempts",
+                  "window",
+                  "windowUnit"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "consistency"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "requirement": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "$ref": "#/$defs/mode"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "deployment"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "requirement": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "$ref": "#/$defs/mode"
+                  },
+                  "tokens": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "items": {
+                      "$ref": "#/$defs/boundedToken"
+                    }
+                  }
+                },
+                "required": [
+                  "mode",
+                  "tokens"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "runtime-constraint"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "requirement": {
+                "type": "object",
+                "properties": {
+                  "tokens": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "items": {
+                      "$ref": "#/$defs/boundedToken"
+                    }
+                  }
+                },
+                "required": [
+                  "tokens"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "accessibility-ref",
+                  "security-ref",
+                  "privacy-ref"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "requirement": {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "digest"
+                    ],
+                    "properties": {
+                      "id": {
+                        "$ref": "#/$defs/namespacedId"
+                      },
+                      "digest": {
+                        "$ref": "#/$defs/sha256Digest"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "reference"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "measurement": {
+                "properties": {
+                  "method": {
+                    "const": "declaration"
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              "enforcement": {
+                "const": "mandatory"
+              }
+            },
+            "required": [
+              "measurement",
+              "enforcement"
+            ]
+          },
+          "then": {
+            "not": {}
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "latency",
+                  "throughput",
+                  "concurrency",
+                  "availability",
+                  "durability",
+                  "timeout",
+                  "retry-budget",
+                  "resource-limit",
+                  "retention",
+                  "freshness",
+                  "rpo",
+                  "rto",
+                  "ai-cost",
+                  "ai-token",
+                  "ai-compute"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "measurement": {
+                "required": [
+                  "gateRef"
+                ],
+                "type": "object",
+                "properties": {
+                  "gateRef": {
+                    "$ref": "#/$defs/namespacedId"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "openQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "questionId"
+      ],
+      "properties": {
+        "questionId": {
+          "$ref": "#/$defs/constraintId"
+        },
+        "relatedConstraint": {
+          "$ref": "#/$defs/constraintId"
+        }
+      }
+    }
+  }
+}
