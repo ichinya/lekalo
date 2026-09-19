@@ -594,7 +594,8 @@ fn endpoint_binding(value: &Json) -> Result<EndpointBinding, DiagnosticSet> {
         object
             .get("params")
             .and_then(Json::as_array)
-            .ok_or_else(|| diagnostic::input_invalid("param-list"))?,
+            .map(|list| list.as_slice())
+            .unwrap_or_default(),
     )?;
     let body = match object.get("body") {
         Some(value) => Some(body_binding(value, ParamOrResponse::Body)?),

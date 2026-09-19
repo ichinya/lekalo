@@ -1,0 +1,8 @@
+{"schema_version":"0.2.16","definitions":[
+{"id":"planner.task_id","kind":"scalar","version":1,"description":"Stable task identifier","base":"uuid","visibility":"project","portability":"portable"},
+{"id":"planner.text","kind":"scalar","version":1,"description":"Human-readable text","base":"string"},
+{"id":"planner.task_state","kind":"enum","version":1,"description":"Task lifecycle state","values":[{"value":"backlog","description":"Not started"},{"value":"focused","description":"Currently focused"},{"value":"done","description":"Completed"}]},
+{"id":"planner.due_date","kind":"scalar","version":1,"description":"Calendar due date","base":"date"},
+{"id":"planner.tenant_id","kind":"scalar","version":1,"description":"Stable tenant identifier","base":"uuid"},
+{"id":"planner.task","kind":"entity","version":1,"description":"A focusable task","fields":[{"name":"task_id","type":{"ref":"planner.task_id"},"required":true},{"name":"tenant","type":{"ref":"planner.tenant_id"},"required":true},{"name":"title","type":{"ref":"planner.text"},"required":true},{"name":"state","type":{"ref":"planner.task_state"},"required":true},{"name":"due","type":{"optional":{"ref":"planner.due_date"}}}],"identity":["task_id"]}
+]}

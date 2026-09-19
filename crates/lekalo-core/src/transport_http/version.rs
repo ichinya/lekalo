@@ -84,15 +84,18 @@ mod tests {
     }
 
     #[test]
-    fn bounds_are_positive_and_ordered() {
-        assert!(MAX_ENDPOINTS >= 1 && MAX_ENDPOINTS <= 10_000);
-        assert!(MAX_PARAMS >= 1 && MAX_PARAMS <= 10_000);
-        assert!(MAX_ERROR_MAP >= 1 && MAX_ERROR_MAP <= 10_000);
-        assert!(MAX_SCHEMES >= 1 && MAX_SCHEMES <= 10_000);
-        assert!(MAX_AUTH_SCHEMES <= MAX_SCHEMES);
-        assert!(MAX_CAPABILITIES <= 16);
-        assert!(MAX_SCENARIOS >= 1);
-        assert!(MAX_FIELDS <= 256);
-        assert!(MAX_CANONICAL_BYTES <= 32 * 1024 * 1024);
+    fn bounds_match_the_recorded_owner_decisions() {
+        assert_eq!(MAX_ENDPOINTS, 2048);
+        assert_eq!(MAX_PARAMS, 64);
+        assert_eq!(MAX_ERROR_MAP, 256);
+        assert_eq!(MAX_SCHEMES, 64);
+        assert_eq!(MAX_AUTH_SCHEMES, 4);
+        assert_eq!(MAX_CAPABILITIES, 3);
+        assert_eq!(MAX_SCENARIOS, 32);
+        assert_eq!(MAX_FIELDS, 64);
+        assert_eq!(MAX_HEADERS, 16);
+        assert_eq!(MAX_CORRELATION_HEADERS, 4);
+        assert_eq!(MAX_TAGS, 16);
+        assert_eq!(MAX_CANONICAL_BYTES, 1024 * 1024);
     }
 }

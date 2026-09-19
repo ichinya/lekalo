@@ -64,11 +64,6 @@ pub(crate) fn input_invalid(detail: &str) -> DiagnosticSet {
     }
 }
 
-/// One un-finalized finding for validators that collect several.
-pub(crate) fn finding(id: &str, data: DataObject) -> Option<Diagnostic> {
-    one(id, data).ok()
-}
-
 /// Assemble the fixed data prefix every rule shares: a detail tag
 /// plus an optional bounded subject echo.
 fn subject_data(detail: &str, subject: Option<&str>) -> DataObject {

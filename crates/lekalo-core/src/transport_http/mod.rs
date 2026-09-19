@@ -33,8 +33,10 @@
 pub mod canonical;
 mod diagnostic;
 pub mod id;
+pub mod mapping;
 pub mod types;
-pub(crate) mod version;
+pub(crate) mod validate;
+pub mod version;
 pub(crate) mod wire;
 
 pub use id::{FieldRef, HeaderName, OperationId, SafeToken, WireName};
@@ -57,6 +59,7 @@ use crate::lockfile::types::{SemVer, Sha256Digest};
 use crate::scenario::id::SemanticId;
 
 pub use diagnostic::io_failure;
+pub use validate::{validate, CapabilityMap, ProfileSupport, ValidationContext};
 
 /// The bound source Model contract: exact accepted version plus
 /// digest.
@@ -102,6 +105,7 @@ pub struct TransportDocument {
 impl TransportDocument {
     /// Assemble from validated parts (crate internal); collections
     /// arrive in the caller's normalized order.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assemble(
         attachment_revision: SemVer,
         project_id: SemanticId,

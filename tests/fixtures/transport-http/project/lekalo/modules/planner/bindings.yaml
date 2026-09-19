@@ -1,0 +1,8 @@
+{"schema_version":"0.2.16","definitions":[
+{"id":"planner.endpoint_focus_task","kind":"endpoint","version":1,"description":"HTTP entry point for focusing a task by body","invokes":"planner.focus_task","method":"POST","path":"/tasks/focus"},
+{"id":"planner.endpoint_focus_task_by_id","kind":"endpoint","version":1,"description":"HTTP entry point for focusing a task by path id","invokes":"planner.focus_task","method":"POST","path":"/tasks/{task_id}/focus"},
+{"id":"planner.endpoint_list_tasks","kind":"endpoint","version":1,"description":"Public tasks listing","invokes":"planner.list_tasks","method":"GET","path":"/tasks"},
+{"id":"planner.endpoint_count_focused","kind":"endpoint","version":1,"description":"Focused task count","invokes":"planner.count_focused","method":"GET","path":"/tasks/focused-count"},
+{"id":"planner.endpoint_tasks_by_project","kind":"endpoint","version":1,"description":"Tasks of one project, paged by cursor","invokes":"planner.tasks_by_project","method":"GET","path":"/projects/{project_ref}/tasks"},
+{"id":"planner.endpoint_task_stream","kind":"endpoint","version":1,"description":"Server-sent task stream","invokes":"planner.list_tasks","method":"GET","path":"/tasks/stream"}
+]}

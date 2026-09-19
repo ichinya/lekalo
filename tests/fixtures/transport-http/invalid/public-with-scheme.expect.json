@@ -1,0 +1,4 @@
+{
+  "rule": "transport.security-invalid",
+  "detail": "public-with-scheme"
+}
