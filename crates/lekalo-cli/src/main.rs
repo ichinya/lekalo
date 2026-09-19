@@ -465,6 +465,14 @@ enum Commands {
         #[command(subcommand)]
         command: NativeCommands,
     },
+    /// Resolve NFR constraints against their measured evidence
+    /// (issue #85): the gate, the derived report, and the closed
+    /// queries. The core owns every decision; this binary only
+    /// selects, renders, and maps exits.
+    Nfr {
+        #[command(subcommand)]
+        command: NfrCommands,
+    },
 }
 
 /// The `native` subcommands (issue #48).
@@ -486,6 +494,75 @@ enum NativeCommands {
 
 /// The per-exchange scan deadline default (issue #42).
 const DEFAULT_SCAN_TIMEOUT_MS: u64 = 60_000;
+
+/// The `nfr` subcommands (issue #85): validate is the gate (exit 0
+/// pass, 1 invalid, 3 denied, 4 unavailable); report and query are
+/// informational and exit 0 whenever the resolution completes.
+#[derive(Debug, Subcommand)]
+enum NfrCommands {
+    /// Validate the attachment and gate every mandatory constraint:
+    /// violated, unverified, stale, unsupported, or conflicted
+    /// mandatory rows deny the gate; `--strict` escalates advisory
+    /// violated/unverified/stale rows into the denied set.
+    Validate {
+        /// Path to the NFR attachment JSON document.
+        path: String,
+        /// Path to one evidence document; repeat for several
+        /// environments.
+        #[arg(long = "evidence", value_name = "FILE")]
+        evidence: Vec<String>,
+        /// Escalate advisory violated/unverified/stale rows into the
+        /// denied set (the impact --profile strict precedent).
+        #[arg(long)]
+        strict: bool,
+        /// The reference date for expiry and validity evaluation
+        /// (`YYYY-MM-DD`); expiry is deterministic in this date, never
+        /// a clock.
+        #[arg(long, value_name = "DATE")]
+        as_of: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Emit the canonical resolution report: per-constraint statuses,
+    /// per-environment rows, foreign evidence, open questions, and the
+    /// gate verdict.
+    Report {
+        /// Path to the NFR attachment JSON document.
+        path: String,
+        /// Path to one evidence document; repeat for several
+        /// environments.
+        #[arg(long = "evidence", value_name = "FILE")]
+        evidence: Vec<String>,
+        /// The reference date for expiry and validity evaluation
+        /// (`YYYY-MM-DD`).
+        #[arg(long, value_name = "DATE")]
+        as_of: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Run one closed query over the resolution report.
+    Query {
+        /// Path to the NFR attachment JSON document.
+        path: String,
+        /// The closed selector: `report`, `unverified`, `stale`,
+        /// `foreign-environment`, `open-questions`, `coverage-gaps`,
+        /// `constraint:ID`, or `symbol:SEMANTIC-ID`.
+        selector: String,
+        /// Path to one evidence document; repeat for several
+        /// environments.
+        #[arg(long = "evidence", value_name = "FILE")]
+        evidence: Vec<String>,
+        /// The reference date for expiry and validity evaluation
+        /// (`YYYY-MM-DD`).
+        #[arg(long, value_name = "DATE")]
+        as_of: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
 
 /// The `module` subcommands: the module-authoring surface (issue #97).
 #[derive(Debug, Subcommand)]
@@ -1267,6 +1344,7 @@ fn main() -> ExitCode {
             Commands::Native { command } => match command {
                 NativeCommands::Run { plan } => run_native_run(&plan),
             },
+            Commands::Nfr { command } => run_nfr(command),
             Commands::Init {
                 adopt,
                 target,
@@ -3012,6 +3090,360 @@ fn run_requirements(command: RequirementsCommands) -> DomainResult {
         RequirementsStep::Trace => requirements_trace(&resolution.report),
     }
 }
+
+/// The selected NFR operation, resolved before the attachment is read.
+enum NfrStep {
+    Validate { strict: bool },
+    Report,
+    Query(String),
+}
+
+/// Run one `lekalo nfr` operation: parse the attachment and every
+/// evidence document, resolve against the selected project, and emit
+/// the requested view. The core owns every decision; this binary only
+/// selects, renders, and maps exits.
+fn run_nfr(command: NfrCommands) -> DomainResult {
+    let (path, evidence_paths, as_of, project, step) = match command {
+        NfrCommands::Validate {
+            path,
+            evidence,
+            strict,
+            as_of,
+            project,
+        } => (path, evidence, as_of, project, NfrStep::Validate { strict }),
+        NfrCommands::Report {
+            path,
+            evidence,
+            as_of,
+            project,
+        } => (path, evidence, as_of, project, NfrStep::Report),
+        NfrCommands::Query {
+            path,
+            selector,
+            evidence,
+            as_of,
+            project,
+        } => (path, evidence, as_of, project, NfrStep::Query(selector)),
+    };
+    let as_of = match lekalo_core::nfr::IsoDate::parse(&as_of) {
+        Ok(as_of) => as_of,
+        Err(_) => {
+            return DomainResult::usage_error();
+        }
+    };
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                io::ErrorKind::NotFound => "file-missing",
+                _ => "file-unreadable",
+            };
+            return DomainResult::invalid(lekalo_core::nfr::diagnostic::io_failure(detail));
+        }
+    };
+    let attachment = match lekalo_core::nfr::NfrAttachment::parse(&bytes) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let mut evidence: Vec<lekalo_core::nfr::EvidenceSet> = Vec::new();
+    for evidence_path in &evidence_paths {
+        let bytes = match std::fs::read(evidence_path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let detail = match error.kind() {
+                    io::ErrorKind::NotFound => "file-missing",
+                    _ => "file-unreadable",
+                };
+                return DomainResult::unavailable(
+                    lekalo_core::nfr::diagnostic::evidence_unavailable(detail, None),
+                );
+            }
+        };
+        match lekalo_core::nfr::EvidenceSet::parse(&bytes) {
+            Ok(set) => evidence.push(set),
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        }
+    }
+    let refs: Vec<&lekalo_core::nfr::EvidenceSet> = evidence.iter().collect();
+    let capabilities = nfr_capability_snapshot(&project);
+    let selection = selection_for(&project);
+    let resolution =
+        match lekalo_core::nfr::resolve(&attachment, &refs, &capabilities, &as_of, &selection) {
+            Ok(resolution) => resolution,
+            Err(result) => return result,
+        };
+    match step {
+        NfrStep::Validate { strict } => nfr_validate(
+            &resolution,
+            if strict {
+                lekalo_core::nfr::GateProfile::Strict
+            } else {
+                lekalo_core::nfr::GateProfile::Default
+            },
+        ),
+        NfrStep::Report => nfr_report(&resolution.report),
+        NfrStep::Query(selector) => nfr_query(&resolution, &selector),
+    }
+}
+
+/// The resolved capability snapshot: the committed project lock's
+/// capability table when a valid lock exists, otherwise the explicit
+/// fact that no profile was resolved.
+fn nfr_capability_snapshot(project: &Option<String>) -> lekalo_core::nfr::CapabilitySnapshot {
+    let selection = selection_for(project);
+    let root = match lekalo_core::orchestration::project_root(&selection) {
+        Ok(root) => root,
+        Err(_) => return lekalo_core::nfr::CapabilitySnapshot::unresolved(),
+    };
+    match lekalo_core::lockfile::plan::LockService::read_state_at(&root) {
+        Ok(lekalo_core::lockfile::LockState::Present(lock)) => {
+            let capabilities = lock
+                .capabilities()
+                .iter()
+                .filter_map(|capability| {
+                    let support = match capability.support() {
+                        lekalo_core::lockfile::types::Support::Full => {
+                            lekalo_core::nfr::Support::Full
+                        }
+                        lekalo_core::lockfile::types::Support::Partial => {
+                            lekalo_core::nfr::Support::Partial
+                        }
+                        // Unsupported and unknown never satisfy a
+                        // requirement: they stay absent.
+                        _ => return None,
+                    };
+                    Some((capability.id().as_str().to_owned(), support))
+                })
+                .collect();
+            lekalo_core::nfr::CapabilitySnapshot::resolved(capabilities)
+        }
+        _ => lekalo_core::nfr::CapabilitySnapshot::unresolved(),
+    }
+}
+
+/// `lekalo nfr validate`: the gate summary plus the verdict; exit 0
+/// pass, 3 denied (the aggregated gate set), 1/4 for the terminal
+/// failures mapped before this point.
+fn nfr_validate(
+    resolution: &lekalo_core::nfr::Resolution,
+    profile: lekalo_core::nfr::GateProfile,
+) -> DomainResult {
+    use lekalo_core::nfr::ResolutionVerdict;
+    let report = &resolution.report;
+    let rows = report
+        .runtime
+        .constraints
+        .iter()
+        .chain(report.ai_budget.constraints.iter());
+    let mut counts = std::collections::BTreeMap::new();
+    for row in rows {
+        *counts.entry(row.status).or_insert(0usize) += 1;
+    }
+    let count = |status: &str| counts.get(status).copied().unwrap_or(0);
+    let verdict = resolution.verdict_for(profile);
+    let json = format!(
+        "{{\"status\":\"valid\",\"nfr\":{{\"projectId\":\"{}\",\"constraintCount\":{},\"satisfied\":{},\"violated\":{},\"unverified\":{},\"stale\":{},\"foreignEnvironment\":{},\"openQuestion\":{},\"unsupported\":{},\"conflict\":{},\"capabilitiesResolved\":{},\"profile\":\"{}\"}}}}",
+        report.project_id,
+        count_all(report),
+        count("satisfied"),
+        count("violated"),
+        count("unverified"),
+        count("stale"),
+        count("foreign-environment"),
+        count("open-question"),
+        count("unsupported"),
+        count("conflict"),
+        report.capabilities_resolved,
+        profile.key(),
+    );
+    let human = format!(
+        "nfr {}\n#   constraints {}; satisfied {}; violated {}; unverified {}; stale {}; \
+         foreign {}; open questions {}; unsupported {}; conflict {} (profile {}, as-of {})",
+        report.project_id,
+        count_all(report),
+        count("satisfied"),
+        count("violated"),
+        count("unverified"),
+        count("stale"),
+        count("foreign-environment"),
+        count("open-question"),
+        count("unsupported"),
+        count("conflict"),
+        profile.key(),
+        report.as_of,
+    );
+    let warnings = resolution.warnings().to_vec();
+    match verdict {
+        ResolutionVerdict::Pass => DomainResult::graph(json, human, warnings),
+        ResolutionVerdict::Denied(diagnostics) => DomainResult::denied(diagnostics),
+    }
+}
+
+/// The total constraint row count across both dimension sections.
+fn count_all(report: &lekalo_core::nfr::Report) -> usize {
+    report.runtime.constraints.len() + report.ai_budget.constraints.len()
+}
+
+/// `lekalo nfr report`: the canonical report bytes are the export;
+/// JSON output embeds the same bytes as a value plus the digest.
+fn nfr_report(report: &lekalo_core::nfr::Report) -> DomainResult {
+    let canonical = match report.canonical_bytes() {
+        Ok(canonical) => canonical,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let digest = match report.digest() {
+        Ok(digest) => digest,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let json =
+        format!("{{\"status\":\"valid\",\"report\":{canonical},\"reportDigest\":\"{digest}\"}}");
+    DomainResult::graph(json, canonical, Vec::new())
+}
+
+/// One closed NFR query selector.
+enum NfrSelection {
+    /// The whole report.
+    Report,
+    /// Constraints in one status.
+    Status(&'static str),
+    /// The foreign-evidence rows.
+    ForeignEnvironment,
+    /// The registered open questions.
+    OpenQuestions,
+    /// The coverage gaps.
+    CoverageGaps,
+    /// One constraint by id.
+    Constraint(String),
+    /// Every constraint whose scope names one symbol.
+    Symbol(String),
+}
+
+/// Parse one closed NFR query selector.
+fn nfr_selection(selector: &str) -> Option<NfrSelection> {
+    match selector {
+        "report" => return Some(NfrSelection::Report),
+        "foreign-environment" => return Some(NfrSelection::ForeignEnvironment),
+        "open-questions" => return Some(NfrSelection::OpenQuestions),
+        "coverage-gaps" => return Some(NfrSelection::CoverageGaps),
+        _ => {}
+    }
+    if let Some(constraint) = selector.strip_prefix("constraint:") {
+        return Some(NfrSelection::Constraint(constraint.to_owned()));
+    }
+    if let Some(symbol) = selector.strip_prefix("symbol:") {
+        return Some(NfrSelection::Symbol(symbol.to_owned()));
+    }
+    for status in [
+        "unverified",
+        "stale",
+        "satisfied",
+        "violated",
+        "open-question",
+        "unsupported",
+        "conflict",
+    ] {
+        if selector == status {
+            return Some(NfrSelection::Status(status));
+        }
+    }
+    None
+}
+
+/// `lekalo nfr query`: the closed selectors answered from the resolved
+/// report; an unknown selector or subject is the stable usage or
+/// unknown failure, never an empty success.
+fn nfr_query(resolution: &lekalo_core::nfr::Resolution, selector: &str) -> DomainResult {
+    let selection = match nfr_selection(selector) {
+        Some(selection) => selection,
+        None => return DomainResult::usage_error(),
+    };
+    let report = &resolution.report;
+    let all = || {
+        report
+            .runtime
+            .constraints
+            .iter()
+            .chain(report.ai_budget.constraints.iter())
+    };
+    let render = |rows: serde_json::Value, human: String| {
+        let json = format!(
+            "{{\"status\":\"valid\",\"nfr\":{}}}",
+            serde_json::to_string(&rows).unwrap_or_else(|_| "null".to_owned())
+        );
+        DomainResult::graph(json, human, Vec::new())
+    };
+    match selection {
+        NfrSelection::Report => nfr_report(report),
+        NfrSelection::Status(status) => {
+            let ids: Vec<String> = all()
+                .filter(|row| row.status == status)
+                .map(|row| row.constraint_id.clone())
+                .collect();
+            if ids.is_empty() {
+                return DomainResult::invalid(lekalo_core::nfr::diagnostic::projection_empty());
+            }
+            render(
+                serde_json::json!({ "selector": selector, "constraints": ids }),
+                format!("nfr {selector}: {} constraints", ids.len()),
+            )
+        }
+        NfrSelection::ForeignEnvironment => {
+            if report.foreign_evidence.is_empty() {
+                return DomainResult::invalid(lekalo_core::nfr::diagnostic::projection_empty());
+            }
+            render(
+                serde_json::json!({ "selector": "foreign-environment", "rows": report.foreign_evidence }),
+                format!(
+                    "nfr foreign-environment: {} rows",
+                    report.foreign_evidence.len()
+                ),
+            )
+        }
+        NfrSelection::OpenQuestions => {
+            if report.open_questions.is_empty() {
+                return DomainResult::invalid(lekalo_core::nfr::diagnostic::projection_empty());
+            }
+            render(
+                serde_json::json!({ "selector": "open-questions", "rows": report.open_questions }),
+                format!("nfr open questions: {}", report.open_questions.len()),
+            )
+        }
+        NfrSelection::CoverageGaps => {
+            if report.coverage_gaps.is_empty() {
+                return DomainResult::invalid(lekalo_core::nfr::diagnostic::projection_empty());
+            }
+            render(
+                serde_json::json!({ "selector": "coverage-gaps", "rows": report.coverage_gaps }),
+                format!("nfr coverage gaps: {}", report.coverage_gaps.len()),
+            )
+        }
+        NfrSelection::Constraint(constraint) => {
+            let row = all().find(|row| row.constraint_id == constraint);
+            let row = match row {
+                Some(row) => row,
+                None => return DomainResult::usage_error(),
+            };
+            render(
+                serde_json::json!({ "constraint": row }),
+                format!("nfr {}: {} ({})", row.constraint_id, row.status, row.kind),
+            )
+        }
+        NfrSelection::Symbol(symbol) => {
+            let ids: Vec<String> = all()
+                .filter(|row| row.scope_ref == symbol)
+                .map(|row| row.constraint_id.clone())
+                .collect();
+            if ids.is_empty() {
+                return DomainResult::invalid(lekalo_core::nfr::diagnostic::projection_empty());
+            }
+            render(
+                serde_json::json!({ "symbol": symbol, "constraints": ids }),
+                format!("nfr symbol {symbol}: {} constraints", ids.len()),
+            )
+        }
+    }
+}
+
 /// Run one `lekalo query-model` operation. The core owns every
 /// decision; this binary only reads the document, selects, renders,
 /// and maps exits.

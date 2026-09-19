@@ -46,6 +46,8 @@ pub const EXPORT_LIMIT: &str = "nfr.export-limit";
 pub const DIFF_INVALID: &str = "nfr.diff-invalid";
 /// The registered rule for an empty requested projection.
 pub const PROJECTION_EMPTY: &str = "nfr.projection-empty";
+/// The registered rule for an absent or unreadable evidence document.
+pub const EVIDENCE_UNAVAILABLE: &str = "nfr.evidence-unavailable";
 
 /// Why one diagnostic could not be finalized (collapsed to the invariant
 /// set by the caller).
@@ -189,4 +191,13 @@ pub fn projection_empty() -> DiagnosticSet {
 /// is a fixed classification token, never an OS error string.
 pub fn io_failure(detail: &str) -> DiagnosticSet {
     document_invalid(detail, None)
+}
+
+/// The `unavailable` set for an absent or unreadable evidence
+/// document (the requirements provider-unavailable exit class).
+pub fn evidence_unavailable(detail: &str, subject: Option<&str>) -> DiagnosticSet {
+    set(
+        crate::result::Status::Unavailable,
+        vec![diagnostic(EVIDENCE_UNAVAILABLE, detail, subject)],
+    )
 }

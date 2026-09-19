@@ -4117,6 +4117,30 @@
       "lifecycle": "active"
     },
     {
+      "id": "nfr.evidence-unavailable",
+      "code": "LEK-NFR-013",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "nfr.evidence-unavailable",
+      "default_message": "A referenced NFR evidence document is absent or unreadable.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "nfr.export-limit",
       "code": "LEK-NFR-010",
       "category": "semantic",
