@@ -33,6 +33,30 @@
       "lifecycle": "active"
     },
     {
+      "id": "adapter.checksum-mismatch",
+      "code": "LEK-ADP-007",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adapter.checksum-mismatch",
+      "default_message": "Declared adapter package bytes do not match their declared checksums.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "domain",
+          "type": "token"
+        },
+        {
+          "name": "identity",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "adapter.diagnostic-invalid",
       "code": "LEK-ADP-001",
       "category": "adapter",
@@ -46,6 +70,145 @@
       "data_fields": [
         {
           "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.hooks-declared",
+      "code": "LEK-ADP-015",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "adapter.hooks-declared",
+      "default_message": "The adapter package declares hooks; hook execution is not available in this version.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "count",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.incompatible",
+      "code": "LEK-ADP-011",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "adapter.incompatible",
+      "default_message": "The adapter manifest compatibility set excludes the current core contracts.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "adapter",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.install-conflict",
+      "code": "LEK-ADP-019",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adapter.install-conflict",
+      "default_message": "The planned install path is occupied by foreign content.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "path",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.install-plan-required",
+      "code": "LEK-ADP-017",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "adapter.install-plan-required",
+      "default_message": "A mutating adapter install, update, or rollback requires a confirmed plan id.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.manifest-invalid",
+      "code": "LEK-ADP-006",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "adapter.manifest-invalid",
+      "default_message": "The adapter package manifest is not a valid closed-wire document.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.manifest-mismatch",
+      "code": "LEK-ADP-008",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adapter.manifest-mismatch",
+      "default_message": "The adapter describe outcome contradicts its verified package manifest.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "field",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.permission-escalated",
+      "code": "LEK-ADP-021",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adapter.permission-escalated",
+      "default_message": "The update widens adapter permissions without the explicit escalation policy.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "adapter",
+          "type": "token"
+        },
+        {
+          "name": "member",
           "type": "token"
         }
       ],
@@ -109,6 +272,74 @@
       "lifecycle": "active"
     },
     {
+      "id": "adapter.quarantined",
+      "code": "LEK-ADP-013",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adapter.quarantined",
+      "default_message": "The adapter package is quarantined and cannot execute.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "id",
+          "type": "token"
+        },
+        {
+          "name": "version",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.recovery-required",
+      "code": "LEK-ADP-020",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "adapter.recovery-required",
+      "default_message": "An adapter install journal is in an ambiguous state; explicit recovery is required.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "stage",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.revoked",
+      "code": "LEK-ADP-012",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adapter.revoked",
+      "default_message": "The adapter is revoked and is never selectable.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "id",
+          "type": "token"
+        },
+        {
+          "name": "version",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "adapter.security-failure",
       "code": "LEK-ADP-005",
       "category": "adapter",
@@ -130,6 +361,85 @@
         },
         {
           "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.signature-unverified",
+      "code": "LEK-ADP-009",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "adapter.signature-unverified",
+      "default_message": "The signature policy is required but no shipped verifier can honor the scheme.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scheme",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.source-changed",
+      "code": "LEK-ADP-018",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "adapter.source-changed",
+      "default_message": "The adapter package inputs drifted between install preview and confirmation.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.source-unavailable",
+      "code": "LEK-ADP-016",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "adapter.source-unavailable",
+      "default_message": "The adapter discovery source cannot be resolved.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "source",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adapter.trust-insufficient",
+      "code": "LEK-ADP-014",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adapter.trust-insufficient",
+      "default_message": "The adapter trust level requires an explicit opt-in that was not given.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "id",
+          "type": "token"
+        },
+        {
+          "name": "level",
           "type": "token"
         }
       ],
