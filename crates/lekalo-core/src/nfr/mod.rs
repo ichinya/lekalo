@@ -26,6 +26,7 @@ pub mod constraint;
 pub mod diagnostic;
 pub mod evidence;
 pub mod id;
+pub mod validate;
 pub mod version;
 
 mod canonical;

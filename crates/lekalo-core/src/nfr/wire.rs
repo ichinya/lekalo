@@ -1566,6 +1566,7 @@ struct ConstraintWire<'a> {
     environments: Vec<EnvironmentWire<'a>>,
     capabilities: Vec<CapabilityWire<'a>>,
     validity: ValidityWire<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     source_requirement: Option<SourceRequirementWire<'a>>,
 }
 
