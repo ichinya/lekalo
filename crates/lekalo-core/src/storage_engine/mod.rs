@@ -8,6 +8,7 @@
 //! embedded per-engine profiles and version matrices, not here.
 
 pub mod canonical;
+pub mod conformance;
 mod diagnostic;
 pub mod drift;
 pub mod id;
@@ -469,6 +470,11 @@ pub fn io_failure(detail: &'static str) -> crate::diagnostics::DiagnosticSet {
     diagnostic::io_invalid(detail)
 }
 
+/// The typed conformance denial of one CLI handoff: the battery
+/// refused.
+pub fn conformance_failure(detail: &'static str) -> crate::diagnostics::DiagnosticSet {
+    diagnostic::conformance_failed_set(detail)
+}
 /// The typed gate denial of one CLI handoff: the plan stays blocked
 /// until its exact planId is named.
 pub fn gated_failure(detail: &'static str) -> crate::diagnostics::DiagnosticSet {

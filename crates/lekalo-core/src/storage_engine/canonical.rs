@@ -271,6 +271,10 @@ pub(crate) fn array(members: &[String]) -> String {
 }
 
 /// One canonical JSON array, or nothing when empty.
+pub(crate) fn optional_string(value: Option<&str>) -> Option<String> {
+    value.map(string)
+}
+
 pub(crate) fn optional_array(members: &[String]) -> Option<String> {
     if members.is_empty() {
         None

@@ -937,6 +937,31 @@ enum StorageCommands {
         #[arg(long, value_name = "PLAN_ID")]
         confirm: Option<String>,
     },
+    /// Run the storage-component conformance battery over the
+    /// committed fixture set: the profile and its bound projection,
+    /// the optional checked-mode evidence pair, the engine input
+    /// document, and the runtime goldens. A skip is never a pass.
+    Conformance {
+        /// Path to the storage-engine profile attachment.
+        #[arg(long, value_name = "PATH")]
+        profile: String,
+        /// Path to the bound storage-projection attachment.
+        #[arg(long, value_name = "PATH")]
+        projection: String,
+        /// Path to the zero-drift introspection evidence.
+        #[arg(long, value_name = "PATH")]
+        scan: Option<String>,
+        /// Path to the drifted introspection evidence.
+        #[arg(long, value_name = "PATH")]
+        drifted: Option<String>,
+        /// Path to the engine input document (the runtime goldens
+        /// must equal it byte for byte).
+        #[arg(long, value_name = "PATH")]
+        input: Option<String>,
+        /// Paths to the runtime goldens (repeatable).
+        #[arg(long = "runtime", value_name = "PATH")]
+        runtimes: Vec<String>,
+    },
     /// Print the single runtime-neutral engine input document every
     /// runtime consumer (Node.js, Laravel, Go, Rust) receives.
     Input {
@@ -3159,6 +3184,21 @@ fn run_storage(command: StorageCommands) -> DomainResult {
             profile,
             confirm,
         } => storage_migrate_plan(&base, &candidate, &profile, confirm.as_deref()),
+        StorageCommands::Conformance {
+            profile,
+            projection,
+            scan,
+            drifted,
+            input,
+            runtimes,
+        } => storage_conformance(
+            &profile,
+            &projection,
+            scan.as_deref(),
+            drifted.as_deref(),
+            input.as_deref(),
+            &runtimes,
+        ),
         StorageCommands::Input {
             profile,
             projection,
@@ -3535,6 +3575,94 @@ fn storage_input(profile_path: &str, projection_path: &str) -> DomainResult {
     )
 }
 
+/// `lekalo storage conformance`: the closed battery, fixed order.
+fn storage_conformance(
+    profile_path: &str,
+    projection_path: &str,
+    scan: Option<&str>,
+    drifted: Option<&str>,
+    input: Option<&str>,
+    runtimes: &[String],
+) -> DomainResult {
+    let profile = match read_storage_profile(profile_path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let projection_document = match read_attachment_document(projection_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let projection = match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(
+        &projection_document,
+    ) {
+        Ok(projection) => projection,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    fn read_evidence(
+        path: &str,
+    ) -> Result<lekalo_core::storage_engine::IntrospectionEvidence, DomainResult> {
+        let document = read_attachment_document(path)?;
+        lekalo_core::storage_engine::IntrospectionEvidence::from_value(&document)
+            .map_err(DomainResult::invalid)
+    }
+    let evidence = match scan {
+        Some(path) => match read_evidence(path) {
+            Ok(evidence) => Some(evidence),
+            Err(result) => return result,
+        },
+        None => None,
+    };
+    let drifted = match drifted {
+        Some(path) => match read_evidence(path) {
+            Ok(evidence) => Some(evidence),
+            Err(result) => return result,
+        },
+        None => None,
+    };
+    let read_text = |path: &str| {
+        std::fs::read_to_string(path).map_err(|_| {
+            DomainResult::invalid(lekalo_core::storage_engine::io_failure("file-unreadable"))
+        })
+    };
+    let input_text = match input {
+        Some(path) => match read_text(path) {
+            Ok(text) => Some(text),
+            Err(result) => return result,
+        },
+        None => None,
+    };
+    let mut goldens: Vec<String> = Vec::with_capacity(runtimes.len());
+    for path in runtimes {
+        match read_text(path) {
+            Ok(text) => goldens.push(text),
+            Err(result) => return result,
+        }
+    }
+    let golden_refs: Vec<&str> = goldens.iter().map(|text| text.as_str()).collect();
+    let inputs = lekalo_core::storage_engine::conformance::BatteryInputs {
+        profile: &profile,
+        projection: &projection,
+        evidence: evidence.as_ref(),
+        drifted: drifted.as_ref(),
+        input: input_text.as_deref(),
+        runtime_goldens: &golden_refs,
+    };
+    let battery = lekalo_core::storage_engine::conformance::run(&inputs);
+    let bytes = match battery.canonical_bytes() {
+        Ok(bytes) => bytes,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    if !battery.ok() {
+        return DomainResult::denied(lekalo_core::storage_engine::conformance_failure(
+            "battery-failed",
+        ));
+    }
+    let human = format!(
+        "storage conformance: {} checks, battery green",
+        battery.checks().len()
+    );
+    DomainResult::graph(bytes, human, Vec::new())
+}
 /// Read one storage-engine attachment from disk.
 fn read_storage_profile(
     path: &str,

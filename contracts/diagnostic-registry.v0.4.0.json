@@ -5213,7 +5213,8 @@
       "category": "semantic",
       "default_severity": "error",
       "allowed_statuses": [
-        "invalid"
+        "invalid",
+        "denied"
       ],
       "message_id": "storage-engine.conformance-failed",
       "default_message": "A storage-engine component conformance check failed.",

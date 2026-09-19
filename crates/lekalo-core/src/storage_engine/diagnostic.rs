@@ -131,6 +131,20 @@ pub(crate) fn unsupported_version_set(detail: &'static str) -> DiagnosticSet {
     }
 }
 
+/// The typed denied set for a failed conformance check.
+pub(crate) fn conformance_failed_set(detail: &'static str) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("detail".to_owned(), token(detail));
+    match one(CONFORMANCE_FAILED, data) {
+        Ok(diagnostic) => {
+            match DiagnosticSet::try_from_unsorted(vec![diagnostic], Status::Denied) {
+                Ok(set) => set,
+                Err(_) => singleton_set("diagnostics.registry-invalid"),
+            }
+        }
+        Err(_) => singleton_set("diagnostics.registry-invalid"),
+    }
+}
 /// The typed denied set for the destructive-step gate. The rule admits
 /// only the denied status.
 pub(crate) fn gated_set(detail: &'static str) -> DiagnosticSet {
