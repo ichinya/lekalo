@@ -160,6 +160,10 @@
         "name": {
           "$ref": "#/$defs/storageName"
         },
+        "scope": {
+          "description": "The observed scope this table was read from; one of the declared scopes.",
+          "$ref": "#/$defs/scopeName"
+        },
         "columns": {
           "type": "array",
           "maxItems": 256,
@@ -180,10 +184,6 @@
           "items": {
             "$ref": "#/$defs/observedConstraint"
           }
-        },
-        "scope": {
-          "description": "The observed scope this table was read from; one of the declared scopes.",
-          "$ref": "#/$defs/scopeName"
         }
       }
     },
@@ -206,17 +206,51 @@
           "$ref": "#/$defs/storageName"
         },
         "type": {
-          "description": "The observed type token; a type outside the closed vocabulary lands in the unsupported records instead.",
+          "description": "The observed type: a closed vocabulary token, the parameterized rendering of a bounded string, decimal, or enum, a native array rendering, or an unsupported spelling carried verbatim when the unsupported records name it.",
           "oneOf": [
             {
               "$ref": "#/$defs/observedType"
             },
             {
-              "description": "An unsupported type spelling, carried verbatim only when the unsupported records name it.",
+              "description": "The parameterized varchar rendering with its declared length.",
+              "type": "string",
+              "pattern": "^varchar\\([0-9]{1,4}\\)$",
+              "maxLength": 16
+            },
+            {
+              "description": "The parameterized numeric rendering with its declared precision and scale.",
+              "type": "string",
+              "pattern": "^numeric\\([0-9]{1,2},[0-9]{1,2}\\)$",
+              "maxLength": 16
+            },
+            {
+              "description": "The native array rendering over one closed element type.",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_ ()]*\\[\\]$",
+              "maxLength": 67
+            },
+            {
+              "description": "An unsupported type spelling; a closed or parameterized token never takes this branch.",
               "type": "string",
               "minLength": 1,
               "maxLength": 63,
-              "pattern": "^[a-z][a-z0-9_ ]*$"
+              "pattern": "^[a-z][a-z0-9_ ()]*$",
+              "not": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/observedType"
+                  },
+                  {
+                    "pattern": "^varchar\\([0-9]{1,4}\\)$"
+                  },
+                  {
+                    "pattern": "^numeric\\([0-9]{1,2},[0-9]{1,2}\\)$"
+                  },
+                  {
+                    "pattern": "^[a-z][a-z0-9_ ()]*\\[\\]$"
+                  }
+                ]
+              }
             }
           ]
         },

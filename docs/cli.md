@@ -219,6 +219,40 @@ only. The normative contract is
 [adapter-conformance.md](adapter-conformance.md) and
 [ADR-0030](adr/0030-adapter-conformance.md).
 
+## Storage (issue #69)
+
+The `lekalo storage` group projects the storage-engine family over
+the #65 storage projection. The core owns every decision; the binary
+selects, renders, and maps exits on the accepted envelope.
+
+- `lekalo storage profile --engine postgres [--version V]` — the
+  owner-published version matrix, or one version's capability
+  answers. An unpublished major answers `unsupported-version`.
+- `lekalo storage validate PATH` — normalize one engine profile and
+  print its canonical bytes.
+- `lekalo storage ddl PROFILE --projection PATH` — the deterministic
+  DDL document; the profile's `projectionRef` digest must bind the
+  projection.
+- `lekalo storage migrate-plan BASE CANDIDATE --profile PATH
+  [--confirm PLAN_ID]` — the gated migration plan; a destructive
+  plan answers the denied envelope (`LEK-SEN-009`) until the exact
+  `planId` is named.
+- `lekalo storage drift SCAN --projection PATH --profile PATH` —
+  the declared-versus-observed comparison; the verdict stays data.
+- `lekalo storage input PROFILE --projection PATH` — the one
+  runtime-neutral engine input document every runtime consumer
+  receives.
+- `lekalo storage capabilities PROFILE --projection PATH
+  [--requirements PATH] [--profile strict|permissive]` — the engine
+  capability snapshot, optionally mapped against declared
+  transaction-concurrency requirements.
+- `lekalo storage conformance --profile PATH --projection PATH
+  [--scan PATH] [--drifted PATH] [--input PATH] [--runtime PATH]…`
+  — the closed fourteen-check battery; a skip is never a pass.
+
+See [docs/storage-engine.md](storage-engine.md) and
+[ADR-0042](adr/0042-postgres-storage-engine.md).
+
 ## Exit and stream contract
 
 | Exit | Status | Stream | Meaning |
