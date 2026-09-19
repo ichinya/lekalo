@@ -1618,6 +1618,29 @@ fn run_validate(
                 }
                 Ok(lekalo_core::authorization::Review::Ok) => {}
             }
+            // Transport home (#70): when `lekalo/transport.yaml`
+            // exists, the semantic pass includes it — wire
+            // normalization plus the Model-bound checks; the
+            // cross-family gates (error union, query model,
+            // capabilities) stay with `lekalo transport validate`,
+            // which binds their explicit contexts.
+            let root = match lekalo_core::orchestration::project_root(&selection) {
+                Ok(root) => root,
+                Err(result) => return result,
+            };
+            match lekalo_core::transport_http::read_document(&root) {
+                Err(diagnostics) => return DomainResult::invalid(diagnostics),
+                Ok(Some(attachment)) => {
+                    let context =
+                        lekalo_core::transport_http::ValidationContext::new(&compilation.project);
+                    if let Err(diagnostics) =
+                        lekalo_core::transport_http::validate(&attachment, &context)
+                    {
+                        return DomainResult::invalid(diagnostics);
+                    }
+                }
+                Ok(None) => {}
+            }
             let (json, human) = render_validate_success(&model, &report);
             let diagnostics = report.diagnostics().as_slice().to_vec();
             DomainResult::validation(json, human, diagnostics)

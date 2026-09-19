@@ -325,6 +325,162 @@ fn project_emits_the_byte_pinned_route_surface() {
 }
 
 #[test]
+fn the_canonical_home_joins_lekalo_validate() {
+    let temp = scratch_with_attachment();
+    let dir = temp.path();
+    // The canonical home is the digest-repinned attachment at
+    // lekalo/transport.yaml; lekalo validate includes its semantic
+    // pass (family-internal plus Model-bound checks).
+    let mut value: Value =
+        serde_json::from_slice(&fs::read(dir.join("transport.attachment.json")).unwrap()).unwrap();
+    repin_model(dir, &mut value);
+    fs::write(
+        dir.join("lekalo").join("transport.yaml"),
+        serde_json::to_vec_pretty(&value).unwrap(),
+    )
+    .unwrap();
+    let output = lekalo_in(dir, &["--json", "validate", "--project", "."]);
+    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
+
+    // An invalid home refuses the whole validate run.
+    value["endpoints"][0]["endpoint"] = json!("planner.not_an_endpoint");
+    fs::write(
+        dir.join("lekalo").join("transport.yaml"),
+        serde_json::to_vec_pretty(&value).unwrap(),
+    )
+    .unwrap();
+    let refused = lekalo_in(dir, &["--json", "validate", "--project", "."]);
+    assert_eq!(exit_code(&refused), 1);
+    assert!(
+        stderr_text(&refused).contains("transport.endpoint-unresolved"),
+        "{}",
+        stderr_text(&refused)
+    );
+}
+
+#[test]
+fn generate_writes_the_transport_evidence() {
+    // The orchestration fixture project carries the lock and the
+    // endpoint symbol planner.api_focus; its transport home joins the
+    // generate pipeline exactly like an operator project.
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../")
+        .join("tests/fixtures/orchestration/project");
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    copy_fixture(&root, &project);
+    let load = lekalo_in(&project, &["--json", "load", "--project", "."]);
+    assert_eq!(exit_code(&load), 0);
+    let model_digest = digest(
+        load.stdout
+            .strip_suffix(
+                b"
+",
+            )
+            .unwrap(),
+    );
+    let home = json!({
+        "schemaVersion": "lekalo/transport-http/v0.4.0",
+        "identity": "dev.lekalo.transport-http@0.4.0",
+        "attachmentRevision": "0.4.0",
+        "projectId": "planner",
+        "modelRef": {
+            "modelVersion": "0.2.16",
+            "digest": model_digest,
+        },
+        "irRef": {
+            "identity": "dev.lekalo.ir@0.2.16",
+            "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        },
+        "wire": {"dialect": "lekalo-http-wire/v1", "contentType": "application/json"},
+        "defaults": {
+            "errorEnvelope": "canonical-v1",
+            "idempotencyHeader": "Idempotency-Key",
+            "correlationHeaders": ["X-Request-Id"],
+        },
+        "securitySchemes": [],
+        "endpoints": [
+            {
+                "endpoint": "planner.api_focus",
+                "params": [
+                    {"name": "task_id", "in": "path", "field": "input.task_id", "required": true, "style": "simple"},
+                ],
+                "success": {"status": 202},
+                "errorDefaults": {
+                    "validation": 400, "auth": 403, "conflict": 409,
+                    "not-found": 404, "domain": 422, "infrastructure": 500,
+                },
+                "auth": {"actor": "identity.user", "schemes": ["user_bearer"]},
+            },
+        ],
+    });
+    let schemes = json!([{"id": "user_bearer", "kind": "bearer", "format": "jwt"}]);
+    let mut home = home;
+    home["securitySchemes"] = schemes;
+    fs::write(
+        project.join("lekalo").join("transport.yaml"),
+        serde_json::to_vec_pretty(&home).unwrap(),
+    )
+    .unwrap();
+    // The pipeline requires the lock; bind the reference adapter.
+    let lock = Command::new(env!("CARGO_BIN_EXE_lekalo"))
+        .args([
+            "--json",
+            "lock",
+            "--",
+            "node",
+            "adapters/node-typescript/node-adapter.mjs",
+        ])
+        .current_dir(alias_free_path(&project))
+        .env_remove("LEKALO_PROJECT")
+        .output()
+        .expect("run the lock");
+    assert_eq!(
+        exit_code(&lock),
+        0,
+        "{}",
+        String::from_utf8_lossy(&lock.stderr)
+    );
+    // A dry-run generate through the reference adapter reaches the
+    // preflight stage; the evidence file must exist afterwards.
+    let output = Command::new(env!("CARGO_BIN_EXE_lekalo"))
+        .args([
+            "--json",
+            "generate",
+            "--target",
+            "node-typescript",
+            "--dry-run",
+            "--",
+            "node",
+            "adapters/node-typescript/node-adapter.mjs",
+        ])
+        .current_dir(alias_free_path(&project))
+        .env_remove("LEKALO_PROJECT")
+        .output()
+        .expect("run the real lekalo binary");
+    assert_eq!(
+        exit_code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let evidence = project
+        .join(".lekalo")
+        .join("cache")
+        .join("transport")
+        .join("planner.json");
+    let bytes = fs::read(&evidence).unwrap_or_else(|_| {
+        panic!(
+            "the transport evidence is written: {}",
+            String::from_utf8_lossy(&output.stdout)
+        )
+    });
+    let evidence: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(evidence["schemaVersion"], "lekalo/transport-http/v0.4.0",);
+    assert_eq!(evidence["endpoints"][0]["endpoint"], "planner.api_focus");
+}
+
+#[test]
 fn missing_documents_refuse_read_only() {
     let temp = scratch_with_attachment();
     let dir = temp.path();

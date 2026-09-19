@@ -35,7 +35,7 @@ use super::receipt::{
     AdapterReceipt, GenerateReceipt, InputsReceipt, IrEvidenceReceipt, ScopeReceipt, TargetCounts,
     TargetReceipt, TargetState, Verdict, WriteReceipt, IDENTITY, SCHEMA_VERSION,
 };
-use super::version::{DEFAULT_TIMEOUT_MS, IR_EVIDENCE_DIR, MAX_TARGETS};
+use super::version::{DEFAULT_TIMEOUT_MS, IR_EVIDENCE_DIR, MAX_TARGETS, TRANSPORT_EVIDENCE_DIR};
 use super::Failure;
 
 /// The request of one generate invocation.
@@ -115,6 +115,26 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     // generate run, and the only bytes an adapter may read as input.
     let evidence_path = format!("{IR_EVIDENCE_DIR}/{project_id}.json");
     write_evidence(prepared.root(), &evidence_path, ir_bytes.as_bytes())?;
+    // Transport preflight (#70): when the canonical transport home
+    // exists, it validates against the compiled project and its
+    // canonical bytes land under the `lekalo.cache` evidence home —
+    // the only transport input an adapter may read, covered by its
+    // declared read scopes. An invalid home refuses the run before
+    // any adapter is discovered.
+    match crate::transport_http::read_document(prepared.root()) {
+        Err(diagnostics) => return Err(DomainResult::invalid(diagnostics)),
+        Ok(Some(attachment)) => {
+            let context = crate::transport_http::ValidationContext::new(&compilation.project);
+            crate::transport_http::validate(&attachment, &context)
+                .map_err(DomainResult::invalid)?;
+            let transport_path = format!("{TRANSPORT_EVIDENCE_DIR}/{project_id}.json");
+            let transport_bytes = attachment
+                .canonical_bytes()
+                .map_err(DomainResult::invalid)?;
+            write_evidence(prepared.root(), &transport_path, transport_bytes.as_bytes())?;
+        }
+        Ok(None) => {}
+    }
 
     let mut client = TargetClient::new(limits);
     let discovered = discover(&mut client, supply, prepared.root(), limits)?;

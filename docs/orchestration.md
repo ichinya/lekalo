@@ -32,6 +32,13 @@ same receipt; the human line is a one-line summary of the same data.
   adapter may read as input. Generate maintains the file (runtime
   cache, atomic replace, read-back check); verify consumes it and
   refuses a stale or absent file as `lock.stale` instead of writing.
+- Transport preflight (issue #70): when the canonical transport home
+  `lekalo/transport.yaml` exists, generate validates it against the
+  compiled project before any adapter is discovered and writes its
+  canonical bytes to `.lekalo/cache/transport/<project>.json` under
+  the same `lekalo.cache` evidence home — the only transport input an
+  adapter may read, covered by its declared read scopes. An invalid
+  home refuses the run.
 - `scope` records the attribution scope: every module, or one module.
 - Generate receipts carry one isolated row per target (`planned`,
   `applied`, or `failed`) with the protocol plan id, the sorted write

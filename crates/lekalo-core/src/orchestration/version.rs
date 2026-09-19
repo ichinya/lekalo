@@ -7,6 +7,13 @@
 /// a manifest artifact, never the only copy of a semantic decision.
 pub const IR_EVIDENCE_DIR: &str = ".lekalo/cache/ir";
 
+/// The runtime home of the canonical transport evidence one generate
+/// run binds (issue #70): the canonical transport-http attachment
+/// bytes under the reserved  area — never source,
+/// never the only copy of a canonical semantic decision (the
+/// canonical home  owns that copy).
+pub const TRANSPORT_EVIDENCE_DIR: &str = ".lekalo/cache/transport";
+
 /// The default adapter-operation deadline, in milliseconds. The value
 /// matches the accepted protocol default; callers may lower it.
 pub const DEFAULT_TIMEOUT_MS: u64 = 600_000;

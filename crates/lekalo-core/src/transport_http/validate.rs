@@ -294,38 +294,45 @@ fn validate_endpoint(
     } else {
         None
     };
-    let field_resolves = |field: &super::id::FieldRef| -> bool {
+    let field_resolves = |field: &super::id::FieldRef| -> Option<bool> {
         if let Some(fields) = input_fields {
-            field.is_input()
-                && fields
-                    .iter()
-                    .any(|candidate| candidate.name.as_str() == field.name().as_str())
+            Some(
+                field.is_input()
+                    && fields
+                        .iter()
+                        .any(|candidate| candidate.name.as_str() == field.name().as_str()),
+            )
         } else if let Some(decl) = query_decl {
-            !field.is_input()
-                && decl
-                    .parameters
-                    .iter()
-                    .any(|candidate| candidate.name.as_str() == field.name().as_str())
+            Some(
+                !field.is_input()
+                    && decl
+                        .parameters
+                        .iter()
+                        .any(|candidate| candidate.name.as_str() == field.name().as_str()),
+            )
+        } else if field.is_input() {
+            // A command-style reference on a query endpoint is
+            // always checkable and always wrong.
+            Some(false)
         } else {
-            false
+            // A query-model parameter reference without a bound query
+            // model is unchecked, not unresolvable: the cross-family
+            // check runs exactly when the family is bound.
+            None
         }
     };
     for param in &binding.params {
-        if !field_resolves(&param.field) {
+        if field_resolves(&param.field) == Some(false) {
             return Err(diagnostic::rule_invalid(
                 diagnostic::PARAM_INVALID,
-                if is_query && query_decl.is_none() && !param.field.is_input() {
-                    "query-model-absent"
-                } else {
-                    "field-unresolved"
-                },
+                "field-unresolved",
                 Some(subject),
             ));
         }
     }
     if let Some(body) = &binding.body {
         for field in &body.fields {
-            if !field_resolves(&field.field) {
+            if field_resolves(&field.field) == Some(false) {
                 return Err(diagnostic::rule_invalid(
                     diagnostic::PARAM_INVALID,
                     "field-unresolved",
@@ -352,29 +359,35 @@ fn validate_endpoint(
         let id = crate::error_contract::id::ErrorId::new(endpoint.invokes.as_str())?;
         registry.binding(&id)
     });
+    // The error map is checked against the bound #62 registry when
+    // one is supplied; without one, declared entries are
+    // accepted-but-unchecked (the union check runs exactly when the
+    // family is bound). The strict profile requires the registry
+    // whenever any entry is declared.
     if !binding.errors.is_empty() {
-        let Some(registry) = context.errors else {
+        if let Some(registry) = context.errors {
+            match operation_binding {
+                Some(operation) => check_mapping(
+                    operation,
+                    registry,
+                    &binding.errors,
+                    context.strict,
+                    subject,
+                )?,
+                None => {
+                    return Err(diagnostic::rule_invalid(
+                        diagnostic::CONTRACT_INVALID,
+                        "operation-unbound",
+                        Some(subject),
+                    ));
+                }
+            }
+        } else if context.strict {
             return Err(diagnostic::rule_invalid(
                 diagnostic::CONTRACT_INVALID,
                 "errors-registry-absent",
                 Some(subject),
             ));
-        };
-        match operation_binding {
-            Some(operation) => check_mapping(
-                operation,
-                registry,
-                &binding.errors,
-                context.strict,
-                subject,
-            )?,
-            None => {
-                return Err(diagnostic::rule_invalid(
-                    diagnostic::CONTRACT_INVALID,
-                    "operation-unbound",
-                    Some(subject),
-                ));
-            }
         }
     }
     if context.strict {

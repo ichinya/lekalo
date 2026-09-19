@@ -19,6 +19,7 @@ the checker.
   lekalo/
     project.yaml
     authorization.yaml
+    transport.yaml
     modules/
       <module>/
         module.yaml
@@ -62,6 +63,7 @@ All other shown files and directories are optional legal homes. The leaf names b
 |---|---|---|---|
 | `lekalo/project.yaml` | canonical marker/model document | yes | Lekalo |
 | `lekalo/authorization.yaml` | canonical authorization document (#25) | yes | Lekalo |
+| `lekalo/transport.yaml` | canonical HTTP/JSON transport attachment (#70) | yes | Lekalo |
 | `lekalo/modules/<module>/**` | canonical semantic model | yes | Lekalo |
 | `lekalo/targets/<target-id>.yaml` | canonical target configuration | yes | Lekalo |
 | `lekalo.lock` | canonical resolved versions | yes | Lekalo (#10) |

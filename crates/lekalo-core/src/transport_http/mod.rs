@@ -36,6 +36,7 @@ mod diff;
 pub mod id;
 pub mod mapping;
 mod project;
+pub mod source;
 pub mod types;
 pub(crate) mod validate;
 pub mod version;
@@ -65,6 +66,7 @@ pub use diff::{compare, DiffClass, DiffPath, DiffResult};
 pub use project::{
     project, RouteSurface, NAMESPACE_GO, NAMESPACE_LARAVEL, NAMESPACE_NODE, NAMESPACE_RUST,
 };
+pub use source::{read_document, SOURCE_PATH};
 pub use validate::{validate, CapabilityMap, ProfileSupport, ValidationContext};
 
 /// The bound source Model contract: exact accepted version plus

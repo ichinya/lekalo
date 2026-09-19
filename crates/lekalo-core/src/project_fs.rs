@@ -697,8 +697,13 @@ impl Fs {
 }
 
 /// The closed set of canonical `lekalo/` root entries.
-const CANONICAL_ROOT_ENTRIES: [&str; 4] =
-    ["project.yaml", "modules", "targets", "authorization.yaml"];
+const CANONICAL_ROOT_ENTRIES: [&str; 5] = [
+    "project.yaml",
+    "modules",
+    "targets",
+    "authorization.yaml",
+    "transport.yaml",
+];
 
 /// The closed runtime top-level entries under `.lekalo/`.
 const RUNTIME_ENTRIES: [&str; 5] = ["import", "cache", "generated", "consumer", "privacy"];
@@ -893,6 +898,10 @@ impl Fs {
             if name == "authorization.yaml" && entry_type != EntryType::File {
                 return Err(StructureReason::new("structure.directory-required")
                     .at("lekalo/authorization.yaml"));
+            }
+            if name == "transport.yaml" && entry_type != EntryType::File {
+                return Err(StructureReason::new("structure.directory-required")
+                    .at("lekalo/transport.yaml"));
             }
         }
 
