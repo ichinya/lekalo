@@ -131,8 +131,10 @@ const SUPPORT_STATES = Object.freeze(["full", "partial", "unsupported", "unknown
 
 const CAPABILITY_IDS = Object.freeze([
   "generate.openapi",
+  "generate.storage-ddl",
   "generate.ui",
   "generate.zod",
+  "scan.storage-schema",
   "scan.symbols",
   "verify.scenarios",
   "plan.native-gates",

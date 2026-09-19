@@ -919,6 +919,16 @@ enum StorageCommands {
         /// Path to the storage-engine attachment JSON document.
         path: String,
     },
+    /// Print the single runtime-neutral engine input document every
+    /// runtime consumer (Node.js, Laravel, Go, Rust) receives.
+    Input {
+        /// Path to the storage-engine attachment JSON document.
+        profile: String,
+        /// Path to the bound storage-projection attachment JSON
+        /// document.
+        #[arg(long, value_name = "PATH")]
+        projection: String,
+    },
     /// Render the deterministic DDL document of one profile over its
     /// bound storage-projection attachment.
     Ddl {
@@ -3125,6 +3135,10 @@ fn run_storage(command: StorageCommands) -> DomainResult {
             profile,
             projection,
         } => storage_ddl(&profile, &projection),
+        StorageCommands::Input {
+            profile,
+            projection,
+        } => storage_input(&profile, &projection),
         StorageCommands::Capabilities {
             path,
             projection,
@@ -3411,6 +3425,35 @@ fn storage_capabilities(
         answers.join(",")
     );
     DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo storage input`: the one runtime-neutral document.
+fn storage_input(profile_path: &str, projection_path: &str) -> DomainResult {
+    let profile = match read_storage_profile(profile_path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let document = match read_attachment_document(projection_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let projection =
+        match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(&document) {
+            Ok(projection) => projection,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let input = match lekalo_core::storage_engine::input_document(&profile, &projection) {
+        Ok(input) => input,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    DomainResult::graph(
+        input,
+        format!(
+            "engine input for {}: one canonical document",
+            profile.engine_version().as_str()
+        ),
+        Vec::new(),
+    )
 }
 
 /// Read one storage-engine attachment from disk.

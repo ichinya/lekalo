@@ -11,6 +11,7 @@ pub mod canonical;
 mod diagnostic;
 pub mod drift;
 pub mod id;
+pub mod input;
 pub mod introspection;
 pub mod postgres;
 mod validate;
@@ -19,6 +20,7 @@ pub(crate) mod wire;
 
 pub use drift::compare as compare_drift;
 pub use id::{ConnectionName, Engine, VersionPin};
+pub use input::engine_input as input_document;
 pub use introspection::IntrospectionEvidence;
 pub use version::{FAMILY, IDENTITY, SCHEMA_VERSION, VERSION};
 
