@@ -919,6 +919,24 @@ enum StorageCommands {
         /// Path to the storage-engine attachment JSON document.
         path: String,
     },
+    /// Derive the deterministic migration plan from two same-project
+    /// storage-projection attachments under one engine profile. A
+    /// destructive plan is gated: it prints blocked unless the exact
+    /// planId is named with --confirm (the native-gate custody
+    /// pattern).
+    MigratePlan {
+        /// Path to the base storage-projection attachment.
+        base: String,
+        /// Path to the candidate storage-projection attachment.
+        candidate: String,
+        /// Path to the storage-engine profile attachment.
+        #[arg(long, value_name = "PATH")]
+        profile: String,
+        /// Apply custody: the exact planId (sha256 digest) of the
+        /// gated plan. A wrong digest refuses.
+        #[arg(long, value_name = "PLAN_ID")]
+        confirm: Option<String>,
+    },
     /// Print the single runtime-neutral engine input document every
     /// runtime consumer (Node.js, Laravel, Go, Rust) receives.
     Input {
@@ -3135,6 +3153,12 @@ fn run_storage(command: StorageCommands) -> DomainResult {
             profile,
             projection,
         } => storage_ddl(&profile, &projection),
+        StorageCommands::MigratePlan {
+            base,
+            candidate,
+            profile,
+            confirm,
+        } => storage_migrate_plan(&base, &candidate, &profile, confirm.as_deref()),
         StorageCommands::Input {
             profile,
             projection,
@@ -3425,6 +3449,61 @@ fn storage_capabilities(
         answers.join(",")
     );
     DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo storage migrate-plan`: the gated plan document. A blocked
+/// plan is a typed denial; a confirmed or ready plan prints its bytes.
+fn storage_migrate_plan(
+    base_path: &str,
+    candidate_path: &str,
+    profile_path: &str,
+    confirm: Option<&str>,
+) -> DomainResult {
+    let profile = match read_storage_profile(profile_path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let base_document = match read_attachment_document(base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let base = match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(
+        &base_document,
+    ) {
+        Ok(base) => base,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let candidate_document = match read_attachment_document(candidate_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let candidate = match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(
+        &candidate_document,
+    ) {
+        Ok(candidate) => candidate,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let plan =
+        match lekalo_core::storage_engine::plan_migration(&profile, &base, &candidate, confirm) {
+            Ok(plan) => plan,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    if plan.status() == lekalo_core::storage_engine::PlanStatus::Blocked {
+        return DomainResult::denied(lekalo_core::storage_engine::gated_failure(
+            "destructive-steps",
+        ));
+    }
+    let bytes = match plan.canonical_bytes() {
+        Ok(bytes) => bytes,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let human = format!(
+        "migration plan {}: {} step(s), status {}",
+        plan.plan_id().chars().skip(7).take(12).collect::<String>(),
+        plan.steps().len(),
+        plan.status().key()
+    );
+    DomainResult::graph(bytes, human, Vec::new())
 }
 
 /// `lekalo storage input`: the one runtime-neutral document.

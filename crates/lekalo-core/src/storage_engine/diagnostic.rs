@@ -131,6 +131,21 @@ pub(crate) fn unsupported_version_set(detail: &'static str) -> DiagnosticSet {
     }
 }
 
+/// The typed denied set for the destructive-step gate. The rule admits
+/// only the denied status.
+pub(crate) fn gated_set(detail: &'static str) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("detail".to_owned(), token(detail));
+    match one(MIGRATION_GATED, data) {
+        Ok(diagnostic) => {
+            match DiagnosticSet::try_from_unsorted(vec![diagnostic], Status::Denied) {
+                Ok(set) => set,
+                Err(_) => singleton_set("diagnostics.registry-invalid"),
+            }
+        }
+        Err(_) => singleton_set("diagnostics.registry-invalid"),
+    }
+}
 /// The fatal set for the over-bound canonical payload.
 pub(crate) fn export_limit_set(bytes: usize) -> DiagnosticSet {
     let mut data = DataObject::new();

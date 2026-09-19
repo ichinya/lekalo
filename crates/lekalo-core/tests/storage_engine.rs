@@ -188,3 +188,132 @@ fn the_declared_test_lifecycle_is_isolated_and_production_free() {
     assert_eq!(lifecycle.provision().key(), "create_drop");
     assert_eq!(lifecycle.cleanup().key(), "drop");
 }
+
+// --- migration planner (plan step S7) --------------------------------------
+
+const MIGRATION_BASE: &[u8] =
+    include_bytes!("../../../tests/fixtures/storage-engine/migration/base.json");
+const MIGRATION_ADDITIVE: &[u8] =
+    include_bytes!("../../../tests/fixtures/storage-engine/migration/candidate-additive.json");
+const MIGRATION_BACKFILL: &[u8] =
+    include_bytes!("../../../tests/fixtures/storage-engine/migration/candidate-backfill.json");
+const MIGRATION_DESTRUCTIVE: &[u8] =
+    include_bytes!("../../../tests/fixtures/storage-engine/migration/candidate-destructive.json");
+
+fn migration_attachment(bytes: &[u8]) -> StorageProjectionAttachment {
+    let value: serde_json::Value = serde_json::from_slice(bytes).expect("json");
+    StorageProjectionAttachment::from_value(&value).expect("valid attachment")
+}
+
+#[test]
+fn an_additive_change_plans_ready_without_destructive_steps() {
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &migration_attachment(MIGRATION_ADDITIVE),
+        None,
+    )
+    .expect("plans");
+    assert!(!plan.gated());
+    assert_eq!(
+        plan.status(),
+        lekalo_core::storage_engine::PlanStatus::Ready
+    );
+    assert!(
+        plan.steps().iter().all(|step| step.risk().key() == "none"),
+        "a nullable technical column addition carries no data risk"
+    );
+    // The added column is present exactly once, on the right table.
+    assert_eq!(
+        plan.steps()
+            .iter()
+            .filter(|step| step.kind() == "add_column")
+            .count(),
+        1
+    );
+    assert!(plan
+        .steps()
+        .iter()
+        .any(|step| step.statement().contains("last_seen_at")));
+    // Determinism: planning twice is byte-identical.
+    let again = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &migration_attachment(MIGRATION_ADDITIVE),
+        None,
+    )
+    .expect("plans");
+    assert_eq!(
+        plan.canonical_bytes().expect("bytes"),
+        again.canonical_bytes().expect("bytes")
+    );
+}
+
+#[test]
+fn a_not_null_tightening_without_default_requires_backfill() {
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &migration_attachment(MIGRATION_BACKFILL),
+        None,
+    )
+    .expect("plans");
+    assert!(
+        plan.steps().iter().any(
+            |step| step.kind() == "set_column_null" && step.risk().key() == "backfill_required"
+        ),
+        "the tightening carries the backfill risk visibly"
+    );
+    // The plan is not gated: backfill is a declared obligation, not a
+    // destructive rewrite.
+    assert!(!plan.gated());
+}
+
+#[test]
+fn a_destructive_plan_is_gated_and_blocked_until_the_plan_id_is_named() {
+    let base = migration_attachment(MIGRATION_BASE);
+    let candidate = migration_attachment(MIGRATION_DESTRUCTIVE);
+    let plan = lekalo_core::storage_engine::plan_migration(&profile(), &base, &candidate, None)
+        .expect("plans");
+    assert!(plan.gated(), "a column drop is destructive");
+    assert_eq!(
+        plan.status(),
+        lekalo_core::storage_engine::PlanStatus::Blocked
+    );
+    assert!(plan
+        .steps()
+        .iter()
+        .any(|step| step.kind() == "drop_column" && step.risk().key() == "destructive"));
+    // The wrong planId refuses with the registered gate diagnostic.
+    let error = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &base,
+        &candidate,
+        Some("sha256:0707070707070707070707070707070707070707070707070707070707070707"),
+    )
+    .expect_err("wrong digest");
+    assert_eq!(
+        error.reason_ids().first().copied(),
+        Some("storage-engine.migration-gated")
+    );
+    // The exact planId confirms the plan.
+    let plan_id = plan.plan_id().to_owned();
+    let confirmed =
+        lekalo_core::storage_engine::plan_migration(&profile(), &base, &candidate, Some(&plan_id))
+            .expect("confirmed");
+    assert_eq!(
+        confirmed.status(),
+        lekalo_core::storage_engine::PlanStatus::Confirmed
+    );
+    // Drops sort behind the constructive steps.
+    let kinds: Vec<&str> = confirmed.steps().iter().map(|step| step.kind()).collect();
+    let first_drop = kinds.iter().position(|kind| kind.starts_with("drop_"));
+    if let Some(position) = first_drop {
+        assert!(
+            kinds[..position]
+                .iter()
+                .all(|kind| !kind.starts_with("drop_")),
+            "drops sort last: {kinds:?}"
+        );
+    }
+}

@@ -13,6 +13,7 @@ pub mod drift;
 pub mod id;
 pub mod input;
 pub mod introspection;
+pub mod migration;
 pub mod postgres;
 mod validate;
 pub(crate) mod version;
@@ -22,6 +23,7 @@ pub use drift::compare as compare_drift;
 pub use id::{ConnectionName, Engine, VersionPin};
 pub use input::engine_input as input_document;
 pub use introspection::IntrospectionEvidence;
+pub use migration::{plan as plan_migration, PlanStatus};
 pub use version::{FAMILY, IDENTITY, SCHEMA_VERSION, VERSION};
 
 use crate::diagnostics::DiagnosticSet;
@@ -467,6 +469,11 @@ pub fn io_failure(detail: &'static str) -> crate::diagnostics::DiagnosticSet {
     diagnostic::io_invalid(detail)
 }
 
+/// The typed gate denial of one CLI handoff: the plan stays blocked
+/// until its exact planId is named.
+pub fn gated_failure(detail: &'static str) -> crate::diagnostics::DiagnosticSet {
+    diagnostic::gated_set(detail)
+}
 /// The typed unsupported refusal of one CLI handoff.
 pub fn unsupported_failure(detail: &'static str) -> crate::diagnostics::DiagnosticSet {
     diagnostic::unsupported_version_set(detail)
