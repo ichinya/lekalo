@@ -29,7 +29,7 @@ fn diagnostic_item_json(
     message: &str,
 ) -> String {
     format!(
-        "{{\n      \"schema_version\": \"lekalo/diagnostic/v0.2.16\",\n      \"registry_version\": \"0.3.2\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
+        "{{\n      \"schema_version\": \"lekalo/diagnostic/v0.2.16\",\n      \"registry_version\": \"0.4.0\",\n      \"id\": \"{id}\",\n      \"code\": \"{code}\",\n      \"severity\": \"{severity}\",\n      \"category\": \"{category}\",\n      \"message_id\": \"{id}\",\n      \"message\": \"{message}\",\n      \"data\": {{}},\n      \"related_locations\": [],\n      \"causes\": [],\n      \"fixes\": [],\n      \"metadata\": {{}}\n    }}"
     )
 }
 
