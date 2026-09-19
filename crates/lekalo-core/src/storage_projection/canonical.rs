@@ -621,6 +621,10 @@ fn derived_column_payload(column: &super::derivation::DerivedColumn) -> String {
             "default",
             column.default.as_ref().map(field_default_payload),
         ),
+        (
+            "generatedKind",
+            column.generated_kind.map(|kind| string(kind.key())),
+        ),
     ])
 }
 

@@ -252,7 +252,7 @@ fn extension_payload(extension: &super::Extension) -> String {
 }
 
 /// One canonical JSON string value.
-fn string(text: &str) -> String {
+pub(crate) fn string(text: &str) -> String {
     serde_json::to_string(text).unwrap_or_else(|_| "\"\"".to_owned())
 }
 
@@ -281,7 +281,7 @@ fn optional_array(members: &[String]) -> Option<String> {
 
 /// One canonical JSON object with byte-sorted keys; `None` members are
 /// dropped entirely.
-fn object(members: Vec<(&str, Option<String>)>) -> String {
+pub(crate) fn object(members: Vec<(&str, Option<String>)>) -> String {
     let mut present: Vec<(&str, String)> = members
         .into_iter()
         .filter_map(|(key, value)| value.map(|value| (key, value)))

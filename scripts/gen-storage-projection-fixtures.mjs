@@ -321,7 +321,7 @@ const projections = [
     tables: [
       table("comment", "comment", {}),
       table("focus_session", "focus_session", {
-        generatedColumns: [{ kind: "identity", name: "session_no" }],
+        generatedColumns: [{ kind: "sequence", name: "session_no" }],
       }),
       table("tag", "tag", {
         indexes: [{ columns: ["label"], unique: true }],

@@ -8,6 +8,7 @@
 //! (#117) reuses the same shape with its own matrix, type table, and
 //! answers.
 
+pub mod ddl;
 pub mod quoting;
 pub mod snapshot;
 pub mod types;

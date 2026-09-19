@@ -13,7 +13,7 @@ use serde::Serialize;
 
 /// The identity of the embedded capability definition registry
 /// (`dev.lekalo.target-capabilities@0.3.1`).
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.3.2";
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.4.0";
 
 /// One versioned capability definition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn registry_identity_and_definitions_are_pinned() {
-        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.3.2");
+        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.4.0");
         let ids: Vec<&str> = definitions().iter().map(|entry| entry.id).collect();
         assert_eq!(
             ids,

@@ -456,6 +456,16 @@ impl StorageEngineAttachment {
     }
 }
 
+/// The typed read-only I/O failure of one CLI handoff.
+pub fn io_failure(detail: &'static str) -> crate::diagnostics::DiagnosticSet {
+    diagnostic::io_invalid(detail)
+}
+
+/// The typed unsupported refusal of one CLI handoff.
+pub fn unsupported_failure(detail: &'static str) -> crate::diagnostics::DiagnosticSet {
+    diagnostic::unsupported_version_set(detail)
+}
+
 impl Policies {
     /// Whether emitted identifiers are always quoted (the only v1
     /// answer).

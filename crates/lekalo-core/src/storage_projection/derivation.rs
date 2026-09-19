@@ -113,6 +113,7 @@ pub struct DerivedColumn {
     pub(crate) origin: ColumnOrigin,
     pub(crate) visibility: Visibility,
     pub(crate) default: Option<super::entity::FieldDefault>,
+    pub(crate) generated_kind: Option<super::projection::GeneratedKind>,
 }
 
 impl DerivedColumn {
@@ -140,6 +141,11 @@ impl DerivedColumn {
     /// declared field with one.
     pub fn default(&self) -> Option<&super::entity::FieldDefault> {
         self.default.as_ref()
+    }
+
+    /// The declared generation kind, for generated columns.
+    pub const fn generated_kind(&self) -> Option<super::projection::GeneratedKind> {
+        self.generated_kind
     }
 
     /// The domain visibility of the column's content. Technical and
@@ -388,6 +394,7 @@ fn derive_table(
             origin: ColumnOrigin::Field,
             visibility: field.visibility(),
             default: field.default().cloned(),
+            generated_kind: None,
         });
     }
     for technical in table.technical_columns() {
@@ -398,6 +405,7 @@ fn derive_table(
             origin: ColumnOrigin::Technical,
             visibility: Visibility::Private,
             default: None,
+            generated_kind: None,
         });
     }
     for generated in table.generated_columns() {
@@ -411,6 +419,7 @@ fn derive_table(
             origin: ColumnOrigin::Generated,
             visibility: Visibility::Private,
             default: None,
+            generated_kind: Some(generated.kind()),
         });
     }
     if let Some(column) = table.soft_delete() {
@@ -421,6 +430,7 @@ fn derive_table(
             origin: ColumnOrigin::SoftDelete,
             visibility: Visibility::Private,
             default: None,
+            generated_kind: None,
         });
     }
     if let Some((column, storage_type)) = table.tenant_key() {
@@ -431,6 +441,7 @@ fn derive_table(
             origin: ColumnOrigin::TenantKey,
             visibility: Visibility::Private,
             default: None,
+            generated_kind: None,
         });
     }
     if let Some((created_at, updated_at)) = table.timestamps() {
@@ -441,6 +452,7 @@ fn derive_table(
             origin: ColumnOrigin::CreatedAt,
             visibility: Visibility::Private,
             default: None,
+            generated_kind: None,
         });
         columns.push(DerivedColumn {
             name: updated_at.clone(),
@@ -449,6 +461,7 @@ fn derive_table(
             origin: ColumnOrigin::UpdatedAt,
             visibility: Visibility::Private,
             default: None,
+            generated_kind: None,
         });
     }
     let local_key = |table: &super::projection::Table, column: &StorageName| {
@@ -515,6 +528,7 @@ fn derive_table(
             origin: ColumnOrigin::ForeignKey,
             visibility: Visibility::Private,
             default: None,
+            generated_kind: None,
         });
         if relation.kind() == RelationKind::OneToOne {
             unique_foreign_keys.push(column.clone());
@@ -564,6 +578,7 @@ fn derive_table(
             origin: ColumnOrigin::DiscriminatorKey,
             visibility: Visibility::Private,
             default: None,
+            generated_kind: None,
         });
         columns.push(DerivedColumn {
             name: materialization.type_column().clone(),
@@ -572,6 +587,7 @@ fn derive_table(
             origin: ColumnOrigin::DiscriminatorType,
             visibility: Visibility::Private,
             default: None,
+            generated_kind: None,
         });
         polymorphics.push(DerivedPolymorphic {
             relation: materialization.relation().clone(),
@@ -664,6 +680,7 @@ fn derive_join(
             origin: ColumnOrigin::JoinKey,
             visibility: Visibility::Private,
             default: None,
+            generated_kind: None,
         });
     }
     Ok(DerivedJoin {

@@ -104,6 +104,33 @@ pub(crate) fn rule_invalid(rule: &str, detail: &str, subject: Option<&str>) -> D
     }
 }
 
+/// The typed refusal set for a CLI-read I/O failure. The detail tag
+/// is a fixed classification token with no subject echo.
+pub(crate) fn io_invalid(detail: &'static str) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("detail".to_owned(), token(detail));
+    match one(INPUT_INVALID, data) {
+        Ok(diagnostic) => invalid_set(vec![diagnostic]),
+        Err(_) => singleton_set("diagnostics.registry-invalid"),
+    }
+}
+
+/// The typed unsupported set for one refusal rule (version, render,
+/// capability). The rule must admit the unsupported status.
+pub(crate) fn unsupported_version_set(detail: &'static str) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("detail".to_owned(), token(detail));
+    match one(VERSION_UNSUPPORTED, data) {
+        Ok(diagnostic) => {
+            match DiagnosticSet::try_from_unsorted(vec![diagnostic], Status::Unsupported) {
+                Ok(set) => set,
+                Err(_) => singleton_set("diagnostics.registry-invalid"),
+            }
+        }
+        Err(_) => singleton_set("diagnostics.registry-invalid"),
+    }
+}
+
 /// The fatal set for the over-bound canonical payload.
 pub(crate) fn export_limit_set(bytes: usize) -> DiagnosticSet {
     let mut data = DataObject::new();

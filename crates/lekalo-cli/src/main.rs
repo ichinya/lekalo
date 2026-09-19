@@ -247,6 +247,13 @@ enum Commands {
         #[command(subcommand)]
         command: QueryModelCommands,
     },
+    /// Inspect and project the storage-engine family (issue #69): the
+    /// embedded version matrix, profile validation, the deterministic
+    /// DDL rendering, and the capability mapping.
+    Storage {
+        #[command(subcommand)]
+        command: StorageCommands,
+    },
     /// Validate, evaluate, render, or compare typed-expression
     /// attachments (issue #66). The core owns every decision; this
     /// binary only selects, renders, and maps exits.
@@ -874,6 +881,74 @@ enum QueryModelCommands {
     },
 }
 
+/// The closed storage-engine vocabulary of the CLI.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum StorageEngineArg {
+    /// The PostgreSQL engine.
+    Postgres,
+}
+
+/// The closed capability-mapping profiles of the CLI.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum StorageCapabilityProfileArg {
+    /// Block on unsupported, unknown, and unapproved partial.
+    Strict,
+    /// Degrade explicitly; never pass on unsupported or unknown.
+    Permissive,
+}
+
+/// The `storage` subcommands (issue #69): the thin handoff over the
+/// storage-engine core family. The core owns every decision; this
+/// binary only selects, renders, and maps exits.
+#[derive(Debug, Subcommand)]
+enum StorageCommands {
+    /// Print the owner-published engine version matrix, or one
+    /// version's capability answers.
+    Profile {
+        /// The closed engine vocabulary.
+        #[arg(long, value_enum)]
+        engine: StorageEngineArg,
+        /// The exact engine version pin (major.minor.patch); absent
+        /// prints every published major row.
+        #[arg(long, value_name = "V")]
+        version: Option<String>,
+    },
+    /// Validate one storage-engine attachment and emit its canonical
+    /// bytes.
+    Validate {
+        /// Path to the storage-engine attachment JSON document.
+        path: String,
+    },
+    /// Render the deterministic DDL document of one profile over its
+    /// bound storage-projection attachment.
+    Ddl {
+        /// Path to the storage-engine attachment JSON document.
+        profile: String,
+        /// Path to the bound storage-projection attachment JSON
+        /// document; its canonical digest must equal the profile's
+        /// projectionRef.
+        #[arg(long, value_name = "PATH")]
+        projection: String,
+    },
+    /// Project the engine capability snapshot, optionally mapped
+    /// against one transaction-concurrency attachment's requirements.
+    Capabilities {
+        /// Path to the storage-engine attachment JSON document.
+        path: String,
+        /// Path to the bound storage-projection attachment JSON
+        /// document.
+        #[arg(long, value_name = "PATH")]
+        projection: String,
+        /// The closed mapping profile; the default is strict.
+        #[arg(long, value_enum, default_value_t = StorageCapabilityProfileArg::Strict)]
+        profile: StorageCapabilityProfileArg,
+        /// Optional path to a transaction-concurrency attachment whose
+        /// capability requirements are mapped against the snapshot.
+        #[arg(long, value_name = "PATH")]
+        requirements: Option<String>,
+    },
+}
+
 /// The `expressions` subcommands (issue #66): the thin
 /// validate/eval/render/diff handoff over the core family.
 #[derive(Debug, Subcommand)]
@@ -1190,6 +1265,7 @@ fn main() -> ExitCode {
                 format: DiffFormat::Json,
             } => run_diff(first, second, base, profiles),
             Commands::QueryModel { command } => run_query_model(command),
+            Commands::Storage { command } => run_storage(command),
             Commands::Expressions { command } => run_expressions(command),
             Commands::Graph { command } => run_graph(command, cli.no_cache),
             Commands::Effects { command } => run_effects(command, cli.no_cache),
@@ -3024,6 +3100,260 @@ fn run_query_model(command: QueryModelCommands) -> DomainResult {
         } => query_model_validate(&path, &project, strict),
         QueryModelCommands::Diff { base, candidate } => query_model_diff(&base, &candidate),
     }
+}
+
+fn run_storage(command: StorageCommands) -> DomainResult {
+    match command {
+        StorageCommands::Profile { engine, version } => storage_profile(engine, version),
+        StorageCommands::Validate { path } => storage_validate(&path),
+        StorageCommands::Ddl {
+            profile,
+            projection,
+        } => storage_ddl(&profile, &projection),
+        StorageCommands::Capabilities {
+            path,
+            projection,
+            profile,
+            requirements,
+        } => storage_capabilities(&path, &projection, profile, requirements.as_deref()),
+    }
+}
+
+/// `lekalo storage profile`: the owner-published matrix projection.
+fn storage_profile(engine: StorageEngineArg, version: Option<String>) -> DomainResult {
+    match engine {
+        StorageEngineArg::Postgres => {
+            use lekalo_core::storage_engine::postgres::version_matrix;
+            let capabilities = |major: u32| {
+                version_matrix::CAPABILITY_IDS
+                    .iter()
+                    .filter_map(|id| {
+                        version_matrix::answer(major, id).map(|support| {
+                            format!("{{\"id\":\"{id}\",\"support\":\"{}\"}}", support.key())
+                        })
+                    })
+                    .collect::<Vec<String>>()
+                    .join(",")
+            };
+            match version {
+                Some(pin) => {
+                    let parsed = match lekalo_core::storage_engine::VersionPin::parse(&pin) {
+                        Ok(parsed) => parsed,
+                        Err(_) => {
+                            return DomainResult::invalid(lekalo_core::storage_engine::io_failure(
+                                "engine-version",
+                            ))
+                        }
+                    };
+                    if version_matrix::row_for(parsed.major()).is_none() {
+                        return DomainResult::unsupported_version(
+                            lekalo_core::storage_engine::unsupported_failure("major-unpublished"),
+                        );
+                    }
+                    let json = format!(
+                        "{{\"status\":\"valid\",\"engine\":\"postgres\",\"engineVersion\":\"{pin}\",\"capabilities\":[{}]}}",
+                        capabilities(parsed.major())
+                    );
+                    DomainResult::graph(
+                        json,
+                        format!("postgres {pin}: published capability matrix row"),
+                        Vec::new(),
+                    )
+                }
+                None => {
+                    let rows: Vec<String> = version_matrix::ROWS
+                        .iter()
+                        .map(|row| {
+                            format!(
+                                "{{\"major\":{},\"capabilities\":[{}]}}",
+                                row.major,
+                                capabilities(row.major)
+                            )
+                        })
+                        .collect();
+                    let json = format!(
+                        "{{\"status\":\"valid\",\"engine\":\"postgres\",\"rows\":[{}]}}",
+                        rows.join(",")
+                    );
+                    DomainResult::graph(
+                        json,
+                        "postgres: every published capability matrix row".to_owned(),
+                        Vec::new(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/// `lekalo storage validate`: normalize one attachment and print its
+/// canonical bytes.
+fn storage_validate(path: &str) -> DomainResult {
+    let document = match read_attachment_document(path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let attachment =
+        match lekalo_core::storage_engine::StorageEngineAttachment::from_value(&document) {
+            Ok(attachment) => attachment,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let bytes = match attachment.canonical_bytes() {
+        Ok(bytes) => bytes,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    DomainResult::graph(
+        bytes,
+        format!(
+            "storage engine {}: {} profile",
+            attachment.engine().key(),
+            attachment.engine_version().as_str()
+        ),
+        Vec::new(),
+    )
+}
+
+/// `lekalo storage ddl`: the deterministic DDL document.
+fn storage_ddl(profile_path: &str, projection_path: &str) -> DomainResult {
+    let profile = match read_storage_profile(profile_path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let document = match read_attachment_document(projection_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let projection =
+        match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(&document) {
+            Ok(projection) => projection,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let rendered = match lekalo_core::storage_engine::postgres::ddl::render(&profile, &projection) {
+        Ok(rendered) => rendered,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let bytes = match rendered.canonical_bytes() {
+        Ok(bytes) => bytes,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    DomainResult::graph(
+        bytes,
+        format!(
+            "postgres DDL for {}: {} statements",
+            profile.engine_version().as_str(),
+            rendered.statements().len()
+        ),
+        Vec::new(),
+    )
+}
+
+/// `lekalo storage capabilities`: the engine snapshot, optionally
+/// mapped against declared requirements.
+fn storage_capabilities(
+    path: &str,
+    projection_path: &str,
+    profile: StorageCapabilityProfileArg,
+    requirements: Option<&str>,
+) -> DomainResult {
+    let engine_profile = match read_storage_profile(path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let document = match read_attachment_document(projection_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let projection =
+        match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(&document) {
+            Ok(projection) => projection,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let snapshot =
+        lekalo_core::storage_engine::postgres::snapshot::build(&engine_profile, &projection);
+    let answers: Vec<String> = snapshot
+        .answers()
+        .iter()
+        .map(|(capability, support)| {
+            format!(
+                "{{\"capability\":\"{capability}\",\"support\":\"{}\"}}",
+                support.key()
+            )
+        })
+        .collect();
+    let (mapped, verdicts_json) = match requirements {
+        Some(path) => {
+            let document = match read_attachment_document(path) {
+                Ok(document) => document,
+                Err(result) => return result,
+            };
+            let attachment = match lekalo_core::transaction_concurrency::
+                TransactionConcurrencyAttachment::from_value(&document)
+            {
+                Ok(attachment) => attachment,
+                Err(diagnostics) => return DomainResult::invalid(diagnostics),
+            };
+            let profile = match profile {
+                StorageCapabilityProfileArg::Strict => {
+                    lekalo_core::transaction_concurrency::CapabilityProfile::Strict
+                }
+                StorageCapabilityProfileArg::Permissive => {
+                    lekalo_core::transaction_concurrency::CapabilityProfile::Permissive
+                }
+            };
+            let decision = lekalo_core::transaction_concurrency::map_capabilities(
+                attachment.capability_requirements(),
+                &snapshot,
+                profile,
+            );
+            let verdicts: Vec<String> = decision
+                .verdicts()
+                .iter()
+                .map(|verdict| {
+                    format!(
+                        "{{\"requirement\":\"{}\",\"capability\":\"{}\",\"support\":\"{}\",\"blocked\":{}}}",
+                        verdict.requirement_id(),
+                        verdict.capability(),
+                        verdict.support().key(),
+                        verdict.blocked()
+                    )
+                })
+                .collect();
+            (
+                format!(
+                    ",\"blocked\":{},\"profile\":\"{}\"",
+                    decision.blocked(),
+                    profile.key()
+                ),
+                format!(",\"verdicts\":[{}]", verdicts.join(",")),
+            )
+        }
+        None => (String::new(), String::new()),
+    };
+    let human = format!(
+        "engine capabilities: {} answers{}",
+        answers.len(),
+        if requirements.is_some() {
+            " mapped against the declared requirements"
+        } else {
+            ""
+        }
+    );
+    let json = format!(
+        "{{\"status\":\"valid\",\"engine\":\"{}\",\"engineVersion\":\"{}\",\"capabilities\":[{}]{verdicts_json}{mapped}}}",
+        engine_profile.engine().key(),
+        engine_profile.engine_version().as_str(),
+        answers.join(",")
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// Read one storage-engine attachment from disk.
+fn read_storage_profile(
+    path: &str,
+) -> Result<lekalo_core::storage_engine::StorageEngineAttachment, DomainResult> {
+    let document = read_attachment_document(path)?;
+    lekalo_core::storage_engine::StorageEngineAttachment::from_value(&document)
+        .map_err(DomainResult::invalid)
 }
 
 /// Read one attachment document from disk with a classified read-only
