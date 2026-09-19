@@ -34,6 +34,7 @@ pub mod canonical;
 mod diagnostic;
 pub mod id;
 pub mod mapping;
+mod project;
 pub mod types;
 pub(crate) mod validate;
 pub mod version;
@@ -58,7 +59,10 @@ use crate::diagnostics::DiagnosticSet;
 use crate::lockfile::types::{SemVer, Sha256Digest};
 use crate::scenario::id::SemanticId;
 
-pub use diagnostic::io_failure;
+pub use diagnostic::{io_failure, rule_set};
+pub use project::{
+    project, RouteSurface, NAMESPACE_GO, NAMESPACE_LARAVEL, NAMESPACE_NODE, NAMESPACE_RUST,
+};
 pub use validate::{validate, CapabilityMap, ProfileSupport, ValidationContext};
 
 /// The bound source Model contract: exact accepted version plus

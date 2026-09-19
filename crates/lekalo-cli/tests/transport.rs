@@ -287,6 +287,44 @@ fn inspect_joins_the_model_surface_and_params() {
 }
 
 #[test]
+fn project_emits_the_byte_pinned_route_surface() {
+    let temp = scratch_with_attachment();
+    let dir = temp.path();
+    for namespace in ["go", "laravel", "node", "rust"] {
+        let output = lekalo_in(
+            dir,
+            &[
+                "--json",
+                "transport",
+                "project",
+                "transport.attachment.json",
+                "--namespace",
+                namespace,
+                "--project",
+                ".",
+                "--query-model",
+                "query-model.json",
+            ],
+        );
+        assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
+        let envelope: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(envelope["status"], "valid");
+        let golden_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../")
+            .join(format!(
+                "tests/fixtures/transport-http/projected/{namespace}/{namespace}.expect.json",
+            ));
+        let golden: Value =
+            serde_json::from_slice(&fs::read(alias_free_path(&golden_path)).unwrap()).unwrap();
+        assert_eq!(
+            serde_json::to_string(&envelope["surface"]).unwrap(),
+            serde_json::to_string(&golden).unwrap(),
+            "{namespace}: the CLI surface is the committed golden",
+        );
+    }
+}
+
+#[test]
 fn missing_documents_refuse_read_only() {
     let temp = scratch_with_attachment();
     let dir = temp.path();

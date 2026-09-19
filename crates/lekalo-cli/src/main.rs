@@ -897,6 +897,48 @@ enum TransportCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
+    /// Project the attachment into the canonical route surface of one
+    /// closed namespace (node, laravel, go, or rust).
+    Project {
+        /// Path to the transport attachment JSON document.
+        path: String,
+        /// The closed projection namespace.
+        #[arg(long, value_enum)]
+        namespace: TransportNamespace,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Path to the bound #62 error registry.
+        #[arg(long, value_name = "FILE")]
+        errors: Option<String>,
+        /// Path to the bound #64 query-model attachment.
+        #[arg(long, value_name = "FILE")]
+        query_model: Option<String>,
+    },
+}
+
+/// The closed projection namespace vocabulary.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum TransportNamespace {
+    /// Node (ECMAScript) route table.
+    Node,
+    /// Laravel controller surface.
+    Laravel,
+    /// Go handler surface.
+    Go,
+    /// Rust (axum-style) route surface.
+    Rust,
+}
+
+impl TransportNamespace {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Node => "node",
+            Self::Laravel => "laravel",
+            Self::Go => "go",
+            Self::Rust => "rust",
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -3104,6 +3146,19 @@ fn run_transport(command: TransportCommands) -> DomainResult {
             endpoint,
             project,
         } => transport_inspect(&path, &endpoint, &project),
+        TransportCommands::Project {
+            path,
+            namespace,
+            project,
+            errors,
+            query_model,
+        } => transport_project(
+            &path,
+            namespace.as_str(),
+            &project,
+            errors.as_deref(),
+            query_model.as_deref(),
+        ),
     }
 }
 
@@ -3131,6 +3186,98 @@ fn read_context_document(path: Option<&str>) -> Result<Option<serde_json::Value>
     }
 }
 
+/// One loaded transport session: the attachment, the compiled
+/// project, the bound registry, the optional query model, and the
+/// validated context every transport command shares.
+struct TransportSession {
+    attachment: lekalo_core::transport_http::TransportDocument,
+    compilation: lekalo_core::ir::Compilation,
+    registry: lekalo_core::error_contract::ErrorRegistry,
+    query_model: Option<lekalo_core::query_model::QueryModelAttachment>,
+    capabilities: lekalo_core::transport_http::CapabilityMap,
+}
+
+/// Load and bind one transport session: the document, the project
+/// (load, compile, custody), the error registry, and the optional
+/// query model.
+fn transport_session(
+    path: &str,
+    project: &Option<String>,
+    errors_path: Option<&str>,
+    query_model_path: Option<&str>,
+) -> Result<TransportSession, DomainResult> {
+    let document = read_transport_document(path)?;
+    let attachment = match lekalo_core::transport_http::TransportDocument::from_value(&document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return Err(DomainResult::invalid(diagnostics)),
+    };
+    let selection = selection_for(project);
+    // The bound #62 registry: explicit path, or the embedded seed.
+    let registry = match read_context_document(errors_path)? {
+        Some(json) => serde_json::to_string(&json)
+            .map_err(|_| lekalo_core::transport_http::io_failure("errors-registry-invalid"))
+            .and_then(|canonical| {
+                lekalo_core::error_contract::ErrorRegistry::from_bytes(canonical.as_bytes())
+            })
+            .map_err(DomainResult::invalid)?,
+        None => lekalo_core::error_contract::ErrorRegistry::embedded()
+            .cloned()
+            .map_err(DomainResult::invalid)?,
+    };
+    let query_model = match read_context_document(query_model_path)? {
+        Some(json) => Some(
+            lekalo_core::query_model::QueryModelAttachment::from_value(&json)
+                .map_err(DomainResult::invalid)?,
+        ),
+        None => None,
+    };
+    // The project: load, compile, and check custody exactly like the
+    // query-model resolver (project id, Model version, Model digest).
+    let model = lekalo_core::loader::normalize_model(&selection)?;
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Ok(compilation) => compilation,
+        Err(failure) => return Err(failure.into_result()),
+    };
+    let model_json = match lekalo_core::loader::run(&selection, false) {
+        DomainResult::Valid {
+            payload: lekalo_core::result::SuccessPayload::Model { json, .. },
+            ..
+        } => json,
+        other => return Err(other),
+    };
+    let computed = lekalo_core::digest::sha256_hex(model_json.as_bytes());
+    if attachment.model_ref().digest().as_str() != format!("sha256:{computed}") {
+        return Err(DomainResult::invalid(
+            lekalo_core::transport_http::rule_set(
+                "transport.contract-invalid",
+                "model-digest",
+                None,
+            ),
+        ));
+    }
+    Ok(TransportSession {
+        attachment,
+        compilation,
+        registry,
+        query_model,
+        capabilities: lekalo_core::transport_http::CapabilityMap::http_json(),
+    })
+}
+
+impl TransportSession {
+    /// The validation context of this session.
+    fn context(&self) -> lekalo_core::transport_http::ValidationContext<'_> {
+        let context =
+            lekalo_core::transport_http::ValidationContext::new(&self.compilation.project)
+                .with_errors(&self.registry)
+                .with_capabilities(&self.capabilities);
+        match &self.query_model {
+            Some(model) => context.with_query_model(model),
+            None => context,
+        }
+    }
+}
+
 /// `lekalo transport validate`: wire normalization, custody, and the
 /// semantic pass against the selected project and every bound context.
 fn transport_validate(
@@ -3140,78 +3287,14 @@ fn transport_validate(
     query_model_path: Option<&str>,
     strict: bool,
 ) -> DomainResult {
-    let document = match read_transport_document(path) {
-        Ok(document) => document,
+    let session = match transport_session(path, project, errors_path, query_model_path) {
+        Ok(session) => session,
         Err(result) => return result,
     };
-    let attachment = match lekalo_core::transport_http::TransportDocument::from_value(&document) {
-        Ok(attachment) => attachment,
-        Err(diagnostics) => return DomainResult::invalid(diagnostics),
-    };
-    let selection = selection_for(project);
-    // The bound #62 registry: explicit path, or the embedded seed.
-    let registry = match read_context_document(errors_path) {
-        Ok(value) => match value {
-            Some(json) => match serde_json::to_string(&json)
-                .map_err(|_| lekalo_core::transport_http::io_failure("errors-registry-invalid"))
-                .and_then(|canonical| {
-                    lekalo_core::error_contract::ErrorRegistry::from_bytes(canonical.as_bytes())
-                }) {
-                Ok(registry) => registry,
-                Err(diagnostics) => return DomainResult::invalid(diagnostics),
-            },
-            None => match lekalo_core::error_contract::ErrorRegistry::embedded() {
-                Ok(registry) => registry.clone(),
-                Err(diagnostics) => return DomainResult::invalid(diagnostics),
-            },
-        },
-        Err(result) => return result,
-    };
-    let query_model = match read_context_document(query_model_path) {
-        Ok(value) => match value {
-            Some(json) => match lekalo_core::query_model::QueryModelAttachment::from_value(&json) {
-                Ok(model) => Some(model),
-                Err(diagnostics) => return DomainResult::invalid(diagnostics),
-            },
-            None => None,
-        },
-        Err(result) => return result,
-    };
-    // The project: load, compile, and check custody exactly like the
-    // query-model resolver (project id, Model version, Model digest).
-    let model = match lekalo_core::loader::normalize_model(&selection) {
-        Ok(model) => model,
-        Err(result) => return result,
-    };
-    let compilation = match lekalo_core::ir::compile(&model) {
-        Ok(compilation) => compilation,
-        Err(failure) => return failure.into_result(),
-    };
-    let model_json = match lekalo_core::loader::run(&selection, false) {
-        DomainResult::Valid {
-            payload: lekalo_core::result::SuccessPayload::Model { json, .. },
-            ..
-        } => json,
-        other => return other,
-    };
-    let computed = lekalo_core::digest::sha256_hex(model_json.as_bytes());
-    if attachment.model_ref().digest().as_str() != format!("sha256:{computed}") {
-        return DomainResult::invalid(lekalo_core::transport_http::rule_set(
-            "transport.contract-invalid",
-            "model-digest",
-            None,
-        ));
-    }
-    let capabilities = lekalo_core::transport_http::CapabilityMap::http_json();
-    let context = lekalo_core::transport_http::ValidationContext::new(&compilation.project)
-        .with_errors(&registry);
-    let context = match &query_model {
-        Some(model) => context.with_query_model(model),
-        None => context,
-    };
-    let context = context.with_capabilities(&capabilities);
+    let attachment = &session.attachment;
+    let context = session.context();
     let context = if strict { context.strict() } else { context };
-    if let Err(diagnostics) = lekalo_core::transport_http::validate(&attachment, &context) {
+    if let Err(diagnostics) = lekalo_core::transport_http::validate(attachment, &context) {
         return DomainResult::invalid(diagnostics);
     }
     let digest = attachment
@@ -3230,6 +3313,42 @@ fn transport_validate(
         attachment.project_id().as_str(),
         attachment.endpoints().len(),
         attachment.schemes().len(),
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo transport project`: the canonical route surface of one
+/// closed namespace, byte-stable and deterministic.
+fn transport_project(
+    path: &str,
+    namespace: &str,
+    project: &Option<String>,
+    errors_path: Option<&str>,
+    query_model_path: Option<&str>,
+) -> DomainResult {
+    let session = match transport_session(path, project, errors_path, query_model_path) {
+        Ok(session) => session,
+        Err(result) => return result,
+    };
+    let attachment = &session.attachment;
+    let context = session.context();
+    // The projection requires a validated attachment: an unresolved
+    // endpoint refuses rather than guessing a route.
+    if let Err(diagnostics) = lekalo_core::transport_http::validate(attachment, &context) {
+        return DomainResult::invalid(diagnostics);
+    }
+    let surface = match lekalo_core::transport_http::project(attachment, &context, namespace) {
+        Ok(surface) => surface,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let json = format!(
+        "{{\"status\":\"valid\",\"surface\":{}}}",
+        surface.canonical_bytes(),
+    );
+    let human = format!(
+        "route surface {}: {} routes",
+        namespace,
+        attachment.endpoints().len(),
     );
     DomainResult::graph(json, human, Vec::new())
 }

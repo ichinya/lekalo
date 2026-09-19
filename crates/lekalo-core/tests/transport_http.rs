@@ -117,6 +117,7 @@ fn transport_suite_runs_from_the_workspace_root() {
         canonical_bytes_are_deterministic_and_reparseable();
         bounds_are_enforced_at_the_wire();
         capabilities_and_projection_invariants();
+        projection_goldens_are_byte_pinned_and_parity_holds();
         endpoint_bound_refuses_beyond_the_limit();
         canonical_digest_is_pinned();
         every_capability_kind_refuses_without_profile_support();
@@ -284,6 +285,49 @@ fn bounds_are_enforced_at_the_wire() {
     }
     focus["params"] = serde_json::Value::Array(params);
     assert!(TransportDocument::from_value(&at).is_ok(), "at the bound");
+}
+
+/// The four committed projection goldens are byte-pinned: the Rust
+/// projection reproduces them exactly, and the canonical core
+/// (every route member except the namespace-shaped handler
+/// identity) is byte-identical across all four namespaces — the
+/// cross-runtime parity the OpenAPI projection relies on.
+fn projection_goldens_are_byte_pinned_and_parity_holds() {
+    let (project, registry, query_model, capabilities) = loaded();
+    let document =
+        TransportDocument::from_value(&read_fixture("valid/planner.transport.json")).unwrap();
+    let context = ValidationContext::new(&project)
+        .with_errors(registry)
+        .with_query_model(&query_model)
+        .with_capabilities(&capabilities);
+    let mut canonical_cores: Vec<String> = Vec::new();
+    for namespace in ["go", "laravel", "node", "rust"] {
+        let surface = lekalo_core::transport_http::project(&document, &context, namespace).unwrap();
+        let golden = std::fs::read_to_string(format!(
+            "{FIXTURE_ROOT}/projected/{namespace}/{namespace}.expect.json"
+        ))
+        .expect("committed golden");
+        assert_eq!(
+            surface.canonical_bytes(),
+            golden.trim_end(),
+            "{namespace}: the projection is byte-pinned"
+        );
+        // The canonical core: strip the namespace-shaped handler.
+        let mut value: serde_json::Value = serde_json::from_str(surface.canonical_bytes()).unwrap();
+        value["namespace"].take();
+        for route in value["routes"].as_array_mut().unwrap() {
+            route["handler"].take();
+        }
+        canonical_cores.push(value.to_string());
+    }
+    assert_eq!(
+        canonical_cores
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        1,
+        "the canonical core is identical across namespaces"
+    );
 }
 
 fn capabilities_and_projection_invariants() {

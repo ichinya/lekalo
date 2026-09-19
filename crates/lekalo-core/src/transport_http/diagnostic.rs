@@ -104,6 +104,17 @@ pub(crate) fn capability_unsatisfied(
     }
 }
 
+/// One registered refusal set for CLI-level custody and lookup
+/// failures: a fixed detail tag plus an optional bounded subject
+/// echo over the family rules.
+pub fn rule_set(rule: &str, detail: &str, subject: Option<&str>) -> DiagnosticSet {
+    let data = subject_data(detail, subject);
+    match one(rule, data) {
+        Ok(diagnostic) => invalid_set(vec![diagnostic]),
+        Err(_) => singleton_set("diagnostics.registry-invalid"),
+    }
+}
+
 /// The fatal set for the over-bound canonical payload.
 pub(crate) fn export_limit_set(bytes: usize) -> DiagnosticSet {
     let mut data = DataObject::new();
