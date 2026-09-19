@@ -1,0 +1,446 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/adapter-manifest.schema.v0.3.2.json",
+  "title": "Lekalo Adapter Package Manifest",
+  "description": "Closed wire contract for the adapter package manifest (issue #32): one independently verifiable declaration of a target/profile adapter package — identity, publisher, source custody, license, protocol/IR compatibility, declared capabilities, executable coordinates, supported platforms, integrity (per-file checksums, package digest, signature policy), least-privilege permissions, hooks, conformance report reference, and lifecycle status. Every identity is a stable semantic identifier; every digest is sha256:<64 lowercase hex> over its declared domain; every array is sorted by the documented key; no field carries an absolute path, URL, credential, or host data. The manifest is the independent claim the runtime cross-checks against the safe describe handshake: describe output is self-asserted, the manifest is verified against the package bytes. The Rust implementation in crates/lekalo-core/src/adapter_package is normative for cross-field invariants.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "adapter",
+    "publisher",
+    "source",
+    "license",
+    "compatibility",
+    "capabilities",
+    "executable",
+    "platforms",
+    "integrity",
+    "permissions",
+    "hooks",
+    "conformance",
+    "status",
+    "revocation"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "lekalo/adapter-manifest/v0.3.2" },
+    "identity": { "const": "dev.lekalo.adapter-manifest@0.3.2" },
+    "adapter": { "$ref": "#/$defs/adapter" },
+    "publisher": { "$ref": "#/$defs/publisher" },
+    "source": { "$ref": "#/$defs/source" },
+    "license": { "$ref": "#/$defs/license" },
+    "compatibility": { "$ref": "#/$defs/compatibility" },
+    "capabilities": { "$ref": "#/$defs/capabilities" },
+    "executable": { "$ref": "#/$defs/executable" },
+    "platforms": { "$ref": "#/$defs/platforms" },
+    "integrity": { "$ref": "#/$defs/integrity" },
+    "permissions": { "$ref": "#/$defs/permissions" },
+    "hooks": { "$ref": "#/$defs/hooks" },
+    "conformance": { "$ref": "#/$defs/conformance" },
+    "status": { "$ref": "#/$defs/status" },
+    "revocation": { "$ref": "#/$defs/revocation" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "active" } }, "required": ["status"] },
+      "then": { "properties": { "revocation": { "type": "null" } } }
+    },
+    {
+      "if": {
+        "properties": { "status": { "enum": ["yanked", "revoked"] }, "revocation": { "type": "null" } },
+        "required": ["status", "revocation"]
+      },
+      "then": { "properties": { "revocation": { "not": {} } } }
+    },
+    {
+      "if": {
+        "properties": { "integrity": { "type": "object", "properties": { "signaturePolicy": { "const": "unsigned" } }, "required": ["signaturePolicy"] } },
+        "required": ["integrity"]
+      },
+      "then": { "properties": { "integrity": { "type": "object", "properties": { "signature": { "type": "null" } } } } }
+    }
+  ],
+  "$defs": {
+    "token": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$",
+      "maxLength": 64
+    },
+    "componentId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,127}$",
+      "maxLength": 128,
+      "description": "The closed lowercase component identifier grammar; never a path or a coordinate."
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "maxLength": 32,
+      "description": "Canonical SemVer without prerelease or build metadata: one spelling per version, precedence-safe."
+    },
+    "contractVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "packagePath": {
+      "type": "string",
+      "pattern": "^[^/\\\\.][^/\\\\]*(/[^/\\\\.]*/?)*$|^[^/\\\\.][^/\\\\]*$",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "A package-relative POSIX logical path: no leading dot, no dot segments, no backslash, no drive, never absolute."
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "version"],
+      "properties": {
+        "id": { "$ref": "#/$defs/componentId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "version": { "$ref": "#/$defs/semver" }
+      }
+    },
+    "publisher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "trustAnchor"],
+      "properties": {
+        "id": { "$ref": "#/$defs/componentId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "trustAnchor": {
+          "description": "The closed publisher trust-anchor vocabulary: builtin anchors core distributions, registry anchors a registry operator, publisher-key names a declared key identity, none is an unanchored publisher.",
+          "enum": ["builtin", "registry", "publisher-key", "none"]
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "coordinate", "digest"],
+      "properties": {
+        "kind": {
+          "description": "The closed discovery-source vocabulary mirroring the resolution sources.",
+          "enum": ["path", "path-exec", "release", "registry"]
+        },
+        "coordinate": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 256,
+          "description": "A closed source-coordinate token (path:<fs-path>, exec:<name>, release:<channel>/<id>, registry:<registry-id>/<package-id>); never a URL string and never an absolute or traversal path shape."
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest",
+          "description": "SHA-256 over the exact source snapshot bytes the manifest was derived from."
+        }
+      }
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spdx", "file", "fileDigest"],
+      "properties": {
+        "spdx": { "type": "string", "minLength": 3, "maxLength": 64 },
+        "file": { "$ref": "#/$defs/packagePath" },
+        "fileDigest": { "$ref": "#/$defs/sha256Digest" }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersions", "irVersions", "extensions"],
+      "description": "Exact-set membership over the protocol/IR contract versions — never a range — mirroring the accepted #9 preflight semantics.",
+      "properties": {
+        "protocolVersions": {
+          "type": "array", "minItems": 1, "maxItems": 8,
+          "items": { "$ref": "#/$defs/contractVersion" }
+        },
+        "irVersions": {
+          "type": "array", "minItems": 1, "maxItems": 8,
+          "items": { "$ref": "#/$defs/contractVersion" }
+        },
+        "extensions": {
+          "type": "array", "maxItems": 32,
+          "items": { "$ref": "#/$defs/token" }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operations", "targets", "profiles", "named", "constraints", "readScopes", "writeScopes", "transports"],
+      "properties": {
+        "operations": {
+          "type": "array", "minItems": 1, "maxItems": 16,
+          "items": { "$ref": "#/$defs/operation" }
+        },
+        "targets": {
+          "type": "array", "maxItems": 16,
+          "items": { "$ref": "#/$defs/token" }
+        },
+        "profiles": {
+          "type": "array", "maxItems": 16,
+          "items": { "$ref": "#/$defs/token" }
+        },
+        "named": {
+          "type": "object",
+          "additionalProperties": { "enum": ["full", "partial", "unsupported", "unknown"] },
+          "maxProperties": 64,
+          "description": "Named capability id to closed support state, sorted by id on the canonical wire."
+        },
+        "constraints": { "$ref": "#/$defs/constraints" },
+        "readScopes": { "$ref": "#/$defs/scopeList" },
+        "writeScopes": { "$ref": "#/$defs/scopeList" },
+        "transports": {
+          "type": "array", "minItems": 1, "maxItems": 4,
+          "items": { "enum": ["stdin", "file"] }
+        }
+      }
+    },
+    "capabilityId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*(\\.[a-z0-9][a-z0-9_-]*)+$",
+      "maxLength": 128,
+      "description": "Lowercase dotted capability segments."
+    },
+    "operation": {
+      "description": "The closed operation vocabulary of the current protocol contract.",
+      "enum": ["describe", "scan", "bind", "validate", "generate", "verify", "clean", "plan-clean", "plan-native"]
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "maxEntries": { "type": "integer", "minimum": 1, "maximum": 100000000 },
+        "maxWrites": { "type": "integer", "minimum": 1, "maximum": 100000 }
+      }
+    },
+    "scopeList": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/scope" }
+    },
+    "scope": {
+      "type": "string",
+      "pattern": "^[^/\\\\].*$",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "A project-relative POSIX glob scope; absolute, backslash, and traversal shapes are refused by the Rust grammar."
+    },
+    "executable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime", "entry", "argvPreview", "assets"],
+      "properties": {
+        "runtime": { "$ref": "#/$defs/runtime" },
+        "entry": { "$ref": "#/$defs/packagePath" },
+        "argvPreview": {
+          "type": "array", "minItems": 1, "maxItems": 16,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "description": "Display-only launch preview; never executed verbatim."
+        },
+        "assets": {
+          "type": "array", "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "digest"],
+            "properties": {
+              "path": { "$ref": "#/$defs/packagePath" },
+              "digest": { "$ref": "#/$defs/sha256Digest" }
+            }
+          }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "minVersion"],
+      "properties": {
+        "kind": {
+          "enum": ["node", "deno", "bun", "php", "python", "native-binary", "other"]
+        },
+        "minVersion": { "$ref": "#/$defs/contractVersion" }
+      }
+    },
+    "platforms": {
+      "type": "array", "minItems": 1, "maxItems": 8,
+      "items": { "$ref": "#/$defs/platform" }
+    },
+    "platform": {
+      "description": "The closed platform vocabulary: any, or a stable lowercase target triple.",
+      "enum": ["any", "windows-x64", "linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64"]
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageDigest", "files", "signaturePolicy", "signature"],
+      "properties": {
+        "packageDigest": {
+          "$ref": "#/$defs/sha256Digest",
+          "description": "SHA-256 over the canonical package-root digest domain: the sorted per-file byte set of the exact packaged files."
+        },
+        "files": {
+          "type": "array", "minItems": 1, "maxItems": 512,
+          "description": "Sorted by path, unique; covers every packaged file including the manifest itself.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "digest", "bytes"],
+            "properties": {
+              "path": { "$ref": "#/$defs/packagePath" },
+              "digest": { "$ref": "#/$defs/sha256Digest" },
+              "bytes": { "type": "integer", "minimum": 1, "maximum": 268435456 }
+            }
+          }
+        },
+        "signaturePolicy": {
+          "enum": ["unsigned", "optional", "required"]
+        },
+        "signature": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["scheme", "bundleDigest"],
+              "properties": {
+                "scheme": { "enum": ["minisign", "sigstore-bundle", "pgp-cleartext"] },
+                "bundleDigest": { "$ref": "#/$defs/sha256Digest" },
+                "signerIdentity": { "type": "string", "minLength": 3, "maxLength": 128 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filesystem", "network", "environment", "processes", "secrets"],
+      "description": "The least-privilege declaration the execution-isolation issue (#89) consumes as its declared policy; trust never widens it.",
+      "properties": {
+        "filesystem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["readScopes", "writeScopes"],
+          "properties": {
+            "readScopes": { "$ref": "#/$defs/scopeList" },
+            "writeScopes": { "$ref": "#/$defs/scopeList" }
+          }
+        },
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "destinations"],
+          "properties": {
+            "mode": { "enum": ["denied", "allowlist"] },
+            "destinations": {
+              "type": "array", "maxItems": 32,
+              "items": { "$ref": "#/$defs/hostToken" }
+            }
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allowlist"],
+          "properties": {
+            "allowlist": {
+              "type": "array", "maxItems": 64,
+              "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$", "maxLength": 64 }
+            }
+          }
+        },
+        "processes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["children"],
+          "properties": {
+            "children": { "enum": ["denied", "declared"] }
+          }
+        },
+        "secrets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["handles"],
+          "properties": {
+            "handles": {
+              "type": "array", "maxItems": 32,
+              "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$", "maxLength": 64 }
+            }
+          }
+        }
+      }
+    },
+    "hostToken": {
+      "type": "string",
+      "pattern": "^(\\*\\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "A closed lowercase host token (optionally one wildcard label); never a URL."
+    },
+    "hooks": {
+      "type": "array", "maxItems": 0,
+      "description": "Schema-complete declaration surface; v1 refuses non-empty (no scripts by default is structural, not a flag). The current contract pins it empty."
+    },
+    "conformance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reportDigest", "badge", "suiteRegistry"],
+      "properties": {
+        "reportDigest": {
+          "$ref": "#/$defs/sha256Digest",
+          "description": "SHA-256 over the canonical report bytes of the recorded #31 conformance run."
+        },
+        "badge": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["protocol", "ir", "profile"],
+          "properties": {
+            "protocol": { "$ref": "#/$defs/contractVersion" },
+            "ir": { "$ref": "#/$defs/contractVersion" },
+            "profile": { "$ref": "#/$defs/token" }
+          }
+        },
+        "suiteRegistry": {
+          "type": "string", "minLength": 3, "maxLength": 128,
+          "description": "The exact diagnostic-registry identity the conformance battery belongs to."
+        }
+      }
+    },
+    "status": {
+      "description": "active is selectable; yanked is excluded from new installs and auto-selection; revoked is never selectable. The enforcing revocation signal is the local revocation store, not this publisher self-report.",
+      "enum": ["active", "yanked", "revoked"]
+    },
+    "revocation": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason"],
+          "properties": {
+            "reason": { "$ref": "#/$defs/token" },
+            "noticeDigest": { "$ref": "#/$defs/sha256Digest" },
+            "supersededBy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "version"],
+              "properties": {
+                "id": { "$ref": "#/$defs/componentId" },
+                "version": { "$ref": "#/$defs/semver" }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
