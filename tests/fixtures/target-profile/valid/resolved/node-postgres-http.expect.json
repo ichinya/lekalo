@@ -1,38 +1,4 @@
 {
-  "id": "node-postgres-http",
-  "version": "0.2.16",
-  "components": [
-    {
-      "axis": "analysis",
-      "id": "typescript-native",
-      "definition_version": "0.2.16"
-    },
-    {
-      "axis": "deployment",
-      "id": "container",
-      "definition_version": "0.2.16"
-    },
-    {
-      "axis": "runtime",
-      "id": "node-typescript",
-      "definition_version": "0.2.16"
-    },
-    {
-      "axis": "storage",
-      "id": "postgres-sql",
-      "definition_version": "0.2.16"
-    },
-    {
-      "axis": "testing",
-      "id": "node-native",
-      "definition_version": "0.2.16"
-    },
-    {
-      "axis": "transport",
-      "id": "http-json",
-      "definition_version": "0.2.16"
-    }
-  ],
   "capabilities": [
     {
       "id": "analysis.types",
@@ -79,16 +45,57 @@
       "support": "full"
     },
     {
+      "id": "transport.download",
+      "support": "partial"
+    },
+    {
       "id": "transport.http",
       "support": "full"
     },
     {
       "id": "transport.streaming",
       "support": "partial"
+    },
+    {
+      "id": "transport.upload",
+      "support": "partial"
     }
   ],
-  "digest": "sha256:22e1007ae5fa3cd64ad827b79433769dbad0ea086fed604a3a18a28aa9f22876",
-  "source_digest": "sha256:c1801eabea9b7fb409df06baeb09571801d9d5005b2ec2910756b4bba92d9f55",
+  "components": [
+    {
+      "axis": "analysis",
+      "definition_version": "0.2.16",
+      "id": "typescript-native"
+    },
+    {
+      "axis": "deployment",
+      "definition_version": "0.2.16",
+      "id": "container"
+    },
+    {
+      "axis": "runtime",
+      "definition_version": "0.2.16",
+      "id": "node-typescript"
+    },
+    {
+      "axis": "storage",
+      "definition_version": "0.2.16",
+      "id": "postgres-sql"
+    },
+    {
+      "axis": "testing",
+      "definition_version": "0.2.16",
+      "id": "node-native"
+    },
+    {
+      "axis": "transport",
+      "definition_version": "0.4.0",
+      "id": "http-json"
+    }
+  ],
+  "digest": "sha256:8764c643860eb115a4916e592a0661af4fcbbd55b9ba3ec6d1eb1aeed7c3c88f",
+  "id": "node-postgres-http",
+  "overrides_applied": [],
   "provenance": [
     {
       "axis": "analysis",
@@ -115,5 +122,6 @@
       "origin": "declared"
     }
   ],
-  "overrides_applied": []
+  "source_digest": "sha256:c1801eabea9b7fb409df06baeb09571801d9d5005b2ec2910756b4bba92d9f55",
+  "version": "0.2.16"
 }

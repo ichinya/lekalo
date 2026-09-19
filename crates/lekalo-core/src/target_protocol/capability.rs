@@ -12,8 +12,10 @@
 use serde::Serialize;
 
 /// The identity of the embedded capability definition registry
-/// (`dev.lekalo.target-capabilities@0.3.1`).
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.3.2";
+/// (`dev.lekalo.target-capabilities@0.4.0`). The 0.4.0 generation
+/// adds `generate.transport-http` and `verify.transport-http`
+/// (issue #70).
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.4.0";
 
 /// One versioned capability definition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -37,6 +39,12 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         definition_version: "0.3.1",
         domain: "generate",
         semantics: "Emits an OpenAPI document from the compiled project IR. `full` covers every declared operation and type; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "generate.transport-http",
+        definition_version: "0.4.0",
+        domain: "generate",
+        semantics: "Generates the HTTP route layer from the transport-http evidence. `full` covers every declared endpoint, parameter, error projection, and security scheme; `partial` covers a declared subset or reports declared streaming/upload/download capabilities it does not implement as unsupported; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
         id: "generate.ui",
@@ -63,6 +71,12 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         semantics: "Verifies scenario coverage through the `verify` operation. `full` covers every declared scenario; `partial` covers a declared subset; `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
+        id: "verify.transport-http",
+        definition_version: "0.4.0",
+        domain: "verify",
+        semantics: "Verifies black-box endpoint scenarios through the `verify` operation against the transport-http evidence. `full` executes every declared scenario coverage reference; `partial` covers a declared subset; `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
         id: "plan.native-gates",
         definition_version: "0.3.2",
         domain: "plan",
@@ -87,22 +101,26 @@ mod tests {
 
     #[test]
     fn registry_identity_and_definitions_are_pinned() {
-        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.3.2");
+        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.4.0");
         let ids: Vec<&str> = definitions().iter().map(|entry| entry.id).collect();
         assert_eq!(
             ids,
             vec![
                 "generate.openapi",
+                "generate.transport-http",
                 "generate.ui",
                 "generate.zod",
                 "scan.symbols",
                 "verify.scenarios",
+                "verify.transport-http",
                 "plan.native-gates",
             ]
         );
         for entry in definitions() {
             assert!(
-                entry.definition_version == "0.3.1" || entry.definition_version == "0.3.2",
+                entry.definition_version == "0.3.1"
+                    || entry.definition_version == "0.3.2"
+                    || entry.definition_version == "0.4.0",
                 "definition versions stay on the accepted generations"
             );
             assert!(

@@ -131,10 +131,12 @@ const SUPPORT_STATES = Object.freeze(["full", "partial", "unsupported", "unknown
 
 const CAPABILITY_IDS = Object.freeze([
   "generate.openapi",
+  "generate.transport-http",
   "generate.ui",
   "generate.zod",
   "scan.symbols",
   "verify.scenarios",
+  "verify.transport-http",
   "plan.native-gates",
 ]);
 
