@@ -570,6 +570,23 @@ enum NfrCommands {
         /// Path to the candidate attachment JSON document.
         candidate: String,
     },
+    /// Project the impact of a constraint change through the accepted
+    /// impact engine: the changed constraints' scope symbols enter as
+    /// a synthesized typed changed-input set, and the standard impact
+    /// payload carries the affected scenarios and gates.
+    Impact {
+        /// Path to the candidate NFR attachment JSON document.
+        path: String,
+        /// Path to the base NFR attachment JSON document.
+        #[arg(long, value_name = "BASE")]
+        base: String,
+        /// Cap the traversal depth (1..=256).
+        #[arg(long, value_name = "N", default_value_t = 8)]
+        depth: u16,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
 }
 
 /// The `module` subcommands: the module-authoring surface (issue #97).
@@ -3111,10 +3128,18 @@ enum NfrStep {
 /// the requested view. The core owns every decision; this binary only
 /// selects, renders, and maps exits.
 fn run_nfr(command: NfrCommands) -> DomainResult {
-    // The diff is a pure two-document comparison: no project, no
-    // evidence, no as-of date.
-    if let NfrCommands::Diff { base, candidate } = command {
-        return nfr_diff(&base, &candidate);
+    // The diff and impact operations never resolve evidence: the
+    // diff is a pure two-document comparison, and impact synthesizes
+    // its typed changed-input handoff from two documents.
+    match &command {
+        NfrCommands::Diff { base, candidate } => return nfr_diff(base, candidate),
+        NfrCommands::Impact {
+            path,
+            base,
+            depth,
+            project,
+        } => return nfr_impact(path, base, *depth, project),
+        _ => {}
     }
     let (path, evidence_paths, as_of, project, step) = match command {
         NfrCommands::Validate {
@@ -3137,7 +3162,9 @@ fn run_nfr(command: NfrCommands) -> DomainResult {
             as_of,
             project,
         } => (path, evidence, as_of, project, NfrStep::Query(selector)),
-        NfrCommands::Diff { .. } => unreachable!("diff is handled before the resolution path"),
+        NfrCommands::Diff { .. } | NfrCommands::Impact { .. } => {
+            unreachable!("diff and impact are handled before the resolution path")
+        }
     };
     let as_of = match lekalo_core::nfr::IsoDate::parse(&as_of) {
         Ok(as_of) => as_of,
@@ -3266,6 +3293,104 @@ fn nfr_diff(base_path: &str, candidate_path: &str) -> DomainResult {
         ));
     }
     DomainResult::diff(json, human, Vec::new())
+}
+
+/// `lekalo nfr impact`: the changed constraints' scope symbols enter
+/// the accepted impact engine as a synthesized typed handoff; the
+/// standard impact payload carries an NFR provenance section.
+fn nfr_impact(path: &str, base_path: &str, depth: u16, project: &Option<String>) -> DomainResult {
+    let read = |source: &str| -> Result<lekalo_core::nfr::NfrAttachment, DomainResult> {
+        let bytes = match std::fs::read(source) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let detail = match error.kind() {
+                    io::ErrorKind::NotFound => "file-missing",
+                    _ => "file-unreadable",
+                };
+                return Err(DomainResult::invalid(
+                    lekalo_core::nfr::diagnostic::io_failure(detail),
+                ));
+            }
+        };
+        lekalo_core::nfr::NfrAttachment::parse(&bytes).map_err(DomainResult::invalid)
+    };
+    let base = match read(base_path) {
+        Ok(base) => base,
+        Err(result) => return result,
+    };
+    let candidate = match read(path) {
+        Ok(candidate) => candidate,
+        Err(result) => return result,
+    };
+    let changed = match lekalo_core::nfr::impact::changed_input_set(&base, &candidate, path) {
+        Ok(Some(set)) => set,
+        Ok(None) => return DomainResult::invalid(lekalo_core::nfr::diagnostic::projection_empty()),
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let request = match lekalo_core::impact::ImpactRequest::for_changed().with_depth(depth) {
+        Ok(request) => request,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let selection = selection_for(project);
+    let model = match lekalo_core::loader::normalize_model(&selection) {
+        Err(result) => return result,
+        Ok(model) => model,
+    };
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Err(failure) => return failure.into_result(),
+        Ok(compilation) => compilation,
+    };
+    let graph = match lekalo_core::graph::build(&compilation.project) {
+        Err(set) => return DomainResult::invalid(set),
+        Ok(graph) => graph,
+    };
+    let effects = match lekalo_core::effects::build(&compilation.project) {
+        Err(set) => return DomainResult::invalid(set),
+        Ok(effects) => effects,
+    };
+    match lekalo_core::impact::analyze(
+        &compilation.project,
+        &graph,
+        &effects,
+        &request,
+        Some(&changed),
+        None,
+    ) {
+        Ok(result) => {
+            // The standard impact payload plus the NFR provenance
+            // section: which constraints changed and which symbols
+            // entered the radius.
+            let bytes = match result.to_canonical_json() {
+                Ok(bytes) => bytes,
+                Err(set) => return DomainResult::invalid(set),
+            };
+            let changed_constraints: Vec<String> = changed
+                .entries()
+                .iter()
+                .flat_map(|entry| entry.symbol_ids().iter().cloned())
+                .collect();
+            let json = format!(
+                "{{\"status\":\"valid\",\"impact\":{bytes},\"nfr\":{{\"attachment\":\"{}\",\"changedScopeSymbols\":{}}}}}",
+                path,
+                serde_json::to_string(&changed_constraints)
+                    .unwrap_or_else(|_| "[]".to_owned()),
+            );
+            let mut human = format!(
+                "nfr impact: changed scope symbols {}",
+                changed_constraints.join(", ")
+            );
+            human.push_str(&format!(
+                "
+#   direct {} transitive {} gates {}",
+                result.direct().summary.returned,
+                result.transitive().summary.returned,
+                result.gates().summary.returned,
+            ));
+            DomainResult::impact(json, human, result.warnings().to_vec())
+        }
+        Err(lekalo_core::impact::ImpactFailure::Invalid(set)) => DomainResult::invalid(set),
+        Err(lekalo_core::impact::ImpactFailure::Denied(set)) => DomainResult::denied(set),
+    }
 }
 
 /// The resolved capability snapshot: the committed project lock's

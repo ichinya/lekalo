@@ -27,6 +27,7 @@ pub mod diagnostic;
 pub mod diff;
 pub mod evidence;
 pub mod id;
+pub mod impact;
 pub mod report;
 pub mod validate;
 pub mod version;

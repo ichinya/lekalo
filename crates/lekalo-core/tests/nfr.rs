@@ -330,3 +330,74 @@ fn the_diff_classifies_the_closed_paths() {
         "the diff rule fires"
     );
 }
+
+// ---------------------------------------------------------------------------
+// S8: the impact synthesis - a changed constraint reaches the accepted
+// impact engine and surfaces the affected scenarios and gates.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_constraint_change_surfaces_its_scenarios_and_gates() {
+    let base_json = attachment_json();
+    let base = NfrAttachment::parse(&serde_json::to_vec(&base_json).unwrap()).expect("parses");
+    // Tighten the operation-scoped resource limit: the constraint's
+    // scope symbol is planner.focus_task, covered by the scenario.
+    let mut json = base_json.clone();
+    json["constraints"][2]["requirement"]["value"] = serde_json::json!("600");
+    let candidate = NfrAttachment::parse(&serde_json::to_vec(&json).unwrap()).expect("parses");
+    let changed = lekalo_core::nfr::impact::changed_input_set(
+        &base,
+        &candidate,
+        "lekalo/nfr.attachment.json",
+    )
+    .expect("synthesizes")
+    .expect("the change produces a handoff");
+    assert_eq!(changed.entries().len(), 1);
+    assert_eq!(changed.entries()[0].symbol_ids(), ["planner.focus_task"]);
+    assert_eq!(
+        changed.entries()[0].logical_path().0,
+        "lekalo/nfr.attachment.json"
+    );
+
+    // Equal attachments synthesize no handoff: "nothing changed" is a
+    // caller decision.
+    assert!(lekalo_core::nfr::impact::changed_input_set(
+        &base,
+        &base,
+        "lekalo/nfr.attachment.json"
+    )
+    .expect("synthesizes")
+    .is_none());
+
+    // Through the accepted impact engine: the radius reaches the
+    // covering scenario and the gate rows fire.
+    with_cwd(&workspace_root(), || {
+        let model = lekalo_core::loader::normalize_model(&selection()).expect("fixture loads");
+        let compilation = lekalo_core::ir::compile(&model).expect("fixture compiles");
+        let graph = lekalo_core::graph::build(&compilation.project).expect("graph builds");
+        let effects = lekalo_core::effects::build(&compilation.project).expect("effects build");
+        let request = lekalo_core::impact::ImpactRequest::for_changed();
+        let result = lekalo_core::impact::analyze(
+            &compilation.project,
+            &graph,
+            &effects,
+            &request,
+            Some(&changed),
+            None,
+        )
+        .expect("the analysis completes");
+        assert!(result
+            .scenarios()
+            .items
+            .iter()
+            .any(|item| item.id.as_str() == "scenario:planner.focus_flow"));
+        assert!(
+            result
+                .gates()
+                .items
+                .iter()
+                .any(|gate| gate.gate_id == "impact.gate.semantic-validate"),
+            "the semantic-validate gate fires"
+        );
+    });
+}

@@ -368,3 +368,84 @@ fn the_diff_reports_the_verdict_as_data() {
     );
     assert_eq!(exit_code(&invalid), 1);
 }
+
+#[test]
+fn the_impact_projection_carries_the_scenario_and_gate_rows() {
+    let dir = scratch();
+    // The base is the committed attachment; the candidate tightens the
+    // operation-scoped resource limit.
+    let mut candidate: Value =
+        serde_json::from_slice(&fs::read(dir.path().join(ATTACHMENT)).unwrap()).unwrap();
+    candidate["constraints"][2]["requirement"]["value"] = serde_json::json!("600");
+    fs::write(
+        dir.path().join("nfr-candidate.json"),
+        serde_json::to_vec(&candidate).unwrap(),
+    )
+    .unwrap();
+    let output = lekalo_in(
+        dir.path(),
+        &[
+            "--json",
+            "nfr",
+            "impact",
+            "nfr-candidate.json",
+            "--base",
+            ATTACHMENT,
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(
+        exit_code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json = stdout_json(&output);
+    assert_eq!(json["status"], "valid");
+    // The NFR provenance section names the entered scope symbol.
+    assert_eq!(
+        json["nfr"]["changedScopeSymbols"],
+        serde_json::json!(["planner.focus_task"])
+    );
+    // The scenario row arrives through the impact engine (AC#4).
+    let scenarios = json["impact"]["scenarios"]["items"]
+        .as_array()
+        .expect("scenario rows");
+    assert!(
+        scenarios
+            .iter()
+            .any(|item| item["id"] == "scenario:planner.focus_flow"),
+        "{scenarios:?}"
+    );
+    // The gate selection carries impact.gate.* rows.
+    let gates = json["impact"]["gates"]["items"]
+        .as_array()
+        .expect("gate rows");
+    assert!(gates
+        .iter()
+        .any(|gate| gate["gateId"] == "impact.gate.semantic-validate"));
+}
+
+#[test]
+fn an_equal_impact_is_the_projection_empty_class() {
+    let dir = scratch();
+    let output = lekalo_in(
+        dir.path(),
+        &[
+            "--json",
+            "nfr",
+            "impact",
+            ATTACHMENT,
+            "--base",
+            ATTACHMENT,
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(
+        exit_code(&output),
+        1,
+        "equal attachments never fake an impact"
+    );
+}
