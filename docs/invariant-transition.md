@@ -128,3 +128,11 @@ report/trace surface belongs here. Error identity stays with #62
 (opaque refs only), capability registries and profile resolution
 stay with #27/#28/#29. Tests are hermetic; fixtures live under
 [`tests/fixtures/invariant-transition/`](../tests/fixtures/invariant-transition/).
+
+NFR constraints ([docs/nfr.md](nfr.md), issue #85) are a separate
+family by design: functional invariants and their evidence live here,
+while performance, reliability, operational, and AI-budget constraints
+with their measured evidence never enter this contract. The status and
+coherence vocabulary (`full|verified|partial|gap|...`, the receipt
+statuses) is shared by shape, not by ownership — the NFR report engine
+computes its own statuses against measured evidence.

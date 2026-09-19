@@ -598,6 +598,40 @@ and trace exports emit canonical bytes with pinned digests. See
 [docs/requirements.md](requirements.md) and
 [ADR-0026](adr/0026-requirements-traceability.md).
 
+## NFR (issue #85)
+
+The `lekalo nfr` handoff resolves NFR constraints
+(`lekalo/nfr/v0.4.0`) against their measured evidence
+(`lekalo/nfr-evidence/v0.4.0`): the gate, the derived report, the
+closed queries, the neutral trace projection, the semantic diff, and
+the impact synthesis. All decisions live in the core; nothing is ever
+written. See [docs/nfr.md](nfr.md) and
+[ADR-0042](adr/0042-nfr-constraints.md).
+
+```sh
+lekalo nfr validate tests/fixtures/nfr/planner/nfr.attachment.json \
+  --evidence tests/fixtures/nfr/planner/nfr-evidence.staging-eu.json \
+  --as-of 2026-09-30 --project tests/fixtures/nfr/planner
+# nfr planner
+#   constraints 4; satisfied 3; violated 0; unverified 1; stale 0; ...
+
+lekalo nfr validate ... --strict                    # advisory failures deny too
+lekalo nfr report ... > report.json                 # canonical report bytes + digest
+lekalo nfr query ... unverified                     # constraints without current evidence
+lekalo nfr query ... constraint:planner.nfr.api-focus-p95
+lekalo nfr trace ... > trace.json                   # neutral #22 trace projection
+lekalo nfr diff BASE CANDIDATE                      # breaking / non-breaking / policy-change
+lekalo nfr impact CANDIDATE --base BASE             # changed constraints through impact
+```
+
+Exit protocol: `0` pass, `1` invalid (malformed attachment or evidence,
+unknown selector or subject, malformed as-of date), `3` denied — a
+mandatory constraint violated, unverified, stale, unsupported, or
+conflicted (with `--strict` advisory violated/unverified/stale escalate
+into the denied set), `4` an evidence file absent or unreadable. The
+as-of date is required: expiry and validity evaluation stay
+deterministic and clock-free.
+
 ## Impact
 
 Issue #16 answers the change-radius question through one command with two
