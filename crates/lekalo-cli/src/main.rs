@@ -1783,6 +1783,11 @@ enum AdapterRun {
 /// Run `lekalo adapter test`: the thin handoff to the issue #31
 /// conformance engine. The core owns every decision; this layer only
 /// selects the battery, renders the report, and maps exits.
+///
+/// Issue #32: the launched program first passes the adapter package
+/// resolution gate — the implicit local-development descriptor is
+/// synthesized from the entry bytes and the integrity/trust gates run
+/// before any child process exists.
 fn run_adapter(command: AdapterCommands) -> AdapterRun {
     let AdapterCommands::Test {
         profile,
@@ -1801,6 +1806,14 @@ fn run_adapter(command: AdapterCommands) -> AdapterRun {
         program: std::path::PathBuf::from(program),
         args: args.to_vec(),
     };
+    // The issue #32 resolution gate: synthesize the implicit descriptor
+    // and run every gate. A gate refusal renders its registered adapter
+    // rule and never spawns the adapter.
+    if let Err(failure) = gate_adapter_command(&command.program, &command.args) {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &failure,
+        ));
+    }
     let options = lekalo_core::adapter_conformance::SuiteOptions {
         profile: profile.into(),
         repeats,
@@ -1822,6 +1835,34 @@ fn run_adapter(command: AdapterCommands) -> AdapterRun {
             lekalo_core::adapter_conformance::infrastructure_result(error),
         ),
     }
+}
+
+/// The issue #32 resolution gate for one invocation-supplied adapter
+/// command: synthesize the implicit local-development descriptor from
+/// the launched entry (the executable, or its first argument when that
+/// names an existing regular file — the same interpreter-script
+/// convention as the catalog seam) and run the integrity, signature,
+/// and trust gates. A refusal returns the packaged failure; the caller
+/// renders its registered `adapter.*` rule and never spawns the
+/// adapter.
+fn gate_adapter_command(
+    program: &std::path::Path,
+    args: &[String],
+) -> Result<
+    lekalo_core::adapter_package::ResolvedAdapter,
+    lekalo_core::adapter_package::PackageFailure,
+> {
+    let entry = args
+        .first()
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| program.to_path_buf());
+    let candidate = lekalo_core::adapter_package::implicit_local_development(&entry)?;
+    let context = lekalo_core::adapter_package::ResolveContext {
+        root: None,
+        offline: true,
+    };
+    lekalo_core::adapter_package::resolve_candidate(candidate, &context)
 }
 
 /// Write one document to stdout with the trailing newline protocol.

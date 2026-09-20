@@ -60,6 +60,8 @@ pub struct DiscoveryCandidate {
 pub struct ResolvedAdapter {
     /// The winning candidate.
     pub candidate: DiscoveryCandidate,
+    /// The trust level assigned by the trust gate.
+    pub trust: crate::adapter_package::TrustLevel,
 }
 
 impl ResolvedAdapter {

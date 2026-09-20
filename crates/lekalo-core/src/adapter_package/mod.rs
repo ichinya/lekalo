@@ -52,8 +52,110 @@ pub mod trust;
 pub mod types;
 pub mod version;
 
+pub use discovery::{discover, implicit_local_development, DiscoverySource, ResolvedAdapter};
+pub use integrity::verify_package;
 pub use manifest::{ManifestDigest, ManifestDocument};
+pub use signature::evaluate as evaluate_signature;
+pub use trust::{assign as assign_trust, gate as trust_gate, RevocationStore, TrustLevel};
 pub use types::PackageFailure;
+
+/// Stable context the resolution gate runs in: the project root (for the
+/// revocation store) and the offline flag.
+#[derive(Clone, Debug)]
+pub struct ResolveContext {
+    /// The project root; `None` for store-less invocations (the bare
+    /// `adapter test` surface), where the revocation store is empty.
+    pub root: Option<std::path::PathBuf>,
+    /// Refuse every source that is not already local. `path` sources are
+    /// always local; `release`/`registry` records do not exist in v1.
+    pub offline: bool,
+}
+
+/// Why one resolved candidate was refused by the post-discovery gates.
+/// The gate order is fixed: integrity → signature → trust.
+#[derive(Clone, Debug)]
+pub enum ResolveRejection {
+    /// The bytes on disk do not match the manifest.
+    Integrity(PackageFailure),
+    /// The signature policy cannot be honored.
+    Signature(PackageFailure),
+    /// The trust or revocation gate refused.
+    Trust(PackageFailure),
+}
+
+impl ResolveRejection {
+    /// The packaged refusal.
+    pub fn failure(&self) -> &PackageFailure {
+        match self {
+            Self::Integrity(failure) | Self::Signature(failure) | Self::Trust(failure) => failure,
+        }
+    }
+}
+
+/// The resolution gate (plan §3.5): source → candidates → integrity →
+/// signature → trust/revocation. Every execution surface calls this
+/// before any child process exists; describe runs only on a fully
+/// resolved candidate.
+///
+/// Returns the winning candidate (deterministically ordered by
+/// discovery) with its assigned trust level, or the first refusal in
+/// gate order.
+pub fn resolve(
+    source: &DiscoverySource,
+    context: &ResolveContext,
+) -> Result<ResolvedAdapter, PackageFailure> {
+    if context.offline {
+        if let DiscoverySource::Release(_) | DiscoverySource::Registry(_) = source {
+            return Err(PackageFailure::SourceUnavailable {
+                source: coordinate_of(source),
+            });
+        }
+    }
+    let candidates = discover(source)?;
+    let candidate =
+        candidates
+            .first()
+            .cloned()
+            .ok_or_else(|| PackageFailure::SourceUnavailable {
+                source: coordinate_of(source),
+            })?;
+    resolve_candidate(candidate, context)
+}
+
+/// Run the post-discovery gates over one candidate.
+pub fn resolve_candidate(
+    candidate: discovery::DiscoveryCandidate,
+    context: &ResolveContext,
+) -> Result<ResolvedAdapter, PackageFailure> {
+    // Gate 1: integrity — checksums before anything else executes.
+    integrity::verify_package(&candidate)?;
+    // Gate 2: the declared signature policy, evaluated honestly.
+    signature::evaluate(&candidate.manifest)?;
+    // Gate 3: trust assignment and the revocation override.
+    let store = match &context.root {
+        Some(root) => RevocationStore::load(root)?,
+        None => RevocationStore::default(),
+    };
+    let level = trust::assign(&candidate);
+    let level = trust::gate(&candidate.manifest, level, &store)?;
+    Ok(ResolvedAdapter {
+        candidate,
+        trust: level,
+    })
+}
+
+fn coordinate_of(source: &DiscoverySource) -> String {
+    match source {
+        DiscoverySource::Path(path) => format!("path:{}", path.to_string_lossy()),
+        DiscoverySource::PathExec(Some(name)) => format!("exec:{name}"),
+        DiscoverySource::PathExec(None) => "exec:*".to_owned(),
+        DiscoverySource::Release(coordinate) => format!("release:{coordinate}"),
+        DiscoverySource::Registry(coordinate) => format!("registry:{coordinate}"),
+    }
+    .chars()
+    .take(128)
+    .collect()
+}
 
 /// The stable module-local reason codes. Every refusal maps onto a
 /// registered `adapter.*` rule through [`diagnostic`]; the list here is
@@ -89,4 +191,157 @@ pub mod reasons {
     pub const HOOKS_DECLARED: &str = "adapter.hooks-declared";
     /// An update widens permissions without the explicit policy.
     pub const PERMISSION_ESCALATED: &str = "adapter.permission-escalated";
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::discovery::DiscoveryCandidate;
+    use super::manifest::ManifestDocument;
+    use super::types::PackageFailure;
+    use super::{resolve_candidate, ResolveContext};
+    use std::path::PathBuf;
+
+    fn candidate(id: &str, bytes: &'static [u8]) -> DiscoveryCandidate {
+        let digest = crate::digest::sha256_hex(bytes);
+        let json = serde_json::json!({
+            "schemaVersion": crate::adapter_package::version::MANIFEST_SCHEMA_VERSION,
+            "identity": crate::adapter_package::version::MANIFEST_IDENTITY,
+            "adapter": { "id": id, "name": "R", "version": "1.0.0" },
+            "source": { "kind": "path", "coordinate": "path:fixtures/r", "digest": format!("sha256:{}", "11".repeat(32)) },
+            "compatibility": {
+                "protocolVersions": [crate::target_protocol::version::VERSION],
+                "irVersions": [crate::ir::version::VERSION],
+                "extensions": []
+            },
+            "executable": { "entry": "a.mjs" },
+            "integrity": {
+                "packageDigest": format!("sha256:{digest}"),
+                "files": [ { "path": "a.mjs", "digest": format!("sha256:{digest}"), "bytes": bytes.len() } ],
+                "signaturePolicy": "unsigned",
+                "signature": null
+            },
+            "status": "active",
+            "revocation": null
+        });
+        DiscoveryCandidate {
+            manifest: ManifestDocument::from_value(json).expect("parses"),
+            package_root: None,
+            synthesized: true,
+        }
+    }
+
+    #[test]
+    fn gate_order_is_integrity_signature_trust() {
+        let context = ResolveContext {
+            root: None,
+            offline: false,
+        };
+        // A consistent synthesized candidate passes every gate.
+        let resolved = resolve_candidate(candidate("ok-adapter", b"const a = 1;\n"), &context)
+            .expect("passes");
+        assert_eq!(resolved.trust.as_str(), "local-development");
+    }
+
+    #[test]
+    fn a_revoked_id_refuses_before_anything_runs() {
+        let root = std::env::temp_dir().join(format!("lekalo-ap-resolve-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("mkdir");
+        let mut store = super::RevocationStore::load(&root).expect("store");
+        store
+            .append(
+                &root,
+                super::trust::RevocationRecord {
+                    id: "gone-adapter".to_owned(),
+                    version: "*".to_owned(),
+                    reason: "compromised".to_owned(),
+                },
+            )
+            .expect("append");
+        let context = ResolveContext {
+            root: Some(root.clone()),
+            offline: false,
+        };
+        let error = resolve_candidate(candidate("gone-adapter", b"const a = 2;\n"), &context)
+            .expect_err("revoked refuses");
+        assert!(matches!(error, PackageFailure::Revoked { .. }));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn offline_refuses_remote_sources_without_enumeration() {
+        let context = ResolveContext {
+            root: None,
+            offline: true,
+        };
+        let error = super::resolve(
+            &super::DiscoverySource::Release("ch/pkg".to_owned()),
+            &context,
+        )
+        .expect_err("offline release refuses");
+        assert!(matches!(error, PackageFailure::SourceUnavailable { .. }));
+        let error = super::resolve(
+            &super::DiscoverySource::Registry("hub/pkg".to_owned()),
+            &context,
+        )
+        .expect_err("offline registry refuses");
+        assert!(matches!(error, PackageFailure::SourceUnavailable { .. }));
+    }
+
+    #[test]
+    fn end_to_end_path_resolution_over_a_fixture_package() {
+        let root =
+            std::env::temp_dir().join(format!("lekalo-ap-resolve-e2e-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let package = root.join("pkg");
+        std::fs::create_dir_all(&package).expect("mkdir");
+        let entry_bytes = b"export const gate = true;\n";
+        std::fs::write(package.join("a.mjs"), entry_bytes).expect("entry");
+        let entry_digest = crate::digest::sha256_hex(entry_bytes);
+        // The package digest over the single framed part.
+        let mut part = Vec::new();
+        part.extend_from_slice(b"a.mjs");
+        part.push(0);
+        part.extend_from_slice(&(entry_bytes.len() as u64).to_be_bytes());
+        part.push(0);
+        part.extend_from_slice(entry_bytes);
+        let package_digest = super::integrity::package_digest_hex(&[part]);
+        let manifest_json = serde_json::json!({
+            "schemaVersion": crate::adapter_package::version::MANIFEST_SCHEMA_VERSION,
+            "identity": crate::adapter_package::version::MANIFEST_IDENTITY,
+            "adapter": { "id": "e2e-adapter", "name": "E2E", "version": "1.0.0" },
+            "source": { "kind": "path", "coordinate": "path:pkg", "digest": format!("sha256:{}", "22".repeat(32)) },
+            "compatibility": {
+                "protocolVersions": [crate::target_protocol::version::VERSION],
+                "irVersions": [crate::ir::version::VERSION],
+                "extensions": []
+            },
+            "executable": { "entry": "a.mjs" },
+            "integrity": {
+                "packageDigest": format!("sha256:{package_digest}"),
+                "files": [ { "path": "a.mjs", "digest": format!("sha256:{entry_digest}"), "bytes": entry_bytes.len() } ],
+                "signaturePolicy": "unsigned",
+                "signature": null
+            },
+            "status": "active",
+            "revocation": null
+        });
+        let manifest_bytes = serde_json::to_vec_pretty(&manifest_json).unwrap();
+        std::fs::write(
+            package.join(super::integrity::MANIFEST_FILE),
+            &manifest_bytes,
+        )
+        .expect("manifest");
+        let context = ResolveContext {
+            root: Some(root.clone()),
+            offline: true,
+        };
+        let resolved = super::resolve(&super::DiscoverySource::Path(package.clone()), &context)
+            .expect("resolves");
+        assert_eq!(resolved.adapter_id(), "e2e-adapter");
+        assert_eq!(resolved.trust.as_str(), "local-development");
+        assert_eq!(resolved.candidate.package_root, Some(package.clone()));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = PathBuf::new();
+    }
 }

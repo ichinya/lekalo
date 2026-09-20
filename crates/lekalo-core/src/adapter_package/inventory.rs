@@ -104,7 +104,9 @@ impl Inventory {
         let path = inventory_path(root);
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Self::default())
+            }
             Err(_) => return Err(store_failure()),
         };
         Self::from_bytes(&bytes)
@@ -142,11 +144,15 @@ impl Inventory {
     /// Insert or replace one row; rows are kept sorted by
     /// (id, version, digest) with no exact duplicates.
     pub fn upsert(&mut self, row: InventoryRow) {
-        self.rows
-            .retain(|existing| existing.id != row.id || existing.version != row.version || existing.digest != row.digest);
+        self.rows.retain(|existing| {
+            existing.id != row.id
+                || existing.version != row.version
+                || existing.digest != row.digest
+        });
         self.rows.push(row);
-        self.rows
-            .sort_by(|left, right| (&left.id, &left.version, &left.digest).cmp(&(&right.id, &right.version, &right.digest)));
+        self.rows.sort_by(|left, right| {
+            (&left.id, &left.version, &left.digest).cmp(&(&right.id, &right.version, &right.digest))
+        });
     }
 
     /// Repoint the selected pin of one id: exactly one row of the id is
@@ -233,8 +239,8 @@ mod tests {
         let bytes = serde_json::to_vec(&tampered).unwrap();
         assert!(Inventory::from_bytes(&bytes).is_err());
         // Wrong identity refuses.
-        let mut tampered = serde_json::from_slice::<serde_json::Value>(&inventory.to_wire().unwrap())
-            .unwrap();
+        let mut tampered =
+            serde_json::from_slice::<serde_json::Value>(&inventory.to_wire().unwrap()).unwrap();
         tampered["identity"] = serde_json::json!("dev.lekalo.adapter-inventory@9.9.9");
         let bytes = serde_json::to_vec(&tampered).unwrap();
         assert!(Inventory::from_bytes(&bytes).is_err());
@@ -245,7 +251,8 @@ mod tests {
         let mut inventory = Inventory::default();
         inventory.upsert(row("a", "1.0.0", true, false));
         inventory.upsert(row("a", "2.0.0", false, false));
-        inventory.select("a", "2.0.0", &format!("sha256:{}", "11".repeat(32)))
+        inventory
+            .select("a", "2.0.0", &format!("sha256:{}", "11".repeat(32)))
             .expect("repoint");
         let selected = inventory.selected("a").expect("one selected");
         assert_eq!(selected.version, "2.0.0");

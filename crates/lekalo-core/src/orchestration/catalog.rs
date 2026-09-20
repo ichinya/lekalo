@@ -81,6 +81,12 @@ impl AdapterSupply {
 }
 
 /// Discover one adapter through the safe describe handshake.
+///
+/// Issue #32: the launched entry first passes the adapter package
+/// resolution gate — the implicit local-development descriptor is
+/// synthesized from the entry bytes and the integrity/trust gates run
+/// before any child process exists (checksum before execution,
+/// describe included).
 pub(crate) fn discover(
     client: &mut TargetClient,
     supply: &AdapterSupply,
@@ -88,7 +94,33 @@ pub(crate) fn discover(
     limits: TransportLimits,
 ) -> Result<DiscoveredAdapter, Failure> {
     let _ = limits;
+    gate_supply(supply, root)?;
     Discovery::run(client, &supply.command, root).map_err(Failure::Target)
+}
+
+/// Run the issue #32 resolution gate over one invocation-supplied
+/// supply. The project root scopes the revocation store; the gates are
+/// offline-faithful (the implicit descriptor is fully local).
+fn gate_supply(supply: &AdapterSupply, root: &Path) -> Result<(), Failure> {
+    let entry = supply
+        .command
+        .args
+        .first()
+        .map(PathBuf::from)
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| supply.command.program.clone());
+    let candidate =
+        crate::adapter_package::implicit_local_development(&entry).map_err(package_failure)?;
+    let context = crate::adapter_package::ResolveContext {
+        root: Some(root.to_path_buf()),
+        offline: true,
+    };
+    crate::adapter_package::resolve_candidate(candidate, &context).map_err(package_failure)?;
+    Ok(())
+}
+
+fn package_failure(failure: crate::adapter_package::PackageFailure) -> Failure {
+    Failure::AdapterPackage(failure)
 }
 
 /// The locked adapter with the discovered identity, if any.

@@ -35,6 +35,10 @@ pub enum Failure {
     AdapterDigestMismatch { adapter: String },
     /// The discovered adapter does not declare the requested target.
     TargetNotDeclared { target: String, adapter: String },
+    /// The issue #32 adapter package gate refused (integrity, signature,
+    /// trust, or revocation). The packaged failure carries its own
+    /// registered `adapter.*` rule and exit class.
+    AdapterPackage(crate::adapter_package::PackageFailure),
     /// The generation scope cannot be bound: no project definition.
     ProjectRefUnresolved,
     /// No target remains after the explicit selection.
@@ -106,6 +110,9 @@ impl From<&Failure> for DomainResult {
                 Status::Denied,
                 one("lock.digest-mismatch", None, named("component", adapter)),
             ),
+            Failure::AdapterPackage(package_failure) => {
+                crate::adapter_package::diagnostic::domain_result(package_failure)
+            }
             Failure::TargetNotDeclared { target, adapter } => classified(
                 Status::Unsupported,
                 one(

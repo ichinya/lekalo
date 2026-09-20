@@ -84,6 +84,26 @@ pub fn run(
         return Err(DomainResult::usage_error());
     }
 
+    // 0. The issue #32 resolution gate: the launched entry passes the
+    // integrity/trust gates before any child process exists.
+    {
+        let entry = request
+            .command
+            .args
+            .first()
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_file())
+            .unwrap_or_else(|| request.command.program.clone());
+        let candidate = crate::adapter_package::implicit_local_development(&entry)
+            .map_err(|failure| crate::adapter_package::diagnostic::domain_result(&failure))?;
+        let context = crate::adapter_package::ResolveContext {
+            root: Some(ctx.root.clone()),
+            offline: true,
+        };
+        crate::adapter_package::resolve_candidate(candidate, &context)
+            .map_err(|failure| crate::adapter_package::diagnostic::domain_result(&failure))?;
+    }
+
     // 1. Safe discovery: the describe handshake only, no project IR.
     let mut client = TargetClient::new(request.limits);
     let discovered = Discovery::run(&mut client, &request.command, &ctx.root)?;
