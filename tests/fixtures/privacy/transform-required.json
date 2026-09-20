@@ -9,12 +9,12 @@
       "authorityRef": {
         "contractId": "dev.lekalo.authority-matrix",
         "version": "0.3.2",
-        "digest": "sha256:cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4"
+        "digest": "sha256:7ae6454ea20f7b61202d368411ef9bff4e70af96f1f2a408c209d84fe9722f80"
       },
       "policyRef": {
         "policyId": "dev.lekalo.privacy-export-policy",
         "version": "0.3.2",
-        "digest": "sha256:5643547b96e1ca9f422e91e699c8d04e676e6eb820b4ef21a88860c74133c3b9"
+        "digest": "sha256:5a80966fa628fd4c9452325d34e7191f40ebb7a9cb49185c91d413861fb18384"
       },
       "artifactKind": "generated.summary",
       "operation": {
@@ -71,7 +71,7 @@
               "version": "0.2.16",
               "digest": "sha256:11c3c6ddea482ba5cf1bca27f08d602801d7739f1bd57ed5efb15e100584dec0"
             },
-            "subjectDigest": "subject-sha256:032189ec295ebace780dae45fba830fc653776bc492056783d9855280396328f"
+            "subjectDigest": "subject-sha256:ee460b8f197a0844e3f83780d183b86d3916d924c79d90dbdcc703d69198a65f"
           }
         }
       },

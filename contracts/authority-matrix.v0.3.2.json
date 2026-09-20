@@ -1155,6 +1155,82 @@
       "allowedWriters": [
         "lekalo"
       ]
+    },
+    {
+      "id": "lekalo.adapter-package",
+      "canonicalOwner": "lekalo",
+      "classification": "derived",
+      "allowedPaths": [
+        ".lekalo/adapters/packages/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "lekalo.adapter-inventory",
+      "canonicalOwner": "lekalo",
+      "classification": "derived",
+      "allowedPaths": [
+        ".lekalo/adapters/inventory.json"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "lekalo.adapter-quarantine",
+      "canonicalOwner": "lekalo",
+      "classification": "runtime-only",
+      "allowedPaths": [
+        ".lekalo/adapters/quarantine/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
+    },
+    {
+      "id": "lekalo.adapter-evidence",
+      "canonicalOwner": "lekalo",
+      "classification": "direct-evidence",
+      "allowedPaths": [
+        ".lekalo/adapters/evidence/**"
+      ],
+      "allowedReaders": [
+        "openspec",
+        "ai-factory",
+        "lekalo",
+        "hlv",
+        "source-native",
+        "aifhub-adapter"
+      ],
+      "allowedWriters": [
+        "lekalo"
+      ]
     }
   ],
   "pathBoundaries": [
