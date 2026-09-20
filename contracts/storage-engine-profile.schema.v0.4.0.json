@@ -1,0 +1,384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/storage-engine-profile.schema.v0.4.0.json",
+  "title": "Lekalo Storage Engine Capability Profile",
+  "description": "Closed independent attachment contract carrying the exact, versioned capability evidence of one storage engine generation (issue #117): the engine identity block (closed engine token, exact engine version, closed variant, declared sql mode, default storage engine, declared charset and collation, session time zone, bounded provenance evidence) and the closed capability map (transactions, isolation, locking, concurrency, idempotency, indexes, constraints, generated columns, pagination, collation awareness, and the ephemeral test-database lifecycle), every capability carrying a closed support state with bounded evidence and a mandatory bounds note for partial support. MySQL and MariaDB are separate profiles, never one optimistic mysql-family profile. The profile is pure declaration and evidence data: it never executes, never connects, never carries credentials, hosts, URLs, ports, source text, physical paths, raw tokens, runtime values, timestamps, or provider output, and it never selects an application runtime or an ORM.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "engine",
+    "capabilities",
+    "testLifecycle"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/storage-engine-profile/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.storage-engine-profile@0.4.0"
+    },
+    "attachmentRevision": {
+      "description": "The exact revision of this attachment; a change is a wire-layer fact, classified separately from capability changes.",
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "modelRef": {
+      "description": "The exact bound source Model contract: accepted version plus canonical digest.",
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "description": "The exact bound IR contract: accepted identity plus canonical digest.",
+      "$ref": "#/$defs/irRef"
+    },
+    "engine": {
+      "description": "The exact engine identity evidence. The engine version is one exact release, never a range; the collation is the declared server collation, never an implicit default.",
+      "$ref": "#/$defs/engineIdentity"
+    },
+    "capabilities": {
+      "description": "The closed capability evidence map: every declared capability id carries exactly one support record. An absent id is unknown and is never treated as yes.",
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": {
+        "enum": [
+          "concurrency.compare_and_set",
+          "concurrency.etag_if_match",
+          "idempotency.durable_key",
+          "idempotency.replay",
+          "index.descending",
+          "index.functional",
+          "index.invisible",
+          "invariant.collation_aware",
+          "invariant.unique_concurrent",
+          "isolation.read_committed",
+          "isolation.repeatable_read",
+          "isolation.serializable",
+          "isolation.snapshot",
+          "lock.exclusive",
+          "lock.key",
+          "lock.nowait",
+          "lock.range",
+          "lock.shared",
+          "lock.skip_locked",
+          "pagination.keyset_cursor",
+          "pagination.limit_offset",
+          "storage.advisory_locks",
+          "storage.array_types",
+          "storage.check_constraints",
+          "storage.collation_aware",
+          "storage.deferred_constraints",
+          "storage.exclusion_constraints",
+          "storage.fulltext_index",
+          "storage.generated_columns",
+          "storage.introspection_checked",
+          "storage.json_operators",
+          "storage.partial_index",
+          "storage.prefix_index",
+          "storage.returning",
+          "storage.sequences",
+          "storage.timestamptz",
+          "test.create_schema",
+          "test.drop_schema",
+          "transaction.atomic_group",
+          "transaction.rollback",
+          "transaction.transactional_ddl"
+        ]
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/capability"
+      }
+    },
+    "testLifecycle": {
+      "description": "The declared ephemeral test-database lifecycle. Production use is a closed forbidden token a strict consumer can gate on; test schema names live under one declared prefix.",
+      "$ref": "#/$defs/testLifecycle"
+    },
+    "adapters": {
+      "description": "The declared runtime-adapter mapping evidence. Evidence only: the profile never depends on an adapter and never selects one.",
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/adapterEvidence"
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "safeText": {
+      "description": "Bounded declaration text. Never source text, paths, credentials, URLs, runtime values, or provider output.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;()/_-]*$"
+    },
+    "safeToken": {
+      "description": "One bounded lowercase identifier token (charset, collation, storage engine name). Never quoted, dotted, or path-shaped.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "evidenceRef": {
+      "description": "One bounded provenance record. The closed evidence kinds keep the provenance machine-checkable; the reference is a bounded declaration, never a URL or a path.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "vendor-docs",
+            "engine-reference",
+            "adapter-docs",
+            "observed-run"
+          ]
+        },
+        "ref": {
+          "$ref": "#/$defs/safeText"
+        }
+      }
+    },
+    "engineIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "engineVersion",
+        "variant",
+        "sqlMode",
+        "defaultStorageEngine",
+        "charset",
+        "collation",
+        "timeZone",
+        "evidence"
+      ],
+      "properties": {
+        "engine": {
+          "description": "The closed engine token. MySQL and MariaDB are separate profiles; a merged mysql-family claim is inexpressible.",
+          "enum": [
+            "mysql",
+            "mariadb"
+          ]
+        },
+        "engineVersion": {
+          "description": "The exact engine release (major.minor.patch). A range or a wildcard is a refusal, never a claim.",
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 16,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "variant": {
+          "description": "The closed distribution variant.",
+          "enum": [
+            "mysql-community",
+            "mariadb"
+          ]
+        },
+        "sqlMode": {
+          "description": "The exact declared server SQL mode as the closed token list. The member is mandatory so the mode is always declared, never implicit; an empty list declares the empty server mode.",
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "ANSI_QUOTES",
+              "ERROR_FOR_DIVISION_BY_ZERO",
+              "NO_ENGINE_SUBSTITUTION",
+              "NO_ZERO_DATE",
+              "NO_ZERO_IN_DATE",
+              "ONLY_FULL_GROUP_BY",
+              "STRICT_ALL_TABLES",
+              "STRICT_TRANS_TABLES",
+              "TRADITIONAL"
+            ]
+          }
+        },
+        "defaultStorageEngine": {
+          "description": "The declared default storage engine of this generation.",
+          "$ref": "#/$defs/safeToken"
+        },
+        "charset": {
+          "description": "The declared default character set.",
+          "$ref": "#/$defs/safeToken"
+        },
+        "collation": {
+          "description": "The declared default collation. Charset/collation coherence is a semantic rule of the typed normalizer.",
+          "$ref": "#/$defs/safeToken"
+        },
+        "timeZone": {
+          "description": "The declared session time zone: an offset, UTC, or the explicit SYSTEM declaration.",
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 6,
+          "pattern": "^(SYSTEM|UTC|[+-][0-9]{2}:[0-9]{2})$"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidenceRef"
+        }
+      }
+    },
+    "capability": {
+      "description": "One closed capability support record. Partial support is honest only with its bounds note; absence of the whole record is unknown and is never yes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "support",
+        "evidence"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "support": {
+                "const": "partial"
+              }
+            },
+            "required": [
+              "support"
+            ]
+          },
+          "then": {
+            "required": [
+              "support",
+              "bounds",
+              "evidence"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "support": {
+          "enum": [
+            "full",
+            "partial",
+            "unsupported"
+          ]
+        },
+        "bounds": {
+          "description": "The mandatory bounded gap note of partial support.",
+          "$ref": "#/$defs/safeText"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidenceRef"
+        }
+      }
+    },
+    "testLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "create",
+        "drop",
+        "isolation",
+        "production",
+        "testSchemaPrefix",
+        "evidence"
+      ],
+      "properties": {
+        "create": {
+          "description": "The capability to create one ephemeral test schema.",
+          "$ref": "#/$defs/capability"
+        },
+        "drop": {
+          "description": "The capability to drop the ephemeral test schema.",
+          "$ref": "#/$defs/capability"
+        },
+        "isolation": {
+          "description": "The closed test-isolation token: one schema per run.",
+          "const": "schema-per-run"
+        },
+        "production": {
+          "description": "The closed production token: production databases are forbidden for the test lifecycle.",
+          "const": "forbidden"
+        },
+        "testSchemaPrefix": {
+          "description": "The mandatory declared prefix of every test schema name the lifecycle may create.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidenceRef"
+        }
+      }
+    },
+    "adapterEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "dialect",
+        "evidence"
+      ],
+      "properties": {
+        "name": {
+          "description": "The closed adapter token.",
+          "enum": [
+            "drizzle"
+          ]
+        },
+        "dialect": {
+          "description": "The bounded adapter dialect declaration (drizzle mysql-core, drizzle mariadb core).",
+          "$ref": "#/$defs/safeText"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidenceRef"
+        }
+      }
+    }
+  }
+}

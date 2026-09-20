@@ -1,0 +1,5 @@
+{
+  "defaultProvider": "omni",
+  "defaultModel": "glm/glm-5.3-flash",
+  "defaultThinkingLevel": "max"
+}

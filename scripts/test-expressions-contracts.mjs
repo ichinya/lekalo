@@ -315,11 +315,11 @@ for (const constant of [
   if (!versionSource.includes(constant)) fail("rust-constant", constant);
 }
 const diagnosticsVersionSource = readText("crates/lekalo-core/src/diagnostics/version.rs");
-if (!diagnosticsVersionSource.includes('REGISTRY_VERSION: &str = "0.3.2"')) {
-  fail("rust-registry-version", "0.3.2");
+if (!diagnosticsVersionSource.includes('REGISTRY_VERSION: &str = "0.4.0"')) {
+  fail("rust-registry-version", "0.4.0");
 }
-if (!diagnosticsVersionSource.includes('REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.3.2"')) {
-  fail("rust-registry-identity", "0.3.2");
+if (!diagnosticsVersionSource.includes('REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.4.0"')) {
+  fail("rust-registry-identity", "0.4.0");
 }
 const builtinSource = readText("crates/lekalo-core/src/expressions/builtin.rs");
 for (const name of builtinNames) {
