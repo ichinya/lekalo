@@ -8,6 +8,7 @@ pub mod classification;
 pub mod context;
 pub mod contracted;
 pub mod diagnostics;
+pub mod dataflow;
 pub mod diff;
 pub mod digest;
 pub mod doctor;
