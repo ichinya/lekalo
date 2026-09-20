@@ -18,6 +18,12 @@ pub const VERSION: &str = "0.4.0";
 /// The exact contract identity: family and version joined with `@`.
 pub const IDENTITY: &str = "dev.lekalo.data-classification@0.4.0";
 
+/// The exact marker contract reference stamped on effect edges: the
+/// same family in the effect-graph schema's namespaced spelling
+/// (`namespace/name@version`, the shape `Sensitivity::new` and the
+/// effect-graph wire demand).
+pub const EDGE_CONTRACT: &str = "dev.lekalo/data-classification@0.4.0";
+
 /// The exact wire discriminator of the data-classification contract.
 pub const SCHEMA_VERSION: &str = "lekalo/data-classification/v0.4.0";
 
