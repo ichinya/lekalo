@@ -50,6 +50,10 @@ const nativePlanPath = join(adapterRoot, "src", "native-plan.mjs");
 const nativeContractPath = join(adapterRoot, "src", "native-contract.mjs");
 const nativeExtensionPath = join(adapterRoot, "src", "native-gate-extension.mjs");
 const nativePolicySrcPath = join(adapterRoot, "src", "native-policy.mjs");
+const zodGenPath = join(adapterRoot, "src", "zod-gen.mjs");
+const zodMapPath = join(adapterRoot, "src", "zod-map.mjs");
+const zodEmitPath = join(adapterRoot, "src", "zod-emit.mjs");
+const zodPolicyPath = join(adapterRoot, "src", "zod-policy.mjs");
 const libsPath = join(adapterRoot, "src", "libs.mjs");
 const scratchRoot = join(adapterRoot, ".build");
 
@@ -129,6 +133,7 @@ import * as workspace from "./workspace.mjs";
 import * as nativeGate from "./native-gate-extension.mjs";
 import nativePolicy from "./native-policy.mjs";
 import * as nativePlan from "./native-plan.mjs";
+import { descriptor as zodDescriptor } from "./zod-gen.mjs";
 
 kernel.__setCompilerMetadata({
   vendored: true,
@@ -159,6 +164,7 @@ kernel.__setLaunchExtensions([
     invoke: (context) =>
       nativeGate.planNativeOperation(context, nativeGate.launchPolicy),
   },
+  zodDescriptor,
 ]);
 export const compilerHostApi = ts;
 export const __lekaloKernel = kernel;
@@ -167,6 +173,7 @@ export const __lekaloNativeGate = nativeGate;
 export const __lekaloWorkspace = workspace;
 export const __lekaloNativePlan = nativePlan;
 export const __lekaloLaunchPolicy = nativePolicy;
+export const __lekaloZodGen = zodDescriptor;
 export const __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: "0.3.2", digest: kernel.entryDigest() };
 await kernel.runIfEntry(import.meta.url);
 `;
@@ -206,6 +213,10 @@ async function buildArtifact() {
   writeFileSync(join(scratchRoot, "src", "native-gate-extension.mjs"), readFileSync(nativeExtensionPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "native-policy.mjs"), readFileSync(nativePolicySrcPath, "utf8"));
   writeFileSync(join(scratchRoot, "src", "native-contract.mjs"), readFileSync(nativeContractPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "zod-gen.mjs"), readFileSync(zodGenPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "zod-map.mjs"), readFileSync(zodMapPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "zod-emit.mjs"), readFileSync(zodEmitPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "zod-policy.mjs"), readFileSync(zodPolicyPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "main.mjs"), entryText);
   // The exact compiler pin must resolve from the adapter's own provisioning.
   const tsPackageDir = dirname(require.resolve("typescript/package.json"));

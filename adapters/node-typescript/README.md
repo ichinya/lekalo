@@ -101,6 +101,46 @@ signature digest, up to eight typed reference rows). Uncertainty in
 the index keeps the outcome honestly `partial` — a partial scan is an
 in-envelope error, never a silently complete receipt.
 
+## The Zod schema generator (issue #45)
+
+Generation of deterministic, typechecking Zod schemas from the
+compiled project IR inside the kernel's read/write views:
+
+- inputs: the canonical IR evidence under `.lekalo/cache/ir/**` (a
+  declared read root) and the optional adapter-owned policy document
+  `lekalo/targets/node-typescript.yaml` (`zod.date`,
+  `zod.unknown-keys`; absent file = documented defaults, malformed
+  present file = in-envelope refusal, never a silent fallback).
+- outputs: one emission group per weakly connected component of the
+  cross-module reference graph (acyclic projects keep one file per
+  module), the shared `runtime.ts` (`LekaloDateString`, `lekaloBrand`,
+  `normalizeIssues`), a sorted `index.ts` barrel, and one canonical
+  `.map.json` sidecar per group (field path → semantic id, declaration
+  byte ranges) — all under `src/generated/node-typescript/zod/**`.
+- orthogonality: `required` governs key presence (`.optional()`), the
+  IR `optional` wrapper governs value nullability (`.nullable()`); all
+  four presence × nullability combinations emit distinct compositions.
+- honesty: every emitted declaration is byte-stable for identical IR
+  (fixed header, sorted imports, topological declaration order, LF,
+  JSON.stringify literals); constructs outside the mapped subset —
+  unknown scalar bases, refs to non-schema kinds, unknown type shapes,
+  missing returns — classify as `zod.unsupported-construct` findings
+  with `symbol:<id>` details, and because the v0.3.2 wire reserves the
+  findings member for validate/verify, a generate run carrying any
+  finding surfaces as an honest partial error and claims nothing.
+- brand: entity identity scalars emit branded (`lekaloBrand("id")`),
+  so `z.infer` yields `string & z.BRAND<"id">` and raw strings cannot
+  masquerade as opaque ids without `.parse`.
+- error mapping: runtime zod issues resolve to Lekalo semantic ids
+  through the sibling sidecar (`normalizeIssues`), exact field paths
+  first, then the closest enclosing path, then the module owner.
+
+Write authority is the bounded kernel write view (create/replace
+existence checks mirroring the core plan semantics, atomic stage plus
+rename, bounded counts and bytes); dry runs get a plan-only view and
+write nothing. Minimum zod for consumers of the generated code is
+3.22; the pinned dev dependency exists for this suite only.
+
 ## Operation table
 
 | Operation | Posture | Owner of the real behavior |
@@ -109,8 +149,8 @@ in-envelope error, never a silently complete receipt.
 | `scan` | Implemented (issue #44) with the launch profile: real Program/TypeChecker indexing. Without the launch profile: `unsupported`, not advertised. | #44 |
 | `bind` | Unsupported/undeclared. Profile validation is not binding. | #42 registry flow (`lekalo bindings propose/confirm/audit`), not an adapter RPC. |
 | `validate` | Unsupported/undeclared. Needs IR; not a profile RPC. | Later semantic/target validator owner. |
-| `verify` | Unsupported/undeclared; test-only runner injection exercises framing without spawning commands. | #48 (+#47 scenarios). |
-| `generate` | Unsupported/undeclared for dry-run and apply. No fake plan. | #45–#47 after #40. |
+| `verify` | Implemented (issue #45) with the launch profile: recomputes expected Zod bytes from the IR evidence and reports `zod.drift` findings; readable generated paths only. | #45 (+#47 scenarios). |
+| `generate` | Implemented (issue #45) with the launch profile: deterministic Zod schema emission from the compiled IR — dry-run plans plus applies honoring the echoed plan id. Constructs outside the mapped subset produce an honest partial error; nothing is silently dropped. | #45 (OpenAPI stays with #46). |
 | `plan-clean` | Unsupported/undeclared. No inferred deletions. | Generation lifecycle owner. |
 | `clean` | Unsupported/undeclared, even with a plausible plan id. | Generation lifecycle owner. |
 
@@ -175,7 +215,8 @@ createKernel({ identity?, resolvedProjectProfile?, extensionRegistry?, localEvid
 
 ExtensionDescriptor = {
   id, version, operations, namedCapabilities?, acceptedIrVersions?,
-  invoke({ operation, request, profile, readView, cancellation, limits })
+  writeScopes?,
+  invoke({ operation, request, profile, readView, writeView?, cancellation, limits })
 }
 InternalOperationOutcome = { state: complete|partial|unknown|unsupported|failed,
                              data?, evidence?, diagnostics? }
