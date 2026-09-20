@@ -6,7 +6,7 @@
 // `.nullable()`. Closed objects mirror the closed model (.strict()).
 
 import * as z from "zod";
-import { LekaloDateString, lekaloBrand } from "./_runtime";
+import { LekaloDateString, lekaloBrand } from "./runtime";
 
 export const AlphaCountSchema = z.number().finite();
 export type AlphaCount = z.infer<typeof AlphaCountSchema>;

@@ -55,14 +55,17 @@ import { createHash } from "node:crypto";
 import {
   closeSync,
   lstatSync,
+  mkdirSync,
   openSync,
   fstatSync,
   readSync,
   readFileSync,
   realpathSync,
+  renameSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
-import { isAbsolute, resolve, win32 } from "node:path";
+import { dirname, isAbsolute, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The stable wire token of the protocol line (issue #27). */
@@ -1128,15 +1131,21 @@ export function describeCapabilities(profile = null, extensions = []) {
     // predicate as dispatch — extensions are advertised only when a
     // validated profile is bound, and `ir_versions` becomes the sorted
     // unique union of the enabled descriptors' accepted versions.
+    // `write_scopes` likewise aggregates the descriptors' declared write
+    // scopes (issue #45): no extension, no write authority.
     const operations = new Set(["describe"]);
     const capabilitiesMap = { ...capabilities.capabilities };
     const irVersions = new Set();
+    const writeScopes = new Set();
     for (const extension of extensions) {
       for (const operation of extension.operations) {
         operations.add(operation);
       }
       for (const [id, state] of Object.entries(extension.namedCapabilities ?? {})) {
         capabilitiesMap[id] = state;
+      }
+      for (const scope of extension.writeScopes ?? []) {
+        writeScopes.add(scope);
       }
       for (const version of extension.acceptedIrVersions ?? []) {
         irVersions.add(version);
@@ -1147,6 +1156,7 @@ export function describeCapabilities(profile = null, extensions = []) {
     capabilities.read_scopes = profile.readRoots.map((root) => root.scope);
     capabilities.profiles = [profile.id];
     capabilities.ir_versions = [...irVersions].sort();
+    capabilities.write_scopes = [...writeScopes].sort();
   }
   return capabilities;
 }
@@ -1591,7 +1601,7 @@ export function validateExtensionDescriptor(descriptor) {
   if (typeof descriptor !== "object" || descriptor === null) {
     invalid("not an object");
   }
-  const allowed = ["id", "version", "operations", "namedCapabilities", "acceptedIrVersions", "invoke"];
+  const allowed = ["id", "version", "operations", "namedCapabilities", "acceptedIrVersions", "writeScopes", "invoke"];
   for (const key of Object.keys(descriptor)) {
     if (!allowed.includes(key)) {
       invalid(`unknown member ${key}`);
@@ -1626,6 +1636,14 @@ export function validateExtensionDescriptor(descriptor) {
       invalid("acceptedIrVersions");
     }
   }
+  if (hasOwn(descriptor, "writeScopes") && descriptor.writeScopes !== undefined) {
+    if (!Array.isArray(descriptor.writeScopes)
+      || descriptor.writeScopes.length > MAX_WRITE_SCOPES
+      || !descriptor.writeScopes.every(isScope)
+      || descriptor.writeScopes.some((scope) => scopesOverlap(descriptor.writeScopes, scope))) {
+      invalid("writeScopes");
+    }
+  }
   if (typeof descriptor.invoke !== "function") {
     invalid("invoke");
   }
@@ -1639,8 +1657,24 @@ export function validateExtensionDescriptor(descriptor) {
     acceptedIrVersions: descriptor.acceptedIrVersions
       ? Object.freeze([...descriptor.acceptedIrVersions])
       : undefined,
+    writeScopes: descriptor.writeScopes
+      ? Object.freeze([...descriptor.writeScopes])
+      : undefined,
     invoke: descriptor.invoke,
   });
+}
+
+/** The maximum declared write scopes of one descriptor. */
+const MAX_WRITE_SCOPES = 8;
+
+/** Whether any two scopes in the list overlap or nest. */
+function scopesOverlap(scopes, candidate) {
+  return scopes.some((other) =>
+    other !== candidate
+      && (scopeCovers(other, candidate.replace(/\/\*\*$/, ""))
+        || scopeCovers(candidate, other.replace(/\/\*\*$/, ""))
+        || scopeCovers(other, candidate)
+        || scopeCovers(candidate, other)));
 }
 
 /** One internal dispatch outcome before any wire projection. */
@@ -1850,6 +1884,19 @@ export function createKernel(options = {}) {
       }
       const readView = createReadView(permittedRoot, roots, profile);
       readView.permittedProjectRoot = permittedRoot;
+      // Issue #45: generate dispatches carry a bounded write view scoped
+      // to the dispatching extension's declared write scopes. A dry run
+      // gets a plan-only view (existence probes, never writes); an apply
+      // gets write authority mirroring the core's create/replace plan
+      // semantics inside the staged private view.
+      let writeView = null;
+      if (operation === "generate") {
+        writeView = createWriteView(
+          permittedRoot,
+          extension.writeScopes ?? [],
+          { writable: validatedRequest.dry_run === false },
+        );
+      }
       let outcome;
       try {
         outcome = normalizeExtensionOutcome(extension.invoke({
@@ -1857,6 +1904,7 @@ export function createKernel(options = {}) {
           request: validatedRequest,
           profile,
           readView,
+          ...(writeView !== null ? { writeView } : {}),
           cancellation: trustedExecutionContext.cancellation ?? null,
           limits: trustedExecutionContext.limits ?? { files: 4096, bytes: 4 * 1024 * 1024 },
         }));
@@ -1937,6 +1985,42 @@ function buildUnsupportedResponse(request) {
  */
 function projectOutcome(request, outcome) {
   if (outcome.state === "complete") {
+    // Issue #45: generate outcomes project the closed writes member (the
+    // plan or its applied receipt) plus, for verify, the closed findings
+    // member; findings on generate travel as an honest partial error
+    // instead, because the v0.3.2 wire reserves result.findings for
+    // validate/verify.
+    const writes = projectWrites(outcome.data);
+    if (writes) {
+      if (request.operation === "generate"
+        && Array.isArray(outcome.data?.findings)
+        && outcome.data.findings.length > 0) {
+        return buildResponse(request, {
+          error: {
+            class: "invalid",
+            code: "outcome-partial-unsupported-constructs",
+            message: "the IR carries constructs outside the declared generation subset; nothing was emitted",
+            retryable: false,
+            partial: true,
+            detail: outcome.data.findings
+              .slice(0, 16)
+              .map((finding) => boundToken(`${finding.code}:${finding.detail ?? ""}`)),
+          },
+        });
+      }
+      const result = projectVerifyFindings(request, outcome.data);
+      const response = buildResponse(request, {
+        writes,
+        ...(result ? { result } : {}),
+      });
+      // A dry run carries no request plan id: the extension's computed
+      // plan identity becomes the pending plan's identity (the opaque
+      // token the apply must echo), exactly like the reference adapter.
+      if (!hasOwn(request, "plan_id") && isPlanId(outcome.data?.plan_id)) {
+        response.evidence.plan_id = outcome.data.plan_id;
+      }
+      return response;
+    }
     const result = projectResult(outcome.data);
     if (result) {
       return buildResponse(request, { result });
@@ -1975,6 +2059,77 @@ function projectOutcome(request, outcome) {
  * observed reference rows and the structural signature digest as typed
  * data; anything else is refused, never flattened into pseudo-JSON.
  */
+/**
+ * Project one generate/verify write set onto the closed wire: logical
+ * paths, closed actions, sha256 digests for create/replace, sorted by
+ * path exactly as the core plan validator requires. Any malformed entry
+ * refuses the whole projection.
+ */
+function projectWrites(data) {
+  if (data === undefined || data === null || typeof data !== "object"
+    || !Array.isArray(data.writes)) {
+    return undefined;
+  }
+  if (data.writes.length > 10000) {
+    return undefined;
+  }
+  const writes = [];
+  for (const entry of data.writes) {
+    if (typeof entry !== "object" || entry === null
+      || !isLogicalPath(entry.path)
+      || (entry.action !== "create" && entry.action !== "replace" && entry.action !== "delete")) {
+      return undefined;
+    }
+    if (entry.action === "delete") {
+      if (entry.sha256 !== undefined) return undefined;
+      writes.push({ path: entry.path, action: "delete" });
+      continue;
+    }
+    if (!isSha256Digest(entry.sha256)) {
+      return undefined;
+    }
+    writes.push({ path: entry.path, action: entry.action, sha256: entry.sha256 });
+  }
+  const paths = writes.map((entry) => entry.path);
+  const sorted = [...paths].sort();
+  if (paths.join("\u0000") !== sorted.join("\u0000")) {
+    return undefined;
+  }
+  return writes;
+}
+
+/**
+ * Project the closed findings member for verify outcomes. Findings are
+ * wire-legal only on validate/verify; every path is a logical path and
+ * every code/detail stays inside the closed bounds.
+ */
+function projectVerifyFindings(request, data) {
+  if (request.operation !== "verify") {
+    return undefined;
+  }
+  if (!Array.isArray(data?.findings)) {
+    return undefined;
+  }
+  if (data.findings.length > 10000) {
+    return undefined;
+  }
+  const findings = [];
+  for (const finding of data.findings) {
+    if (typeof finding !== "object" || finding === null
+      || !isLogicalPath(finding.path)
+      || typeof finding.code !== "string" || finding.code.length === 0
+      || [...finding.code].length > 128
+      || (finding.detail !== undefined
+        && (typeof finding.detail !== "string" || [...finding.detail].length > 128))) {
+      return undefined;
+    }
+    findings.push(finding.detail === undefined
+      ? { path: finding.path, code: finding.code }
+      : { path: finding.path, code: finding.code, detail: finding.detail });
+  }
+  return findings.length > 0 ? { ok: true, findings } : { ok: true };
+}
+
 function projectResult(data) {
   if (data === undefined || data === null || typeof data !== "object") {
     return undefined;
@@ -2198,6 +2353,113 @@ export function createReadView(permittedRoot, roots, profile) {
     },
     counters: () => ({ filesRead, bytesRead }),
   };
+}
+
+/** The maximum number of files one generate write view may produce. */
+export const MAX_WRITE_FILES = 1024;
+/** The maximum single generated file size (mirrors the core artifact bound). */
+export const MAX_WRITE_FILE_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The bounded write facade handed to extensions during `generate`
+ * dispatches (issue #45). Authority is exactly the dispatching
+ * extension's declared write scopes: every path is scope-checked,
+ * create/replace semantics are existence-checked against the private
+ * staged view (mirroring the core's plan semantics), files are written
+ * atomically (stage + rename), and counts and bytes are capped. A dry-run
+ * dispatch receives a plan-only view: existence probes only, never a
+ * write. No delete authority exists — orphan removal belongs to
+ * plan-clean/clean, never to generation.
+ */
+export function createWriteView(permittedRoot, scopes, { writable = false } = {}) {
+  let filesWritten = 0;
+  let bytesWritten = 0;
+  const authorize = (logicalPath) => {
+    if (!isLogicalPath(logicalPath)) {
+      throw new RequestRefusal("write-denied", "path is not a logical path");
+    }
+    if (!scopes.some((scope) => scopeCovers(scope, logicalPath))) {
+      throw new RequestRefusal("write-denied", "path outside the declared write scopes");
+    }
+    if (protectedHomeViolation(logicalPath)) {
+      throw new RequestRefusal("write-denied", "path is a protected home");
+    }
+    return resolve(permittedRoot, ...logicalPath.split("/"));
+  };
+  return {
+    scopes: [...scopes],
+    writable,
+    /** Whether the staged view already has this exact file. */
+    exists(logicalPath) {
+      const absolute = authorize(logicalPath);
+      let metadata;
+      try {
+        metadata = lstatSync(absolute);
+      } catch (error) {
+        if (error?.code === "ENOENT") return false;
+        throw new RequestRefusal("write-denied", "uninspectable");
+      }
+      if (!metadata.isFile()) {
+        throw new RequestRefusal("write-denied", "not a regular file");
+      }
+      return true;
+    },
+    /**
+     * Write one file's exact bytes. `action` must match the observed
+     * state: create requires absence, replace requires presence. Returns
+     * the byte count written.
+     */
+    write(logicalPath, action, bytes) {
+      if (!writable) {
+        throw new RequestRefusal("write-denied", "this dispatch is read-only");
+      }
+      if (action !== "create" && action !== "replace") {
+        throw new RequestRefusal("write-denied", "action must be create or replace");
+      }
+      if (!Buffer.isBuffer(bytes)) {
+        throw new RequestRefusal("write-denied", "bytes must be a buffer");
+      }
+      if (bytes.length > MAX_WRITE_FILE_BYTES) {
+        throw new RequestRefusal("write-denied", "file exceeds the write bound");
+      }
+      if (filesWritten >= MAX_WRITE_FILES) {
+        throw new RequestRefusal("write-denied", "file count cap exhausted");
+      }
+      if (bytesWritten + bytes.length > MAX_WRITE_FILE_BYTES * MAX_WRITE_FILES) {
+        throw new RequestRefusal("write-denied", "byte cap exhausted");
+      }
+      const absolute = authorize(logicalPath);
+      const exists = this.exists(logicalPath);
+      if (action === "create" && exists) {
+        throw new RequestRefusal("write-denied", "create on an existing file");
+      }
+      if (action === "replace" && !exists) {
+        throw new RequestRefusal("write-denied", "replace on a missing file");
+      }
+      mkdirSync(dirname(absolute), { recursive: true });
+      const stage = `${absolute}.lekalo-stage`;
+      writeFileSync(stage, bytes);
+      renameSync(stage, absolute);
+      filesWritten += 1;
+      bytesWritten += bytes.length;
+      return bytes.length;
+    },
+    counters: () => ({ filesWritten, bytesWritten }),
+  };
+}
+
+/** The fixed protected write homes of the protocol (mirrors the core). */
+function protectedHomeViolation(logicalPath) {
+  const segments = logicalPath.split("/");
+  if (segments[0] === "lekalo" || segments[0] === "openspec/") {
+    return true;
+  }
+  if (segments[0] === ".lekalo") {
+    const second = segments[1];
+    return second === "ir" || second === "cache" || second === "import"
+      || second === "privacy" || second === "consumer" || second === "generated";
+  }
+  return segments.length === 1 && segments[0] === "lekalo.lock";
 }
 
 // ---------------------------------------------------------------------------

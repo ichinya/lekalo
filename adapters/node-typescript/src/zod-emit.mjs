@@ -1,7 +1,7 @@
 /**
  * Deterministic TypeScript text emitter for the Zod generator (issue #45,
  * plan §3.2). Input is the pure schema AST of `zod-map.mjs`; output is one
- * TypeScript module per Lekalo module, the shared `_runtime.ts`, the
+ * TypeScript module per Lekalo module, the shared `runtime.ts`, the
  * `index.ts` barrel, and one canonical `.map.json` sidecar per module.
  *
  * Byte stability is the contract (acceptance criterion 6):
@@ -87,12 +87,12 @@ function file(path, text, map) {
  * `modules` is the mapper output, `inputDigest` is the sha256 of the exact
  * canonical IR bytes generation consumed, `adapterVersion` and
  * `irIdentity` are the header contract pins. Returns sorted `{path, text,
- * map}` records: `_runtime.ts`, `index.ts`, one `<module>.ts` and one
+ * map}` records: `runtime.ts`, `index.ts`, one `<module>.ts` and one
  * `<module>.map.json` per emission group. The `map` member carries
  * `{ owner, fields, declarations }` and is non-null only on sidecars.
  */
 export function emitFiles({ modules, inputDigest, adapterVersion, irIdentity }) {
-  const files = [file(`${ZOD_DIR}/_runtime.ts`, runtimeText(adapterVersion))];
+  const files = [file(`${ZOD_DIR}/runtime.ts`, runtimeText(adapterVersion))];
   const groups = emissionGroups(modules);
   for (const group of groups) {
     const others = groups.filter((candidate) => candidate !== group);
@@ -204,7 +204,7 @@ function barrelText(groups) {
     `// every generated Zod group; entries are sorted and the set changes`,
     `// only when the set of schema-bearing modules changes.`,
   ];
-  const entries = ["_runtime", ...groups.map((group) => group.id)].sort();
+  const entries = ["runtime", ...groups.map((group) => group.id)].sort();
   for (const entry of entries) {
     lines.push(`export * from "./${entry}";`);
   }
@@ -390,7 +390,7 @@ function collectRuntimeImports(module) {
   };
   for (const declaration of module.declarations) visit(declaration.expr);
   return used.size > 0
-    ? [`import { ${[...used].sort().join(", ")} } from "./_runtime";`]
+    ? [`import { ${[...used].sort().join(", ")} } from "./runtime";`]
     : [];
 }
 

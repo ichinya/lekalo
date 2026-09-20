@@ -68,7 +68,7 @@ test("header carries identity and the input digest, never paths or timestamps", 
     // Only per-module files carry the full header; the runtime and the
     // barrel have their own fixed comments.
     if (!/zod\/[a-z][a-z0-9_]*\.ts$/.test(file.path)
-      || file.path.endsWith("_runtime.ts")
+      || file.path.endsWith("runtime.ts")
       || file.path.endsWith("index.ts")) {
       continue;
     }
@@ -149,7 +149,7 @@ test("the matrix fixture emits byte-identical goldens and a stable double run", 
   }
   assert.deepEqual(
     first.map((file) => file.path.split("/").pop()).sort(),
-    ["_runtime.ts", "alpha.map.json", "alpha.ts", "index.ts"],
+    ["runtime.ts", "alpha.map.json", "alpha.ts", "index.ts"],
   );
 });
 
