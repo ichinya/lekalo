@@ -82,6 +82,14 @@ or unreadable maps to `unavailable`) needs a rule admitting that
 status, so LEK-NFR-013 `nfr.evidence-unavailable` was added — recorded
 here as the single deviation from the plan's diagnostic table.
 
+The `nfr.*` contract family and the registry successor ship at contract
+version `0.4.0` while the workspace product version remains `0.3.2`
+until milestone integration reserves the release. This is deliberate:
+`check-contract-versions.mjs --base <milestone-start>` is expected to
+report the reserve gap on this branch, and the per-push invocation
+(`--base HEAD^`, as CI runs it) stays green. The product bump lands on
+the milestone branch at integration, not inside this issue.
+
 ## Consequences
 
 - The constraint attachment, evidence document, and report are
