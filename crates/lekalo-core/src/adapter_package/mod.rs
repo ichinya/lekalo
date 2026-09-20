@@ -54,6 +54,7 @@ pub mod version;
 
 pub use discovery::{discover, implicit_local_development, DiscoverySource, ResolvedAdapter};
 pub use integrity::verify_package;
+pub use inventory::Inventory;
 pub use manifest::{ManifestDigest, ManifestDocument};
 pub use signature::evaluate as evaluate_signature;
 pub use trust::{assign as assign_trust, gate as trust_gate, RevocationStore, TrustLevel};

@@ -742,6 +742,40 @@ enum AdapterCommands {
         #[arg(trailing_var_arg = true)]
         program_args: Vec<String>,
     },
+    /// Enumerate the adapter package discovery sources without running
+    /// anything (issue #32). Auto-discovery never installs or trusts.
+    Discover {
+        /// The closed discovery source: path:<fs-path>, exec:<name>,
+        /// release:<channel>/<id>, or registry:<registry>/<package>.
+        #[arg(long, value_name = "SOURCE")]
+        source: String,
+        /// Refuse sources that are not already local (exact semantics:
+        /// release/registry records do not exist in v1).
+        #[arg(long)]
+        offline: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// List the installed adapter packages from the local store
+    /// inventory (issue #32).
+    List {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Show one installed package's manifest projection, trust, and
+    /// provenance (issue #32).
+    Info {
+        /// The adapter id.
+        id: String,
+        /// Optional exact version; defaults to the selected pin.
+        #[arg(long, value_name = "VERSION")]
+        version: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
 }
 
 /// The closed conformance battery profile vocabulary.
@@ -1789,13 +1823,210 @@ enum AdapterRun {
 /// synthesized from the entry bytes and the integrity/trust gates run
 /// before any child process exists.
 fn run_adapter(command: AdapterCommands) -> AdapterRun {
-    let AdapterCommands::Test {
-        profile,
-        report,
-        repeats,
-        timeout_ms,
-        program_args,
-    } = command;
+    match command {
+        AdapterCommands::Test {
+            profile,
+            report,
+            repeats,
+            timeout_ms,
+            program_args,
+        } => run_adapter_test(profile, report, repeats, timeout_ms, program_args),
+        AdapterCommands::Discover {
+            source,
+            offline,
+            project,
+        } => run_adapter_discover(&source, offline, &project),
+        AdapterCommands::List { project } => run_adapter_list(&project),
+        AdapterCommands::Info {
+            id,
+            version,
+            project,
+        } => run_adapter_info(&id, version.as_deref(), &project),
+    }
+}
+
+/// Run `lekalo adapter discover`: enumerate one closed discovery source
+/// without running anything. The report is a deterministic JSON receipt
+/// on stdout; auto-discovery never installs, trusts, or executes.
+fn run_adapter_discover(source: &str, offline: bool, project: &Option<String>) -> AdapterRun {
+    let parsed = match lekalo_core::adapter_package::DiscoverySource::parse(source) {
+        Ok(parsed) => parsed,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let context = lekalo_core::adapter_package::ResolveContext {
+        root: Some(root),
+        offline,
+    };
+    let candidates = match lekalo_core::adapter_package::discover(&parsed) {
+        Ok(candidates) => candidates,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let mut rows = Vec::new();
+    for candidate in &candidates {
+        let manifest = &candidate.manifest;
+        let mut row = serde_json::json!({
+            "id": manifest.adapter_id(),
+            "version": manifest.adapter_version().to_string(),
+            "packageDigest": manifest.package_digest().as_str(),
+            "manifestDigest": manifest.digest().as_str(),
+            "sourceKind": manifest.source_kind().as_str(),
+            "synthesized": candidate.synthesized,
+            "status": manifest.status().as_str(),
+        });
+        // The assigned trust level, plus the gate verdict when the
+        // candidate is fully resolvable offline.
+        let level = lekalo_core::adapter_package::assign_trust(candidate);
+        row["trust"] = serde_json::json!(level.as_str());
+        if let Ok(resolved) =
+            lekalo_core::adapter_package::resolve_candidate(candidate.clone(), &context)
+        {
+            row["gates"] = serde_json::json!({
+                "integrity": true,
+                "signature": true,
+                "trust": resolved.trust.as_str(),
+            });
+        }
+        rows.push(row);
+    }
+    let document = serde_json::json!({
+        "status": "valid",
+        "schemaVersion": "lekalo/adapter-discovery/v0.3.2",
+        "source": source,
+        "offline": offline,
+        "candidates": rows,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("discovery receipt serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("discovery receipt serializes"),
+            format!("discover {} : {} candidate(s)", source, rows.len()),
+        ),
+    }
+}
+
+/// Run `lekalo adapter list`: the installed inventory rows.
+fn run_adapter_list(project: &Option<String>) -> AdapterRun {
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let rows: Vec<serde_json::Value> = inventory
+        .rows()
+        .iter()
+        .map(|row| {
+            serde_json::json!({
+                "id": row.id,
+                "version": row.version,
+                "digest": row.digest,
+                "trust": row.trust,
+                "selected": row.selected,
+                "quarantined": row.quarantined,
+            })
+        })
+        .collect();
+    let document = serde_json::json!({
+        "status": "valid",
+        "schemaVersion": lekalo_core::adapter_package::version::INVENTORY_SCHEMA_VERSION,
+        "packages": rows,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("inventory serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("inventory serializes"),
+            format!("list : {} package(s)", rows.len()),
+        ),
+    }
+}
+
+/// Run `lekalo adapter info`: one package's manifest projection, trust,
+/// and provenance from the store inventory.
+fn run_adapter_info(id: &str, version: Option<&str>, project: &Option<String>) -> AdapterRun {
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let row = match version {
+        Some(version) => inventory
+            .rows()
+            .iter()
+            .find(|row| row.id == id && row.version == version && !row.quarantined),
+        None => inventory.selected(id),
+    };
+    let Some(row) = row else {
+        return AdapterRun::Envelope(DomainResult::from(
+            lekalo_core::lockfile::LockFailure::ComponentUnavailable {
+                kind: "adapter",
+                id: id.to_owned(),
+            },
+        ));
+    };
+    let document = serde_json::json!({
+        "status": "valid",
+        "schemaVersion": lekalo_core::adapter_package::version::INVENTORY_SCHEMA_VERSION,
+        "package": {
+            "id": row.id,
+            "version": row.version,
+            "digest": row.digest,
+            "manifestDigest": row.manifest_digest,
+            "trust": row.trust,
+            "source": row.source,
+            "installPlanId": row.install_plan_id,
+            "selected": row.selected,
+            "quarantined": row.quarantined,
+        },
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("info serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("info serializes"),
+            format!("info {} {} : {}", row.id, row.version, row.trust),
+        ),
+    }
+}
+
+/// Resolve the project root for the adapter package surfaces.
+fn project_root_for(project: &Option<String>) -> Result<std::path::PathBuf, DomainResult> {
+    let selection = selection_for(project);
+    lekalo_core::orchestration::project_root(&selection)
+}
+
+/// Run `lekalo adapter test` (the issue #31 conformance battery behind
+/// the issue #32 resolution gate).
+fn run_adapter_test(
+    profile: AdapterTestProfile,
+    report: Option<AdapterTestReport>,
+    repeats: u8,
+    timeout_ms: u64,
+    program_args: Vec<String>,
+) -> AdapterRun {
     let Some((program, args)) = program_args.split_first() else {
         return AdapterRun::Envelope(DomainResult::usage_error());
     };

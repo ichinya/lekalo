@@ -120,6 +120,7 @@ pub fn run(
             required: &required,
             preferred_profile: request.profile,
             policy: selection::SelectionPolicy::default(),
+            trust: None,
         },
         crate::ir::version::VERSION,
     );
