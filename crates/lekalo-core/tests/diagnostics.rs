@@ -9,8 +9,11 @@ use lekalo_core::result::DomainResult;
 #[test]
 fn embedded_registry_parses_and_is_closed() {
     let registry = DiagnosticRegistry::embedded().expect("embedded registry is valid");
-    assert_eq!(registry.registry_version(), "0.3.2");
+    assert_eq!(registry.registry_version(), "0.4.0");
     assert!(registry.len() >= 100, "the core rule inventory is present");
+    // The classification and dataflow families ride the same successor.
+    assert!(registry.entry("classification.unknown-kind").is_some());
+    assert!(registry.entry("dataflow.unknown-flow").is_some());
     // A second parse of the exact bytes yields the same table (pure data).
     let again = DiagnosticRegistry::from_bytes(REGISTRY_BYTES).expect("registry bytes re-validate");
     assert_eq!(again, *registry);
