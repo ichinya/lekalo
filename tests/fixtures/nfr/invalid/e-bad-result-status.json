@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "lekalo/nfr-evidence/v0.4.0",
+  "identity": "dev.lekalo.nfr-evidence@0.4.0",
+  "projectId": "planner",
+  "environment": {
+    "envId": "staging-eu",
+    "profileRef": {
+      "id": "targets/node-aws",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "adapterRef": {
+      "id": "adapters.node/runner-x",
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "runtime": "node-22",
+    "platform": "linux-x64",
+    "labels": [
+      "k8s",
+      "eu-west"
+    ]
+  },
+  "results": [
+    {
+      "constraintId": "planner.nfr.api-focus-p95",
+      "constraintRevision": "1.2.0",
+      "method": "load-test",
+      "measuredOn": "2026-09-10",
+      "sourceRevision": "run-2026-09-10",
+      "runRef": "hlv.runs/load-2026-09-10",
+      "gateRef": "perf.gates/api-focus-p95",
+      "scenarioRef": {
+        "scenarioId": "planner.focus_flow",
+        "scenarioVersion": "1",
+        "irDigest": "sha256:4a7422a29cea09f7df216cc108405cf0c05a8554c2362be496530a84a81542dd"
+      },
+      "measurements": [
+        {
+          "metric": "latency",
+          "percentile": "p95",
+          "value": {
+            "state": "known",
+            "value": "238"
+          },
+          "unit": "milliseconds"
+        }
+      ],
+      "resultStatus": "maybe",
+      "evidenceDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "expiresOn": "2026-12-10"
+    },
+    {
+      "constraintId": "planner.nfr.focus-memory",
+      "constraintRevision": "1.1.0",
+      "method": "benchmark",
+      "measuredOn": "2026-09-11",
+      "sourceRevision": "run-2026-09-11",
+      "runRef": "hlv.runs/bench-2026-09-11",
+      "gateRef": "perf.gates/focus-memory",
+      "measurements": [
+        {
+          "metric": "peak-memory",
+          "value": {
+            "state": "known",
+            "value": "486"
+          },
+          "unit": "megabytes"
+        }
+      ],
+      "resultStatus": "pass",
+      "evidenceDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "expiresOn": "2026-12-11"
+    },
+    {
+      "constraintId": "planner.nfr.ai-monthly-cost",
+      "constraintRevision": "1.0.0",
+      "method": "slo-report",
+      "measuredOn": "2026-09-30",
+      "sourceRevision": "report-2026-09",
+      "gateRef": "budget.gates/ai-monthly",
+      "measurements": [
+        {
+          "metric": "spend",
+          "value": {
+            "state": "known",
+            "value": "412.5"
+          },
+          "unit": "currency"
+        }
+      ],
+      "resultStatus": "pass",
+      "evidenceDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    }
+  ]
+}

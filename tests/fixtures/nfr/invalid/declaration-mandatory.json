@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "lekalo/nfr/v0.4.0",
+  "identity": "dev.lekalo.nfr@0.4.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "0.2.16",
+    "digest": "sha256:9e0f53127ff9a53768821c21439b636f5ec202b8bcd0df53b87b5b9c4e82972a"
+  },
+  "irRef": {
+    "irVersion": "0.2.16",
+    "digest": "sha256:4a7422a29cea09f7df216cc108405cf0c05a8554c2362be496530a84a81542dd"
+  },
+  "constraints": [
+    {
+      "constraintId": "planner.nfr.privacy-review",
+      "dimension": "runtime",
+      "kind": "privacy-ref",
+      "scope": {
+        "kind": "project",
+        "ref": "planner"
+      },
+      "requirement": {
+        "reference": {
+          "id": "policies.privacy/main",
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      },
+      "enforcement": "mandatory",
+      "measurement": {
+        "method": "declaration"
+      },
+      "validity": {
+        "revision": "1.0.0"
+      }
+    }
+  ],
+  "openQuestions": [
+    {
+      "questionId": "planner.nfr.q-latency-prose",
+      "relatedConstraint": "planner.nfr.api-focus-p95"
+    }
+  ]
+}
