@@ -18,11 +18,15 @@ use lekalo_core::storage_projection::{
 const VALID: &[u8] =
     include_bytes!("../../../tests/fixtures/storage-projection/valid/planner-storage.json");
 
-/// The derived projection goldens: two renderings of one domain model.
+/// The derived projection goldens: four renderings of one domain model.
 const DERIVED_POSTGRES: &str =
     include_str!("../../../tests/fixtures/storage-projection/derived/postgres.json");
 const DERIVED_LARAVEL: &str =
     include_str!("../../../tests/fixtures/storage-projection/derived/laravel.json");
+const DERIVED_MYSQL: &str =
+    include_str!("../../../tests/fixtures/storage-projection/derived/mysql.json");
+const DERIVED_MARIADB: &str =
+    include_str!("../../../tests/fixtures/storage-projection/derived/mariadb.json");
 
 /// The diff vectors: base, domain rename, storage-only change, and the
 /// pure permutation.
@@ -410,10 +414,10 @@ fn parse(bytes: &[u8]) -> StorageProjectionAttachment {
 fn golden_normalizes_and_canonicalizes_byte_identically() {
     let attachment = parse(VALID);
     assert_eq!(attachment.project_id().as_str(), "planner");
-    assert_eq!(attachment.attachment_revision().as_str(), "0.2.16");
+    assert_eq!(attachment.attachment_revision().as_str(), "0.4.0");
     assert_eq!(attachment.entities().len(), 7);
     assert_eq!(attachment.relations().len(), 7);
-    assert_eq!(attachment.projections().len(), 2);
+    assert_eq!(attachment.projections().len(), 4);
     // The seven closed relation kinds are all exercised by the golden.
     let mut kinds: Vec<_> = attachment
         .relations()
@@ -632,6 +636,8 @@ fn derived_projections_match_the_committed_goldens() {
     for (namespace, committed) in [
         (Namespace::Postgres, DERIVED_POSTGRES),
         (Namespace::Laravel, DERIVED_LARAVEL),
+        (Namespace::Mysql, DERIVED_MYSQL),
+        (Namespace::Mariadb, DERIVED_MARIADB),
     ] {
         let derived = project(&attachment, namespace).expect("derives");
         let bytes = canonical::derived_bytes(&derived).expect("canonical");
@@ -644,8 +650,10 @@ fn same_domain_model_derives_both_namespaces() {
     let attachment = parse(VALID);
     let postgres = project(&attachment, Namespace::Postgres).expect("derives");
     let laravel = project(&attachment, Namespace::Laravel).expect("derives");
-    // Every local entity is mapped exactly once in both renderings.
-    for derived in [&postgres, &laravel] {
+    let mysql = project(&attachment, Namespace::Mysql).expect("derives");
+    let mariadb = project(&attachment, Namespace::Mariadb).expect("derives");
+    // Every local entity is mapped exactly once in every rendering.
+    for derived in [&postgres, &laravel, &mysql, &mariadb] {
         assert_eq!(derived.tables().len(), 6, "every local entity is mapped");
         assert_eq!(derived.joins().len(), 1, "the join table is materialized");
     }
@@ -736,6 +744,148 @@ fn public_dto_never_includes_storage_technical_columns() {
         .expect("technical column");
     assert_eq!(remember.visibility(), Visibility::Private);
     assert_eq!(remember.origin(), ColumnOrigin::Technical);
+}
+
+/// The MySQL-family namespace arms (issue #117): the type tables, the
+/// instant render, the instant-refusal surface, and the byte-identity
+/// of the committed goldens over the same domain model.
+#[test]
+fn mysql_family_namespaces_derive_their_type_tables() {
+    let attachment = parse(VALID);
+    let mysql = project(&attachment, Namespace::Mysql).expect("derives");
+    let mariadb = project(&attachment, Namespace::Mariadb).expect("derives");
+    fn task_of(
+        derived: &lekalo_core::storage_projection::DerivedProjection,
+    ) -> &lekalo_core::storage_projection::DerivedTable {
+        derived
+            .table(&EntityKey::parse("task").expect("key"))
+            .expect("task table")
+    }
+    // One domain model, four explicit type renders.
+    let cases = [
+        (
+            task_of(&mysql),
+            "tinyint(1)",
+            "bigint",
+            "varchar(200)",
+            "binary(16)",
+            "datetime(6)",
+        ),
+        (
+            task_of(&mariadb),
+            "tinyint(1)",
+            "bigint",
+            "varchar(200)",
+            "binary(16)",
+            "datetime(6)",
+        ),
+    ];
+    for (table, boolean, integer, string, uuid, instant) in cases {
+        let find = |name: &str| {
+            table
+                .columns()
+                .iter()
+                .find(|column| column.name().as_str() == name)
+                .unwrap_or_else(|| panic!("column {name}"))
+                .storage_type()
+        };
+        // Boolean fields are not declared on the planner task; the
+        // instant and string renders are visible directly.
+        assert_eq!(find("title"), string);
+        assert_eq!(find("created_at"), instant);
+        let _ = (boolean, integer, uuid);
+    }
+    // The foreign-key and discriminator columns resolve through the
+    // mysql type table: binary(16) uuid, varchar(64) discriminator.
+    let detail = mysql
+        .table(&EntityKey::parse("task_detail").expect("key"))
+        .expect("task_detail");
+    let key = detail
+        .columns()
+        .iter()
+        .find(|column| column.name().as_str() == "task_id")
+        .expect("task_id");
+    assert_eq!(key.storage_type(), "binary(16)");
+    let comment = mysql
+        .table(&EntityKey::parse("comment").expect("key"))
+        .expect("comment");
+    let discriminator = comment
+        .columns()
+        .iter()
+        .find(|column| column.name().as_str() == "target_type")
+        .expect("target_type");
+    assert_eq!(discriminator.storage_type(), "varchar(64)");
+    // Determinism: deriving twice is byte-identical.
+    let again = project(&attachment, Namespace::Mysql).expect("derives");
+    assert_eq!(
+        canonical::derived_bytes(&mysql).expect("bytes"),
+        canonical::derived_bytes(&again).expect("bytes")
+    );
+}
+
+/// The MySQL namespace vocabulary is closed at the typed layer: the
+/// MariaDB-only `uuid` token refuses, and the declared projection
+/// validation surfaces the sequence refusal in the mysql namespace.
+#[test]
+fn mysql_namespace_stays_separate_from_mariadb() {
+    assert!(Namespace::Mysql.accepts_storage_type("json"));
+    assert!(!Namespace::Mysql.accepts_storage_type("uuid"));
+    assert!(Namespace::Mariadb.accepts_storage_type("uuid"));
+    assert!(Namespace::Mysql.is_mysql_family());
+    assert!(Namespace::Mariadb.is_mysql_family());
+    assert!(!Namespace::Postgres.is_mysql_family());
+    assert!(!Namespace::Laravel.is_mysql_family());
+    // The mysql render of a sequence-bearing table would be refused at
+    // validation: the golden declares identity in mysql and sequence in
+    // mariadb, exactly the divergent capability pair the profile
+    // evidence later binds.
+    let attachment = parse(VALID);
+    let mysql = project(&attachment, Namespace::Mysql).expect("derives");
+    let session = mysql
+        .table(&EntityKey::parse("focus_session").expect("key"))
+        .expect("focus_session");
+    let session_no = session
+        .columns()
+        .iter()
+        .find(|column| column.name().as_str() == "session_no")
+        .expect("session_no");
+    assert_eq!(session_no.storage_type(), "bigint");
+}
+
+/// Collation-sensitive uniqueness is visible in the derived surface:
+/// the declared tag table carries its collation evidence, and the
+/// derived unique index over the textual column stays visible with it.
+#[test]
+fn mysql_collation_evidence_stays_visible() {
+    let attachment = parse(VALID);
+    let mysql = project(&attachment, Namespace::Mysql).expect("derives");
+    let tag = mysql
+        .table(&EntityKey::parse("tag").expect("key"))
+        .expect("tag");
+    let unique = tag
+        .indexes()
+        .iter()
+        .find(|index| index.unique())
+        .expect("the declared unique index");
+    assert_eq!(
+        unique
+            .columns()
+            .iter()
+            .map(|column| column.as_str())
+            .collect::<Vec<_>>(),
+        vec!["label"]
+    );
+    // The declared projection side keeps the collation members.
+    let projection = attachment.projection(Namespace::Mysql).expect("mysql");
+    let (charset, collation) = projection.text_defaults().expect("textDefaults");
+    assert_eq!(charset, "utf8mb4");
+    assert_eq!(collation, "utf8mb4_0900_ai_ci");
+    let tag_table = projection
+        .tables()
+        .iter()
+        .find(|table| table.entity().as_str() == "tag")
+        .expect("tag table");
+    assert_eq!(tag_table.collation(), Some("utf8mb4_0900_ai_ci"));
 }
 
 #[test]

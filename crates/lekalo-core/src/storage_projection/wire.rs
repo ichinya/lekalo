@@ -20,8 +20,8 @@ use super::diagnostic;
 use super::entity::{DomainEntity, DomainField, DomainType, Visibility};
 use super::id::{EntityKey, StorageName};
 use super::projection::{
-    GeneratedColumn, GeneratedKind, Index, Join, Namespace, Polymorphic, Projection, StorageType,
-    Table, TechnicalColumn,
+    GeneratedColumn, GeneratedKind, Index, IndexKind, Join, Namespace, Polymorphic, Projection,
+    StorageType, Table, TechnicalColumn,
 };
 use super::relation::{DeleteBehavior, Relation, RelationKind, ScenarioRef};
 use super::version;
@@ -622,7 +622,7 @@ fn projections(array: &[Json]) -> Result<Vec<Projection>, DiagnosticSet> {
         for key in projection.keys() {
             if !matches!(
                 key.as_str(),
-                "namespace" | "tables" | "joins" | "polymorphics"
+                "namespace" | "tables" | "joins" | "polymorphics" | "textDefaults"
             ) {
                 return Err(diagnostic::input_invalid("unknown-field"));
             }
@@ -644,11 +644,34 @@ fn projections(array: &[Json]) -> Result<Vec<Projection>, DiagnosticSet> {
                 Some(entries) => polymorphics(entries)?,
                 None => Vec::new(),
             };
+        let text_defaults = match projection.get("textDefaults") {
+            Some(Json::Null) | None => None,
+            Some(value) => {
+                let object = value
+                    .as_object()
+                    .ok_or_else(|| diagnostic::input_invalid("text-defaults-shape"))?;
+                for key in object.keys() {
+                    if !matches!(key.as_str(), "charset" | "collation") {
+                        return Err(diagnostic::input_invalid("unknown-field"));
+                    }
+                }
+                let charset = string_member(object, "charset")?.to_owned();
+                if charset.len() > 64 {
+                    return Err(diagnostic::input_invalid("text-defaults-shape"));
+                }
+                let collation = string_member(object, "collation")?.to_owned();
+                if collation.len() > 64 {
+                    return Err(diagnostic::input_invalid("text-defaults-shape"));
+                }
+                Some((charset, collation))
+            }
+        };
         parsed.push(Projection {
             namespace,
             tables,
             joins,
             polymorphics,
+            text_defaults,
         });
     }
     parsed.sort_by_key(|projection| projection.namespace.key());
@@ -677,6 +700,8 @@ fn tables(array: &[Json]) -> Result<Vec<Table>, DiagnosticSet> {
                     | "tenantKey"
                     | "timestamps"
                     | "indexes"
+                    | "charset"
+                    | "collation"
             ) {
                 return Err(diagnostic::input_invalid("unknown-field"));
             }
@@ -766,6 +791,30 @@ fn tables(array: &[Json]) -> Result<Vec<Table>, DiagnosticSet> {
             Some(entries) => indexes(entries)?,
             None => Vec::new(),
         };
+        let charset = match table.get("charset") {
+            Some(Json::Null) | None => None,
+            Some(value) => {
+                let charset = value
+                    .as_str()
+                    .ok_or_else(|| diagnostic::input_invalid("charset-shape"))?;
+                if charset.is_empty() || charset.len() > 64 {
+                    return Err(diagnostic::input_invalid("charset-shape"));
+                }
+                Some(charset.to_owned())
+            }
+        };
+        let collation = match table.get("collation") {
+            Some(Json::Null) | None => None,
+            Some(value) => {
+                let collation = value
+                    .as_str()
+                    .ok_or_else(|| diagnostic::input_invalid("collation-shape"))?;
+                if collation.is_empty() || collation.len() > 64 {
+                    return Err(diagnostic::input_invalid("collation-shape"));
+                }
+                Some(collation.to_owned())
+            }
+        };
         parsed.push(Table {
             entity,
             table: name,
@@ -776,6 +825,8 @@ fn tables(array: &[Json]) -> Result<Vec<Table>, DiagnosticSet> {
             tenant_key,
             timestamps,
             indexes,
+            charset,
+            collation,
         });
     }
     parsed.sort_by(|left, right| left.entity.cmp(&right.entity));
@@ -872,7 +923,10 @@ fn indexes(array: &[Json]) -> Result<Vec<Index>, DiagnosticSet> {
             .as_object()
             .ok_or_else(|| diagnostic::input_invalid("index-shape"))?;
         for key in index.keys() {
-            if !matches!(key.as_str(), "name" | "columns" | "unique") {
+            if !matches!(
+                key.as_str(),
+                "name" | "columns" | "unique" | "kind" | "prefixLengths" | "descending"
+            ) {
                 return Err(diagnostic::input_invalid("unknown-field"));
             }
         }
@@ -893,10 +947,64 @@ fn indexes(array: &[Json]) -> Result<Vec<Index>, DiagnosticSet> {
             .get("unique")
             .and_then(Json::as_bool)
             .ok_or_else(|| diagnostic::input_invalid("index-shape"))?;
+        let kind = match index.get("kind") {
+            Some(Json::Null) | None => IndexKind::Btree,
+            Some(value) => IndexKind::parse(
+                value
+                    .as_str()
+                    .ok_or_else(|| diagnostic::input_invalid("index-kind"))?,
+            )
+            .map_err(|_| diagnostic::input_invalid("index-kind"))?,
+        };
+        let prefix_lengths = match index.get("prefixLengths") {
+            Some(Json::Null) | None => None,
+            Some(value) => {
+                let array = value
+                    .as_array()
+                    .ok_or_else(|| diagnostic::input_invalid("prefix-shape"))?;
+                if array.len() != columns.len() {
+                    return Err(diagnostic::input_invalid("prefix-shape"));
+                }
+                let mut parsed = Vec::with_capacity(array.len());
+                for entry in array {
+                    let length = entry
+                        .as_u64()
+                        .ok_or_else(|| diagnostic::input_invalid("prefix-shape"))?;
+                    if !(1..=3072).contains(&length) {
+                        return Err(diagnostic::input_invalid("prefix-bound"));
+                    }
+                    parsed.push(length as u16);
+                }
+                Some(parsed)
+            }
+        };
+        let descending = match index.get("descending") {
+            Some(Json::Null) | None => None,
+            Some(value) => {
+                let array = value
+                    .as_array()
+                    .ok_or_else(|| diagnostic::input_invalid("descending-shape"))?;
+                if array.len() != columns.len() {
+                    return Err(diagnostic::input_invalid("descending-shape"));
+                }
+                let parsed = array
+                    .iter()
+                    .map(|entry| {
+                        entry
+                            .as_bool()
+                            .ok_or_else(|| diagnostic::input_invalid("descending-shape"))
+                    })
+                    .collect::<Result<Vec<bool>, _>>()?;
+                Some(parsed)
+            }
+        };
         parsed.push(Index {
             name,
             columns,
             unique,
+            kind,
+            prefix_lengths,
+            descending,
         });
     }
     parsed.sort_by(|left, right| {

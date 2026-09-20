@@ -61,7 +61,7 @@ const derivedDir = "tests/fixtures/storage-projection/derived";
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const schema = JSON.parse(
   readFileSync(
-    resolve(root, "contracts/storage-projection.schema.v0.2.16.json"),
+    resolve(root, "contracts/storage-projection.schema.v0.4.0.json"),
     "utf8",
   ),
 );
@@ -118,6 +118,18 @@ const SEMANTIC_ONLY_DETAILS = new Set([
   "polymorphic-owner-unmapped",
   "unknown-index-column",
   "unknown-primary-key",
+  // issue #117: the MySQL-family semantic rules the schema cannot
+  // express (prefix rules, fulltext rules, sequence refusal, collation
+  // coherence) are proven by the typed normalizer and the Rust suite.
+  "sequence-unsupported",
+  "prefix-required",
+  "prefix-shape",
+  "descending-shape",
+  "descending-arity",
+  "fulltext-unique",
+  "fulltext-textual-only",
+  "collation-charset-mismatch",
+  "collation-without-charset",
 ]);
 
 // --- raw duplicate-key scan (a parsed value cannot see duplicates) ---
@@ -223,7 +235,7 @@ for (const name of readdirSync(resolve(root, derivedDir)).sort()) {
   }
   derivedCount += 1;
 }
-if (derivedCount !== 2) failEarly("no-derived-goldens", "both namespace goldens are required");
+if (derivedCount !== 4) failEarly("no-derived-goldens", "all four namespace goldens are required");
 
 let invalidCount = 0;
 for (const name of readdirSync(resolve(root, invalidDir)).sort()) {

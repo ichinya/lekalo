@@ -15,7 +15,7 @@
 use super::diagnostic::{self, DOMAIN_INVALID, PROJECTION_INVALID, RELATION_INVALID};
 use super::entity::DomainEntity;
 use super::id::{EntityKey, StorageName};
-use super::projection::Projection;
+use super::projection::{Namespace, Projection};
 use super::relation::{DeleteBehavior, Relation, RelationKind};
 use super::StorageProjectionAttachment;
 use crate::diagnostics::DiagnosticSet;
@@ -189,11 +189,77 @@ fn check_detach_minimum(relation: &Relation, subject: &str) -> Result<(), Diagno
 /// polymorphic materializations.
 fn check_projections(attachment: &StorageProjectionAttachment) -> Result<(), DiagnosticSet> {
     for projection in attachment.projections() {
+        check_charset_coherence(projection)?;
+        check_sequence_namespace(projection)?;
         check_mapping(attachment, projection)?;
         check_tables(attachment, projection)?;
         check_joins(attachment, projection)?;
         check_join_coverage(attachment, projection)?;
         check_polymorphics(attachment, projection)?;
+    }
+    Ok(())
+}
+
+/// The declared charset/collation members cohere: a table collation
+/// belongs to its declared charset, the projection text defaults are
+/// declared as a pair, and every table collation belongs to the
+/// projection default charset. The closed owner-approved membership
+/// pairs keep the check pure and offline.
+fn check_charset_coherence(projection: &Projection) -> Result<(), DiagnosticSet> {
+    let defaults = projection.text_defaults();
+    if let Some((charset, collation)) = defaults {
+        if !collation_belongs_to_charset(collation, charset) {
+            return Err(projection_invalid("collation-charset-mismatch"));
+        }
+    }
+    for table in projection.tables() {
+        if let Some(collation) = table.collation() {
+            let charset = table
+                .charset()
+                .or_else(|| defaults.map(|(charset, _)| charset))
+                .ok_or_else(|| projection_invalid("collation-without-charset"))?;
+            if !collation_belongs_to_charset(collation, charset) {
+                return Err(projection_invalid("collation-charset-mismatch"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The closed charset/collation membership pairs of the v1 grammar.
+/// Membership is decided by the collation prefix convention (`utf8mb4_
+/// ` for utf8mb4, `utf8_` for utf8/utf8mb3, `latin1_` for latin1) plus
+/// the known MariaDB uca1400 family, never by a live engine query.
+fn collation_belongs_to_charset(collation: &str, charset: &str) -> bool {
+    if let Some(rest) = collation.strip_prefix(charset) {
+        if rest.starts_with('_') {
+            return true;
+        }
+    }
+    // The utf8mb3/utf8 spellings share the utf8_ collation prefix.
+    if charset == "utf8mb3" && collation.starts_with("utf8_") {
+        return true;
+    }
+    // The MariaDB 11.4+ uca1400 family is defined over utf8mb4.
+    charset == "utf8mb4" && collation.starts_with("uca1400_")
+}
+
+/// The `sequence` generated kind is MariaDB-only (10.3+ evidence): the
+/// `mysql` namespace refuses it instead of guessing an
+/// auto-increment substitute.
+fn check_sequence_namespace(projection: &Projection) -> Result<(), DiagnosticSet> {
+    if projection.namespace() != Namespace::Mysql {
+        return Ok(());
+    }
+    for table in projection.tables() {
+        for generated in table.generated_columns() {
+            if generated.kind() == super::projection::GeneratedKind::Sequence {
+                return Err(projection_invalid_subject(
+                    "sequence-unsupported",
+                    table.entity().as_str(),
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -338,9 +404,136 @@ fn check_tables(
                     return Err(projection_invalid_subject("unknown-index-column", subject));
                 }
             }
+            check_index(index, table, projection, entity)?;
         }
     }
     Ok(())
+}
+
+/// The closed index rules over one declared index of one table:
+/// prefix lengths parallel to columns, textual/blob key parts require a
+/// prefix in the MySQL namespaces, fulltext never unique and textual
+/// only, and generated `sequence` columns refuse in the `mysql`
+/// namespace (MariaDB sequences are version-evidenced at 10.3+).
+fn check_index(
+    index: &super::projection::Index,
+    table: &super::projection::Table,
+    projection: &Projection,
+    entity: &DomainEntity,
+) -> Result<(), DiagnosticSet> {
+    let columns = index.columns();
+    if let Some(lengths) = index.prefix_lengths() {
+        if lengths.len() != columns.len() {
+            return Err(projection_invalid_subject(
+                "prefix-arity",
+                table.entity().as_str(),
+            ));
+        }
+    }
+    if let Some(flags) = index.descending() {
+        if flags.len() != columns.len() {
+            return Err(projection_invalid_subject(
+                "descending-arity",
+                table.entity().as_str(),
+            ));
+        }
+    }
+    if index.kind() == super::projection::IndexKind::Fulltext {
+        if index.unique() {
+            return Err(projection_invalid_subject(
+                "fulltext-unique",
+                table.entity().as_str(),
+            ));
+        }
+        for column in columns {
+            if !column_is_textual(attachment_column_type(table, entity, column)) {
+                return Err(projection_invalid_subject(
+                    "fulltext-textual-only",
+                    table.entity().as_str(),
+                ));
+            }
+        }
+    }
+    if projection.namespace().is_mysql_family() {
+        for (position, column) in columns.iter().enumerate() {
+            let Some(declared) = declared_column_type(table, entity, column) else {
+                continue;
+            };
+            let textual = super::projection::StorageType::is_textual(declared);
+            let blob = super::projection::StorageType::is_blob_family(declared);
+            if !(textual || blob) {
+                continue;
+            }
+            let prefixed = index
+                .prefix_lengths()
+                .and_then(|lengths| lengths.get(position))
+                .is_some();
+            if !prefixed {
+                return Err(projection_invalid_subject(
+                    "prefix-required",
+                    table.entity().as_str(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The declared or derived storage type of one locally owned column,
+/// reduced to the member the index rules need: technical and generated
+/// declarations, and the field-derived types.
+fn attachment_column_type<'a>(
+    _table: &'a super::projection::Table,
+    entity: &'a DomainEntity,
+    column: &StorageName,
+) -> Option<&'static str> {
+    for field in entity.fields() {
+        if field.name().as_str() == column.as_str() {
+            // `DomainType::name` returns a `&'static str` from the
+            // closed domain vocabulary; the lifetime is unconstrained.
+            let name = field.field_type().clone().name();
+            return Some(name);
+        }
+    }
+    None
+}
+
+/// Whether one resolved domain type name is a textual family. Field
+/// names are the closed domain vocabulary, so the textual spellings are
+/// `string` and `text`.
+fn column_is_textual(domain_type: Option<&str>) -> bool {
+    matches!(domain_type, Some("string") | Some("text"))
+}
+
+/// The declared storage type token of one locally owned declared
+/// column (technical, generated, tenant). Field-derived columns are
+/// `None` here: the prefix rule resolves them through the domain type
+/// spelling at the caller.
+fn declared_column_type<'a>(
+    table: &'a super::projection::Table,
+    entity: &DomainEntity,
+    column: &StorageName,
+) -> Option<&'a str> {
+    if entity
+        .fields()
+        .iter()
+        .any(|field| field.name().as_str() == column.as_str())
+    {
+        return None;
+    }
+    for technical in table.technical_columns() {
+        if technical.name() == column {
+            return Some(technical.storage_type().as_str());
+        }
+    }
+    for generated in table.generated_columns() {
+        if generated.name() == column {
+            return generated
+                .storage_type()
+                .map(|storage_type| storage_type.as_str());
+        }
+    }
+    None
 }
 
 /// Join-level rules: each join materializes one many-to-many relation

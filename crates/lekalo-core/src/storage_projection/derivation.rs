@@ -570,6 +570,9 @@ fn derive_table(
             name: None,
             columns: vec![column],
             unique: true,
+            kind: super::projection::IndexKind::Btree,
+            prefix_lengths: None,
+            descending: None,
         });
     }
     indexes.sort_by(|left, right| {
@@ -749,6 +752,25 @@ fn map_type(namespace: Namespace, field_type: &DomainType) -> String {
             DomainType::Date => "date".to_owned(),
             DomainType::Timestamp => "datetime".to_owned(),
             DomainType::Binary => "binary".to_owned(),
+            DomainType::Json => "json".to_owned(),
+        },
+        Namespace::Mysql | Namespace::Mariadb => match field_type {
+            DomainType::Boolean => "tinyint(1)".to_owned(),
+            DomainType::Integer => "bigint".to_owned(),
+            DomainType::Decimal { precision, scale } => {
+                format!("decimal({precision},{scale})")
+            }
+            DomainType::String { length } => format!("varchar({length})"),
+            DomainType::Text => "text".to_owned(),
+            // MySQL renders the UUID as binary(16): compact and
+            // collation-free. MariaDB's native uuid is version-gated
+            // evidence in the bound profile, so the canonical render
+            // stays binary(16) there too; char(36) remains a declared
+            // technical-column alternative.
+            DomainType::Uuid => "binary(16)".to_owned(),
+            DomainType::Date => "date".to_owned(),
+            DomainType::Timestamp => "datetime(6)".to_owned(),
+            DomainType::Binary => "varbinary(255)".to_owned(),
             DomainType::Json => "json".to_owned(),
         },
     }
