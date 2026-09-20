@@ -15,7 +15,8 @@ use std::path::Path;
 use crate::artifacts::check::{inputs_revision, Prepared};
 use crate::artifacts::types::{
     AdapterRef, ArtifactEntry, ArtifactKey, ArtifactKind, ArtifactManifest, ArtifactPath,
-    Lifecycle, ProjectRef, SemanticOwnerId, MANIFEST_DIR, MANIFEST_NAME,
+    Lifecycle, ProjectRef, SemanticOwnerId, SourceMapBinding, SourceRange, MANIFEST_DIR,
+    MANIFEST_NAME, MAX_ARTIFACT_BYTES,
 };
 use crate::artifacts::ArtifactFailure;
 use crate::diagnostics::types::token_value;
@@ -698,7 +699,11 @@ fn update_manifest(
             .map_err(|_| ArtifactFailure::ReferenceInvalid)?
             .ok_or(ArtifactFailure::ReferenceInvalid)?;
         let key_path = ArtifactPath::parse(&entry.path).ok_or(ArtifactFailure::ReferenceInvalid)?;
-        let key = ArtifactKey::new(owner.clone(), key_path, ArtifactKind::Source);
+        // Issue #45 attribution: the written path determines the closed
+        // kind by convention — generated Zod schema modules are `schema`,
+        // their `.map.json` sidecars are `data`, everything else stays
+        // `source`. No wire change: the convention is core-side only.
+        let key = ArtifactKey::new(owner.clone(), key_path, artifact_kind_for(&entry.path));
         keep.retain(|recorded| recorded.key() != &key);
         keep.push(ArtifactEntry::new(
             key,
@@ -710,6 +715,27 @@ fn update_manifest(
         ));
     }
     keep.sort_by(|left, right| left.key().cmp(right.key()));
+    // Source maps: ingest the emitted `.map.json` sidecars of this run's
+    // writes into the manifest's `source_maps` bindings (issue #45). Each
+    // sidecar declaration range becomes one half-open byte range bound to
+    // the exact generation inputs; a malformed sidecar fails the whole
+    // apply — deterministic, never a half-recorded map.
+    let mut source_maps = Vec::new();
+    for entry in writes {
+        if entry.action == WriteAction::Delete || !entry.path.ends_with(".map.json") {
+            continue;
+        }
+        let binding = source_map_binding_for(
+            prepared,
+            &entry.path,
+            &owner,
+            model_version,
+            inputs_revision(prepared.inputs().model(), prepared.inputs().ir()),
+        )?;
+        if let Some(binding) = binding {
+            source_maps.push(binding);
+        }
+    }
     let build = |digest: Sha256Digest| {
         ArtifactManifest::new(
             project.clone(),
@@ -717,7 +743,7 @@ fn update_manifest(
             prepared.inputs().model().clone(),
             prepared.inputs().ir().clone(),
             keep.clone(),
-            Vec::new(),
+            source_maps.clone(),
             digest,
         )
     };
@@ -734,6 +760,79 @@ fn update_manifest(
     let parsed = ArtifactManifest::parse_canonical(&bytes)?;
     write_manifest_atomic(prepared.root(), &bytes)?;
     Ok(parsed.manifest_digest().clone())
+}
+
+/// The closed artifact kind of one generated write, by path convention
+/// (issue #45): `.map.json` sidecars are `data`, `.ts` modules under a
+/// `zod/` segment are `schema`, everything else stays `source`.
+fn artifact_kind_for(path: &str) -> ArtifactKind {
+    if path.ends_with(".map.json") {
+        return ArtifactKind::Data;
+    }
+    if path.ends_with(".ts") && path.split('/').any(|segment| segment == "zod") {
+        return ArtifactKind::Schema;
+    }
+    ArtifactKind::Source
+}
+
+/// One ingested source-map binding from an emitted `.map.json` sidecar,
+/// or `None` when the sidecar is absent from the staged view (a `create`
+/// plan's map may legitimately not exist yet at planning time — the
+/// digest binding stays with the write receipt).
+fn source_map_binding_for(
+    prepared: &Prepared,
+    sidecar_path: &str,
+    owner: &SemanticOwnerId,
+    model_version: ModelVersion,
+    input_revision: Sha256Digest,
+) -> Result<Option<SourceMapBinding>, ArtifactFailure> {
+    let (dir, name) = match sidecar_path.rfind('/') {
+        Some(at) => (&sidecar_path[..at], &sidecar_path[at + 1..]),
+        None => (".", sidecar_path),
+    };
+    let bytes = match prepared.fs().read_file_opt(dir, name, MAX_ARTIFACT_BYTES) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => return Ok(None),
+        Err(_) => return Err(ArtifactFailure::Io("artifact-read")),
+    };
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| ArtifactFailure::SourceMapInvalid)?;
+    let declarations = value
+        .get("declarations")
+        .and_then(serde_json::Value::as_array)
+        .ok_or(ArtifactFailure::SourceMapInvalid)?;
+    if declarations.len() > 4096 {
+        return Err(ArtifactFailure::SourceMapInvalid);
+    }
+    let mut entries = Vec::with_capacity(declarations.len());
+    for declaration in declarations {
+        let semantic_id = declaration
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or(ArtifactFailure::SourceMapInvalid)?;
+        let start = declaration
+            .get("start")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|start| *start <= u32::MAX as u64)
+            .ok_or(ArtifactFailure::SourceMapInvalid)? as u32;
+        let end = declaration
+            .get("end")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|end| *end <= u32::MAX as u64)
+            .ok_or(ArtifactFailure::SourceMapInvalid)? as u32;
+        entries.push(SourceRange::new(
+            SemanticOwnerId::parse(semantic_id, model_version)
+                .ok_or(ArtifactFailure::ReferenceInvalid)?,
+            start,
+            end,
+        ));
+    }
+    let key = ArtifactKey::new(
+        owner.clone(),
+        ArtifactPath::parse(sidecar_path).ok_or(ArtifactFailure::ReferenceInvalid)?,
+        artifact_kind_for(sidecar_path),
+    );
+    Ok(Some(SourceMapBinding::new(key, input_revision, entries)))
 }
 
 fn write_manifest_atomic(root: &Path, bytes: &[u8]) -> Result<(), ArtifactFailure> {
