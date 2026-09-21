@@ -168,3 +168,13 @@ precedence (5 > 1 > 3 > 4).
   the pinned golden receipts (regenerate with the documented fixture
   sequence when the fixture project bytes change), and the
   cross-language invariants, with exact Ajv 8.17.1 on Node 18 and 24.
+
+## Adapter package gate (issue #32)
+
+The catalog seam (`lekalo lock -- PROGRAM`, `generate`/`verify --`
+`PROGRAM`) runs the adapter package resolution gate before the safe
+describe handshake: the implicit local-development descriptor is
+synthesized from the launched entry, then the integrity, signature, and
+trust gates run with the project-scoped revocation store. A refusal
+carries its registered `adapter.*` rule and never spawns the adapter.
+The normative contract is [adapter-manifest.md](adapter-manifest.md).

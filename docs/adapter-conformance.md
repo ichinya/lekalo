@@ -129,3 +129,13 @@ falls back to an unconfined launch. A suite infrastructure failure
 The suite owns neutral fixture evidence and normalization assertions; scenario execution
 backends stay with their own issues, and no persisted cross-session
 plan authority exists.
+
+## Manifest gate (issue #32)
+
+`adapter test` resolves the launched entry through the adapter package
+gate before the battery starts: the synthesized local-development
+descriptor is integrity-checked, the signature policy is evaluated, and
+the revocation store is consulted. The shipped adapter commits its
+`adapter.manifest.json` with per-file digests, verified in CI by
+`scripts/test-adapter-manifest-golden.mjs`. A gate refusal renders its
+registered `adapter.*` rule and no check runs.
