@@ -427,3 +427,73 @@ mod tests {
         }
     }
 }
+
+/// The CLI entry for `lekalo dataflow report`: validate custody,
+/// resolve subjects, build the stamped effect graph, and derive the
+/// report with its normalized findings. Any structured violation
+/// aborts with the typed set; the returned diagnostics carry the
+/// mirrored findings for exit mapping.
+pub fn run_report(
+    compilation: &crate::ir::Compilation,
+    attachment: &crate::classification::Attachment,
+    policy: &crate::classification::PolicyAttachment,
+    resolution: &crate::classification::Resolution,
+) -> Result<(crate::dataflow::Report, crate::diagnostics::DiagnosticSet), DiagnosticSet> {
+    // Custody: the attachment binds the exact compilation.
+    crate::classification::validate::validate_custody(attachment, policy, &compilation.project)?;
+    crate::classification::validate::validate_subjects(attachment, compilation)?;
+    let graph = crate::effects::build_with_classification(&compilation.project, Some(resolution))?;
+    let (model_digest, ir_digest) = compile_digests(compilation);
+    let project_id = match compilation.project.project.as_ref() {
+        Some(project) => SemanticId::parse_root(project.id.as_str())
+            .map_err(|_| diagnostic::document_invalid("project-id", None))?,
+        None => SemanticId::parse_root(attachment.project_id().as_str())
+            .map_err(|_| diagnostic::document_invalid("project-id", None))?,
+    };
+    let classification_ref = crate::lockfile::types::Sha256Digest::parse(
+        &crate::classification::attachment_digest(attachment)?,
+    )
+    .map_err(|_| diagnostic::document_invalid("classification-ref", None))?;
+    let policy_ref = crate::lockfile::types::Sha256Digest::parse(
+        &crate::classification::policy_digest(policy)?,
+    )
+    .map_err(|_| diagnostic::document_invalid("policy-ref", None))?;
+    let analysis = analyze(&Inputs {
+        project_id: &project_id,
+        model_ref: (compilation.project.model_version.as_str(), &model_digest),
+        ir_ref: ("0.2.16", &ir_digest),
+        graph: &graph,
+        classification: resolution,
+        classification_ref: &classification_ref,
+        policy,
+        policy_ref: &policy_ref,
+        generated_by: GENERATED_BY,
+        report_revision: REPORT_REVISION,
+    })?;
+    let diagnostics = analysis.diagnostics.clone();
+    Ok((analysis.report, diagnostics))
+}
+
+/// The engine identity recorded as `generatedBy`.
+const GENERATED_BY: &str = "lekalo-core";
+
+/// The pinned report revision of this generation.
+const REPORT_REVISION: &str = "1.0.0";
+
+/// The exact `(model, ir)` digests of one compilation (the same
+/// spelling the effect-graph builder records).
+fn compile_digests(
+    compilation: &crate::ir::Compilation,
+) -> (crate::lockfile::types::Sha256Digest, crate::lockfile::types::Sha256Digest) {
+    use sha2::Digest as _;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(compilation.project.to_canonical_json().as_bytes());
+    let ir = format!("sha256:{:x}", hasher.finalize());
+    (
+        crate::lockfile::types::Sha256Digest::from_hex(&crate::digest::sha256_hex(
+            compilation.project.model_version.as_str().as_bytes(),
+        )),
+        crate::lockfile::types::Sha256Digest::parse(&ir)
+            .unwrap_or_else(|_| crate::lockfile::types::Sha256Digest::from_hex(&"0".repeat(64))),
+    )
+}
