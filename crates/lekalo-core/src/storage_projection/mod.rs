@@ -33,6 +33,7 @@ pub mod id;
 pub mod projection;
 pub mod relation;
 mod validate;
+pub(crate) mod diagnostic_public {}
 pub(crate) mod version;
 pub(crate) mod wire;
 
@@ -40,6 +41,7 @@ pub use derivation::{
     project, public_fields, ColumnOrigin, DerivedColumn, DerivedForeignKey, DerivedJoin,
     DerivedPolymorphic, DerivedProjection, DerivedTable, OnDelete,
 };
+pub use diagnostic::io_failure;
 pub use diff::{compare, DiffClass, DiffLayer, DiffPath, DiffResult};
 pub use entity::{DomainEntity, DomainField, DomainType, Visibility};
 pub use id::{EntityKey, StorageName};

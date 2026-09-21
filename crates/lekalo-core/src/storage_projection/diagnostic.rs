@@ -93,6 +93,13 @@ pub(crate) fn export_limit_set(bytes: usize) -> DiagnosticSet {
     }
 }
 
+/// The public read-only I/O failure of the family: one registered
+/// `storage.input-invalid` with a fixed detail token (the CLI maps
+/// file-missing/unreadable and invalid-json onto it).
+pub fn io_failure(detail: &str) -> DiagnosticSet {
+    input_invalid(detail)
+}
+
 /// Bound an echoed identifier to the diagnostic token bound.
 pub(crate) fn bounded(text: &str) -> String {
     bound_token(text)
