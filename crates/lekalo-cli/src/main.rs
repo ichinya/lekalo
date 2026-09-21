@@ -841,6 +841,36 @@ enum AdapterCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
+    /// Record an explicit trust transition for an installed package (issue #32).
+    Trust {
+        /// The adapter id.
+        id: String,
+        /// The target trust level; never inferred, always explicit.
+        #[arg(long = "level", value_enum)]
+        level: AdapterTrustLevel,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Record a revocation for an adapter id/version in the local store (issue #32).
+    Revoke {
+        /// The adapter id.
+        id: String,
+        /// The revoked version, or * for the whole id.
+        #[arg(long, value_name = "VERSION", default_value = "*")]
+        version: String,
+        /// The closed reason token.
+        #[arg(long, value_name = "TOKEN")]
+        reason: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Report or purge the quarantine custody (issue #32).
+    Quarantine {
+        #[command(subcommand)]
+        command: QuarantineCommands,
+    },
 }
 
 /// The closed conformance battery profile vocabulary.
@@ -1953,6 +1983,20 @@ fn run_adapter(command: AdapterCommands) -> AdapterRun {
             false,
             &project,
         ),
+
+        AdapterCommands::Trust { id, level, project } => run_adapter_trust(&id, level, &project),
+        AdapterCommands::Revoke {
+            id,
+            version,
+            reason,
+            project,
+        } => run_adapter_revoke(&id, &version, &reason, &project),
+        AdapterCommands::Quarantine { command } => match command {
+            QuarantineCommands::List { project } => run_adapter_quarantine_list(&project),
+            QuarantineCommands::Purge { all, project } => {
+                run_adapter_quarantine_purge(all, &project)
+            }
+        },
     }
 }
 
@@ -2460,6 +2504,261 @@ fn install_rejection(
     }
 }
 
+/// The quarantine custody subcommands (issue #32).
+
+#[derive(Debug, Subcommand)]
+
+enum QuarantineCommands {
+    /// List the quarantined packages.
+    List {
+        /// Project root selector, relative to the invocation directory.
+
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+
+    /// Purge quarantined bytes (the only removal path).
+    Purge {
+        /// Purge every quarantined package.
+
+        #[arg(long)]
+        all: bool,
+
+        /// Project root selector, relative to the invocation directory.
+
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
+
+/// The closed trust-level vocabulary accepted by `adapter trust`.
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+
+enum AdapterTrustLevel {
+    /// Distribution trust.
+    Builtin,
+
+    /// Verified publisher trust.
+    Verified,
+
+    /// The project's own local development trust.
+    LocalDevelopment,
+
+    /// Community trust (quarantined posture).
+    Community,
+}
+
+/// Run `lekalo adapter trust`: the explicit trust transition. The level
+/// is never inferred and never widened by any other command.
+fn run_adapter_trust(id: &str, level: AdapterTrustLevel, project: &Option<String>) -> AdapterRun {
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let level_token = match level {
+        AdapterTrustLevel::Builtin => "builtin",
+        AdapterTrustLevel::Verified => "verified",
+        AdapterTrustLevel::LocalDevelopment => "local-development",
+        AdapterTrustLevel::Community => "community",
+    };
+    let mut inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let mut changed = 0usize;
+    let rows: Vec<_> = inventory
+        .rows()
+        .iter()
+        .filter(|row| row.id == id)
+        .cloned()
+        .collect();
+    for mut row in rows {
+        row.trust = level_token.to_owned();
+        inventory.upsert(row);
+        changed += 1;
+    }
+    if changed == 0 {
+        return AdapterRun::Envelope(DomainResult::from(
+            lekalo_core::lockfile::LockFailure::ComponentUnavailable {
+                kind: "adapter",
+                id: id.to_owned(),
+            },
+        ));
+    }
+    if let Err(failure) = inventory.store(&root) {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &failure,
+        ));
+    }
+    let document = serde_json::json!({
+        "status": "valid",
+        "schemaVersion": lekalo_core::adapter_package::version::INVENTORY_SCHEMA_VERSION,
+        "id": id,
+        "trust": level_token,
+        "packages": changed,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("trust serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("trust serializes"),
+            format!("trust {} : {}", id, level_token),
+        ),
+    }
+}
+
+/// Run `lekalo adapter revoke`: append a revocation record to the local
+/// store. Revocation overrides every other trust signal.
+fn run_adapter_revoke(
+    id: &str,
+    version: &str,
+    reason: &str,
+    project: &Option<String>,
+) -> AdapterRun {
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let mut store = match lekalo_core::adapter_package::trust::RevocationStore::load(&root) {
+        Ok(store) => store,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    if let Err(failure) = store.append(
+        &root,
+        lekalo_core::adapter_package::trust::RevocationRecord {
+            id: id.to_owned(),
+            version: version.to_owned(),
+            reason: reason.to_owned(),
+        },
+    ) {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &failure,
+        ));
+    }
+    let document = serde_json::json!({
+        "status": "valid",
+        "id": id,
+        "version": version,
+        "reason": reason,
+        "revoked": true,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("revoke serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("revoke serializes"),
+            format!("revoke {} {} : {}", id, version, reason),
+        ),
+    }
+}
+
+/// Run `lekalo adapter quarantine list`: the quarantined inventory rows.
+fn run_adapter_quarantine_list(project: &Option<String>) -> AdapterRun {
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let rows: Vec<serde_json::Value> = inventory
+        .rows()
+        .iter()
+        .filter(|row| row.quarantined)
+        .map(|row| {
+            serde_json::json!({
+                "id": row.id,
+                "version": row.version,
+                "digest": row.digest,
+                "trust": row.trust,
+            })
+        })
+        .collect();
+    let count = rows.len();
+    let document = serde_json::json!({
+        "status": "valid",
+        "schemaVersion": lekalo_core::adapter_package::version::INVENTORY_SCHEMA_VERSION,
+        "quarantined": rows,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("quarantine serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("quarantine serializes"),
+            format!("quarantine list : {} package(s)", count),
+        ),
+    }
+}
+
+/// Run `lekalo adapter quarantine purge`: the only removal path for
+/// quarantined bytes (never an automatic deletion).
+fn run_adapter_quarantine_purge(all: bool, project: &Option<String>) -> AdapterRun {
+    if !all {
+        return AdapterRun::Envelope(DomainResult::usage_error());
+    }
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let mut inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let quarantined: Vec<_> = inventory
+        .rows()
+        .iter()
+        .filter(|row| row.quarantined)
+        .cloned()
+        .collect();
+    for row in &quarantined {
+        let digest8: String = row.digest["sha256:".len()..].chars().take(8).collect();
+        let dir = root.join(
+            format!(
+                ".lekalo/adapters/quarantine/{}-{}-{}",
+                row.id, row.version, digest8
+            )
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
+        );
+        let _ = std::fs::remove_dir_all(dir);
+        inventory
+            .rows_mut()
+            .retain(|existing| existing.id != row.id || existing.version != row.version);
+    }
+    if let Err(failure) = inventory.store(&root) {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &failure,
+        ));
+    }
+    let purged = quarantined.len();
+    let document = serde_json::json!({
+        "status": "valid",
+        "purged": purged,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("purge serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("purge serializes"),
+            format!("quarantine purge : {} package(s)", purged),
+        ),
+    }
+}
+
+/// Run `lekalo adapter test` (the issue #31 conformance battery behind
 /// Run `lekalo adapter test` (the issue #31 conformance battery behind
 /// the issue #32 resolution gate).
 fn run_adapter_test(

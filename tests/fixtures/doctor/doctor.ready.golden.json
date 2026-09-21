@@ -1,7 +1,7 @@
 {
   "status": "valid",
-  "schemaVersion": "lekalo/doctor/v0.2.16",
-  "identity": "dev.lekalo.doctor@0.2.16",
+  "schemaVersion": "lekalo/doctor/v0.3.2",
+  "identity": "dev.lekalo.doctor@0.3.2",
   "report": "doctor",
   "productVersion": "0.2.7",
   "verdict": "ready",
@@ -26,6 +26,12 @@
       "state": "ok",
       "required": true,
       "reason": "none-required"
+    },
+    {
+      "id": "adapters.trust",
+      "state": "ok",
+      "required": false,
+      "reason": "clean"
     },
     {
       "id": "artifacts.drift",

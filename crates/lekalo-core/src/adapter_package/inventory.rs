@@ -121,6 +121,11 @@ impl Inventory {
         std::fs::write(&path, self.to_wire()?).map_err(|_| store_failure())
     }
 
+    /// Mutable access for the purge path only.
+    pub fn rows_mut(&mut self) -> &mut Vec<InventoryRow> {
+        &mut self.rows
+    }
+
     /// Every row, in stored order (sorted by id, version, digest).
     pub fn rows(&self) -> &[InventoryRow] {
         &self.rows

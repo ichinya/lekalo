@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dev.lekalo/doctor.schema.v0.2.16.json",
   "title": "Lekalo doctor, status, and readiness wire",
-  "description": "Closed contract of the issue #92 readiness report family: `lekalo doctor`, `lekalo status`, and `lekalo readiness --phase PHASE`. One versioned document (lekalo/doctor/v0.2.16) whose checks are a closed vocabulary of read-only diagnostic states with closed next-action recipe ids. Doctor is read-only by default and forever; no secret, environment value, host identity, absolute path, or free-form text may appear. The doctor contract version is independent of the product release and of every Model/IR/graph/effect/lock/diagnostic contract version.",
+  "description": "Closed contract of the issue #92 readiness report family: `lekalo doctor`, `lekalo status`, and `lekalo readiness --phase PHASE`. One versioned document (lekalo/doctor/v0.3.2) whose checks are a closed vocabulary of read-only diagnostic states with closed next-action recipe ids. Doctor is read-only by default and forever; no secret, environment value, host identity, absolute path, or free-form text may appear. The doctor contract version is independent of the product release and of every Model/IR/graph/effect/lock/diagnostic contract version.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,8 +17,8 @@
   ],
   "properties": {
     "status": { "const": "valid" },
-    "schemaVersion": { "const": "lekalo/doctor/v0.2.16" },
-    "identity": { "const": "dev.lekalo.doctor@0.2.16" },
+    "schemaVersion": { "const": "lekalo/doctor/v0.3.2" },
+    "identity": { "const": "dev.lekalo.doctor@0.3.2" },
     "report": {
       "description": "The closed report-kind vocabulary.",
       "enum": ["doctor", "status", "readiness"]
@@ -115,6 +115,7 @@
           "description": "The closed check vocabulary.",
           "enum": [
             "adapters.inventory",
+            "adapters.trust",
             "artifacts.drift",
             "bindings.freshness",
             "cache.health",

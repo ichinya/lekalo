@@ -37,7 +37,7 @@ if (ajvVersion !== "8.17.1") {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
-const schema = read("contracts/doctor.schema.v0.2.16.json");
+const schema = read("contracts/doctor.schema.v0.3.2.json");
 const registry = read("contracts/diagnostic-registry.v0.2.16.json");
 const registryIds = new Set(registry.entries.map((entry) => entry.id));
 

@@ -615,6 +615,91 @@ pub(crate) fn adapters_inventory(facts: &LockFacts, targets_declared: bool) -> C
     base(CheckState::Ok, "resolved", None, Vec::new())
 }
 
+/// `adapters.trust`: the issue #32 adapter package trust posture of
+/// the project: revoked pins, quarantined inventory rows, and packages
+/// whose trust requires attention. The check reads the local
+/// revocation store and the store inventory; no lock means nothing to
+/// report (unknown).
+pub(crate) fn adapters_trust(root_path: Option<&std::path::Path>) -> Check {
+    let base = |state, reason, next, ids: Vec<String>| Check {
+        id: "adapters.trust",
+        state,
+        required: false,
+        reason: Some(reason),
+        next_action: next,
+        diagnostics: ids,
+        notes: Vec::new(),
+    };
+    let Some(root) = root_path else {
+        return base(
+            CheckState::Unknown,
+            "no-project",
+            action("create-lock"),
+            Vec::new(),
+        );
+    };
+    let store = match crate::adapter_package::trust::RevocationStore::load(root) {
+        Ok(store) => store,
+        Err(_) => {
+            return base(
+                CheckState::Degraded,
+                "revocation-store-invalid",
+                action("resolve-adapters"),
+                vec!["adapter.revoked".to_owned()],
+            );
+        }
+    };
+    let inventory = match crate::adapter_package::Inventory::load(root) {
+        Ok(inventory) => inventory,
+        Err(_) => {
+            return base(
+                CheckState::Unknown,
+                "no-inventory",
+                action("resolve-adapters"),
+                Vec::new(),
+            );
+        }
+    };
+    let mut diagnostics: Vec<String> = Vec::new();
+    let rank = |state: CheckState| match state {
+        CheckState::Ok => 0,
+        CheckState::Degraded => 1,
+        CheckState::Blocked => 3,
+        CheckState::Unknown => 2,
+    };
+    let mut worst = CheckState::Ok;
+    let mut worst_rank = 0;
+    let mut reason = "clean";
+    for row in inventory.rows() {
+        if row.quarantined && worst_rank < rank(CheckState::Blocked) {
+            worst = CheckState::Blocked;
+            worst_rank = rank(CheckState::Blocked);
+            reason = "quarantined-package";
+        }
+        if row.trust == "revoked" && worst_rank < rank(CheckState::Blocked) {
+            worst = CheckState::Blocked;
+            worst_rank = rank(CheckState::Blocked);
+            reason = "revoked-pin";
+        }
+    }
+    // A revocation record that covers a selected pin is a blocked pin.
+    for row in inventory.rows().iter().filter(|row| row.selected) {
+        if store.is_revoked(&row.id, &row.version) {
+            worst = CheckState::Blocked;
+            reason = "revoked-pin";
+            if diagnostics.len() < 8 {
+                diagnostics.push("adapter.revoked".to_owned());
+            }
+        }
+    }
+    if !store.records().is_empty() && worst == CheckState::Ok {
+        // Recorded revocations without an affected pin: informational.
+        worst = CheckState::Degraded;
+        reason = "revocations-recorded";
+    }
+    base(worst, reason, None, diagnostics)
+}
+
 /// `capabilities.profiles`: the locked capability/profile resolution.
 pub(crate) fn capabilities_profiles(facts: &LockFacts, targets_declared: bool) -> Check {
     let base = |state, reason, next: Option<&'static str>| Check {
@@ -1106,6 +1191,8 @@ pub(crate) fn panel(ctx: &PanelContext) -> Vec<Check> {
     lock.required = required("lock.freshness");
     let mut adapters = adapters_inventory(facts, targets_declared);
     adapters.required = required("adapters.inventory");
+    let mut adapter_trust = adapters_trust(Some(root_path));
+    adapter_trust.required = required("adapters.trust");
     let mut capabilities = capabilities_profiles(facts, targets_declared);
     capabilities.required = required("capabilities.profiles");
     let mut cache = cache_health(root_path);
@@ -1120,6 +1207,7 @@ pub(crate) fn panel(ctx: &PanelContext) -> Vec<Check> {
     integrations.required = required("integrations.hlv");
     vec![
         adapters,
+        adapter_trust,
         artifacts,
         bindings,
         cache,

@@ -559,7 +559,7 @@ impl ResolvedAdapter {
         digest: Sha256Digest,
         source: SourceRef,
         compatibility_digest: Sha256Digest,
-        mut artifacts: Vec<ArtifactPin>,
+        artifacts: Vec<ArtifactPin>,
     ) -> Result<Self, LockFailure> {
         Self::from_parts_with_provenance(
             id,
@@ -575,13 +575,16 @@ impl ResolvedAdapter {
     }
 
     /// Construct one adapter pin with the issue #32 provenance members.
+    // The allow is the closed v1 wire: the identity triple plus the
+    // three additive provenance members.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_parts_with_provenance(
         id: ComponentId,
         version: SemVer,
         digest: Sha256Digest,
         source: SourceRef,
         compatibility_digest: Sha256Digest,
-        mut artifacts: Vec<ArtifactPin>,
+        artifacts: Vec<ArtifactPin>,
         manifest_digest: Option<Sha256Digest>,
         trust: Option<LockTrust>,
         provenance: Option<Provenance>,
@@ -589,6 +592,7 @@ impl ResolvedAdapter {
         if artifacts.is_empty() {
             return Err(LockFailure::ReferenceInvalid);
         }
+        let mut artifacts = artifacts;
         artifacts.sort();
         if artifacts.windows(2).any(|pair| pair[0] >= pair[1]) {
             return Err(LockFailure::ReferenceInvalid);
