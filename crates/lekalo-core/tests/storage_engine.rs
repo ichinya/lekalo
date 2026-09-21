@@ -935,6 +935,67 @@ fn an_added_join_plans_the_exact_ddl_create_and_foreign_keys() {
 }
 
 #[test]
+fn a_renamed_table_rederives_its_constraint_names() {
+    // The derived FK and index names embed the table name: after a
+    // rename, the old names drop and the fresh deterministic names
+    // re-add — the migrated schema never keeps a stale fk_<oldtable>_*
+    // a fresh render would not produce.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        for namespace_table in projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+        {
+            if namespace_table
+                .get("table")
+                .and_then(serde_json::Value::as_str)
+                == Some("tag")
+            {
+                namespace_table["table"] = serde_json::Value::String("label".to_owned());
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        None,
+    )
+    .expect("plans");
+    assert!(plan.gated(), "a rename is destructive");
+    assert!(plan
+        .steps()
+        .iter()
+        .any(|step| step.kind() == "rename_table"));
+    // The old derived names drop; the fresh ones re-add.
+    assert!(plan
+        .steps()
+        .iter()
+        .any(|step| { step.kind() == "drop_index" && step.statement().contains("idx_tag_label") }));
+    assert!(plan.steps().iter().any(|step| {
+        step.kind() == "add_index" && step.statement().contains("idx_label_label")
+    }));
+    // The migrated schema carries no stale derived name: every FK on
+    // the renamed table references the new table name.
+    assert!(!plan
+        .steps()
+        .iter()
+        .any(|step| { step.kind() == "add_foreign_key" && step.statement().contains("fk_tag_") }));
+    // The derived enum check re-adds under the new table name.
+    assert!(plan.steps().iter().any(|step| {
+        step.kind() == "add_check" && step.statement().contains("chk_label_color")
+    }));
+}
+
+#[test]
 fn a_type_change_without_an_assignment_cast_refuses() {
     // A text-to-integer change cannot execute as a bare ALTER COLUMN
     // TYPE: the planner refuses with the registered rule instead of

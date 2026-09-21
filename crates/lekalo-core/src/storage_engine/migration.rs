@@ -571,6 +571,18 @@ fn plan_tables(
         }
     }
     // Existing tables: column-level changes.
+    // The primary key of every candidate table, by table name: the
+    // deterministic FK target column for rename re-derivation.
+    let primary_keys: std::collections::BTreeMap<&str, &StorageName> = candidate
+        .tables()
+        .iter()
+        .filter_map(|table| {
+            table
+                .primary_key()
+                .first()
+                .map(|pk| (table.table().as_str(), pk))
+        })
+        .collect();
     for table in candidate.tables() {
         let Some(base_table) = base.table(table.entity()) else {
             continue;
@@ -590,6 +602,111 @@ fn plan_tables(
                 Vec::new(),
                 None,
             );
+            // The derived constraint names embed the table name, so
+            // the renamed table's foreign keys drop under their old
+            // names and re-add under the fresh deterministic ones —
+            // the migrated schema never keeps a stale `fk_<oldtable>_
+            // *` a fresh render would not produce.
+            let mut rename_requires = Vec::new();
+            for foreign_key in table.foreign_keys() {
+                let old_name = StorageName::parse(&format!(
+                    "fk_{}_{}",
+                    base_table.table(),
+                    foreign_key.column()
+                ))
+                .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None))?;
+                let drop_id = steps.len();
+                push_step(
+                    steps,
+                    "drop_constraint",
+                    format!(
+                        "ALTER TABLE {} DROP CONSTRAINT {};",
+                        quote(table.table()),
+                        quote(&old_name)
+                    ),
+                    DataRisk::Destructive,
+                    Vec::new(),
+                    None,
+                );
+                rename_requires.push(drop_id + 1);
+            }
+            for index in table.indexes() {
+                if index.name().is_some() {
+                    // A declared name is not derived; the rename
+                    // leaves it stable.
+                    continue;
+                }
+                let old_name = super::postgres::ddl::derived_index_name(base_table.table(), index)?;
+                let drop_id = steps.len();
+                push_step(
+                    steps,
+                    "drop_index",
+                    format!("DROP INDEX {};", quote(&old_name)),
+                    DataRisk::Destructive,
+                    Vec::new(),
+                    None,
+                );
+                rename_requires.push(drop_id + 1);
+            }
+            for foreign_key in table.foreign_keys() {
+                let referenced = primary_keys
+                    .get(foreign_key.references_table().as_str())
+                    .copied()
+                    .ok_or_else(|| {
+                        diagnostic::rule_invalid(MAPPING_INVALID, "referenced-key-absent", None)
+                    })?;
+                let name =
+                    StorageName::parse(&format!("fk_{}_{}", table.table(), foreign_key.column()))
+                        .map_err(|_| {
+                        diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
+                    })?;
+                push_step(
+                    steps,
+                    "add_foreign_key",
+                    format!(
+                        "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {}({}) ON DELETE {};",
+                        quote(table.table()),
+                        quote(&name),
+                        quote(foreign_key.column()),
+                        quote(foreign_key.references_table()),
+                        quote(referenced),
+                        foreign_key.on_delete().key(),
+                    ),
+                    DataRisk::None,
+                    rename_requires.clone(),
+                    None,
+                );
+            }
+            for index in table.indexes() {
+                if index.name().is_some() {
+                    continue;
+                }
+                let name = super::postgres::ddl::derived_index_name(table.table(), index)?;
+                let unique = if index.unique() { "UNIQUE " } else { "" };
+                let predicate = match index.where_() {
+                    Some(predicates) => format!(" WHERE {}", render_predicates(predicates)),
+                    None => String::new(),
+                };
+                let columns = index
+                    .columns()
+                    .iter()
+                    .map(quote)
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                push_step(
+                    steps,
+                    "add_index",
+                    format!(
+                        "CREATE {unique}INDEX {} ON {} ({}){predicate};",
+                        quote(&name),
+                        quote(table.table()),
+                        columns
+                    ),
+                    DataRisk::None,
+                    rename_requires.clone(),
+                    None,
+                );
+            }
             continue;
         }
         table_ids

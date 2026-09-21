@@ -656,7 +656,7 @@ pub(crate) fn sequence_default(
 }
 
 /// The deterministic name of one unnamed index.
-fn derived_index_name(
+pub(crate) fn derived_index_name(
     table: &StorageName,
     index: &crate::storage_projection::Index,
 ) -> Result<StorageName, DiagnosticSet> {
