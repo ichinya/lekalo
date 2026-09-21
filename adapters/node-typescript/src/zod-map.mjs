@@ -277,7 +277,13 @@ function mapEnum(definition, naming, moduleId) {
 
 function mapObject(definition, naming, context, moduleId) {
   const strict = context.policy.unknownKeys === "strict";
-  const fields = (definition.fields ?? []).map((field) => {
+  const members =
+    definition.kind === "command"
+      ? definition.input
+      : definition.kind === "event"
+        ? definition.payload
+        : definition.fields;
+  const fields = (members ?? []).map((field) => {
     const inner = mapType(field.type, context);
     // Presence axis: an absent `required` member makes the key optional.
     const expr = field.required === true ? inner : { k: "optional", inner };
