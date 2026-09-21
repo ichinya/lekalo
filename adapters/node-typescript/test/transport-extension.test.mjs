@@ -28,6 +28,10 @@ const plannerEvidence = readFileSync(
   join(repoRoot, "tests/fixtures/adapter-conformance/inputs/transport-minimal.json"),
   "utf8",
 );
+const plannerIr = readFileSync(
+  join(repoRoot, "tests/fixtures/adapter-conformance/inputs/ir-minimal.json"),
+  "utf8",
+);
 const sha256Text = (text) =>
   "sha256:" + createHash("sha256").update(text, "utf8").digest("hex");
 
@@ -35,18 +39,39 @@ const PROFILE = {
   id: "standalone",
   mode: "observed",
   target: "node-typescript",
-  readRoots: [{ kind: "tree", path: ".lekalo/cache/transport" }],
+  readRoots: [
+    { kind: "tree", path: ".lekalo/cache/transport" },
+    { kind: "tree", path: ".lekalo/cache/ir" },
+  ],
   exclusions: [],
   provenance: { origin: "declared", revision: "test", disposition: "public-fixture" },
 };
 
-/** A temp project with the planner evidence under the cache home. */
-function evidenceProject() {
+/** A temp project with the planner evidence and IR under the cache homes. */
+function evidenceProject(irText = plannerIr) {
   const root = mkdtempSync(join(tmpdir(), "lekalo-transport-ext-"));
   const evidenceDir = join(root, ".lekalo", "cache", "transport");
   mkdirSync(evidenceDir, { recursive: true });
   writeFileSync(join(evidenceDir, "planner.json"), plannerEvidence, "utf8");
+  const irDir = join(root, ".lekalo", "cache", "ir");
+  mkdirSync(irDir, { recursive: true });
+  writeFileSync(join(irDir, "planner.json"), irText, "utf8");
   return root;
+}
+
+/** The Model endpoint joins of the fixture IR evidence. */
+function fixtureJoins(document = JSON.parse(plannerIr)) {
+  const joins = new Map();
+  for (const definition of document.definitions) {
+    if (definition.kind === "endpoint") {
+      joins.set(definition.id, {
+        method: definition.method,
+        path: definition.path,
+        invokes: definition.invokes,
+      });
+    }
+  }
+  return joins;
 }
 
 const REQUEST_BASE = {
@@ -80,12 +105,14 @@ test("the descriptor declares the transport capability and write root", () => {
   assert.equal(descriptor.namedCapabilities["generate.openapi"], "unsupported");
   assert.deepEqual(descriptor.acceptedIrVersions, ["0.2.16"]);
   assert.deepEqual(descriptor.writeRoots, [ROUTE_WRITE_ROOT]);
+  assert.deepEqual(descriptor.readRoots, [".lekalo/cache/transport", ".lekalo/cache/ir"]);
 });
 
 test("the route plan is deterministic and derived from the evidence", () => {
   const evidence = JSON.parse(plannerEvidence);
-  const first = planRouteLayer(evidence, "planner");
-  const second = planRouteLayer(evidence, "planner");
+  const joins = fixtureJoins();
+  const first = planRouteLayer(evidence, "planner", joins);
+  const second = planRouteLayer(evidence, "planner", joins);
   assert.deepEqual(first, second, "repeated plans are identical");
   assert.equal(first.writes.length, 1, "one route module per model module");
   const write = first.writes[0];
@@ -96,11 +123,24 @@ test("the route plan is deterministic and derived from the evidence", () => {
   const text = first.bodies[0].bytes;
   assert.match(text, /plannerApiFocus/);
   assert.match(text, /"errorEnvelope":"canonical-v1"/);
+  // The Model join fills the wire surface: never a null-bearing route.
+  assert.match(text, /"method":"POST"/);
+  assert.match(text, /"path":"\/tasks\/\{task_id\}\/focus"/);
+  assert.match(text, /"invokes":"planner.focus_task"/);
+  assert.doesNotMatch(text, /"method":null/);
+});
+
+test("an unjoined endpoint throws instead of planning a null route", () => {
+  const evidence = JSON.parse(plannerEvidence);
+  assert.throws(
+    () => planRouteLayer(evidence, "planner", new Map()),
+    /transport-endpoint-unjoined/,
+  );
 });
 
 test("declared capabilities are reported unsupported, never silent", () => {
   const evidence = JSON.parse(plannerEvidence);
-  const plan = planRouteLayer(evidence, "planner");
+  const plan = planRouteLayer(evidence, "planner", fixtureJoins());
   assert.equal(plan.notes.length, 1, "the streaming declaration is noted");
   assert.deepEqual(plan.notes[0], {
     capability: "streaming",
@@ -157,6 +197,60 @@ test("a missing evidence file is an honest failure, never a silent plan", () => 
     });
     assert.equal(outcome.state, "failed");
     assert.equal(outcome.diagnostics[0].reason, "transport-evidence-absent");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a missing compiled-IR evidence refuses instead of planning nulls", () => {
+  const root = evidenceProject();
+  try {
+    rmSync(join(root, ".lekalo", "cache", "ir", "planner.json"));
+    const outcome = transportGenerateOperation({
+      request: { ...REQUEST_BASE },
+      readView: createScopedReadView(root),
+    });
+    assert.equal(outcome.state, "failed");
+    assert.equal(outcome.diagnostics[0].reason, "ir-evidence-absent");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a foreign project in either evidence document refuses the plan", () => {
+  // The IR carries a different project id than the transport evidence.
+  const foreignIr = JSON.parse(plannerIr);
+  foreignIr.project.id = "other";
+  const root = evidenceProject(JSON.stringify(foreignIr));
+  try {
+    const outcome = transportGenerateOperation({
+      request: { ...REQUEST_BASE },
+      readView: createScopedReadView(root),
+    });
+    assert.equal(outcome.state, "failed");
+    assert.equal(outcome.diagnostics[0].reason, "transport-project-mismatch");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an endpoint the IR cannot resolve refuses the plan", () => {
+  // The transport evidence references an endpoint symbol the IR lacks.
+  const missingJoin = JSON.parse(plannerEvidence);
+  missingJoin.endpoints[0].endpoint = "planner.endpoint_missing";
+  const foreignEvidence = JSON.stringify(missingJoin);
+  const root = mkdtempSync(join(tmpdir(), "lekalo-transport-unjoined-"));
+  try {
+    mkdirSync(join(root, ".lekalo", "cache", "transport"), { recursive: true });
+    writeFileSync(join(root, ".lekalo", "cache", "transport", "planner.json"), foreignEvidence, "utf8");
+    mkdirSync(join(root, ".lekalo", "cache", "ir"), { recursive: true });
+    writeFileSync(join(root, ".lekalo", "cache", "ir", "planner.json"), plannerIr, "utf8");
+    const outcome = transportGenerateOperation({
+      request: { ...REQUEST_BASE },
+      readView: createScopedReadView(root),
+    });
+    assert.equal(outcome.state, "failed");
+    assert.equal(outcome.diagnostics[0].reason, "transport-endpoint-unjoined");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

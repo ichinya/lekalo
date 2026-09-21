@@ -147,8 +147,14 @@ validate|inspect|project|diff` operate on any document path;
 document exists, and `lekalo generate` validates it as a preflight
 and writes canonical evidence to
 `.lekalo/cache/transport/<project>.json` inside the `lekalo.cache`
-authority home — the only transport bytes an adapter may read as
-input, covered by its declared read scopes.
+authority home. The transport generator extension additionally reads
+the compiled-IR evidence `.lekalo/cache/ir/<project>.json` from the
+same home and joins the Model endpoint symbols (`method`, `path`,
+`invokes`) into the route layer; an unresolvable join, a version
+mismatch, or a project mismatch between the two evidence documents
+refuses the plan — never a null-bearing route. Both homes are the
+only bytes an adapter may read as input, covered by its declared read
+scopes.
 
 ## Diagnostics
 

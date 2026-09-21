@@ -12,6 +12,10 @@
       "kind": "tree"
     },
     {
+      "path": ".lekalo/cache/ir",
+      "kind": "tree"
+    },
+    {
       "path": ".lekalo/cache/transport",
       "kind": "tree"
     }

@@ -28,6 +28,10 @@ const evidenceBytes = readFileSync(
   join(repoRoot, "tests/fixtures/adapter-conformance/inputs/transport-minimal.json"),
   "utf8",
 );
+const irBytes = readFileSync(
+  join(repoRoot, "tests/fixtures/adapter-conformance/inputs/ir-minimal.json"),
+  "utf8",
+);
 const sha256Text = (text) =>
   "sha256:" + createHash("sha256").update(text, "utf8").digest("hex");
 
@@ -35,7 +39,10 @@ const PROFILE = {
   id: "standalone",
   mode: "observed",
   target: "node-typescript",
-  readRoots: [{ kind: "tree", path: ".lekalo/cache/transport" }],
+  readRoots: [
+    { kind: "tree", path: ".lekalo/cache/transport" },
+    { kind: "tree", path: ".lekalo/cache/ir" },
+  ],
   exclusions: [],
   provenance: { origin: "declared", revision: "test", disposition: "public-fixture" },
 };
@@ -57,7 +64,25 @@ function evidenceProject() {
   const dir = join(root, ".lekalo", "cache", "transport");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "planner.json"), evidenceBytes, "utf8");
+  const irDir = join(root, ".lekalo", "cache", "ir");
+  mkdirSync(irDir, { recursive: true });
+  writeFileSync(join(irDir, "planner.json"), irBytes, "utf8");
   return root;
+}
+
+/** The Model endpoint joins of the fixture IR evidence. */
+function fixtureJoins(document = JSON.parse(irBytes)) {
+  const joins = new Map();
+  for (const definition of document.definitions) {
+    if (definition.kind === "endpoint") {
+      joins.set(definition.id, {
+        method: definition.method,
+        path: definition.path,
+        invokes: definition.invokes,
+      });
+    }
+  }
+  return joins;
 }
 
 test("gate: the descriptor claims the transport capability honestly", () => {
@@ -69,12 +94,22 @@ test("gate: the descriptor claims the transport capability honestly", () => {
 
 test("gate: the plan is deterministic and byte-pinned across repeats", () => {
   const evidence = JSON.parse(evidenceBytes);
-  const first = planRouteLayer(evidence, "planner");
+  const joins = fixtureJoins();
+  const first = planRouteLayer(evidence, "planner", joins);
   for (let index = 0; index < 3; index += 1) {
-    assert.deepEqual(planRouteLayer(evidence, "planner"), first);
+    assert.deepEqual(planRouteLayer(evidence, "planner", joins), first);
   }
   assert.equal(first.writes[0].path, "src/routes/planner.routes.ts");
   assert.equal(first.writes[0].sha256, sha256Text(first.bodies[0].bytes));
+  // Every route carries its joined Model surface: never a null.
+  const module = JSON.parse(
+    first.bodies[0].bytes.slice(first.bodies[0].bytes.indexOf("=") + 1, -2),
+  );
+  for (const route of module.routes) {
+    assert.equal(route.method, "POST");
+    assert.equal(route.path, "/tasks/{task_id}/focus");
+    assert.equal(route.invokes, "planner.focus_task");
+  }
 });
 
 test("gate: dry run never writes and apply publishes exactly the plan", () => {
@@ -103,10 +138,18 @@ test("gate: dry run never writes and apply publishes exactly the plan", () => {
 
 test("gate: unsupported capabilities are explicit notes, never silent", () => {
   const evidence = JSON.parse(evidenceBytes);
-  const plan = planRouteLayer(evidence, "planner");
+  const plan = planRouteLayer(evidence, "planner", fixtureJoins());
   assert.equal(plan.notes.length, 1);
   assert.equal(plan.notes[0].capability, "streaming");
   assert.equal(plan.notes[0].state, "unsupported");
+});
+
+test("gate: an unjoined endpoint refuses instead of planning nulls", () => {
+  const evidence = JSON.parse(evidenceBytes);
+  assert.throws(
+    () => planRouteLayer(evidence, "planner", new Map()),
+    /transport-endpoint-unjoined/,
+  );
 });
 
 test("gate: an absent evidence file refuses honestly", () => {

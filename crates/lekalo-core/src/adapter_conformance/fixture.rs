@@ -66,28 +66,36 @@ pub const TRANSPORT_DIFF_BREAKING: &str =
     include_str!("../../../../tests/fixtures/transport-http/diff/candidate-remove-error.json");
 
 /// The canonical route surface the transport generator must derive
-/// from the fixture evidence: the path and the exact sha256 of the
-/// committed golden route module (parity is checkable by byte
-/// comparison because every runtime renders the same canonical
-/// surface).
+/// from the fixture evidence joined with the fixture compiled-IR
+/// evidence: the path and the exact sha256 of the committed golden
+/// route module (parity is checkable by byte comparison because every
+/// runtime renders the same canonical surface; the joined method,
+/// path, and invokes come from the Model symbols).
 pub const TRANSPORT_ROUTE_PATH: &str = "src/routes/planner.routes.ts";
 pub const TRANSPORT_ROUTE_DIGEST: &str =
-    "sha256:a156b53c84474c6530d5b68e50f40a7345fc8e0a020e228db5951c93620ab2e4";
+    "sha256:e0e969d4a9523761bc84d48d3f5455e293fa203dc8d9d8fb075e7f678b5a5ec4";
 
 /// The logical path of the transport evidence input.
 pub const TRANSPORT_PATH: &str = ".lekalo/cache/transport/minimal.json";
+
+/// The logical path of the compiled-IR evidence the transport
+/// generator joins with (the canonical `lekalo.cache` IR home, exactly
+/// like a production `lekalo generate` run materializes before any
+/// adapter exchange).
+pub const IR_EVIDENCE_PATH: &str = ".lekalo/cache/ir/minimal.json";
 
 /// The route-layer home marker the transport generator owns.
 pub const ROUTES_KEEP: &str = "";
 
 /// The fixture files, as logical path plus exact bytes.
-pub const FILES: [(&str, &str); 7] = [
+pub const FILES: [(&str, &str); 8] = [
     ("lekalo/project.yaml", PROJECT_MARKER),
     ("openspec/specs/conformance.md", OPENSPEC_MARKER),
     (IR_PATH, IR_MINIMAL),
     (IR_INVALID_PATH, IR_INVALID_REFS),
     (SCENARIO_PATH, SCENARIO_TXN),
     (TRANSPORT_PATH, TRANSPORT_EVIDENCE),
+    (IR_EVIDENCE_PATH, IR_MINIMAL),
     ("src/routes/.keep", ROUTES_KEEP),
 ];
 
