@@ -538,6 +538,46 @@ fn plan_tables(
         table_ids
             .entry(table.table().as_str().to_owned())
             .or_insert(usize::MAX);
+        // A changed primary key on a surviving table is visible: the
+        // old constraint drops before the new one is added (both names
+        // are deterministic — `pk_<table>`), and the swap is a
+        // destructive rewrite of the table's identity, so it gates.
+        if base_table.primary_key() != table.primary_key() {
+            let key_name = StorageName::parse(&format!("pk_{}", table.table()))
+                .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "primary-key-name", None))?;
+            let drop_id = steps.len();
+            push_step(
+                steps,
+                "drop_constraint",
+                format!(
+                    "ALTER TABLE {} DROP CONSTRAINT {};",
+                    quote(table.table()),
+                    quote(&key_name)
+                ),
+                DataRisk::Destructive,
+                Vec::new(),
+                None,
+            );
+            let columns = table
+                .primary_key()
+                .iter()
+                .map(quote)
+                .collect::<Vec<String>>()
+                .join(", ");
+            push_step(
+                steps,
+                "add_primary_key",
+                format!(
+                    "ALTER TABLE {} ADD CONSTRAINT {} PRIMARY KEY ({});",
+                    quote(table.table()),
+                    quote(&key_name),
+                    columns
+                ),
+                DataRisk::Destructive,
+                vec![drop_id + 1],
+                None,
+            );
+        }
         for column in table.columns() {
             let Some(base_column) = base_table
                 .columns()

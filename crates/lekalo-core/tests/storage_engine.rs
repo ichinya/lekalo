@@ -660,6 +660,70 @@ fn a_plan_under_a_refusing_array_policy_refuses_and_never_renders_the_type() {
 }
 
 #[test]
+fn a_changed_primary_key_plans_the_drop_and_add_and_gates() {
+    // A primary-key swap on a surviving table is visible to the
+    // planner: the old constraint drops, the new one is added under
+    // the deterministic pk_<table> name, and the swap gates.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        if let Some(tables) = projection.get_mut("tables").and_then(|t| t.as_array_mut()) {
+            for table in tables.iter_mut() {
+                if table.get("table").and_then(serde_json::Value::as_str) == Some("tag") {
+                    table["primaryKey"] = serde_json::json!(["label"]);
+                }
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        None,
+    )
+    .expect("plans");
+    assert!(plan.gated(), "a primary-key swap is destructive");
+    let drop = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "drop_constraint" && step.statement().contains("pk_tag"))
+        .expect("the old primary key drops");
+    let add = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "add_primary_key")
+        .expect("the new primary key is added");
+    assert!(add.statement().contains("PRIMARY KEY (\"label\")"));
+    assert_eq!(
+        add.requires(),
+        &[drop.id()],
+        "the add follows the drop of the old key"
+    );
+    // Both destructive steps declare their explain hook.
+    assert_eq!(
+        drop.explain(),
+        Some(lekalo_core::storage_engine::migration::ExplainHook::Before)
+    );
+    assert_eq!(
+        add.explain(),
+        Some(lekalo_core::storage_engine::migration::ExplainHook::Before)
+    );
+}
+
+#[test]
 fn a_dropped_join_plans_a_gated_drop_table() {
     // Join tables are planned: dropping a many-to-many relation is a
     // destructive DROP TABLE, never a silently-empty ready plan.
