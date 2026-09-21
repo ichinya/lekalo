@@ -290,9 +290,9 @@ pub fn plan(
     }
     let table_ids = plan_tables(&mut steps, &derived_base, &derived_candidate, profile)?;
     // Foreign keys and checks after their tables.
-    plan_foreign_keys(&mut steps, &derived_base, &derived_candidate, &table_ids);
+    plan_foreign_keys(&mut steps, &derived_base, &derived_candidate, &table_ids)?;
     plan_checks(&mut steps, base, candidate)?;
-    plan_indexes(&mut steps, &derived_base, &derived_candidate, &table_ids);
+    plan_indexes(&mut steps, &derived_base, &derived_candidate, &table_ids)?;
     // Drops last: the mechanical diff emits them, the ordering pass
     // moves every destructive drop behind the constructive steps.
     order_drops_last(&mut steps);
@@ -740,98 +740,6 @@ fn create_table_statement(
     ))
 }
 
-/// The foreign-key plan: added and removed constraints, dependency
-/// ordered behind their tables.
-fn plan_foreign_keys(
-    steps: &mut Vec<Step>,
-    base: &DerivedProjection,
-    candidate: &DerivedProjection,
-    table_ids: &std::collections::BTreeMap<String, usize>,
-) {
-    // The primary key of every candidate table, by table name: the
-    // deterministic FK target column.
-    let primary_keys: std::collections::BTreeMap<&str, &StorageName> = candidate
-        .tables()
-        .iter()
-        .filter_map(|table| {
-            table
-                .primary_key()
-                .first()
-                .map(|pk| (table.table().as_str(), pk))
-        })
-        .collect();
-    for table in candidate.tables() {
-        let base_table = base.table(table.entity());
-        for foreign_key in table.foreign_keys() {
-            let existed = base_table
-                .map(|base| {
-                    base.foreign_keys()
-                        .iter()
-                        .any(|candidate| candidate.column() == foreign_key.column())
-                })
-                .unwrap_or(false);
-            if existed {
-                continue;
-            }
-            let mut requires = Vec::new();
-            if let Some(create_id) = table_ids.get(table.table().as_str()) {
-                if *create_id < steps.len() {
-                    requires.push(create_id + 1);
-                }
-            }
-            let name =
-                StorageName::parse(&format!("fk_{}_{}", table.table(), foreign_key.column()))
-                    .unwrap_or_else(|_| StorageName::parse("fk_derived").expect("literal"));
-            push_step(
-                steps,
-                "add_foreign_key",
-                format!(
-                    "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {}({}) ON DELETE {};",
-                    quote(table.table()),
-                    quote(&name),
-                    quote(foreign_key.column()),
-                    quote(foreign_key.references_table()),
-                    quote(primary_keys.get(foreign_key.references_table().as_str()).copied().unwrap_or(&StorageName::parse("id").expect("literal"))),
-                    foreign_key.on_delete().key(),
-                ),
-                DataRisk::None,
-                requires,
-                None,
-            );
-        }
-    }
-    for table in base.tables() {
-        let candidate_table = candidate.table(table.entity());
-        for foreign_key in table.foreign_keys() {
-            let removed = !candidate_table
-                .map(|candidate| {
-                    candidate
-                        .foreign_keys()
-                        .iter()
-                        .any(|base| base.column() == foreign_key.column())
-                })
-                .unwrap_or(false);
-            if removed {
-                let name =
-                    StorageName::parse(&format!("fk_{}_{}", table.table(), foreign_key.column()))
-                        .unwrap_or_else(|_| StorageName::parse("fk_derived").expect("literal"));
-                push_step(
-                    steps,
-                    "drop_constraint",
-                    format!(
-                        "ALTER TABLE {} DROP CONSTRAINT {};",
-                        quote(table.table()),
-                        quote(&name)
-                    ),
-                    DataRisk::Destructive,
-                    Vec::new(),
-                    None,
-                );
-            }
-        }
-    }
-}
-
 /// The CHECK-constraint plan from the declared storage tables.
 fn plan_checks(
     steps: &mut Vec<Step>,
@@ -934,14 +842,127 @@ fn render_predicates(
         .join(" AND ")
 }
 
+/// The foreign-key plan: added and removed constraints, dependency
+/// ordered behind their tables. An over-long derived constraint name
+/// and an unresolvable referenced key refuse with the typed mapping
+/// rule — never a colliding fallback name and never an invented `id`
+/// target (the DDL renderer answers the same inputs identically).
+fn plan_foreign_keys(
+    steps: &mut Vec<Step>,
+    base: &DerivedProjection,
+    candidate: &DerivedProjection,
+    table_ids: &std::collections::BTreeMap<String, usize>,
+) -> Result<(), DiagnosticSet> {
+    // The primary key of every candidate table, by table name: the
+    // deterministic FK target column.
+    let primary_keys: std::collections::BTreeMap<&str, &StorageName> = candidate
+        .tables()
+        .iter()
+        .filter_map(|table| {
+            table
+                .primary_key()
+                .first()
+                .map(|pk| (table.table().as_str(), pk))
+        })
+        .collect();
+    for table in candidate.tables() {
+        let base_table = base.table(table.entity());
+        for foreign_key in table.foreign_keys() {
+            let existed = base_table
+                .map(|base| {
+                    base.foreign_keys()
+                        .iter()
+                        .any(|candidate| candidate.column() == foreign_key.column())
+                })
+                .unwrap_or(false);
+            if existed {
+                continue;
+            }
+            let mut requires = Vec::new();
+            if let Some(create_id) = table_ids.get(table.table().as_str()) {
+                if *create_id < steps.len() {
+                    requires.push(create_id + 1);
+                }
+            }
+            let name = StorageName::parse(&format!(
+                "fk_{}_{}",
+                table.table(),
+                foreign_key.column()
+            ))
+            .map_err(|_| {
+                diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
+            })?;
+            let referenced = primary_keys
+                .get(foreign_key.references_table().as_str())
+                .copied()
+                .ok_or_else(|| {
+                    diagnostic::rule_invalid(MAPPING_INVALID, "referenced-key-absent", None)
+                })?;
+            push_step(
+                steps,
+                "add_foreign_key",
+                format!(
+                    "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {}({}) ON DELETE {};",
+                    quote(table.table()),
+                    quote(&name),
+                    quote(foreign_key.column()),
+                    quote(foreign_key.references_table()),
+                    quote(referenced),
+                    foreign_key.on_delete().key(),
+                ),
+                DataRisk::None,
+                requires,
+                None,
+            );
+        }
+    }
+    for table in base.tables() {
+        let candidate_table = candidate.table(table.entity());
+        for foreign_key in table.foreign_keys() {
+            let removed = !candidate_table
+                .map(|candidate| {
+                    candidate
+                        .foreign_keys()
+                        .iter()
+                        .any(|base| base.column() == foreign_key.column())
+                })
+                .unwrap_or(false);
+            if removed {
+                let name = StorageName::parse(&format!(
+                    "fk_{}_{}",
+                    table.table(),
+                    foreign_key.column()
+                ))
+                .map_err(|_| {
+                    diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
+                })?;
+                push_step(
+                    steps,
+                    "drop_constraint",
+                    format!(
+                        "ALTER TABLE {} DROP CONSTRAINT {};",
+                        quote(table.table()),
+                        quote(&name)
+                    ),
+                    DataRisk::Destructive,
+                    Vec::new(),
+                    None,
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The index plan: added and removed indexes, deterministic names for
-/// the unnamed ones.
+/// the unnamed ones. An over-long derived index name refuses with the
+/// typed mapping rule instead of collapsing to a colliding fallback.
 fn plan_indexes(
     steps: &mut Vec<Step>,
     base: &DerivedProjection,
     candidate: &DerivedProjection,
     table_ids: &std::collections::BTreeMap<String, usize>,
-) {
+) -> Result<(), DiagnosticSet> {
     for table in candidate.tables() {
         let base_table = base.table(table.entity());
         for index in table.indexes() {
@@ -962,7 +983,9 @@ fn plan_indexes(
                         .collect::<Vec<&str>>()
                         .join("_");
                     StorageName::parse(&format!("idx_{}_{}{}", table.table(), columns, suffix))
-                        .unwrap_or_else(|_| StorageName::parse("idx_derived").expect("literal"))
+                        .map_err(|_| {
+                            diagnostic::rule_invalid(MAPPING_INVALID, "index-name", None)
+                        })?
                 }
             };
             let unique = if index.unique() { "UNIQUE " } else { "" };
@@ -1014,8 +1037,15 @@ fn plan_indexes(
                             .map(|column| column.as_str())
                             .collect::<Vec<&str>>()
                             .join("_");
-                        StorageName::parse(&format!("idx_{}_{}{}", table.table(), columns, suffix))
-                            .unwrap_or_else(|_| StorageName::parse("idx_derived").expect("literal"))
+                        StorageName::parse(&format!(
+                            "idx_{}_{}{}",
+                            table.table(),
+                            columns,
+                            suffix
+                        ))
+                        .map_err(|_| {
+                            diagnostic::rule_invalid(MAPPING_INVALID, "index-name", None)
+                        })?
                     }
                 };
                 push_step(
@@ -1029,6 +1059,7 @@ fn plan_indexes(
             }
         }
     }
+    Ok(())
 }
 
 /// Move every drop behind the constructive steps; within the drops,
