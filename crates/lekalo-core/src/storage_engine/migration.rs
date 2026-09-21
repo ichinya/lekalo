@@ -21,7 +21,7 @@ use crate::storage_projection::id::StorageName;
 use crate::storage_projection::projection::{DataRisk, GeneratedKind, PredicateOp};
 use crate::storage_projection::{compare, StorageProjectionAttachment};
 
-use super::diagnostic::{self, MAPPING_INVALID, MIGRATION_INVALID};
+use super::diagnostic::{self, MAPPING_INVALID, MIGRATION_INVALID, RENDER_UNSUPPORTED};
 use super::postgres::quoting::quote;
 use super::StorageEngineAttachment;
 
@@ -548,7 +548,7 @@ fn plan_tables(
                             "UPDATE {} SET {} = {} WHERE {} IS NULL;",
                             quote(table.table()),
                             quote(column.name()),
-                            backfill_literal(column),
+                            backfill_literal(column, table.table())?,
                             quote(column.name())
                         ),
                         DataRisk::BackfillRequired,
@@ -613,7 +613,7 @@ fn plan_tables(
                             "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT {};",
                             quote(table.table()),
                             quote(column.name()),
-                            render_default(default)?
+                            render_default(default, table.table())?
                         ),
                         DataRisk::None,
                         Vec::new(),
@@ -673,28 +673,50 @@ fn plan_tables(
 
 /// One deterministic placeholder backfill literal for a tightened
 /// column: the zero value of its declared default kind, never
-/// invented row data.
-fn backfill_literal(column: &DerivedColumn) -> String {
+/// invented row data. A sequence default consumes the owning table's
+/// deterministic sequence.
+fn backfill_literal(
+    column: &DerivedColumn,
+    table: &StorageName,
+) -> Result<String, DiagnosticSet> {
     match column.default() {
-        Some(default) => render_default(default).unwrap_or_else(|_| "NULL".to_owned()),
+        Some(default) => render_default(default, table),
         None => match column.storage_type() {
-            "boolean" => "FALSE".to_owned(),
+            "boolean" => Ok("FALSE".to_owned()),
             "bigint" | "smallint" | "integer" | "real" | "numeric" | "double precision" => {
-                "0".to_owned()
+                Ok("0".to_owned())
             }
-            "text" | "varchar" | "json" | "jsonb" => "' '".to_owned(),
-            _ => "NULL".to_owned(),
+            "text" | "varchar" | "json" | "jsonb" => Ok("''".to_owned()),
+            _ => Err(diagnostic::rule_invalid(
+                RENDER_UNSUPPORTED,
+                "backfill-literal",
+                None,
+            )),
         },
     }
 }
 
-/// Render one column default.
-fn render_default(default: &FieldDefault) -> Result<String, DiagnosticSet> {
+/// Render one column default. A sequence default consumes the owning
+/// table's deterministic sequence (`seq_<table>_<column>`), the exact
+/// object the planner creates — never the bare referenced column
+/// name, which names no sequence.
+fn render_default(
+    default: &FieldDefault,
+    table: &StorageName,
+) -> Result<String, DiagnosticSet> {
     let rendered = match default {
         FieldDefault::Literal(literal) => render_literal(literal),
         FieldDefault::Now => "now()".to_owned(),
         FieldDefault::UuidGenerate => "gen_random_uuid()".to_owned(),
-        FieldDefault::Sequence { column } => format!("nextval('{}')", column.as_str()),
+        FieldDefault::Sequence { column } => {
+            let sequence = StorageName::parse(&format!(
+                "seq_{}_{}",
+                table,
+                column.as_str()
+            ))
+            .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "sequence-name", None))?;
+            format!("nextval('{}')", sequence)
+        }
     };
     Ok(rendered)
 }
@@ -718,8 +740,21 @@ fn create_table_statement(
     let mut lines: Vec<String> = Vec::new();
     for column in table.columns() {
         let mut line = format!("{} {}", quote(column.name()), column.storage_type());
-        if let Some(default) = column.default() {
-            line.push_str(&format!(" DEFAULT {}", render_default(default)?));
+        if column.generated_kind() == Some(GeneratedKind::Sequence) {
+            // A generated sequence column draws from its own owned
+            // sequence, exactly as the DDL renderer emits it.
+            let sequence = StorageName::parse(&format!(
+                "seq_{}_{}",
+                table.table(),
+                column.name()
+            ))
+            .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "sequence-name", None))?;
+            line.push_str(&format!(" DEFAULT nextval('{}')", sequence));
+        } else if let Some(default) = column.default() {
+            line.push_str(&format!(
+                " DEFAULT {}",
+                render_default(default, table.table())?
+            ));
         }
         if !column.nullable() {
             line.push_str(" NOT NULL");

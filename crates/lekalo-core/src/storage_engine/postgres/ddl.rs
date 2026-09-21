@@ -399,8 +399,16 @@ fn create_table(
         let mut line = format!("{} {}", quote(column.name()), column.storage_type());
         if column.generated_kind() == Some(GeneratedKind::Identity) {
             line.push_str(" GENERATED ALWAYS AS IDENTITY");
+        } else if column.generated_kind() == Some(GeneratedKind::Sequence) {
+            // A generated sequence column draws from its own owned
+            // sequence: the default is the point of 'generated'.
+            let default = sequence_default(table.table(), column.name())?;
+            line.push_str(&format!(" DEFAULT {default}"));
         } else if let Some(default) = column.default() {
-            line.push_str(&format!(" DEFAULT {}", render_default(default)?));
+            line.push_str(&format!(
+                " DEFAULT {}",
+                render_default(default, table.table())?
+            ));
         }
         if !column.nullable() {
             line.push_str(" NOT NULL");
@@ -472,15 +480,35 @@ fn render_literal(value: &Literal) -> String {
     }
 }
 
-/// Render one column default.
-fn render_default(default: &FieldDefault) -> Result<String, DiagnosticSet> {
+/// Render one column default. A sequence default consumes the owning
+/// table's deterministic sequence (`seq_<table>_<column>`), the exact
+/// object the renderer creates — never the bare referenced column
+/// name, which names no sequence.
+fn render_default(
+    default: &FieldDefault,
+    table: &StorageName,
+) -> Result<String, DiagnosticSet> {
     let rendered = match default {
         FieldDefault::Literal(literal) => render_literal(literal),
         FieldDefault::Now => "now()".to_owned(),
         FieldDefault::UuidGenerate => "gen_random_uuid()".to_owned(),
-        FieldDefault::Sequence { column } => format!("nextval('{}')", column.as_str()),
+        FieldDefault::Sequence { column } => {
+            let sequence = derived_name(
+                &format!("seq_{}_{}", table, column.as_str()),
+                "sequence-name",
+            )?;
+            format!("nextval('{}')", sequence)
+        }
     };
     Ok(rendered)
+}
+
+/// The exact default spelling of a generated sequence column: the
+/// deterministic sequence this renderer creates and owns.
+fn sequence_default(table: &StorageName, column: &StorageName) -> Result<String, DiagnosticSet> {
+    let sequence =
+        derived_name(&format!("seq_{}_{}", table, column), "sequence-name")?;
+    Ok(format!("nextval('{}')", sequence))
 }
 
 /// The deterministic name of one unnamed index.
@@ -642,6 +670,16 @@ mod tests {
         assert!(joined.contains("FORCE ROW LEVEL SECURITY"));
         assert!(joined.contains("current_setting('app.tenant_id')::uuid"));
         assert!(joined.contains("CREATE SEQUENCE \"seq_focus_session_session_no\""));
+        assert!(
+            joined.contains(
+                "\"session_no\" bigint DEFAULT nextval('seq_focus_session_session_no') NOT NULL",
+            ),
+            "the generated sequence column draws from its own owned sequence"
+        );
+        assert!(
+            !joined.contains("nextval('session_no')"),
+            "a sequence default never names the bare column"
+        );
         assert!(joined.contains("ALTER SEQUENCE \"seq_focus_session_session_no\" OWNED BY"));
         // Every id is 1-based sequential.
         for (index, statement) in document.statements().iter().enumerate() {
