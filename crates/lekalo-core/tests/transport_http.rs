@@ -467,6 +467,13 @@ fn wire_diff_classifies_and_blocks_breaking_changes() {
             "candidate-defaults-header",
             vec![("defaults/idempotencyHeader", "breaking")],
         ),
+        (
+            "candidate-capability-detail",
+            vec![(
+                "endpoints/planner.endpoint_task_stream/capabilities",
+                "policy-change",
+            )],
+        ),
     ];
     for (name, expected) in cases {
         let candidate = TransportDocument::from_value(&read_fixture(&format!("diff/{name}.json")))

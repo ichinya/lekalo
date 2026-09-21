@@ -10,7 +10,8 @@
 //! inherited header name was renamed), **non-breaking** (an addition
 //! under the evolution policy, metadata), and **policy-change**
 //! (status, rate-limit, cache, idempotency, correlation,
-//! content-version, security-strengthening, and operation-id changes
+//! content-version, security-strengthening, capability detail, and
+//! operation-id changes
 //! that reshape the projection without removing a guarantee — HTTP
 //! statuses are projections of the #62 identity, never the identity
 //! itself, so a status change is policy, not breakage). Parameters are
@@ -387,7 +388,9 @@ fn compare_endpoint(
 
     // Capabilities: removal breaks (a consumer relying on the
     // streaming/upload/download channel loses it); additions and
-    // minimum-support raises are policy.
+    // minimum-support or detail changes are policy (a detail switch
+    // reshapes the channel mechanics without removing the declared
+    // capability).
     for decl in &base.capabilities {
         let still = candidate
             .capabilities
@@ -395,7 +398,9 @@ fn compare_endpoint(
             .find(|other| other.capability == decl.capability);
         match still {
             Some(other) => {
-                if other.minimum_support != decl.minimum_support {
+                if other.minimum_support != decl.minimum_support
+                    || other.detail != decl.detail
+                {
                     push_path(&at("capabilities"), DiffClass::PolicyChange, paths);
                 }
             }
