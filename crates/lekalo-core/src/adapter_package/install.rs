@@ -524,6 +524,43 @@ mod tests {
     }
 
     #[test]
+    fn a_failing_stage_rolls_back_the_journal_and_releases_the_guard() {
+        let root =
+            std::env::temp_dir().join(format!("lekalo-ap-install-rb-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("mkdir");
+        // Source directory whose bytes deliberately disagree with the
+        // plan (tampered after preview): the stage verify refuses, and
+        // the journal/stage/guard state must be cleaned up.
+        let source = std::env::temp_dir().join(format!("lekalo-ap-rb-src-{}", std::process::id()));
+        std::fs::create_dir_all(&source).expect("src dir");
+        std::fs::write(source.join("a.mjs"), b"tampered bytes").expect("entry");
+        let candidate = candidate("a", b"bytes", "path:x");
+        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None);
+        let rejection =
+            apply_with_source(&root, &install_plan, &install_plan.plan_id, false, &source)
+                .expect_err("tampered stage refuses");
+        assert_eq!(
+            rejection,
+            ApplyRejection::InstallConflict {
+                path: "a.mjs".to_owned()
+            },
+            "a digest mismatch at stage time is an install conflict"
+        );
+        // The guard is released and nothing reached the store.
+        assert!(!root
+            .join(INSTALL_GUARD.replace('/', std::path::MAIN_SEPARATOR_STR))
+            .exists());
+        assert!(!root.join(".lekalo/adapters/packages").exists());
+        // A subsequent apply with honest bytes succeeds: no stale guard.
+        std::fs::write(source.join("a.mjs"), b"bytes").expect("honest bytes");
+        apply_with_source(&root, &install_plan, &install_plan.plan_id, false, &source)
+            .expect("recovery apply succeeds");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&source);
+    }
+
+    #[test]
     fn guard_is_released_after_a_successful_apply() {
         let root =
             std::env::temp_dir().join(format!("lekalo-ap-install-grd-{}", std::process::id()));
