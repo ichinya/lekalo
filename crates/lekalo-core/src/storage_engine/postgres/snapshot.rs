@@ -39,10 +39,15 @@ pub const CONCURRENCY_ANSWERS: &[(&str, SnapshotSupport)] = &[
     ("transaction.rollback", SnapshotSupport::Full),
 ];
 
-/// The version-independent truths the `postgres-sql` component
-/// provides on the storage axis (mirrored from the embedded component
-/// registry so the snapshot is self-consistent without resolving a
-/// profile document).
+/// The version-independent truths the `postgres-sql` engine answers
+/// on the storage axis. These are engine-profile-local answers, NOT a
+/// mirror of the embedded component registry: the `postgres-sql`
+/// component declares only the coarse storage.migrations / pooling /
+/// sql / transactions set, while the engine snapshot specializes with
+/// the finer-grained facts (explain, introspection, jsonb,
+/// partial_index, rls, sequences) the engine layer owns. Reconciling
+/// the two registries is coordinator-owned follow-up work; until then
+/// the snapshot's answers stay self-contained here.
 pub const COMPONENT_PROVIDES: &[(&str, SnapshotSupport)] = &[
     ("storage.explain", SnapshotSupport::Full),
     ("storage.introspection", SnapshotSupport::Full),
