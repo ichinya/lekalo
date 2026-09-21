@@ -36,7 +36,21 @@ pub fn map_type(field_type: &DomainType, policies: &Policies) -> Result<String, 
             JsonPolicy::Jsonb => "jsonb".to_owned(),
             JsonPolicy::Json => "json".to_owned(),
         },
-        DomainType::Enum { .. } => "varchar(64)".to_owned(),
+        DomainType::Enum { .. } => match policies.enum_policy() {
+            // The bounded member CHECK over a varchar is the rendered
+            // answer; the member list rides the derived column.
+            crate::storage_engine::EnumPolicy::Check => "varchar(64)".to_owned(),
+            // The 0.4.0 renderer creates no native enum types; the
+            // declared policy refuses explicitly instead of silently
+            // yielding a varchar.
+            crate::storage_engine::EnumPolicy::NativeEnum => {
+                return Err(diagnostic::rule_invalid(
+                    RENDER_UNSUPPORTED,
+                    "native-enum",
+                    None,
+                ));
+            }
+        },
         DomainType::Array { element, .. } => match policies.array() {
             ArrayPolicy::Native => format!("{}[]", map_type(element, policies)?),
             ArrayPolicy::Json => "jsonb".to_owned(),
@@ -156,17 +170,32 @@ mod tests {
     }
 
     #[test]
-    fn enums_render_through_the_bounded_varchar() {
-        let policies = policies(ArrayPolicy::Native, false, JsonPolicy::Jsonb);
+    fn enums_render_through_the_bounded_varchar_and_refuse_native() {
+        let check = policies(ArrayPolicy::Native, false, JsonPolicy::Jsonb);
         assert_eq!(
             map_type(
                 &DomainType::Enum {
                     members: vec!["red".to_owned(), "green".to_owned()]
                 },
-                &policies
+                &check
             )
             .unwrap(),
             "varchar(64)"
+        );
+        // The native_enum policy refuses explicitly: the 0.4.0 renderer
+        // creates no enum types, and silence would invent a varchar.
+        let mut native = policies(ArrayPolicy::Native, false, JsonPolicy::Jsonb);
+        native.enum_policy = crate::storage_engine::EnumPolicy::NativeEnum;
+        let error = map_type(
+            &DomainType::Enum {
+                members: vec!["red".to_owned()]
+            },
+            &native,
+        )
+        .expect_err("native_enum refuses");
+        assert_eq!(
+            error.reason_ids().first().copied(),
+            Some("storage-engine.render-unsupported")
         );
     }
 }

@@ -19,8 +19,8 @@ use crate::storage_projection::id::StorageName;
 use crate::storage_projection::projection::{ColumnPredicate, GeneratedKind, PredicateOp};
 use crate::storage_projection::StorageProjectionAttachment;
 
-use super::super::diagnostic::{self, MAPPING_INVALID};
-use super::super::StorageEngineAttachment;
+use super::super::diagnostic::{self, MAPPING_INVALID, RENDER_UNSUPPORTED};
+use super::super::{EnumPolicy, StorageEngineAttachment};
 use super::quoting::quote;
 
 /// The declared explain hook point of one statement (the hook surface
@@ -388,12 +388,28 @@ fn referenced_join_target(
     Some((table.table().clone(), table.primary_key().first()?.clone()))
 }
 
-/// Render one CREATE TABLE statement.
+/// Render one CREATE TABLE statement. The enum policy is observable:
+/// `check` (the default) renders one bounded member-list CHECK per
+/// enum column (`chk_<table>_<column>`, the deterministic name the
+/// migration planner and the drift comparison reuse); `native_enum`
+/// refuses explicitly — the 0.4.0 renderer creates no enum types, and
+/// silently yielding a varchar would violate the nothing-is-invented
+/// boundary.
 fn create_table(
-    _profile: &StorageEngineAttachment,
+    profile: &StorageEngineAttachment,
     attachment: &StorageProjectionAttachment,
     table: &crate::storage_projection::derivation::DerivedTable,
 ) -> Result<String, DiagnosticSet> {
+    let enum_members = declared_enum_members(attachment, table);
+    if !enum_members.is_empty()
+        && profile.policies().enum_policy() == EnumPolicy::NativeEnum
+    {
+        return Err(diagnostic::rule_invalid(
+            RENDER_UNSUPPORTED,
+            "native-enum",
+            None,
+        ));
+    }
     let mut lines: Vec<String> = Vec::new();
     for column in table.columns() {
         let mut line = format!("{} {}", quote(column.name()), column.storage_type());
@@ -442,11 +458,67 @@ fn create_table(
             ));
         }
     }
+    // The derived member-list CHECKs of the enum columns, column
+    // order (the canonical member order of the declaration).
+    for column in table.columns() {
+        let Some(members) = enum_members.get(column.name().as_str()) else {
+            continue;
+        };
+        let name = derived_name(
+            &format!("chk_{}_{}", table.table(), column.name()),
+            "check-name",
+        )?;
+        let values = members
+            .iter()
+            .map(|member| format!("'{}'", member.replace('\'', "''")))
+            .collect::<Vec<String>>()
+            .join(", ");
+        lines.push(format!(
+            "CONSTRAINT {} CHECK ({} IN ({values}))",
+            quote(&name),
+            quote(column.name())
+        ));
+    }
     Ok(format!(
         "CREATE TABLE {} ({});",
         quote(table.table()),
         lines.join(", ")
     ))
+}
+
+/// The declared enum members of one derived table's field-origin
+/// columns, keyed by column name (the field and column grammars
+/// coincide). Empty when the entity declares no enum fields.
+fn declared_enum_members(
+    attachment: &StorageProjectionAttachment,
+    table: &crate::storage_projection::derivation::DerivedTable,
+) -> std::collections::BTreeMap<String, Vec<String>> {
+    let mut members = std::collections::BTreeMap::new();
+    let Some(declared) = attachment
+        .projections()
+        .iter()
+        .find(|declared| declared.namespace().key() == "postgres")
+        .and_then(|declared| {
+            declared
+                .tables()
+                .iter()
+                .find(|declared| declared.entity() == table.entity())
+        })
+    else {
+        return members;
+    };
+    let Some(entity) = attachment.entity(declared.entity()) else {
+        return members;
+    };
+    for field in entity.fields() {
+        if let crate::storage_projection::entity::DomainType::Enum {
+            members: field_members,
+        } = field.field_type()
+        {
+            members.insert(field.name().as_str().to_owned(), field_members.clone());
+        }
+    }
+    members
 }
 
 /// Render one bounded predicate conjunction.
@@ -550,16 +622,10 @@ mod tests {
         .expect("fixture json")
     }
 
-    fn digest_of_attachment() -> String {
-        let attachment =
-            crate::storage_projection::StorageProjectionAttachment::from_value(&projection_value())
-                .expect("valid fixture");
-        let bytes = attachment.canonical_bytes().expect("canonical");
-        format!("sha256:{}", crate::digest::sha256_hex(bytes.as_bytes()))
-    }
-
-    fn profile() -> StorageEngineAttachment {
-        let mut value = serde_json::json!({
+    /// One fresh profile wire value bound to the projection fixture;
+    /// tests mutate members (policies, binding) before parsing.
+    fn profile_value() -> serde_json::Value {
+        serde_json::json!({
             "schemaVersion": "lekalo/storage-engine/v0.4.0",
             "identity": "dev.lekalo.storage-engine@0.4.0",
             "attachmentRevision": "0.4.0",
@@ -590,9 +656,19 @@ mod tests {
             "extensions": [
                 {"name": "pgcrypto", "state": "required"}
             ]
-        });
-        value["projectionRef"] = serde_json::Value::String(digest_of_attachment());
-        StorageEngineAttachment::from_value(&value).expect("valid profile")
+        })
+    }
+
+    fn digest_of_attachment() -> String {
+        let attachment =
+            crate::storage_projection::StorageProjectionAttachment::from_value(&projection_value())
+                .expect("valid fixture");
+        let bytes = attachment.canonical_bytes().expect("canonical");
+        format!("sha256:{}", crate::digest::sha256_hex(bytes.as_bytes()))
+    }
+
+    fn profile() -> StorageEngineAttachment {
+        StorageEngineAttachment::from_value(&profile_value()).expect("valid profile")
     }
 
     fn attachment() -> crate::storage_projection::StorageProjectionAttachment {
@@ -657,6 +733,12 @@ mod tests {
         );
         assert!(joined.contains("DEFAULT 0"), "the declared literal default");
         assert!(joined.contains("CONSTRAINT \"chk_task_window\" CHECK (\"deleted_at\" IS NULL)"));
+        assert!(
+            joined.contains(
+                "CONSTRAINT \"chk_tag_color\" CHECK (\"color\" IN ('blue', 'green', 'red'))"
+            ),
+            "the check enum policy renders the bounded member list"
+        );
         assert!(
             joined.contains("WHERE \"deleted_at\" IS NULL;"),
             "partial index"
@@ -729,31 +811,7 @@ mod tests {
         let attachment =
             crate::storage_projection::StorageProjectionAttachment::from_value(&value)
                 .expect("valid projection");
-        let mut profile_value = serde_json::json!({
-            "schemaVersion": "lekalo/storage-engine/v0.4.0",
-            "identity": "dev.lekalo.storage-engine@0.4.0",
-            "attachmentRevision": "0.4.0",
-            "projectId": "planner",
-            "modelRef": {
-                "modelVersion": "0.2.16",
-                "digest": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-            },
-            "irRef": {
-                "identity": "dev.lekalo.ir@0.2.16",
-                "digest": "sha256:0202020202020202020202020202020202020202020202020202020202020202"
-            },
-            "projectionRef": "sha256:0404040404040404040404040404040404040404040404040404040404040404",
-            "engine": "postgres",
-            "engineVersion": "16.4.0",
-            "policies": {
-                "identifierQuote": "always",
-                "json": "jsonb",
-                "enum": "check",
-                "array": "native",
-                "time": {"instant": "timestamptz", "local": "forbidden"},
-                "pagination": {"offset": "allowed", "cursor": "keyset"}
-            }
-        });
+        let mut profile_value = profile_value();
         let bytes = attachment.canonical_bytes().expect("canonical");
         profile_value["projectionRef"] = serde_json::Value::String(format!(
             "sha256:{}",
@@ -764,6 +822,21 @@ mod tests {
         assert_eq!(
             error.reason_ids().first().copied(),
             Some("storage-engine.mapping-invalid")
+        );
+    }
+
+    #[test]
+    fn the_native_enum_policy_refuses_explicitly() {
+        // The declared-but-unimplemented native_enum policy refuses the
+        // render with the registered unsupported rule — never a silent
+        // varchar coercion.
+        let mut value = profile_value();
+        value["policies"]["enum"] = serde_json::Value::String("native_enum".to_owned());
+        let profile = StorageEngineAttachment::from_value(&value).expect("valid profile");
+        let error = render(&profile, &attachment()).expect_err("native_enum refuses");
+        assert_eq!(
+            error.reason_ids().first().copied(),
+            Some("storage-engine.render-unsupported")
         );
     }
 

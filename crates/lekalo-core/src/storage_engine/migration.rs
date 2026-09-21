@@ -292,6 +292,7 @@ pub fn plan(
     // Foreign keys and checks after their tables.
     plan_foreign_keys(&mut steps, &derived_base, &derived_candidate, &table_ids)?;
     plan_checks(&mut steps, base, candidate)?;
+    plan_enum_checks(&mut steps, profile, base, candidate)?;
     plan_indexes(&mut steps, &derived_base, &derived_candidate, &table_ids)?;
     // Drops last: the mechanical diff emits them, the ordering pass
     // moves every destructive drop behind the constructive steps.
@@ -852,6 +853,131 @@ fn plan_checks(
         }
     }
     Ok(())
+}
+
+/// The declared table map of one attachment's postgres projection.
+fn declared_tables(
+    attachment: &StorageProjectionAttachment,
+) -> std::collections::BTreeMap<String, crate::storage_projection::Table> {
+    attachment
+        .projections()
+        .iter()
+        .find(|projection| projection.namespace().key() == "postgres")
+        .map(|projection| {
+            projection
+                .tables()
+                .iter()
+                .map(|table| (table.entity().as_str().to_owned(), table.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The enum-member CHECK plan: under the `check` policy every enum
+/// column carries the bounded `chk_<table>_<column>` member-list
+/// constraint, exactly as the DDL renderer emits it; a new, changed,
+/// or removed member list plans the matching add or drop.
+fn plan_enum_checks(
+    steps: &mut Vec<Step>,
+    profile: &StorageEngineAttachment,
+    base: &StorageProjectionAttachment,
+    candidate: &StorageProjectionAttachment,
+) -> Result<(), DiagnosticSet> {
+    if profile.policies().enum_policy() != super::EnumPolicy::Check {
+        return Ok(());
+    }
+    let expected = |attachment: &StorageProjectionAttachment| {
+        let tables = declared_tables(attachment);
+        let mut expected: Vec<(String, String, String)> = Vec::new();
+        for (entity, table) in &tables {
+            let Some(domain) = attachment.entity(table.entity()) else {
+                continue;
+            };
+            for field in domain.fields() {
+                if let crate::storage_projection::entity::DomainType::Enum { members } =
+                    field.field_type()
+                {
+                    expected.push((
+                        entity.clone(),
+                        enum_check_name(table.table(), field.name().as_str())?,
+                        render_enum_predicate(field.name().as_str(), members),
+                    ));
+                }
+            }
+        }
+        Ok(expected)
+    };
+    let base_checks = expected(base)?;
+    let candidate_checks = expected(candidate)?;
+    let candidate_tables = declared_tables(candidate);
+    for (entity, name, predicate) in &candidate_checks {
+        let existed = base_checks
+            .iter()
+            .any(|(base_entity, base_name, base_predicate)| {
+                base_entity == entity && base_name == name && base_predicate == predicate
+            });
+        if existed {
+            continue;
+        }
+        let Some(table) = candidate_tables.get(entity) else {
+            continue;
+        };
+        push_step(
+            steps,
+            "add_check",
+            format!(
+                "ALTER TABLE {} ADD CONSTRAINT \"{name}\" CHECK ({predicate});",
+                quote(table.table()),
+            ),
+            DataRisk::None,
+            Vec::new(),
+            None,
+        );
+    }
+    let base_tables = declared_tables(base);
+    for (entity, name, _) in &base_checks {
+        let removed = !candidate_checks
+            .iter()
+            .any(|(candidate_entity, candidate_name, _)| {
+                candidate_entity == entity && candidate_name == name
+            });
+        if removed {
+            let Some(table) = base_tables.get(entity) else {
+                continue;
+            };
+            push_step(
+                steps,
+                "drop_check",
+                format!(
+                    "ALTER TABLE {} DROP CONSTRAINT \"{name}\";",
+                    quote(table.table())
+                ),
+                DataRisk::Destructive,
+                Vec::new(),
+                None,
+            );
+        }
+    }
+    Ok(())
+}
+
+/// The deterministic name of one derived enum member CHECK.
+fn enum_check_name(table: &StorageName, column: &str) -> Result<String, DiagnosticSet> {
+    StorageName::parse(&format!("chk_{}_{}", table, column))
+        .map(|name| name.as_str().to_owned())
+        .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "check-name", None))
+}
+
+/// The bounded member-list predicate of one enum column, identical in
+/// shape to the DDL renderer's inline constraint. Names are validated
+/// storage-grammar tokens, so plain quoting is exact.
+fn render_enum_predicate(column: &str, members: &[String]) -> String {
+    let values = members
+        .iter()
+        .map(|member| format!("'{}'", member.replace('\'', "''")))
+        .collect::<Vec<String>>()
+        .join(", ");
+    format!("\"{column}\" IN ({values})")
 }
 
 /// Render one bounded predicate conjunction.

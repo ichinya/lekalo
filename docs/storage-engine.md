@@ -41,12 +41,15 @@ resolve to one row of the owner-published matrix — never clamped),
 and declares:
 
 - **policies** — JSON (`jsonb` default, `json` opt-in), enums
-  (`check` default, `native_enum`), arrays (`native` | `json` |
-  `unsupported`), time (`timestamptz` instants; the naive timestamp
-  is gateable policy surface no v1 domain type names), pagination
-  (LIMIT/OFFSET and keyset cursors), and identifier quoting (v1 has
-  exactly one answer: always `"name"`, deterministic and safe against
-  reserved words).
+  (`check` default: every enum column carries the bounded member-list
+  CHECK `chk_<table>_<column>`, planned by the migration planner and
+  compared by drift; `native_enum` refuses with `render-unsupported`
+  until the 0.4.0 renderer creates enum types — never a silent
+  varchar), arrays (`native` | `json` | `unsupported`), time
+  (`timestamptz` instants; the naive timestamp is gateable policy
+  surface no v1 domain type names), pagination (LIMIT/OFFSET and
+  keyset cursors), and identifier quoting (v1 has exactly one answer:
+  always `"name"`, deterministic and safe against reserved words).
 - **tenancy** — `none | application | rls`; an RLS enforcement
   declares its session variable and FORCE posture and renders
   explicit `enable_rls`/`create_policy` steps for every covered
