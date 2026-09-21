@@ -158,6 +158,7 @@ fn the_analyzer_projects_flows_and_the_report_is_stable() {
         policy_ref: &policy_ref,
         generated_by: "lekalo-core/0.3.2",
         report_revision: "1.0.0",
+        endpoint_exposures: &[],
     })
     .expect("analysis");
 
@@ -221,6 +222,7 @@ fn export_sinks_above_their_ceiling_are_findings() {
         policy_ref: &policy_ref,
         generated_by: "lekalo-core/0.3.2",
         report_revision: "1.0.0",
+        endpoint_exposures: &[],
     })
     .expect("analysis");
     // The declared planner flows stay inside the declared ceilings.

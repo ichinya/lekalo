@@ -54,6 +54,43 @@ pub struct Inputs<'a> {
     pub generated_by: &'a str,
     /// The report revision.
     pub report_revision: &'a str,
+    /// The transport endpoint-actor bindings (issue #70 seam, plan
+    /// §5.1): empty on this branch — the exposure rule then emits
+    /// nothing, and never fails closed on the absence of observed data.
+    pub endpoint_exposures: &'a [EndpointExposure],
+}
+
+/// One transport endpoint-actor binding handed to the analysis: the
+/// endpoint symbol, its closed actor, and the subject its success
+/// response resolves to (the binding resolves the operation result;
+/// the analysis classifies it).
+#[derive(Clone, Debug)]
+pub struct EndpointExposure {
+    /// The endpoint semantic id.
+    pub endpoint: String,
+    /// The closed actor of the binding.
+    pub actor: EndpointActor,
+    /// The subject the success response exposes.
+    pub result_subject: SubjectPath,
+}
+
+/// The closed endpoint-actor vocabulary (the transport `actor` axis).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EndpointActor {
+    /// `public` — unauthenticated exposure.
+    Public,
+    /// Every authenticated actor.
+    Authenticated,
+}
+
+impl EndpointActor {
+    /// The exact wire spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Authenticated => "authenticated",
+        }
+    }
 }
 
 /// The derived report plus the diagnostics the derivation surfaced
@@ -213,6 +250,10 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
     // this module projects what the graph itself carries so analysis
     // stays a pure function of the pinned compilation plus inputs.
 
+    // The public-endpoint exposure rule (plan §5.1, the acceptance
+    // case) over the transport bindings handed to this run.
+    findings.extend(exposure_findings(inputs.classification, inputs.endpoint_exposures));
+
     unknowns.sort_by(|left, right| {
         left.source
             .as_str()
@@ -266,6 +307,43 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
         report,
         diagnostics,
     })
+}
+
+/// The public-endpoint exposure evaluation over one resolution and the
+/// supplied endpoint-actor bindings: a public actor whose success
+/// response resolves to a kind above public is a finding unless an
+/// approved declassification grant lowers the subject to public.
+pub fn exposure_findings(
+    resolution: &crate::classification::Resolution,
+    exposures: &[EndpointExposure],
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for exposure in exposures {
+        let ResolvedKind::Classified(kind) = resolution.resolve(&exposure.result_subject) else {
+            continue;
+        };
+        if exposure.actor != EndpointActor::Public || kind.rank() <= DataKind::Public.rank() {
+            continue;
+        }
+        let lowered_to_public = resolution
+            .grants(&exposure.result_subject)
+            .iter()
+            .any(|grant| {
+                grant.from_kind() == kind
+                    && grant.to_kind() == DataKind::Public
+                    && grant.from_kind().declassifiable()
+            });
+        if lowered_to_public {
+            continue;
+        }
+        findings.push(Finding {
+            rule_id: "dataflow.exposed-private-field".to_owned(),
+            severity: Severity::Error,
+            subject: exposure.result_subject.as_str().to_owned(),
+            detail: "public-endpoint".to_owned(),
+        });
+    }
+    findings
 }
 
 /// Map findings into one normalized diagnostic set (`valid` when only
@@ -494,6 +572,7 @@ pub fn run_report(
         policy_ref: &policy_ref,
         generated_by: GENERATED_BY,
         report_revision: REPORT_REVISION,
+        endpoint_exposures: &[],
     })?;
     let diagnostics = analysis.diagnostics.clone();
     Ok((analysis.report, diagnostics))
@@ -521,4 +600,97 @@ fn compile_digests(
         crate::lockfile::types::Sha256Digest::parse(&ir)
             .unwrap_or_else(|_| crate::lockfile::types::Sha256Digest::from_hex(&"0".repeat(64))),
     )
+}
+
+#[cfg(test)]
+mod exposure_tests {
+    use super::super::types::Severity;
+    use super::*;
+    use crate::classification::Attachment;
+
+    const ATTACHMENT: &str = r#"{
+      "schemaVersion": "lekalo/data-classification/v0.4.0",
+      "identity": "dev.lekalo.data-classification@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "clinic",
+      "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "irRef": {"irVersion": "0.2.16", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+      "defaults": {"profile": "strict", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"},
+      "classifications": [
+        {"subject": "core.entity.user/email", "kind": "personal"}
+      ],
+      "declassifications": [],
+      "openQuestions": []
+    }"#;
+
+    fn resolution() -> crate::classification::Resolution {
+        let attachment = Attachment::parse(ATTACHMENT.as_bytes()).expect("parses");
+        crate::classification::Resolution::build(&attachment)
+    }
+
+    fn exposure_of(subject: &str) -> EndpointExposure {
+        EndpointExposure {
+            endpoint: "core.endpoint.list_users".to_owned(),
+            actor: EndpointActor::Public,
+            result_subject: SubjectPath::parse(subject).expect("subject"),
+        }
+    }
+
+    #[test]
+    fn a_public_endpoint_exposing_a_personal_field_is_a_finding() {
+        let resolution = resolution();
+        let exposures = vec![exposure_of("core.entity.user/email")];
+        let findings = super::exposure_findings(&resolution, &exposures);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, "dataflow.exposed-private-field");
+        assert!(findings[0].severity.is_error());
+    }
+
+    #[test]
+    fn authenticated_actors_and_unresolved_subjects_never_expose() {
+        let resolution = resolution();
+        let mut authenticated = exposure_of("core.entity.user/email");
+        authenticated.actor = EndpointActor::Authenticated;
+        let unresolved = exposure_of("core.entity.user");
+        let findings = super::exposure_findings(&resolution, &[authenticated, unresolved]);
+        // Only public actors over resolvable subjects above public are
+        // findings; an unresolvable subject stays silent here (the
+        // unclassified rules cover it) — the rule never guesses.
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn an_approved_lowering_to_public_clears_the_exposure() {
+        let attachment = Attachment::parse(
+            r#"{
+      "schemaVersion": "lekalo/data-classification/v0.4.0",
+      "identity": "dev.lekalo.data-classification@0.4.0",
+      "attachmentRevision": "1.1.0",
+      "projectId": "clinic",
+      "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "irRef": {"irVersion": "0.2.16", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+      "defaults": {"profile": "strict", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"},
+      "classifications": [
+        {"subject": "core.entity.user/email", "kind": "personal"}
+      ],
+      "declassifications": [
+        {
+          "id": "grant.core.email-public@1.0.0",
+          "subject": "core.entity.user/email",
+          "fromKind": "personal",
+          "toKind": "public",
+          "approvedBy": "review-2025-09-003",
+          "justification": "Published directory listing."
+        }
+      ],
+      "openQuestions": []
+    }"#
+            .as_bytes(),
+        )
+        .expect("parses");
+        let resolution = crate::classification::Resolution::build(&attachment);
+        let exposures = vec![exposure_of("core.entity.user/email")];
+        let findings = super::exposure_findings(&resolution, &exposures);
+        assert!(findings.is_empty(), "the grant clears the exposure");
+    }
 }
