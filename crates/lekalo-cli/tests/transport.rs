@@ -267,7 +267,44 @@ fn inspect_joins_the_model_surface_and_params() {
         envelope["endpoint"]["operationId"],
         "plannerEndpointFocusTaskById"
     );
-    assert_eq!(envelope["endpoint"]["params"]["task_id"]["in"], "path");
+    // Parameters render as an array keyed by the (name, location)
+    // wire identity — never a name-keyed object that could collapse
+    // two declared params.
+    let params = envelope["endpoint"]["params"].as_array().unwrap();
+    let task_id = params
+        .iter()
+        .find(|param| param["name"] == "task_id")
+        .expect("the path param is declared");
+    assert_eq!(task_id["in"], "path");
+    assert_eq!(task_id["field"], "input.task_id");
+    assert_eq!(task_id["required"], true);
+    assert_eq!(task_id["style"], "simple");
+    // Every declared transport member is present, not a subset.
+    for member in [
+        "endpoint",
+        "operationId",
+        "method",
+        "path",
+        "invokes",
+        "params",
+        "body",
+        "success",
+        "errors",
+        "errorDefaults",
+        "auth",
+        "idempotency",
+    ] {
+        assert!(
+            envelope["endpoint"].get(member).is_some(),
+            "member {member} is rendered",
+        );
+    }
+    assert_eq!(envelope["endpoint"]["idempotency"]["required"], true);
+    assert_eq!(envelope["endpoint"]["success"]["status"], 202);
+    // An undeclared member stays absent: the rendering is driven by
+    // the declaration, never padded with defaults.
+    assert!(envelope["endpoint"].get("correlation").is_none());
+    assert!(envelope["endpoint"].get("pagination").is_none());
 
     // An unknown endpoint symbol refuses with the family rule.
     let missing = lekalo_in(

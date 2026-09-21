@@ -3482,38 +3482,40 @@ fn transport_inspect(path: &str, endpoint: &str, project: &Option<String>) -> Do
             .iter()
             .find_map(|definition| match definition {
                 lekalo_core::ir::Definition::Endpoint(def) if def.id.as_str() == endpoint => {
-                    Some(format!(
-                        "\"method\":\"{}\",\"path\":\"{}\",\"invokes\":\"{}\"",
-                        def.method.as_str(),
-                        def.path.as_str(),
-                        def.invokes.as_str()
+                    Some((
+                        def.method.as_str().to_owned(),
+                        def.path.as_str().to_owned(),
+                        def.invokes.as_str().to_owned(),
                     ))
                 }
                 _ => None,
             })
     });
-    let params: Vec<String> = binding
-        .params
-        .iter()
-        .map(|param| {
-            format!(
-                "\"{}\":{{\"in\":\"{}\",\"field\":\"{}\"}}",
-                param.name.as_str(),
-                param.location.as_str(),
-                param.field.as_str()
-            )
-        })
-        .collect();
-    let joined_text = match joined {
-        Some(surface) => format!("{surface},"),
-        None => String::new(),
+    // The full declared binding, serialized by the core in its exact
+    // wire spelling: every declared transport member, params as an
+    // array keyed by the (name, location) wire identity.
+    let mut binding_object = match lekalo_core::transport_http::binding_json(binding) {
+        serde_json::Value::Object(map) => map,
+        _ => unreachable!("binding_json renders an object"),
     };
+    binding_object.insert(
+        "operationId".to_owned(),
+        serde_json::Value::String(
+            binding.effective_operation_id().as_str().to_owned(),
+        ),
+    );
+    if let Some((method, path, invokes)) = joined {
+        binding_object
+            .insert("method".to_owned(), serde_json::Value::String(method));
+        binding_object.insert("path".to_owned(), serde_json::Value::String(path));
+        binding_object.insert(
+            "invokes".to_owned(),
+            serde_json::Value::String(invokes),
+        );
+    }
     let json = format!(
-        "{{\"status\":\"valid\",\"endpoint\":{{\"endpoint\":\"{}\",\"operationId\":\"{}\",{}\"params\":{{{}}}}}}}",
-        endpoint,
-        binding.effective_operation_id().as_str(),
-        joined_text,
-        params.join(","),
+        "{{\"status\":\"valid\",\"endpoint\":{}}}",
+        serde_json::Value::Object(binding_object),
     );
     let human = format!(
         "endpoint {}: operationId {}",

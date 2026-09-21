@@ -228,7 +228,7 @@ fn route_json(
                 binding
                     .capabilities
                     .iter()
-                    .map(|decl| capability_json(decl, document, binding))
+                    .map(capability_json)
                     .collect(),
             ),
         );
@@ -256,6 +256,180 @@ fn handler_root(project_id: &str) -> String {
         }
     }
     root
+}
+
+/// The full canonical JSON of one endpoint binding: every declared
+/// transport member in its exact wire spelling (the `transport
+/// inspect` handoff). Parameters render as an array — the wire
+/// identity of a parameter is the (name, location) pair, so a
+/// name-keyed object could silently collapse two declared params.
+/// Pure declaration data, deterministic and byte-stable.
+pub fn binding_json(binding: &EndpointBinding) -> Json {
+    let mut object = Map::new();
+    object.insert(
+        "endpoint".to_owned(),
+        Json::String(binding.endpoint.as_str().to_owned()),
+    );
+    if !binding.tags.is_empty() {
+        object.insert(
+            "tags".to_owned(),
+            Json::Array(
+                binding
+                    .tags
+                    .iter()
+                    .map(|tag| Json::String(tag.as_str().to_owned()))
+                    .collect(),
+            ),
+        );
+    }
+    if let Some(summary) = &binding.summary {
+        object.insert("summary".to_owned(), Json::String(summary.clone()));
+    }
+    object.insert(
+        "params".to_owned(),
+        Json::Array(binding.params.iter().map(param_json).collect()),
+    );
+    if let Some(body) = &binding.body {
+        object.insert("body".to_owned(), body_json(body));
+    }
+    object.insert("success".to_owned(), inspect_success_json(&binding.success));
+    if !binding.errors.is_empty() {
+        object.insert(
+            "errors".to_owned(),
+            Json::Array(
+                binding
+                    .errors
+                    .iter()
+                    .map(|entry| {
+                        let mut entry_object = Map::new();
+                        entry_object.insert(
+                            "error".to_owned(),
+                            Json::String(entry.error.as_str().to_owned()),
+                        );
+                        entry_object.insert("status".to_owned(), Json::from(entry.status));
+                        Json::Object(entry_object)
+                    })
+                    .collect(),
+            ),
+        );
+    }
+    object.insert(
+        "errorDefaults".to_owned(),
+        error_defaults_json(&binding.error_defaults),
+    );
+    if let Some(auth) = &binding.auth {
+        object.insert("auth".to_owned(), auth_json(auth));
+    }
+    if let Some(idempotency) = &binding.idempotency {
+        let mut idempotency_object = Map::new();
+        idempotency_object.insert(
+            "header".to_owned(),
+            Json::String(idempotency.header.as_str().to_owned()),
+        );
+        idempotency_object.insert("required".to_owned(), Json::Bool(idempotency.required));
+        object.insert("idempotency".to_owned(), Json::Object(idempotency_object));
+    }
+    if let Some(correlation) = &binding.correlation {
+        let mut correlation_object = Map::new();
+        correlation_object.insert(
+            "headers".to_owned(),
+            Json::Array(
+                correlation
+                    .headers
+                    .iter()
+                    .map(|header| Json::String(header.as_str().to_owned()))
+                    .collect(),
+            ),
+        );
+        object.insert("correlation".to_owned(), Json::Object(correlation_object));
+    }
+    if let Some(pagination) = &binding.pagination {
+        object.insert("pagination".to_owned(), pagination_json(pagination));
+    }
+    if let Some(rate_limit) = &binding.rate_limit {
+        object.insert("rateLimit".to_owned(), rate_limit_json(rate_limit));
+    }
+    if let Some(cache) = &binding.cache {
+        object.insert("cache".to_owned(), cache_json(cache));
+    }
+    if let Some(api_version) = &binding.api_version {
+        object.insert("apiVersion".to_owned(), api_version_json(api_version));
+    }
+    if !binding.capabilities.is_empty() {
+        object.insert(
+            "capabilities".to_owned(),
+            Json::Array(binding.capabilities.iter().map(capability_json).collect()),
+        );
+    }
+    if !binding.scenarios.is_empty() {
+        object.insert(
+            "scenarios".to_owned(),
+            Json::Array(
+                binding
+                    .scenarios
+                    .iter()
+                    .map(|scenario| Json::String(scenario.as_str().to_owned()))
+                    .collect(),
+            ),
+        );
+    }
+    Json::Object(object)
+}
+
+/// The inspect spelling of one success binding: the status, the
+/// optional response body, and the declared response headers.
+fn inspect_success_json(success: &SuccessBinding) -> Json {
+    let mut object = Map::new();
+    object.insert("status".to_owned(), Json::from(success.status));
+    if let Some(body) = &success.body {
+        object.insert("body".to_owned(), inspect_body_json(body));
+    }
+    if !success.headers.is_empty() {
+        object.insert(
+            "headers".to_owned(),
+            Json::Array(
+                success
+                    .headers
+                    .iter()
+                    .map(|header| {
+                        let mut header_object = Map::new();
+                        header_object.insert(
+                            "name".to_owned(),
+                            Json::String(header.name.as_str().to_owned()),
+                        );
+                        header_object.insert("required".to_owned(), Json::Bool(header.required));
+                        Json::Object(header_object)
+                    })
+                    .collect(),
+            ),
+        );
+    }
+    Json::Object(object)
+}
+
+/// The inspect spelling of one body projection: the mode token and the
+/// declared field subset (an explicit body always carries its fields).
+fn inspect_body_json(body: &BodyBinding) -> Json {
+    let mut object = Map::new();
+    object.insert("mode".to_owned(), Json::String(body.mode.body_str().to_owned()));
+    if !body.fields.is_empty() {
+        object.insert(
+            "fields".to_owned(),
+            Json::Array(
+                body.fields
+                    .iter()
+                    .map(|field| {
+                        let mut entry = Map::new();
+                        entry.insert("name".to_owned(), Json::String(field.name.as_str().to_owned()));
+                        entry.insert("field".to_owned(), Json::String(field.field.as_str()));
+                        entry.insert("required".to_owned(), Json::Bool(field.required));
+                        Json::Object(entry)
+                    })
+                    .collect(),
+            ),
+        );
+    }
+    Json::Object(object)
 }
 
 /// The namespace-shaped handler identity: one deterministic spelling
@@ -500,11 +674,7 @@ fn api_version_json(api_version: &ApiVersionBinding) -> Json {
 /// One canonical capability declaration with its resolved profile
 /// support: the surface carries the declared minimum, and an
 /// unsupported capability stays explicit — never dropped.
-fn capability_json(
-    decl: &CapabilityDecl,
-    _document: &TransportDocument,
-    _binding: &EndpointBinding,
-) -> Json {
+fn capability_json(decl: &CapabilityDecl) -> Json {
     let mut object = Map::new();
     object.insert(
         "capability".to_owned(),
