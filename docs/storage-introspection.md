@@ -31,6 +31,14 @@ a database.
    (`missing-table`, `type-mismatch`, `collation-mismatch`,
    `missing-index`, `engine-mismatch`, `sql-mode-mismatch`,
    `version-mismatch`). Drift is data, never a guessed repair.
+   All eight kinds fire: the engine echo is compared against the
+   projected namespace (token, sql-mode baseline, declared release
+   line), column types compare base family and numeric parameters
+   (`varchar(200)` vs `varchar(64)` drifts; a `unsigned` presentation
+   suffix does not), and observed column collations are answered
+   against the declared table collation or projection text default.
+   Server variables must be normalized before emission: `@@version`
+   reduces to the leading `major.minor.patch` triple.
 
 ## Denials
 

@@ -35,7 +35,13 @@ The envelope follows the established attachment shape: `schemaVersion`,
 
 - `engine` is the closed `mysql | mariadb` token.
 - `engineVersion` is one exact `major.minor.patch` release; a range or a
-  wildcard is a refusal (`engine-version-range`), never a claim.
+  wildcard is a refusal (`engine-version-range`), never a claim. Real
+  distributions report decorated strings (`10.11.2-MariaDB-1:...`,
+  `8.0.36-0ubuntu0.22.04.1`): the producing adapter must normalize the
+  server echo to the base triple before emission — split on the first
+  hyphen/plus and keep the leading numeric triple. The grammar accepts
+  only that normalized form, so an unnormalized vendor string is a
+  wire refusal, not a silent pass.
 - `sqlMode` is the mandatory closed token list; the mode is always
   declared, never implicit.
 - `collation` is the declared server collation; the implicit server

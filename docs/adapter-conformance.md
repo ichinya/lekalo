@@ -43,11 +43,11 @@ security-class one:
 | `artifact.manifest-evidence` | feature | applied bytes match declared digests |
 | `redaction.evidence` | security | redaction of durable evidence |
 | `process.cancellation` | process | cancellation and recovery |
-| `storage.projection-parity` | feature | adapter-rendered schema matches the canonical `project()` output (issue #117) |
+| `storage.projection-parity` | feature | adapter's verify answer is an honest ok over the fixture and the mysql derivation holds (issue #117) |
 | `storage.profile-evidence` | feature | honest `scan.schema`/`verify.schema-projection` capability declaration (issue #117) |
-| `storage.introspection-checked` | security | introspection evidence stays checked, read-only, credential-free, test-schema bound (issue #117) |
-| `storage.migration-gate` | feature | destructive diff paths produce gated plan steps; unconfirmed applies refuse (issue #117) |
-| `storage.collation-uniqueness` | feature | collation-sensitive uniqueness surfaces, never silently passes (issue #117) |
+| `storage.introspection-checked` | security | declared scan surface answers a real read-only exchange; evidence grammar stays checked, read-only, credential-free (issue #117) |
+| `storage.migration-gate` | feature | destructive diff of the fixture produces an explicitly gated plan step (issue #117) |
+| `storage.collation-uniqueness` | feature | declared collation stays visible beside the derived unique index (issue #117) |
 
 Skipped checks record a bounded reason (`operation-undeclared`,
 `legacy-session`, `no-ir-operations`, `default-profile`,
