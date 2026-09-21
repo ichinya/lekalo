@@ -110,7 +110,26 @@ if (canonicalJson(JSON.parse(runtimes[0])) !== runtimes[0].trim()) {
   failEarly("runtime-golden-noncanonical", "the input document deviates from canonical form");
 }
 
-// The invalid vectors: schema-level rejections with their expect files.
+// The invalid vectors: schema-level rejections with their expect
+// files. The expectation is load-bearing: every vector must declare a
+// schema rule, and the actual Ajv rejection must carry the signal the
+// declared detail names — a document rejected for the wrong reason
+// fails the gate like one that passes.
+const EXPECTED_AJV_SIGNALS = {
+  "unknown-field": (errors) =>
+    errors.some((error) => error.keyword === "additionalProperties"),
+  "mode-not-checked": (errors) =>
+    errors.some(
+      (error) =>
+        (error.keyword === "const" || error.keyword === "enum") &&
+        /\/mode$/.test(error.instancePath),
+    ),
+  "unknown-step-kind": (errors) =>
+    errors.some(
+      (error) =>
+        error.keyword === "enum" && error.instancePath.includes("/kind"),
+    ),
+};
 let invalidCount = 0;
 const invalidDir = "tests/fixtures/storage-engine/invalid";
 for (const name of readdirSync(resolve(root, invalidDir)).sort()) {
@@ -121,9 +140,22 @@ for (const name of readdirSync(resolve(root, invalidDir)).sort()) {
       ? ["storage-migration-plan", readJson(`${invalidDir}/${name}`)]
       : ["storage-engine", readJson(`${invalidDir}/${name}`)];
   const expect = readJson(`${invalidDir}/${name.replace(/\.json$/, ".expect.json")}`);
+  if (expect.rule !== "schema") {
+    fail(`invalid:${name}:rule`, `the gate only exercises schema rejections, got ${expect.rule}`);
+    continue;
+  }
+  const signal = EXPECTED_AJV_SIGNALS[expect.detail];
+  if (!signal) {
+    fail(`invalid:${name}:expectation`, `no schema signal mapped for detail ${expect.detail}`);
+    continue;
+  }
   const validate = validators.get(family);
   if (validate(document)) {
     fail(`invalid:${name}:schema-passed`, expect.detail);
+    continue;
+  }
+  if (!signal(validate.errors ?? [])) {
+    fail(`invalid:${name}:wrong-reason`, expect.detail);
     continue;
   }
   invalidCount += 1;
