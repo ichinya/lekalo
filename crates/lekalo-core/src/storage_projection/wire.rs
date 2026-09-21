@@ -634,7 +634,13 @@ fn projections(array: &[Json]) -> Result<Vec<Projection>, DiagnosticSet> {
                 .ok_or_else(|| diagnostic::input_invalid("namespace"))?,
         )
         .map_err(|_| diagnostic::input_invalid("namespace"))?;
+        // The declared tables are parsed once here so every declared
+        // storage type can be checked against this projection's closed
+        // namespace vocabulary before any table is accepted (issue
+        // #117 review F-3): the global `StorageType` union is only the
+        // wire grammar; the per-namespace subset is the semantic rule.
         let tables = tables(bounded_array(projection, "tables", version::MAX_TABLES)?)?;
+        check_namespace_types(namespace, &tables)?;
         let joins = match optional_bounded_array(projection, "joins", version::MAX_JOINS)? {
             Some(entries) => joins(entries)?,
             None => Vec::new(),
@@ -679,6 +685,35 @@ fn projections(array: &[Json]) -> Result<Vec<Projection>, DiagnosticSet> {
         return Err(diagnostic::input_invalid("duplicate-namespace"));
     }
     Ok(parsed)
+}
+
+/// The per-namespace storage-type subset is a semantic rule, not a
+/// wire rule: every declared type of every technical, generated, and
+/// tenant column must exist in the declaring projection's namespace
+/// vocabulary. The global `StorageType` union only proves the token is
+/// a type at all (issue #117 review F-3).
+fn check_namespace_types(namespace: Namespace, tables: &[Table]) -> Result<(), DiagnosticSet> {
+    for table in tables {
+        let check = |storage_type: &StorageType| {
+            if namespace.accepts_storage_type(storage_type.as_str()) {
+                Ok(())
+            } else {
+                Err(diagnostic::input_invalid("storage-type"))
+            }
+        };
+        for column in table.technical_columns() {
+            check(column.storage_type())?;
+        }
+        for column in table.generated_columns() {
+            if let Some(storage_type) = column.storage_type() {
+                check(storage_type)?;
+            }
+        }
+        if let Some((_, storage_type)) = table.tenant_key() {
+            check(storage_type)?;
+        }
+    }
+    Ok(())
 }
 
 /// Parse the declared tables; canonical order is entity key.

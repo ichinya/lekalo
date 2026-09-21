@@ -123,6 +123,7 @@ const SEMANTIC_ONLY_DETAILS = new Set([
   // coherence) are proven by the typed normalizer and the Rust suite.
   "sequence-unsupported",
   "prefix-required",
+  "prefix-on-non-textual",
   "prefix-shape",
   "descending-shape",
   "descending-arity",

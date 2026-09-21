@@ -223,6 +223,14 @@ const table = (entity, name, rest) => ({
   ...rest,
 });
 
+// MySQL-family secondary indexes over textual/blob key parts must
+// declare per-column prefix lengths (the InnoDB key-part rule). The
+// tagged columns below are the fixture's textual/blob key parts.
+const withPrefixes = (index) => ({
+  prefixLengths: index.columns.map(() => 16),
+  ...index,
+});
+
 
 const projections = [
   {
@@ -299,12 +307,17 @@ const projections = [
       table("tag", "tag", {
         charset: "utf8mb4",
         collation: "utf8mb4_general_ci",
-        indexes: [{ columns: ["label"], unique: true }],
+        indexes: [withPrefixes({ columns: ["label"], unique: true })],
       }),
       table("task", "task", {
         indexes: [
           { columns: ["due_date"], unique: false },
-          { columns: ["tenant_id"], name: "idx_task_tenant", unique: false },
+          {
+            columns: ["tenant_id"],
+            name: "idx_task_tenant",
+            prefixLengths: [16],
+            unique: false,
+          },
         ],
         softDelete: { column: "deleted_at" },
         technicalColumns: [
@@ -316,11 +329,11 @@ const projections = [
       table("task_detail", "task_detail", {}),
       table("task_external_link", "task_external_link", {
         indexes: [
-          {
+          withPrefixes({
             columns: ["provider", "external_key"],
             name: "uq_external_identity",
             unique: true,
-          },
+          }),
         ],
       }),
     ],
@@ -351,12 +364,17 @@ const projections = [
       table("tag", "tag", {
         charset: "utf8mb4",
         collation: "utf8mb4_0900_ai_ci",
-        indexes: [{ columns: ["label"], unique: true }],
+        indexes: [withPrefixes({ columns: ["label"], unique: true })],
       }),
       table("task", "task", {
         indexes: [
           { columns: ["due_date"], unique: false },
-          { columns: ["tenant_id"], name: "idx_task_tenant", unique: false },
+          {
+            columns: ["tenant_id"],
+            name: "idx_task_tenant",
+            prefixLengths: [16],
+            unique: false,
+          },
         ],
         softDelete: { column: "deleted_at" },
         technicalColumns: [
@@ -368,11 +386,11 @@ const projections = [
       table("task_detail", "task_detail", {}),
       table("task_external_link", "task_external_link", {
         indexes: [
-          {
+          withPrefixes({
             columns: ["provider", "external_key"],
             name: "uq_external_identity",
             unique: true,
-          },
+          }),
         ],
       }),
     ],
@@ -1077,8 +1095,20 @@ addInvalid(
     });
   }),
   "storage.projection-invalid",
-  "prefix-required",
+  "prefix-on-non-textual",
   "focus_session",
+);
+addInvalid(
+  "field-without-prefix",
+  mutate({}, (clone) => {
+    const tag = findProjection(clone, "mysql").tables.find(
+      (entry) => entry.entity === "tag",
+    );
+    tag.indexes[0].prefixLengths = undefined;
+  }),
+  "storage.projection-invalid",
+  "prefix-required",
+  "tag",
 );
 addInvalid(
   "fulltext-unique",

@@ -724,6 +724,10 @@ fn local_column_type(
 
 /// The published namespace type table: the exact rendering of one
 /// domain value type in one namespace.
+pub(crate) fn render_type(namespace: Namespace, field_type: &DomainType) -> String {
+    map_type(namespace, field_type)
+}
+
 fn map_type(namespace: Namespace, field_type: &DomainType) -> String {
     match namespace {
         Namespace::Postgres => match field_type {

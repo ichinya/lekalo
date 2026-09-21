@@ -404,7 +404,7 @@ fn check_tables(
                     return Err(projection_invalid_subject("unknown-index-column", subject));
                 }
             }
-            check_index(index, table, projection, entity)?;
+            check_index(index, table, projection, entity, attachment)?;
         }
     }
     Ok(())
@@ -420,6 +420,7 @@ fn check_index(
     table: &super::projection::Table,
     projection: &Projection,
     entity: &DomainEntity,
+    attachment: &StorageProjectionAttachment,
 ) -> Result<(), DiagnosticSet> {
     let columns = index.columns();
     if let Some(lengths) = index.prefix_lengths() {
@@ -446,7 +447,14 @@ fn check_index(
             ));
         }
         for column in columns {
-            if !column_is_textual(attachment_column_type(table, entity, column)) {
+            // Fulltext key parts must render to a textual family in
+            // the declaring namespace: field columns resolve through
+            // the same table as the prefix rule (issue #117 review
+            // F-3), so a domain string/text field is textual while a
+            // bigint/binary render is refused.
+            let textual = index_column_type(attachment, projection, table, entity, column)
+                .map(|render| super::projection::StorageType::is_textual(render_family(&render)));
+            if textual != Some(true) {
                 return Err(projection_invalid_subject(
                     "fulltext-textual-only",
                     table.entity().as_str(),
@@ -456,12 +464,32 @@ fn check_index(
     }
     if projection.namespace().is_mysql_family() {
         for (position, column) in columns.iter().enumerate() {
-            let Some(declared) = declared_column_type(table, entity, column) else {
+            // The declared or derived storage family of the indexed
+            // column: field columns resolve through the domain type's
+            // namespace render, so the prefix rules cover every
+            // indexable column instead of only explicitly declared
+            // ones (issue #117 review F-3).
+            let Some(declared) = index_column_type(attachment, projection, table, entity, column)
+            else {
                 continue;
             };
-            let textual = super::projection::StorageType::is_textual(declared);
-            let blob = super::projection::StorageType::is_blob_family(declared);
+            let family = render_family(&declared);
+            let textual = super::projection::StorageType::is_textual(family);
+            let blob = super::projection::StorageType::is_blob_family(family);
             if !(textual || blob) {
+                // A prefix length on a non-textual, non-blob key part
+                // is inexpressible engine semantics: refused, never
+                // silently ignored.
+                if index
+                    .prefix_lengths()
+                    .and_then(|lengths| lengths.get(position))
+                    .is_some()
+                {
+                    return Err(projection_invalid_subject(
+                        "prefix-on-non-textual",
+                        table.entity().as_str(),
+                    ));
+                }
                 continue;
             }
             let prefixed = index
@@ -480,60 +508,98 @@ fn check_index(
 }
 
 /// The declared or derived storage type of one locally owned column,
-/// reduced to the member the index rules need: technical and generated
-/// declarations, and the field-derived types.
-fn attachment_column_type<'a>(
-    _table: &'a super::projection::Table,
-    entity: &'a DomainEntity,
-    column: &StorageName,
-) -> Option<&'static str> {
-    for field in entity.fields() {
-        if field.name().as_str() == column.as_str() {
-            // `DomainType::name` returns a `&'static str` from the
-            // closed domain vocabulary; the lifetime is unconstrained.
-            let name = field.field_type().clone().name();
-            return Some(name);
-        }
-    }
-    None
-}
-
-/// Whether one resolved domain type name is a textual family. Field
-/// names are the closed domain vocabulary, so the textual spellings are
-/// `string` and `text`.
-fn column_is_textual(domain_type: Option<&str>) -> bool {
-    matches!(domain_type, Some("string") | Some("text"))
-}
-
-/// The declared storage type token of one locally owned declared
-/// column (technical, generated, tenant). Field-derived columns are
-/// `None` here: the prefix rule resolves them through the domain type
-/// spelling at the caller.
-fn declared_column_type<'a>(
-    table: &'a super::projection::Table,
+/// resolved to the exact namespace render the index rules need:
+/// technical, generated, and tenant declarations keep their token,
+/// field columns map through the namespace type table, and the policy
+/// columns resolve to their derived spellings (issue #117 review F-3).
+/// Foreign-key and polymorphic key columns derive from the referenced
+/// table's single-column primary key and resolve through the same
+/// render at the referenced side.
+fn index_column_type(
+    attachment: &StorageProjectionAttachment,
+    projection: &Projection,
+    table: &super::projection::Table,
     entity: &DomainEntity,
     column: &StorageName,
-) -> Option<&'a str> {
-    if entity
-        .fields()
-        .iter()
-        .any(|field| field.name().as_str() == column.as_str())
-    {
-        return None;
+) -> Option<String> {
+    let namespace = projection.namespace();
+    for field in entity.fields() {
+        if field.name().as_str() == column.as_str() {
+            return Some(super::derivation::render_type(
+                namespace,
+                field.field_type(),
+            ));
+        }
     }
     for technical in table.technical_columns() {
         if technical.name() == column {
-            return Some(technical.storage_type().as_str());
+            return Some(technical.storage_type().as_str().to_owned());
         }
     }
     for generated in table.generated_columns() {
         if generated.name() == column {
-            return generated
-                .storage_type()
-                .map(|storage_type| storage_type.as_str());
+            return Some(
+                generated
+                    .storage_type()
+                    .map(|storage_type| storage_type.as_str().to_owned())
+                    .unwrap_or_else(|| namespace.big_integer().to_owned()),
+            );
         }
     }
+    if let Some((tenant, storage_type)) = table.tenant_key() {
+        if tenant == column {
+            return Some(storage_type.as_str().to_owned());
+        }
+    }
+    if let Some((created_at, updated_at)) = table.timestamps() {
+        if created_at == column || updated_at == column {
+            return Some(namespace.instant().to_owned());
+        }
+    }
+    if table.soft_delete() == Some(column) {
+        return Some(namespace.instant().to_owned());
+    }
+    // Foreign-key and polymorphic key columns derive from the
+    // referenced table's single-column primary key: resolve through
+    // the same render that derivation uses, non-iteratively.
+    for relation in attachment.relations() {
+        let places_here = (relation.kind().target_foreign_key()
+            && relation.target().as_str() == table.entity().as_str())
+            || (relation.kind().owner_foreign_key()
+                && relation.owner().as_str() == table.entity().as_str());
+        if !places_here || relation.foreign_key() != Some(column) {
+            continue;
+        }
+        let referenced = if relation.kind().owner_foreign_key() {
+            relation.target()
+        } else {
+            relation.owner()
+        };
+        let referenced_table = projection
+            .tables()
+            .iter()
+            .find(|table| table.entity().as_str() == referenced.as_str())?;
+        if referenced_table.primary_key().len() != 1 {
+            return None;
+        }
+        let primary = &referenced_table.primary_key()[0];
+        let referenced_entity = attachment.entity(referenced)?;
+        return index_column_type(
+            attachment,
+            projection,
+            referenced_table,
+            referenced_entity,
+            primary,
+        );
+    }
     None
+}
+
+/// Reduce one namespace render to its base family token:
+/// `varchar(200)` → `varchar`, `bigint unsigned` → `bigint`.
+fn render_family(render: &str) -> &str {
+    let base = render.split('(').next().unwrap_or(render);
+    base.split(' ').next().unwrap_or(base)
 }
 
 /// Join-level rules: each join materializes one many-to-many relation
