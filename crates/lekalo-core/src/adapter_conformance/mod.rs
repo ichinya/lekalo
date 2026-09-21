@@ -1048,12 +1048,10 @@ impl Runner {
             .and_then(|caps| caps.capabilities.get("preserve.classification"))
             .map(|state| state.as_str().to_owned());
         self.record(match declared.as_deref() {
-            None | Some("unsupported") | Some("unknown") => {
-                CheckOutcome {
-                    detail: Some("honest-unsupported"),
-                    ..CheckOutcome::pass(CheckId::ClassificationPreservation)
-                }
-            }
+            None | Some("unsupported") | Some("unknown") => CheckOutcome {
+                detail: Some("honest-unsupported"),
+                ..CheckOutcome::pass(CheckId::ClassificationPreservation)
+            },
             Some("full") | Some("partial") => CheckOutcome::fail(
                 CheckId::ClassificationPreservation,
                 CheckId::ClassificationPreservation.class(),

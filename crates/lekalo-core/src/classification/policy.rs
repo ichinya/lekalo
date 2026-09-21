@@ -132,13 +132,15 @@ impl ActorRef {
         ScopeDimension::parse(dimension)?;
         if let Some(scope) = scope {
             let scope_bytes = scope.as_bytes();
-            if scope_bytes.is_empty() || scope_bytes.len() > 64 || !scope_bytes[0].is_ascii_lowercase() {
+            if scope_bytes.is_empty()
+                || scope_bytes.len() > 64
+                || !scope_bytes[0].is_ascii_lowercase()
+            {
                 return None;
             }
-            if !scope_bytes[1..]
-                .iter()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-'))
-            {
+            if !scope_bytes[1..].iter().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
+            }) {
                 return None;
             }
         }
@@ -588,10 +590,14 @@ fn from_value(json: &Json) -> Result<PolicyAttachment, DiagnosticSet> {
         .as_object()
         .ok_or_else(|| diagnostic::document_invalid("top-level-shape", None))?;
     check_members(object, POLICY_TOP_LEVEL_KEYS)?;
-    if object.get("schemaVersion").and_then(Json::as_str) != Some(super::policy::policy_version::SCHEMA_VERSION) {
+    if object.get("schemaVersion").and_then(Json::as_str)
+        != Some(super::policy::policy_version::SCHEMA_VERSION)
+    {
         return Err(diagnostic::document_invalid("schema-version", None));
     }
-    if object.get("identity").and_then(Json::as_str) != Some(super::policy::policy_version::IDENTITY) {
+    if object.get("identity").and_then(Json::as_str)
+        != Some(super::policy::policy_version::IDENTITY)
+    {
         return Err(diagnostic::document_invalid("contract-identity", None));
     }
     let attachment_revision = semver(
@@ -667,30 +673,30 @@ fn kind_rules(json: &[Json]) -> Result<Vec<KindRule>, DiagnosticSet> {
         .ok_or_else(|| diagnostic::document_invalid("kind", None))?;
         let readers = actor_refs(object, "readers")?;
         let writers = actor_refs(object, "writers")?;
-        let destinations = match object.get("destinations") {
-            None => Vec::new(),
-            Some(value) => {
-                let items = value
-                    .as_array()
-                    .ok_or_else(|| diagnostic::document_invalid("destinations", None))?;
-                if items.len() > MAX_DESTINATIONS {
-                    return Err(diagnostic::document_invalid("destinations", None));
+        let destinations =
+            match object.get("destinations") {
+                None => Vec::new(),
+                Some(value) => {
+                    let items = value
+                        .as_array()
+                        .ok_or_else(|| diagnostic::document_invalid("destinations", None))?;
+                    if items.len() > MAX_DESTINATIONS {
+                        return Err(diagnostic::document_invalid("destinations", None));
+                    }
+                    let mut parsed_destinations = Vec::with_capacity(items.len());
+                    for item in items {
+                        parsed_destinations.push(
+                            DestinationKind::parse(item.as_str().ok_or_else(|| {
+                                diagnostic::document_invalid("destinations", None)
+                            })?)
+                            .ok_or_else(|| diagnostic::document_invalid("destinations", None))?,
+                        );
+                    }
+                    parsed_destinations.sort();
+                    parsed_destinations.dedup();
+                    parsed_destinations
                 }
-                let mut parsed_destinations = Vec::with_capacity(items.len());
-                for item in items {
-                    parsed_destinations.push(
-                        DestinationKind::parse(
-                            item.as_str()
-                                .ok_or_else(|| diagnostic::document_invalid("destinations", None))?,
-                        )
-                        .ok_or_else(|| diagnostic::document_invalid("destinations", None))?,
-                    );
-                }
-                parsed_destinations.sort();
-                parsed_destinations.dedup();
-                parsed_destinations
-            }
-        };
+            };
         let masking_json = object
             .get("masking")
             .ok_or_else(|| diagnostic::document_invalid("masking", None))?;
@@ -728,11 +734,9 @@ fn kind_rules(json: &[Json]) -> Result<Vec<KindRule>, DiagnosticSet> {
                 let mut parsed_refs = Vec::with_capacity(items.len());
                 for item in items {
                     parsed_refs.push(
-                        ContractRef::parse(
-                            item.as_str().ok_or_else(|| {
-                                diagnostic::document_invalid("encryption-refs", None)
-                            })?,
-                        )
+                        ContractRef::parse(item.as_str().ok_or_else(|| {
+                            diagnostic::document_invalid("encryption-refs", None)
+                        })?)
                         .map_err(|_| diagnostic::document_invalid("encryption-refs", None))?,
                     );
                 }
@@ -780,13 +784,11 @@ fn kind_rules(json: &[Json]) -> Result<Vec<KindRule>, DiagnosticSet> {
                     if role_bytes.is_empty()
                         || role_bytes.len() > 64
                         || !role_bytes[0].is_ascii_lowercase()
-                        || !role_bytes[1..]
-                            .iter()
-                            .all(|byte| {
-                                byte.is_ascii_lowercase()
-                                    || byte.is_ascii_digit()
-                                    || matches!(byte, b'_' | b'-')
-                            })
+                        || !role_bytes[1..].iter().all(|byte| {
+                            byte.is_ascii_lowercase()
+                                || byte.is_ascii_digit()
+                                || matches!(byte, b'_' | b'-')
+                        })
                     {
                         return Err(diagnostic::document_invalid("declassify-roles", None));
                     }
@@ -819,7 +821,10 @@ fn kind_rules(json: &[Json]) -> Result<Vec<KindRule>, DiagnosticSet> {
     }
     // Hard rule: credential rules list no destinations and no
     // declassification roles; secrets never declassify downward.
-    if let Some(credential) = parsed.iter().find(|rule| rule.kind() == DataKind::Credential) {
+    if let Some(credential) = parsed
+        .iter()
+        .find(|rule| rule.kind() == DataKind::Credential)
+    {
         if !credential.destinations().is_empty() {
             return Err(diagnostic::document_invalid(
                 "credential-destinations",
@@ -946,11 +951,7 @@ fn policy_open_questions(json: &[Json]) -> Result<Vec<PolicyOpenQuestion>, Diagn
                 .ok_or_else(|| diagnostic::document_invalid("kind", None))?,
             ),
         };
-        parsed.push(PolicyOpenQuestion {
-            id,
-            question,
-            kind,
-        });
+        parsed.push(PolicyOpenQuestion { id, question, kind });
     }
     parsed.sort_by(|left, right| left.id().as_str().cmp(right.id().as_str()));
     for pair in parsed.windows(2) {
@@ -1125,11 +1126,7 @@ impl PolicyAttachment {
                         .collect(),
                     consent_required: rule.consent_required(),
                     cross_tenant: rule.cross_tenant().as_str(),
-                    declassify_roles: rule
-                        .declassify_roles()
-                        .iter()
-                        .map(String::as_str)
-                        .collect(),
+                    declassify_roles: rule.declassify_roles().iter().map(String::as_str).collect(),
                 })
                 .collect(),
             sinks: SinksWire {

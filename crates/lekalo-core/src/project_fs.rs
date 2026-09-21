@@ -902,11 +902,14 @@ impl Fs {
                 return Err(StructureReason::new("structure.directory-required")
                     .at("lekalo/authorization.yaml"));
             }
-            if matches!(name.as_str(), "classification.json" | "classification-policy.json")
-                && entry_type != EntryType::File
+            if matches!(
+                name.as_str(),
+                "classification.json" | "classification-policy.json"
+            ) && entry_type != EntryType::File
             {
-                return Err(StructureReason::new("structure.document-missing")
-                    .at(format!("lekalo/{name}")));
+                return Err(
+                    StructureReason::new("structure.document-missing").at(format!("lekalo/{name}"))
+                );
             }
         }
 

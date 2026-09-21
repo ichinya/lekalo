@@ -26,10 +26,7 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 /// bound, or the export-limit refusal.
 pub(super) fn check_export_bound(bytes: &str) -> Result<(), crate::diagnostics::DiagnosticSet> {
     if bytes.len() > version::MAX_EXPORT_BYTES {
-        return Err(super::diagnostic::document_invalid(
-            "canonical-bytes",
-            None,
-        ));
+        return Err(super::diagnostic::document_invalid("canonical-bytes", None));
     }
     Ok(())
 }

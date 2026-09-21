@@ -14,7 +14,6 @@
 //! report is derived: its bytes are a pure function of the exact
 //! input digests and the pinned compilation, with no wall-clock input.
 
-
 use crate::classification::policy::{PolicyAttachment, SinkName};
 use crate::classification::resolve::{Resolution, ResolvedKind};
 use crate::classification::types::{DataKind, SubjectPath};
@@ -26,8 +25,8 @@ use crate::scenario::id::SemanticId;
 use super::diagnostic;
 use super::report::Report;
 use super::types::{
-    Confidence, Finding, Flow, Gate, GateReason, Provenance, Severity, SinkKind,
-    TenantRelation, UnknownFlow, UnknownReason,
+    Confidence, Finding, Flow, Gate, GateReason, Provenance, Severity, SinkKind, TenantRelation,
+    UnknownFlow, UnknownReason,
 };
 use super::version;
 use crate::result::Status;
@@ -252,7 +251,10 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
 
     // The public-endpoint exposure rule (plan §5.1, the acceptance
     // case) over the transport bindings handed to this run.
-    findings.extend(exposure_findings(inputs.classification, inputs.endpoint_exposures));
+    findings.extend(exposure_findings(
+        inputs.classification,
+        inputs.endpoint_exposures,
+    ));
 
     unknowns.sort_by(|left, right| {
         left.source
@@ -368,8 +370,7 @@ fn findings_to_diagnostics(findings: &[Finding]) -> DiagnosticSet {
                 crate::digest::sha256_hex(finding.subject.as_bytes())
             )),
         );
-        if let Ok(built) =
-            crate::diagnostics::normalize::build(&finding.rule_id, None, None, data)
+        if let Ok(built) = crate::diagnostics::normalize::build(&finding.rule_id, None, None, data)
         {
             diagnostics.push(built);
         }
@@ -435,7 +436,11 @@ const fn gate_rule_of(reason: GateReason) -> Option<&'static str> {
 
 /// The tenant relation of one subject/kind pair. With no declared
 /// tenant evidence the relation is `unknown` — never silently `same`.
-fn tenant_relation_of(_inputs: &Inputs<'_>, _subject: &SubjectPath, kind: DataKind) -> TenantRelation {
+fn tenant_relation_of(
+    _inputs: &Inputs<'_>,
+    _subject: &SubjectPath,
+    kind: DataKind,
+) -> TenantRelation {
     // Tenant-crossing detection joins authorization tenant scopes and
     // query tenant-filter declarations. The classification-level rule
     // is conservative: tenant-scoped kinds whose path carries no
@@ -514,14 +519,35 @@ mod tests {
     #[test]
     fn gate_rules_cover_every_failure_reason() {
         for (reason, rule) in [
-            (GateReason::MissingDestination, Some("dataflow.missing-destination")),
-            (GateReason::MissingApproval, Some("dataflow.missing-approval")),
-            (GateReason::DestinationForbidden, Some("dataflow.destination-forbidden")),
+            (
+                GateReason::MissingDestination,
+                Some("dataflow.missing-destination"),
+            ),
+            (
+                GateReason::MissingApproval,
+                Some("dataflow.missing-approval"),
+            ),
+            (
+                GateReason::DestinationForbidden,
+                Some("dataflow.destination-forbidden"),
+            ),
             (GateReason::UnknownFlow, Some("dataflow.unknown-flow")),
-            (GateReason::LowConfidence, Some("dataflow.low-confidence-sensitive")),
-            (GateReason::SinkCeilingExceeded, Some("classification.sink-ceiling-exceeded")),
-            (GateReason::UnclassifiedSubject, Some("classification.unclassified-sensitive-sink")),
-            (GateReason::InputsIncomplete, Some("dataflow.observed-incomplete")),
+            (
+                GateReason::LowConfidence,
+                Some("dataflow.low-confidence-sensitive"),
+            ),
+            (
+                GateReason::SinkCeilingExceeded,
+                Some("classification.sink-ceiling-exceeded"),
+            ),
+            (
+                GateReason::UnclassifiedSubject,
+                Some("classification.unclassified-sensitive-sink"),
+            ),
+            (
+                GateReason::InputsIncomplete,
+                Some("dataflow.observed-incomplete"),
+            ),
             (GateReason::NotRequired, None),
             (GateReason::DestinationDeclared, None),
             (GateReason::ApprovalPresent, None),
@@ -557,10 +583,9 @@ pub fn run_report(
         &crate::classification::attachment_digest(attachment)?,
     )
     .map_err(|_| diagnostic::document_invalid("classification-ref", None))?;
-    let policy_ref = crate::lockfile::types::Sha256Digest::parse(
-        &crate::classification::policy_digest(policy)?,
-    )
-    .map_err(|_| diagnostic::document_invalid("policy-ref", None))?;
+    let policy_ref =
+        crate::lockfile::types::Sha256Digest::parse(&crate::classification::policy_digest(policy)?)
+            .map_err(|_| diagnostic::document_invalid("policy-ref", None))?;
     let analysis = analyze(&Inputs {
         project_id: &project_id,
         model_ref: (compilation.project.model_version.as_str(), &model_digest),
@@ -588,7 +613,10 @@ const REPORT_REVISION: &str = "1.0.0";
 /// spelling the effect-graph builder records).
 fn compile_digests(
     compilation: &crate::ir::Compilation,
-) -> (crate::lockfile::types::Sha256Digest, crate::lockfile::types::Sha256Digest) {
+) -> (
+    crate::lockfile::types::Sha256Digest,
+    crate::lockfile::types::Sha256Digest,
+) {
     use sha2::Digest as _;
     let mut hasher = sha2::Sha256::new();
     hasher.update(compilation.project.to_canonical_json().as_bytes());
@@ -604,7 +632,6 @@ fn compile_digests(
 
 #[cfg(test)]
 mod exposure_tests {
-    use super::super::types::Severity;
     use super::*;
     use crate::classification::Attachment;
 

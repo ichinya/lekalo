@@ -30,14 +30,13 @@ pub mod types;
 pub mod version;
 
 pub use analyze::{analyze, run_report, Analysis, Inputs};
-pub use report::{Report, ReportWire, Verdict};
 pub use report::report_canonical_bytes;
+pub use report::{Report, ReportWire, Verdict};
 pub use types::{
     BoundedText, Confidence, DataKind, Finding, Flow, Gate, GateReason, GateState, QuestionId,
     Severity, SinkKind, SubjectPath, TenantRelation, UnknownFlow, UnknownReason,
 };
 pub use version::{
-    FAMILY, IDENTITY, IR_IDENTITY, MAX_CANONICAL_BYTES, MAX_FINDINGS, MAX_FLOWS, MAX_OPEN_QUESTIONS,
-    MAX_PATH_HOPS, MAX_UNKNOWNS, MODEL_VERSION, SCHEMA_VERSION, VERSION,
+    FAMILY, IDENTITY, IR_IDENTITY, MAX_CANONICAL_BYTES, MAX_FINDINGS, MAX_FLOWS,
+    MAX_OPEN_QUESTIONS, MAX_PATH_HOPS, MAX_UNKNOWNS, MODEL_VERSION, SCHEMA_VERSION, VERSION,
 };
-

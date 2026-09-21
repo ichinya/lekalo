@@ -142,10 +142,9 @@ fn the_analyzer_projects_flows_and_the_report_is_stable() {
         &lekalo_core::classification::attachment_digest(&classification).expect("digest"),
     )
     .expect("digest shape");
-    let policy_ref = Sha256Digest::parse(
-        &lekalo_core::classification::policy_digest(&policy).expect("digest"),
-    )
-    .expect("digest shape");
+    let policy_ref =
+        Sha256Digest::parse(&lekalo_core::classification::policy_digest(&policy).expect("digest"))
+            .expect("digest shape");
 
     let analysis = analyze(&Inputs {
         project_id: &project_id,
@@ -167,7 +166,9 @@ fn the_analyzer_projects_flows_and_the_report_is_stable() {
     assert_eq!(report.flows().len(), graph.declared().len());
     // Every flow carries its resolved kind and a gate decision.
     for flow in report.flows() {
-        assert!(flow.classification().rank() >= lekalo_core::classification::DataKind::Internal.rank());
+        assert!(
+            flow.classification().rank() >= lekalo_core::classification::DataKind::Internal.rank()
+        );
         assert!(flow.gate().is_some());
     }
     // The personal data of the notify module is sensitive.
@@ -207,10 +208,9 @@ fn export_sinks_above_their_ceiling_are_findings() {
         &lekalo_core::classification::attachment_digest(&classification).expect("digest"),
     )
     .expect("digest shape");
-    let policy_ref = Sha256Digest::parse(
-        &lekalo_core::classification::policy_digest(&policy).expect("digest"),
-    )
-    .expect("digest shape");
+    let policy_ref =
+        Sha256Digest::parse(&lekalo_core::classification::policy_digest(&policy).expect("digest"))
+            .expect("digest shape");
     let analysis = analyze(&Inputs {
         project_id: &project_id,
         model_ref: ("0.2.16", &model_digest),

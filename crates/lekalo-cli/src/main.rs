@@ -1671,7 +1671,10 @@ fn classification_review(
     compilation: &lekalo_core::ir::Compilation,
     strict: bool,
 ) -> Result<(), DomainResult> {
-    let selector = selection.project.clone().or_else(|| std::env::var("LEKALO_PROJECT").ok());
+    let selector = selection
+        .project
+        .clone()
+        .or_else(|| std::env::var("LEKALO_PROJECT").ok());
     let root = match &selector {
         Some(dir) => std::path::PathBuf::from(dir),
         None => match std::env::current_dir() {
@@ -2246,9 +2249,8 @@ fn run_effects(command: EffectsCommands, no_cache: bool) -> DomainResult {
 
 /// Read one attachment document; IO failure is a typed invalid set.
 fn read_document(path: &str) -> Result<Vec<u8>, DomainResult> {
-    std::fs::read(path).map_err(|_| {
-        DomainResult::invalid(lekalo_core::classification::io_failure_set())
-    })
+    std::fs::read(path)
+        .map_err(|_| DomainResult::invalid(lekalo_core::classification::io_failure_set()))
 }
 
 /// Load the compiled project for the classification/dataflow surfaces:
@@ -2328,9 +2330,7 @@ fn run_classification(command: ClassificationCommands) -> DomainResult {
                 Ok(outcome) => {
                     let (json, human) = classification_validate_payload(&attachment, &outcome);
                     if outcome.invalid {
-                        DomainResult::invalid(lekalo_core::classification::findings_set(
-                            &outcome,
-                        ))
+                        DomainResult::invalid(lekalo_core::classification::findings_set(&outcome))
                     } else {
                         DomainResult::graph(json, human, Vec::new())
                     }
@@ -2443,7 +2443,8 @@ fn run_dataflow(command: DataflowCommands) -> DomainResult {
                     Err(result) => return result,
                     Ok(parts) => parts,
                 };
-            match lekalo_core::dataflow::run_report(&compilation, &attachment, &policy, &resolution) {
+            match lekalo_core::dataflow::run_report(&compilation, &attachment, &policy, &resolution)
+            {
                 Err(set) => DomainResult::invalid(set),
                 Ok((report, diagnostics)) => {
                     let bytes = match lekalo_core::dataflow::report_canonical_bytes(&report) {

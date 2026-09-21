@@ -187,7 +187,11 @@ pub fn sink_ceiling_exceeded(detail: &str, subject: &str) -> DiagnosticSet {
 pub fn unclassified_sensitive_sink(detail: &str, subject: &str) -> DiagnosticSet {
     set(
         Status::Invalid,
-        vec![diagnostic(UNCLASSIFIED_SENSITIVE_SINK, detail, Some(subject))],
+        vec![diagnostic(
+            UNCLASSIFIED_SENSITIVE_SINK,
+            detail,
+            Some(subject),
+        )],
     )
 }
 
@@ -227,8 +231,8 @@ mod tests {
 
     #[test]
     fn every_rule_allows_invalid_and_only_that_gate_status_where_declared() {
-        let registry = crate::diagnostics::registry::DiagnosticRegistry::embedded()
-            .expect("registry");
+        let registry =
+            crate::diagnostics::registry::DiagnosticRegistry::embedded().expect("registry");
         for id in [
             DOCUMENT_INVALID,
             UNKNOWN_SUBJECT,
@@ -243,7 +247,11 @@ mod tests {
             let entry = registry.entry(id).unwrap_or_else(|| panic!("{id}"));
             assert!(entry.allows_status(Status::Invalid), "{id}");
         }
-        for id in [EXPIRED_DECLASSIFICATION, SINK_CEILING_EXCEEDED, UNCLASSIFIED_SENSITIVE_SINK] {
+        for id in [
+            EXPIRED_DECLASSIFICATION,
+            SINK_CEILING_EXCEEDED,
+            UNCLASSIFIED_SENSITIVE_SINK,
+        ] {
             let entry = registry.entry(id).unwrap_or_else(|| panic!("{id}"));
             assert!(entry.allows_status(Status::Invalid), "{id}");
         }

@@ -125,12 +125,9 @@ impl CheckId {
     pub const fn class(self) -> CheckClass {
         match self {
             Self::ConfinementCanonical
-                | Self::ConfinementPlanScopes
-                | Self::RedactionEvidence
-                | Self::ClassificationPreservation
-            => {
-                CheckClass::Security
-            }
+            | Self::ConfinementPlanScopes
+            | Self::RedactionEvidence
+            | Self::ClassificationPreservation => CheckClass::Security,
             Self::DescribeHandshake
             | Self::DescribeNegotiation
             | Self::CapabilityDeclaration

@@ -16,9 +16,7 @@ use crate::lockfile::types::Sha256Digest;
 use crate::scenario::id::SemanticId;
 
 use super::diagnostic;
-use super::types::{
-    BoundedText, Finding, Flow, QuestionId, UnknownFlow,
-};
+use super::types::{BoundedText, Finding, Flow, QuestionId, UnknownFlow};
 use super::version;
 
 /// The closed top-level member set of the report.
@@ -322,12 +320,15 @@ fn report_from_parts(
         .ok_or_else(|| diagnostic::document_invalid("inputs-complete", None))?;
     let flows = flows
         .iter()
-        .map(|flow| Flow::from_wire(flow).map_err(|_| diagnostic::document_invalid("flow-row", None)))
+        .map(|flow| {
+            Flow::from_wire(flow).map_err(|_| diagnostic::document_invalid("flow-row", None))
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let findings = findings
         .iter()
         .map(|finding| {
-            Finding::from_wire(finding).map_err(|_| diagnostic::document_invalid("finding-row", None))
+            Finding::from_wire(finding)
+                .map_err(|_| diagnostic::document_invalid("finding-row", None))
         })
         .collect::<Result<Vec<_>, _>>()?;
     let unknowns = unknowns
@@ -395,10 +396,10 @@ type CustodyPin = (String, Sha256Digest);
 fn custody_pins(
     object: &serde_json::Map<String, Json>,
 ) -> Result<(CustodyPin, CustodyPin), DiagnosticSet> {
-    let pin = |key: &str, version_key: &str, detail: &'static str| -> Result<
-        (String, Sha256Digest),
-        DiagnosticSet,
-    > {
+    let pin = |key: &str,
+               version_key: &str,
+               detail: &'static str|
+     -> Result<(String, Sha256Digest), DiagnosticSet> {
         let pin_object = object
             .get(key)
             .ok_or_else(|| diagnostic::document_invalid(detail, None))?
@@ -525,8 +526,8 @@ pub fn report_canonical_bytes(report: &Report) -> Result<String, DiagnosticSet> 
 
 /// One canonical SemVer spelling without build metadata (report wire).
 fn wire_semver(text: &str) -> Result<String, DiagnosticSet> {
-    let parsed =
-        semver::Version::parse(text).map_err(|_| diagnostic::document_invalid("report-revision", None))?;
+    let parsed = semver::Version::parse(text)
+        .map_err(|_| diagnostic::document_invalid("report-revision", None))?;
     if parsed.build != semver::BuildMetadata::EMPTY || parsed.to_string() != text {
         return Err(diagnostic::document_invalid("report-revision", None));
     }

@@ -616,10 +616,9 @@ const PLANNER_CLASSIFICATION: &str = r#"{
 #[test]
 fn classified_edges_carry_the_marker_and_uncovered_edges_do_not() {
     let project = planner();
-    let attachment = lekalo_core::classification::Attachment::parse(
-        PLANNER_CLASSIFICATION.as_bytes(),
-    )
-    .expect("planner classification parses");
+    let attachment =
+        lekalo_core::classification::Attachment::parse(PLANNER_CLASSIFICATION.as_bytes())
+            .expect("planner classification parses");
     let resolution = lekalo_core::classification::Resolution::build(&attachment);
     let graph = lekalo_core::effects::build_with_classification(&project, Some(&resolution))
         .expect("graph builds");
@@ -646,10 +645,9 @@ fn classified_edges_carry_the_marker_and_uncovered_edges_do_not() {
 fn stamping_never_changes_the_edge_identity_set() {
     let project = planner();
     let bare = build(&project).expect("bare graph builds");
-    let attachment = lekalo_core::classification::Attachment::parse(
-        PLANNER_CLASSIFICATION.as_bytes(),
-    )
-    .expect("planner classification parses");
+    let attachment =
+        lekalo_core::classification::Attachment::parse(PLANNER_CLASSIFICATION.as_bytes())
+            .expect("planner classification parses");
     let resolution = lekalo_core::classification::Resolution::build(&attachment);
     let stamped = lekalo_core::effects::build_with_classification(&project, Some(&resolution))
         .expect("stamped graph builds");

@@ -672,7 +672,10 @@ impl Finding {
             .get("detail")
             .and_then(Json::as_str)
             .ok_or(VocabularyError::Shape)?;
-        if detail.is_empty() || detail.len() > 64 || !detail.starts_with(|byte: char| byte.is_ascii_lowercase()) {
+        if detail.is_empty()
+            || detail.len() > 64
+            || !detail.starts_with(|byte: char| byte.is_ascii_lowercase())
+        {
             return Err(VocabularyError::Shape);
         }
         Ok(Self {

@@ -81,8 +81,7 @@ impl Resolution {
         let mut definition_defaults = BTreeMap::new();
         for entry in attachment.classifications() {
             if entry.subject().is_definition_level() {
-                definition_defaults
-                    .insert(entry.subject().as_str().to_owned(), entry.kind());
+                definition_defaults.insert(entry.subject().as_str().to_owned(), entry.kind());
             } else {
                 exact.insert(entry.subject().as_str().to_owned(), entry.kind());
             }
@@ -294,8 +293,7 @@ mod tests {
     #[test]
     fn credential_subjects_keep_their_kind() {
         let resolution = Resolution::build(&attachment());
-        let ssn =
-            SubjectPath::parse("core.command.create_user/payload/ssn").expect("valid");
+        let ssn = SubjectPath::parse("core.command.create_user/payload/ssn").expect("valid");
         let mark = resolution.resolve_with_grants(&ssn, |_| true);
         assert_eq!(mark.kind, DataKind::Credential);
     }

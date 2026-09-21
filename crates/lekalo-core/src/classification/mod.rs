@@ -30,10 +30,10 @@
 //! family (`dev.lekalo.classification-policy@0.4.0`), not here.
 
 pub mod diagnostic;
-pub mod validate;
 pub mod policy;
 pub mod resolve;
 pub mod types;
+pub mod validate;
 pub mod version;
 
 mod canonical;
@@ -47,22 +47,19 @@ pub use policy::{
 pub use resolve::{Resolution, ResolvedKind, SensitivityMark};
 pub use types::{
     BoundedText, Condition, ContractRef, DataKind, IsoTimestamp, Label, PolicyRef, Profile,
-    QuestionId, ReviewRef, RetentionClass, SubjectPath, VocabularyError,
+    QuestionId, RetentionClass, ReviewRef, SubjectPath, VocabularyError,
 };
 pub use version::{
     EDGE_CONTRACT, FAMILY, IDENTITY, IR_IDENTITY, MAX_CANONICAL_BYTES, MAX_CLASSIFICATIONS,
-    MAX_CONDITIONS,
-    MAX_DECLASSIFICATIONS, MAX_DOC_BYTES, MAX_EXPORT_BYTES, MAX_LABELS, MAX_OPEN_QUESTIONS,
-    MAX_SUBJECT_SEGMENTS, MODEL_VERSION, SCHEMA_VERSION, VERSION,
+    MAX_CONDITIONS, MAX_DECLASSIFICATIONS, MAX_DOC_BYTES, MAX_EXPORT_BYTES, MAX_LABELS,
+    MAX_OPEN_QUESTIONS, MAX_SUBJECT_SEGMENTS, MODEL_VERSION, SCHEMA_VERSION, VERSION,
 };
 
 pub use validate::{
-    discover, validate_custody, validate_policy_and_grants, validate_subjects,
-    FindingRow, ValidationOutcome, ATTACHMENT_PATH, POLICY_PATH,
+    discover, validate_custody, validate_policy_and_grants, validate_subjects, FindingRow,
+    ValidationOutcome, ATTACHMENT_PATH, POLICY_PATH,
 };
-pub use wire::{
-    Attachment, Classification, Declassification, Defaults, OpenQuestion,
-};
+pub use wire::{Attachment, Classification, Declassification, Defaults, OpenQuestion};
 
 use crate::diagnostics::DiagnosticSet;
 

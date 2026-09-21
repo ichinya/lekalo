@@ -20,8 +20,8 @@ use crate::scenario::id::SemanticId;
 
 use super::diagnostic;
 use super::types::{
-    BoundedText, Condition, ContractRef, DataKind, IsoTimestamp, Label, Profile,
-    QuestionId, ReviewRef, RetentionClass, SubjectPath,
+    BoundedText, Condition, ContractRef, DataKind, IsoTimestamp, Label, Profile, QuestionId,
+    RetentionClass, ReviewRef, SubjectPath,
 };
 use super::version;
 
@@ -40,11 +40,7 @@ const TOP_LEVEL_KEYS: &[&str] = &[
 ];
 
 /// The closed defaults member set.
-const DEFAULTS_KEYS: &[&str] = &[
-    "profile",
-    "unclassifiedFields",
-    "unclassifiedPayloads",
-];
+const DEFAULTS_KEYS: &[&str] = &["profile", "unclassifiedFields", "unclassifiedPayloads"];
 
 /// The closed classification-entry member set.
 const CLASSIFICATION_KEYS: &[&str] = &[
@@ -264,13 +260,10 @@ impl Attachment {
     /// return the terminal rejection set.
     pub fn parse(bytes: &[u8]) -> Result<Self, DiagnosticSet> {
         if bytes.len() > version::MAX_DOC_BYTES {
-            return Err(diagnostic::document_invalid(
-                "document-bytes",
-                None,
-            ));
+            return Err(diagnostic::document_invalid("document-bytes", None));
         }
-        let text =
-            std::str::from_utf8(bytes).map_err(|_| diagnostic::document_invalid("invalid-encoding", None))?;
+        let text = std::str::from_utf8(bytes)
+            .map_err(|_| diagnostic::document_invalid("invalid-encoding", None))?;
         let json = super::json::parse(text)?;
         from_value(&json)
     }
@@ -498,10 +491,7 @@ fn defaults(json: &Json) -> Result<Defaults, DiagnosticSet> {
 /// reject exact duplicates.
 fn classifications(json: &[Json]) -> Result<Vec<Classification>, DiagnosticSet> {
     if json.len() > version::MAX_CLASSIFICATIONS {
-        return Err(diagnostic::document_invalid(
-            "classification-list",
-            None,
-        ));
+        return Err(diagnostic::document_invalid("classification-list", None));
     }
     let mut parsed = Vec::with_capacity(json.len());
     for value in json {
@@ -588,10 +578,7 @@ fn classifications(json: &[Json]) -> Result<Vec<Classification>, DiagnosticSet> 
 /// then grant id and reject exact subject duplicates.
 fn declassifications(json: &[Json]) -> Result<Vec<Declassification>, DiagnosticSet> {
     if json.len() > version::MAX_DECLASSIFICATIONS {
-        return Err(diagnostic::document_invalid(
-            "declassification-list",
-            None,
-        ));
+        return Err(diagnostic::document_invalid("declassification-list", None));
     }
     let mut parsed = Vec::with_capacity(json.len());
     for value in json {
@@ -751,10 +738,7 @@ fn open_questions(json: &[Json]) -> Result<Vec<OpenQuestion>, DiagnosticSet> {
     parsed.sort_by(|left, right| left.id().as_str().cmp(right.id().as_str()));
     for pair in parsed.windows(2) {
         if pair[0].id().as_str() == pair[1].id().as_str() {
-            return Err(diagnostic::document_invalid(
-                "duplicate-question",
-                None,
-            ));
+            return Err(diagnostic::document_invalid("duplicate-question", None));
         }
     }
     Ok(parsed)

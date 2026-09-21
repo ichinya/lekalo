@@ -89,16 +89,10 @@ pub fn validate_custody(
         .map(|project| project.id.as_str().to_owned());
     if let Some(project_id) = &declared_project {
         if attachment.project_id().as_str() != project_id {
-            return Err(diagnostic::document_invalid(
-                "custody-project",
-                None,
-            ));
+            return Err(diagnostic::document_invalid("custody-project", None));
         }
         if policy.project_id().as_str() != project_id {
-            return Err(diagnostic::document_invalid(
-                "custody-project",
-                None,
-            ));
+            return Err(diagnostic::document_invalid("custody-project", None));
         }
     }
     let _ = (attachment.model_ref(), policy.model_ref());
@@ -182,9 +176,7 @@ fn field_map(definition: &crate::ir::Definition) -> std::collections::BTreeMap<S
 }
 
 /// The field map of an explicit member list.
-fn field_map_of(
-    members: &[crate::ir::Field],
-) -> std::collections::BTreeMap<String, String> {
+fn field_map_of(members: &[crate::ir::Field]) -> std::collections::BTreeMap<String, String> {
     let mut map = std::collections::BTreeMap::new();
     for field in members {
         let target = match &field.r#type {

@@ -337,9 +337,9 @@ impl ReviewRef {
             return Err(VocabularyError::Length);
         }
         let first_ok = bytes[0].is_ascii_alphanumeric();
-        let rest_ok = bytes[1..]
-            .iter()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'/' | b'-'));
+        let rest_ok = bytes[1..].iter().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'/' | b'-')
+        });
         if !first_ok || !rest_ok {
             return Err(VocabularyError::Shape);
         }
@@ -373,7 +373,9 @@ impl ContractRef {
         };
         let ok_namespace = !namespace.is_empty()
             && namespace.len() <= 128
-            && namespace.split('.').all(super::super::effects::identity::is_lower_name);
+            && namespace
+                .split('.')
+                .all(super::super::effects::identity::is_lower_name);
         if !ok_namespace {
             return Err(VocabularyError::Shape);
         }
@@ -444,10 +446,9 @@ impl RetentionClass {
                 VocabularyError::Shape
             });
         }
-        if !bytes[1..]
-            .iter()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-'))
-        {
+        if !bytes[1..].iter().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
+        }) {
             return Err(VocabularyError::Shape);
         }
         Ok(Self(text.to_owned()))
@@ -472,9 +473,9 @@ impl Label {
             return Err(VocabularyError::Length);
         }
         if !bytes[0].is_ascii_alphanumeric()
-            || !bytes[1..]
-                .iter()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'/' | b'-'))
+            || !bytes[1..].iter().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'/' | b'-')
+            })
         {
             return Err(VocabularyError::Shape);
         }
@@ -518,9 +519,13 @@ impl BoundedText {
             return Err(VocabularyError::Length);
         }
         let first_ok = bytes[0].is_ascii_alphanumeric();
-        let rest_ok = bytes[1..]
-            .iter()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b' ' | b'.' | b',' | b':' | b';' | b'(' | b')' | b'/' | b'_' | b'-'));
+        let rest_ok = bytes[1..].iter().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b' ' | b'.' | b',' | b':' | b';' | b'(' | b')' | b'/' | b'_' | b'-'
+                )
+        });
         if !first_ok || !rest_ok {
             return Err(VocabularyError::Shape);
         }
@@ -541,7 +546,14 @@ impl IsoTimestamp {
     /// Validate and keep the exact text of one timestamp.
     pub fn parse(text: &str) -> Result<Self, VocabularyError> {
         let bytes = text.as_bytes();
-        if bytes.len() != 20 || bytes[4] != b'-' || bytes[7] != b'-' || bytes[10] != b'T' || bytes[13] != b':' || bytes[16] != b':' || bytes[19] != b'Z' {
+        if bytes.len() != 20
+            || bytes[4] != b'-'
+            || bytes[7] != b'-'
+            || bytes[10] != b'T'
+            || bytes[13] != b':'
+            || bytes[16] != b':'
+            || bytes[19] != b'Z'
+        {
             return Err(VocabularyError::Shape);
         }
         if !bytes.iter().enumerate().all(|(index, byte)| match index {
@@ -587,7 +599,13 @@ mod tests {
         assert!(!DataKind::Internal.is_sensitive());
         assert!(DataKind::Derived.is_sensitive());
         assert!(DataKind::Credential.is_sensitive());
-        for kind in [DataKind::Personal, DataKind::Credential, DataKind::Financial, DataKind::Health, DataKind::TenantScoped] {
+        for kind in [
+            DataKind::Personal,
+            DataKind::Credential,
+            DataKind::Financial,
+            DataKind::Health,
+            DataKind::TenantScoped,
+        ] {
             assert!(kind.cross_tenant_forbidden_by_default());
         }
         assert!(!DataKind::Public.cross_tenant_forbidden_by_default());
@@ -617,7 +635,10 @@ mod tests {
     fn subject_paths_expose_head_and_field_segments() {
         let subject = SubjectPath::parse("core.command.create_user/payload/ssn").expect("valid");
         assert_eq!(subject.semantic_id(), "core.command.create_user");
-        assert_eq!(subject.field_segments().collect::<Vec<_>>(), ["payload", "ssn"]);
+        assert_eq!(
+            subject.field_segments().collect::<Vec<_>>(),
+            ["payload", "ssn"]
+        );
         assert!(!subject.is_definition_level());
         let head = SubjectPath::parse("core.entity.user").expect("valid");
         assert!(head.is_definition_level());
