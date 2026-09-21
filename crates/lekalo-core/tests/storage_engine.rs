@@ -724,6 +724,91 @@ fn a_changed_primary_key_plans_the_drop_and_add_and_gates() {
 }
 
 #[test]
+fn a_dropped_column_owns_its_check_and_index_drops() {
+    // PostgreSQL auto-drops the indexes and constraints involving a
+    // dropped column, so the plan's explicit drops of the column's
+    // objects must execute before the DROP COLUMN — a confirmed plan
+    // drops the constraint and index first, then the column.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    // Remove softDelete (deleted_at), the check over it, and the
+    // partial index over it from the postgres projection.
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+            .retain(|table| table.get("table").and_then(serde_json::Value::as_str) != Some("task"));
+        let task = serde_json::json!({
+            "entity": "task",
+            "table": "task",
+            "primaryKey": ["id"],
+            "indexes": [
+                {"columns": ["due_date"], "unique": false},
+                {"columns": ["tenant_id"], "name": "idx_task_tenant", "unique": false}
+            ],
+            "technicalColumns": [
+                {"name": "row_etag", "nullable": false, "purpose": "optimistic concurrency token", "type": "bytea"}
+            ],
+            "tenantKey": {"column": "tenant_id", "type": "uuid"},
+            "timestamps": {"createdAt": "created_at", "updatedAt": "updated_at"}
+        });
+        projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+            .push(task);
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    let position = |needle: &str| {
+        plan.steps()
+            .iter()
+            .position(|step| step.statement().contains(needle))
+            .unwrap_or_else(|| panic!("step with {needle} absent"))
+    };
+    let deleted_at_drop = position("DROP COLUMN \"deleted_at\"");
+    let check_drop = position("DROP CONSTRAINT \"chk_task_window\"");
+    let index_drop = position("DROP INDEX \"idx_task_due_open\"");
+    assert!(
+        check_drop < deleted_at_drop,
+        "the check drops before its column"
+    );
+    assert!(
+        index_drop < deleted_at_drop,
+        "the index drops before its column"
+    );
+}
+
+#[test]
 fn a_dropped_join_plans_a_gated_drop_table() {
     // Join tables are planned: dropping a many-to-many relation is a
     // destructive DROP TABLE, never a silently-empty ready plan.

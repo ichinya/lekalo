@@ -1547,14 +1547,17 @@ fn plan_indexes(
 }
 
 /// Move every drop behind the constructive steps; within the drops,
-/// constraint/check/index/column drops precede the table drops —
-/// PostgreSQL refuses `ALTER TABLE t DROP ...` after `DROP TABLE t`,
-/// and refuses `DROP TABLE` while dependents still reference it.
-/// One exception: a drop that is replaced in place (a later step
-/// re-creates the same quoted object name — a changed constraint
-/// predicate or FK action under a constant derived name) stays with
-/// the constructive steps, because the re-add of an existing name
-/// would fail if the drop ran after it. Stable for identical inputs.
+/// constraint/check/index drops precede column drops, which precede
+/// the table drops — PostgreSQL refuses `ALTER TABLE t DROP ...` after
+/// `DROP TABLE t`, refuses `DROP TABLE` while dependents still
+/// reference it, and auto-drops the indexes and constraints involving
+/// a dropped column, so a column's DROP COLUMN must run after every
+/// explicit drop of its checks, FKs, and indexes. One exception: a
+/// drop that is replaced in place (a later step re-creates the same
+/// quoted object name — a changed constraint predicate, enum member
+/// list, or FK action under a constant derived name) stays with the
+/// constructive steps, because the re-add of an existing name would
+/// fail if the drop ran after it. Stable for identical inputs.
 fn order_drops_last(steps: &mut [Step]) {
     fn dropped_object_name(statement: &str) -> Option<String> {
         let inner = statement.strip_suffix(';')?;
@@ -1575,9 +1578,13 @@ fn order_drops_last(steps: &mut [Step]) {
         if !step.kind.starts_with("drop_") {
             0
         } else if step.kind == "drop_table" {
-            2
+            3
         } else if is_paired(index, steps) {
             0
+        } else if step.kind == "drop_column" {
+            // The column's checks, FKs, and indexes drop first: the
+            // column drop auto-removes every object involving it.
+            2
         } else {
             1
         }
@@ -1610,15 +1617,16 @@ mod tests {
     #[test]
     fn drop_table_sorts_behind_its_member_drops() {
         // PostgreSQL refuses ALTER TABLE t DROP ... after DROP TABLE t,
-        // so the ordering pass ranks member drops before table drops
-        // (stable within each rank).
+        // and auto-drops the objects involving a dropped column, so
+        // constraint/check/index drops rank first, column drops next,
+        // and table drops last (stable within each rank).
         let mut steps = vec![
             step("create_extension"),
             step("drop_table"),
+            step("drop_column"),
             step("drop_index"),
             step("drop_check"),
             step("drop_constraint"),
-            step("drop_column"),
         ];
         order_drops_last(&mut steps);
         let kinds: Vec<&str> = steps.iter().map(|step| step.kind).collect();
