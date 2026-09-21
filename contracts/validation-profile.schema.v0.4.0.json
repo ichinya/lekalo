@@ -16,19 +16,19 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "lekalo/validation-profile/v0.3.2"
+      "const": "lekalo/validation-profile/v0.4.0"
     },
     "identity": {
-      "const": "dev.lekalo.validation-profile@0.3.2"
+      "const": "dev.lekalo.validation-profile@0.4.0"
     },
     "profile_id": {
       "$ref": "#/$defs/profileId"
     },
     "version": {
-      "const": "0.3.2"
+      "const": "0.4.0"
     },
     "diagnostic_registry_version": {
-      "const": "0.3.2"
+      "const": "0.4.0"
     },
     "scope": {
       "enum": [

@@ -1,7 +1,7 @@
 {
-  "schema_version": "lekalo/diagnostic-registry/v0.3.2",
-  "identity": "dev.lekalo.diagnostic-registry@0.3.2",
-  "registry_version": "0.3.2",
+  "schema_version": "lekalo/diagnostic-registry/v0.4.0",
+  "identity": "dev.lekalo.diagnostic-registry@0.4.0",
+  "registry_version": "0.4.0",
   "closed": true,
   "entries": [
     {

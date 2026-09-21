@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "dev.lekalo.diagnostic-registry-schema@0.3.2",
+  "$id": "dev.lekalo.diagnostic-registry-schema@0.4.0",
   "title": "Lekalo diagnostic registry schema v1",
   "description": "Closed wire shape of the Lekalo diagnostic rule registry. Successor of the frozen 0.2.16 registry schema with the successor identity constants only: every entry constraint, category enum, field grammar, and bound is byte-identical to the frozen document, because the registry wire shape did not change. Never edit the frozen 0.2.16 documents.",
   "type": "object",
   "properties": {
     "schema_version": {
-      "const": "lekalo/diagnostic-registry/v0.3.2"
+      "const": "lekalo/diagnostic-registry/v0.4.0"
     },
     "identity": {
-      "const": "dev.lekalo.diagnostic-registry@0.3.2"
+      "const": "dev.lekalo.diagnostic-registry@0.4.0"
     },
     "registry_version": {
       "type": "string",
