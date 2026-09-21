@@ -38,6 +38,8 @@ const DIFF_STORAGE: &[u8] =
     include_bytes!("../../../tests/fixtures/storage-projection/diff/candidate-storage.json");
 const DIFF_PERMUTATION: &[u8] =
     include_bytes!("../../../tests/fixtures/storage-projection/diff/candidate-permutation.json");
+const DIFF_COLLATION: &[u8] =
+    include_bytes!("../../../tests/fixtures/storage-projection/diff/candidate-collation.json");
 
 /// The committed adversarial vectors: (name, fixture bytes, expectation
 /// bytes). The expectation records the exact registered rule and the
@@ -533,6 +535,92 @@ fn storage_change_classifies_separately_with_visible_data_risk() {
             .all(|path| path.layer() != DiffLayer::Domain),
         "a storage-only change must never classify as domain"
     );
+}
+
+/// The collation-sensitive-uniqueness headline (issue #117, ADR-0042
+/// §6): a collation or text-defaults change is breaking with destructive
+/// data risk, and an index member change classifies by engine
+/// semantics — never folded into a silent aggregate.
+#[test]
+fn collation_and_index_member_changes_classify_in_the_diff() {
+    let base = parse(DIFF_BASE);
+    let changed = parse(DIFF_COLLATION);
+    let diff = compare(&base, &changed).expect("comparable");
+    assert!(!diff.equal());
+    // The mysql table collation flipped utf8mb4_0900_ai_ci → utf8mb4_bin
+    // on the table carrying the unique textual index: breaking +
+    // destructive. The projection textDefaults flipped with it.
+    let find = |path: &str| {
+        diff.paths()
+            .iter()
+            .find(|entry| entry.path() == path)
+            .unwrap_or_else(|| panic!("path {path}"))
+    };
+    let collation = find("storage/mysql/tables/tag/charsetCollation");
+    assert_eq!(collation.layer(), DiffLayer::Storage);
+    assert_eq!(collation.class(), DiffClass::Breaking);
+    assert_eq!(collation.risk(), Some(DataRisk::Destructive));
+    let defaults = find("storage/mysql/textDefaults");
+    assert_eq!(defaults.class(), DiffClass::Breaking);
+    assert_eq!(defaults.risk(), Some(DataRisk::Destructive));
+    // Non-mysql namespaces untouched by the candidate stay equal.
+    assert!(!diff
+        .paths()
+        .iter()
+        .any(|path| path.path().starts_with("storage/postgres")));
+    // An index member change (kind or prefixLengths) on the named
+    // tenant index surfaces at its own path with the rewrite
+    // obligation, not as the silent aggregate.
+    let mut member: serde_json::Value = serde_json::from_slice(DIFF_BASE).expect("json");
+    member["projections"]
+        .as_array_mut()
+        .expect("projections")
+        .iter_mut()
+        .for_each(|projection| {
+            if projection["namespace"] == "mysql" {
+                for table in projection["tables"].as_array_mut().expect("tables") {
+                    if table["entity"] == "task" {
+                        table["indexes"][1]["prefixLengths"] = serde_json::json!([3072]);
+                    }
+                }
+            }
+        });
+    let member_candidate = StorageProjectionAttachment::from_value(&member).expect("parses");
+    let member_diff = compare(&base, &member_candidate).expect("comparable");
+    let member_path = member_diff
+        .paths()
+        .iter()
+        .find(|path| path.path() == "storage/mysql/tables/task/indexes/idx_task_tenant")
+        .expect("the exact member path");
+    assert_eq!(member_path.class(), DiffClass::PolicyChange);
+    assert_eq!(member_path.risk(), Some(DataRisk::Destructive));
+    // Dropping uniqueness from the named unique external-identity index
+    // is a breaking narrowing.
+    let mut ununique: serde_json::Value = serde_json::from_slice(DIFF_BASE).expect("json");
+    ununique["projections"]
+        .as_array_mut()
+        .expect("projections")
+        .iter_mut()
+        .for_each(|projection| {
+            if projection["namespace"] == "mysql" {
+                for table in projection["tables"].as_array_mut().expect("tables") {
+                    if table["entity"] == "task_external_link" {
+                        table["indexes"][0]["unique"] = serde_json::Value::Bool(false);
+                    }
+                }
+            }
+        });
+    let ununique_candidate = StorageProjectionAttachment::from_value(&ununique).expect("parses");
+    let ununique_diff = compare(&base, &ununique_candidate).expect("comparable");
+    let ununique_path = ununique_diff
+        .paths()
+        .iter()
+        .find(|path| {
+            path.path() == "storage/mysql/tables/task_external_link/indexes/uq_external_identity"
+        })
+        .expect("the unique-narrowing path");
+    assert_eq!(ununique_path.class(), DiffClass::Breaking);
+    assert_eq!(ununique_path.risk(), Some(DataRisk::Destructive));
 }
 
 #[test]
