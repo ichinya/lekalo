@@ -432,8 +432,23 @@ fn validate_endpoint(
             }
         }
     }
-    if let Some(idempotency) = &binding.idempotency {
-        match (idempotency.required, demand_of(operation_binding, context)) {
+    // The idempotency demand: a command endpoint whose bound #62
+    // metadata declares `key-required` must carry the binding — both
+    // the forced `required` state and the presence of the whole member
+    // are enforced (an absent binding would hide the forced header
+    // from every consumer projecting the route); `not-applicable`
+    // forbids a declared key. Queries never demand a key: a safe
+    // operation stays safe to retry without one.
+    let demand = demand_of(operation_binding, context);
+    match (&binding.idempotency, demand) {
+        (None, IdempotencyDemand::KeyRequired) if !is_query => {
+            return Err(diagnostic::rule_invalid(
+                diagnostic::CONTRACT_INVALID,
+                "idempotency-required-missing",
+                Some(subject),
+            ));
+        }
+        (Some(idempotency), _) => match (idempotency.required, demand) {
             (false, IdempotencyDemand::KeyRequired) => {
                 return Err(diagnostic::rule_invalid(
                     diagnostic::CONTRACT_INVALID,
@@ -449,7 +464,8 @@ fn validate_endpoint(
                 ));
             }
             _ => {}
-        }
+        },
+        (None, _) => {}
     }
 
     // Security: schemes resolve, the actor pairing is closed, and

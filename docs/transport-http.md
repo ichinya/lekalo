@@ -91,8 +91,12 @@ the attachment references the symbol and owns everything else.
   `policyRef` resolves to a Model policy symbol.
 - **Idempotency and correlation.** `idempotency.required` is forced
   when the operation's #62 error metadata declares `key-required`
-  and forbidden when every declared error is `not-applicable`;
-  `correlation` declares the header names runtimes echo.
+  and forbidden when every declared error is `not-applicable`; on a
+  command endpoint the forced demand also requires the whole
+  `idempotency` member to be declared — an absent binding refuses
+  (`transport.contract-invalid` / `idempotency-required-missing`) so
+  a consumer projecting the route always learns the header is
+  required. `correlation` declares the header names runtimes echo.
 - **Pagination.** `pagination` projects the #64 contract onto
   `limitParam`/`offsetParam`/`cursorParam`/`cursorField`; only
   `page`/`stream` queries admit it, the cursor parameter type must
