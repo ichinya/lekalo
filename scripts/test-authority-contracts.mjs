@@ -17,7 +17,7 @@ const baseline = JSON.parse(baselineBytes.toString("utf8"));
 const successor = JSON.parse(successorBytes.toString("utf8"));
 const profiles = {
   "0.2.16": {path: baselinePath, digest: "141641cfbc1fbf6a07add99feafb877f9f544687ad558ab91d619ec7dd78d1b4"},
-  "0.3.2": {path: successorPath, digest: "cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4"}
+  "0.3.2": {path: successorPath, digest: "7ae6454ea20f7b61202d368411ef9bff4e70af96f1f2a408c209d84fe9722f80"}
 };
 const requiredAddedKindIds = [
   "authority.contract",
