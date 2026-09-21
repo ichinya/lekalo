@@ -416,6 +416,15 @@ pub(crate) fn create_table(
         let mut line = format!("{} {}", quote(column.name()), column.storage_type());
         if column.generated_kind() == Some(GeneratedKind::Identity) {
             line.push_str(" GENERATED ALWAYS AS IDENTITY");
+        } else if column.generated_kind() == Some(GeneratedKind::Computed) {
+            // A computed generated column refuses: the 0.4.0 member
+            // carries no expression, and rendering a plain stored
+            // column would invent a fact the declaration never made.
+            return Err(diagnostic::rule_invalid(
+                RENDER_UNSUPPORTED,
+                "computed-column",
+                None,
+            ));
         } else if column.generated_kind() == Some(GeneratedKind::Sequence) {
             // A generated sequence column draws from its own owned
             // sequence: the default is the point of 'generated'.
@@ -823,6 +832,50 @@ mod tests {
         assert_eq!(
             error.reason_ids().first().copied(),
             Some("storage-engine.mapping-invalid")
+        );
+    }
+
+    #[test]
+    fn a_computed_generated_column_refuses_explicitly() {
+        // The 0.4.0 generatedColumns member carries no expression, so a
+        // computed column must refuse with the registered unsupported
+        // rule — never render as a plain stored column.
+        let mut value = projection_value();
+        let table = value
+            .get_mut("projections")
+            .and_then(|projections| projections.as_array_mut())
+            .and_then(|projections| {
+                projections.iter_mut().find(|projection| {
+                    projection.get("namespace").and_then(serde_json::Value::as_str)
+                        == Some("postgres")
+                })
+            })
+            .and_then(|projection| projection.get_mut("tables"))
+            .and_then(|tables| tables.as_array_mut())
+            .and_then(|tables| {
+                tables.iter_mut().find(|table| {
+                    table.get("table").and_then(serde_json::Value::as_str) == Some("task")
+                })
+            })
+            .expect("projection table");
+        table["generatedColumns"] = serde_json::json!([{
+            "kind": "computed",
+            "name": "total",
+        }]);
+        let attachment =
+            crate::storage_projection::StorageProjectionAttachment::from_value(&value)
+                .expect("valid projection");
+        let mut profile_value = profile_value();
+        let bytes = attachment.canonical_bytes().expect("canonical");
+        profile_value["projectionRef"] = serde_json::Value::String(format!(
+            "sha256:{}",
+            crate::digest::sha256_hex(bytes.as_bytes())
+        ));
+        let profile = StorageEngineAttachment::from_value(&profile_value).expect("valid profile");
+        let error = render(&profile, &attachment).expect_err("computed refuses");
+        assert_eq!(
+            error.reason_ids().first().copied(),
+            Some("storage-engine.render-unsupported")
         );
     }
 

@@ -517,6 +517,16 @@ fn plan_tables(
                 .iter()
                 .find(|candidate| candidate.name() == column.name())
             else {
+                // A computed generated column refuses: the 0.4.0
+                // member carries no expression, and an ADD COLUMN of a
+                // plain stored column would invent one.
+                if column.generated_kind() == Some(GeneratedKind::Computed) {
+                    return Err(diagnostic::rule_invalid(
+                        RENDER_UNSUPPORTED,
+                        "computed-column",
+                        None,
+                    ));
+                }
                 // An added column: NOT NULL without a declared default
                 // needs a backfill before it can hold.
                 let tightening = !column.nullable();
