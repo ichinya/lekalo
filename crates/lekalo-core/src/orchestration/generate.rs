@@ -827,12 +827,24 @@ fn source_map_binding_for(
             end,
         ));
     }
+    let module_path = module_path_of(sidecar_path);
     let key = ArtifactKey::new(
         owner.clone(),
-        ArtifactPath::parse(sidecar_path).ok_or(ArtifactFailure::ReferenceInvalid)?,
-        artifact_kind_for(sidecar_path),
+        // The binding targets the generated module the ranges index (the
+        // `.ts` sibling of the sidecar), never the sidecar itself — the
+        // ranges are declaration offsets inside the module's bytes.
+        ArtifactPath::parse(&module_path).ok_or(ArtifactFailure::ReferenceInvalid)?,
+        artifact_kind_for(&module_path),
     );
     Ok(Some(SourceMapBinding::new(key, input_revision, entries)))
+}
+
+/// The `.ts` module path of one `.map.json` sidecar path.
+fn module_path_of(sidecar_path: &str) -> String {
+    sidecar_path
+        .strip_suffix(".map.json")
+        .map(|base| format!("{base}.ts"))
+        .unwrap_or_else(|| sidecar_path.to_owned())
 }
 
 fn write_manifest_atomic(root: &Path, bytes: &[u8]) -> Result<(), ArtifactFailure> {
