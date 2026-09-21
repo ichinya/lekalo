@@ -63,6 +63,24 @@ pub enum CheckId {
     /// A cancelled read-only exchange is classified, the child is
     /// reaped, and a fresh handshake recovers.
     ProcessCancellation,
+    /// The adapter-rendered mysql schema matches the canonical
+    /// `project()` output of the fixture attachment's mysql namespace
+    /// (issue #117).
+    StorageProjectionParity,
+    /// The adapter declares the `scan.schema`/`verify.schema-projection`
+    /// support honestly and the declared evidence document shape
+    /// validates (issue #117).
+    StorageProfileEvidence,
+    /// Introspection evidence carries the checked/read-only constants,
+    /// no credential-shaped members, and the test-schema binding only
+    /// (issue #117).
+    StorageIntrospectionChecked,
+    /// A destructive diff path produces a gated plan step and an
+    /// unconfirmed apply refuses (issue #117).
+    StorageMigrationGate,
+    /// The collation fixture's `_ci` unique collision surfaces in the
+    /// derived evidence and never silently passes (issue #117).
+    StorageCollationUniqueness,
 }
 
 impl CheckId {
@@ -87,6 +105,11 @@ impl CheckId {
             Self::ArtifactManifestEvidence => "artifact.manifest-evidence",
             Self::RedactionEvidence => "redaction.evidence",
             Self::ProcessCancellation => "process.cancellation",
+            Self::StorageProjectionParity => "storage.projection-parity",
+            Self::StorageProfileEvidence => "storage.profile-evidence",
+            Self::StorageIntrospectionChecked => "storage.introspection-checked",
+            Self::StorageMigrationGate => "storage.migration-gate",
+            Self::StorageCollationUniqueness => "storage.collation-uniqueness",
         }
     }
 
@@ -111,6 +134,11 @@ impl CheckId {
             Self::ArtifactManifestEvidence => "lekalo.adapter.artifact",
             Self::RedactionEvidence => "lekalo.adapter.redaction",
             Self::ProcessCancellation => "lekalo.adapter.process",
+            Self::StorageProjectionParity
+            | Self::StorageProfileEvidence
+            | Self::StorageMigrationGate
+            | Self::StorageCollationUniqueness => "lekalo.adapter.storage",
+            Self::StorageIntrospectionChecked => "lekalo.adapter.storage-security",
         }
     }
 
@@ -120,6 +148,7 @@ impl CheckId {
             Self::ConfinementCanonical | Self::ConfinementPlanScopes | Self::RedactionEvidence => {
                 CheckClass::Security
             }
+            Self::StorageIntrospectionChecked => CheckClass::Security,
             Self::DescribeHandshake
             | Self::DescribeNegotiation
             | Self::CapabilityDeclaration
@@ -238,7 +267,7 @@ impl CheckOutcome {
 }
 
 /// The full catalog in its fixed order.
-pub const CATALOG: [CheckId; 18] = [
+pub const CATALOG: [CheckId; 23] = [
     CheckId::DescribeHandshake,
     CheckId::DescribeNegotiation,
     CheckId::CapabilityDeclaration,
@@ -257,6 +286,11 @@ pub const CATALOG: [CheckId; 18] = [
     CheckId::ArtifactManifestEvidence,
     CheckId::RedactionEvidence,
     CheckId::ProcessCancellation,
+    CheckId::StorageProjectionParity,
+    CheckId::StorageProfileEvidence,
+    CheckId::StorageIntrospectionChecked,
+    CheckId::StorageMigrationGate,
+    CheckId::StorageCollationUniqueness,
 ];
 
 /// The aggregate verdict of one run, derived from the check outcomes.

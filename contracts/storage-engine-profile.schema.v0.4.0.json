@@ -295,7 +295,16 @@
               "support",
               "bounds",
               "evidence"
-            ]
+            ],
+            "properties": {
+              "bounds": {
+                "description": "The mandatory bounded gap note of partial support.",
+                "$ref": "#/$defs/safeText"
+              },
+              "evidence": {
+                "$ref": "#/$defs/evidenceRef"
+              }
+            }
           }
         }
       ],

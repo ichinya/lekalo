@@ -235,9 +235,7 @@
         "name",
         "engine",
         "collation",
-        "columns",
-        "indexes",
-        "foreignKeys"
+        "columns"
       ],
       "properties": {
         "name": {

@@ -56,6 +56,9 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-invariant-transition-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-reference-evaluation-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-projection-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-engine-profile-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-introspection-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-mysql-binding.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-observed-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-bindings-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-query-model-contracts.mjs

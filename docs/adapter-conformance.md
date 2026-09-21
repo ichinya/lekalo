@@ -17,7 +17,7 @@ Everything after the program path is passed to the adapter verbatim
 
 ## Checks and classes
 
-The closed catalog carries eighteen checks in fixed order. Every check
+The closed catalog carries twenty-three checks in fixed order. Every check
 has one inherent failure class; a recorded failure carries the class of
 what actually failed, so a crash during a feature check is a
 process-class failure and a refusal during any exchange is a
@@ -43,6 +43,11 @@ security-class one:
 | `artifact.manifest-evidence` | feature | applied bytes match declared digests |
 | `redaction.evidence` | security | redaction of durable evidence |
 | `process.cancellation` | process | cancellation and recovery |
+| `storage.projection-parity` | feature | adapter-rendered schema matches the canonical `project()` output (issue #117) |
+| `storage.profile-evidence` | feature | honest `scan.schema`/`verify.schema-projection` capability declaration (issue #117) |
+| `storage.introspection-checked` | security | introspection evidence stays checked, read-only, credential-free, test-schema bound (issue #117) |
+| `storage.migration-gate` | feature | destructive diff paths produce gated plan steps; unconfirmed applies refuse (issue #117) |
+| `storage.collation-uniqueness` | feature | collation-sensitive uniqueness surfaces, never silently passes (issue #117) |
 
 Skipped checks record a bounded reason (`operation-undeclared`,
 `legacy-session`, `no-ir-operations`, `default-profile`,

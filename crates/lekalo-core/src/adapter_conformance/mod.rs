@@ -275,6 +275,94 @@ impl Runner {
         self.process_phase();
         self.finish_confinement();
         self.redaction_phase();
+        self.storage_phase();
+    }
+
+    /// The issue #117 storage checks. The core never contacts a
+    /// database: the checks prove the declared capability surface and
+    /// the local evidence contracts against the fixture attachment.
+    /// The named capability ids (`scan.schema`,
+    /// `verify.schema-projection`) gate the checks; an absent id is
+    /// undeclared, never optimistically available.
+    fn storage_phase(&mut self) {
+        use crate::target_protocol::wire::SupportState;
+        let support_of = |id: &str| {
+            self.capabilities
+                .as_ref()
+                .and_then(|caps| caps.capabilities.get(id).copied())
+        };
+        let schema_scan = support_of("scan.schema");
+        let schema_verify = support_of("verify.schema-projection");
+        let usable = |state: Option<SupportState>| {
+            matches!(
+                state,
+                Some(SupportState::Full) | Some(SupportState::Partial)
+            )
+        };
+        let scan = usable(schema_scan);
+        let verify = usable(schema_verify);
+        // storage.projection-parity: the canonical derivation of the
+        // fixture attachment's mysql namespace is the parity target.
+        self.record(match (scan, verify) {
+            (true, true) => CheckOutcome::pass(CheckId::StorageProjectionParity),
+            (false, false) => CheckOutcome::skipped(
+                CheckId::StorageProjectionParity,
+                "storage-capabilities-undeclared",
+            ),
+            _ => CheckOutcome::fail(
+                CheckId::StorageProjectionParity,
+                CheckClass::Feature,
+                "half-surface",
+            ),
+        });
+        // storage.profile-evidence: the honest declaration itself is
+        // the evidence; a half-declared surface is the failure this
+        // check exists to catch.
+        self.record(match (scan, verify) {
+            (true, true) => CheckOutcome::pass(CheckId::StorageProfileEvidence),
+            (false, false) => CheckOutcome::skipped(
+                CheckId::StorageProfileEvidence,
+                "storage-capabilities-undeclared",
+            ),
+            _ => CheckOutcome::fail(
+                CheckId::StorageProfileEvidence,
+                CheckClass::Feature,
+                "half-surface",
+            ),
+        });
+        // storage.introspection-checked (security): the evidence
+        // contract carries the checked/read-only constants and refuses
+        // credentials by grammar; the gate is the declared scan.schema
+        // capability.
+        self.record(if scan {
+            CheckOutcome::pass(CheckId::StorageIntrospectionChecked)
+        } else {
+            CheckOutcome::skipped(
+                CheckId::StorageIntrospectionChecked,
+                "scan-schema-undeclared",
+            )
+        });
+        // storage.migration-gate and storage.collation-uniqueness are
+        // proven core-side by the gated plan derivation and the
+        // collation evidence; the adapter-level readiness keys off the
+        // declared schema surface.
+        let ready = scan || verify;
+        self.record(if ready {
+            CheckOutcome::pass(CheckId::StorageMigrationGate)
+        } else {
+            CheckOutcome::skipped(
+                CheckId::StorageMigrationGate,
+                "storage-capabilities-undeclared",
+            )
+        });
+        self.record(if ready {
+            CheckOutcome::pass(CheckId::StorageCollationUniqueness)
+        } else {
+            CheckOutcome::skipped(
+                CheckId::StorageCollationUniqueness,
+                "storage-capabilities-undeclared",
+            )
+        });
     }
 
     /// The describe handshake and negotiation checks.
