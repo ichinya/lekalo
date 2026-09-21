@@ -149,7 +149,7 @@ test("the matrix fixture emits byte-identical goldens and a stable double run", 
   }
   assert.deepEqual(
     first.map((file) => file.path.split("/").pop()).sort(),
-    ["runtime.ts", "alpha.map.json", "alpha.ts", "index.ts"],
+    ["alpha.map.json", "alpha.ts", "index.ts", "runtime.ts"],
   );
 });
 
@@ -313,3 +313,52 @@ function toRunnable(text) {
     )
     .join("\n");
 }
+
+test("normalizeIssues attributes nested paths through the sidecar map", async () => {
+  const dir = materialize();
+  try {
+    const index = await import(
+      pathToFileURL(join(dir, "src", "generated", "node-typescript", "zod", "index.js")).href
+    );
+    const sidecar = JSON.parse(
+      readFileSync(
+        join(dir, "src", "generated", "node-typescript", "zod", "alpha.map.json"),
+        "utf8",
+      ),
+    );
+    // A nested array-element error path resolves to the owning symbol of
+    // the flattened leaf (deep.0.0 → alpha.deep).
+    const normalized = index.normalizeIssues(
+      [{ path: ["deep", 0, 0], code: "invalid_type" }],
+      sidecar.fields,
+      sidecar.owner,
+    );
+    assert.deepEqual(normalized, [
+      { path: "deep.0.0", semanticId: "alpha.deep", code: "invalid_type" },
+    ]);
+    // A nested unknown leaf resolves to its closest enclosing mapped
+    // path (the closest-enclosing-path fallback).
+    const enclosing = index.normalizeIssues(
+      [{ path: ["deep", 5, 9, "beyond"], code: "invalid_type" }],
+      sidecar.fields,
+      sidecar.owner,
+    );
+    assert.equal(enclosing[0].semanticId, "alpha.deep");
+    // A completely unknown path falls back to the module owner.
+    const fallback = index.normalizeIssues(
+      [{ path: ["ghost", "deep", "x"], code: "unrecognized_keys" }],
+      sidecar.fields,
+      sidecar.owner,
+    );
+    assert.equal(fallback[0].semanticId, sidecar.owner);
+    // The object root ("" path) attributes to the module's root symbol.
+    const root = index.normalizeIssues(
+      [{ path: [], code: "invalid_type" }],
+      sidecar.fields,
+      sidecar.owner,
+    );
+    assert.ok(root[0].semanticId.length > 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
