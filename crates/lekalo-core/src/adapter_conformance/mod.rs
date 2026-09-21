@@ -279,11 +279,12 @@ impl Runner {
     }
 
     /// The issue #117 storage checks. The core never contacts a
-    /// database: the checks prove the declared capability surface and
-    /// the local evidence contracts against the fixture attachment.
-    /// The named capability ids (`scan.schema`,
-    /// `verify.schema-projection`) gate the checks; an absent id is
-    /// undeclared, never optimistically available.
+    /// database: the checks drive the adapter's declared schema
+    /// operations over the hermetic fixture and prove the declared
+    /// capability surface against observed behavior. The named
+    /// capability ids (`scan.schema`, `verify.schema-projection`) gate
+    /// the checks; an absent id is undeclared, never optimistically
+    /// available.
     fn storage_phase(&mut self) {
         use crate::target_protocol::wire::SupportState;
         let support_of = |id: &str| {
@@ -301,10 +302,37 @@ impl Runner {
         };
         let scan = usable(schema_scan);
         let verify = usable(schema_verify);
-        // storage.projection-parity: the canonical derivation of the
-        // fixture attachment's mysql namespace is the parity target.
-        self.record(match (scan, verify) {
-            (true, true) => CheckOutcome::pass(CheckId::StorageProjectionParity),
+        // Fixture custody runs once: the parity target is decoded
+        // through the production normalizer before any adapter is
+        // trusted with it.
+        let attachment = match fixture::storage_custody() {
+            Ok(attachment) => attachment,
+            Err(outcome) => {
+                self.record(outcome);
+                return;
+            }
+        };
+        // storage.projection-parity: the adapter's observed verify
+        // answer must be an honest ok over the fixture IR, and the
+        // derivation itself must reproduce the mysql parity target the
+        // capability claims to verify against.
+        let parity_outcome = match (scan, verify) {
+            (true, true) => {
+                let derives = crate::storage_projection::project(
+                    &attachment,
+                    crate::storage_projection::Namespace::Mysql,
+                )
+                .is_ok();
+                if !derives {
+                    CheckOutcome::fail(
+                        CheckId::StorageProjectionParity,
+                        CheckClass::Feature,
+                        "derivation-refused",
+                    )
+                } else {
+                    self.schema_probe(CheckId::StorageProjectionParity)
+                }
+            }
             (false, false) => CheckOutcome::skipped(
                 CheckId::StorageProjectionParity,
                 "storage-capabilities-undeclared",
@@ -314,7 +342,8 @@ impl Runner {
                 CheckClass::Feature,
                 "half-surface",
             ),
-        });
+        };
+        self.record(parity_outcome);
         // storage.profile-evidence: the honest declaration itself is
         // the evidence; a half-declared surface is the failure this
         // check exists to catch.
@@ -330,40 +359,191 @@ impl Runner {
                 "half-surface",
             ),
         });
-        // storage.introspection-checked (security): the evidence
-        // contract carries the checked/read-only constants and refuses
-        // credentials by grammar; the gate is the declared scan.schema
-        // capability.
-        self.record(if scan {
-            CheckOutcome::pass(CheckId::StorageIntrospectionChecked)
+        // storage.introspection-checked (security): the declared
+        // scan.schema capability must answer a real read-only verify
+        // exchange over the fixture; the evidence contract carries the
+        // checked/read-only constants and refuses credentials by
+        // grammar. A dead or malformed probe is a security failure.
+        let introspection_outcome = if scan {
+            self.schema_probe(CheckId::StorageIntrospectionChecked)
         } else {
             CheckOutcome::skipped(
                 CheckId::StorageIntrospectionChecked,
                 "scan-schema-undeclared",
             )
-        });
+        };
+        self.record(introspection_outcome);
         // storage.migration-gate and storage.collation-uniqueness are
         // proven core-side by the gated plan derivation and the
-        // collation evidence; the adapter-level readiness keys off the
-        // declared schema surface.
+        // collation evidence over the fixture attachment.
         let ready = scan || verify;
-        self.record(if ready {
-            CheckOutcome::pass(CheckId::StorageMigrationGate)
+        let migration_outcome = if ready {
+            self.migration_gate_probe()
         } else {
             CheckOutcome::skipped(
                 CheckId::StorageMigrationGate,
                 "storage-capabilities-undeclared",
             )
-        });
-        self.record(if ready {
-            CheckOutcome::pass(CheckId::StorageCollationUniqueness)
+        };
+        self.record(migration_outcome);
+        let collation_outcome = if ready {
+            self.collation_probe(&attachment)
         } else {
             CheckOutcome::skipped(
                 CheckId::StorageCollationUniqueness,
                 "storage-capabilities-undeclared",
             )
-        });
+        };
+        self.record(collation_outcome);
     }
+
+    /// Probe the declared schema surface over the fixture IR: the
+    /// adapter receives one read-only exchange and must answer
+    /// in-envelope. An honest `ok` passes. Only a malformed envelope,
+    /// a result-less response, or a dead exchange fails.
+    fn schema_probe(&mut self, check: CheckId) -> CheckOutcome {
+        let shape = CallShape {
+            operation: Operation::Verify,
+            ir_path: Some(IR_PATH.to_owned()),
+            ..CallShape::default()
+        };
+        match self.exchange(&shape) {
+            Exchange::Ok { response, .. } => match &response.result {
+                Some(result) if result.ok == Some(true) => CheckOutcome::pass(check),
+                Some(_) => CheckOutcome::fail(check, check.class(), "parity-refused"),
+                None => CheckOutcome::fail(check, check.class(), "result-absent"),
+            },
+            Exchange::Failed(failure) => {
+                let (class, detail) = classify(&failure);
+                CheckOutcome::fail(check, class, detail)
+            }
+        }
+    }
+
+    /// The migration-gate probe: derive the gated plan over the
+    /// fixture attachment's destructive diff and require the
+    /// destructive step to gate `explicit` — an unconfirmed apply path
+    /// can never pass silently.
+    fn migration_gate_probe(&mut self) -> CheckOutcome {
+        // One declared table rename in the mysql namespace is the
+        // destructive vector: renaming a table drops and rewrites it.
+        let mut candidate_value =
+            serde_json::from_str::<serde_json::Value>(fixture::STORAGE_PROJECTION)
+                .unwrap_or(serde_json::Value::Null);
+        let renamed = if candidate_value.is_object() {
+            let mut touched = false;
+            if let Some(projections) = candidate_value
+                .get_mut("projections")
+                .and_then(|p| p.as_array_mut())
+            {
+                for projection in projections.iter_mut() {
+                    if projection.get("namespace") == Some(&serde_json::json!("mysql")) {
+                        if let Some(tables) =
+                            projection.get_mut("tables").and_then(|t| t.as_array_mut())
+                        {
+                            for table in tables.iter_mut() {
+                                if table.get("entity") == Some(&serde_json::json!("tag")) {
+                                    table["table"] = serde_json::json!("tag_renamed");
+                                    touched = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            touched
+        } else {
+            false
+        };
+        if !renamed {
+            return CheckOutcome::fail(
+                CheckId::StorageMigrationGate,
+                CheckClass::Feature,
+                "vector-broken",
+            );
+        }
+        let attachment_value: serde_json::Value =
+            serde_json::from_str(fixture::STORAGE_PROJECTION).unwrap_or(serde_json::Value::Null);
+        let base_attachment =
+            crate::storage_projection::StorageProjectionAttachment::from_value(&attachment_value);
+        let candidate_attachment =
+            crate::storage_projection::StorageProjectionAttachment::from_value(&candidate_value);
+        let (base, candidate) = match (base_attachment, candidate_attachment) {
+            (Ok(base), Ok(candidate)) => (base, candidate),
+            _ => {
+                return CheckOutcome::fail(
+                    CheckId::StorageMigrationGate,
+                    CheckClass::Feature,
+                    "vector-broken",
+                );
+            }
+        };
+        let diff = match crate::storage_projection::compare(&base, &candidate) {
+            Ok(diff) => diff,
+            Err(_) => {
+                return CheckOutcome::fail(
+                    CheckId::StorageMigrationGate,
+                    CheckClass::Feature,
+                    "diff-refused",
+                );
+            }
+        };
+        let plan = crate::storage_projection::migration_plan(&diff);
+        let gated_destructive = plan.steps.iter().any(|step| {
+            step.gate == crate::storage_projection::Gate::Explicit
+                && step.risk.as_deref() == Some("destructive")
+        });
+        if gated_destructive {
+            CheckOutcome::pass(CheckId::StorageMigrationGate)
+        } else {
+            CheckOutcome::fail(
+                CheckId::StorageMigrationGate,
+                CheckClass::Feature,
+                "no-destructive-step",
+            )
+        }
+    }
+
+    /// The collation probe: the fixture attachment's mysql namespace
+    /// declares text-default collation evidence; the derived surface
+    /// must carry a unique textual index beside it so uniqueness
+    /// semantics stay visible, never silently passing.
+    fn collation_probe(
+        &mut self,
+        attachment: &crate::storage_projection::StorageProjectionAttachment,
+    ) -> CheckOutcome {
+        let derived = match crate::storage_projection::project(
+            attachment,
+            crate::storage_projection::Namespace::Mysql,
+        ) {
+            Ok(derived) => derived,
+            Err(_) => {
+                return CheckOutcome::fail(
+                    CheckId::StorageCollationUniqueness,
+                    CheckClass::Feature,
+                    "derivation-refused",
+                );
+            }
+        };
+        let declared_collation = attachment
+            .projection(crate::storage_projection::Namespace::Mysql)
+            .and_then(|projection| projection.text_defaults())
+            .map(|(_, collation)| collation);
+        let unique_visible = derived
+            .tables()
+            .iter()
+            .any(|table| table.indexes().iter().any(|index| index.unique()));
+        if unique_visible && declared_collation.is_some() {
+            CheckOutcome::pass(CheckId::StorageCollationUniqueness)
+        } else {
+            CheckOutcome::fail(
+                CheckId::StorageCollationUniqueness,
+                CheckClass::Feature,
+                "collation-invisible",
+            )
+        }
+    }
+
 
     /// The describe handshake and negotiation checks.
     fn describe_phase(&mut self) -> Result<(), ()> {
