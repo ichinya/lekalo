@@ -399,6 +399,7 @@ impl Runner {
         let shape = CallShape {
             operation: Operation::Validate,
             ir_path: Some(IR_INVALID_PATH.to_owned()),
+            profile: self.selected_profile(None),
             ..CallShape::default()
         };
         match self.exchange(&shape) {
@@ -465,6 +466,7 @@ impl Runner {
                 let shape = CallShape {
                     operation,
                     ir_path: ir_path.map(str::to_owned),
+                    profile: self.selected_profile(None),
                     ..CallShape::default()
                 };
                 match self.exchange(&shape) {
@@ -511,6 +513,7 @@ impl Runner {
             let shape = CallShape {
                 operation: Operation::Generate,
                 target: Some(target.clone()),
+                profile: self.selected_profile(None),
                 ir_path: Some(IR_PATH.to_owned()),
                 dry_run: Some(true),
                 ..CallShape::default()
@@ -574,10 +577,10 @@ impl Runner {
         let forged = CallShape {
             operation: Operation::Generate,
             target: Some(target.to_owned()),
+            profile: self.selected_profile(None),
             ir_path: Some(IR_PATH.to_owned()),
             dry_run: Some(false),
             plan_id: Some(format!("plan-{}", "0".repeat(64))),
-            ..CallShape::default()
         };
         match self.exchange(&forged) {
             Exchange::Ok { .. } => {
@@ -618,6 +621,7 @@ impl Runner {
         let replan = CallShape {
             operation: Operation::Generate,
             target: Some(target.to_owned()),
+            profile: self.selected_profile(None),
             ir_path: Some(IR_PATH.to_owned()),
             dry_run: Some(true),
             ..CallShape::default()
@@ -657,10 +661,10 @@ impl Runner {
         let apply = CallShape {
             operation: Operation::Generate,
             target: Some(target.to_owned()),
+            profile: self.selected_profile(None),
             ir_path: Some(IR_PATH.to_owned()),
             dry_run: Some(false),
             plan_id: Some(replan_id),
-            ..CallShape::default()
         };
         match self.exchange(&apply) {
             Exchange::Ok { response, .. } => {
@@ -816,6 +820,7 @@ impl Runner {
             let shape = CallShape {
                 operation: Operation::Verify,
                 ir_path: Some(IR_PATH.to_owned()),
+                profile: self.selected_profile(None),
                 ..CallShape::default()
             };
             match self.exchange(&shape) {
@@ -870,7 +875,7 @@ impl Runner {
                 self.first_target()
                     .unwrap_or_else(|| "conformance".to_owned())
             }),
-            profile: (operation == Operation::Bind).then(|| "default".to_owned()),
+            profile: self.selected_profile((operation == Operation::Bind).then_some("default")),
             ..CallShape::default()
         };
         let cancel = AtomicBool::new(true);
@@ -1085,6 +1090,9 @@ impl Runner {
     /// Record a failed check from a classified protocol failure; the
     /// caller handles terminal short-circuits.
     fn record_failure(&mut self, id: CheckId, failure: &TargetFailure) {
+        if std::env::var("LEKALO_SUITE_DEBUG").is_ok() {
+            eprintln!("suite failure on {id:?}: {failure:?}");
+        }
         let (class, detail) = classify(failure);
         self.record(CheckOutcome {
             id,
@@ -1146,6 +1154,21 @@ impl Runner {
         self.capabilities
             .as_ref()
             .and_then(|caps| caps.targets.first().cloned())
+    }
+
+    /// The deterministic profile selection: the preferred token when the
+    /// adapter declared it, else the lowest declared profile — the same
+    /// rule discovery applies, so profile-bound deployments (issue #45)
+    /// are driven through their declared profile. An adapter without
+    /// profiles (profile-optional operations only) selects none.
+    fn selected_profile(&self, preferred: Option<&str>) -> Option<String> {
+        let declared = self.capabilities.as_ref()?.profiles.clone();
+        if let Some(preferred) = preferred {
+            if declared.iter().any(|offered| offered == preferred) {
+                return Some(preferred.to_owned());
+            }
+        }
+        declared.iter().min().cloned()
     }
 
     /// Assemble the terminal outcome.

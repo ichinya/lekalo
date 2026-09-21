@@ -484,7 +484,9 @@ fn a_checked_zod_schema_binds_as_a_types_support_claim() {
         .expect("create generated home");
     std::fs::copy(
         sandbox.project().join("openapi-planner.json"),
-        sandbox.project().join(".lekalo/generated/openapi/planner.json"),
+        sandbox
+            .project()
+            .join(".lekalo/generated/openapi/planner.json"),
     )
     .expect("materialize the declaration's openapi claim");
     // The bound operations need their native coverage before any gate.

@@ -1992,34 +1992,47 @@ function projectOutcome(request, outcome) {
     // validate/verify.
     const writes = projectWrites(outcome.data);
     if (writes) {
-      if (request.operation === "generate"
-        && Array.isArray(outcome.data?.findings)
-        && outcome.data.findings.length > 0) {
-        return buildResponse(request, {
-          error: {
-            class: "invalid",
-            code: "outcome-partial-unsupported-constructs",
-            message: "the IR carries constructs outside the declared generation subset; nothing was emitted",
-            retryable: false,
-            partial: true,
-            detail: outcome.data.findings
-              .slice(0, 16)
-              .map((finding) => boundToken(`${finding.code}:${finding.detail ?? ""}`)),
-          },
-        });
+      if (request.operation === "generate") {
+        // Out-of-subset IR: an honest partial error, nothing emitted.
+        if (Array.isArray(outcome.data?.findings)
+          && outcome.data.findings.length > 0) {
+          return buildResponse(request, {
+            error: {
+              class: "invalid",
+              code: "outcome-partial-unsupported-constructs",
+              message: "the IR carries constructs outside the declared generation subset; nothing was emitted",
+              retryable: false,
+              partial: true,
+              detail: outcome.data.findings
+                .slice(0, 16)
+                .map((finding) => boundToken(`${finding.code}:${finding.detail ?? ""}`)),
+            },
+          });
+        }
+        const response = buildResponse(request, { writes });
+        // A dry run carries no request plan id: the extension's computed
+        // plan identity becomes the pending plan's identity (the opaque
+        // token the apply must echo), exactly like the reference adapter.
+        if (!hasOwn(request, "plan_id") && isPlanId(outcome.data?.plan_id)) {
+          response.evidence.plan_id = outcome.data.plan_id;
+        }
+        return response;
       }
+      // Validate/verify: the findings member only — the wire refuses
+      // writes on operations that declare none.
       const result = projectVerifyFindings(request, outcome.data);
-      const response = buildResponse(request, {
-        writes,
-        ...(result ? { result } : {}),
-      });
-      // A dry run carries no request plan id: the extension's computed
-      // plan identity becomes the pending plan's identity (the opaque
-      // token the apply must echo), exactly like the reference adapter.
-      if (!hasOwn(request, "plan_id") && isPlanId(outcome.data?.plan_id)) {
-        response.evidence.plan_id = outcome.data.plan_id;
+      if (result) {
+        return buildResponse(request, { result });
       }
-      return response;
+      return buildResponse(request, {
+        error: {
+          class: "conflict",
+          code: "outcome-unrepresentable",
+          message: "the extension outcome cannot be represented on the closed wire",
+          retryable: false,
+          partial: true,
+        },
+      });
     }
     const result = projectResult(outcome.data);
     if (result) {

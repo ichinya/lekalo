@@ -566,6 +566,34 @@ lekalo generate --clean --confirm sha256:973d6dd3ef84df5e286622a796e542f9dac2097
 generate applied plan sha256:973d... (-1)
 ```
 
+### Zod schemas for the Node/TypeScript target (issue #45)
+
+With the node-typescript adapter supplied, `generate` emits deterministic
+Zod modules from the compiled IR — schema constants plus inferred types,
+a shared runtime, a sorted barrel, and one canonical `.map.json` sidecar
+per module (field path → semantic id, declaration byte ranges). The
+pipeline is plan-first: `--dry-run` lists the whole write set and writes
+nothing; the apply consumes the echoed plan id. The ownership manifest
+records the modules as kind `schema`, the sidecars as kind `data`, and
+the sidecar declaration ranges as source maps bound to the exact inputs
+revision, so the `--check` gate above detects any tampering, staleness,
+or orphaning of the generated set.
+
+```sh
+lekalo lock -- node adapters/node-typescript/adapter-zod.mjs \
+  --lekalo-project-profile-json '{"id":"generate", …}'
+lekalo generate --dry-run --target node-typescript -- node adapters/node-typescript/adapter-zod.mjs --lekalo-project-profile-json '{…}'
+lekalo generate --target node-typescript -- node adapters/node-typescript/adapter-zod.mjs --lekalo-project-profile-json '{…}'
+lekalo generate --check
+```
+
+The type-mapping table, the optional/nullable orthogonality rules, the
+codegen policy document, and the unsupported-construct behaviour are
+specified in [docs/zod-generation.md](zod-generation.md). Note the
+generation artifact (`adapter-zod.mjs`) is a dedicated self-contained
+script: the full compiler bundle exceeds the protocol's entry-digest
+bound and is scanner-only.
+
 ## Requirements
 
 The `lekalo requirements` handoff resolves one requirements attachment

@@ -213466,27 +213466,38 @@ function projectOutcome(request, outcome) {
   if (outcome.state === "complete") {
     const writes = projectWrites(outcome.data);
     if (writes) {
-      if (request.operation === "generate" && Array.isArray(outcome.data?.findings) && outcome.data.findings.length > 0) {
-        return buildResponse(request, {
-          error: {
-            class: "invalid",
-            code: "outcome-partial-unsupported-constructs",
-            message: "the IR carries constructs outside the declared generation subset; nothing was emitted",
-            retryable: false,
-            partial: true,
-            detail: outcome.data.findings.slice(0, 16).map((finding) => boundToken(`${finding.code}:${finding.detail ?? ""}`))
-          }
-        });
+      if (request.operation === "generate") {
+        if (Array.isArray(outcome.data?.findings) && outcome.data.findings.length > 0) {
+          return buildResponse(request, {
+            error: {
+              class: "invalid",
+              code: "outcome-partial-unsupported-constructs",
+              message: "the IR carries constructs outside the declared generation subset; nothing was emitted",
+              retryable: false,
+              partial: true,
+              detail: outcome.data.findings.slice(0, 16).map((finding) => boundToken(`${finding.code}:${finding.detail ?? ""}`))
+            }
+          });
+        }
+        const response = buildResponse(request, { writes });
+        if (!hasOwn(request, "plan_id") && isPlanId(outcome.data?.plan_id)) {
+          response.evidence.plan_id = outcome.data.plan_id;
+        }
+        return response;
       }
       const result2 = projectVerifyFindings(request, outcome.data);
-      const response = buildResponse(request, {
-        writes,
-        ...result2 ? { result: result2 } : {}
-      });
-      if (!hasOwn(request, "plan_id") && isPlanId(outcome.data?.plan_id)) {
-        response.evidence.plan_id = outcome.data.plan_id;
+      if (result2) {
+        return buildResponse(request, { result: result2 });
       }
-      return response;
+      return buildResponse(request, {
+        error: {
+          class: "conflict",
+          code: "outcome-unrepresentable",
+          message: "the extension outcome cannot be represented on the closed wire",
+          retryable: false,
+          partial: true
+        }
+      });
     }
     const result = projectResult(outcome.data);
     if (result) {
