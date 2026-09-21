@@ -160,7 +160,22 @@ valid pair; the runtime goldens are the byte-exact
 `lekalo storage input --json` output over the same pair (one document,
 three runtimes); the introspection goldens are hand-authored evidence
 observing the full declared schema, guarded by the zero-drift
-assertion and the canonical-form contract gate. When an engine-profile
-change alters a renderer, regenerate by re-running the producing CLI
-command and re-committing the bytes — the byte-equality tests make any
-drift loud.
+assertion and the canonical-form contract gate. The CLI emits exactly
+one terminal LF after every domain document, while the committed
+goldens store the canonical payload without it — strip the terminal
+LF (or compare against the trimmed bytes) when regenerating. When an
+engine-profile change alters a renderer, regenerate by re-running the
+producing CLI command and re-committing the payload bytes — the
+byte-equality tests make any drift loud.
+
+Two drift verdicts report the same extension twice by design: the
+allow-list check records `extensions/<name> extension-unallowlisted`,
+and the evidence records re-surface the same fact verbatim as
+`unsupported/extension/<name>` — provenance from two independent
+sources, not duplication.
+
+The drifted-evidence vector currently yields exactly nine typed
+findings (three `missing`, two `extra`, one `divergent`, three
+`unsupported`); the evidence-log expectation is pinned by the review
+record, and a widened comparison that moves that count is a
+deliberate contract change, not noise.
