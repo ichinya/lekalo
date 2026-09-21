@@ -127,6 +127,7 @@ fn route_json(
     let module = subject.split('.').next().unwrap_or_default();
     let operation = endpoint.invokes.as_str();
     let tail = operation.split('.').next_back().unwrap_or_default();
+    let project_root = handler_root(document.project_id().as_str());
 
     let mut route = Map::new();
     route.insert(
@@ -145,7 +146,7 @@ fn route_json(
     // The namespace-shaped handler identity.
     route.insert(
         "handler".to_owned(),
-        Json::String(handler_identity(namespace, module, tail)),
+        Json::String(handler_identity(namespace, &project_root, module, tail)),
     );
     // The canonical decode plan: params plus the body mode.
     let mut decode = Map::new();
@@ -235,11 +236,34 @@ fn route_json(
     Ok(Json::Object(route))
 }
 
+/// The project root segment of the handler identity: the PascalCase
+/// spelling of the project id (`planner` -> `Planner`), so every
+/// project namespaces its handlers under its own root, never a
+/// hardcoded one.
+fn handler_root(project_id: &str) -> String {
+    let mut root = String::with_capacity(project_id.len());
+    let mut new_word = true;
+    for character in project_id.chars() {
+        if character.is_ascii_alphanumeric() {
+            if new_word {
+                root.extend(character.to_uppercase());
+                new_word = false;
+            } else {
+                root.push(character);
+            }
+        } else {
+            new_word = true;
+        }
+    }
+    root
+}
+
 /// The namespace-shaped handler identity: one deterministic spelling
-/// per namespace over the module and the operation tail.
-fn handler_identity(namespace: &str, module: &str, tail: &str) -> String {
+/// per namespace over the project root, the module, and the operation
+/// tail.
+fn handler_identity(namespace: &str, project_root: &str, module: &str, tail: &str) -> String {
     match namespace {
-        NAMESPACE_LARAVEL => format!("Planner/{module}/{tail}Controller"),
+        NAMESPACE_LARAVEL => format!("{project_root}/{module}/{tail}Controller"),
         NAMESPACE_GO => format!("{module}.{tail}Handler"),
         NAMESPACE_RUST => format!("{module}::{tail}Route"),
         // node and anything else: the module-relative handler module.
@@ -495,4 +519,40 @@ fn capability_json(
         Json::String(decl.detail.as_str().to_owned()),
     );
     Json::Object(object)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{handler_identity, handler_root};
+
+    #[test]
+    fn the_laravel_root_is_derived_from_the_project_id() {
+        // The planner fixture spells the committed golden root.
+        assert_eq!(handler_root("planner"), "Planner");
+        // Every other project namespaces under its own root.
+        assert_eq!(handler_root("billing_gateway"), "BillingGateway");
+        assert_eq!(handler_root("content-hub"), "ContentHub");
+        assert_eq!(handler_root("ledger2"), "Ledger2");
+        // No hardcoded Planner root leaks into a foreign project.
+        assert_ne!(handler_root("inventory"), "Planner");
+    }
+
+    #[test]
+    fn the_laravel_handler_identity_uses_the_project_root() {
+        assert_eq!(
+            handler_identity("laravel", "BillingGateway", "billing", "issue"),
+            "BillingGateway/billing/issueController"
+        );
+        assert_eq!(
+            handler_identity("laravel", "Planner", "planner", "focus_task"),
+            "Planner/planner/focus_taskController"
+        );
+        // The other namespaces never carry the root segment.
+        assert_eq!(handler_identity("go", "Planner", "planner", "list"), "planner.listHandler");
+        assert_eq!(handler_identity("rust", "Planner", "planner", "list"), "planner::listRoute");
+        assert_eq!(
+            handler_identity("node", "Planner", "planner", "list"),
+            "planner/list.handler"
+        );
+    }
 }

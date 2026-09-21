@@ -40,10 +40,17 @@ const endpoints = new Map(
 
 const NAMESPACES = ["go", "laravel", "node", "rust"];
 
-const handlerIdentity = (namespace, endpointId, invokes) => {
+const handlerIdentity = (namespace, projectId, endpointId, invokes) => {
   const module = endpointId.split(".")[0];
   const tail = invokes.split(".").pop();
-  if (namespace === "laravel") return `Planner/${module}/${tail}Controller`;
+  // The project root segment: the PascalCase spelling of the project
+  // id (mirrors the Rust `handler_root`), never a hardcoded root.
+  const root = String(projectId)
+    .split(/[^A-Za-z0-9]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join("");
+  if (namespace === "laravel") return `${root}/${module}/${tail}Controller`;
   if (namespace === "go") return `${module}.${tail}Handler`;
   if (namespace === "rust") return `${module}::${tail}Route`;
   return `${module}/${tail}.handler`;
@@ -71,7 +78,7 @@ const route = (binding, namespace) => {
     method: symbol.method,
     pathTemplate: symbol.path,
     invokes: symbol.invokes,
-    handler: handlerIdentity(namespace, binding.endpoint, symbol.invokes),
+    handler: handlerIdentity(namespace, attachment.projectId, binding.endpoint, symbol.invokes),
     decode: {
       params: (binding.params ?? []).map((param) => ({
         name: param.name,
