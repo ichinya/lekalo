@@ -420,6 +420,74 @@ fn a_new_table_plans_the_exact_ddl_create_statement() {
 }
 
 #[test]
+fn a_changed_check_predicate_plans_a_drop_and_readd_in_order() {
+    // The semantic diff is blind to nothing: a same-named CHECK whose
+    // predicate changed is a drop of the old constraint followed by
+    // the re-add under the same derived name, in executable order.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    let check = candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .and_then(|projections| {
+            projections.iter_mut().find(|projection| {
+                projection.get("namespace").and_then(serde_json::Value::as_str)
+                    == Some("postgres")
+            })
+        })
+        .and_then(|projection| projection.get_mut("tables"))
+        .and_then(|tables| tables.as_array_mut())
+        .and_then(|tables| {
+            tables.iter_mut().find(|table| {
+                table.get("table").and_then(serde_json::Value::as_str) == Some("task")
+            })
+        })
+        .and_then(|table| table.get_mut("checks"))
+        .and_then(|checks| checks.get_mut(0))
+        .expect("the declared check");
+    check["where"] = serde_json::json!([
+        {"column": "deleted_at", "op": "is-not-null"}
+    ]);
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        None,
+    )
+    .expect("plans");
+    let positions: Vec<usize> = plan
+        .steps()
+        .iter()
+        .enumerate()
+        .filter(|(_, step)| {
+            step.statement().contains("chk_task_window")
+                && (step.kind() == "drop_check" || step.kind() == "add_check")
+        })
+        .map(|(position, _)| position)
+        .collect();
+    assert_eq!(
+        plan.steps()[positions[0]].kind(),
+        "drop_check",
+        "the old predicate drops first"
+    );
+    assert_eq!(
+        plan.steps()[positions[1]].kind(),
+        "add_check",
+        "the new predicate re-adds under the same name"
+    );
+    assert_eq!(
+        plan.steps()[positions[1]].requires(),
+        &[plan.steps()[positions[0]].id()],
+        "the re-add depends on the drop"
+    );
+    // A gated plan stays gated: a constraint replacement is a
+    // destructive rewrite of enforced schema.
+    assert!(plan.gated());
+}
+
+#[test]
 fn a_destructive_plan_is_gated_and_blocked_until_the_plan_id_is_named() {
     let base = migration_attachment(MIGRATION_BASE);
     let candidate = migration_attachment(MIGRATION_DESTRUCTIVE);

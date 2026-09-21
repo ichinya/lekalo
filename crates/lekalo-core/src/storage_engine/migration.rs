@@ -835,16 +835,36 @@ fn plan_checks(
             continue;
         }
         for check in table.checks() {
-            let existed = base_tables
-                .get(entity)
-                .map(|base| {
-                    base.checks()
-                        .iter()
-                        .any(|candidate| candidate.name() == check.name())
-                })
-                .unwrap_or(false);
-            if existed {
+            let base_check = base_tables.get(entity).and_then(|base| {
+                base.checks()
+                    .iter()
+                    .find(|candidate| candidate.name() == check.name())
+            });
+            let unchanged =
+                base_check.is_some_and(|base| {
+                    render_predicates(base.predicates()) == render_predicates(check.predicates())
+                });
+            if unchanged {
                 continue;
+            }
+            // A same-named check with a changed predicate is replaced:
+            // the drop executes in place, never after its own re-add.
+            let mut requires = Vec::new();
+            if base_check.is_some() {
+                let drop_id = steps.len();
+                push_step(
+                    steps,
+                    "drop_check",
+                    format!(
+                        "ALTER TABLE {} DROP CONSTRAINT {};",
+                        quote(table.table()),
+                        quote(check.name())
+                    ),
+                    DataRisk::Destructive,
+                    Vec::new(),
+                    None,
+                );
+                requires.push(drop_id + 1);
             }
             push_step(
                 steps,
@@ -856,7 +876,7 @@ fn plan_checks(
                     render_predicates(check.predicates())
                 ),
                 DataRisk::None,
-                Vec::new(),
+                requires,
                 None,
             );
         }
@@ -1075,14 +1095,16 @@ fn plan_foreign_keys(
     for table in candidate.tables() {
         let base_table = base.table(table.entity());
         for foreign_key in table.foreign_keys() {
-            let existed = base_table
-                .map(|base| {
-                    base.foreign_keys()
-                        .iter()
-                        .any(|candidate| candidate.column() == foreign_key.column())
-                })
-                .unwrap_or(false);
-            if existed {
+            let base_foreign_key = base_table.and_then(|base| {
+                base.foreign_keys()
+                    .iter()
+                    .find(|candidate| candidate.column() == foreign_key.column())
+            });
+            // Unchanged: same column, same target, same action.
+            if base_foreign_key.is_some_and(|base| {
+                base.references_table() == foreign_key.references_table()
+                    && base.on_delete() == foreign_key.on_delete()
+            }) {
                 continue;
             }
             let mut requires = Vec::new();
@@ -1105,6 +1127,25 @@ fn plan_foreign_keys(
                 .ok_or_else(|| {
                     diagnostic::rule_invalid(MAPPING_INVALID, "referenced-key-absent", None)
                 })?;
+            // A same-named foreign key whose target or action changed
+            // is replaced: the drop executes in place (the derived
+            // name is constant), never after its own re-add.
+            if base_foreign_key.is_some() {
+                let drop_id = steps.len();
+                push_step(
+                    steps,
+                    "drop_constraint",
+                    format!(
+                        "ALTER TABLE {} DROP CONSTRAINT {};",
+                        quote(table.table()),
+                        quote(&name)
+                    ),
+                    DataRisk::Destructive,
+                    Vec::new(),
+                    None,
+                );
+                requires.push(drop_id + 1);
+            }
             push_step(
                 steps,
                 "add_foreign_key",
@@ -1282,18 +1323,43 @@ fn plan_indexes(
 /// constraint/check/index/column drops precede the table drops —
 /// PostgreSQL refuses `ALTER TABLE t DROP ...` after `DROP TABLE t`,
 /// and refuses `DROP TABLE` while dependents still reference it.
-/// Stable for identical inputs.
+/// One exception: a drop that is replaced in place (a later step
+/// re-creates the same quoted object name — a changed constraint
+/// predicate or FK action under a constant derived name) stays with
+/// the constructive steps, because the re-add of an existing name
+/// would fail if the drop ran after it. Stable for identical inputs.
 fn order_drops_last(steps: &mut [Step]) {
-    let rank = |step: &Step| {
+    fn dropped_object_name(statement: &str) -> Option<String> {
+        let inner = statement.strip_suffix(';')?;
+        let name_end = inner.rfind('"')?;
+        let name_start = inner[..name_end].rfind('"')? + 1;
+        Some(inner[name_start..=name_end].to_owned())
+    }
+    let is_paired = |index: usize, steps: &[Step]| -> bool {
+        let Some(name) = dropped_object_name(&steps[index].statement) else {
+            return false;
+        };
+        steps[index + 1..]
+            .iter()
+            .any(|later| later.statement.contains(&name))
+    };
+    let rank = |index: usize, steps: &[Step]| {
+        let step = &steps[index];
         if !step.kind.starts_with("drop_") {
             0
         } else if step.kind == "drop_table" {
             2
+        } else if is_paired(index, steps) {
+            0
         } else {
             1
         }
     };
-    steps.sort_by_key(|step| rank(step));
+    let ranks: Vec<usize> = (0..steps.len()).map(|index| rank(index, steps)).collect();
+    let mut order: Vec<usize> = (0..steps.len()).collect();
+    order.sort_by_key(|&index| ranks[index]);
+    let reordered: Vec<Step> = order.into_iter().map(|index| steps[index].clone()).collect();
+    steps.clone_from_slice(&reordered);
 }
 
 #[cfg(test)]
