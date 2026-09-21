@@ -712,7 +712,7 @@ fn requirement(json: &Json, kind: Kind) -> Result<Requirement, DiagnosticSet> {
         kind,
         Kind::Runtime(RuntimeKind::Deployment) | Kind::Runtime(RuntimeKind::RuntimeConstraint)
     );
-    if (!tokens.is_empty()) != token_kind {
+    if tokens.is_empty() == token_kind {
         return Err(diagnostic::document_invalid("tokens-kind", None));
     }
     let max_attempts = match object.get("maxAttempts") {
