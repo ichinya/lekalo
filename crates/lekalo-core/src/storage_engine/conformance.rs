@@ -509,7 +509,9 @@ fn migration_gate_blocks(
         .and_then(serde_json::Value::as_array_mut)
         .and_then(|projections| {
             projections.iter_mut().find(|projection| {
-                projection.get("namespace").and_then(serde_json::Value::as_str)
+                projection
+                    .get("namespace")
+                    .and_then(serde_json::Value::as_str)
                     == Some("postgres")
             })
         })
@@ -542,7 +544,10 @@ fn migration_gate_blocks(
     };
     if !plan.gated()
         || plan.status() != super::PlanStatus::Blocked
-        || !plan.steps().iter().any(|step| step.risk().key() == "destructive")
+        || !plan
+            .steps()
+            .iter()
+            .any(|step| step.risk().key() == "destructive")
     {
         return Outcome::Fail("gate-open");
     }

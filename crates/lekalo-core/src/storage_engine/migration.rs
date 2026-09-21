@@ -300,7 +300,13 @@ pub fn plan(
             );
         }
     }
-    let table_ids = plan_tables(&mut steps, &derived_base, &derived_candidate, profile, candidate)?;
+    let table_ids = plan_tables(
+        &mut steps,
+        &derived_base,
+        &derived_candidate,
+        profile,
+        candidate,
+    )?;
     // Foreign keys and checks after their tables. Checks skip the new
     // tables: their create_table statements already carry every
     // declared and derived constraint inline.
@@ -770,10 +776,7 @@ fn plan_tables(
 /// column: the zero value of its declared default kind, never
 /// invented row data. A sequence default consumes the owning table's
 /// deterministic sequence.
-fn backfill_literal(
-    column: &DerivedColumn,
-    table: &StorageName,
-) -> Result<String, DiagnosticSet> {
+fn backfill_literal(column: &DerivedColumn, table: &StorageName) -> Result<String, DiagnosticSet> {
     match column.default() {
         Some(default) => render_default(default, table),
         None => match column.storage_type() {
@@ -795,21 +798,14 @@ fn backfill_literal(
 /// table's deterministic sequence (`seq_<table>_<column>`), the exact
 /// object the planner creates — never the bare referenced column
 /// name, which names no sequence.
-fn render_default(
-    default: &FieldDefault,
-    table: &StorageName,
-) -> Result<String, DiagnosticSet> {
+fn render_default(default: &FieldDefault, table: &StorageName) -> Result<String, DiagnosticSet> {
     let rendered = match default {
         FieldDefault::Literal(literal) => render_literal(literal),
         FieldDefault::Now => "now()".to_owned(),
         FieldDefault::UuidGenerate => "gen_random_uuid()".to_owned(),
         FieldDefault::Sequence { column } => {
-            let sequence = StorageName::parse(&format!(
-                "seq_{}_{}",
-                table,
-                column.as_str()
-            ))
-            .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "sequence-name", None))?;
+            let sequence = StorageName::parse(&format!("seq_{}_{}", table, column.as_str()))
+                .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "sequence-name", None))?;
             format!("nextval('{}')", sequence)
         }
     };
@@ -860,10 +856,9 @@ fn plan_checks(
                     .iter()
                     .find(|candidate| candidate.name() == check.name())
             });
-            let unchanged =
-                base_check.is_some_and(|base| {
-                    render_predicates(base.predicates()) == render_predicates(check.predicates())
-                });
+            let unchanged = base_check.is_some_and(|base| {
+                render_predicates(base.predicates()) == render_predicates(check.predicates())
+            });
             if unchanged {
                 continue;
             }
@@ -1133,14 +1128,11 @@ fn plan_foreign_keys(
                     requires.push(create_id + 1);
                 }
             }
-            let name = StorageName::parse(&format!(
-                "fk_{}_{}",
-                table.table(),
-                foreign_key.column()
-            ))
-            .map_err(|_| {
-                diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
-            })?;
+            let name =
+                StorageName::parse(&format!("fk_{}_{}", table.table(), foreign_key.column()))
+                    .map_err(|_| {
+                        diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
+                    })?;
             let referenced = primary_keys
                 .get(foreign_key.references_table().as_str())
                 .copied()
@@ -1201,14 +1193,11 @@ fn plan_foreign_keys(
                 })
                 .unwrap_or(false);
             if removed {
-                let name = StorageName::parse(&format!(
-                    "fk_{}_{}",
-                    table.table(),
-                    foreign_key.column()
-                ))
-                .map_err(|_| {
-                    diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
-                })?;
+                let name =
+                    StorageName::parse(&format!("fk_{}_{}", table.table(), foreign_key.column()))
+                        .map_err(|_| {
+                        diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
+                    })?;
                 push_step(
                     steps,
                     "drop_constraint",
@@ -1314,15 +1303,10 @@ fn plan_indexes(
                             .map(|column| column.as_str())
                             .collect::<Vec<&str>>()
                             .join("_");
-                        StorageName::parse(&format!(
-                            "idx_{}_{}{}",
-                            table.table(),
-                            columns,
-                            suffix
-                        ))
-                        .map_err(|_| {
-                            diagnostic::rule_invalid(MAPPING_INVALID, "index-name", None)
-                        })?
+                        StorageName::parse(&format!("idx_{}_{}{}", table.table(), columns, suffix))
+                            .map_err(|_| {
+                                diagnostic::rule_invalid(MAPPING_INVALID, "index-name", None)
+                            })?
                     }
                 };
                 push_step(
@@ -1378,7 +1362,10 @@ fn order_drops_last(steps: &mut [Step]) {
     let ranks: Vec<usize> = (0..steps.len()).map(|index| rank(index, steps)).collect();
     let mut order: Vec<usize> = (0..steps.len()).collect();
     order.sort_by_key(|&index| ranks[index]);
-    let reordered: Vec<Step> = order.into_iter().map(|index| steps[index].clone()).collect();
+    let reordered: Vec<Step> = order
+        .into_iter()
+        .map(|index| steps[index].clone())
+        .collect();
     steps.clone_from_slice(&reordered);
 }
 
@@ -1429,7 +1416,7 @@ mod tests {
     fn every_destructive_step_declares_explain_before() {
         // The declared hook surface is real: destructive steps carry
         // the before hook, constructive steps carry none.
-        let mut steps = vec![
+        let mut steps = [
             step("create_extension"),
             step("drop_table"),
             step("drop_index"),
