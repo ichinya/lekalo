@@ -935,6 +935,86 @@ fn an_added_join_plans_the_exact_ddl_create_and_foreign_keys() {
 }
 
 #[test]
+fn a_type_change_without_an_assignment_cast_refuses() {
+    // A text-to-integer change cannot execute as a bare ALTER COLUMN
+    // TYPE: the planner refuses with the registered rule instead of
+    // emitting a statement PostgreSQL would reject mid-apply.
+    let candidate =
+        candidate_with_field_type("tag", "label", serde_json::json!({"name": "integer"}));
+    let error = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        None,
+    )
+    .expect_err("text to bigint refuses");
+    assert_eq!(
+        error.reason_ids().first().copied(),
+        Some("storage-engine.render-unsupported")
+    );
+    let rendered = serde_json::to_string(&error).expect("json");
+    assert!(rendered.contains("column-type-uncastable"));
+}
+
+#[test]
+fn a_widening_type_change_plans_the_type_alter() {
+    // A varchar widening casts by assignment, so the type alter plans
+    // destructively and carries the exact new spelling.
+    let candidate = candidate_with_field_type(
+        "tag",
+        "label",
+        serde_json::json!({"length": 128, "name": "string"}),
+    );
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        None,
+    )
+    .expect("plans");
+    let alter = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "alter_column_type")
+        .expect("the type alter is planned");
+    assert!(alter
+        .statement()
+        .contains("ALTER COLUMN \"label\" TYPE varchar(128)"));
+    assert!(plan.gated(), "a type change is destructive");
+}
+
+/// One candidate attachment whose postgres-projected field changes
+/// its declared type; everything else stays the committed base.
+fn candidate_with_field_type(
+    entity_key: &str,
+    field_name: &str,
+    field_type: serde_json::Value,
+) -> StorageProjectionAttachment {
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    let entity = candidate_value
+        .get_mut("entities")
+        .and_then(|entities| entities.as_array_mut())
+        .and_then(|entities| {
+            entities.iter_mut().find(|entity| {
+                entity.get("entityKey").and_then(serde_json::Value::as_str) == Some(entity_key)
+            })
+        })
+        .expect("entity");
+    let field = entity
+        .get_mut("fields")
+        .and_then(|fields| fields.as_array_mut())
+        .and_then(|fields| {
+            fields.iter_mut().find(|field| {
+                field.get("field").and_then(serde_json::Value::as_str) == Some(field_name)
+            })
+        })
+        .expect("field");
+    field["type"] = field_type;
+    StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate")
+}
+
+#[test]
 fn a_generated_kind_change_refuses_instead_of_staying_silent() {
     // Flipping a generated column between sequence and identity has no
     // deterministic v1 transition (no SET GENERATED step, no sequence

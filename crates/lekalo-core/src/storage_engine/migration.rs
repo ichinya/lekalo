@@ -769,6 +769,18 @@ fn plan_tables(
                 ));
             }
             if base_column.storage_type() != column.storage_type() {
+                // PostgreSQL executes ALTER COLUMN TYPE only with an
+                // assignment cast between the two spellings; a
+                // transition without one cannot run, so it refuses with
+                // the registered rule instead of emitting a statement
+                // that fails mid-apply.
+                if !assignment_castable(base_column.storage_type(), &storage_type) {
+                    return Err(diagnostic::rule_invalid(
+                        RENDER_UNSUPPORTED,
+                        "column-type-uncastable",
+                        None,
+                    ));
+                }
                 push_step(
                     steps,
                     "alter_column_type",
@@ -1084,6 +1096,78 @@ fn render_literal(value: &Literal) -> String {
         Literal::Integer(value) => value.to_string(),
         Literal::Decimal(text) => text.clone(),
         Literal::Text(text) => format!("'{}'", text.replace('\'', "''")),
+    }
+}
+
+/// Whether PostgreSQL holds an assignment cast (or implicit
+/// equivalence) between two rendered storage-type spellings, so a bare
+/// `ALTER COLUMN TYPE` executes. The vocabulary is the closed type
+/// table this engine renders; identical spellings are trivially
+/// castable. Anything outside the table (an unknown spelling) refuses
+/// via `false`, keeping the planner fail-closed.
+fn assignment_castable(from: &str, to: &str) -> bool {
+    if from == to {
+        return true;
+    }
+    // Numeric widenings: integer families and numeric scale-ups cast
+    // by assignment; narrowing an integer or decimal refuses (a
+    // narrowing rewrite is a data decision the planner never makes).
+    let numeric_rank = |spelling: &str| -> Option<u8> {
+        match spelling {
+            "smallint" => Some(1),
+            "integer" => Some(2),
+            "bigint" => Some(3),
+            "real" => Some(4),
+            "double precision" => Some(5),
+            _ => None,
+        }
+    };
+    if let (Some(from_rank), Some(to_rank)) = (numeric_rank(from), numeric_rank(to)) {
+        return to_rank >= from_rank;
+    }
+    match (from, to) {
+        // Numeric scale changes: PostgreSQL casts numeric to numeric by
+        // assignment, but a scale/precision reduction can fail on apply
+        // for out-of-range values and silently round — the planner
+        // treats a shrink as a data decision it never makes.
+        (from, to) if from.starts_with("numeric(") && to.starts_with("numeric(") => {
+            let parse = |spelling: &str| -> Option<(i64, i64)> {
+                let inner = spelling.strip_prefix("numeric(")?.strip_suffix(')')?;
+                let (precision, scale) = inner.split_once(',')?;
+                Some((precision.trim().parse().ok()?, scale.trim().parse().ok()?))
+            };
+            match (parse(from), parse(to)) {
+                (Some((from_precision, from_scale)), Some((to_precision, to_scale))) => {
+                    to_scale >= from_scale && to_precision >= from_precision
+                }
+                _ => false,
+            }
+        }
+        // Any numeric source casts up to numeric by assignment.
+        (_, to) if numeric_rank(from).is_some() && to.starts_with("numeric(") => true,
+        // varchar(n) widenings cast by assignment; shortenings refuse.
+        (from, to) if from.starts_with("varchar(") && to.starts_with("varchar(") => {
+            let parse_length = |spelling: &str| {
+                spelling
+                    .strip_prefix("varchar(")
+                    .and_then(|rest| rest.strip_suffix(')'))
+                    .and_then(|length| length.parse::<i64>().ok())
+            };
+            match (parse_length(from), parse_length(to)) {
+                (Some(from_length), Some(to_length)) => to_length >= from_length,
+                _ => false,
+            }
+        }
+        // varchar and text cast in both directions by assignment.
+        (from, "text") if from.starts_with("varchar(") => true,
+        ("text", to) if to.starts_with("varchar(") => true,
+        // json and jsonb cast in both directions by assignment.
+        ("json", "jsonb") | ("jsonb", "json") => true,
+        // Everything else (text to bigint, bytea to anything, uuid
+        // spellings, timestamp families, arrays) refuses: a bare type
+        // change without an assignment cast cannot execute, and a
+        // USING clause would invent conversion semantics.
+        _ => false,
     }
 }
 
@@ -1681,6 +1765,30 @@ mod tests {
             requires: Vec::new(),
             explain: None,
         }
+    }
+
+    #[test]
+    fn assignment_casts_follow_the_postgres_table() {
+        // Widening numeric transitions and varchar widenings cast by
+        // assignment; narrowings and unrelated families refuse, and an
+        // unknown spelling is fail-closed.
+        assert!(assignment_castable("bigint", "bigint"));
+        assert!(assignment_castable("smallint", "bigint"));
+        assert!(assignment_castable("integer", "numeric(12,4)"));
+        assert!(!assignment_castable("bigint", "smallint"));
+        assert!(assignment_castable("numeric(10,2)", "numeric(12,4)"));
+        assert!(!assignment_castable("numeric(10,2)", "numeric(8,2)"));
+        assert!(assignment_castable("varchar(64)", "varchar(128)"));
+        assert!(!assignment_castable("varchar(64)", "varchar(32)"));
+        assert!(assignment_castable("varchar(64)", "text"));
+        assert!(assignment_castable("text", "varchar(64)"));
+        assert!(assignment_castable("json", "jsonb"));
+        // The non-castable transitions the planner must refuse.
+        assert!(!assignment_castable("text", "bigint"));
+        assert!(!assignment_castable("uuid", "text"));
+        assert!(!assignment_castable("timestamptz", "date"));
+        assert!(!assignment_castable("bytea", "text"));
+        assert!(!assignment_castable("some unknown", "bigint"));
     }
 
     #[test]
