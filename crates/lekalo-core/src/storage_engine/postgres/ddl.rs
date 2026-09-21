@@ -177,7 +177,8 @@ pub fn render(
     for table in projection.tables() {
         for column in table.columns() {
             if column.generated_kind() == Some(GeneratedKind::Sequence) {
-                let sequence = derived_name(&format!("seq_{}_{}", table.table(), column.name()));
+                let sequence =
+                    derived_name(&format!("seq_{}_{}", table.table(), column.name()), "sequence-name")?;
                 statements.push(format!("CREATE SEQUENCE {};", quote(&sequence)));
                 sequence_owners.push((
                     sequence,
@@ -228,7 +229,10 @@ pub fn render(
                 .ok_or_else(|| {
                     diagnostic::rule_invalid(MAPPING_INVALID, "referenced-key-absent", None)
                 })?;
-            let name = derived_name(&format!("fk_{}_{}", table.table(), foreign_key.column()));
+            let name = derived_name(
+                &format!("fk_{}_{}", table.table(), foreign_key.column()),
+                "foreign-key-name",
+            )?;
             statements.push(format!(
                 "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {}({}) ON DELETE {};",
                 quote(table.table()),
@@ -258,7 +262,10 @@ pub fn render(
                     None,
                 ));
             };
-            let name = derived_name(&format!("fk_{}_{}", join.table(), column.name()));
+            let name = derived_name(
+                &format!("fk_{}_{}", join.table(), column.name()),
+                "foreign-key-name",
+            )?;
             statements.push(format!(
                 "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {}({}) ON DELETE {};",
                 quote(join.table()),
@@ -276,7 +283,7 @@ pub fn render(
         for index in table.indexes() {
             let name = match index.name() {
                 Some(name) => name.clone(),
-                None => derived_index_name(table.table(), index),
+                None => derived_index_name(table.table(), index)?,
             };
             let unique = if index.unique() { "UNIQUE " } else { "" };
             let predicate = match index.where_() {
@@ -332,7 +339,7 @@ pub fn render(
                         quote(table.table())
                     ));
                 }
-                let policy_name = derived_name(&format!("pol_{}_tenant", table.table()));
+                let policy_name = derived_name(&format!("pol_{}_tenant", table.table()), "policy-name")?;
                 statements.push(format!(
                     "CREATE POLICY {} ON {} USING ({} = current_setting('{}')::{});",
                     quote(&policy_name),
@@ -480,7 +487,7 @@ fn render_default(default: &FieldDefault) -> Result<String, DiagnosticSet> {
 fn derived_index_name(
     table: &StorageName,
     index: &crate::storage_projection::Index,
-) -> StorageName {
+) -> Result<StorageName, DiagnosticSet> {
     let suffix = if index.unique() { "_uq" } else { "" };
     let columns = index
         .columns()
@@ -488,15 +495,16 @@ fn derived_index_name(
         .map(|column| column.as_str())
         .collect::<Vec<&str>>()
         .join("_");
-    derived_name(&format!("idx_{table}_{columns}{suffix}"))
+    derived_name(&format!("idx_{table}_{columns}{suffix}"), "index-name")
 }
 
 /// Keep a derived identifier inside the storage-name grammar; a name
-/// beyond the grammar bound is a developer fault refused loudly, never
-/// silently truncated.
-fn derived_name(text: &str) -> StorageName {
-    StorageName::parse(text)
-        .unwrap_or_else(|_| panic!("derived identifier {text} exceeds the storage-name grammar"))
+/// beyond the grammar bound refuses with the typed mapping rule, never
+/// silently truncated and never a panic: every component is
+/// schema-valid on its own, so an over-long composition is legal input
+/// the renderer must answer with a diagnostic.
+fn derived_name(text: &str, detail: &'static str) -> Result<StorageName, DiagnosticSet> {
+    StorageName::parse(text).map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, detail, None))
 }
 
 #[cfg(test)]
@@ -653,6 +661,71 @@ mod tests {
             document.canonical_bytes().expect("bytes"),
             committed.trim_end(),
             "the committed DDL golden matches"
+        );
+    }
+
+    #[test]
+    fn an_over_long_derived_name_refuses_instead_of_panicking() {
+        // Both the table and the column fit the storage-name grammar;
+        // the composed sequence name does not. The renderer must answer
+        // with the typed mapping diagnostic, never a panic.
+        let mut value = projection_value();
+        let table = value
+            .get_mut("projections")
+            .and_then(|projections| projections.as_array_mut())
+            .and_then(|projections| {
+                projections
+                    .iter_mut()
+                    .find(|projection| projection.get("namespace").and_then(serde_json::Value::as_str) == Some("postgres"))
+            })
+            .and_then(|projection| projection.get_mut("tables"))
+            .and_then(|tables| tables.get_mut(0))
+            .expect("projection tables");
+        let long_table = format!("{}_tbl", "a".repeat(58));
+        let long_column = format!("{}_col", "b".repeat(58));
+        table["table"] = serde_json::Value::String(long_table.clone());
+        table["generatedColumns"] = serde_json::json!([{
+            "kind": "sequence",
+            "name": long_column,
+        }]);
+        let attachment =
+            crate::storage_projection::StorageProjectionAttachment::from_value(&value)
+                .expect("valid projection");
+        let mut profile_value = serde_json::json!({
+            "schemaVersion": "lekalo/storage-engine/v0.4.0",
+            "identity": "dev.lekalo.storage-engine@0.4.0",
+            "attachmentRevision": "0.4.0",
+            "projectId": "planner",
+            "modelRef": {
+                "modelVersion": "0.2.16",
+                "digest": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
+            },
+            "irRef": {
+                "identity": "dev.lekalo.ir@0.2.16",
+                "digest": "sha256:0202020202020202020202020202020202020202020202020202020202020202"
+            },
+            "projectionRef": "sha256:0404040404040404040404040404040404040404040404040404040404040404",
+            "engine": "postgres",
+            "engineVersion": "16.4.0",
+            "policies": {
+                "identifierQuote": "always",
+                "json": "jsonb",
+                "enum": "check",
+                "array": "native",
+                "time": {"instant": "timestamptz", "local": "forbidden"},
+                "pagination": {"offset": "allowed", "cursor": "keyset"}
+            }
+        });
+        let bytes = attachment.canonical_bytes().expect("canonical");
+        profile_value["projectionRef"] = serde_json::Value::String(format!(
+            "sha256:{}",
+            crate::digest::sha256_hex(bytes.as_bytes())
+        ));
+        let profile = StorageEngineAttachment::from_value(&profile_value).expect("valid profile");
+        let error = render(&profile, &attachment).expect_err("over-long composition");
+        assert_eq!(
+            error.reason_ids().first().copied(),
+            Some("storage-engine.mapping-invalid")
         );
     }
 
