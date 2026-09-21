@@ -227,12 +227,16 @@ fn compare_engine(
     }
 }
 
-/// The support ordering: narrower is a left-to-candidate downgrade.
-fn support_rank(support: Support) -> u8 {
+/// The support ordering: narrower is a left-to-candidate downgrade. An
+/// absent record ranks below `unsupported` — absent means unknown, and
+/// unknown is the weakest state — so a removed capability is a
+/// downgrade and an added record is an upgrade.
+fn support_rank(support: Option<Support>) -> i16 {
     match support {
-        Support::Full => 2,
-        Support::Partial => 1,
-        Support::Unsupported => 0,
+        None => -1,
+        Some(Support::Unsupported) => 0,
+        Some(Support::Partial) => 1,
+        Some(Support::Full) => 2,
     }
 }
 
@@ -251,9 +255,7 @@ fn compare_capabilities(
         if base_support == candidate_support {
             continue;
         }
-        let base_rank = base_support.map(support_rank).unwrap_or(u8::MAX);
-        let candidate_rank = candidate_support.map(support_rank).unwrap_or(u8::MAX);
-        let class = if candidate_rank > base_rank {
+        let class = if support_rank(candidate_support) > support_rank(base_support) {
             DiffClass::NonBreaking
         } else {
             DiffClass::Breaking
@@ -292,9 +294,11 @@ fn compare_test_lifecycle(
         ),
         ("drop", base_lifecycle.drop(), candidate_lifecycle.drop()),
     ] {
-        if support_rank(base_capability.support()) != support_rank(candidate_capability.support()) {
-            let class = if support_rank(candidate_capability.support())
-                > support_rank(base_capability.support())
+        if support_rank(Some(base_capability.support()))
+            != support_rank(Some(candidate_capability.support()))
+        {
+            let class = if support_rank(Some(candidate_capability.support()))
+                > support_rank(Some(base_capability.support()))
             {
                 DiffClass::NonBreaking
             } else {

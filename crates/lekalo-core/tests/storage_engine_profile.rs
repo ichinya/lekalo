@@ -295,6 +295,52 @@ fn profile_diff_classifies_capability_changes() {
 }
 
 #[test]
+fn profile_diff_classifies_capability_removal_and_addition() {
+    let base = parse(MYSQL_80);
+    // A removed capability record is a downgrade: absent is unknown, and
+    // unknown is the weakest state. Removal classifies breaking, never
+    // non-breaking — a silently dropped guarantee must gate a consumer.
+    let mut value: serde_json::Value = serde_json::from_slice(MYSQL_80).expect("json");
+    value["capabilities"]
+        .as_object_mut()
+        .expect("capability map")
+        .remove("lock.range");
+    let candidate = StorageEngineProfile::from_value(&value).expect("parses");
+    let diff = compare(&base, &candidate).expect("comparable");
+    let removed = diff
+        .paths()
+        .iter()
+        .find(|path| path.path() == "capability/lock.range")
+        .expect("the removed capability path");
+    assert_eq!(removed.layer(), DiffLayer::Capability);
+    assert_eq!(removed.class(), DiffClass::Breaking);
+    // The reverse direction is an addition: non-breaking. Value equality
+    // makes the classification exactly symmetric.
+    let addition = compare(&candidate, &base).expect("comparable");
+    let added = addition
+        .paths()
+        .iter()
+        .find(|path| path.path() == "capability/lock.range")
+        .expect("the added capability path");
+    assert_eq!(added.class(), DiffClass::NonBreaking);
+    // Removal and a declared downgrade share the same class: absent
+    // ranks strictly below unsupported.
+    let mut downgraded: serde_json::Value = serde_json::from_slice(MYSQL_80).expect("json");
+    downgraded["capabilities"]["lock.range"] = serde_json::json!({
+        "support": "unsupported",
+        "evidence": { "kind": "vendor-docs", "ref": "mysql-8.0-en" }
+    });
+    let downgrade_candidate = StorageEngineProfile::from_value(&downgraded).expect("parses");
+    let downgrade = compare(&base, &downgrade_candidate).expect("comparable");
+    let downgrade_path = downgrade
+        .paths()
+        .iter()
+        .find(|path| path.path() == "capability/lock.range")
+        .expect("the downgraded capability path");
+    assert_eq!(downgrade_path.class(), removed.class());
+}
+
+#[test]
 fn portability_golden_is_byte_pinned() {
     let mysql = parse(MYSQL_80);
     let mariadb = parse(MARIADB_1011);
