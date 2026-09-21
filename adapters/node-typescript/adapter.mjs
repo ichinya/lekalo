@@ -211923,8 +211923,10 @@ var OPERATION_TOKENS = Object.freeze([
 var SUPPORT_STATES = Object.freeze(["full", "partial", "unsupported", "unknown"]);
 var CAPABILITY_IDS = Object.freeze([
   "generate.openapi",
+  "generate.storage-ddl",
   "generate.ui",
   "generate.zod",
+  "scan.storage-schema",
   "scan.symbols",
   "verify.scenarios",
   "plan.native-gates"
