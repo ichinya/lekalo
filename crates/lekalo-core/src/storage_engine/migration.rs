@@ -559,6 +559,13 @@ fn plan_tables(
                         add_requires.push(create_id + 1);
                     }
                 }
+                // The policy table owns the field-origin type spelling.
+                let storage_type = super::postgres::ddl::column_storage_type(
+                    profile,
+                    candidate_attachment,
+                    table,
+                    column,
+                )?;
                 if !column.nullable() && column.default().is_some() {
                     // The declared default fills existing rows at ADD
                     // time (the fast default), so one step is
@@ -571,7 +578,7 @@ fn plan_tables(
                             "ALTER TABLE {} ADD COLUMN {} {} DEFAULT {} NOT NULL;",
                             quote(table.table()),
                             quote(column.name()),
-                            column.storage_type(),
+                            storage_type,
                             render_default(default, table.table())?
                         ),
                         DataRisk::None,
@@ -594,7 +601,7 @@ fn plan_tables(
                             "ALTER TABLE {} ADD COLUMN {} {};",
                             quote(table.table()),
                             quote(column.name()),
-                            column.storage_type()
+                            storage_type
                         ),
                         DataRisk::None,
                         add_requires,
@@ -634,7 +641,7 @@ fn plan_tables(
                             "ALTER TABLE {} ADD COLUMN {} {};",
                             quote(table.table()),
                             quote(column.name()),
-                            column.storage_type()
+                            storage_type
                         ),
                         DataRisk::None,
                         add_requires,
@@ -643,6 +650,14 @@ fn plan_tables(
                 }
                 continue;
             };
+            // The policy table owns the field-origin type spelling on
+            // the surviving-column paths too.
+            let storage_type = super::postgres::ddl::column_storage_type(
+                profile,
+                candidate_attachment,
+                table,
+                column,
+            )?;
             if base_column.storage_type() != column.storage_type() {
                 push_step(
                     steps,
@@ -651,7 +666,7 @@ fn plan_tables(
                         "ALTER TABLE {} ALTER COLUMN {} TYPE {};",
                         quote(table.table()),
                         quote(column.name()),
-                        column.storage_type()
+                        storage_type
                     ),
                     DataRisk::Destructive,
                     Vec::new(),

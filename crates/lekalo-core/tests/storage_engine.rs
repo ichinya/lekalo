@@ -637,6 +637,29 @@ fn a_dropped_tables_enum_checks_ride_the_table_drop() {
 }
 
 #[test]
+fn a_plan_under_a_refusing_array_policy_refuses_and_never_renders_the_type() {
+    // The render policies reach the planner too: under
+    // `array:"unsupported"` the added-column plan refuses with the
+    // registered rule instead of emitting the native array type the
+    // policy refuses — the conformance battery's answer and the
+    // emitter can no longer disagree.
+    let mut profile_value: serde_json::Value = serde_json::from_slice(PROFILE).expect("profile");
+    profile_value["policies"]["array"] = serde_json::Value::String("unsupported".to_owned());
+    let refusing = StorageEngineAttachment::from_value(&profile_value).expect("valid profile");
+    let error = lekalo_core::storage_engine::plan_migration(
+        &refusing,
+        &migration_attachment(MIGRATION_BASE),
+        &migration_attachment(MIGRATION_ADDITIVE),
+        None,
+    )
+    .expect_err("array unsupported refuses the plan");
+    assert_eq!(
+        error.reason_ids().first().copied(),
+        Some("storage-engine.render-unsupported")
+    );
+}
+
+#[test]
 fn a_profile_bound_to_a_foreign_projection_refuses_to_plan() {
     // The binding guarantee holds on the migration surface too: the
     // profile is authored against the base state, and a profile bound

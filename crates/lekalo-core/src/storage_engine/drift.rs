@@ -184,7 +184,7 @@ pub fn compare(
             });
             continue;
         };
-        compare_columns(table, observed, &mut findings)?;
+        compare_columns(profile, attachment, table, observed, &mut findings)?;
         compare_primary_key(table, observed, &mut findings);
         compare_foreign_keys(table, observed, &mut findings);
         compare_indexes(table, observed, &mut findings);
@@ -251,13 +251,20 @@ pub fn compare(
 }
 
 /// Column-level drift: missing, extra, and divergent (type,
-/// nullability, default spelling, or identity).
+/// nullability, default spelling, or identity). The expected type is
+/// the policy table's answer for field-origin columns — the profile's
+/// `json`/`array` policies are observable here, exactly as the DDL
+/// renderer and the migration planner render them.
 fn compare_columns(
+    profile: &StorageEngineAttachment,
+    attachment: &StorageProjectionAttachment,
     declared: &crate::storage_projection::derivation::DerivedTable,
     observed: &super::introspection::ObservedTable,
     findings: &mut Vec<Finding>,
 ) -> Result<(), DiagnosticSet> {
     for column in declared.columns() {
+        let expected_type =
+            super::postgres::ddl::column_storage_type(profile, attachment, declared, column)?;
         let Some(observed_column) = observed
             .columns()
             .iter()
@@ -270,7 +277,7 @@ fn compare_columns(
             });
             continue;
         };
-        if observed_column.storage_type() != column.storage_type() {
+        if observed_column.storage_type() != expected_type {
             findings.push(Finding {
                 kind: FindingKind::Divergent,
                 path: format!("tables/{}/columns/{}", declared.table(), column.name()),

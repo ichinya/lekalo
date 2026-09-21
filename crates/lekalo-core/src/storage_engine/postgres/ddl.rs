@@ -414,7 +414,11 @@ pub(crate) fn create_table(
     }
     let mut lines: Vec<String> = Vec::new();
     for column in table.columns() {
-        let mut line = format!("{} {}", quote(column.name()), column.storage_type());
+        // The policy table owns the field-origin type spelling: the
+        // `json` and `array` policies are observable here, exactly as
+        // the conformance battery answers them.
+        let storage_type = column_storage_type(profile, attachment, table, column)?;
+        let mut line = format!("{} {}", quote(column.name()), storage_type);
         if column.generated_kind() == Some(GeneratedKind::Identity) {
             line.push_str(" GENERATED ALWAYS AS IDENTITY");
         } else if column.generated_kind() == Some(GeneratedKind::Computed) {
@@ -530,6 +534,52 @@ pub(crate) fn declared_enum_members(
         }
     }
     members
+}
+
+/// The exact storage type of one derived column under the profile's
+/// declared policies: field-origin columns render through the policy
+/// type table (the `json` and `array` policies are observable here —
+/// `json:"json"` renders the textual type, `array:"json"` renders
+/// `jsonb`, and `array:"unsupported"` refuses), and every policy-
+/// owned column renders through its namespace table exactly as the
+/// projection derivation fixed it. Empty for the opaque technical
+/// spellings the type table does not own (e.g. a declared `bytea`
+/// technical column).
+pub(crate) fn column_storage_type(
+    profile: &StorageEngineAttachment,
+    attachment: &StorageProjectionAttachment,
+    table: &crate::storage_projection::derivation::DerivedTable,
+    column: &crate::storage_projection::derivation::DerivedColumn,
+) -> Result<String, DiagnosticSet> {
+    if column.origin().key() != "field" {
+        return Ok(column.storage_type().to_owned());
+    }
+    let Some(field_type) = attachment
+        .entity(table.entity())
+        .and_then(|entity| {
+            entity
+                .fields()
+                .iter()
+                .find(|field| field.name().as_str() == column.name().as_str())
+        })
+        .map(|field| field.field_type())
+    else {
+        return Ok(column.storage_type().to_owned());
+    };
+    match super::types::map_type(field_type, profile.policies()) {
+        Ok(rendered) => Ok(rendered),
+        Err(error)
+            if error.reason_ids().first().copied() == Some(RENDER_UNSUPPORTED)
+                // The policy table refuses an enum field only under
+                // `native_enum`, which `create_table` already refuses
+                // on its own; a field the table does not own keeps the
+                // derived spelling.
+                && !matches!(field_type, crate::storage_projection::entity::DomainType::Enum { .. }) =>
+        {
+            Err(error)
+        }
+        Err(_) => Ok(column.storage_type().to_owned()),
+    }
 }
 
 /// Render one bounded predicate conjunction.
@@ -894,6 +944,38 @@ mod tests {
         value["policies"]["enum"] = serde_json::Value::String("native_enum".to_owned());
         let profile = StorageEngineAttachment::from_value(&value).expect("valid profile");
         let error = render(&profile, &attachment()).expect_err("native_enum refuses");
+        assert_eq!(
+            error.reason_ids().first().copied(),
+            Some("storage-engine.render-unsupported")
+        );
+    }
+
+    #[test]
+    fn the_array_policy_gates_the_rendered_column_type() {
+        // The array policy is observable in the emitted DDL: `json`
+        // renders jsonb, `unsupported` refuses with the registered
+        // rule — never a native array under a refusing policy.
+        let mut json_value = profile_value();
+        json_value["policies"]["array"] = serde_json::Value::String("json".to_owned());
+        let json_profile = StorageEngineAttachment::from_value(&json_value).expect("valid profile");
+        let document = render(&json_profile, &attachment()).expect("renders");
+        let joined = document
+            .statements()
+            .iter()
+            .map(|statement| statement.statement())
+            .collect::<Vec<&str>>()
+            .join("\n");
+        assert!(
+            joined.contains("CREATE TABLE \"task_roster\" (\"id\" uuid NOT NULL, \"members\" jsonb, PRIMARY KEY (\"id\"))"),
+            "the json array policy renders jsonb"
+        );
+        assert!(!joined.contains("[]"), "no native array survives");
+
+        let mut unsup_value = profile_value();
+        unsup_value["policies"]["array"] = serde_json::Value::String("unsupported".to_owned());
+        let unsup_profile =
+            StorageEngineAttachment::from_value(&unsup_value).expect("valid profile");
+        let error = render(&unsup_profile, &attachment()).expect_err("array unsupported refuses");
         assert_eq!(
             error.reason_ids().first().copied(),
             Some("storage-engine.render-unsupported")
