@@ -75,13 +75,19 @@ impl CapabilityMap {
         Self { entries }
     }
 
-    /// The default `http-json` transport component surface:
-    /// `transport.http` full and `transport.streaming` partial — the
-    /// transport axis the profile registry publishes today.
+    /// The default `http-json` transport component surface, mirrored
+    /// exactly from the embedded target-profile component registry
+    /// (`target_profile::component`, id `http-json`): `transport.http`
+    /// full, and `transport.streaming`, `transport.upload`, and
+    /// `transport.download` partial — so a declaration the published
+    /// component registry claims is satisfiable on every validation
+    /// path.
     pub fn http_json() -> Self {
         Self::from_sorted(vec![
             ("transport.http".to_owned(), ProfileSupport::Full),
             ("transport.streaming".to_owned(), ProfileSupport::Partial),
+            ("transport.upload".to_owned(), ProfileSupport::Partial),
+            ("transport.download".to_owned(), ProfileSupport::Partial),
         ])
     }
 
@@ -706,6 +712,27 @@ mod tests {
         let map = CapabilityMap::http_json();
         assert_eq!(map.support("transport.http"), ProfileSupport::Full);
         assert_eq!(map.support("transport.streaming"), ProfileSupport::Partial);
-        assert_eq!(map.support("transport.upload"), ProfileSupport::Absent);
+        assert_eq!(map.support("transport.upload"), ProfileSupport::Partial);
+        assert_eq!(map.support("transport.download"), ProfileSupport::Partial);
+    }
+
+    #[test]
+    fn the_http_json_default_map_mirrors_the_component_registry() {
+        // Cross-module coherence: the published http-json component
+        // (issue #70 plan S9) claims exactly the transport capabilities
+        // the default validation map admits, state for state.
+        let component = crate::target_profile::component::definition(
+            crate::target_profile::component::Axis::Transport,
+            "http-json",
+        )
+        .expect("the http-json component is registered");
+        let map = CapabilityMap::http_json();
+        for provided in component.provides {
+            let expected = match provided.support {
+                crate::target_profile::component::Support::Partial => ProfileSupport::Partial,
+                crate::target_profile::component::Support::Full => ProfileSupport::Full,
+            };
+            assert_eq!(map.support(provided.id), expected, "{}", provided.id);
+        }
     }
 }

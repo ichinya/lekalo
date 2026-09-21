@@ -124,6 +124,7 @@ fn transport_suite_runs_from_the_workspace_root() {
         canonical_digest_is_pinned();
         wire_diff_classifies_and_blocks_breaking_changes();
         every_capability_kind_refuses_without_profile_support();
+        every_capability_kind_validates_under_the_published_surface();
     });
     std::env::set_current_dir(original).expect("restore working dir");
     if let Err(payload) = result {
@@ -558,5 +559,50 @@ fn every_capability_kind_refuses_without_profile_support() {
             })
             .unwrap_or_default();
         assert_eq!(capability, format!("transport.{kind}"));
+    }
+}
+
+/// Every capability kind is satisfied by the published http-json
+/// surface at a partial minimum (the C-6 alignment): declaring
+/// streaming, upload, or download validates under the default map,
+/// while a full minimum still refuses a partial profile.
+fn every_capability_kind_validates_under_the_published_surface() {
+    let (project, registry, query_model, _) = loaded();
+    let map = CapabilityMap::http_json();
+    let base = read_fixture("valid/planner.transport.json");
+    for (kind, detail, minimum) in [
+        ("streaming", "sse", "partial"),
+        ("upload", "multipart", "partial"),
+        ("download", "binary", "partial"),
+        ("upload", "multipart", "full"),
+    ] {
+        let mut doc = base.clone();
+        let target = doc["endpoints"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|endpoint| endpoint["endpoint"] == "planner.endpoint_focus_task")
+            .unwrap();
+        target["capabilities"] = serde_json::json!([
+            { "capability": kind, "minimumSupport": minimum, "detail": detail }
+        ]);
+        let document = TransportDocument::from_value(&doc).expect("parses");
+        let context = ValidationContext::new(&project)
+            .with_errors(registry)
+            .with_query_model(&query_model)
+            .with_capabilities(&map);
+        let outcome = validate(&document, &context);
+        if minimum == "full" {
+            let set = outcome.expect_err("full minimum refuses a partial profile");
+            assert_eq!(
+                refusal(&set),
+                Some((
+                    "transport.capability-unsatisfied".to_owned(),
+                    "capability-unsupported".to_owned()
+                ))
+            );
+        } else {
+            outcome.unwrap_or_else(|set| panic!("{kind} under the published map: {set:?}"));
+        }
     }
 }

@@ -937,7 +937,7 @@ impl Runner {
 
     /// `transport.unsupported-capability`: the declared streaming
     /// capability is satisfied by the `http-json` profile surface, and
-    /// an unsupported capability declaration is an explicit refusal —
+    /// an unsatisfied capability declaration is an explicit refusal —
     /// never a silent downgrade.
     fn transport_unsupported_capability(&mut self) {
         let ok = (|| -> Option<bool> {
@@ -955,15 +955,18 @@ impl Runner {
             if !satisfied {
                 return None;
             }
-            // The explicit refusal: an upload declaration the profile
-            // does not support must refuse with the family rule.
+            // The explicit refusal: a full minimum the partial profile
+            // cannot satisfy must refuse with the family rule. (The
+            // upload/download partial declarations are satisfied by the
+            // published http-json surface since the C-6 registry
+            // alignment.)
             let mut refused = serde_json::from_str::<serde_json::Value>(
                 crate::adapter_conformance::fixture::TRANSPORT_EVIDENCE,
             )
             .ok()?;
             refused["endpoints"][0]["capabilities"] = serde_json::json!([{
                 "capability": "upload",
-                "minimumSupport": "partial",
+                "minimumSupport": "full",
                 "detail": "multipart"
             }]);
             let refused = crate::transport_http::TransportDocument::from_value(&refused).ok()?;
