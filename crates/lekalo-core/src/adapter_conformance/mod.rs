@@ -544,7 +544,6 @@ impl Runner {
         }
     }
 
-
     /// The describe handshake and negotiation checks.
     fn describe_phase(&mut self) -> Result<(), ()> {
         let described = match self.client.describe(&self.command, &self.root) {

@@ -102,7 +102,7 @@ const storageCapabilities = {
     "JSON_EXTRACT family; no jsonb binary operator surface",
     "mysql-8.0-en",
   ),
-  "storage.returning": unsupported("mysql-8.0-en"),
+  "storage.returning": unsupported("mysql-8.0-en"), // mariadb arm flips this to partial (10.5+)
   "storage.timestamptz": unsupported("mysql-8.0-en"),
   "storage.advisory_locks": partial(
     "GET_LOCK named locks only",
@@ -138,7 +138,12 @@ const mariadbCapabilities = {
       id,
       id === "storage.sequences"
         ? full("mariadb-10.11-en")
-        : { ...record, evidence: evidence(record.evidence.kind, "mariadb-10.11-en") },
+        : id === "storage.returning"
+          ? partial(
+              "10.5+ statements; not every context returns rows",
+              "mariadb-10.11-en",
+            )
+          : { ...record, evidence: evidence(record.evidence.kind, "mariadb-10.11-en") },
     ]),
   ),
   ...Object.fromEntries(

@@ -85,8 +85,8 @@ fn the_monorepo_document_resolves_every_profile_deterministically() {
     let mysql = first.iter().find(|p| p.id == "node-mysql").expect("mysql");
     assert_eq!(
         mysql.capability("storage.check-constraints"),
-        Some(Support::Full),
-        "the mysql swap keeps the enforced-check capability"
+        Some(Support::Partial),
+        "the coarse component keeps the version-gated honest partial"
     );
     assert_eq!(
         mysql.capability("storage.fulltext-index"),

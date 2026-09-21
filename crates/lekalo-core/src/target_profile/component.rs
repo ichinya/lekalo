@@ -332,9 +332,12 @@ const DEFINITIONS: &[ComponentDefinition] = &[
         axis: Axis::Storage,
         definition_version: COMPONENTS_DEFINITION_VERSION,
         provides: &[
+            // Version-gated: enforced only from 10.2.1; older releases
+            // parse and ignore. The versioned engine profile beside the
+            // component carries the exact per-release evidence.
             ProvidedCapability {
                 id: "storage.check-constraints",
-                support: Support::Full,
+                support: Support::Partial,
             },
             ProvidedCapability {
                 id: "storage.generated-columns",
@@ -370,9 +373,12 @@ const DEFINITIONS: &[ComponentDefinition] = &[
         axis: Axis::Storage,
         definition_version: COMPONENTS_DEFINITION_VERSION,
         provides: &[
+            // Version-gated: enforced only from 8.0.16; older releases
+            // parse and ignore. The versioned engine profile beside the
+            // component carries the exact per-release evidence.
             ProvidedCapability {
                 id: "storage.check-constraints",
-                support: Support::Full,
+                support: Support::Partial,
             },
             ProvidedCapability {
                 id: "storage.fulltext-index",

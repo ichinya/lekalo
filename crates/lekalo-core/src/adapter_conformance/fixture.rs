@@ -146,10 +146,8 @@ fn walk(root: &Path, dir: &Path, out: &mut Observation) -> Result<(), std::io::E
 /// Decode the storage projection fixture through the production
 /// storage-projection module; a fixture that fails its own custody
 /// fails every evidence-keyed storage check (issue #117).
-pub fn storage_custody() -> Result<
-    crate::storage_projection::StorageProjectionAttachment,
-    CheckOutcome,
-> {
+pub fn storage_custody(
+) -> Result<crate::storage_projection::StorageProjectionAttachment, CheckOutcome> {
     let json: serde_json::Value = serde_json::from_str(STORAGE_PROJECTION).map_err(|_| {
         CheckOutcome::fail(
             CheckId::StorageProfileEvidence,
