@@ -34,7 +34,7 @@ use lekalo_core::versioning::{ContractVersion, VersionRegistry};
 const GOLDEN: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:152027472e864ab06955fc21402ee25ca191939dd328960fa4c4ce27691ed62d";
+    "sha256:020ea607d7b537c2e7a7c14c793386c77594908b7f993c3b6b76324cf64a0a43";
 const MULTI: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/multi-adapter.lock.json");
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/lockfile/project";
@@ -227,7 +227,7 @@ fn golden_contract_only_lock_parses_and_matches_its_independent_digest() {
     let lock = Lockfile::parse_canonical(GOLDEN).expect("golden lock parses");
     assert_eq!(lock.digest().as_str(), GOLDEN_DIGEST);
     assert_eq!(lock.resolver_version().as_str(), RESOLVER_VERSION);
-    assert_eq!(lock.core_version().as_str(), "0.3.2");
+    assert_eq!(lock.core_version().as_str(), "0.4.0");
     let protocol = lock.target_protocol().expect("published protocol");
     assert_eq!(protocol.version().as_str(), "0.3.2");
     // Round-trip: canonical bytes are byte-identical to the committed file.

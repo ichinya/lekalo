@@ -1,0 +1,6 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.task_id
+    kind: scalar
+    version: 1
+    base: uuid

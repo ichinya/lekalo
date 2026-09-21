@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/nfr-evidence.schema.v0.4.0.json",
+  "title": "Lekalo NFR Measured Evidence Set",
+  "description": "Closed independent volatile evidence contract for NFR constraints (issue #85): measured results pinned to the exact constraint id and revision they were produced against, carrying the exact environment identity of the run, valueState-typed measurements, and owner-held artifact digests. Separate from the constraint attachment so measurement churn never touches constraint declarations. Results from different environments are never merged; a measurement can never satisfy a scenario assertion and never enters the Model. The contract is independent of the product release, of the Model/IR/trace/graph contract versions, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "projectId",
+    "environment",
+    "results"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/nfr-evidence/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.nfr-evidence@0.4.0"
+    },
+    "projectId": {
+      "$ref": "#/$defs/projectId"
+    },
+    "environment": {
+      "$ref": "#/$defs/environment"
+    },
+    "results": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/result"
+      }
+    }
+  },
+  "$defs": {
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+      "not": {
+        "enum": ["lekalo", "dev"]
+      }
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+    },
+    "constraintId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z0-9_-]+)+$"
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)([-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$"
+    },
+    "namespacedId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+    },
+    "boundedToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$"
+    },
+    "decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "method": {
+      "enum": [
+        "benchmark",
+        "load-test",
+        "soak-test",
+        "slo-report",
+        "chaos-experiment",
+        "synthetic-probe",
+        "audit-document",
+        "declaration"
+      ]
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["envId", "profileRef", "adapterRef", "runtime", "platform"],
+      "properties": {
+        "envId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+        },
+        "profileRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "digest"],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/namespacedId"
+            },
+            "digest": {
+              "$ref": "#/$defs/sha256Digest"
+            }
+          }
+        },
+        "adapterRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "digest"],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/namespacedId"
+            },
+            "digest": {
+              "$ref": "#/$defs/sha256Digest"
+            }
+          }
+        },
+        "runtime": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "platform": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "labels": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/boundedToken"
+          }
+        }
+      }
+    },
+    "measuredValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "enum": ["known", "unknown", "unsupported", "withheld"]
+        },
+        "value": {
+          "$ref": "#/$defs/decimal"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "known"
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/decimal"
+              }
+            },
+            "required": ["value"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": ["unknown", "unsupported", "withheld"]
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "not": {
+              "required": ["value"]
+            }
+          }
+        }
+      ]
+    },
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "value", "unit"],
+      "properties": {
+        "metric": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "percentile": {
+          "enum": ["p50", "p95", "p99"]
+        },
+        "value": {
+          "$ref": "#/$defs/measuredValue"
+        },
+        "unit": {
+          "$ref": "#/$defs/boundedToken"
+        }
+      }
+    },
+    "scenarioRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenarioId", "scenarioVersion", "irDigest"],
+      "properties": {
+        "scenarioId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "scenarioVersion": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "irDigest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "constraintId",
+        "constraintRevision",
+        "method",
+        "measuredOn",
+        "sourceRevision",
+        "measurements",
+        "resultStatus",
+        "evidenceDigest"
+      ],
+      "properties": {
+        "constraintId": {
+          "$ref": "#/$defs/constraintId"
+        },
+        "constraintRevision": {
+          "$ref": "#/$defs/semver"
+        },
+        "method": {
+          "$ref": "#/$defs/method"
+        },
+        "measuredOn": {
+          "$ref": "#/$defs/date"
+        },
+        "sourceRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$"
+        },
+        "runRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "gateRef": {
+          "$ref": "#/$defs/namespacedId"
+        },
+        "scenarioRef": {
+          "$ref": "#/$defs/scenarioRef"
+        },
+        "measurements": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/measurement"
+          }
+        },
+        "resultStatus": {
+          "enum": ["pass", "fail", "skipped", "unknown"]
+        },
+        "evidenceDigest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "expiresOn": {
+          "$ref": "#/$defs/date"
+        }
+      }
+    }
+  }
+}

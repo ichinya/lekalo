@@ -274,7 +274,7 @@ for (const [id, code] of expectedExpressionRules) {
 // The registry chain is additive: the current embedded registry (the
 // version Rust compiles via include_bytes!) must still carry every
 // LEK-EXPR rule with the same code/lifecycle/severity/category.
-const currentRegistry = read("contracts/diagnostic-registry.v0.3.2.json");
+const currentRegistry = read("contracts/diagnostic-registry.v0.4.0.json");
 const currentEntries = new Map(currentRegistry.entries.map((entry) => [entry.id, entry]));
 for (const [id, code] of expectedExpressionRules) {
   const entry = currentEntries.get(id);
