@@ -250,7 +250,19 @@ pub fn plan(
             None,
         ));
     }
+    // The binding guarantee holds on every surface: the profile is
+    // authored against one storage projection — the base state this
+    // plan starts from — and a profile bound to an unrelated
+    // projection refuses, exactly as the DDL renderer, the drift
+    // comparison, and the input document refuse.
     let base_digest = digest_of(base)?;
+    if base_digest.as_str() != profile.projection_ref().as_str() {
+        return Err(diagnostic::rule_invalid(
+            MIGRATION_INVALID,
+            "projection-binding-mismatch",
+            None,
+        ));
+    }
     let candidate_digest = digest_of(candidate)?;
     let diff = compare(base, candidate)?;
     let mut diff_material = String::new();

@@ -392,7 +392,17 @@ fn a_new_table_plans_the_exact_ddl_create_statement() {
         });
     }
     let base = StorageProjectionAttachment::from_value(&base_value).expect("valid base");
-    let plan = lekalo_core::storage_engine::plan_migration(&profile, &base, &full, None)
+    // The plan binds the profile to the base state; rebind the profile
+    // to the mutated base the way an authoring step would.
+    let mut profile_value: serde_json::Value = serde_json::from_slice(PROFILE).expect("profile");
+    let base_bytes = base.canonical_bytes().expect("canonical");
+    profile_value["projectionRef"] = serde_json::Value::String(format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(base_bytes.as_bytes())
+    ));
+    let base_profile =
+        StorageEngineAttachment::from_value(&profile_value).expect("valid profile");
+    let plan = lekalo_core::storage_engine::plan_migration(&base_profile, &base, &full, None)
         .expect("plans");
     let create = plan
         .steps()
@@ -485,6 +495,31 @@ fn a_changed_check_predicate_plans_a_drop_and_readd_in_order() {
     // A gated plan stays gated: a constraint replacement is a
     // destructive rewrite of enforced schema.
     assert!(plan.gated());
+}
+
+#[test]
+fn a_profile_bound_to_a_foreign_projection_refuses_to_plan() {
+    // The binding guarantee holds on the migration surface too: the
+    // profile is authored against the base state, and a profile bound
+    // to an unrelated projection refuses with the typed detail.
+    let mut profile_value: serde_json::Value = serde_json::from_slice(PROFILE).expect("profile");
+    profile_value["projectionRef"] = serde_json::Value::String(
+        "sha256:0909090909090909090909090909090909090909090909090909090909090909".into(),
+    );
+    let foreign = StorageEngineAttachment::from_value(&profile_value).expect("valid profile");
+    let error = lekalo_core::storage_engine::plan_migration(
+        &foreign,
+        &migration_attachment(MIGRATION_BASE),
+        &migration_attachment(MIGRATION_ADDITIVE),
+        None,
+    )
+    .expect_err("unbound profile");
+    assert_eq!(
+        error.reason_ids().first().copied(),
+        Some("storage-engine.migration-invalid")
+    );
+    let rendered = serde_json::to_string(&error).expect("json");
+    assert!(rendered.contains("projection-binding-mismatch"));
 }
 
 #[test]
