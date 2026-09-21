@@ -27,6 +27,12 @@ const MYSQL_80: &[u8] =
 const MARIADB_1011: &[u8] =
     include_bytes!("../../../tests/fixtures/storage-engine-profile/valid/mariadb-10.11.json");
 
+/// The committed portability goldens: the engine-family divergences
+/// (mysql -> mariadb) and the named postgres divergences, byte-pinned.
+const PORTABILITY_MYSQL_TO_MARIADB: &str = include_str!(
+    "../../../tests/fixtures/storage-engine-profile/portability/mysql-to-mariadb.json"
+);
+
 /// The committed adversarial vectors: (name, fixture bytes, expectation
 /// bytes). The expectation records the exact registered rule and the
 /// fixed detail token of the single diagnostic.
@@ -286,6 +292,19 @@ fn profile_diff_classifies_capability_changes() {
         .paths()
         .iter()
         .any(|path| path.path() == "engine/identity" && path.class() == DiffClass::Breaking));
+}
+
+#[test]
+fn portability_golden_is_byte_pinned() {
+    let mysql = parse(MYSQL_80);
+    let mariadb = parse(MARIADB_1011);
+    let report = portability(&mysql, &mariadb);
+    let rendered = serde_json::to_string_pretty(&report).expect("json");
+    assert_eq!(
+        rendered.trim_end(),
+        PORTABILITY_MYSQL_TO_MARIADB.trim_end(),
+        "the committed portability golden must match the engine"
+    );
 }
 
 #[test]
