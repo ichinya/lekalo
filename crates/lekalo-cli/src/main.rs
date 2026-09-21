@@ -874,7 +874,9 @@ enum TransportCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
         /// Path to the bound #62 error registry the error map checks
-        /// against; without it those checks are skipped.
+        /// against; without it the embedded seed registry (the planner
+        /// seed) is bound, so any non-seed project with declared error
+        /// entries must pass --errors or refuses as unbound.
         #[arg(long, value_name = "FILE")]
         errors: Option<String>,
         /// Path to the bound #64 query-model attachment the query
