@@ -140,7 +140,7 @@ const mariadbCapabilities = {
         ? full("mariadb-10.11-en")
         : id === "storage.returning"
           ? partial(
-              "10.5+ statements; not every context returns rows",
+              "10.5 or newer statements; not every context returns rows",
               "mariadb-10.11-en",
             )
           : { ...record, evidence: evidence(record.evidence.kind, "mariadb-10.11-en") },
