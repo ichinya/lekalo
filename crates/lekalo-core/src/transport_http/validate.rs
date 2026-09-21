@@ -443,8 +443,10 @@ fn validate_endpoint(
     // the forced `required` state and the presence of the whole member
     // are enforced (an absent binding would hide the forced header
     // from every consumer projecting the route); `not-applicable`
-    // forbids a declared key. Queries never demand a key: a safe
-    // operation stays safe to retry without one.
+    // forbids a declared key. Queries are not required to carry the
+    // binding, but a declared binding is still checked: an endpoint
+    // may opt a safe operation out of the demand by omitting the
+    // member, never by declaring it dishonestly.
     let demand = demand_of(operation_binding, context);
     match (&binding.idempotency, demand) {
         (None, IdempotencyDemand::KeyRequired) if !is_query => {
