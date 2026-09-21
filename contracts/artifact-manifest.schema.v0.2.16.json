@@ -32,7 +32,7 @@
       "required": ["schema_version", "digest"],
       "properties": {
         "schema_version": {
-          "const": "lekalo/lock/v0.2.16"
+          "const": "lekalo/lock/v0.3.2"
         },
         "digest": {
           "$ref": "#/$defs/digest",

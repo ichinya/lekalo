@@ -7,7 +7,7 @@ use std::process::{Command, Output};
 
 const GOLDEN: &str = include_str!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:152027472e864ab06955fc21402ee25ca191939dd328960fa4c4ce27691ed62d";
+    "sha256:5b36eb772580d26bf99802345ad5a0103768435a249c4ffa723462cdda987c31";
 const REFERENCE_PROJECT: &str = "tests/fixtures/lockfile/project";
 
 fn lekalo_in(dir: &Path, args: &[&str]) -> Output {

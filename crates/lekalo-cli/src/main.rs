@@ -1418,10 +1418,7 @@ fn run_cli() -> ExitCode {
                 };
             }
             ErrorKind::DisplayVersion => DomainResult::version(VERSION),
-            _ => {
-                eprintln!("CLAP-ERR: {}", error);
-                DomainResult::usage_error()
-            }
+            _ => DomainResult::usage_error(),
         },
     };
     emit(result, json_requested)

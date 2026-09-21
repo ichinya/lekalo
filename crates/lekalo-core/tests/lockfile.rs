@@ -34,7 +34,7 @@ use lekalo_core::versioning::{ContractVersion, VersionRegistry};
 const GOLDEN: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:152027472e864ab06955fc21402ee25ca191939dd328960fa4c4ce27691ed62d";
+    "sha256:5b36eb772580d26bf99802345ad5a0103768435a249c4ffa723462cdda987c31";
 const MULTI: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/multi-adapter.lock.json");
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/lockfile/project";
@@ -266,19 +266,19 @@ fn wire_refusals_carry_the_closed_reason_codes() {
         (
             "duplicate JSON key",
             payload.replace(
-                "\"schema_version\":\"lekalo/lock/v0.2.16\"",
-                "\"schema_version\":\"lekalo/lock/v0.2.16\",\"schema_version\":\"lekalo/lock/v0.2.16\"",
+                "\"schema_version\":\"lekalo/lock/v0.3.2\"",
+                "\"schema_version\":\"lekalo/lock/v0.3.2\",\"schema_version\":\"lekalo/lock/v0.3.2\"",
             ),
             "lock.noncanonical",
         ),
         (
             "future schema discriminator",
-            tampered("lekalo/lock/v0.2.16", "lekalo/lock/v2.0.0"),
+            tampered("lekalo/lock/v0.3.2", "lekalo/lock/v2.0.0"),
             "lock.unsupported-schema-version",
         ),
         (
             "unknown schema spelling",
-            tampered("lekalo/lock/v0.2.16", "lekalo/lock/1"),
+            tampered("lekalo/lock/v0.3.2", "lekalo/lock/1"),
             "lock.schema-invalid",
         ),
         (
@@ -330,7 +330,7 @@ fn wire_refusals_carry_the_closed_reason_codes() {
     }
     // Exit classes: unsupported schema is 5, schema-invalid is 1.
     let future =
-        Lockfile::parse_canonical(tampered("lekalo/lock/v0.2.16", "lekalo/lock/v2.0.0").as_bytes())
+        Lockfile::parse_canonical(tampered("lekalo/lock/v0.3.2", "lekalo/lock/v2.0.0").as_bytes())
             .map(|_: Lockfile| ())
             .expect_err("future");
     assert_eq!(future.exit_code(), 5);
