@@ -170,6 +170,7 @@ fn doctor_reports_the_fresh_fixture_without_mutating_it() {
             "bindings.freshness",
             "cache.health",
             "capabilities.profiles",
+            "classification.attachment",
             "fs.confinement",
             "integrations.hlv",
             "lock.freshness",
