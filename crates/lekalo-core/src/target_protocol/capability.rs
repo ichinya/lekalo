@@ -39,6 +39,12 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         semantics: "Emits an OpenAPI document from the compiled project IR. `full` covers every declared operation and type; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
+        id: "generate.storage-ddl",
+        definition_version: "0.4.0",
+        domain: "generate",
+        semantics: "Emits-or-applies the core-rendered deterministic storage DDL and migration plan documents under the `generate` operation. `full` applies every core-proposed, digest-addressed document the adapter accepted (the plan's planId stays the apply authority); `partial` covers a declared subset; `unsupported` never applies; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
         id: "generate.ui",
         definition_version: "0.3.1",
         domain: "generate",
@@ -99,6 +105,7 @@ mod tests {
             ids,
             vec![
                 "generate.openapi",
+                "generate.storage-ddl",
                 "generate.ui",
                 "generate.zod",
                 "scan.storage-schema",

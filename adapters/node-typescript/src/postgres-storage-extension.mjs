@@ -1,16 +1,18 @@
 /**
  * The PostgreSQL storage extension (issue #69, plan S6 spike).
  *
- * One launch-seam extension descriptor that declares the
+ * One standalone launch-seam extension descriptor that declares the
  * `generate.storage-ddl` capability on the `generate` operation: the
  * adapter can apply a core-proposed, digest-addressed storage DDL or
  * migration plan document. The descriptor carries no rendering logic —
  * core renders the deterministic plan, the adapter applies it under
  * its declared capability, and the plan's `planId` stays the apply
- * authority (the native-gate custody pattern). The spike wires the
- * declaration into the kernel's validated extension registry so the
- * describe handshake can advertise it; a full apply pipeline is the
- * coordinator-owned integration step.
+ * authority (the native-gate custody pattern). This spike is
+ * standalone by design: nothing in the kernel imports or registers it
+ * yet, and wiring the registration (plus the apply pipeline) is the
+ * coordinator-owned integration step. The descriptor validates
+ * against the kernel's `validateExtensionDescriptor` vocabulary today
+ * (pinned by the kernel suite).
  */
 
 /** The one capability this extension declares. */
