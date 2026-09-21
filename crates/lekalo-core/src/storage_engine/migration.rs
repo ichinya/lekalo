@@ -862,6 +862,10 @@ fn plan_checks(
         }
     }
     for (entity, table) in &base_tables {
+        // A table being dropped carries its constraints with it.
+        if !candidate_tables.contains_key(entity) {
+            continue;
+        }
         for check in table.checks() {
             let removed = !candidate_tables
                 .get(entity)
@@ -1121,6 +1125,11 @@ fn plan_foreign_keys(
     }
     for table in base.tables() {
         let candidate_table = candidate.table(table.entity());
+        // A table being dropped carries its constraints with it: no
+        // member drops, the DROP TABLE owns them.
+        if candidate_table.is_none() {
+            continue;
+        }
         for foreign_key in table.foreign_keys() {
             let removed = !candidate_table
                 .map(|candidate| {
@@ -1225,6 +1234,10 @@ fn plan_indexes(
     }
     for table in base.tables() {
         let candidate_table = candidate.table(table.entity());
+        // A table being dropped carries its indexes with it.
+        if candidate_table.is_none() {
+            continue;
+        }
         for index in table.indexes() {
             let removed = !candidate_table
                 .map(|candidate| candidate.indexes().contains(index))
@@ -1266,8 +1279,63 @@ fn plan_indexes(
 }
 
 /// Move every drop behind the constructive steps; within the drops,
-/// columns precede tables. Stable for identical inputs.
+/// constraint/check/index/column drops precede the table drops —
+/// PostgreSQL refuses `ALTER TABLE t DROP ...` after `DROP TABLE t`,
+/// and refuses `DROP TABLE` while dependents still reference it.
+/// Stable for identical inputs.
 fn order_drops_last(steps: &mut [Step]) {
-    let is_drop = |step: &Step| step.kind.starts_with("drop_");
-    steps.sort_by_key(|step| if is_drop(step) { 1 } else { 0 });
+    let rank = |step: &Step| {
+        if !step.kind.starts_with("drop_") {
+            0
+        } else if step.kind == "drop_table" {
+            2
+        } else {
+            1
+        }
+    };
+    steps.sort_by_key(|step| rank(step));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn step(kind: &'static str) -> Step {
+        Step {
+            id: 0,
+            kind,
+            statement: format!("{kind};"),
+            risk: DataRisk::Destructive,
+            requires: Vec::new(),
+            explain: None,
+        }
+    }
+
+    #[test]
+    fn drop_table_sorts_behind_its_member_drops() {
+        // PostgreSQL refuses ALTER TABLE t DROP ... after DROP TABLE t,
+        // so the ordering pass ranks member drops before table drops
+        // (stable within each rank).
+        let mut steps = vec![
+            step("create_extension"),
+            step("drop_table"),
+            step("drop_index"),
+            step("drop_check"),
+            step("drop_constraint"),
+            step("drop_column"),
+        ];
+        order_drops_last(&mut steps);
+        let kinds: Vec<&str> = steps.iter().map(|step| step.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                "create_extension",
+                "drop_index",
+                "drop_check",
+                "drop_constraint",
+                "drop_column",
+                "drop_table",
+            ]
+        );
+    }
 }
