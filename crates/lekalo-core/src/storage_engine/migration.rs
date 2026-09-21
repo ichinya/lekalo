@@ -288,8 +288,10 @@ pub fn plan(
             );
         }
     }
-    let table_ids = plan_tables(&mut steps, &derived_base, &derived_candidate, profile)?;
-    // Foreign keys and checks after their tables.
+    let table_ids = plan_tables(&mut steps, &derived_base, &derived_candidate, profile, candidate)?;
+    // Foreign keys and checks after their tables. Checks skip the new
+    // tables: their create_table statements already carry every
+    // declared and derived constraint inline.
     plan_foreign_keys(&mut steps, &derived_base, &derived_candidate, &table_ids)?;
     plan_checks(&mut steps, base, candidate)?;
     plan_enum_checks(&mut steps, profile, base, candidate)?;
@@ -374,6 +376,7 @@ fn plan_tables(
     base: &DerivedProjection,
     candidate: &DerivedProjection,
     profile: &StorageEngineAttachment,
+    candidate_attachment: &StorageProjectionAttachment,
 ) -> Result<std::collections::BTreeMap<String, usize>, DiagnosticSet> {
     let mut table_ids = std::collections::BTreeMap::new();
     // Sequences exist before the tables that use them.
@@ -405,10 +408,13 @@ fn plan_tables(
             }
         }
     }
-    // New tables: create with their columns, keys, and defaults.
+    // New tables: create through the exact DDL renderer, so the plan
+    // and the DDL document describe one schema — identity columns,
+    // defaults, declared CHECK constraints, and the derived enum
+    // member CHECKs ride the create statement identically.
     for table in candidate.tables() {
         if base.table(table.entity()).is_none() {
-            let create = create_table_statement(profile, table)?;
+            let create = super::postgres::ddl::create_table(profile, candidate_attachment, table)?;
             push_step(
                 steps,
                 "create_table",
@@ -733,49 +739,6 @@ fn render_literal(value: &Literal) -> String {
     }
 }
 
-/// Render one CREATE TABLE statement for a new table.
-fn create_table_statement(
-    _profile: &StorageEngineAttachment,
-    table: &crate::storage_projection::derivation::DerivedTable,
-) -> Result<String, DiagnosticSet> {
-    let mut lines: Vec<String> = Vec::new();
-    for column in table.columns() {
-        let mut line = format!("{} {}", quote(column.name()), column.storage_type());
-        if column.generated_kind() == Some(GeneratedKind::Sequence) {
-            // A generated sequence column draws from its own owned
-            // sequence, exactly as the DDL renderer emits it.
-            let sequence = StorageName::parse(&format!(
-                "seq_{}_{}",
-                table.table(),
-                column.name()
-            ))
-            .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "sequence-name", None))?;
-            line.push_str(&format!(" DEFAULT nextval('{}')", sequence));
-        } else if let Some(default) = column.default() {
-            line.push_str(&format!(
-                " DEFAULT {}",
-                render_default(default, table.table())?
-            ));
-        }
-        if !column.nullable() {
-            line.push_str(" NOT NULL");
-        }
-        lines.push(line);
-    }
-    let primary_key = table
-        .primary_key()
-        .iter()
-        .map(quote)
-        .collect::<Vec<String>>()
-        .join(", ");
-    lines.push(format!("PRIMARY KEY ({primary_key})"));
-    Ok(format!(
-        "CREATE TABLE {} ({});",
-        quote(table.table()),
-        lines.join(", ")
-    ))
-}
-
 /// The CHECK-constraint plan from the declared storage tables.
 fn plan_checks(
     steps: &mut Vec<Step>,
@@ -798,6 +761,11 @@ fn plan_checks(
     let base_tables = declared(base).unwrap_or_default();
     let candidate_tables = declared(candidate).unwrap_or_default();
     for (entity, table) in &candidate_tables {
+        // A new table's constraints ride its create_table statement
+        // verbatim; planning them again would duplicate the DDL.
+        if !base_tables.contains_key(entity) {
+            continue;
+        }
         for check in table.checks() {
             let existed = base_tables
                 .get(entity)
@@ -910,7 +878,13 @@ fn plan_enum_checks(
     let base_checks = expected(base)?;
     let candidate_checks = expected(candidate)?;
     let candidate_tables = declared_tables(candidate);
+    let base_declared = declared_tables(base);
     for (entity, name, predicate) in &candidate_checks {
+        // A new table's enum CHECKs ride its create_table statement;
+        // planning them again would duplicate the DDL.
+        if !base_declared.contains_key(entity) {
+            continue;
+        }
         let existed = base_checks
             .iter()
             .any(|(base_entity, base_name, base_predicate)| {

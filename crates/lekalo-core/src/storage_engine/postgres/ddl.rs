@@ -394,8 +394,9 @@ fn referenced_join_target(
 /// migration planner and the drift comparison reuse); `native_enum`
 /// refuses explicitly — the 0.4.0 renderer creates no enum types, and
 /// silently yielding a varchar would violate the nothing-is-invented
-/// boundary.
-fn create_table(
+/// boundary. The migration planner reuses this renderer for its
+/// create_table steps so both emitters describe one schema.
+pub(crate) fn create_table(
     profile: &StorageEngineAttachment,
     attachment: &StorageProjectionAttachment,
     table: &crate::storage_projection::derivation::DerivedTable,

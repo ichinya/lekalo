@@ -270,6 +270,68 @@ fn a_not_null_tightening_without_default_requires_backfill() {
 }
 
 #[test]
+fn a_new_table_plans_the_exact_ddl_create_statement() {
+    // The migration create_table step reuses the DDL renderer: the
+    // plan and the DDL document describe one schema. Pin it by
+    // planning the committed projection against a base missing one
+    // table: the create statement must equal the DDL renderer's
+    // statement for the same table (identity, declared CHECK, and all
+    // column facts included).
+    let profile = profile();
+    let full = projection();
+    let mut base_value: serde_json::Value =
+        serde_json::from_slice(PROJECTION).expect("projection json");
+    // Remove the standalone roster table from every projection (its
+    // entity leaves with it), leaving it for the candidate to create.
+    if let Some(projections) = base_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+    {
+        for projection in projections.iter_mut() {
+            if let Some(tables) = projection.get_mut("tables").and_then(|t| t.as_array_mut()) {
+                tables.retain(|table| {
+                    table.get("table").and_then(serde_json::Value::as_str) != Some("task_roster")
+                });
+            }
+        }
+    }
+    if let Some(entities) = base_value
+        .get_mut("entities")
+        .and_then(|entities| entities.as_array_mut())
+    {
+        entities.retain(|entity| {
+            entity.get("entityKey").and_then(serde_json::Value::as_str) != Some("task_roster")
+        });
+    }
+    let base = StorageProjectionAttachment::from_value(&base_value).expect("valid base");
+    let plan = lekalo_core::storage_engine::plan_migration(&profile, &base, &full, None)
+        .expect("plans");
+    let create = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "create_table")
+        .expect("the missing table is created");
+    let document = postgres::ddl::render(&profile, &full).expect("renders");
+    let ddl_create = document
+        .statements()
+        .iter()
+        .map(|statement| statement.statement())
+        .find(|statement| statement.starts_with("CREATE TABLE \"task_roster\""))
+        .expect("the DDL creates the same table");
+    assert_eq!(
+        create.statement(),
+        ddl_create,
+        "the planned create equals the DDL statement"
+    );
+    // No add_check steps follow for the new table: the constraints
+    // rode the create statement.
+    assert!(!plan
+        .steps()
+        .iter()
+        .any(|step| step.kind() == "add_check"));
+}
+
+#[test]
 fn a_destructive_plan_is_gated_and_blocked_until_the_plan_id_is_named() {
     let base = migration_attachment(MIGRATION_BASE);
     let candidate = migration_attachment(MIGRATION_DESTRUCTIVE);
