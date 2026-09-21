@@ -264,9 +264,97 @@ fn a_not_null_tightening_without_default_requires_backfill() {
         ),
         "the tightening carries the backfill risk visibly"
     );
+    // The tightening plans its remediation: a backfill UPDATE with the
+    // type's zero value precedes SET NOT NULL — the executable order
+    // (SET NOT NULL alone fails on any existing NULL row).
+    let set_null = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "set_column_null")
+        .expect("the tightening step");
+    let backfill = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "backfill")
+        .expect("the tightening plans its backfill");
+    assert_eq!(backfill.id(), set_null.requires()[0], "SET NOT NULL follows the backfill");
+    assert!(
+        backfill.statement().contains("= 0 WHERE"),
+        "the backfill writes the type's zero value: {}",
+        backfill.statement()
+    );
     // The plan is not gated: backfill is a declared obligation, not a
     // destructive rewrite.
     assert!(!plan.gated());
+}
+
+#[test]
+fn an_added_not_null_column_plans_nullable_backfill_then_the_constraint() {
+    // The base lacks the added column and the candidate adds it NOT
+    // NULL without a default: PostgreSQL refuses the inline form on a
+    // non-empty table, so the plan must add nullable first, backfill
+    // the zero value, and only then hold the constraint.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_ADDITIVE).expect("candidate json");
+    let fields = candidate_value
+        .get_mut("entities")
+        .and_then(|entities| entities.as_array_mut())
+        .and_then(|entities| {
+            entities.iter_mut().find(|entity| {
+                entity.get("entityKey").and_then(serde_json::Value::as_str) == Some("task")
+            })
+        })
+        .and_then(|entity| entity.get_mut("fields"))
+        .and_then(|fields| fields.as_array_mut())
+        .expect("entity fields");
+    fields.push(serde_json::json!({
+        "field": "attempt_count",
+        "required": true,
+        "type": {"name": "integer"},
+        "visibility": "internal"
+    }));
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        None,
+    )
+    .expect("plans");
+    let add = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "add_column" && step.statement().contains("attempt_count"))
+        .expect("the added column");
+    assert!(
+        !add.statement().contains("NOT NULL"),
+        "the add is nullable: {}",
+        add.statement()
+    );
+    let backfill = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "backfill" && step.statement().contains("attempt_count"))
+        .expect("the backfill");
+    let set_null = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "set_column_null" && step.statement().contains("attempt_count")
+        })
+        .expect("the constraint");
+    assert_eq!(add.id() + 1, backfill.id(), "the backfill follows the add");
+    assert_eq!(
+        backfill.id(),
+        set_null.requires()[0],
+        "SET NOT NULL follows the backfill"
+    );
+    assert!(
+        backfill.statement().contains("= 0 WHERE"),
+        "the integer zero backfills: {}",
+        backfill.statement()
+    );
 }
 
 #[test]

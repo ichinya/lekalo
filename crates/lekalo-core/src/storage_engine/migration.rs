@@ -527,37 +527,53 @@ fn plan_tables(
                         None,
                     ));
                 }
-                // An added column: NOT NULL without a declared default
-                // needs a backfill before it can hold.
-                let tightening = !column.nullable();
-                let mut requires = Vec::new();
+                let mut add_requires = Vec::new();
                 if let Some(create_id) = table_ids.get(table.table().as_str()) {
                     if *create_id < steps.len() {
-                        requires.push(create_id + 1);
+                        add_requires.push(create_id + 1);
                     }
                 }
-                push_step(
-                    steps,
-                    "add_column",
-                    format!(
-                        "ALTER TABLE {} ADD COLUMN {} {}{};",
-                        quote(table.table()),
-                        quote(column.name()),
-                        column.storage_type(),
-                        if tightening { " NOT NULL" } else { "" }
-                    ),
-                    if tightening {
-                        DataRisk::BackfillRequired
-                    } else {
-                        DataRisk::None
-                    },
-                    requires,
-                    None,
-                );
-                if tightening {
-                    // The backfill uses only the column's declared
-                    // default zero value; arbitrary row text is
-                    // unrepresentable.
+                if !column.nullable() && column.default().is_some() {
+                    // The declared default fills existing rows at ADD
+                    // time (the fast default), so one step is
+                    // executable and no backfill is owed.
+                    let default = column.default().expect("declared default");
+                    push_step(
+                        steps,
+                        "add_column",
+                        format!(
+                            "ALTER TABLE {} ADD COLUMN {} {} DEFAULT {} NOT NULL;",
+                            quote(table.table()),
+                            quote(column.name()),
+                            column.storage_type(),
+                            render_default(default, table.table())?
+                        ),
+                        DataRisk::None,
+                        add_requires,
+                        None,
+                    );
+                } else if !column.nullable() {
+                    // PostgreSQL refuses ADD COLUMN ... NOT NULL on a
+                    // non-empty table, so the executable order is:
+                    // add nullable, backfill the zero value, then hold
+                    // the constraint. The backfill literal is the
+                    // column's declared default or its type's zero
+                    // value; types with no zero value refuse instead
+                    // of backfilling NULL.
+                    let add_id = steps.len();
+                    push_step(
+                        steps,
+                        "add_column",
+                        format!(
+                            "ALTER TABLE {} ADD COLUMN {} {};",
+                            quote(table.table()),
+                            quote(column.name()),
+                            column.storage_type()
+                        ),
+                        DataRisk::None,
+                        add_requires,
+                        None,
+                    );
                     push_step(
                         steps,
                         "backfill",
@@ -569,7 +585,33 @@ fn plan_tables(
                             quote(column.name())
                         ),
                         DataRisk::BackfillRequired,
-                        Vec::new(),
+                        vec![add_id + 1],
+                        None,
+                    );
+                    push_step(
+                        steps,
+                        "set_column_null",
+                        format!(
+                            "ALTER TABLE {} ALTER COLUMN {} SET NOT NULL;",
+                            quote(table.table()),
+                            quote(column.name())
+                        ),
+                        DataRisk::BackfillRequired,
+                        vec![add_id + 2],
+                        None,
+                    );
+                } else {
+                    push_step(
+                        steps,
+                        "add_column",
+                        format!(
+                            "ALTER TABLE {} ADD COLUMN {} {};",
+                            quote(table.table()),
+                            quote(column.name()),
+                            column.storage_type()
+                        ),
+                        DataRisk::None,
+                        add_requires,
                         None,
                     );
                 }
@@ -591,6 +633,26 @@ fn plan_tables(
                 );
             }
             if base_column.nullable() && !column.nullable() {
+                // A declared default helps future inserts only; SET
+                // NOT NULL still fails on any existing NULL row. The
+                // executable order is backfill first, then the
+                // constraint; a type with no zero value refuses
+                // instead of planning a NULL backfill.
+                let backfill_id = steps.len();
+                push_step(
+                    steps,
+                    "backfill",
+                    format!(
+                        "UPDATE {} SET {} = {} WHERE {} IS NULL;",
+                        quote(table.table()),
+                        quote(column.name()),
+                        backfill_literal(column, table.table())?,
+                        quote(column.name())
+                    ),
+                    DataRisk::BackfillRequired,
+                    Vec::new(),
+                    None,
+                );
                 push_step(
                     steps,
                     "set_column_null",
@@ -599,12 +661,8 @@ fn plan_tables(
                         quote(table.table()),
                         quote(column.name())
                     ),
-                    if column.default().is_some() {
-                        DataRisk::None
-                    } else {
-                        DataRisk::BackfillRequired
-                    },
-                    Vec::new(),
+                    DataRisk::BackfillRequired,
+                    vec![backfill_id + 1],
                     None,
                 );
             } else if !base_column.nullable() && column.nullable() {

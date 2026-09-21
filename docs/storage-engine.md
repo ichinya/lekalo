@@ -111,9 +111,16 @@ each with its closed `DataRisk`. A plan with a destructive step is
 `gated`; its status stays `blocked` until the caller names the exact
 `planId` (`lekalo storage migrate-plan … --confirm sha256:…`), the
 same custody as `update --apply`. A wrong digest refuses with
-`LEK-SEN-009`. A NOT NULL tightening without a declared default
-carries `backfill_required` visibly; the `backfill` step uses only
-the column's declared default zero value.
+`LEK-SEN-009`. A NOT NULL change carries `backfill_required` visibly
+and plans the executable order: an added NOT NULL column without a
+ declared default is added nullable, backfilled, and only then held by
+`SET NOT NULL` (an inline `ADD COLUMN ... NOT NULL` fails on any
+non-empty table); a tightened existing column backfills before
+`SET NOT NULL`; a column with a declared default adds in one step (the
+fast default fills existing rows). The `backfill` step writes only the
+column's declared default or its storage type's zero value — a type
+with no zero value refuses (`render-unsupported`), never backfilling
+NULL.
 
 ## CLI
 
