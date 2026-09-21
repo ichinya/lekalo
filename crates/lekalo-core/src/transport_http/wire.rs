@@ -782,8 +782,9 @@ fn params(values: &[Json]) -> Result<Vec<ParamBinding>, DiagnosticSet> {
             explode,
         });
     }
-    // One wire name may arrive in exactly one location; a duplicate
-    // name within one location is ambiguous decoding.
+    // One wire name may arrive in one location only once; a duplicate
+    // (name, location) pair is ambiguous decoding — the same name in
+    // different locations is fine (e.g. `id` in path + `id` in query).
     let mut seen: Vec<(ParamLocation, String)> = params
         .iter()
         .map(|param| (param.location, param.name.as_str().to_owned()))
