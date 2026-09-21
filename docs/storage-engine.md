@@ -147,3 +147,20 @@ checks, so #117 (MySQL) reuses the whole catalog unchanged — exactly
 the shared seams the plan designates: family shells, module layout,
 drift, plan gate, battery, CLI group, `LEK-SEN` diagnostics, and the
 lifecycle/tenancy member shapes.
+
+## Golden provenance
+
+The committed storage-engine goldens are produced by hand from the
+production binary and guarded by exactness assertions, not by a
+committed generator script (plan §3.7's generator was not delivered;
+this is the documented provenance in its place). The DDL golden
+(`tests/fixtures/storage-engine/derived/postgres-ddl.json`) is the
+byte-exact `lekalo storage ddl --json` output over the committed
+valid pair; the runtime goldens are the byte-exact
+`lekalo storage input --json` output over the same pair (one document,
+three runtimes); the introspection goldens are hand-authored evidence
+observing the full declared schema, guarded by the zero-drift
+assertion and the canonical-form contract gate. When an engine-profile
+change alters a renderer, regenerate by re-running the producing CLI
+command and re-committing the bytes — the byte-equality tests make any
+drift loud.

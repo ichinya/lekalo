@@ -12,6 +12,9 @@ use lekalo_core::storage_projection::{project, Namespace, StorageProjectionAttac
 
 const PROFILE: &[u8] =
     include_bytes!("../../../tests/fixtures/storage-engine/valid/planner-postgres.json");
+const PROFILE_FULL: &[u8] = include_bytes!(
+    "../../../tests/fixtures/storage-engine/valid/planner-postgres-full.json"
+);
 const PROJECTION: &[u8] =
     include_bytes!("../../../tests/fixtures/storage-projection/valid/planner-storage.json");
 const OBSERVED: &[u8] =
@@ -21,6 +24,11 @@ const OBSERVED_DRIFTED: &[u8] =
 
 fn profile() -> StorageEngineAttachment {
     let value: serde_json::Value = serde_json::from_slice(PROFILE).expect("profile json");
+    StorageEngineAttachment::from_value(&value).expect("valid profile")
+}
+
+fn full_profile() -> StorageEngineAttachment {
+    let value: serde_json::Value = serde_json::from_slice(PROFILE_FULL).expect("profile json");
     StorageEngineAttachment::from_value(&value).expect("valid profile")
 }
 
@@ -525,6 +533,37 @@ fn a_profile_bound_to_a_foreign_projection_refuses_to_plan() {
     );
     let rendered = serde_json::to_string(&error).expect("json");
     assert!(rendered.contains("projection-binding-mismatch"));
+}
+
+#[test]
+fn the_full_declaration_battery_passes_without_skips() {
+    // The committed full-coverage profile declares concurrency,
+    // introspection, and the test lifecycle, so the checks the base
+    // profile skips must pass for real: the battery proves the
+    // positive answers, not only the skips.
+    let clean = evidence(OBSERVED);
+    let drifted = evidence(OBSERVED_DRIFTED);
+    let inputs = lekalo_core::storage_engine::conformance::BatteryInputs {
+        profile: &full_profile(),
+        projection: &projection(),
+        evidence: Some(&clean),
+        drifted: Some(&drifted),
+        input: None,
+        runtime_goldens: &[],
+    };
+    let battery = lekalo_core::storage_engine::conformance::run(&inputs);
+    let outcome = |id: &str| {
+        battery
+            .checks()
+            .iter()
+            .find(|check| check.id() == id)
+            .map(|check| (check.outcome().key(), check.outcome().reason()))
+            .unwrap_or_else(|| panic!("check {id} absent"))
+    };
+    assert_eq!(outcome("cas-column-declared"), ("pass", None));
+    assert_eq!(outcome("lifecycle.isolation-declared"), ("pass", None));
+    assert_eq!(outcome("lifecycle.no-production"), ("pass", None));
+    assert!(battery.ok());
 }
 
 #[test]
