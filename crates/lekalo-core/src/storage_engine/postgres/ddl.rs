@@ -199,28 +199,7 @@ pub fn render(
     // Join tables materialize their many-to-many relations with the
     // same column rendering; a unique pair is the primary key.
     for join in projection.joins() {
-        let mut lines: Vec<String> = Vec::new();
-        for column in join.columns() {
-            lines.push(format!(
-                "{} {} NOT NULL",
-                quote(column.name()),
-                column.storage_type()
-            ));
-        }
-        if join.unique_pair() {
-            let pair = join
-                .columns()
-                .iter()
-                .map(|column| quote(column.name()))
-                .collect::<Vec<String>>()
-                .join(", ");
-            lines.push(format!("PRIMARY KEY ({pair})"));
-        }
-        statements.push(format!(
-            "CREATE TABLE {} ({});",
-            quote(join.table()),
-            lines.join(", ")
-        ));
+        statements.push(create_join_table(join));
     }
     // Foreign keys, after their referenced tables.
     for table in projection.tables() {
@@ -372,7 +351,7 @@ pub fn render(
 /// Resolve the referenced table name and primary key of one join
 /// side: the join's relation names its owner and target entities, and
 /// their derived tables carry the deterministic targets.
-fn referenced_join_target(
+pub(crate) fn referenced_join_target(
     attachment: &StorageProjectionAttachment,
     projection: &crate::storage_projection::derivation::DerivedProjection,
     join: &crate::storage_projection::derivation::DerivedJoin,
@@ -389,6 +368,36 @@ fn referenced_join_target(
     };
     let table = projection.table(entity)?;
     Some((table.table().clone(), table.primary_key().first()?.clone()))
+}
+
+/// Render one join-table CREATE TABLE statement — the exact statement
+/// both the DDL document and the migration planner emit, so the two
+/// emitters describe one schema.
+pub(crate) fn create_join_table(
+    join: &crate::storage_projection::derivation::DerivedJoin,
+) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    for column in join.columns() {
+        lines.push(format!(
+            "{} {} NOT NULL",
+            quote(column.name()),
+            column.storage_type()
+        ));
+    }
+    if join.unique_pair() {
+        let pair = join
+            .columns()
+            .iter()
+            .map(|column| quote(column.name()))
+            .collect::<Vec<String>>()
+            .join(", ");
+        lines.push(format!("PRIMARY KEY ({pair})"));
+    }
+    format!(
+        "CREATE TABLE {} ({});",
+        quote(join.table()),
+        lines.join(", ")
+    )
 }
 
 /// Render one CREATE TABLE statement. The enum policy is observable:

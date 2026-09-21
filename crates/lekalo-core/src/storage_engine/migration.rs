@@ -393,7 +393,8 @@ fn push_step(
     });
 }
 
-/// The table plan: creates, drops, and per-column changes. Returns the
+/// The table plan: creates, drops, and per-column changes for the
+/// entity tables and the materialized join tables alike. Returns the
 /// step index (0-based, pre-renumber) of each surviving table's create
 /// or existing declaration, keyed by table name, for FK/index
 /// dependency wiring.
@@ -784,7 +785,146 @@ fn plan_tables(
             );
         }
     }
+    // Join tables: creates and drops, mirroring the DDL renderer's
+    // join block. The join table's shape is fully derived from its
+    // relation and the two endpoint primary keys, so any change to
+    // either endpoint's table or key rematerializes the join — drop,
+    // then create under the same deterministic name. Join-table FKs
+    // ride the join create in the DDL renderer's ordering (the FK pass
+    // covers only entity tables), so the create carries the whole
+    // materialized relation exactly as the document renders it.
+    for join in candidate.joins() {
+        let base_join = base
+            .joins()
+            .iter()
+            .find(|base| base.relation() == join.relation());
+        let unchanged = base_join.is_some_and(|base| {
+            base.table() == join.table()
+                && base.columns() == join.columns()
+                && base.unique_pair() == join.unique_pair()
+                && base.on_owner_delete() == join.on_owner_delete()
+                && base.on_target_delete() == join.on_target_delete()
+        });
+        if unchanged {
+            table_ids
+                .entry(join.table().as_str().to_owned())
+                .or_insert(usize::MAX);
+            continue;
+        }
+        if let Some(existing) = base_join {
+            let renamed = existing.table() != join.table();
+            let rematerialized = !renamed
+                && (existing.columns() != join.columns()
+                    || existing.unique_pair() != join.unique_pair()
+                    || existing.on_owner_delete() != join.on_owner_delete()
+                    || existing.on_target_delete() != join.on_target_delete());
+            if renamed {
+                // A rename is drop + create: the declared risk of a
+                // table rename is destructive, never guessed history.
+                push_step(
+                    steps,
+                    "rename_table",
+                    format!(
+                        "ALTER TABLE {} RENAME TO {};",
+                        quote(existing.table()),
+                        quote(join.table())
+                    ),
+                    DataRisk::Destructive,
+                    Vec::new(),
+                    None,
+                );
+            } else if rematerialized {
+                push_step(
+                    steps,
+                    "drop_table",
+                    format!("DROP TABLE {};", quote(existing.table())),
+                    DataRisk::Destructive,
+                    Vec::new(),
+                    None,
+                );
+            }
+        }
+        // The FK statements of the DDL renderer's join block are
+        // joined facts: they ride the join create step, not separate
+        // add_foreign_key steps.
+        let mut statements = create_join_and_fks(candidate_attachment, candidate, join)?;
+        let create = statements.remove(0);
+        push_step(
+            steps,
+            "create_table",
+            create,
+            DataRisk::None,
+            Vec::new(),
+            None,
+        );
+        table_ids.insert(join.table().as_str().to_owned(), steps.len() - 1);
+        for fk in statements {
+            push_step(
+                steps,
+                "add_foreign_key",
+                fk,
+                DataRisk::None,
+                Vec::new(),
+                None,
+            );
+        }
+    }
+    for join in base.joins() {
+        if !candidate
+            .joins()
+            .iter()
+            .any(|candidate| candidate.relation() == join.relation())
+        {
+            push_step(
+                steps,
+                "drop_table",
+                format!("DROP TABLE {};", quote(join.table())),
+                DataRisk::Destructive,
+                Vec::new(),
+                None,
+            );
+        }
+    }
     Ok(table_ids)
+}
+
+/// Render one join table's create plus its two join foreign keys —
+/// the exact statements the DDL renderer emits for the same relation,
+/// so a planned join create and the DDL document agree byte for byte.
+fn create_join_and_fks(
+    attachment: &StorageProjectionAttachment,
+    projection: &DerivedProjection,
+    join: &crate::storage_projection::derivation::DerivedJoin,
+) -> Result<Vec<String>, DiagnosticSet> {
+    let mut statements = vec![super::postgres::ddl::create_join_table(join)];
+    for (index, action) in [
+        (0usize, join.on_owner_delete()),
+        (1usize, join.on_target_delete()),
+    ] {
+        let column = &join.columns()[index];
+        let owner_side = index == 0;
+        let Some((table_name, pk)) =
+            super::postgres::ddl::referenced_join_target(attachment, projection, join, owner_side)
+        else {
+            return Err(diagnostic::rule_invalid(
+                MAPPING_INVALID,
+                "join-reference-unresolved",
+                None,
+            ));
+        };
+        let name = StorageName::parse(&format!("fk_{}_{}", join.table(), column.name()))
+            .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None))?;
+        statements.push(format!(
+            "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {}({}) ON DELETE {};",
+            quote(join.table()),
+            quote(&name),
+            quote(column.name()),
+            quote(&table_name),
+            quote(&pk),
+            action.key(),
+        ));
+    }
+    Ok(statements)
 }
 
 /// One deterministic placeholder backfill literal for a tightened

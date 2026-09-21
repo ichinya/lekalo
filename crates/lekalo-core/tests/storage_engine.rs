@@ -660,6 +660,132 @@ fn a_plan_under_a_refusing_array_policy_refuses_and_never_renders_the_type() {
 }
 
 #[test]
+fn a_dropped_join_plans_a_gated_drop_table() {
+    // Join tables are planned: dropping a many-to-many relation is a
+    // destructive DROP TABLE, never a silently-empty ready plan.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if let Some(joins) = projection.get_mut("joins").and_then(|j| j.as_array_mut()) {
+            joins.retain(|join| {
+                join.get("relation").and_then(serde_json::Value::as_str)
+                    != Some("planner.relation.task_tags")
+            });
+        }
+    }
+    candidate_value["relations"]
+        .as_array_mut()
+        .expect("relations")
+        .retain(|relation| {
+            relation
+                .get("relationId")
+                .and_then(serde_json::Value::as_str)
+                != Some("planner.relation.task_tags")
+        });
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        None,
+    )
+    .expect("plans");
+    assert!(plan.gated(), "a dropped join table is destructive");
+    assert_eq!(
+        plan.status(),
+        lekalo_core::storage_engine::PlanStatus::Blocked
+    );
+    let drop = plan
+        .steps()
+        .iter()
+        .find(|step| step.statement().contains("\"task_tag\""))
+        .expect("the join table drop is planned");
+    assert_eq!(drop.kind(), "drop_table");
+    assert_eq!(drop.risk().key(), "destructive");
+}
+
+#[test]
+fn an_added_join_plans_the_exact_ddl_create_and_foreign_keys() {
+    // Adding a many-to-many relation plans the join table's create —
+    // the exact statement the DDL renderer emits for the same schema —
+    // followed by its two join foreign keys.
+    let full = migration_attachment(PROJECTION);
+    let mut base_value: serde_json::Value = serde_json::from_slice(PROJECTION).expect("base json");
+    for projection in base_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if let Some(joins) = projection.get_mut("joins").and_then(|j| j.as_array_mut()) {
+            joins.retain(|join| {
+                join.get("relation").and_then(serde_json::Value::as_str)
+                    != Some("planner.relation.task_tags")
+            });
+        }
+    }
+    base_value["relations"]
+        .as_array_mut()
+        .expect("relations")
+        .retain(|relation| {
+            relation
+                .get("relationId")
+                .and_then(serde_json::Value::as_str)
+                != Some("planner.relation.task_tags")
+        });
+    let base = StorageProjectionAttachment::from_value(&base_value).expect("valid base");
+    // The plan binds the profile to the base state; rebind the profile
+    // the way an authoring step would.
+    let mut profile_value: serde_json::Value = serde_json::from_slice(PROFILE).expect("profile");
+    let base_bytes = base.canonical_bytes().expect("canonical");
+    profile_value["projectionRef"] = serde_json::Value::String(format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(base_bytes.as_bytes())
+    ));
+    let base_profile = StorageEngineAttachment::from_value(&profile_value).expect("valid");
+    let plan = lekalo_core::storage_engine::plan_migration(&base_profile, &base, &full, None)
+        .expect("plans");
+    assert!(!plan.gated(), "adding a join is purely constructive");
+    let create = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "create_table" && step.statement().contains("\"task_tag\""))
+        .expect("the join create is planned");
+    let document = postgres::ddl::render(&profile(), &full).expect("renders");
+    let ddl_create = document
+        .statements()
+        .iter()
+        .map(|statement| statement.statement())
+        .find(|statement| statement.starts_with("CREATE TABLE \"task_tag\""))
+        .expect("the DDL creates the same join");
+    assert_eq!(
+        create.statement(),
+        ddl_create,
+        "the planned join create equals the DDL statement"
+    );
+    let join_fks: Vec<&str> = plan
+        .steps()
+        .iter()
+        .filter(|step| {
+            step.kind() == "add_foreign_key" && step.statement().contains("\"task_tag\"")
+        })
+        .map(|step| step.statement())
+        .collect();
+    let ddl_join_fks: Vec<&str> = document
+        .statements()
+        .iter()
+        .map(|statement| statement.statement())
+        .filter(|statement| statement.starts_with("ALTER TABLE \"task_tag\" ADD CONSTRAINT"))
+        .collect();
+    assert_eq!(join_fks, ddl_join_fks, "the planned join FKs equal the DDL");
+    assert_eq!(join_fks.len(), 2, "one FK per join side");
+}
+
+#[test]
 fn a_profile_bound_to_a_foreign_projection_refuses_to_plan() {
     // The binding guarantee holds on the migration surface too: the
     // profile is authored against the base state, and a profile bound
