@@ -1,0 +1,127 @@
+{
+  "schemaVersion": "lekalo/adapter-manifest/v0.3.2",
+  "identity": "dev.lekalo.adapter-manifest@0.3.2",
+  "adapter": {
+    "id": "lekalo-target-node-typescript",
+    "name": "Node/TypeScript target adapter",
+    "version": "0.3.2"
+  },
+  "publisher": {
+    "id": "lekalo",
+    "name": "Lekalo project",
+    "trustAnchor": "builtin"
+  },
+  "source": {
+    "kind": "path",
+    "coordinate": "path:adapters/node-typescript",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "license": {
+    "spdx": "Apache-2.0",
+    "file": "THIRD_PARTY_NOTICES.md",
+    "fileDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "compatibility": {
+    "protocolVersions": [
+      "0.3.2"
+    ],
+    "irVersions": [
+      "0.2.16"
+    ],
+    "extensions": []
+  },
+  "capabilities": {
+    "operations": [
+      "describe",
+      "scan",
+      "bind",
+      "validate",
+      "generate",
+      "verify",
+      "clean",
+      "plan-clean"
+    ],
+    "targets": [
+      "node-typescript"
+    ],
+    "profiles": [
+      "default"
+    ],
+    "named": {
+      "scan.symbols": "full"
+    },
+    "constraints": {},
+    "readScopes": [
+      ".lekalo/ir/**"
+    ],
+    "writeScopes": [
+      ".lekalo/generated/node-typescript/**"
+    ],
+    "transports": [
+      "stdin",
+      "file"
+    ]
+  },
+  "executable": {
+    "runtime": {
+      "kind": "node",
+      "minVersion": "18.0.0"
+    },
+    "entry": "adapter.mjs",
+    "argvPreview": [
+      "node",
+      "adapter.mjs"
+    ],
+    "assets": []
+  },
+  "platforms": [
+    "any"
+  ],
+  "integrity": {
+    "packageDigest": "sha256:8bb2a397509c4b36f25a8e91fb829fc1b7c761eb9490f3ebe11f72568648731e",
+    "files": [
+      {
+        "path": "adapter.mjs",
+        "digest": "sha256:bf30659659570a45764a98f2152e0da06cf6d80e325cef4faf876b270497d55d",
+        "bytes": 13330585
+      }
+    ],
+    "signaturePolicy": "unsigned",
+    "signature": null
+  },
+  "permissions": {
+    "filesystem": {
+      "readScopes": [
+        ".lekalo/ir/**"
+      ],
+      "writeScopes": [
+        ".lekalo/generated/node-typescript/**"
+      ]
+    },
+    "network": {
+      "mode": "denied",
+      "destinations": []
+    },
+    "environment": {
+      "allowlist": []
+    },
+    "processes": {
+      "children": "denied"
+    },
+    "secrets": {
+      "handles": []
+    }
+  },
+  "hooks": [],
+  "conformance": {
+    "reportDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "badge": {
+      "protocol": "0.3.2",
+      "ir": "0.2.16",
+      "profile": "default"
+    },
+    "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2"
+  },
+  "status": "active",
+  "revocation": null
+}
