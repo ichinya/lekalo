@@ -30,6 +30,7 @@
 //! family (`dev.lekalo.classification-policy@0.4.0`), not here.
 
 pub mod diagnostic;
+pub mod validate;
 pub mod policy;
 pub mod resolve;
 pub mod types;
@@ -55,11 +56,41 @@ pub use version::{
     MAX_SUBJECT_SEGMENTS, MODEL_VERSION, SCHEMA_VERSION, VERSION,
 };
 
+pub use validate::{
+    discover, validate_custody, validate_policy_and_grants, validate_subjects,
+    FindingRow, ValidationOutcome, ATTACHMENT_PATH, POLICY_PATH,
+};
 pub use wire::{
     Attachment, Classification, Declassification, Defaults, OpenQuestion,
 };
 
 use crate::diagnostics::DiagnosticSet;
+
+/// The typed IO-failure set for unreadable attachment documents.
+pub fn io_failure_set() -> DiagnosticSet {
+    diagnostic::document_invalid("document-io", None)
+}
+
+/// The invalid set behind one validation outcome: the findings mapped
+/// to registered diagnostics (metadata-only; hashed subjects).
+pub fn findings_set(outcome: &ValidationOutcome) -> DiagnosticSet {
+    let mut diagnostics = Vec::new();
+    for row in &outcome.rows {
+        let mut data = crate::diagnostics::types::DataObject::new();
+        data.insert(
+            "detail".to_owned(),
+            crate::diagnostics::types::token_value(&format!(
+                "finding:subject-{}",
+                crate::digest::sha256_hex(row.subject.as_bytes())
+            )),
+        );
+        if let Ok(built) = crate::diagnostics::normalize::build(&row.rule, None, None, data) {
+            diagnostics.push(built);
+        }
+    }
+    DiagnosticSet::try_from_unsorted(diagnostics, crate::result::Status::Invalid)
+        .unwrap_or_else(|_| crate::result::singleton_set("diagnostics.registry-invalid"))
+}
 
 /// The canonical export of one classification attachment: compact
 /// JSON with byte-sorted keys, canonical collections, and no trailing

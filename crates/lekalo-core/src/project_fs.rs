@@ -697,8 +697,16 @@ impl Fs {
 }
 
 /// The closed set of canonical `lekalo/` root entries.
-const CANONICAL_ROOT_ENTRIES: [&str; 4] =
-    ["project.yaml", "modules", "targets", "authorization.yaml"];
+const CANONICAL_ROOT_ENTRIES: [&str; 6] = [
+    "project.yaml",
+    "modules",
+    "targets",
+    "authorization.yaml",
+    // Issue #87: the classification attachment and its governing policy
+    // are canonical declaration homes of every project (optional).
+    "classification.json",
+    "classification-policy.json",
+];
 
 /// The closed runtime top-level entries under `.lekalo/`.
 const RUNTIME_ENTRIES: [&str; 5] = ["import", "cache", "generated", "consumer", "privacy"];
@@ -893,6 +901,12 @@ impl Fs {
             if name == "authorization.yaml" && entry_type != EntryType::File {
                 return Err(StructureReason::new("structure.directory-required")
                     .at("lekalo/authorization.yaml"));
+            }
+            if matches!(name.as_str(), "classification.json" | "classification-policy.json")
+                && entry_type != EntryType::File
+            {
+                return Err(StructureReason::new("structure.document-missing")
+                    .at(format!("lekalo/{name}")));
             }
         }
 

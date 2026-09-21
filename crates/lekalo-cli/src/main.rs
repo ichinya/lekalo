@@ -254,6 +254,20 @@ enum Commands {
         #[command(subcommand)]
         command: ExpressionsCommands,
     },
+    /// Validate or inspect one data-classification attachment against
+    /// the project (issue #87): custody, subject resolution, grants,
+    /// and the governing policy.
+    Classification {
+        #[command(subcommand)]
+        command: ClassificationCommands,
+    },
+    /// Derive or inspect the data-flow report over the classified
+    /// project (issue #87): flows, tenant relations, gate decisions,
+    /// and the first-class unknown list.
+    Dataflow {
+        #[command(subcommand)]
+        command: DataflowCommands,
+    },
     /// Check generated-artifact ownership and drift, or plan and apply a
     /// confirmed clean of orphaned generated files.
     Generate {
@@ -464,6 +478,60 @@ enum Commands {
     Native {
         #[command(subcommand)]
         command: NativeCommands,
+    },
+}
+
+/// The `classification` subcommands (issue #87).
+#[derive(Debug, Subcommand)]
+enum ClassificationCommands {
+    /// Validate one classification attachment and its governing policy
+    /// against the project: custody pins, subject resolution, grant
+    /// coherence, and the strict-profile sensitive-sink rule. The
+    /// documents are read from the given project-relative paths; the
+    /// core owns every decision.
+    Validate {
+        /// The classification attachment document path.
+        #[arg(long, value_name = "PATH")]
+        attachment: String,
+        /// The classification-policy document path.
+        #[arg(long, value_name = "PATH")]
+        policy: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Inspect one classification attachment: the resolved kinds of
+    /// every declared subject in canonical order.
+    Inspect {
+        /// The classification attachment document path.
+        #[arg(long, value_name = "PATH")]
+        attachment: String,
+        /// The classification-policy document path.
+        #[arg(long, value_name = "PATH")]
+        policy: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
+
+/// The `dataflow` subcommands (issue #87).
+#[derive(Debug, Subcommand)]
+enum DataflowCommands {
+    /// Derive the data-flow report over the classified project: flows,
+    /// findings, unknowns, and the aggregated gate verdict, pinned to
+    /// the exact input digests. Read-only; the report is never written
+    /// by this command.
+    Report {
+        /// The classification attachment document path.
+        #[arg(long, value_name = "PATH")]
+        attachment: String,
+        /// The classification-policy document path.
+        #[arg(long, value_name = "PATH")]
+        policy: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
     },
 }
 
@@ -1193,6 +1261,8 @@ fn main() -> ExitCode {
             Commands::Expressions { command } => run_expressions(command),
             Commands::Graph { command } => run_graph(command, cli.no_cache),
             Commands::Effects { command } => run_effects(command, cli.no_cache),
+            Commands::Classification { command } => run_classification(command),
+            Commands::Dataflow { command } => run_dataflow(command),
             Commands::Trace { command } => run_trace(command),
             Commands::Requirements { command } => run_requirements(command),
             Commands::Generate {
@@ -1518,6 +1588,14 @@ fn run_validate(
                 }
                 Ok(lekalo_core::authorization::Review::Ok) => {}
             }
+            // Classification review (#87): when the project declares a
+            // classification attachment, custody, subject resolution,
+            // and policy/grant coherence join the pipeline. The strict
+            // profile invalidates on any error finding; the default
+            // profile records them as warnings without failing.
+            if let Err(result) = classification_review(&selection, &compilation, strict) {
+                return result;
+            }
             let (json, human) = render_validate_success(&model, &report);
             let diagnostics = report.diagnostics().as_slice().to_vec();
             DomainResult::validation(json, human, diagnostics)
@@ -1578,6 +1656,60 @@ fn run_inspect(symbol: &str, include: Option<&str>, project: &Option<String>) ->
         ),
     }
 }
+/// The classification review of one validation run (issue #87).
+///
+/// When the project declares `lekalo/classification.json`, the
+/// attachment, its governing policy, subject resolution, and the
+/// policy/grant coherence join the pipeline. The strict profile
+/// invalidates on any error-severity finding; the default profile
+/// records the review without failing (findings stay visible through
+/// `lekalo classification validate`). A present-but-broken attachment
+/// is invalid in every profile: declared security metadata that fails
+/// closed can never be silently skipped.
+fn classification_review(
+    selection: &LoadSelection,
+    compilation: &lekalo_core::ir::Compilation,
+    strict: bool,
+) -> Result<(), DomainResult> {
+    let selector = selection.project.clone().or_else(|| std::env::var("LEKALO_PROJECT").ok());
+    let root = match &selector {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => match std::env::current_dir() {
+            Ok(cwd) => cwd,
+            Err(_) => return Ok(()),
+        },
+    };
+    let (attachment, policy) = match lekalo_core::classification::discover(&root) {
+        Err(set) => return Err(DomainResult::invalid(set)),
+        Ok(None) => return Ok(()),
+        Ok(Some(found)) => found,
+    };
+    if let Err(set) =
+        lekalo_core::classification::validate_custody(&attachment, &policy, &compilation.project)
+    {
+        return Err(DomainResult::invalid(set));
+    }
+    let resolution = match lekalo_core::classification::validate_subjects(&attachment, compilation)
+    {
+        Err(set) => return Err(DomainResult::invalid(set)),
+        Ok(resolution) => resolution,
+    };
+    let outcome = match lekalo_core::classification::validate_policy_and_grants(
+        &attachment,
+        &policy,
+        &resolution,
+    ) {
+        Err(set) => return Err(DomainResult::invalid(set)),
+        Ok(outcome) => outcome,
+    };
+    if outcome.invalid && strict {
+        return Err(DomainResult::invalid(
+            lekalo_core::classification::findings_set(&outcome),
+        ));
+    }
+    Ok(())
+}
+
 /// The fail-closed set for an unusable embedded contract (developer fault).
 fn registry_invariant_failure() -> lekalo_core::diagnostics::DiagnosticSet {
     lekalo_core::validator::registry_invariant_failure()
@@ -2108,6 +2240,232 @@ fn run_effects(command: EffectsCommands, no_cache: bool) -> DomainResult {
             with_effects(&project, no_cache, |project, graph| {
                 effects_conflicts(project, graph, &changed)
             })
+        }
+    }
+}
+
+/// Read one attachment document; IO failure is a typed invalid set.
+fn read_document(path: &str) -> Result<Vec<u8>, DomainResult> {
+    std::fs::read(path).map_err(|_| {
+        DomainResult::invalid(lekalo_core::classification::io_failure_set())
+    })
+}
+
+/// Load the compiled project for the classification/dataflow surfaces:
+/// the shared loader seam with the same cache semantics as validate.
+fn load_compiled_for(
+    project: &Option<String>,
+) -> Result<lekalo_core::ir::Compilation, DomainResult> {
+    let selection = LoadSelection {
+        project: project
+            .clone()
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    #[allow(clippy::question_mark)] // DomainResult is not an error type
+    let (_model, compilation) = match lekalo_core::cache::load_compiled(&selection, false) {
+        Err(result) => return Err(result),
+        Ok(pair) => pair,
+    };
+    Ok(compilation)
+}
+
+/// Parse the classification attachment and its governing policy, and
+/// resolve both against the pinned compilation. Custody mismatches
+/// (project, modelRef, irRef) are typed invalid sets from the core.
+fn parse_classification_pair(
+    attachment_path: &str,
+    policy_path: &str,
+    compilation: &lekalo_core::ir::Compilation,
+) -> Result<
+    (
+        lekalo_core::classification::Attachment,
+        lekalo_core::classification::PolicyAttachment,
+        lekalo_core::classification::Resolution,
+    ),
+    DomainResult,
+> {
+    let attachment_bytes = read_document(attachment_path)?;
+    let policy_bytes = read_document(policy_path)?;
+    let attachment = lekalo_core::classification::Attachment::parse(&attachment_bytes)
+        .map_err(DomainResult::invalid)?;
+    let policy = lekalo_core::classification::PolicyAttachment::parse(&policy_bytes)
+        .map_err(DomainResult::invalid)?;
+    if let Err(set) =
+        lekalo_core::classification::validate_custody(&attachment, &policy, &compilation.project)
+    {
+        return Err(DomainResult::invalid(set));
+    }
+    let resolution = lekalo_core::classification::validate_subjects(&attachment, compilation)
+        .map_err(DomainResult::invalid)?;
+    Ok((attachment, policy, resolution))
+}
+
+/// Run one `classification` subcommand (issue #87): validate or
+/// inspect. The core owns every decision; this binary reads the two
+/// documents, renders, and maps exits.
+fn run_classification(command: ClassificationCommands) -> DomainResult {
+    match command {
+        ClassificationCommands::Validate {
+            attachment,
+            policy,
+            project,
+        } => {
+            let compilation = match load_compiled_for(&project) {
+                Err(result) => return result,
+                Ok(compilation) => compilation,
+            };
+            let (attachment, policy, resolution) =
+                match parse_classification_pair(&attachment, &policy, &compilation) {
+                    Err(result) => return result,
+                    Ok(parts) => parts,
+                };
+            match lekalo_core::classification::validate_policy_and_grants(
+                &attachment,
+                &policy,
+                &resolution,
+            ) {
+                Err(set) => DomainResult::invalid(set),
+                Ok(outcome) => {
+                    let (json, human) = classification_validate_payload(&attachment, &outcome);
+                    if outcome.invalid {
+                        DomainResult::invalid(lekalo_core::classification::findings_set(
+                            &outcome,
+                        ))
+                    } else {
+                        DomainResult::graph(json, human, Vec::new())
+                    }
+                }
+            }
+        }
+        ClassificationCommands::Inspect {
+            attachment,
+            policy,
+            project,
+        } => {
+            let compilation = match load_compiled_for(&project) {
+                Err(result) => return result,
+                Ok(compilation) => compilation,
+            };
+            let (attachment, _policy, resolution) =
+                match parse_classification_pair(&attachment, &policy, &compilation) {
+                    Err(result) => return result,
+                    Ok(parts) => parts,
+                };
+            let (json, human) = classification_inspect_payload(&attachment, &resolution);
+            DomainResult::graph(json, human, Vec::new())
+        }
+    }
+}
+
+/// Render the `classification validate` payload.
+fn classification_validate_payload(
+    attachment: &lekalo_core::classification::Attachment,
+    outcome: &lekalo_core::classification::ValidationOutcome,
+) -> (String, String) {
+    let mut json = String::from("{\"status\":");
+    json.push_str(if outcome.invalid {
+        "\"invalid\","
+    } else {
+        "\"valid\","
+    });
+    json.push_str("\"identity\":");
+    json.push_str(&serde_json::to_string(lekalo_core::classification::IDENTITY).expect("identity"));
+    json.push_str(",\"subjects\":");
+    json.push_str(&attachment.classifications().len().to_string());
+    json.push_str(&outcome.wire_findings());
+    json.push('}');
+    let human = if outcome.invalid {
+        format!(
+            "classification invalid: {} finding(s)",
+            outcome.finding_count()
+        )
+    } else {
+        format!(
+            "classification valid: {} subject(s), 0 findings",
+            attachment.classifications().len()
+        )
+    };
+    (json, human)
+}
+
+/// Render the `classification inspect` payload.
+fn classification_inspect_payload(
+    attachment: &lekalo_core::classification::Attachment,
+    resolution: &lekalo_core::classification::Resolution,
+) -> (String, String) {
+    let mut json = String::from("{\"status\":\"valid\",\"subjects\":[");
+    let mut human = Vec::new();
+    for (index, entry) in attachment.classifications().iter().enumerate() {
+        // Grants participate in the inspect view: a valid reviewed
+        // lowering shows the lowered kind (never a silent lowering of
+        // un-granted subjects).
+        let mark = resolution.resolve_with_grants(entry.subject(), |grant| {
+            grant.from_kind().declassifiable()
+                && grant.to_kind().strict_lowering_of(grant.from_kind())
+        });
+        let resolved = lekalo_core::classification::ResolvedKind::Classified(mark.kind);
+        if index > 0 {
+            json.push(',');
+        }
+        let kind = resolved
+            .kind()
+            .map(|kind| kind.as_str().to_owned())
+            .unwrap_or_else(|| "unclassified".to_owned());
+        json.push_str(
+            &serde_json::to_string(&serde_json::json!({
+                "subject": entry.subject().as_str(),
+                "kind": kind,
+            }))
+            .expect("subject row"),
+        );
+        human.push(format!("{} : {}", entry.subject().as_str(), kind));
+    }
+    json.push_str("]}");
+    (json, human.join("\n"))
+}
+
+/// Run one `dataflow` subcommand (issue #87): derive the read-only
+/// report. The core owns every decision; this binary reads the two
+/// documents, renders, and maps exits.
+fn run_dataflow(command: DataflowCommands) -> DomainResult {
+    match command {
+        DataflowCommands::Report {
+            attachment,
+            policy,
+            project,
+        } => {
+            let compilation = match load_compiled_for(&project) {
+                Err(result) => return result,
+                Ok(compilation) => compilation,
+            };
+            let (attachment, policy, resolution) =
+                match parse_classification_pair(&attachment, &policy, &compilation) {
+                    Err(result) => return result,
+                    Ok(parts) => parts,
+                };
+            match lekalo_core::dataflow::run_report(&compilation, &attachment, &policy, &resolution) {
+                Err(set) => DomainResult::invalid(set),
+                Ok((report, diagnostics)) => {
+                    let bytes = match lekalo_core::dataflow::report_canonical_bytes(&report) {
+                        Err(set) => return DomainResult::invalid(set),
+                        Ok(bytes) => bytes,
+                    };
+                    let json = format!("{{\"status\":\"valid\",\"report\":{bytes}}}");
+                    let denied = report.verdict().as_str() == "denied";
+                    let human = format!(
+                        "dataflow {}: {} flow(s), {} finding(s), {} unknown(s)",
+                        report.verdict().as_str(),
+                        report.flows().len(),
+                        report.findings().len(),
+                        report.unknowns().len()
+                    );
+                    if denied {
+                        DomainResult::denied(diagnostics)
+                    } else {
+                        DomainResult::graph(json, human, Vec::new())
+                    }
+                }
+            }
         }
     }
 }
