@@ -193,6 +193,51 @@ fn storage_profile_diff_classifies_profile_changes() {
 }
 
 #[test]
+fn storage_plan_gates_destructive_steps_and_confirms_by_identity() {
+    let base = workspace_path("tests/fixtures/storage-projection/diff/base.json");
+    let candidate = workspace_path("tests/fixtures/storage-projection/diff/candidate-storage.json");
+    let output = lekalo(&[
+        "--json",
+        "storage",
+        "plan",
+        base.to_str().expect("base"),
+        candidate.to_str().expect("candidate"),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{:?}", stderr(&output));
+    let plan_stdout = stdout(&output);
+    assert!(plan_stdout.contains("\"acknowledged\":false"));
+    assert!(plan_stdout.contains("\"gate\":\"explicit\""));
+    assert!(plan_stdout.contains("\"risk\":\"destructive\""));
+    // The plan identity is content-bound: extract and re-confirm.
+    let plan: serde_json::Value = serde_json::from_str(plan_stdout.trim()).expect("json");
+    let plan_id = plan["plan"]["planId"].as_str().expect("plan id");
+    let output = lekalo(&[
+        "--json",
+        "storage",
+        "plan",
+        base.to_str().expect("base"),
+        candidate.to_str().expect("candidate"),
+        "--confirm",
+        plan_id,
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{:?}", stderr(&output));
+    let confirmed_stdout = stdout(&output);
+    assert!(confirmed_stdout.contains("\"acknowledged\":true"));
+    // A wrong identity refuses as stale, never acknowledges.
+    let output = lekalo(&[
+        "--json",
+        "storage",
+        "plan",
+        base.to_str().expect("base"),
+        candidate.to_str().expect("candidate"),
+        "--confirm",
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    ]);
+    assert_eq!(output.status.code(), Some(1), "{:?}", stderr(&output));
+    assert!(stderr(&output).contains("plan-changed"));
+}
+
+#[test]
 fn missing_documents_are_typed_invalid_never_panics() {
     let output = lekalo(&["storage", "validate", "missing-file.json"]);
     assert_eq!(output.status.code(), Some(1), "{output:?}");

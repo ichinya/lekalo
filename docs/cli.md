@@ -42,6 +42,7 @@ lekalo expressions diff BASE CANDIDATE
 lekalo storage validate PATH [--project DIR]
 lekalo storage project PATH --namespace postgres|laravel|mysql|mariadb
 lekalo storage diff BASE CANDIDATE
+lekalo storage plan BASE CANDIDATE [--confirm PLAN_ID]
 lekalo storage introspect-check --projection PATH --evidence PATH --namespace postgres|laravel|mysql|mariadb
 lekalo storage-profile validate PATH
 lekalo storage-profile capabilities PATH

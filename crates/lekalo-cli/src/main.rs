@@ -988,6 +988,20 @@ enum StorageCommands {
         #[arg(long, value_enum)]
         namespace: StorageNamespace,
     },
+    /// Derive the non-executable migration plan over one comparison;
+    /// destructive and backfill steps carry the explicit gate. The
+    /// plan-id acknowledgment stays data: with `--confirm` and the
+    /// exact plan identity the envelope records the acknowledgment,
+    /// and a wrong identity refuses as stale.
+    Plan {
+        /// Path to the base attachment JSON document.
+        base: String,
+        /// Path to the candidate attachment JSON document.
+        candidate: String,
+        /// The exact plan identity to acknowledge.
+        #[arg(long, value_name = "PLAN_ID")]
+        confirm: Option<String>,
+    },
 }
 
 /// The closed storage namespace vocabulary of the CLI.
@@ -3311,6 +3325,11 @@ fn run_storage(command: StorageCommands) -> DomainResult {
         StorageCommands::Validate { path, project: _ } => storage_validate(&path),
         StorageCommands::Project { path, namespace } => storage_project(&path, namespace),
         StorageCommands::Diff { base, candidate } => storage_diff(&base, &candidate),
+        StorageCommands::Plan {
+            base,
+            candidate,
+            confirm,
+        } => storage_plan(&base, &candidate, confirm.as_deref()),
         StorageCommands::IntrospectCheck {
             projection,
             evidence,
@@ -3487,6 +3506,54 @@ fn storage_diff(base_path: &str, candidate_path: &str) -> DomainResult {
         breaking,
         non_breaking,
         policy_change,
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo storage plan`: the non-executable migration plan over one
+/// comparison, with the plan-id acknowledgment plumbing.
+fn storage_plan(base_path: &str, candidate_path: &str, confirm: Option<&str>) -> DomainResult {
+    let base_document = match read_storage_document(StorageDocFamily::Projection, base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let candidate_document =
+        match read_storage_document(StorageDocFamily::Projection, candidate_path) {
+            Ok(document) => document,
+            Err(result) => return result,
+        };
+    let base = match StorageAttachment::from_value(&base_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let candidate = match StorageAttachment::from_value(&candidate_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let diff = match lekalo_core::storage_projection::compare(&base, &candidate) {
+        Ok(diff) => diff,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let plan = lekalo_core::storage_projection::migration_plan(&diff);
+    // The plan-id acknowledgment: echoing the exact identity records
+    // the acknowledgment; a wrong identity refuses as stale instead of
+    // acknowledging a plan the caller never saw.
+    let acknowledged = match confirm {
+        None => false,
+        Some(plan_id) if plan_id == plan.plan_id => true,
+        Some(_) => {
+            return DomainResult::invalid(lekalo_core::storage_projection::io_failure(
+                "plan-changed",
+            ))
+        }
+    };
+    let json = serde_json::to_string(&plan).unwrap_or_else(|_| "{}".to_owned());
+    let json = format!("{{\"status\":\"valid\",\"acknowledged\":{acknowledged},\"plan\":{json}}}");
+    let human = format!(
+        "storage plan {}: {} steps, {} gated; acknowledged {acknowledged}",
+        &plan.plan_id[..19.min(plan.plan_id.len())],
+        plan.steps.len(),
+        plan.gated,
     );
     DomainResult::graph(json, human, Vec::new())
 }
