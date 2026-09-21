@@ -45,6 +45,8 @@ if (!binaryOk) fail("binary-missing", `run: cargo build -p lekalo-cli (${binary}
 const VALID = join(root, "tests/fixtures/classification/valid/planner");
 const DECLASSIFIED = join(root, "tests/fixtures/classification/valid/declassified-export");
 const UNKNOWN = join(root, "tests/fixtures/classification/invalid/unknown-subject");
+const CROSSING = join(root, "tests/fixtures/classification/invalid/tenant-crossing");
+const SINK = join(root, "tests/fixtures/classification/invalid/secret-in-sink");
 const SEALED = join(root, "tests/fixtures/classification/invalid/credential-declassified");
 const UNCLOSED = join(root, "tests/fixtures/classification/invalid/unclosed-policy");
 const attachment = (fixture) => join(fixture, "lekalo/classification.json");
@@ -152,6 +154,37 @@ const policy = (fixture) => join(fixture, "lekalo/classification-policy.json");
   }
 }
 
+// 6b. The representative tenant-crossing fixture (acceptance): a
+// tenant-scoped subject whose tenant relation cannot be derived is
+// treated as crossing — the flow is a dataflow.tenant-crossing finding
+// and the report verdict is denied (exit 3).
+{
+  const outcome = run(
+    ["dataflow", "report", "--attachment", attachment(CROSSING), "--policy", policy(CROSSING)],
+    CROSSING,
+  );
+  if (outcome.code !== 3) fail("tenant-crossing-exit", outcome);
+  const deniedOutput = outcome.stdout + outcome.stderr;
+  if (!deniedOutput.includes("dataflow.tenant-crossing")) {
+    fail("tenant-crossing-rule", deniedOutput);
+  }
+}
+
+// 6c. The secret-in-sink fixture (hard rule): a credential-kind subject
+// is above the unconditional diagnostics/trace ceilings wherever it
+// flows — classification.sink-ceiling-exceeded, verdict denied.
+{
+  const outcome = run(
+    ["dataflow", "report", "--attachment", attachment(SINK), "--policy", policy(SINK)],
+    SINK,
+  );
+  if (outcome.code !== 3) fail("secret-in-sink-exit", outcome);
+  const sinkOutput = outcome.stdout + outcome.stderr;
+  if (!sinkOutput.includes("classification.sink-ceiling-exceeded")) {
+    fail("secret-in-sink-rule", sinkOutput);
+  }
+}
+
 // 7. Non-disclosure byte-scan: the sentinel secret value never appears
 // in any committed classification fixture artifact or in any CLI output
 // over them. Classification metadata flows; values never do.
@@ -171,7 +204,7 @@ const SENTINEL = "LEKALO-SENTINEL-SECRET-9f2c";
     const bytes = readFileSync(path, "utf8");
     if (bytes.includes(SENTINEL)) fail("sentinel-in-fixture", path);
   }
-  for (const fixture of [VALID, DECLASSIFIED, UNKNOWN, SEALED, UNCLOSED]) {
+  for (const fixture of [VALID, DECLASSIFIED, UNKNOWN, SEALED, UNCLOSED, CROSSING, SINK]) {
     for (const command of [
       ["classification", "validate", "--attachment", attachment(fixture), "--policy", policy(fixture)],
       ["classification", "inspect", "--attachment", attachment(fixture), "--policy", policy(fixture)],
@@ -189,7 +222,7 @@ process.stdout.write(`${JSON.stringify({
   fixtures: {
     valid: 1,
     declassified: 1,
-    invalid: 3,
+    invalid: 5,
   },
   sentinelScanned: true,
 }, null, 2)}\n`);

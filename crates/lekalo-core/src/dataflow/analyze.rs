@@ -140,14 +140,39 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
             classification: kind,
             gate: gate_wire,
         });
-        // Rule findings over the flow.
-        if tenant_relation == TenantRelation::Crossing && kind.cross_tenant_forbidden_by_default() {
+        // Rule findings over the flow. An unknown tenant relation is
+        // treated as crossing (plan §4.4): scopes that cannot be derived
+        // are never silently `same`.
+        if tenant_relation != TenantRelation::Same && kind.cross_tenant_forbidden_by_default() {
             findings.push(Finding {
                 rule_id: "dataflow.tenant-crossing".to_owned(),
                 severity: Severity::Error,
                 subject: subject.as_str().to_owned(),
-                detail: "cross-tenant-flow".to_owned(),
+                detail: if tenant_relation == TenantRelation::Crossing {
+                    "cross-tenant-flow".to_owned()
+                } else {
+                    "tenant-relation-unknown".to_owned()
+                },
             });
+        }
+        // Hard rule: secret values never enter diagnostics, traces, or
+        // evidence — those sinks observe every operation unconditionally,
+        // so a credential-kind subject is above their ceiling wherever
+        // it flows.
+        if kind == DataKind::Credential {
+            for sink in [SinkName::Diagnostics, SinkName::Traces] {
+                if let Some(ceiling) = inputs.policy.sink(sink) {
+                    if DataKind::Credential.rank() > ceiling.max_kind().rank() {
+                        findings.push(Finding {
+                            rule_id: "classification.sink-ceiling-exceeded".to_owned(),
+                            severity: Severity::Error,
+                            subject: subject.as_str().to_owned(),
+                            detail: format!("sink-{}", sink.as_str()),
+                        });
+                        break;
+                    }
+                }
+            }
         }
         if let Some(outcome) = gate {
             if outcome.required && !outcome.satisfied {
