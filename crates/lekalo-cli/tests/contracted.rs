@@ -160,8 +160,8 @@ fn the_first_contracted_slice_passes_conformance() {
         "proj",
     ]);
     assert_eq!(receipt["status"], "valid");
-    assert_eq!(receipt["symbols"], 3);
-    assert_eq!(receipt["recorded"].as_array().expect("recorded").len(), 3);
+    assert_eq!(receipt["symbols"], 4);
+    assert_eq!(receipt["recorded"].as_array().expect("recorded").len(), 4);
 
     // Attach native coverage to both bound operations.
     let receipt = sandbox.json(&[
@@ -221,8 +221,8 @@ fn the_first_contracted_slice_passes_conformance() {
 
     let receipt = sandbox.json(&["contract", "check", "--project", "proj"]);
     assert_eq!(receipt["status"], "valid");
-    assert_eq!(receipt["symbols"], 3);
-    assert_eq!(receipt["conformant"], 3);
+    assert_eq!(receipt["symbols"], 4);
+    assert_eq!(receipt["conformant"], 4);
     assert_eq!(receipt["stale"], 0);
     assert_eq!(receipt["artifacts"], 1);
     assert_eq!(receipt["staleArtifacts"], 0);

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "lekalo/contracted-declaration/v0.2.16",
+  "schemaVersion": "lekalo/contracted-declaration/v0.3.2",
   "adapter": {
     "id": "lekalo-target-node-typescript",
     "version": "0.2.16",
@@ -64,7 +64,43 @@
       },
       "fingerprint": "sha256:c2f13e81d2cac25ab44a37ed97c73d2964216aef3f87cb33077bca06437e9e08",
       "signature": null,
-      "effects": []
+      "effects": [],
+      "shape": {
+        "fields": [
+          {
+            "name": "task_id",
+            "type": "planner.task_id",
+            "required": true
+          },
+          {
+            "name": "title",
+            "type": "planner.text",
+            "required": true
+          },
+          {
+            "name": "state",
+            "type": "planner.task_state",
+            "required": true
+          },
+          {
+            "name": "due",
+            "type": "optional(planner.due_date)",
+            "required": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "planner.task_id",
+      "kind": "scalar",
+      "source": {
+        "path": "src/ids.ts",
+        "line": 1
+      },
+      "fingerprint": "sha256:c2f13e81d2cac25ab44a37ed97c73d2964216aef3f87cb33077bca06437e9e08",
+      "shape": {
+        "base": "uuid"
+      }
     }
   ],
   "artifacts": [

@@ -94,7 +94,7 @@ fn rewrite_declaration(sandbox: &Sandbox, name: &str, mutate: impl FnOnce(&mut s
 #[test]
 fn declaration_wire_fails_closed_on_unknown_keys_and_bad_grammar() {
     let base = br#"{
-        "schemaVersion": "lekalo/contracted-declaration/v0.2.16",
+        "schemaVersion": "lekalo/contracted-declaration/v0.3.2",
         "adapter": {"id": "lekalo-target-node-typescript", "version": "0.2.16", "digest": null},
         "project": "planner",
         "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -202,7 +202,46 @@ fn signature_and_effect_drift_are_classified() {
         .iter()
         .any(|diagnostic| diagnostic.id() == "contracted.binding-drift"));
 
-    // The conforming declaration passes once coverage is attached.
+    // Issue #45: a claimed canonical shape drifts when the model field
+    // list moves; the drift detail is `shape`, like `signature` above.
+    sandbox.update("initial.json");
+    rewrite_declaration(&sandbox, "initial.json", |value| {
+        let symbols = value["symbols"].as_array_mut().expect("symbols");
+        let entity = symbols
+            .iter_mut()
+            .find(|symbol| symbol["id"] == "planner.task")
+            .expect("entity");
+        entity["shape"]["fields"]
+            .as_array_mut()
+            .expect("fields")
+            .push(serde_json::json!({
+                "name": "ghost",
+                "type": "planner.text",
+                "required": true
+            }));
+    });
+    // Re-capture the drifted claim, then let the gate recompute it.
+    sandbox.update("initial.json");
+    let receipt = contracted::check(&sandbox.context(), None).expect_err("shape drift");
+    let drift_details: Vec<String> = receipt
+        .as_slice()
+        .iter()
+        .filter(|diagnostic| diagnostic.id() == "contracted.binding-drift")
+        .map(|diagnostic| match diagnostic.data().get("detail") {
+            Some(lekalo_core::diagnostics::DataValue::Token(detail)) => detail.clone(),
+            _ => String::new(),
+        })
+        .collect();
+    assert!(drift_details.iter().any(|detail| detail == "shape"),);
+
+    // The conforming declaration passes once coverage is attached:
+    // restore the fixture declaration, undoing the drifted claim.
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/contracted/planner-slice/declarations/initial.json"),
+        sandbox.root.join("declarations/initial.json"),
+    )
+    .expect("restore");
     sandbox.update("initial.json");
     let ctx = sandbox.context();
     contracted::attach(
@@ -227,8 +266,8 @@ fn signature_and_effect_drift_are_classified() {
     )
     .expect("materialize");
     let receipt = contracted::check(&ctx, None).expect("clean check");
-    assert_eq!(receipt.symbols, 3);
-    assert_eq!(receipt.conformant, 3);
+    assert_eq!(receipt.symbols, 4);
+    assert_eq!(receipt.conformant, 4);
     assert!(receipt.drifts.is_empty());
 }
 

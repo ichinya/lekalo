@@ -14,8 +14,9 @@ use serde_json::Value as Json;
 
 use super::diagnostic;
 use super::types::{
-    AdapterIdentity, DeclarationDocument, DeclaredEffect, DeclaredSymbol, SignatureEvidence,
-    SignatureField, SourceLocation, SupportArtifact, SupportKind, SupportLifecycle, SymbolKind,
+    AdapterIdentity, DeclarationDocument, DeclaredEffect, DeclaredSymbol, ShapeEvidence,
+    SignatureEvidence, SignatureField, SourceLocation, SupportArtifact, SupportKind,
+    SupportLifecycle, SymbolKind,
 };
 use super::version;
 
@@ -40,6 +41,7 @@ const SYMBOL_KEYS: &[&str] = &[
     "fingerprint",
     "signature",
     "effects",
+    "shape",
 ];
 
 /// The closed source member set.
@@ -56,6 +58,14 @@ const EFFECT_KEYS: &[&str] = &["kind", "subject"];
 
 /// The closed support-artifact member set.
 const ARTIFACT_KEYS: &[&str] = &["symbol", "kind", "path", "lifecycle", "digest"];
+
+/// The closed shape member set (issue #45).
+const SHAPE_KEYS: &[&str] = &["fields", "base", "values"];
+
+/// The closed scalar base vocabulary (issue #45).
+const SCALAR_BASES: &[&str] = &[
+    "string", "number", "boolean", "date", "datetime", "uuid", "uri",
+];
 
 /// The closed effect-kind keys (the #14 effect-kind wire words).
 const EFFECT_KINDS: &[&str] = &[
@@ -304,6 +314,78 @@ fn parse_symbol(value: &Json) -> Result<DeclaredSymbol, crate::diagnostics::Diag
     }
     effects.sort();
     effects.dedup();
+    let shape = match map.get("shape") {
+        None | Some(Json::Null) => None,
+        Some(value) => {
+            let map = as_object(value)?;
+            exact_keys(map, SHAPE_KEYS)?;
+            let fields = match map.get("fields") {
+                None | Some(Json::Null) => Vec::new(),
+                Some(value) => {
+                    let member = value
+                        .as_array()
+                        .ok_or_else(|| diagnostic::declaration_invalid_set("not-an-array", None))?;
+                    if member.len() > version::MAX_ATTACHMENTS {
+                        return Err(diagnostic::declaration_limit_set(
+                            "shape-fields",
+                            member.len(),
+                        ));
+                    }
+                    signature_inputs(member, &id)?
+                }
+            };
+            let base = match map.get("base") {
+                None | Some(Json::Null) => None,
+                Some(value) => {
+                    let base = value
+                        .as_str()
+                        .filter(|base| SCALAR_BASES.contains(base))
+                        .ok_or_else(|| {
+                            diagnostic::declaration_invalid_set("shape-base", Some(&id))
+                        })?
+                        .to_owned();
+                    Some(base)
+                }
+            };
+            let values = match map.get("values") {
+                None | Some(Json::Null) => Vec::new(),
+                Some(value) => {
+                    let member = value
+                        .as_array()
+                        .ok_or_else(|| diagnostic::declaration_invalid_set("not-an-array", None))?;
+                    if member.is_empty() || member.len() > version::MAX_ATTACHMENTS {
+                        return Err(diagnostic::declaration_limit_set(
+                            "shape-values",
+                            member.len(),
+                        ));
+                    }
+                    let mut values = Vec::with_capacity(member.len());
+                    for entry in member {
+                        let value = entry
+                            .as_str()
+                            .filter(|value| (1..=64).contains(&value.len()))
+                            .ok_or_else(|| {
+                                diagnostic::declaration_invalid_set("shape-value", Some(&id))
+                            })?
+                            .to_owned();
+                        values.push(value);
+                    }
+                    values
+                }
+            };
+            if fields.is_empty() && base.is_none() && values.is_empty() {
+                return Err(diagnostic::declaration_invalid_set(
+                    "shape-empty",
+                    Some(&id),
+                ));
+            }
+            Some(ShapeEvidence {
+                fields,
+                base,
+                values,
+            })
+        }
+    };
     Ok(DeclaredSymbol {
         id,
         kind,
@@ -311,6 +393,7 @@ fn parse_symbol(value: &Json) -> Result<DeclaredSymbol, crate::diagnostics::Diag
         fingerprint,
         signature,
         effects,
+        shape,
     })
 }
 

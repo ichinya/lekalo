@@ -23,7 +23,7 @@ to maintained source locations, records the typed signature and
 declared-effect claims captured at declaration time, the ownership
 manifest of every generated support artifact, and the attached native
 tests. The contract is published as
-[`contracts/contracted-declaration.schema.v0.2.16.json`](../contracts/contracted-declaration.schema.v0.2.16.json)
+[`contracts/contracted-declaration.schema.v0.3.2.json`](../contracts/contracted-declaration.schema.v0.3.2.json)
 (the adapter declaration document; the registry itself is Lekalo-owned
 derived state with canonical compact bytes).
 
