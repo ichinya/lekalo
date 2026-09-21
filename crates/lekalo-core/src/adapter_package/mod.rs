@@ -52,7 +52,9 @@ pub mod trust;
 pub mod types;
 pub mod version;
 
+pub use diff::{diff_manifests, ManifestDiff};
 pub use discovery::{discover, implicit_local_development, DiscoverySource, ResolvedAdapter};
+pub use install::{ApplyRejection, InstallAction, InstallPlan};
 pub use integrity::verify_package;
 pub use inventory::Inventory;
 pub use manifest::{ManifestDigest, ManifestDocument};

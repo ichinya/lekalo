@@ -366,16 +366,16 @@ enum Commands {
     /// (issue #97).
     Module {
         #[command(subcommand)]
-        command: ModuleCommands,
+        command: Box<ModuleCommands>,
     },
     /// Run the target adapter conformance suite (issue #31).
     Adapter {
         #[command(subcommand)]
-        command: AdapterCommands,
+        command: Box<AdapterCommands>,
     },
     Cache {
         #[command(subcommand)]
-        command: CacheCommands,
+        command: Box<CacheCommands>,
     },
     /// Diagnose project, model, adapters, artifacts, and integrations in
     /// one read-only readiness report.
@@ -418,7 +418,7 @@ enum Commands {
     /// selects, renders, and maps exits.
     Observe {
         #[command(subcommand)]
-        command: ObserveCommands,
+        command: Box<ObserveCommands>,
     },
     /// Scan existing code through one target adapter and record the
     /// bindings (issue #42). Everything after the program path is passed
@@ -463,7 +463,7 @@ enum Commands {
     /// launches a gate command and answers with a typed refusal.
     Native {
         #[command(subcommand)]
-        command: NativeCommands,
+        command: Box<NativeCommands>,
     },
 }
 
@@ -772,6 +772,71 @@ enum AdapterCommands {
         /// Optional exact version; defaults to the selected pin.
         #[arg(long, value_name = "VERSION")]
         version: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Install one adapter package from a closed source (issue #32).
+    ///
+    /// `--dry-run` renders the plan and writes nothing; `--confirm`
+    /// applies exactly that previewed plan id.
+    Install {
+        /// The closed source coordinate (path:<fs-path>, exec:<name>,
+        /// release:<channel>/<id>, registry:<registry>/<package>).
+        source: String,
+        /// Render the plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply exactly the previewed plan id.
+        #[arg(long = "confirm", value_name = "PLAN_ID")]
+        confirm: Option<String>,
+        /// Accept a permission-widening update diff (required for a
+        /// plan flagged escalated).
+        #[arg(long)]
+        allow_escalation: bool,
+        /// Refuse sources that are not already local.
+        #[arg(long)]
+        offline: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Update one installed package to another immutable version
+    /// (issue #32). The plan renders the permission/capability diff;
+    /// a widening diff refuses without `--allow-escalation`.
+    Update {
+        /// The adapter id.
+        id: String,
+        /// The target version; defaults to the newest installed one.
+        #[arg(long, value_name = "VERSION")]
+        to: Option<String>,
+        /// Render the plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply exactly the previewed plan id.
+        #[arg(long = "confirm", value_name = "PLAN_ID")]
+        confirm: Option<String>,
+        /// Accept a permission-widening diff.
+        #[arg(long)]
+        allow_escalation: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Repoint the selected pin to a previously installed immutable
+    /// version (issue #32). Bytes are never modified.
+    Rollback {
+        /// The adapter id.
+        id: String,
+        /// The exact previously installed version.
+        #[arg(long, value_name = "VERSION")]
+        to: String,
+        /// Render the plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply exactly the previewed plan id.
+        #[arg(long = "confirm", value_name = "PLAN_ID")]
+        confirm: Option<String>,
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
@@ -1175,7 +1240,7 @@ struct MigrateArgs {
     rollback: Option<String>,
 }
 
-fn main() -> ExitCode {
+fn run_cli() -> ExitCode {
     let json_requested = std::env::args_os()
         .skip(1)
         .take_while(|argument| argument != OsStr::new("--"))
@@ -1282,7 +1347,7 @@ fn main() -> ExitCode {
                 project,
                 traces,
             } => run_readiness(phase.phase(), project, traces),
-            Commands::Cache { command } => run_cache(command),
+            Commands::Cache { command } => run_cache(*command),
             Commands::Scan {
                 target,
                 profile,
@@ -1298,7 +1363,7 @@ fn main() -> ExitCode {
             ),
             Commands::Bindings { command } => run_bindings(command),
             Commands::Contract { command } => run_contract(command),
-            Commands::Native { command } => match command {
+            Commands::Native { command } => match *command {
                 NativeCommands::Run { plan } => run_native_run(&plan),
             },
             Commands::Init {
@@ -1322,9 +1387,9 @@ fn main() -> ExitCode {
                 project,
                 dry_run,
             ),
-            Commands::Module { command } => run_module(command),
-            Commands::Observe { command } => run_observe(command),
-            Commands::Adapter { command } => match run_adapter(command) {
+            Commands::Module { command } => run_module(*command),
+            Commands::Observe { command } => run_observe(*command),
+            Commands::Adapter { command } => match run_adapter(*command) {
                 AdapterRun::Envelope(result) => result,
                 AdapterRun::Document { document, result } => {
                     // The requested report document owns stdout for
@@ -1353,7 +1418,10 @@ fn main() -> ExitCode {
                 };
             }
             ErrorKind::DisplayVersion => DomainResult::version(VERSION),
-            _ => DomainResult::usage_error(),
+            _ => {
+                eprintln!("CLAP-ERR: {}", error);
+                DomainResult::usage_error()
+            }
         },
     };
     emit(result, json_requested)
@@ -1842,6 +1910,52 @@ fn run_adapter(command: AdapterCommands) -> AdapterRun {
             version,
             project,
         } => run_adapter_info(&id, version.as_deref(), &project),
+        AdapterCommands::Install {
+            source,
+            dry_run,
+            confirm,
+            allow_escalation,
+            offline,
+            project,
+        } => run_adapter_install(
+            &source,
+            dry_run,
+            confirm.as_deref(),
+            allow_escalation,
+            offline,
+            &project,
+        ),
+        AdapterCommands::Update {
+            id,
+            to,
+            dry_run,
+            confirm,
+            allow_escalation,
+            project,
+        } => run_adapter_repoint(
+            AdapterRepoint::Update,
+            &id,
+            to.as_deref(),
+            dry_run,
+            confirm.as_deref(),
+            allow_escalation,
+            &project,
+        ),
+        AdapterCommands::Rollback {
+            id,
+            to,
+            dry_run,
+            confirm,
+            project,
+        } => run_adapter_repoint(
+            AdapterRepoint::Rollback,
+            &id,
+            Some(to.as_str()),
+            dry_run,
+            confirm.as_deref(),
+            false,
+            &project,
+        ),
     }
 }
 
@@ -2016,6 +2130,337 @@ fn run_adapter_info(id: &str, version: Option<&str>, project: &Option<String>) -
 fn project_root_for(project: &Option<String>) -> Result<std::path::PathBuf, DomainResult> {
     let selection = selection_for(project);
     lekalo_core::orchestration::project_root(&selection)
+}
+
+/// Render one install plan as the wire document (the dry-run output).
+fn render_plan(plan: &lekalo_core::adapter_package::InstallPlan) -> String {
+    let mut value = plan.to_json();
+    value["planId"] = serde_json::json!(plan.plan_id);
+    serde_json::to_string_pretty(&value).expect("plan serializes")
+}
+
+/// Run `lekalo adapter install`: plan (writes nothing) or confirm
+/// (apply exactly that plan id).
+/// Run `lekalo adapter install`: plan (writes nothing) or confirm
+/// (apply exactly that plan id).
+fn run_adapter_install(
+    source: &str,
+    dry_run: bool,
+    confirm: Option<&str>,
+    allow_escalation: bool,
+    offline: bool,
+    project: &Option<String>,
+) -> AdapterRun {
+    if !dry_run && confirm.is_none() {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::InstallPlanRequired,
+        ));
+    }
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let parsed = match lekalo_core::adapter_package::DiscoverySource::parse(source) {
+        Ok(parsed) => parsed,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let context = lekalo_core::adapter_package::ResolveContext {
+        root: Some(root.clone()),
+        offline,
+    };
+    let resolved = match lekalo_core::adapter_package::resolve(&parsed, &context) {
+        Ok(resolved) => resolved,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let current = inventory
+        .selected(resolved.adapter_id())
+        .and_then(|row| current_manifest(&root, row));
+    let quarantined = resolved.trust.quarantined_at_install();
+    let plan = lekalo_core::adapter_package::install::plan(
+        &resolved.candidate,
+        resolved.trust,
+        quarantined,
+        current.as_ref(),
+    );
+    if dry_run || confirm.is_none() {
+        return AdapterRun::Document {
+            document: render_plan(&plan),
+            result: DomainResult::receipt(
+                serde_json::to_string(&plan.to_json()).expect("plan serializes"),
+                format!(
+                    "install {} {} : plan {}",
+                    plan.id, plan.version, plan.plan_id
+                ),
+            ),
+        };
+    }
+    let confirmed = confirm.expect("checked above");
+    match lekalo_core::adapter_package::install::apply_from_candidate(
+        &root,
+        &resolved.candidate,
+        &plan,
+        confirmed,
+        allow_escalation,
+    ) {
+        Ok(()) => {
+            let document = serde_json::json!({
+                "status": "valid",
+                "schemaVersion": lekalo_core::adapter_package::version::INSTALL_PLAN_SCHEMA_VERSION,
+                "applied": plan.plan_id,
+                "id": plan.id,
+                "version": plan.version,
+                "trust": plan.trust.as_str(),
+                "quarantined": plan.quarantined,
+            });
+            AdapterRun::Document {
+                document: serde_json::to_string_pretty(&document).expect("applies serializes"),
+                result: DomainResult::receipt(
+                    serde_json::to_string(&document).expect("applies serializes"),
+                    format!(
+                        "install {} {} : applied {}",
+                        plan.id, plan.version, plan.plan_id
+                    ),
+                ),
+            }
+        }
+        Err(rejection) => AdapterRun::Envelope(install_rejection(rejection)),
+    }
+}
+
+/// The repoint family: update and rollback share the machinery. Both
+/// operate over already-installed immutable versions; update resolves
+/// the target version from the store inventory, rollback demands one.
+#[allow(clippy::too_many_arguments)]
+/// The repoint family: update and rollback share the machinery. Both
+/// operate over already-installed immutable versions; update resolves
+/// the target version from the store inventory, rollback demands one.
+#[derive(Clone, Copy)]
+enum AdapterRepoint {
+    Update,
+    Rollback,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_adapter_repoint(
+    kind: AdapterRepoint,
+    id: &str,
+    to: Option<&str>,
+    dry_run: bool,
+    confirm: Option<&str>,
+    allow_escalation: bool,
+    project: &Option<String>,
+) -> AdapterRun {
+    if !dry_run && confirm.is_none() {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::InstallPlanRequired,
+        ));
+    }
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    // Resolve the target row among the installed (promoted) versions.
+    let promoted: Vec<_> = inventory
+        .rows()
+        .iter()
+        .filter(|row| row.id == id && !row.quarantined)
+        .cloned()
+        .collect();
+    let target = match (kind, to) {
+        (_, Some(version)) => promoted
+            .iter()
+            .find(|row| row.version == version)
+            .or_else(|| inventory.selected(id).filter(|row| row.version == version)),
+        (AdapterRepoint::Update, None) => promoted.iter().rev().find(|row| !row.selected),
+        (AdapterRepoint::Rollback, None) => None,
+    };
+    let Some(target) = target else {
+        return AdapterRun::Envelope(DomainResult::from(
+            lekalo_core::lockfile::LockFailure::ComponentUnavailable {
+                kind: "adapter",
+                id: id.to_owned(),
+            },
+        ));
+    };
+    let current_row = inventory.selected(id);
+    let current = current_row.and_then(|row| current_manifest(&root, row));
+    // The repoint plan: one repoint action; the bytes already sit in the
+    // immutable store, so no stage runs. The diff compares the currently
+    // selected manifest with the target's stored manifest.
+    let diff =
+        current
+            .as_ref()
+            .zip(current_manifest(&root, target))
+            .map(|(current, target_manifest)| {
+                lekalo_core::adapter_package::diff::diff_manifests(current, &target_manifest)
+            });
+    let trust = lekalo_core::adapter_package::TrustLevel::parse(&target.trust)
+        .unwrap_or(lekalo_core::adapter_package::TrustLevel::Community);
+    let mut plan = lekalo_core::adapter_package::InstallPlan {
+        id: id.to_owned(),
+        version: target.version.clone(),
+        digest: target.digest.clone(),
+        manifest_digest: target.manifest_digest.clone(),
+        trust,
+        quarantined: false,
+        actions: vec![
+            lekalo_core::adapter_package::install::InstallAction::Repoint {
+                id: id.to_owned(),
+                version: target.version.clone(),
+            },
+        ],
+        diff,
+        plan_id: String::new(),
+    };
+    plan.plan_id = plan.compute_plan_id();
+    let verb = if matches!(kind, AdapterRepoint::Update) {
+        "update"
+    } else {
+        "rollback"
+    };
+    if dry_run || confirm.is_none() {
+        return AdapterRun::Document {
+            document: render_plan(&plan),
+            result: DomainResult::receipt(
+                serde_json::to_string(&plan.to_json()).expect("plan serializes"),
+                format!(
+                    "{} {} {} : plan {}",
+                    verb, plan.id, plan.version, plan.plan_id
+                ),
+            ),
+        };
+    }
+    let confirmed = confirm.expect("checked above");
+    if plan.compute_plan_id() != confirmed {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::SourceChanged,
+        ));
+    }
+    if let Some(diff) = &plan.diff {
+        if diff.escalated && !allow_escalation {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &lekalo_core::adapter_package::PackageFailure::PermissionEscalated {
+                    adapter: id.to_owned(),
+                    member: diff
+                        .escalated_member
+                        .clone()
+                        .unwrap_or_else(|| "permissions".to_owned()),
+                },
+            ));
+        }
+    }
+    let mut next = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(next) => next,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let applied = next
+        .select(id, &target.version, &target.digest)
+        .map_err(|_| ())
+        .and_then(|()| next.store(&root).map_err(|_| ()));
+    match applied {
+        Ok(()) => {
+            let document = serde_json::json!({
+                "status": "valid",
+                "schemaVersion": lekalo_core::adapter_package::version::INSTALL_PLAN_SCHEMA_VERSION,
+                "applied": plan.plan_id,
+                "id": plan.id,
+                "version": plan.version,
+                "selected": true,
+            });
+            AdapterRun::Document {
+                document: serde_json::to_string_pretty(&document).expect("applies serializes"),
+                result: DomainResult::receipt(
+                    serde_json::to_string(&document).expect("applies serializes"),
+                    format!(
+                        "{} {} {} : applied {}",
+                        verb, plan.id, plan.version, plan.plan_id
+                    ),
+                ),
+            }
+        }
+        Err(()) => AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::RecoveryRequired {
+                stage: "repoint".to_owned(),
+            },
+        )),
+    }
+}
+
+/// Re-load one installed package's manifest from the store bytes.
+fn current_manifest(
+    root: &std::path::Path,
+    row: &lekalo_core::adapter_package::inventory::InventoryRow,
+) -> Option<lekalo_core::adapter_package::ManifestDocument> {
+    let digest8: String = row.digest["sha256:".len()..].chars().take(8).collect();
+    let dir = root.join(
+        format!(
+            ".lekalo/adapters/packages/{}/{}-{}",
+            row.id, row.version, digest8
+        )
+        .replace('/', std::path::MAIN_SEPARATOR_STR),
+    );
+    let bytes =
+        std::fs::read(dir.join(lekalo_core::adapter_package::integrity::MANIFEST_FILE)).ok()?;
+    lekalo_core::adapter_package::ManifestDocument::from_bytes(&bytes).ok()
+}
+
+/// Map an apply rejection onto its registered envelope.
+fn install_rejection(
+    rejection: lekalo_core::adapter_package::install::ApplyRejection,
+) -> DomainResult {
+    use lekalo_core::adapter_package::install::ApplyRejection;
+    use lekalo_core::adapter_package::PackageFailure;
+    match rejection {
+        ApplyRejection::SourceChanged => {
+            lekalo_core::adapter_package::diagnostic::domain_result(&PackageFailure::SourceChanged)
+        }
+        ApplyRejection::PermissionEscalated { member } => {
+            lekalo_core::adapter_package::diagnostic::domain_result(
+                &PackageFailure::PermissionEscalated {
+                    adapter: String::new(),
+                    member,
+                },
+            )
+        }
+        ApplyRejection::InstallConflict { path } => {
+            lekalo_core::adapter_package::diagnostic::domain_result(
+                &PackageFailure::InstallConflict { path },
+            )
+        }
+        ApplyRejection::RecoveryRequired { stage } => {
+            lekalo_core::adapter_package::diagnostic::domain_result(
+                &PackageFailure::RecoveryRequired { stage },
+            )
+        }
+    }
 }
 
 /// Run `lekalo adapter test` (the issue #31 conformance battery behind
@@ -5125,4 +5570,17 @@ fn run_contract_support(
         ),
         Err(set) => DomainResult::invalid(set),
     }
+}
+
+/// The process entry point: run the CLI on a dedicated thread with a
+/// bounded large stack. The clap-generated command tree and the deep
+/// per-command match arms otherwise overflow the 1 MiB main-thread
+/// reserve on Windows debug builds (issue #32, step 8).
+fn main() -> ExitCode {
+    std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(run_cli)
+        .expect("CLI thread")
+        .join()
+        .unwrap_or(ExitCode::from(1))
 }

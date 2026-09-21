@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/adapter-install-plan.schema.v0.3.2.json",
+  "title": "Lekalo Adapter Install Plan",
+  "description": "Closed wire contract for the previewed adapter install/update/rollback plan (issue #32). Planning writes nothing; the confirmed planId binds the preview to its apply byte-exactly. The plan carries the resolved package identity, the assigned trust level, the quarantine custody flag, the sorted actions, the optional permission/capability diff against the currently selected version, and the plan identity digest over these canonical bytes. The planId member never participates in its own digest domain. The Rust implementation in crates/lekalo-core/src/adapter_package/install is normative for cross-field invariants.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "version",
+    "digest",
+    "manifestDigest",
+    "trust",
+    "quarantined",
+    "actions",
+    "diff"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "lekalo/adapter-install-plan/v0.3.2" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,127}$",
+      "maxLength": 128
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "maxLength": 32
+    },
+    "digest": { "$ref": "#/$defs/sha256Digest" },
+    "manifestDigest": { "$ref": "#/$defs/sha256Digest" },
+    "trust": { "$ref": "#/$defs/trustLevel" },
+    "quarantined": { "type": "boolean" },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "items": { "$ref": "#/$defs/action" }
+    },
+    "diff": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/manifestDiff" }]
+    },
+    "planId": {
+      "oneOf": [{ "$ref": "#/$defs/sha256Digest" }, { "type": "null" }],
+      "description": "The plan identity: sha256 over the canonical bytes of this document with planId excluded. Recomputed and compared at apply time; any drift is adapter.source-changed."
+    }
+  },
+  "$defs": {
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "trustLevel": {
+      "enum": ["builtin", "verified", "local-development", "community", "revoked"]
+    },
+    "action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "path", "digest"],
+          "properties": {
+            "action": { "const": "stage" },
+            "path": { "$ref": "#/$defs/packagePath" },
+            "digest": { "$ref": "#/$defs/sha256Digest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "path"],
+          "properties": {
+            "action": { "const": "promote" },
+            "path": { "type": "string", "minLength": 1, "maxLength": 512 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "id", "version"],
+          "properties": {
+            "action": { "const": "repoint" },
+            "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,127}$" },
+            "version": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "path"],
+          "properties": {
+            "action": { "const": "quarantine" },
+            "path": { "type": "string", "minLength": 1, "maxLength": 512 }
+          }
+        }
+      ]
+    },
+    "packagePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "manifestDiff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["escalated"],
+      "properties": {
+        "readScopes": { "$ref": "#/$defs/changeList" },
+        "writeScopes": { "$ref": "#/$defs/changeList" },
+        "networkMode": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "string", "maxLength": 32 }
+        },
+        "networkDestinations": { "$ref": "#/$defs/changeList" },
+        "environment": { "$ref": "#/$defs/changeList" },
+        "processes": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "string", "maxLength": 32 }
+        },
+        "secrets": { "$ref": "#/$defs/changeList" },
+        "namedCapabilities": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": { "type": "string", "maxLength": 128 }
+          }
+        },
+        "protocolVersions": { "$ref": "#/$defs/changeList" },
+        "irVersions": { "$ref": "#/$defs/changeList" },
+        "escalated": { "type": "boolean" },
+        "escalatedMember": {
+          "oneOf": [{ "type": "string", "maxLength": 128 }, { "type": "null" }]
+        }
+      }
+    },
+    "changeList": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 2,
+        "items": { "type": "string", "maxLength": 256 }
+      }
+    }
+  }
+}
