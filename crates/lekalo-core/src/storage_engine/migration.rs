@@ -951,7 +951,12 @@ fn declared_tables(
 /// The enum-member CHECK plan: under the `check` policy every enum
 /// column carries the bounded `chk_<table>_<column>` member-list
 /// constraint, exactly as the DDL renderer emits it; a new, changed,
-/// or removed member list plans the matching add or drop.
+/// or removed member list plans the matching add or drop. A changed
+/// member list replaces the constraint in place — the drop of the
+/// old list executes before the re-add under the same derived name,
+/// because an `ADD CONSTRAINT` under an existing name cannot
+/// execute — and a table the candidate drops carries its derived
+/// checks with it: the `DROP TABLE` owns them.
 fn plan_enum_checks(
     steps: &mut Vec<Step>,
     profile: &StorageEngineAttachment,
@@ -992,17 +997,37 @@ fn plan_enum_checks(
         if !base_declared.contains_key(entity) {
             continue;
         }
-        let existed = base_checks
+        let base_check = base_checks
             .iter()
-            .any(|(base_entity, base_name, base_predicate)| {
-                base_entity == entity && base_name == name && base_predicate == predicate
-            });
-        if existed {
+            .find(|(base_entity, base_name, _)| base_entity == entity && base_name == name);
+        // Unchanged: the same derived name carries the same member
+        // list.
+        if base_check.is_some_and(|(_, _, base_predicate)| base_predicate == predicate) {
             continue;
         }
         let Some(table) = candidate_tables.get(entity) else {
             continue;
         };
+        // A same-named check with a changed member list is replaced:
+        // the drop of the old list executes in place, never after its
+        // own re-add — an ADD CONSTRAINT under an already-bound name
+        // cannot execute.
+        let mut requires = Vec::new();
+        if base_check.is_some() {
+            let drop_id = steps.len();
+            push_step(
+                steps,
+                "drop_check",
+                format!(
+                    "ALTER TABLE {} DROP CONSTRAINT \"{name}\";",
+                    quote(table.table())
+                ),
+                DataRisk::Destructive,
+                Vec::new(),
+                None,
+            );
+            requires.push(drop_id + 1);
+        }
         push_step(
             steps,
             "add_check",
@@ -1011,21 +1036,24 @@ fn plan_enum_checks(
                 quote(table.table()),
             ),
             DataRisk::None,
-            Vec::new(),
+            requires,
             None,
         );
     }
-    let base_tables = declared_tables(base);
     for (entity, name, _) in &base_checks {
+        // A table being dropped carries its derived checks with it:
+        // no member drops, the DROP TABLE owns them.
+        let Some(table) = candidate_tables.get(entity) else {
+            continue;
+        };
         let removed = !candidate_checks
             .iter()
             .any(|(candidate_entity, candidate_name, _)| {
                 candidate_entity == entity && candidate_name == name
             });
         if removed {
-            let Some(table) = base_tables.get(entity) else {
-                continue;
-            };
+            // The constraint lives on the surviving table under its
+            // current (post-rename) name.
             push_step(
                 steps,
                 "drop_check",
@@ -1434,5 +1462,33 @@ mod tests {
         assert_eq!(steps[2].explain(), Some(ExplainHook::Before));
         assert!(steps[3].explain().is_none());
         assert_eq!(steps[1].explain().map(ExplainHook::key), Some("before"));
+    }
+
+    #[test]
+    fn a_replaced_enum_check_stays_paired_and_in_place() {
+        // A drop whose object name a later step re-adds (a changed
+        // enum member list under the constant derived check name)
+        // keeps rank 0: the re-add depends on the drop, and moving the
+        // drop behind the constructive steps would fail the re-add on
+        // the still-bound name.
+        let mut steps = vec![
+            step("create_extension"),
+            step("drop_check"),
+            step("add_check"),
+            step("drop_column"),
+        ];
+        steps[1].statement = "ALTER TABLE \"tag\" DROP CONSTRAINT \"chk_tag_color\";".to_owned();
+        steps[2].statement =
+            "ALTER TABLE \"tag\" ADD CONSTRAINT \"chk_tag_color\" CHECK (\"color\" IN ('red'));"
+                .to_owned();
+        steps[2].requires = vec![2];
+        steps[2].risk = DataRisk::None;
+        order_drops_last(&mut steps);
+        let kinds: Vec<&str> = steps.iter().map(|step| step.kind).collect();
+        assert_eq!(
+            kinds,
+            vec!["create_extension", "drop_check", "add_check", "drop_column",],
+            "the paired drop stays in place ahead of the unpaired drops"
+        );
     }
 }

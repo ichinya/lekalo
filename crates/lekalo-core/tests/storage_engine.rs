@@ -510,6 +510,133 @@ fn a_changed_check_predicate_plans_a_drop_and_readd_in_order() {
 }
 
 #[test]
+fn a_changed_enum_member_list_plans_a_drop_and_readd_under_the_same_name() {
+    // The derived enum CHECK diffs by (entity, name, predicate): a
+    // changed member list replaces the constraint in place — the drop
+    // of the old list executes before the re-add under the same
+    // derived name, because ADD CONSTRAINT under an existing name
+    // cannot execute.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    let fields = candidate_value
+        .get_mut("entities")
+        .and_then(|entities| entities.as_array_mut())
+        .and_then(|entities| {
+            entities.iter_mut().find(|entity| {
+                entity.get("entityKey").and_then(serde_json::Value::as_str) == Some("tag")
+            })
+        })
+        .and_then(|entity| entity.get_mut("fields"))
+        .and_then(|fields| fields.as_array_mut())
+        .expect("entity fields");
+    let color = fields
+        .iter_mut()
+        .find(|field| field.get("field").and_then(serde_json::Value::as_str) == Some("color"))
+        .expect("the enum field");
+    color["type"]["members"] = serde_json::json!(["blue", "green", "red", "purple"]);
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        None,
+    )
+    .expect("plans");
+    let positions: Vec<(usize, &str)> = plan
+        .steps()
+        .iter()
+        .enumerate()
+        .filter(|(_, step)| {
+            step.statement().contains("chk_tag_color")
+                && (step.kind() == "drop_check" || step.kind() == "add_check")
+        })
+        .map(|(position, step)| (position, step.kind()))
+        .collect();
+    assert_eq!(
+        positions,
+        vec![
+            (positions[0].0, "drop_check"),
+            (positions[1].0, "add_check")
+        ],
+        "the old member list drops before the re-add"
+    );
+    assert_eq!(
+        plan.steps()[positions[1].0].requires(),
+        &[plan.steps()[positions[0].0].id()],
+        "the re-add depends on the drop"
+    );
+    assert!(
+        plan.steps()[positions[1].0]
+            .statement()
+            .contains("'purple'"),
+        "the re-add carries the new member list"
+    );
+    assert!(plan.gated(), "a constraint replacement is destructive");
+}
+
+#[test]
+fn a_dropped_tables_enum_checks_ride_the_table_drop() {
+    // A table the candidate drops carries its derived enum CHECKs
+    // with it: no member drops, the DROP TABLE owns them.
+    let mut base_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("base json");
+    // The candidate loses the whole tag entity, its join relation, and
+    // every join declaration over that relation.
+    base_value["entities"]
+        .as_array_mut()
+        .expect("entities")
+        .retain(|entity| {
+            entity.get("entityKey").and_then(serde_json::Value::as_str) != Some("tag")
+        });
+    for projection in base_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if let Some(tables) = projection.get_mut("tables").and_then(|t| t.as_array_mut()) {
+            tables.retain(|table| {
+                table.get("entity").and_then(serde_json::Value::as_str) != Some("tag")
+            });
+        }
+        if let Some(joins) = projection.get_mut("joins").and_then(|j| j.as_array_mut()) {
+            joins.retain(|join| {
+                join.get("relation").and_then(serde_json::Value::as_str)
+                    != Some("planner.relation.task_tags")
+            });
+        }
+    }
+    base_value["relations"]
+        .as_array_mut()
+        .expect("relations")
+        .retain(|relation| {
+            relation
+                .get("relationId")
+                .and_then(serde_json::Value::as_str)
+                != Some("planner.relation.task_tags")
+        });
+    let candidate = StorageProjectionAttachment::from_value(&base_value).expect("valid candidate");
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        None,
+    )
+    .expect("plans");
+    assert!(
+        !plan
+            .steps()
+            .iter()
+            .any(|step| step.statement().contains("chk_tag_color")),
+        "no enum-check drops for the dropped table"
+    );
+    assert!(plan
+        .steps()
+        .iter()
+        .any(|step| step.kind() == "drop_table" && step.statement().contains("\"tag\"")));
+}
+
+#[test]
 fn a_profile_bound_to_a_foreign_projection_refuses_to_plan() {
     // The binding guarantee holds on the migration surface too: the
     // profile is authored against the base state, and a profile bound
