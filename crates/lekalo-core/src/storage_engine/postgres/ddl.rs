@@ -177,8 +177,10 @@ pub fn render(
     for table in projection.tables() {
         for column in table.columns() {
             if column.generated_kind() == Some(GeneratedKind::Sequence) {
-                let sequence =
-                    derived_name(&format!("seq_{}_{}", table.table(), column.name()), "sequence-name")?;
+                let sequence = derived_name(
+                    &format!("seq_{}_{}", table.table(), column.name()),
+                    "sequence-name",
+                )?;
                 statements.push(format!("CREATE SEQUENCE {};", quote(&sequence)));
                 sequence_owners.push((
                     sequence,
@@ -339,7 +341,8 @@ pub fn render(
                         quote(table.table())
                     ));
                 }
-                let policy_name = derived_name(&format!("pol_{}_tenant", table.table()), "policy-name")?;
+                let policy_name =
+                    derived_name(&format!("pol_{}_tenant", table.table()), "policy-name")?;
                 statements.push(format!(
                     "CREATE POLICY {} ON {} USING ({} = current_setting('{}')::{});",
                     quote(&policy_name),
@@ -402,9 +405,7 @@ pub(crate) fn create_table(
     table: &crate::storage_projection::derivation::DerivedTable,
 ) -> Result<String, DiagnosticSet> {
     let enum_members = declared_enum_members(attachment, table);
-    if !enum_members.is_empty()
-        && profile.policies().enum_policy() == EnumPolicy::NativeEnum
-    {
+    if !enum_members.is_empty() && profile.policies().enum_policy() == EnumPolicy::NativeEnum {
         return Err(diagnostic::rule_invalid(
             RENDER_UNSUPPORTED,
             "native-enum",
@@ -587,9 +588,11 @@ pub(crate) fn render_default(
 
 /// The exact default spelling of a generated sequence column: the
 /// deterministic sequence this renderer creates and owns.
-pub(crate) fn sequence_default(table: &StorageName, column: &StorageName) -> Result<String, DiagnosticSet> {
-    let sequence =
-        derived_name(&format!("seq_{}_{}", table, column), "sequence-name")?;
+pub(crate) fn sequence_default(
+    table: &StorageName,
+    column: &StorageName,
+) -> Result<String, DiagnosticSet> {
+    let sequence = derived_name(&format!("seq_{}_{}", table, column), "sequence-name")?;
     Ok(format!("nextval('{}')", sequence))
 }
 
@@ -804,9 +807,12 @@ mod tests {
             .get_mut("projections")
             .and_then(|projections| projections.as_array_mut())
             .and_then(|projections| {
-                projections
-                    .iter_mut()
-                    .find(|projection| projection.get("namespace").and_then(serde_json::Value::as_str) == Some("postgres"))
+                projections.iter_mut().find(|projection| {
+                    projection
+                        .get("namespace")
+                        .and_then(serde_json::Value::as_str)
+                        == Some("postgres")
+                })
             })
             .and_then(|projection| projection.get_mut("tables"))
             .and_then(|tables| tables.get_mut(0))
@@ -818,9 +824,8 @@ mod tests {
             "kind": "sequence",
             "name": long_column,
         }]);
-        let attachment =
-            crate::storage_projection::StorageProjectionAttachment::from_value(&value)
-                .expect("valid projection");
+        let attachment = crate::storage_projection::StorageProjectionAttachment::from_value(&value)
+            .expect("valid projection");
         let mut profile_value = profile_value();
         let bytes = attachment.canonical_bytes().expect("canonical");
         profile_value["projectionRef"] = serde_json::Value::String(format!(
@@ -846,7 +851,9 @@ mod tests {
             .and_then(|projections| projections.as_array_mut())
             .and_then(|projections| {
                 projections.iter_mut().find(|projection| {
-                    projection.get("namespace").and_then(serde_json::Value::as_str)
+                    projection
+                        .get("namespace")
+                        .and_then(serde_json::Value::as_str)
                         == Some("postgres")
                 })
             })
@@ -862,9 +869,8 @@ mod tests {
             "kind": "computed",
             "name": "total",
         }]);
-        let attachment =
-            crate::storage_projection::StorageProjectionAttachment::from_value(&value)
-                .expect("valid projection");
+        let attachment = crate::storage_projection::StorageProjectionAttachment::from_value(&value)
+            .expect("valid projection");
         let mut profile_value = profile_value();
         let bytes = attachment.canonical_bytes().expect("canonical");
         profile_value["projectionRef"] = serde_json::Value::String(format!(

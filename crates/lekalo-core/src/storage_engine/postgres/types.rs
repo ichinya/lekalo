@@ -188,7 +188,7 @@ mod tests {
         native.enum_policy = crate::storage_engine::EnumPolicy::NativeEnum;
         let error = map_type(
             &DomainType::Enum {
-                members: vec!["red".to_owned()]
+                members: vec!["red".to_owned()],
             },
             &native,
         )

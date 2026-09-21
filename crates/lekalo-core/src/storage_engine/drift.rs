@@ -306,9 +306,7 @@ fn compare_columns(
         } else {
             column
                 .default()
-                .map(|default| {
-                    super::postgres::ddl::render_default(default, declared.table())
-                })
+                .map(|default| super::postgres::ddl::render_default(default, declared.table()))
                 .transpose()?
         };
         let observed_default = observed_column.default().map(normalized_default);
@@ -460,7 +458,12 @@ fn compare_join_primary_key(
             });
             return;
         };
-        let expected = sorted_names(declared.columns().iter().map(|column| column.name().as_str()));
+        let expected = sorted_names(
+            declared
+                .columns()
+                .iter()
+                .map(|column| column.name().as_str()),
+        );
         if sorted_names(first.columns().iter().map(String::as_str)) != expected {
             findings.push(Finding {
                 kind: FindingKind::Divergent,
@@ -526,12 +529,9 @@ fn compare_checks(
             // The missing table is reported once as table-missing.
             continue;
         };
-        let observed_check = observed_table
-            .constraints()
-            .iter()
-            .find(|constraint| {
-                constraint.kind().key() == "check" && constraint.name() == Some(name.as_str())
-            });
+        let observed_check = observed_table.constraints().iter().find(|constraint| {
+            constraint.kind().key() == "check" && constraint.name() == Some(name.as_str())
+        });
         let path = format!("tables/{table_name}/checks/{name}");
         match observed_check {
             None => findings.push(Finding {
@@ -606,11 +606,7 @@ fn compare_unique_constraints(
             if columns != primary && !declared_unique.contains(&columns) {
                 findings.push(Finding {
                     kind: FindingKind::Extra,
-                    path: format!(
-                        "tables/{}/unique/{}",
-                        table.table(),
-                        columns.join("_")
-                    ),
+                    path: format!("tables/{}/unique/{}", table.table(), columns.join("_")),
                     detail: "unique-extra".to_owned(),
                 });
             }

@@ -12,9 +12,8 @@ use lekalo_core::storage_projection::{project, Namespace, StorageProjectionAttac
 
 const PROFILE: &[u8] =
     include_bytes!("../../../tests/fixtures/storage-engine/valid/planner-postgres.json");
-const PROFILE_FULL: &[u8] = include_bytes!(
-    "../../../tests/fixtures/storage-engine/valid/planner-postgres-full.json"
-);
+const PROFILE_FULL: &[u8] =
+    include_bytes!("../../../tests/fixtures/storage-engine/valid/planner-postgres-full.json");
 const PROJECTION: &[u8] =
     include_bytes!("../../../tests/fixtures/storage-projection/valid/planner-storage.json");
 const OBSERVED: &[u8] =
@@ -290,7 +289,11 @@ fn a_not_null_tightening_without_default_requires_backfill() {
         .iter()
         .find(|step| step.kind() == "backfill")
         .expect("the tightening plans its backfill");
-    assert_eq!(backfill.id(), set_null.requires()[0], "SET NOT NULL follows the backfill");
+    assert_eq!(
+        backfill.id(),
+        set_null.requires()[0],
+        "SET NOT NULL follows the backfill"
+    );
     assert!(
         backfill.statement().contains("= 0 WHERE"),
         "the backfill writes the type's zero value: {}",
@@ -353,9 +356,7 @@ fn an_added_not_null_column_plans_nullable_backfill_then_the_constraint() {
     let set_null = plan
         .steps()
         .iter()
-        .find(|step| {
-            step.kind() == "set_column_null" && step.statement().contains("attempt_count")
-        })
+        .find(|step| step.kind() == "set_column_null" && step.statement().contains("attempt_count"))
         .expect("the constraint");
     assert_eq!(add.id() + 1, backfill.id(), "the backfill follows the add");
     assert_eq!(
@@ -413,8 +414,7 @@ fn a_new_table_plans_the_exact_ddl_create_statement() {
         "sha256:{}",
         lekalo_core::digest::sha256_hex(base_bytes.as_bytes())
     ));
-    let base_profile =
-        StorageEngineAttachment::from_value(&profile_value).expect("valid profile");
+    let base_profile = StorageEngineAttachment::from_value(&profile_value).expect("valid profile");
     let plan = lekalo_core::storage_engine::plan_migration(&base_profile, &base, &full, None)
         .expect("plans");
     let create = plan
@@ -436,10 +436,7 @@ fn a_new_table_plans_the_exact_ddl_create_statement() {
     );
     // No add_check steps follow for the new table: the constraints
     // rode the create statement.
-    assert!(!plan
-        .steps()
-        .iter()
-        .any(|step| step.kind() == "add_check"));
+    assert!(!plan.steps().iter().any(|step| step.kind() == "add_check"));
 }
 
 #[test]
@@ -454,7 +451,9 @@ fn a_changed_check_predicate_plans_a_drop_and_readd_in_order() {
         .and_then(|projections| projections.as_array_mut())
         .and_then(|projections| {
             projections.iter_mut().find(|projection| {
-                projection.get("namespace").and_then(serde_json::Value::as_str)
+                projection
+                    .get("namespace")
+                    .and_then(serde_json::Value::as_str)
                     == Some("postgres")
             })
         })
