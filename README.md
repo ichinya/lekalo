@@ -71,6 +71,19 @@ malformed or custody failure. The checker trusts only the hard-pinned
 accepted manifest bytes; a recomputed digest never authorizes changed
 semantics.
 
+Validate the data-classification attachments and derive the data-flow
+report (issue #87):
+
+```sh
+node scripts/test-classification-contracts.mjs
+node scripts/test-classification-cli.mjs   # requires: cargo build -p lekalo-cli
+```
+
+The two declared attachments bind to the exact
+`projectId`/`modelRef`/`irRef` custody triple; the derived data-flow
+report pins their canonical digests. Unknown is never safe and
+`credential` never declassifies downward.
+
 ## Canonical project structure
 
 The portable layout of a user repository — canonical model homes, target
