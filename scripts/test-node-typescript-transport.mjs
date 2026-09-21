@@ -109,6 +109,13 @@ test("gate: the plan is deterministic and byte-pinned across repeats", () => {
     assert.equal(route.method, "POST");
     assert.equal(route.path, "/tasks/{task_id}/focus");
     assert.equal(route.invokes, "planner.focus_task");
+    // The full declared policy surface survives the projection.
+    assert.deepEqual(route.rateLimit, { limit: 120, windowSeconds: 60, scope: "actor" });
+    assert.deepEqual(route.cache, { policy: "no-store", maxAgeSeconds: 0, etag: false });
+    assert.deepEqual(route.apiVersion, { in: "header", name: "v1" });
+    assert.deepEqual(route.tags, ["planner"]);
+    assert.equal(route.summary, "Focus one task over HTTP");
+    assert.deepEqual(route.scenarios, ["planner.focus_flow"]);
   }
 });
 

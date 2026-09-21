@@ -216588,7 +216588,7 @@ function routeModuleText(moduleId, endpoints, defaults, joins) {
     if (!joined) {
       throw new TypeError("transport-endpoint-unjoined");
     }
-    return {
+    const route = {
       endpoint: endpoint.endpoint,
       operationId: effectiveOperationId(endpoint),
       method: joined.method,
@@ -216605,6 +216605,10 @@ function routeModuleText(moduleId, endpoints, defaults, joins) {
         correlation: endpoint.correlation ?? null
       } : null
     };
+    for (const member of ["pagination", "rateLimit", "cache", "apiVersion", "tags", "summary", "scenarios"]) {
+      if (endpoint[member] !== void 0) route[member] = endpoint[member];
+    }
+    return route;
   });
   const payload = {
     module: moduleId,

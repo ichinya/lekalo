@@ -128,6 +128,14 @@ test("the route plan is deterministic and derived from the evidence", () => {
   assert.match(text, /"path":"\/tasks\/\{task_id\}\/focus"/);
   assert.match(text, /"invokes":"planner.focus_task"/);
   assert.doesNotMatch(text, /"method":null/);
+  // Every declared wire member is carried through, never dropped:
+  // policy surface (rateLimit, cache, apiVersion) and declaration
+  // data (tags, summary, scenarios) all survive the projection.
+  for (const member of ["rateLimit", "cache", "apiVersion", "tags", "summary", "scenarios"]) {
+    assert.match(text, new RegExp(`"${member}":`), `${member} is projected`);
+  }
+  // Members the endpoint does not declare stay absent, never null.
+  assert.doesNotMatch(text, /"pagination":null/);
 });
 
 test("an unjoined endpoint throws instead of planning a null route", () => {

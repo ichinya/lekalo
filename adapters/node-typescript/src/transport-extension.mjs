@@ -201,14 +201,18 @@ function unsupportedNotes(endpoints) {
 
 /** Render one deterministic route module for one model module. The
  * Model join (`method`, `path`, `invokes`) is required per route:
- * an unjoined endpoint is a refused plan, never a null-bearing one. */
+ * an unjoined endpoint is a refused plan, never a null-bearing one.
+ * Every declared wire member is carried through — pagination,
+ * rate limit, cache, api version, tags, summary, and scenarios
+ * included — so the generated route layer never silently narrows
+ * the canonical surface (plan §3.5: reported, never dropped). */
 function routeModuleText(moduleId, endpoints, defaults, joins) {
   const routes = endpoints.map((endpoint) => {
     const joined = joins.get(endpoint.endpoint);
     if (!joined) {
       throw new TypeError("transport-endpoint-unjoined");
     }
-    return {
+    const route = {
       endpoint: endpoint.endpoint,
       operationId: effectiveOperationId(endpoint),
       method: joined.method,
@@ -227,6 +231,14 @@ function routeModuleText(moduleId, endpoints, defaults, joins) {
           }
         : null,
     };
+    // The remaining declared wire members: copied verbatim when the
+    // endpoint declares them. Members absent from the declaration stay
+    // absent (never null), so a consumer can distinguish "not
+    // declared" from "declared null".
+    for (const member of ["pagination", "rateLimit", "cache", "apiVersion", "tags", "summary", "scenarios"]) {
+      if (endpoint[member] !== undefined) route[member] = endpoint[member];
+    }
+    return route;
   });
   const payload = {
     module: moduleId,

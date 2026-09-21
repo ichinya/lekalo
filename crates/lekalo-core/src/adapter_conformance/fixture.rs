@@ -53,8 +53,11 @@ pub const SCENARIO_PATH: &str = ".lekalo/ir/scenario-txn-concurrency.json";
 /// The canonical transport-http evidence fixture: one endpoint
 /// binding over the fixture project's `planner.api_focus` with the
 /// full #62 error map, explicit security, a declared streaming
-/// capability the `http-json` profile satisfies partially, and the
-/// black-box scenario coverage reference.
+/// capability the `http-json` profile satisfies partially, the
+/// black-box scenario coverage reference, and the full declared
+/// policy surface (rate limit, cache, api version, tags, summary) so
+/// the route-parity digest covers the complete wire surface, not a
+/// reduced one.
 pub const TRANSPORT_EVIDENCE: &str =
     include_str!("../../../../tests/fixtures/adapter-conformance/inputs/transport-minimal.json");
 
@@ -73,7 +76,7 @@ pub const TRANSPORT_DIFF_BREAKING: &str =
 /// path, and invokes come from the Model symbols).
 pub const TRANSPORT_ROUTE_PATH: &str = "src/routes/planner.routes.ts";
 pub const TRANSPORT_ROUTE_DIGEST: &str =
-    "sha256:e0e969d4a9523761bc84d48d3f5455e293fa203dc8d9d8fb075e7f678b5a5ec4";
+    "sha256:8cfe4ddfb5c31dbbc85e7cc91589d14b5d3c2a3d1d1d741cda3a37d3d013c6bd";
 
 /// The logical path of the transport evidence input.
 pub const TRANSPORT_PATH: &str = ".lekalo/cache/transport/minimal.json";
