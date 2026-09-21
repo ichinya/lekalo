@@ -499,7 +499,7 @@ pub(crate) fn create_table(
 /// The declared enum members of one derived table's field-origin
 /// columns, keyed by column name (the field and column grammars
 /// coincide). Empty when the entity declares no enum fields.
-fn declared_enum_members(
+pub(crate) fn declared_enum_members(
     attachment: &StorageProjectionAttachment,
     table: &crate::storage_projection::derivation::DerivedTable,
 ) -> std::collections::BTreeMap<String, Vec<String>> {
@@ -566,7 +566,7 @@ fn render_literal(value: &Literal) -> String {
 /// table's deterministic sequence (`seq_<table>_<column>`), the exact
 /// object the renderer creates — never the bare referenced column
 /// name, which names no sequence.
-fn render_default(
+pub(crate) fn render_default(
     default: &FieldDefault,
     table: &StorageName,
 ) -> Result<String, DiagnosticSet> {
@@ -587,7 +587,7 @@ fn render_default(
 
 /// The exact default spelling of a generated sequence column: the
 /// deterministic sequence this renderer creates and owns.
-fn sequence_default(table: &StorageName, column: &StorageName) -> Result<String, DiagnosticSet> {
+pub(crate) fn sequence_default(table: &StorageName, column: &StorageName) -> Result<String, DiagnosticSet> {
     let sequence =
         derived_name(&format!("seq_{}_{}", table, column), "sequence-name")?;
     Ok(format!("nextval('{}')", sequence))

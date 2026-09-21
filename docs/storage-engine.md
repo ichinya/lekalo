@@ -97,10 +97,12 @@ server-reported version, the bounded scope read, observed tables with
 typed columns, indexes, and constraints, the installed extensions,
 and the explicit `unsupported[]` records. Core normalizes it
 fail-closed, then `compare_drift` reports `missing` / `extra` /
-`divergent` findings per table, column, foreign constraint, and index
-plus the verbatim unsupported findings. The verdict stays data:
-drift never invents a remediation and never changes the exit class
-by itself.
+`divergent` findings per table, column (type, nullability, default
+spelling, and identity), primary key, declared and derived CHECK
+constraint, foreign constraint, and index — over entity tables and
+join tables alike — plus the verbatim unsupported findings. The
+verdict stays data: drift never invents a remediation and never
+changes the exit class by itself.
 
 ## Migration plans and the gate
 

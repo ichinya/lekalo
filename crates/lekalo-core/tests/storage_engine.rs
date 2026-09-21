@@ -84,6 +84,11 @@ fn the_drifted_vector_reports_missing_extra_divergent_and_unsupported() {
     assert!(paths
         .iter()
         .any(|(kind, path, _)| kind == "missing" && path == "tables/task_roster"));
+    // A dropped primary key and a dropped declared check are drift:
+    // the comparison covers the constraint classes, not only columns.
+    assert!(paths.iter().any(|(kind, path, detail)| {
+        kind == "missing" && path == "tables/task_detail/primary" && detail == "primary-missing"
+    }));
     // The unallowlisted extension and the unsupported type surface
     // verbatim from the evidence records.
     assert!(paths.iter().any(|(kind, path, _)| {
