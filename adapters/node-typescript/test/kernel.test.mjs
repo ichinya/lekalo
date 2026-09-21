@@ -95,6 +95,7 @@ test("no invented capability ids ever appear", () => {
     "generate.openapi",
     "generate.ui",
     "generate.zod",
+    "preserve.classification",
     "scan.symbols",
     "verify.scenarios",
   ]);
@@ -375,6 +376,35 @@ test("zero roots are a policy refusal, not an implicit all-files grant", () => {
 // ---------------------------------------------------------------------------
 // Extension registry validation.
 // ---------------------------------------------------------------------------
+
+test("the classification preservation capability is declarable and honestly unsupported by default (issue #87)", () => {
+  // The default describe map carries the closed unsupported state: the
+  // frozen observed-scan wire cannot carry kind tokens, so the adapter
+  // refuses instead of silently lowering.
+  const describe = describeCapabilities();
+  assert.equal(describe.capabilities["preserve.classification"], "unsupported");
+  // A validated extension may declare the capability; its state is
+  // projected into the describe map verbatim.
+  const descriptor = {
+    id: "fixture-classifier",
+    version: "0.1.0",
+    operations: ["scan"],
+    namedCapabilities: { "preserve.classification": "full" },
+    acceptedIrVersions: ["0.3.1"],
+    invoke: () => ({ state: "complete" }),
+  };
+  const validated = validateExtensionDescriptor(descriptor);
+  assert.equal(validated.namedCapabilities["preserve.classification"], "full");
+  // Unknown look-alike ids stay refused.
+  assert.throws(
+    () =>
+      validateExtensionDescriptor({
+        ...descriptor,
+        namedCapabilities: { "preserve.classification-scope": "full" },
+      }),
+    (error) => error.code === "extension-invalid",
+  );
+});
 
 test("extension descriptors are validated; unknown capability ids are refused", () => {
   const descriptor = {

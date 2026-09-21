@@ -211927,7 +211927,10 @@ var CAPABILITY_IDS = Object.freeze([
   "generate.zod",
   "scan.symbols",
   "verify.scenarios",
-  "plan.native-gates"
+  "plan.native-gates",
+  // Issue #87: classification metadata survives every projection the
+  // adapter emits, or the projection is refused (never emitted bare).
+  "preserve.classification"
 ]);
 function entryDigest() {
   return "sha256:" + createHash("sha256").update(readSelfBytes()).digest("hex");
@@ -212765,7 +212768,8 @@ function describeCapabilities(profile = null, extensions = []) {
       "generate.ui": "unsupported",
       "generate.zod": "unsupported",
       "scan.symbols": "unsupported",
-      "verify.scenarios": "unsupported"
+      "verify.scenarios": "unsupported",
+      "preserve.classification": "unsupported"
     }
   };
   if (profile && extensions.length > 0) {

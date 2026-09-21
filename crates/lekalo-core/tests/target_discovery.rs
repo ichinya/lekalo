@@ -437,7 +437,7 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
 fn capability_definitions_are_versioned_and_closed() {
     assert_eq!(
         capability::REGISTRY_IDENTITY,
-        "dev.lekalo.target-capabilities@0.3.2"
+        "dev.lekalo.target-capabilities@0.4.0"
     );
     for id in [
         "scan.symbols",

@@ -13,7 +13,7 @@ use serde::Serialize;
 
 /// The identity of the embedded capability definition registry
 /// (`dev.lekalo.target-capabilities@0.3.1`).
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.3.2";
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.4.0";
 
 /// One versioned capability definition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -68,6 +68,12 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         domain: "plan",
         semantics: "Plans native build/test gates over a detected Node workspace through the read-only `plan-native` operation. `full` produces the immutable plan over every confirmed gate; `partial` covers a declared subset; `unsupported` never plans; `unknown` is a declared state the core does not treat as available.",
     },
+    CapabilityDefinition {
+        id: "preserve.classification",
+        definition_version: "0.4.0",
+        domain: "preserve",
+        semantics: "Preserves classification metadata through every projection the adapter emits (issue #87): every emitted field that maps to a classified subject carries its kind token, and an unrepresentable projection is refused as `unsupported`, never emitted bare. `full` preserves classification on every emitted field; `partial` preserves it on a declared subset; `unsupported` never emits classified fields; `unknown` is a declared state the core does not treat as available.",
+    },
 ];
 
 /// The exact definition of one capability id, or `None` when the id is
@@ -87,7 +93,7 @@ mod tests {
 
     #[test]
     fn registry_identity_and_definitions_are_pinned() {
-        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.3.2");
+        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.4.0");
         let ids: Vec<&str> = definitions().iter().map(|entry| entry.id).collect();
         assert_eq!(
             ids,
@@ -98,11 +104,14 @@ mod tests {
                 "scan.symbols",
                 "verify.scenarios",
                 "plan.native-gates",
+                "preserve.classification",
             ]
         );
         for entry in definitions() {
             assert!(
-                entry.definition_version == "0.3.1" || entry.definition_version == "0.3.2",
+                entry.definition_version == "0.3.1"
+                    || entry.definition_version == "0.3.2"
+                    || entry.definition_version == "0.4.0",
                 "definition versions stay on the accepted generations"
             );
             assert!(

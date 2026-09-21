@@ -63,6 +63,11 @@ pub enum CheckId {
     /// A cancelled read-only exchange is classified, the child is
     /// reaped, and a fresh handshake recovers.
     ProcessCancellation,
+    /// Classification metadata survives every emitted projection (issue
+    /// #87): a declared support state must mean the wire carries the
+    /// kind tokens, and an honest unsupported refusal never counts as
+    /// a silent lowering.
+    ClassificationPreservation,
 }
 
 impl CheckId {
@@ -87,6 +92,7 @@ impl CheckId {
             Self::ArtifactManifestEvidence => "artifact.manifest-evidence",
             Self::RedactionEvidence => "redaction.evidence",
             Self::ProcessCancellation => "process.cancellation",
+            Self::ClassificationPreservation => "classification.preservation",
         }
     }
 
@@ -111,13 +117,18 @@ impl CheckId {
             Self::ArtifactManifestEvidence => "lekalo.adapter.artifact",
             Self::RedactionEvidence => "lekalo.adapter.redaction",
             Self::ProcessCancellation => "lekalo.adapter.process",
+            Self::ClassificationPreservation => "lekalo.adapter.classification",
         }
     }
 
     /// The failure class a failed outcome of this check carries.
     pub const fn class(self) -> CheckClass {
         match self {
-            Self::ConfinementCanonical | Self::ConfinementPlanScopes | Self::RedactionEvidence => {
+            Self::ConfinementCanonical
+                | Self::ConfinementPlanScopes
+                | Self::RedactionEvidence
+                | Self::ClassificationPreservation
+            => {
                 CheckClass::Security
             }
             Self::DescribeHandshake
@@ -238,7 +249,7 @@ impl CheckOutcome {
 }
 
 /// The full catalog in its fixed order.
-pub const CATALOG: [CheckId; 18] = [
+pub const CATALOG: [CheckId; 19] = [
     CheckId::DescribeHandshake,
     CheckId::DescribeNegotiation,
     CheckId::CapabilityDeclaration,
@@ -257,6 +268,7 @@ pub const CATALOG: [CheckId; 18] = [
     CheckId::ArtifactManifestEvidence,
     CheckId::RedactionEvidence,
     CheckId::ProcessCancellation,
+    CheckId::ClassificationPreservation,
 ];
 
 /// The aggregate verdict of one run, derived from the check outcomes.

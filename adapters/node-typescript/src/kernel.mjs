@@ -136,6 +136,9 @@ const CAPABILITY_IDS = Object.freeze([
   "scan.symbols",
   "verify.scenarios",
   "plan.native-gates",
+  // Issue #87: classification metadata survives every projection the
+  // adapter emits, or the projection is refused (never emitted bare).
+  "preserve.classification",
 ]);
 
 /** The exact entry digest: sha256 over the launched script's own bytes. */
@@ -1121,6 +1124,7 @@ export function describeCapabilities(profile = null, extensions = []) {
       "generate.zod": "unsupported",
       "scan.symbols": "unsupported",
       "verify.scenarios": "unsupported",
+      "preserve.classification": "unsupported",
     },
   };
   if (profile && extensions.length > 0) {
