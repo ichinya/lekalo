@@ -1,119 +1,147 @@
 {
-  "id": "node-postgres-http",
-  "version": "0.2.16",
-  "components": [
-    {
-      "axis": "analysis",
-      "id": "typescript-native",
-      "definition_version": "0.2.16"
-    },
-    {
-      "axis": "deployment",
-      "id": "container",
-      "definition_version": "0.2.16"
-    },
-    {
-      "axis": "runtime",
-      "id": "node-typescript",
-      "definition_version": "0.2.16"
-    },
-    {
-      "axis": "storage",
-      "id": "postgres-sql",
-      "definition_version": "0.2.16"
-    },
-    {
-      "axis": "testing",
-      "id": "node-native",
-      "definition_version": "0.2.16"
-    },
-    {
-      "axis": "transport",
-      "id": "http-json",
-      "definition_version": "0.2.16"
-    }
-  ],
-  "capabilities": [
-    {
-      "id": "analysis.types",
-      "support": "full"
-    },
-    {
-      "id": "deployment.replicas",
-      "support": "full"
-    },
-    {
-      "id": "deployment.reproducible",
-      "support": "full"
-    },
-    {
-      "id": "runtime.async",
-      "support": "full"
-    },
-    {
-      "id": "runtime.typing",
-      "support": "full"
-    },
-    {
-      "id": "storage.migrations",
-      "support": "full"
-    },
-    {
-      "id": "storage.pooling",
-      "support": "full"
-    },
-    {
-      "id": "storage.sql",
-      "support": "full"
-    },
-    {
-      "id": "storage.transactions",
-      "support": "full"
-    },
-    {
-      "id": "testing.coverage",
-      "support": "full"
-    },
-    {
-      "id": "testing.parallel",
-      "support": "full"
-    },
-    {
-      "id": "transport.http",
-      "support": "full"
-    },
-    {
-      "id": "transport.streaming",
-      "support": "partial"
-    }
-  ],
-  "digest": "sha256:22e1007ae5fa3cd64ad827b79433769dbad0ea086fed604a3a18a28aa9f22876",
-  "source_digest": "sha256:c1801eabea9b7fb409df06baeb09571801d9d5005b2ec2910756b4bba92d9f55",
-  "provenance": [
-    {
-      "axis": "analysis",
-      "origin": "declared"
-    },
-    {
-      "axis": "deployment",
-      "origin": "declared"
-    },
-    {
-      "axis": "runtime",
-      "origin": "declared"
-    },
-    {
-      "axis": "storage",
-      "origin": "declared"
-    },
-    {
-      "axis": "testing",
-      "origin": "declared"
-    },
-    {
-      "axis": "transport",
-      "origin": "declared"
-    }
-  ],
-  "overrides_applied": []
+ "id": "node-postgres-http",
+ "version": "0.2.16",
+ "components": [
+  {
+   "axis": "analysis",
+   "id": "typescript-native",
+   "definition_version": "0.2.16"
+  },
+  {
+   "axis": "deployment",
+   "id": "container",
+   "definition_version": "0.2.16"
+  },
+  {
+   "axis": "runtime",
+   "id": "node-typescript",
+   "definition_version": "0.2.16"
+  },
+  {
+   "axis": "storage",
+   "id": "postgres-sql",
+   "definition_version": "0.2.16"
+  },
+  {
+   "axis": "testing",
+   "id": "node-native",
+   "definition_version": "0.2.16"
+  },
+  {
+   "axis": "transport",
+   "id": "http-json",
+   "definition_version": "0.2.16"
+  }
+ ],
+ "capabilities": [
+  {
+   "id": "analysis.types",
+   "support": "full"
+  },
+  {
+   "id": "deployment.replicas",
+   "support": "full"
+  },
+  {
+   "id": "deployment.reproducible",
+   "support": "full"
+  },
+  {
+   "id": "runtime.async",
+   "support": "full"
+  },
+  {
+   "id": "runtime.typing",
+   "support": "full"
+  },
+  {
+   "id": "storage.array-types",
+   "support": "full"
+  },
+  {
+   "id": "storage.deferred-constraints",
+   "support": "full"
+  },
+  {
+   "id": "storage.generated-columns",
+   "support": "full"
+  },
+  {
+   "id": "storage.migrations",
+   "support": "full"
+  },
+  {
+   "id": "storage.partial-index",
+   "support": "full"
+  },
+  {
+   "id": "storage.pooling",
+   "support": "full"
+  },
+  {
+   "id": "storage.returning",
+   "support": "full"
+  },
+  {
+   "id": "storage.sequences",
+   "support": "full"
+  },
+  {
+   "id": "storage.sql",
+   "support": "full"
+  },
+  {
+   "id": "storage.timestamptz",
+   "support": "full"
+  },
+  {
+   "id": "storage.transactions",
+   "support": "full"
+  },
+  {
+   "id": "testing.coverage",
+   "support": "full"
+  },
+  {
+   "id": "testing.parallel",
+   "support": "full"
+  },
+  {
+   "id": "transport.http",
+   "support": "full"
+  },
+  {
+   "id": "transport.streaming",
+   "support": "partial"
+  }
+ ],
+ "digest": "sha256:780a684834b829cd53d1e4393311a9f5f69bf4311df0e99224b02ac3b9ddb82f",
+ "source_digest": "sha256:c1801eabea9b7fb409df06baeb09571801d9d5005b2ec2910756b4bba92d9f55",
+ "provenance": [
+  {
+   "axis": "analysis",
+   "origin": "declared"
+  },
+  {
+   "axis": "deployment",
+   "origin": "declared"
+  },
+  {
+   "axis": "runtime",
+   "origin": "declared"
+  },
+  {
+   "axis": "storage",
+   "origin": "declared"
+  },
+  {
+   "axis": "testing",
+   "origin": "declared"
+  },
+  {
+   "axis": "transport",
+   "origin": "declared"
+  }
+ ],
+ "overrides_applied": []
 }

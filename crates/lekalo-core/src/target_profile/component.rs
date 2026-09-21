@@ -328,10 +328,60 @@ const DEFINITIONS: &[ComponentDefinition] = &[
         conflicts: &[],
     },
     ComponentDefinition {
+        id: "mariadb-sql",
+        axis: Axis::Storage,
+        definition_version: COMPONENTS_DEFINITION_VERSION,
+        provides: &[
+            ProvidedCapability {
+                id: "storage.check-constraints",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.generated-columns",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.migrations",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.pooling",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.sequences",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.sql",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.transactions",
+                support: Support::Full,
+            },
+        ],
+        requires_components: &[],
+        requires_capabilities: &[],
+        conflicts: &[],
+    },
+    ComponentDefinition {
         id: "mysql-sql",
         axis: Axis::Storage,
         definition_version: COMPONENTS_DEFINITION_VERSION,
         provides: &[
+            ProvidedCapability {
+                id: "storage.check-constraints",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.fulltext-index",
+                support: Support::Partial,
+            },
+            ProvidedCapability {
+                id: "storage.generated-columns",
+                support: Support::Full,
+            },
             ProvidedCapability {
                 id: "storage.migrations",
                 support: Support::Full,
@@ -339,6 +389,10 @@ const DEFINITIONS: &[ComponentDefinition] = &[
             ProvidedCapability {
                 id: "storage.pooling",
                 support: Support::Partial,
+            },
+            ProvidedCapability {
+                id: "storage.prefix-index",
+                support: Support::Full,
             },
             ProvidedCapability {
                 id: "storage.sql",
@@ -416,7 +470,23 @@ const DEFINITIONS: &[ComponentDefinition] = &[
         definition_version: COMPONENTS_DEFINITION_VERSION,
         provides: &[
             ProvidedCapability {
+                id: "storage.array-types",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.deferred-constraints",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.generated-columns",
+                support: Support::Full,
+            },
+            ProvidedCapability {
                 id: "storage.migrations",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.partial-index",
                 support: Support::Full,
             },
             ProvidedCapability {
@@ -424,7 +494,19 @@ const DEFINITIONS: &[ComponentDefinition] = &[
                 support: Support::Full,
             },
             ProvidedCapability {
+                id: "storage.returning",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.sequences",
+                support: Support::Full,
+            },
+            ProvidedCapability {
                 id: "storage.sql",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.timestamptz",
                 support: Support::Full,
             },
             ProvidedCapability {
@@ -573,7 +655,7 @@ mod tests {
         assert!(definition(Axis::Runtime, "node-typescript").is_some());
         assert!(definition(Axis::Storage, "node-typescript").is_none());
         assert!(definition(Axis::Runtime, "unknown-runtime").is_none());
-        assert_eq!(definitions().len(), 16);
+        assert_eq!(definitions().len(), 17);
     }
 
     #[test]

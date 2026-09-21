@@ -51,22 +51,34 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         semantics: "Emits Zod schemas from the compiled project IR. `full` covers every declared type and invariant; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
+        id: "plan.native-gates",
+        definition_version: "0.3.2",
+        domain: "plan",
+        semantics: "Plans native build/test gates over a detected Node workspace through the read-only `plan-native` operation. `full` produces the immutable plan over every confirmed gate; `partial` covers a declared subset; `unsupported` never plans; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "scan.schema",
+        definition_version: "0.4.0",
+        domain: "scan",
+        semantics: "Produces one storage-introspection evidence document over one explicitly configured test schema through read-only information-schema queries (issue #117). `full` covers every declared table, column, index, and foreign key plus the exact engine identity echo; `partial` covers a declared subset; `unsupported` never introspects; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
         id: "scan.symbols",
         definition_version: "0.3.1",
         domain: "scan",
         semantics: "Enumerates project symbols through the `scan` operation. `full` covers every declared module and entity; `partial` covers a declared subset; `unsupported` never scans; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
+        id: "verify.schema-projection",
+        definition_version: "0.4.0",
+        domain: "verify",
+        semantics: "Verifies that one adapter-rendered schema matches the canonical `project()` output of its attachment namespace (issue #117). `full` verifies every declared table and column; `partial` covers a declared subset; `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
         id: "verify.scenarios",
         definition_version: "0.3.1",
         domain: "verify",
         semantics: "Verifies scenario coverage through the `verify` operation. `full` covers every declared scenario; `partial` covers a declared subset; `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
-    },
-    CapabilityDefinition {
-        id: "plan.native-gates",
-        definition_version: "0.3.2",
-        domain: "plan",
-        semantics: "Plans native build/test gates over a detected Node workspace through the read-only `plan-native` operation. `full` produces the immutable plan over every confirmed gate; `partial` covers a declared subset; `unsupported` never plans; `unknown` is a declared state the core does not treat as available.",
     },
 ];
 
@@ -95,14 +107,18 @@ mod tests {
                 "generate.openapi",
                 "generate.ui",
                 "generate.zod",
-                "scan.symbols",
-                "verify.scenarios",
                 "plan.native-gates",
+                "scan.schema",
+                "scan.symbols",
+                "verify.schema-projection",
+                "verify.scenarios",
             ]
         );
         for entry in definitions() {
             assert!(
-                entry.definition_version == "0.3.1" || entry.definition_version == "0.3.2",
+                entry.definition_version == "0.3.1"
+                    || entry.definition_version == "0.3.2"
+                    || entry.definition_version == "0.4.0",
                 "definition versions stay on the accepted generations"
             );
             assert!(
