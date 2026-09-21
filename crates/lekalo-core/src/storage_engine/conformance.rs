@@ -198,11 +198,7 @@ pub fn run(inputs: &BatteryInputs<'_>) -> Battery {
             );
             check(
                 "introspection.mode-checked",
-                if clean.engine_version().as_str().is_empty() {
-                    Outcome::Fail("evidence-empty")
-                } else {
-                    Outcome::Pass
-                },
+                introspection_mode_checked(inputs.profile, clean),
             );
             check(
                 "extension.allow-listed",
@@ -230,10 +226,7 @@ pub fn run(inputs: &BatteryInputs<'_>) -> Battery {
     // destructive plan derived from a destructive self-mutation.
     check(
         "migration.gate-blocks",
-        match migration_gate_blocks(inputs.profile, inputs.projection) {
-            Ok(()) => Outcome::Pass,
-            Err(_) => Outcome::Fail("gate-open"),
-        },
+        migration_gate_blocks(inputs.profile, inputs.projection),
     );
     // 11-12. lifecycle rules.
     check(
@@ -258,9 +251,10 @@ pub fn run(inputs: &BatteryInputs<'_>) -> Battery {
     Battery { checks }
 }
 
-/// Every declared domain field of the mapped entities renders under
-/// the profile policies, or refuses with the registered explicit
-/// refusal.
+/// Every declared domain field of the mapped entities renders through
+/// the policy table under its actual declared type, or refuses with
+/// the registered explicit refusal — a mapping failure of any other
+/// rule is hollow and fails the check.
 fn type_mapping_total(
     profile: &StorageEngineAttachment,
     projection: &StorageProjectionAttachment,
@@ -272,15 +266,33 @@ fn type_mapping_total(
     .map_err(|_| ())?;
     for table in derived.tables() {
         for column in table.columns() {
-            // The declared type token of a field-origin column must
-            // render through the policy table; a refusal with the
-            // registered render rule is an explicit, acceptable
-            // answer, so only an unexpected panic path fails here.
-            let _ = super::postgres::types::map_type(
-                &crate::storage_projection::entity::DomainType::Text,
-                profile.policies(),
-            );
-            let _ = column;
+            if column.origin().key() != "field" {
+                continue;
+            }
+            // The declared type of the field the column derives from;
+            // the field and column grammars coincide.
+            let field_type = projection
+                .entity(table.entity())
+                .and_then(|entity| {
+                    entity
+                        .fields()
+                        .iter()
+                        .find(|field| field.name().as_str() == column.name().as_str())
+                })
+                .map(|field| field.field_type())
+                .ok_or(())?;
+            match super::postgres::types::map_type(field_type, profile.policies()) {
+                Ok(_) => {}
+                Err(error) => {
+                    // The registered render refusal is an explicit,
+                    // acceptable answer; anything else is hollow.
+                    if error.reason_ids().first().copied()
+                        != Some("storage-engine.render-unsupported")
+                    {
+                        return Err(());
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -456,22 +468,95 @@ fn unsupported_reported(
     }
 }
 
-/// The gate blocks: planning the self-mutation (a table dropped)
-/// yields a gated plan whose wrong digest refuses.
+/// The checked-mode facts hold: the normalizer const-checks
+/// `mode=checked` and read-only at parse, so the check verifies what a
+/// checked exchange must additionally pin — the server-reported
+/// version equals the profile's pin, the evidence binds the exact
+/// projection, and the scope read is declared and non-empty.
+fn introspection_mode_checked(
+    profile: &StorageEngineAttachment,
+    clean: &IntrospectionEvidence,
+) -> Outcome {
+    if clean.engine_version() == profile.engine_version()
+        && clean.projection_ref().as_str() == profile.projection_ref().as_str()
+        && !clean.scopes().is_empty()
+    {
+        Outcome::Pass
+    } else {
+        Outcome::Fail("evidence-unstable")
+    }
+}
+
+/// The gate blocks: the battery builds a destructive self-mutation of
+/// the bound projection (one declared index removed), plans it, and
+/// requires the Blocked status plus the wrong-digest refusal. A
+/// projection without a removable index cannot represent the mutation
+/// and skips — a skip is never a pass.
 fn migration_gate_blocks(
     profile: &StorageEngineAttachment,
     projection: &StorageProjectionAttachment,
-) -> Result<(), ()> {
-    // The destructive mutation is the projection missing one table:
-    // the drop_table risk is the documented destructive class.
-    let _ = (profile, projection);
-    // The committed destructive candidate pairing is covered by the
-    // integration suite; the battery pins the refusal seam itself.
-    let refused = super::diagnostic::gated_set("battery-probe");
-    if refused.reason_ids().first().copied() == Some("storage-engine.migration-gated") {
-        Ok(())
-    } else {
-        Err(())
+) -> Outcome {
+    let mut value: serde_json::Value = match projection
+        .canonical_bytes()
+        .ok()
+        .and_then(|bytes| serde_json::from_str(&bytes).ok())
+    {
+        Some(value) => value,
+        None => return Outcome::Fail("gate-open"),
+    };
+    let removed = value
+        .get_mut("projections")
+        .and_then(serde_json::Value::as_array_mut)
+        .and_then(|projections| {
+            projections.iter_mut().find(|projection| {
+                projection.get("namespace").and_then(serde_json::Value::as_str)
+                    == Some("postgres")
+            })
+        })
+        .and_then(|projection| projection.get_mut("tables"))
+        .and_then(serde_json::Value::as_array_mut)
+        .and_then(|tables| {
+            tables.iter_mut().find_map(|table| {
+                let indexes = table.get_mut("indexes")?.as_array_mut()?;
+                if indexes.len() >= 2 {
+                    indexes.pop();
+                    Some(())
+                } else {
+                    None
+                }
+            })
+        })
+        .is_some();
+    if !removed {
+        return Outcome::Skip("self-mutation-unrepresentable");
+    }
+    let candidate = match StorageProjectionAttachment::from_value(&value) {
+        Ok(candidate) => candidate,
+        Err(_) => return Outcome::Fail("gate-open"),
+    };
+    // The base stays the bound projection, so the profile binding
+    // holds; the candidate is the destructive proposal.
+    let plan = match super::plan_migration(profile, projection, &candidate, None) {
+        Ok(plan) => plan,
+        Err(_) => return Outcome::Fail("gate-open"),
+    };
+    if !plan.gated()
+        || plan.status() != super::PlanStatus::Blocked
+        || !plan.steps().iter().any(|step| step.risk().key() == "destructive")
+    {
+        return Outcome::Fail("gate-open");
+    }
+    // The wrong digest refuses with the registered gate rule.
+    let wrong = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+    match super::plan_migration(profile, projection, &candidate, Some(wrong)) {
+        Err(error) => {
+            if error.reason_ids().first().copied() == Some("storage-engine.migration-gated") {
+                Outcome::Pass
+            } else {
+                Outcome::Fail("gate-open")
+            }
+        }
+        Ok(_) => Outcome::Fail("gate-open"),
     }
 }
 
