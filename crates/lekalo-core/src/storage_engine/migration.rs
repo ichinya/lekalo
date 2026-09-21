@@ -302,6 +302,14 @@ pub fn plan(
     let gated = steps
         .iter()
         .any(|step| step.risk() == DataRisk::Destructive);
+    // The declared hook points are real: every destructive step
+    // declares EXPLAIN before it applies, so an applying adapter can
+    // stage the declared observation; constructive steps carry none.
+    for step in steps.iter_mut() {
+        if step.risk() == DataRisk::Destructive {
+            step.explain = Some(ExplainHook::Before);
+        }
+    }
     for (index, step) in steps.iter_mut().enumerate() {
         step.id = index + 1;
     }
@@ -1403,5 +1411,29 @@ mod tests {
                 "drop_table",
             ]
         );
+    }
+
+    #[test]
+    fn every_destructive_step_declares_explain_before() {
+        // The declared hook surface is real: destructive steps carry
+        // the before hook, constructive steps carry none.
+        let mut steps = vec![
+            step("create_extension"),
+            step("drop_table"),
+            step("drop_index"),
+            step("add_index"),
+        ];
+        steps[0].risk = DataRisk::None;
+        steps[3].risk = DataRisk::None;
+        for step in steps.iter_mut() {
+            if step.risk() == DataRisk::Destructive {
+                step.explain = Some(ExplainHook::Before);
+            }
+        }
+        assert!(steps[0].explain().is_none());
+        assert_eq!(steps[1].explain(), Some(ExplainHook::Before));
+        assert_eq!(steps[2].explain(), Some(ExplainHook::Before));
+        assert!(steps[3].explain().is_none());
+        assert_eq!(steps[1].explain().map(ExplainHook::key), Some("before"));
     }
 }
