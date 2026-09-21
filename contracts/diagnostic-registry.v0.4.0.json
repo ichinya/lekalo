@@ -5396,6 +5396,10 @@
         {
           "name": "detail",
           "type": "token"
+        },
+        {
+          "name": "planId",
+          "type": "token"
         }
       ],
       "allowed_fix_ids": [],

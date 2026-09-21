@@ -3492,7 +3492,9 @@ fn storage_capabilities(
 }
 
 /// `lekalo storage migrate-plan`: the gated plan document. A blocked
-/// plan is a typed denial; a confirmed or ready plan prints its bytes.
+/// plan is a typed denial whose diagnostic carries the exact `planId`
+/// digest the caller must name through `--confirm`; a confirmed or
+/// ready plan prints its bytes.
 fn storage_migrate_plan(
     base_path: &str,
     candidate_path: &str,
@@ -3529,8 +3531,9 @@ fn storage_migrate_plan(
             Err(diagnostics) => return DomainResult::invalid(diagnostics),
         };
     if plan.status() == lekalo_core::storage_engine::PlanStatus::Blocked {
-        return DomainResult::denied(lekalo_core::storage_engine::gated_failure(
+        return DomainResult::denied(lekalo_core::storage_engine::gated_plan_failure(
             "destructive-steps",
+            plan.plan_id(),
         ));
     }
     let bytes = match plan.canonical_bytes() {

@@ -160,6 +160,25 @@ pub(crate) fn gated_set(detail: &'static str) -> DiagnosticSet {
         Err(_) => singleton_set("diagnostics.registry-invalid"),
     }
 }
+
+/// The typed denied set for a blocked plan: the gate denial carries
+/// the exact `planId` digest the caller must name through `--confirm`
+/// to reach the apply authority. The digest is a fixed-shape token
+/// (`sha256:` plus hex), bounded by the token builder like every echo.
+pub fn gated_plan_set(detail: &'static str, plan_id: &str) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("detail".to_owned(), token(detail));
+    data.insert("planId".to_owned(), token(&bounded(plan_id)));
+    match one(MIGRATION_GATED, data) {
+        Ok(diagnostic) => {
+            match DiagnosticSet::try_from_unsorted(vec![diagnostic], Status::Denied) {
+                Ok(set) => set,
+                Err(_) => singleton_set("diagnostics.registry-invalid"),
+            }
+        }
+        Err(_) => singleton_set("diagnostics.registry-invalid"),
+    }
+}
 /// The fatal set for the over-bound canonical payload.
 pub(crate) fn export_limit_set(bytes: usize) -> DiagnosticSet {
     let mut data = DataObject::new();

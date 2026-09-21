@@ -480,6 +480,14 @@ pub fn conformance_failure(detail: &'static str) -> crate::diagnostics::Diagnost
 pub fn gated_failure(detail: &'static str) -> crate::diagnostics::DiagnosticSet {
     diagnostic::gated_set(detail)
 }
+/// The typed gate denial carrying the exact planId digest the caller
+/// must name (the blocked-plan denial surface).
+pub fn gated_plan_failure(
+    detail: &'static str,
+    plan_id: &str,
+) -> crate::diagnostics::DiagnosticSet {
+    diagnostic::gated_plan_set(detail, plan_id)
+}
 /// The typed unsupported refusal of one CLI handoff.
 pub fn unsupported_failure(detail: &'static str) -> crate::diagnostics::DiagnosticSet {
     diagnostic::unsupported_version_set(detail)
