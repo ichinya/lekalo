@@ -307,6 +307,20 @@ pub fn plan(
         profile,
         candidate,
     )?;
+    // Sequence ownership after the tables exist: the executable order
+    // mirrors the DDL document — every created sequence is bound to
+    // its owning column before the constraint passes run.
+    let sequence_owners = owned_sequences(&derived_base, &derived_candidate)?;
+    for (sequence, owner) in &sequence_owners {
+        push_step(
+            &mut steps,
+            "alter_sequence",
+            format!("ALTER SEQUENCE {} OWNED BY {owner};", quote(sequence)),
+            DataRisk::None,
+            Vec::new(),
+            None,
+        );
+    }
     // Foreign keys and checks after their tables. Checks skip the new
     // tables: their create_table statements already carry every
     // declared and derived constraint inline.
@@ -374,6 +388,47 @@ fn digest_of(attachment: &StorageProjectionAttachment) -> Result<String, Diagnos
     ))
 }
 
+/// The sequence ownership the plan must establish: every candidate
+/// generated sequence column whose sequence the base did not create —
+/// on surviving tables and on brand-new tables alike, because the
+/// ownership statement is separate from the CREATE TABLE statement in
+/// the DDL document — yields `(sequence, "\"table\".\"column\"")`,
+/// the exact `ALTER SEQUENCE … OWNED BY` target the document renders
+/// (golden statement 23). Byte-sorted for determinism.
+fn owned_sequences(
+    base: &DerivedProjection,
+    candidate: &DerivedProjection,
+) -> Result<Vec<(StorageName, String)>, DiagnosticSet> {
+    let mut owners: Vec<(StorageName, String)> = Vec::new();
+    for table in candidate.tables() {
+        for column in table.columns() {
+            if column.generated_kind() != Some(GeneratedKind::Sequence) {
+                continue;
+            }
+            let existed = base
+                .table(table.entity())
+                .map(|base_table| {
+                    base_table
+                        .columns()
+                        .iter()
+                        .any(|base| base.name() == column.name())
+                })
+                .unwrap_or(false);
+            if existed {
+                continue;
+            }
+            let sequence = StorageName::parse(&format!("seq_{}_{}", table.table(), column.name()))
+                .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "sequence-name", None))?;
+            owners.push((
+                sequence,
+                format!("{}.{}", quote(table.table()), quote(column.name())),
+            ));
+        }
+    }
+    owners.sort();
+    Ok(owners)
+}
+
 /// Push one step with deferred ordinal assignment.
 fn push_step(
     steps: &mut Vec<Step>,
@@ -406,7 +461,9 @@ fn plan_tables(
     candidate_attachment: &StorageProjectionAttachment,
 ) -> Result<std::collections::BTreeMap<String, usize>, DiagnosticSet> {
     let mut table_ids = std::collections::BTreeMap::new();
-    // Sequences exist before the tables that use them.
+    // Sequences exist before the tables that use them: every new
+    // generated sequence column creates its deterministic sequence —
+    // the exact object its default and the ownership pass reference.
     for table in candidate.tables() {
         for column in table.columns() {
             let base_column = base
@@ -699,6 +756,18 @@ fn plan_tables(
                 table,
                 column,
             )?;
+            // A changed generation kind has no deterministic v1
+            // transition (sequence→identity would need SET GENERATED
+            // plus the owned sequence's retirement, and the step
+            // vocabulary carries no sequence drop); it refuses with the
+            // registered rule instead of silently emitting nothing.
+            if base_column.generated_kind() != column.generated_kind() {
+                return Err(diagnostic::rule_invalid(
+                    RENDER_UNSUPPORTED,
+                    "generated-kind-change",
+                    None,
+                ));
+            }
             if base_column.storage_type() != column.storage_type() {
                 push_step(
                     steps,

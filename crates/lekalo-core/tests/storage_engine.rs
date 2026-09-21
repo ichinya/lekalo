@@ -935,6 +935,109 @@ fn an_added_join_plans_the_exact_ddl_create_and_foreign_keys() {
 }
 
 #[test]
+fn a_generated_kind_change_refuses_instead_of_staying_silent() {
+    // Flipping a generated column between sequence and identity has no
+    // deterministic v1 transition (no SET GENERATED step, no sequence
+    // retirement in the step vocabulary): the planner refuses with the
+    // registered rule instead of a silently-empty ready plan.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        if let Some(tables) = projection.get_mut("tables").and_then(|t| t.as_array_mut()) {
+            for table in tables.iter_mut() {
+                if table.get("table").and_then(serde_json::Value::as_str) == Some("focus_session") {
+                    table["generatedColumns"] =
+                        serde_json::json!([{ "kind": "identity", "name": "session_no" }]);
+                }
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let error = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        None,
+    )
+    .expect_err("generated-kind change refuses");
+    assert_eq!(
+        error.reason_ids().first().copied(),
+        Some("storage-engine.render-unsupported")
+    );
+    let rendered = serde_json::to_string(&error).expect("json");
+    assert!(rendered.contains("generated-kind-change"));
+}
+
+#[test]
+fn a_new_sequence_column_plans_its_creation_and_ownership() {
+    // A new generated sequence column plans CREATE SEQUENCE, the
+    // column, and the DDL document's ownership statement — the plan
+    // and the document agree on the sequence lifecycle.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        if let Some(tables) = projection.get_mut("tables").and_then(|t| t.as_array_mut()) {
+            for table in tables.iter_mut() {
+                if table.get("table").and_then(serde_json::Value::as_str) == Some("task") {
+                    table["generatedColumns"] =
+                        serde_json::json!([{ "kind": "sequence", "name": "task_no" }]);
+                }
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        None,
+    )
+    .expect("plans");
+    let create = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "create_sequence")
+        .expect("the sequence is created");
+    assert!(create
+        .statement()
+        .contains("CREATE SEQUENCE \"seq_task_task_no\""));
+    let own = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "alter_sequence")
+        .expect("the sequence ownership is planned");
+    assert_eq!(
+        own.statement(),
+        "ALTER SEQUENCE \"seq_task_task_no\" OWNED BY \"task\".\"task_no\";",
+        "the ownership statement equals the DDL document's"
+    );
+}
+
+#[test]
 fn a_profile_bound_to_a_foreign_projection_refuses_to_plan() {
     // The binding guarantee holds on the migration surface too: the
     // profile is authored against the base state, and a profile bound

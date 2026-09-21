@@ -139,6 +139,7 @@
             "enable_rls",
             "create_policy",
             "create_sequence",
+            "alter_sequence",
             "create_extension",
             "backfill"
           ]
