@@ -621,6 +621,33 @@ fn collation_and_index_member_changes_classify_in_the_diff() {
         .expect("the unique-narrowing path");
     assert_eq!(ununique_path.class(), DiffClass::Breaking);
     assert_eq!(ununique_path.risk(), Some(DataRisk::Destructive));
+    // The same narrowing on an ANONYMOUS unique index (the tag table's
+    // unnamed `label` index) must classify identically at its own
+    // column-list path — uniqueness is a member, not identity, so the
+    // change cannot hide in the aggregate policy path (round-3 F-2).
+    let mut anon: serde_json::Value = serde_json::from_slice(DIFF_BASE).expect("json");
+    anon["projections"]
+        .as_array_mut()
+        .expect("projections")
+        .iter_mut()
+        .for_each(|projection| {
+            if projection["namespace"] == "mysql" {
+                for table in projection["tables"].as_array_mut().expect("tables") {
+                    if table["entity"] == "tag" {
+                        table["indexes"][0]["unique"] = serde_json::Value::Bool(false);
+                    }
+                }
+            }
+        });
+    let anon_candidate = StorageProjectionAttachment::from_value(&anon).expect("parses");
+    let anon_diff = compare(&base, &anon_candidate).expect("comparable");
+    let anon_path = anon_diff
+        .paths()
+        .iter()
+        .find(|path| path.path() == "storage/mysql/tables/tag/indexes/label")
+        .expect("the anonymous narrowing path");
+    assert_eq!(anon_path.class(), DiffClass::Breaking);
+    assert_eq!(anon_path.risk(), Some(DataRisk::Destructive));
 }
 
 #[test]

@@ -800,11 +800,17 @@ fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<
 fn same_index_identity(base: &Index, candidate: &Index) -> bool {
     match (base.name(), candidate.name()) {
         (Some(base_name), Some(candidate_name)) => base_name == candidate_name,
+        // Anonymous indexes key on the column list alone: `unique` is
+        // a member of the index (compared in the member loop below),
+        // not part of its identity. Keying on it let a uniqueness
+        // change break identity and escape member-level
+        // classification into the aggregate policy path — the same
+        // semantic change classified differently for named indexes
+        // (round-3 review F-2).
         _ => {
             base.name().is_none()
                 && candidate.name().is_none()
                 && base.columns() == candidate.columns()
-                && base.unique() == candidate.unique()
         }
     }
 }
