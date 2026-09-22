@@ -12,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  ADAPTER_VERSION,
   createReadView,
   validateResolvedProjectProfile,
 } from "../src/kernel.mjs";
@@ -59,7 +60,7 @@ function fixtureReadView() {
   return { profile, readView };
 }
 
-setAdapterIdentity({ id: "lekalo-target-node-typescript", version: "0.3.2", digest: D("f") });
+setAdapterIdentity({ id: "lekalo-target-node-typescript", version: ADAPTER_VERSION, digest: D("f") });
 setLaunchPolicy(launchPolicy);
 
 test("planNativeOperation discovers non-vocabulary members via declared roots", () => {

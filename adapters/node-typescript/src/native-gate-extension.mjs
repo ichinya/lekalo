@@ -22,6 +22,8 @@
  */
 import { createHash } from "node:crypto";
 
+import { ADAPTER_VERSION } from "./kernel.mjs";
+
 import {
   buildNativePlan,
   parseConfirmedScript,
@@ -53,6 +55,16 @@ export let adapterIdentity = null;
 
 /** Set the adapter identity (called by the bundle entry). */
 export function setAdapterIdentity(identity) {
+  // Review r2 (cline F-2): the identity version must track the kernel
+  // release constant, so a missed reserve cannot publish a stale pin.
+  if (identity !== null && identity !== undefined) {
+    if (identity !== null && identity.version !== ADAPTER_VERSION) {
+      throw new Error(
+        "adapter identity version " + identity.version +
+        " does not match the adapter release " + ADAPTER_VERSION,
+      );
+    }
+  }
   adapterIdentity = identity;
 }
 

@@ -128,7 +128,7 @@ const buildArgs = (overrides = {}) => ({
   ],
   profileRef: "standalone",
   profileDigest: D("f1"),
-  adapterIdentity: { id: "lekalo-target-node-typescript", version: "0.3.2", digest: D("f2") },
+  adapterIdentity: { id: "lekalo-target-node-typescript", version: "0.4.0", digest: D("f2") },
   scanRef: { id: "scan", version: "0.3.2", digest: D("22") },
   observedRef: { id: "observed", version: "0.3.2", digest: D("33") },
   inputManifestDigest: D("55"),
