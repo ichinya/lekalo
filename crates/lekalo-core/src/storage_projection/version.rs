@@ -13,13 +13,13 @@
 pub const FAMILY: &str = "dev.lekalo.storage-projection";
 
 /// The exact storage-projection contract version.
-pub const VERSION: &str = "0.2.16";
+pub const VERSION: &str = "0.4.0";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.storage-projection@0.2.16";
+pub const IDENTITY: &str = "dev.lekalo.storage-projection@0.4.0";
 
 /// The exact wire discriminator of the storage-projection contract.
-pub const SCHEMA_VERSION: &str = "lekalo/storage-projection/v0.2.16";
+pub const SCHEMA_VERSION: &str = "lekalo/storage-projection/v0.4.0";
 
 /// The maximum number of domain entities one attachment may carry.
 pub const MAX_ENTITIES: usize = 512;
@@ -89,6 +89,6 @@ mod tests {
     #[test]
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
-        assert_eq!(SCHEMA_VERSION, "lekalo/storage-projection/v0.2.16");
+        assert_eq!(SCHEMA_VERSION, "lekalo/storage-projection/v0.4.0");
     }
 }

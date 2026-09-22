@@ -27,7 +27,22 @@ implementation family, the managed-mode built-in block, the deterministic
 evaluation-domain and binding refusals, the semantically impossible
 comparison, and the canonical export bound — publishing 0.2.16 additively
 over the accepted frozen 1.24.0; the embedded validation profiles' registry
-pin advances with no content change.
+pin advances with no content change. Issue #48 adds the fourteen
+`native-gate.*` rules (`LEK-NGT-001..014`) as the reviewed successor
+instance 0.3.2 (wire shape frozen). Issue #117 adds the five
+`storage.profile-*` rules (`LEK-SEP-001..005`: `storage.profile-invalid`,
+`storage.profile-limit`, `storage.profile-diff-invalid`,
+`storage.introspection-invalid`, `storage.introspection-diff-invalid`) —
+the closed refusals of the storage-engine-profile and
+storage-introspection families (see
+[storage-engine-profile.md](storage-engine-profile.md) and
+[storage-introspection.md](storage-introspection.md)) — as the reviewed
+successor instance 0.4.0 (wire shape frozen, schema successor carries
+only the new identity constants); the embedded validation profiles move
+with it, and new fixed detail tokens under the existing `LEK-STO-*`
+rules (the MySQL-family namespace vectors: `sequence-unsupported`,
+`prefix-required`, `fulltext-unique`, `collation-charset-mismatch`, and
+the rest) ride the registered rules with no registry change.
 
 - [`contracts/diagnostic.schema.v0.2.16.json`](../contracts/diagnostic.schema.v0.2.16.json) — one diagnostic item,
 - [`contracts/diagnostic-registry.schema.v0.2.16.json`](../contracts/diagnostic-registry.schema.v0.2.16.json) — the registry schema,

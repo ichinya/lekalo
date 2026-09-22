@@ -20,8 +20,8 @@ use super::diagnostic;
 use super::entity::{DomainEntity, DomainField, DomainType, Visibility};
 use super::id::{EntityKey, StorageName};
 use super::projection::{
-    GeneratedColumn, GeneratedKind, Index, Join, Namespace, Polymorphic, Projection, StorageType,
-    Table, TechnicalColumn,
+    GeneratedColumn, GeneratedKind, Index, IndexKind, Join, Namespace, Polymorphic, Projection,
+    StorageType, Table, TechnicalColumn,
 };
 use super::relation::{DeleteBehavior, Relation, RelationKind, ScenarioRef};
 use super::version;
@@ -622,7 +622,7 @@ fn projections(array: &[Json]) -> Result<Vec<Projection>, DiagnosticSet> {
         for key in projection.keys() {
             if !matches!(
                 key.as_str(),
-                "namespace" | "tables" | "joins" | "polymorphics"
+                "namespace" | "tables" | "joins" | "polymorphics" | "textDefaults"
             ) {
                 return Err(diagnostic::input_invalid("unknown-field"));
             }
@@ -634,7 +634,13 @@ fn projections(array: &[Json]) -> Result<Vec<Projection>, DiagnosticSet> {
                 .ok_or_else(|| diagnostic::input_invalid("namespace"))?,
         )
         .map_err(|_| diagnostic::input_invalid("namespace"))?;
+        // The declared tables are parsed once here so every declared
+        // storage type can be checked against this projection's closed
+        // namespace vocabulary before any table is accepted (issue
+        // #117 review F-3): the global `StorageType` union is only the
+        // wire grammar; the per-namespace subset is the semantic rule.
         let tables = tables(bounded_array(projection, "tables", version::MAX_TABLES)?)?;
+        check_namespace_types(namespace, &tables)?;
         let joins = match optional_bounded_array(projection, "joins", version::MAX_JOINS)? {
             Some(entries) => joins(entries)?,
             None => Vec::new(),
@@ -644,11 +650,34 @@ fn projections(array: &[Json]) -> Result<Vec<Projection>, DiagnosticSet> {
                 Some(entries) => polymorphics(entries)?,
                 None => Vec::new(),
             };
+        let text_defaults = match projection.get("textDefaults") {
+            Some(Json::Null) | None => None,
+            Some(value) => {
+                let object = value
+                    .as_object()
+                    .ok_or_else(|| diagnostic::input_invalid("text-defaults-shape"))?;
+                for key in object.keys() {
+                    if !matches!(key.as_str(), "charset" | "collation") {
+                        return Err(diagnostic::input_invalid("unknown-field"));
+                    }
+                }
+                let charset = string_member(object, "charset")?.to_owned();
+                if charset.len() > 64 {
+                    return Err(diagnostic::input_invalid("text-defaults-shape"));
+                }
+                let collation = string_member(object, "collation")?.to_owned();
+                if collation.len() > 64 {
+                    return Err(diagnostic::input_invalid("text-defaults-shape"));
+                }
+                Some((charset, collation))
+            }
+        };
         parsed.push(Projection {
             namespace,
             tables,
             joins,
             polymorphics,
+            text_defaults,
         });
     }
     parsed.sort_by_key(|projection| projection.namespace.key());
@@ -656,6 +685,35 @@ fn projections(array: &[Json]) -> Result<Vec<Projection>, DiagnosticSet> {
         return Err(diagnostic::input_invalid("duplicate-namespace"));
     }
     Ok(parsed)
+}
+
+/// The per-namespace storage-type subset is a semantic rule, not a
+/// wire rule: every declared type of every technical, generated, and
+/// tenant column must exist in the declaring projection's namespace
+/// vocabulary. The global `StorageType` union only proves the token is
+/// a type at all (issue #117 review F-3).
+fn check_namespace_types(namespace: Namespace, tables: &[Table]) -> Result<(), DiagnosticSet> {
+    for table in tables {
+        let check = |storage_type: &StorageType| {
+            if namespace.accepts_storage_type(storage_type.as_str()) {
+                Ok(())
+            } else {
+                Err(diagnostic::input_invalid("storage-type"))
+            }
+        };
+        for column in table.technical_columns() {
+            check(column.storage_type())?;
+        }
+        for column in table.generated_columns() {
+            if let Some(storage_type) = column.storage_type() {
+                check(storage_type)?;
+            }
+        }
+        if let Some((_, storage_type)) = table.tenant_key() {
+            check(storage_type)?;
+        }
+    }
+    Ok(())
 }
 
 /// Parse the declared tables; canonical order is entity key.
@@ -677,6 +735,8 @@ fn tables(array: &[Json]) -> Result<Vec<Table>, DiagnosticSet> {
                     | "tenantKey"
                     | "timestamps"
                     | "indexes"
+                    | "charset"
+                    | "collation"
             ) {
                 return Err(diagnostic::input_invalid("unknown-field"));
             }
@@ -766,6 +826,30 @@ fn tables(array: &[Json]) -> Result<Vec<Table>, DiagnosticSet> {
             Some(entries) => indexes(entries)?,
             None => Vec::new(),
         };
+        let charset = match table.get("charset") {
+            Some(Json::Null) | None => None,
+            Some(value) => {
+                let charset = value
+                    .as_str()
+                    .ok_or_else(|| diagnostic::input_invalid("charset-shape"))?;
+                if charset.is_empty() || charset.len() > 64 {
+                    return Err(diagnostic::input_invalid("charset-shape"));
+                }
+                Some(charset.to_owned())
+            }
+        };
+        let collation = match table.get("collation") {
+            Some(Json::Null) | None => None,
+            Some(value) => {
+                let collation = value
+                    .as_str()
+                    .ok_or_else(|| diagnostic::input_invalid("collation-shape"))?;
+                if collation.is_empty() || collation.len() > 64 {
+                    return Err(diagnostic::input_invalid("collation-shape"));
+                }
+                Some(collation.to_owned())
+            }
+        };
         parsed.push(Table {
             entity,
             table: name,
@@ -776,6 +860,8 @@ fn tables(array: &[Json]) -> Result<Vec<Table>, DiagnosticSet> {
             tenant_key,
             timestamps,
             indexes,
+            charset,
+            collation,
         });
     }
     parsed.sort_by(|left, right| left.entity.cmp(&right.entity));
@@ -872,7 +958,10 @@ fn indexes(array: &[Json]) -> Result<Vec<Index>, DiagnosticSet> {
             .as_object()
             .ok_or_else(|| diagnostic::input_invalid("index-shape"))?;
         for key in index.keys() {
-            if !matches!(key.as_str(), "name" | "columns" | "unique") {
+            if !matches!(
+                key.as_str(),
+                "name" | "columns" | "unique" | "kind" | "prefixLengths" | "descending"
+            ) {
                 return Err(diagnostic::input_invalid("unknown-field"));
             }
         }
@@ -893,10 +982,75 @@ fn indexes(array: &[Json]) -> Result<Vec<Index>, DiagnosticSet> {
             .get("unique")
             .and_then(Json::as_bool)
             .ok_or_else(|| diagnostic::input_invalid("index-shape"))?;
+        let kind = match index.get("kind") {
+            Some(Json::Null) | None => IndexKind::Btree,
+            Some(value) => IndexKind::parse(
+                value
+                    .as_str()
+                    .ok_or_else(|| diagnostic::input_invalid("index-kind"))?,
+            )
+            .map_err(|_| diagnostic::input_invalid("index-kind"))?,
+        };
+        let prefix_lengths = match index.get("prefixLengths") {
+            Some(Json::Null) | None => None,
+            Some(value) => {
+                let array = value
+                    .as_array()
+                    .ok_or_else(|| diagnostic::input_invalid("prefix-shape"))?;
+                if array.len() != columns.len() {
+                    return Err(diagnostic::input_invalid("prefix-shape"));
+                }
+                let mut parsed = Vec::with_capacity(array.len());
+                for entry in array {
+                    // Sparse per position: `null` declares no prefix
+                    // for that key part, so a mixed textual+non-textual
+                    // composite prefixes only the textual members
+                    // (round-4 review F-1). A present length stays
+                    // bounded 1..=3072.
+                    let length = match entry {
+                        Json::Null => None,
+                        value => {
+                            let length = value
+                                .as_u64()
+                                .ok_or_else(|| diagnostic::input_invalid("prefix-shape"))?;
+                            if !(1..=3072).contains(&length) {
+                                return Err(diagnostic::input_invalid("prefix-bound"));
+                            }
+                            Some(length as u16)
+                        }
+                    };
+                    parsed.push(length);
+                }
+                Some(parsed)
+            }
+        };
+        let descending = match index.get("descending") {
+            Some(Json::Null) | None => None,
+            Some(value) => {
+                let array = value
+                    .as_array()
+                    .ok_or_else(|| diagnostic::input_invalid("descending-shape"))?;
+                if array.len() != columns.len() {
+                    return Err(diagnostic::input_invalid("descending-shape"));
+                }
+                let parsed = array
+                    .iter()
+                    .map(|entry| {
+                        entry
+                            .as_bool()
+                            .ok_or_else(|| diagnostic::input_invalid("descending-shape"))
+                    })
+                    .collect::<Result<Vec<bool>, _>>()?;
+                Some(parsed)
+            }
+        };
         parsed.push(Index {
             name,
             columns,
             unique,
+            kind,
+            prefix_lengths,
+            descending,
         });
     }
     parsed.sort_by(|left, right| {

@@ -1,0 +1,152 @@
+{
+  "binding": {
+    "adapter": "drizzle",
+    "dialect": "drizzle mysql-core",
+    "fixture": "tests/fixtures/storage-mysql/drizzle/schema.ts",
+    "namespace": "mysql",
+    "projection": "tests/fixtures/storage-projection/valid/planner-storage.json"
+  },
+  "expectations": {
+    "tables": {
+      "task": {
+        "columns": {
+          "id": {
+            "drizzle": "varchar(36)",
+            "storageType": "binary(16)",
+            "primaryKey": true,
+            "nullable": false
+          },
+          "title": {
+            "drizzle": "varchar(200)",
+            "storageType": "varchar(200)",
+            "nullable": false
+          },
+          "status": {
+            "drizzle": "varchar(16)",
+            "storageType": "varchar(16)",
+            "nullable": false
+          },
+          "due_date": {
+            "drizzle": "datetime",
+            "storageType": "date",
+            "nullable": true
+          },
+          "note": {
+            "drizzle": "text",
+            "storageType": "text",
+            "nullable": true
+          },
+          "created_at": {
+            "drizzle": "datetime",
+            "storageType": "datetime(6)",
+            "nullable": false
+          },
+          "updated_at": {
+            "drizzle": "datetime",
+            "storageType": "datetime(6)",
+            "nullable": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "idx_task_tenant",
+            "columns": [
+              "tenant_id"
+            ],
+            "unique": false
+          }
+        ]
+      },
+      "tag": {
+        "columns": {
+          "id": {
+            "drizzle": "varchar(36)",
+            "storageType": "binary(16)",
+            "primaryKey": true,
+            "nullable": false
+          },
+          "label": {
+            "drizzle": "varchar(64)",
+            "storageType": "varchar(64)",
+            "nullable": false,
+            "unique": true
+          }
+        }
+      },
+      "task_tag": {
+        "columns": {
+          "task_id": {
+            "drizzle": "varchar(36)",
+            "storageType": "binary(16)",
+            "nullable": false
+          },
+          "tag_id": {
+            "drizzle": "varchar(36)",
+            "storageType": "binary(16)",
+            "nullable": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "task_tag_pair",
+            "columns": [
+              "task_id",
+              "tag_id"
+            ],
+            "unique": true
+          }
+        ]
+      },
+      "focus_session": {
+        "columns": {
+          "id": {
+            "drizzle": "int autoincrement",
+            "storageType": "binary(16)",
+            "identity": true,
+            "nullable": false
+          },
+          "minutes": {
+            "drizzle": "int",
+            "storageType": "bigint",
+            "nullable": false
+          },
+          "started_at": {
+            "drizzle": "datetime",
+            "storageType": "datetime(6)",
+            "nullable": false
+          }
+        }
+      },
+      "comment": {
+        "columns": {
+          "id": {
+            "drizzle": "varchar(36)",
+            "storageType": "binary(16)",
+            "primaryKey": true,
+            "nullable": false
+          },
+          "body": {
+            "drizzle": "text",
+            "storageType": "text",
+            "nullable": false
+          },
+          "target_id": {
+            "drizzle": "varchar(36)",
+            "storageType": "binary(16)",
+            "nullable": false
+          },
+          "target_type": {
+            "drizzle": "varchar(64)",
+            "storageType": "varchar(64)",
+            "nullable": false
+          }
+        }
+      }
+    },
+    "dialectDivergences": {
+      "serial": "alias sugar over bigint unsigned AUTO_INCREMENT UNIQUE; never a storage type; the drizzle-orm #3333 MariaDB 10.6 breakage is the non-merge evidence",
+      "json": "mysql json native binary-normalized; mariadb longtext + JSON_VALID check alias",
+      "uuid": "mariadb native uuid is version-gated evidence (10.7+); the mysql namespace carries no uuid storage type"
+    }
+  }
+}

@@ -428,6 +428,23 @@ pub struct CapabilityRequirement {
 }
 
 impl CapabilityRequirement {
+    /// Assemble one typed requirement record; the caller owns the
+    /// bounded reason text. Used by the engine-profile bridge tests
+    /// and the wire layer alike.
+    pub fn new(
+        requirement_id: crate::scenario::id::NamespacedId,
+        capability: CapabilityId,
+        minimum: RequirementLevel,
+        reason: String,
+    ) -> Self {
+        Self {
+            requirement_id,
+            capability,
+            minimum,
+            reason,
+        }
+    }
+
     /// The validated requirement identifier.
     pub fn requirement_id(&self) -> &crate::scenario::id::NamespacedId {
         &self.requirement_id

@@ -1,0 +1,34 @@
+{
+  "id": "8d4d0363-914f-49c2-a91b-ac2c3a2f839a",
+  "ok": false,
+  "error": {
+    "code": "task_not_startable",
+    "message": "Task task_2f6ab9a4ac94 is failed; only a ready Task can start. Orchestration mutation request ID: bd4ab04b-60a6-4f9e-8243-a5f7dd3d4499.",
+    "data": {
+      "taskId": "task_2f6ab9a4ac94",
+      "status": "failed",
+      "unmetDependencies": [],
+      "nextSteps": [
+        "A failed Task cannot be dispatched; create a new Task or use worker-start --retry-of for a failed attempt."
+      ],
+      "orchestrationRequestId": "bd4ab04b-60a6-4f9e-8243-a5f7dd3d4499",
+      "originalCommand": [
+        "orca",
+        "orchestration",
+        "worker-start",
+        "--task",
+        "task_2f6ab9a4ac94",
+        "--worktree",
+        "name:m4-issue-85",
+        "--agent",
+        "devin",
+        "--timeout-ms",
+        "240000",
+        "--json"
+      ]
+    }
+  },
+  "_meta": {
+    "runtimeId": "34a2d20b-810e-4f0e-aa59-57034c5fe2ab"
+  }
+}

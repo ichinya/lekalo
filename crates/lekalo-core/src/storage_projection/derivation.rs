@@ -202,12 +202,22 @@ pub struct DerivedTable {
     pub(crate) foreign_keys: Vec<DerivedForeignKey>,
     pub(crate) indexes: Vec<super::projection::Index>,
     pub(crate) polymorphics: Vec<DerivedPolymorphic>,
+    pub(crate) collation: Option<String>,
 }
 
 impl DerivedTable {
     /// The mapped entity key.
     pub fn entity(&self) -> &EntityKey {
         &self.entity
+    }
+
+    /// The declared table collation, when declared. The projection's
+    /// `textDefaults` collation is the declared default for textual
+    /// columns without their own table member — surfaced so the
+    /// derived rendering carries the collation-sensitive uniqueness
+    /// evidence instead of dropping it (round-2 review F-R2-1).
+    pub fn collation(&self) -> Option<&str> {
+        self.collation.as_deref()
     }
 
     /// The table name.
@@ -570,6 +580,9 @@ fn derive_table(
             name: None,
             columns: vec![column],
             unique: true,
+            kind: super::projection::IndexKind::Btree,
+            prefix_lengths: None,
+            descending: None,
         });
     }
     indexes.sort_by(|left, right| {
@@ -586,6 +599,15 @@ fn derive_table(
         foreign_keys,
         indexes,
         polymorphics,
+        collation: table
+            .collation()
+            .map(|collation| collation.to_owned())
+            .or_else(|| {
+                projection
+                    .text_defaults()
+                    .map(|(_, collation)| collation.to_owned())
+            })
+            .filter(|_| projection.namespace().is_mysql_family()),
     })
 }
 
@@ -721,6 +743,10 @@ fn local_column_type(
 
 /// The published namespace type table: the exact rendering of one
 /// domain value type in one namespace.
+pub(crate) fn render_type(namespace: Namespace, field_type: &DomainType) -> String {
+    map_type(namespace, field_type)
+}
+
 fn map_type(namespace: Namespace, field_type: &DomainType) -> String {
     match namespace {
         Namespace::Postgres => match field_type {
@@ -749,6 +775,25 @@ fn map_type(namespace: Namespace, field_type: &DomainType) -> String {
             DomainType::Date => "date".to_owned(),
             DomainType::Timestamp => "datetime".to_owned(),
             DomainType::Binary => "binary".to_owned(),
+            DomainType::Json => "json".to_owned(),
+        },
+        Namespace::Mysql | Namespace::Mariadb => match field_type {
+            DomainType::Boolean => "tinyint(1)".to_owned(),
+            DomainType::Integer => "bigint".to_owned(),
+            DomainType::Decimal { precision, scale } => {
+                format!("decimal({precision},{scale})")
+            }
+            DomainType::String { length } => format!("varchar({length})"),
+            DomainType::Text => "text".to_owned(),
+            // MySQL renders the UUID as binary(16): compact and
+            // collation-free. MariaDB's native uuid is version-gated
+            // evidence in the bound profile, so the canonical render
+            // stays binary(16) there too; char(36) remains a declared
+            // technical-column alternative.
+            DomainType::Uuid => "binary(16)".to_owned(),
+            DomainType::Date => "date".to_owned(),
+            DomainType::Timestamp => "datetime(6)".to_owned(),
+            DomainType::Binary => "varbinary(255)".to_owned(),
             DomainType::Json => "json".to_owned(),
         },
     }

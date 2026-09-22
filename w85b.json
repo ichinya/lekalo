@@ -1,0 +1,26 @@
+{
+  "id": "98839536-82af-4c2c-a081-246dc52e96a8",
+  "ok": false,
+  "error": {
+    "code": "agent_unconfigured",
+    "message": "Terminal term_53fa8979-00c1-4318-ad58-d5688adf9687 is not running a recognized agent. Orchestration mutation request ID: 51ac8e9e-1b99-42f1-bdd9-2b7f26227546.",
+    "data": {
+      "orchestrationRequestId": "51ac8e9e-1b99-42f1-bdd9-2b7f26227546",
+      "originalCommand": [
+        "orca",
+        "orchestration",
+        "worker-start",
+        "--task",
+        "task_2f6ab9a4ac94",
+        "--terminal",
+        "term_53fa8979-00c1-4318-ad58-d5688adf9687",
+        "--worktree",
+        "name:m4-issue-85",
+        "--json"
+      ]
+    }
+  },
+  "_meta": {
+    "runtimeId": "34a2d20b-810e-4f0e-aa59-57034c5fe2ab"
+  }
+}

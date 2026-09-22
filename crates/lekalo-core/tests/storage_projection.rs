@@ -18,11 +18,15 @@ use lekalo_core::storage_projection::{
 const VALID: &[u8] =
     include_bytes!("../../../tests/fixtures/storage-projection/valid/planner-storage.json");
 
-/// The derived projection goldens: two renderings of one domain model.
+/// The derived projection goldens: four renderings of one domain model.
 const DERIVED_POSTGRES: &str =
     include_str!("../../../tests/fixtures/storage-projection/derived/postgres.json");
 const DERIVED_LARAVEL: &str =
     include_str!("../../../tests/fixtures/storage-projection/derived/laravel.json");
+const DERIVED_MYSQL: &str =
+    include_str!("../../../tests/fixtures/storage-projection/derived/mysql.json");
+const DERIVED_MARIADB: &str =
+    include_str!("../../../tests/fixtures/storage-projection/derived/mariadb.json");
 
 /// The diff vectors: base, domain rename, storage-only change, and the
 /// pure permutation.
@@ -34,6 +38,8 @@ const DIFF_STORAGE: &[u8] =
     include_bytes!("../../../tests/fixtures/storage-projection/diff/candidate-storage.json");
 const DIFF_PERMUTATION: &[u8] =
     include_bytes!("../../../tests/fixtures/storage-projection/diff/candidate-permutation.json");
+const DIFF_COLLATION: &[u8] =
+    include_bytes!("../../../tests/fixtures/storage-projection/diff/candidate-collation.json");
 
 /// The committed adversarial vectors: (name, fixture bytes, expectation
 /// bytes). The expectation records the exact registered rule and the
@@ -410,10 +416,10 @@ fn parse(bytes: &[u8]) -> StorageProjectionAttachment {
 fn golden_normalizes_and_canonicalizes_byte_identically() {
     let attachment = parse(VALID);
     assert_eq!(attachment.project_id().as_str(), "planner");
-    assert_eq!(attachment.attachment_revision().as_str(), "0.2.16");
+    assert_eq!(attachment.attachment_revision().as_str(), "0.4.0");
     assert_eq!(attachment.entities().len(), 7);
     assert_eq!(attachment.relations().len(), 7);
-    assert_eq!(attachment.projections().len(), 2);
+    assert_eq!(attachment.projections().len(), 4);
     // The seven closed relation kinds are all exercised by the golden.
     let mut kinds: Vec<_> = attachment
         .relations()
@@ -531,6 +537,154 @@ fn storage_change_classifies_separately_with_visible_data_risk() {
     );
 }
 
+/// The collation-sensitive-uniqueness headline (issue #117, ADR-0042
+/// §6): a collation or text-defaults change is breaking with destructive
+/// data risk, and an index member change classifies by engine
+/// semantics — never folded into a silent aggregate.
+#[test]
+fn collation_and_index_member_changes_classify_in_the_diff() {
+    let base = parse(DIFF_BASE);
+    let changed = parse(DIFF_COLLATION);
+    let diff = compare(&base, &changed).expect("comparable");
+    assert!(!diff.equal());
+    // The mysql table collation flipped utf8mb4_0900_ai_ci → utf8mb4_bin
+    // on the table carrying the unique textual index: breaking +
+    // destructive. The projection textDefaults flipped with it.
+    let find = |path: &str| {
+        diff.paths()
+            .iter()
+            .find(|entry| entry.path() == path)
+            .unwrap_or_else(|| panic!("path {path}"))
+    };
+    let collation = find("storage/mysql/tables/tag/charsetCollation");
+    assert_eq!(collation.layer(), DiffLayer::Storage);
+    assert_eq!(collation.class(), DiffClass::Breaking);
+    assert_eq!(collation.risk(), Some(DataRisk::Destructive));
+    let defaults = find("storage/mysql/textDefaults");
+    assert_eq!(defaults.class(), DiffClass::Breaking);
+    assert_eq!(defaults.risk(), Some(DataRisk::Destructive));
+    // Non-mysql namespaces untouched by the candidate stay equal.
+    assert!(!diff
+        .paths()
+        .iter()
+        .any(|path| path.path().starts_with("storage/postgres")));
+    // An index member change (kind or prefixLengths) on the named
+    // tenant index surfaces at its own path with the rewrite
+    // obligation, not as the silent aggregate.
+    let mut member: serde_json::Value = serde_json::from_slice(DIFF_BASE).expect("json");
+    member["projections"]
+        .as_array_mut()
+        .expect("projections")
+        .iter_mut()
+        .for_each(|projection| {
+            if projection["namespace"] == "mysql" {
+                for table in projection["tables"].as_array_mut().expect("tables") {
+                    if table["entity"] == "task" {
+                        table["indexes"][1]["prefixLengths"] = serde_json::json!([3072]);
+                    }
+                }
+            }
+        });
+    let member_candidate = StorageProjectionAttachment::from_value(&member).expect("parses");
+    let member_diff = compare(&base, &member_candidate).expect("comparable");
+    let member_path = member_diff
+        .paths()
+        .iter()
+        .find(|path| path.path() == "storage/mysql/tables/task/indexes/idx_task_tenant")
+        .expect("the exact member path");
+    assert_eq!(member_path.class(), DiffClass::PolicyChange);
+    assert_eq!(member_path.risk(), Some(DataRisk::Destructive));
+    // Dropping uniqueness from the named unique external-identity index
+    // is a breaking narrowing.
+    let mut ununique: serde_json::Value = serde_json::from_slice(DIFF_BASE).expect("json");
+    ununique["projections"]
+        .as_array_mut()
+        .expect("projections")
+        .iter_mut()
+        .for_each(|projection| {
+            if projection["namespace"] == "mysql" {
+                for table in projection["tables"].as_array_mut().expect("tables") {
+                    if table["entity"] == "task_external_link" {
+                        table["indexes"][0]["unique"] = serde_json::Value::Bool(false);
+                    }
+                }
+            }
+        });
+    let ununique_candidate = StorageProjectionAttachment::from_value(&ununique).expect("parses");
+    let ununique_diff = compare(&base, &ununique_candidate).expect("comparable");
+    let ununique_path = ununique_diff
+        .paths()
+        .iter()
+        .find(|path| {
+            path.path() == "storage/mysql/tables/task_external_link/indexes/uq_external_identity"
+        })
+        .expect("the unique-narrowing path");
+    assert_eq!(ununique_path.class(), DiffClass::Breaking);
+    assert_eq!(ununique_path.risk(), Some(DataRisk::Destructive));
+    // The same narrowing on an ANONYMOUS unique index (the tag table's
+    // unnamed `label` index) must classify identically at its own
+    // column-list path — uniqueness is a member, not identity, so the
+    // change cannot hide in the aggregate policy path (round-3 F-2).
+    let mut anon: serde_json::Value = serde_json::from_slice(DIFF_BASE).expect("json");
+    anon["projections"]
+        .as_array_mut()
+        .expect("projections")
+        .iter_mut()
+        .for_each(|projection| {
+            if projection["namespace"] == "mysql" {
+                for table in projection["tables"].as_array_mut().expect("tables") {
+                    if table["entity"] == "tag" {
+                        table["indexes"][0]["unique"] = serde_json::Value::Bool(false);
+                    }
+                }
+            }
+        });
+    let anon_candidate = StorageProjectionAttachment::from_value(&anon).expect("parses");
+    let anon_diff = compare(&base, &anon_candidate).expect("comparable");
+    let anon_path = anon_diff
+        .paths()
+        .iter()
+        .find(|path| path.path() == "storage/mysql/tables/tag/indexes/label")
+        .expect("the anonymous narrowing path");
+    assert_eq!(anon_path.class(), DiffClass::Breaking);
+    assert_eq!(anon_path.risk(), Some(DataRisk::Destructive));
+    // Removing a unique index wholesale is the same guarantee loss as
+    // the unique→false flip: breaking + destructive at the index's own
+    // path, not a risk-free aggregate policy change (round-4 F-4).
+    let mut removal: serde_json::Value = serde_json::from_slice(DIFF_BASE).expect("json");
+    removal["projections"]
+        .as_array_mut()
+        .expect("projections")
+        .iter_mut()
+        .for_each(|projection| {
+            if projection["namespace"] == "mysql" {
+                for table in projection["tables"].as_array_mut().expect("tables") {
+                    if table["entity"] == "task_external_link" {
+                        table["indexes"] = table["indexes"]
+                            .as_array()
+                            .expect("indexes")
+                            .iter()
+                            .filter(|index| index["name"] != "uq_external_identity")
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .into();
+                    }
+                }
+            }
+        });
+    let removal_candidate = StorageProjectionAttachment::from_value(&removal).expect("parses");
+    let removal_diff = compare(&base, &removal_candidate).expect("comparable");
+    let removal_path = removal_diff
+        .paths()
+        .iter()
+        .find(|path| {
+            path.path() == "storage/mysql/tables/task_external_link/indexes/uq_external_identity"
+        })
+        .expect("the removal path");
+    assert_eq!(removal_path.class(), DiffClass::Breaking);
+    assert_eq!(removal_path.risk(), Some(DataRisk::Destructive));
+}
+
 #[test]
 fn diff_addition_is_non_breaking_and_reversible() {
     let base = parse(DIFF_BASE);
@@ -632,6 +786,8 @@ fn derived_projections_match_the_committed_goldens() {
     for (namespace, committed) in [
         (Namespace::Postgres, DERIVED_POSTGRES),
         (Namespace::Laravel, DERIVED_LARAVEL),
+        (Namespace::Mysql, DERIVED_MYSQL),
+        (Namespace::Mariadb, DERIVED_MARIADB),
     ] {
         let derived = project(&attachment, namespace).expect("derives");
         let bytes = canonical::derived_bytes(&derived).expect("canonical");
@@ -644,8 +800,10 @@ fn same_domain_model_derives_both_namespaces() {
     let attachment = parse(VALID);
     let postgres = project(&attachment, Namespace::Postgres).expect("derives");
     let laravel = project(&attachment, Namespace::Laravel).expect("derives");
-    // Every local entity is mapped exactly once in both renderings.
-    for derived in [&postgres, &laravel] {
+    let mysql = project(&attachment, Namespace::Mysql).expect("derives");
+    let mariadb = project(&attachment, Namespace::Mariadb).expect("derives");
+    // Every local entity is mapped exactly once in every rendering.
+    for derived in [&postgres, &laravel, &mysql, &mariadb] {
         assert_eq!(derived.tables().len(), 6, "every local entity is mapped");
         assert_eq!(derived.joins().len(), 1, "the join table is materialized");
     }
@@ -736,6 +894,359 @@ fn public_dto_never_includes_storage_technical_columns() {
         .expect("technical column");
     assert_eq!(remember.visibility(), Visibility::Private);
     assert_eq!(remember.origin(), ColumnOrigin::Technical);
+}
+
+/// The MySQL-family namespace arms (issue #117): the type tables, the
+/// instant render, the instant-refusal surface, and the byte-identity
+/// of the committed goldens over the same domain model.
+#[test]
+fn mysql_family_namespaces_derive_their_type_tables() {
+    let attachment = parse(VALID);
+    let mysql = project(&attachment, Namespace::Mysql).expect("derives");
+    let mariadb = project(&attachment, Namespace::Mariadb).expect("derives");
+    fn task_of(
+        derived: &lekalo_core::storage_projection::DerivedProjection,
+    ) -> &lekalo_core::storage_projection::DerivedTable {
+        derived
+            .table(&EntityKey::parse("task").expect("key"))
+            .expect("task table")
+    }
+    // One domain model, four explicit type renders.
+    let cases = [
+        (
+            task_of(&mysql),
+            "tinyint(1)",
+            "bigint",
+            "varchar(200)",
+            "binary(16)",
+            "datetime(6)",
+        ),
+        (
+            task_of(&mariadb),
+            "tinyint(1)",
+            "bigint",
+            "varchar(200)",
+            "binary(16)",
+            "datetime(6)",
+        ),
+    ];
+    for (table, boolean, integer, string, uuid, instant) in cases {
+        let find = |name: &str| {
+            table
+                .columns()
+                .iter()
+                .find(|column| column.name().as_str() == name)
+                .unwrap_or_else(|| panic!("column {name}"))
+                .storage_type()
+        };
+        // Boolean fields are not declared on the planner task; the
+        // instant and string renders are visible directly.
+        assert_eq!(find("title"), string);
+        assert_eq!(find("created_at"), instant);
+        let _ = (boolean, integer, uuid);
+    }
+    // The foreign-key and discriminator columns resolve through the
+    // mysql type table: binary(16) uuid, varchar(64) discriminator.
+    let detail = mysql
+        .table(&EntityKey::parse("task_detail").expect("key"))
+        .expect("task_detail");
+    let key = detail
+        .columns()
+        .iter()
+        .find(|column| column.name().as_str() == "task_id")
+        .expect("task_id");
+    assert_eq!(key.storage_type(), "binary(16)");
+    let comment = mysql
+        .table(&EntityKey::parse("comment").expect("key"))
+        .expect("comment");
+    let discriminator = comment
+        .columns()
+        .iter()
+        .find(|column| column.name().as_str() == "target_type")
+        .expect("target_type");
+    assert_eq!(discriminator.storage_type(), "varchar(64)");
+    // Determinism: deriving twice is byte-identical.
+    let again = project(&attachment, Namespace::Mysql).expect("derives");
+    assert_eq!(
+        canonical::derived_bytes(&mysql).expect("bytes"),
+        canonical::derived_bytes(&again).expect("bytes")
+    );
+}
+
+/// The MySQL namespace vocabulary is closed at the typed layer: the
+/// MariaDB-only `uuid` token refuses, and the declared projection
+/// validation surfaces the sequence refusal in the mysql namespace.
+#[test]
+fn mysql_namespace_stays_separate_from_mariadb() {
+    assert!(Namespace::Mysql.accepts_storage_type("json"));
+    assert!(!Namespace::Mysql.accepts_storage_type("uuid"));
+    assert!(Namespace::Mariadb.accepts_storage_type("uuid"));
+    assert!(Namespace::Mysql.is_mysql_family());
+    assert!(Namespace::Mariadb.is_mysql_family());
+    assert!(!Namespace::Postgres.is_mysql_family());
+    assert!(!Namespace::Laravel.is_mysql_family());
+    // The mysql render of a sequence-bearing table would be refused at
+    // validation: the golden declares identity in mysql and sequence in
+    // mariadb, exactly the divergent capability pair the profile
+    // evidence later binds.
+    let attachment = parse(VALID);
+    let mysql = project(&attachment, Namespace::Mysql).expect("derives");
+    let session = mysql
+        .table(&EntityKey::parse("focus_session").expect("key"))
+        .expect("focus_session");
+    let session_no = session
+        .columns()
+        .iter()
+        .find(|column| column.name().as_str() == "session_no")
+        .expect("session_no");
+    assert_eq!(session_no.storage_type(), "bigint");
+}
+
+/// Prefix obligation is decided per resolved spelling, not family:
+/// fixed-width `binary(16)` (the uuid/FK render) indexes without a
+/// spurious prefix, while unbounded `text` still refuses. The
+/// dominant index shape in real mysql schemas is now ceremony-free
+/// (round-4 review F-3).
+#[test]
+fn prefix_required_decides_per_resolved_spelling() {
+    // (a) uuid pk index (binary(16)) without a prefix: valid.
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("json");
+    for projection in value["projections"].as_array_mut().expect("projections") {
+        if projection["namespace"] == "mysql" {
+            for table in projection["tables"].as_array_mut().expect("tables") {
+                if table["entity"] == "tag" {
+                    table["indexes"]
+                        .as_array_mut()
+                        .expect("indexes")
+                        .push(serde_json::json!({"columns": ["id"], "unique": false}));
+                }
+            }
+        }
+    }
+    StorageProjectionAttachment::from_value(&value)
+        .expect("parses")
+        .validate_attachment()
+        .expect("binary(16) indexes without a prefix");
+    // (b) FK index (binary(16) via the referenced pk) without a
+    // prefix: valid.
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("json");
+    for projection in value["projections"].as_array_mut().expect("projections") {
+        if projection["namespace"] == "mysql" {
+            for table in projection["tables"].as_array_mut().expect("tables") {
+                if table["entity"] == "task_external_link" {
+                    table["indexes"]
+                        .as_array_mut()
+                        .expect("indexes")
+                        .push(serde_json::json!({"columns": ["task_id"], "unique": false}));
+                }
+            }
+        }
+    }
+    StorageProjectionAttachment::from_value(&value)
+        .expect("parses")
+        .validate_attachment()
+        .expect("FK binary(16) indexes without a prefix");
+    // (c) unbounded text still refuses without a prefix.
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("json");
+    for projection in value["projections"].as_array_mut().expect("projections") {
+        if projection["namespace"] == "mysql" {
+            for table in projection["tables"].as_array_mut().expect("tables") {
+                if table["entity"] == "task" {
+                    table["indexes"]
+                        .as_array_mut()
+                        .expect("indexes")
+                        .push(serde_json::json!({"columns": ["note"], "unique": false}));
+                }
+            }
+        }
+    }
+    let error = StorageProjectionAttachment::from_value(&value)
+        .expect_err("unbounded text without a prefix refuses");
+    let rendered = serde_json::to_string(&error).expect("diagnostic json");
+    assert!(rendered.contains("prefix-required"));
+}
+
+/// The valid coverage vector for the round-4 F-1 fix: a mixed
+/// textual+non-textual composite index with sparse prefixLengths
+/// `[16, null]` validates, and the sparse positions survive
+/// normalization (null = no prefix) and canonical re-rendering.
+#[test]
+fn mixed_textual_and_non_textual_composite_index_is_expressible() {
+    const MIXED: &[u8] = include_bytes!(
+        "../../../tests/fixtures/storage-projection/valid/mixed-composite-prefix.json"
+    );
+    let attachment = parse(MIXED);
+    attachment
+        .validate_attachment()
+        .expect("the mixed composite validates");
+    let projection = attachment
+        .projection(Namespace::Mysql)
+        .expect("mysql projection");
+    let task = projection
+        .tables()
+        .iter()
+        .find(|table| table.entity().as_str() == "task")
+        .expect("task table");
+    let mixed = task
+        .indexes()
+        .iter()
+        .find(|index| index.columns().len() == 2)
+        .expect("the mixed composite index");
+    let lengths = mixed.prefix_lengths().expect("sparse lengths");
+    assert_eq!(lengths[0], Some(16), "the textual member keeps its prefix");
+    assert_eq!(lengths[1], None, "the non-textual member declares none");
+    // Canonical bytes re-render the sparse position as null.
+    let bytes = canonical::attachment_bytes(&attachment).expect("canonical");
+    assert!(bytes.contains("prefixLengths\":[16,null]"));
+    // Deriving the namespace still works over the mixed index.
+    project(&attachment, Namespace::Mysql).expect("derives");
+}
+
+/// A grammar-legal pk→fk cycle (a primary key naming a foreign-key
+/// column, resolution crossing the self-referencing FK) must refuse
+/// with the typed `cyclic-key-resolution` rule — never overflow the
+/// stack (round-3 review F-1). Both reproductions from the review are
+/// pinned: the self-FK pk cycle, and the cross-table chain where
+/// task_detail's index on task_id resolves into task's self-FK pk.
+#[test]
+fn cyclic_key_resolution_refuses_instead_of_crashing() {
+    // (a) self-FK cycle: task's pk names its own optional_reference FK
+    // column, and an index keys on it.
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("json");
+    for projection in value["projections"].as_array_mut().expect("projections") {
+        if projection["namespace"] == "mysql" {
+            for table in projection["tables"].as_array_mut().expect("tables") {
+                if table["entity"] == "task" {
+                    table["primaryKey"] = serde_json::json!(["parent_task_id"]);
+                    table["indexes"]
+                        .as_array_mut()
+                        .expect("indexes")
+                        .push(serde_json::json!({"columns": ["parent_task_id"], "unique": false}));
+                }
+            }
+        }
+    }
+    let error =
+        StorageProjectionAttachment::from_value(&value).expect_err("a pk→fk cycle must refuse");
+    let rendered = serde_json::to_string(&error).expect("diagnostic json");
+    assert!(
+        rendered.contains("cyclic-key-resolution"),
+        "expected the cyclic refusal, got {rendered}"
+    );
+    // (b) cross-table chain: task_detail's index on task_id resolves
+    // into task's self-FK pk, which resolves back through the same
+    // chain — bounded, refused, no crash.
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("json");
+    for projection in value["projections"].as_array_mut().expect("projections") {
+        if projection["namespace"] == "mysql" {
+            for table in projection["tables"].as_array_mut().expect("tables") {
+                if table["entity"] == "task" {
+                    table["primaryKey"] = serde_json::json!(["parent_task_id"]);
+                }
+                if table["entity"] == "task_detail" {
+                    table["indexes"] =
+                        serde_json::json!([{"columns": ["task_id"], "unique": false}]);
+                }
+            }
+        }
+    }
+    let error = StorageProjectionAttachment::from_value(&value)
+        .expect_err("the cross-table cycle must refuse");
+    let rendered = serde_json::to_string(&error).expect("diagnostic json");
+    assert!(
+        rendered.contains("cyclic-key-resolution"),
+        "expected the cyclic refusal, got {rendered}"
+    );
+}
+
+/// A foreign key whose referenced side is an external (unmapped)
+/// entity is non-cyclic and unresolvable: the index rules skip the
+/// column honestly instead of firing the lying cyclic refusal
+/// (round-4 review F-2).
+#[test]
+fn external_entity_foreign_key_index_skips_prefix_rules_honestly() {
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("json");
+    // Flip the external_reference relation into an FK-bearing relation
+    // owned by the external jira_issue entity, and add a matching field
+    // plus an index on the FK column in the mysql projection.
+    let relation = value["relations"]
+        .as_array_mut()
+        .expect("relations")
+        .iter_mut()
+        .find(|relation| relation["relationId"] == "planner.relation.link_provider")
+        .expect("link_provider");
+    relation["kind"] = serde_json::json!("one_to_many");
+    relation["deleteBehavior"] = serde_json::json!("restrict");
+    relation["owner"] = serde_json::json!("jira_issue");
+    relation["target"] = serde_json::json!("task_external_link");
+    relation["foreignKey"] = serde_json::json!("jira_id");
+    let external = value["entities"]
+        .as_array_mut()
+        .expect("entities")
+        .iter_mut()
+        .find(|entity| entity["entityKey"] == "jira_issue")
+        .expect("jira_issue");
+    external["fields"]
+        .as_array_mut()
+        .expect("fields")
+        .push(serde_json::json!({
+            "field": "jira_id",
+            "required": true,
+            "type": {"name": "uuid"},
+            "visibility": "internal"
+        }));
+    for projection in value["projections"].as_array_mut().expect("projections") {
+        if projection["namespace"] == "mysql" {
+            for table in projection["tables"].as_array_mut().expect("tables") {
+                if table["entity"] == "task_external_link" {
+                    table["indexes"]
+                        .as_array_mut()
+                        .expect("indexes")
+                        .push(serde_json::json!({"columns": ["jira_id"], "unique": false}));
+                }
+            }
+        }
+    }
+    let attachment = StorageProjectionAttachment::from_value(&value).expect("parses");
+    attachment
+        .validate_attachment()
+        .expect("a non-cyclic unresolvable reference validates");
+}
+
+/// Collation-sensitive uniqueness is visible in the derived surface:
+/// the declared tag table carries its collation evidence, and the
+/// derived unique index over the textual column stays visible with it.
+#[test]
+fn mysql_collation_evidence_stays_visible() {
+    let attachment = parse(VALID);
+    let mysql = project(&attachment, Namespace::Mysql).expect("derives");
+    let tag = mysql
+        .table(&EntityKey::parse("tag").expect("key"))
+        .expect("tag");
+    let unique = tag
+        .indexes()
+        .iter()
+        .find(|index| index.unique())
+        .expect("the declared unique index");
+    assert_eq!(
+        unique
+            .columns()
+            .iter()
+            .map(|column| column.as_str())
+            .collect::<Vec<_>>(),
+        vec!["label"]
+    );
+    // The declared projection side keeps the collation members.
+    let projection = attachment.projection(Namespace::Mysql).expect("mysql");
+    let (charset, collation) = projection.text_defaults().expect("textDefaults");
+    assert_eq!(charset, "utf8mb4");
+    assert_eq!(collation, "utf8mb4_0900_ai_ci");
+    let tag_table = projection
+        .tables()
+        .iter()
+        .find(|table| table.entity().as_str() == "tag")
+        .expect("tag table");
+    assert_eq!(tag_table.collation(), Some("utf8mb4_0900_ai_ci"));
 }
 
 #[test]

@@ -21,7 +21,23 @@
       "support": "full"
     },
     {
+      "id": "storage.array-types",
+      "support": "full"
+    },
+    {
+      "id": "storage.deferred-constraints",
+      "support": "full"
+    },
+    {
+      "id": "storage.generated-columns",
+      "support": "full"
+    },
+    {
       "id": "storage.migrations",
+      "support": "full"
+    },
+    {
+      "id": "storage.partial-index",
       "support": "full"
     },
     {
@@ -29,7 +45,19 @@
       "support": "full"
     },
     {
+      "id": "storage.returning",
+      "support": "full"
+    },
+    {
+      "id": "storage.sequences",
+      "support": "full"
+    },
+    {
       "id": "storage.sql",
+      "support": "full"
+    },
+    {
+      "id": "storage.timestamptz",
       "support": "full"
     },
     {
@@ -93,7 +121,7 @@
       "id": "http-json"
     }
   ],
-  "digest": "sha256:960efe9dc39204288a13f5c856d27db0176120016efb531175ff8139a53604c2",
+  "digest": "sha256:879ed630a2d008d513e3ef65c51d2dfad9769c2fa8a9761ea7b2f6a7af70b56e",
   "id": "node-postgres-http",
   "overrides_applied": [],
   "provenance": [

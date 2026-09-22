@@ -43,6 +43,15 @@ lekalo transport validate PATH [--project DIR] [--errors FILE] [--query-model FI
 lekalo transport inspect PATH --endpoint SYMBOL [--project DIR]
 lekalo transport project PATH --namespace node|laravel|go|rust [--project DIR] [--errors FILE] [--query-model FILE]
 lekalo transport diff BASE CANDIDATE
+lekalo storage validate PATH [--project DIR]
+lekalo storage project PATH --namespace postgres|laravel|mysql|mariadb
+lekalo storage diff BASE CANDIDATE
+lekalo storage plan BASE CANDIDATE [--confirm PLAN_ID]
+lekalo storage introspect-check --projection PATH --evidence PATH --namespace postgres|laravel|mysql|mariadb
+lekalo storage-profile validate PATH
+lekalo storage-profile capabilities PATH
+lekalo storage-profile portability BASE TARGET [--postgres-divergences]
+lekalo storage-profile diff BASE CANDIDATE
 lekalo graph show SYMBOL [--project DIR]
 lekalo graph callers SYMBOL [--transitive] [--project DIR]
 lekalo graph path FROM TO [--project DIR]
@@ -822,3 +831,28 @@ scripts/test-context-contracts.mjs,
 scripts/test-semantic-diff-contracts.mjs,
 and scripts/test-authorization-contracts.mjs through NODE_PATH,
 and fails the job on any install, version, or gate failure.
+
+## Storage and storage profile (issue #117)
+
+The storage commands are thin, read-only handoffs to the core
+storage-projection, storage-engine-profile, and storage-introspection
+families. The documents are read at the given paths; every decision —
+wire validation, semantic self-check, derivation, comparison, and the
+drift check — lives in the core. Nothing is ever written and no
+database connection flag exists anywhere: the introspection evidence is
+produced by the runtime adapter, and the core only consumes it.
+
+```text
+lekalo storage validate PATH
+lekalo storage project PATH --namespace postgres|laravel|mysql|mariadb
+lekalo storage diff BASE CANDIDATE
+lekalo storage introspect-check --projection PATH --evidence PATH --namespace NS
+lekalo storage-profile validate PATH
+lekalo storage-profile capabilities PATH
+lekalo storage-profile portability BASE TARGET [--postgres-divergences]
+lekalo storage-profile diff BASE CANDIDATE
+```
+
+Exit-code discipline matches `query-model diff`: success and typed
+refusals stay on the accepted 0/1/3/4/5 envelope, and every verdict is
+data in the JSON envelope, never a guessed repair.

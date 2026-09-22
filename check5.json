@@ -1,0 +1,38 @@
+{
+  "id": "2573758d-f483-4ae3-9188-42e864fbd14f",
+  "ok": true,
+  "result": {
+    "runId": "run_d17b9193ea96",
+    "deliveryId": "delivery_842728b415a2",
+    "messages": [
+      {
+        "id": "msg_00942159ade0",
+        "run_id": "run_d17b9193ea96",
+        "delivery_contract": "current_delivery",
+        "from_handle": "term_56b8ef71-e66e-42ed-8f15-715410500f1b",
+        "to_handle": "run:run_d17b9193ea96",
+        "subject": "Issue #32 research plan complete",
+        "body": "I produced the durable research artifact at C:/Users/User/orca/workspaces/lekalo/m4-issue-32/.m4/issue-32-plan.md covering the issue summary with AC-to-step mapping, verified current-state findings, a full implementation plan (adapter_package module, adapter-manifest contract v0.4.0, staged atomic install/update/rollback, trust+quarantine model, lock/evidence provenance), security model, test plan, risks, and 13 ordered commit-sized steps. The core finding is that the repo already has safe describe/selection/confinement/conformance/lockfile machinery but lacks a manifest gate before adapter launch and any package-install/trust/revocation layer; all work was read-only research and no product files, contracts, fixtures, docs, or Cargo/package files were touched. The biggest open risk is signature verification — the workspace has no crypto dependency, so the plan declares schemes and answers 'required' honestly via adapter.signature-unverified until a reviewed verifier lands, flagged for the ADR.",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_c3d72c382811\",\"dispatchId\":\"ctx_a13d8c751a58\",\"outcome\":\"succeeded\",\"reportPath\":\"C:/Users/User/orca/workspaces/lekalo/m4-issue-32/.m4/issue-32-plan.md\"}",
+        "created_at": "2026-09-19T05:45:02Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": true,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "8f40d638-60db-42ca-95b6-646ffec2a2f1",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "34a2d20b-810e-4f0e-aa59-57034c5fe2ab"
+  }
+}

@@ -344,6 +344,14 @@ fn is_core(id: CheckId) -> bool {
             | CheckId::ProcessCancellation
             | CheckId::TransportProjectionParity
             | CheckId::TransportBlackboxScenarios
+            // The issue #117 storage rows: optional capability-gated
+            // checks; a skip on an undeclared surface never blocks a
+            // badge (issue #117).
+            | CheckId::StorageProjectionParity
+            | CheckId::StorageProfileEvidence
+            | CheckId::StorageIntrospectionChecked
+            | CheckId::StorageMigrationGate
+            | CheckId::StorageCollationUniqueness
     )
 }
 

@@ -22,13 +22,22 @@ pub enum ShapeError {
     StorageType,
 }
 
-/// The closed target namespaces of v1.
+/// The closed target namespaces of v1. MySQL and MariaDB are separate
+/// members, never one optimistic family: real divergences exist in the
+/// projection grammar itself (native `uuid`, `sequence` generation,
+/// `json` storage class), and the engine capability evidence lives in
+/// the versioned storage-engine-profile attachment beside the
+/// projection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Namespace {
     /// The PostgreSQL namespace.
     Postgres,
     /// The Laravel (Eloquent migration) namespace.
     Laravel,
+    /// The MySQL namespace (version-evidenced engine profile beside it).
+    Mysql,
+    /// The MariaDB namespace (version-evidenced engine profile beside it).
+    Mariadb,
 }
 
 impl Namespace {
@@ -37,6 +46,8 @@ impl Namespace {
         match self {
             Self::Postgres => "postgres",
             Self::Laravel => "laravel",
+            Self::Mysql => "mysql",
+            Self::Mariadb => "mariadb",
         }
     }
 
@@ -45,8 +56,16 @@ impl Namespace {
         match text {
             "postgres" => Ok(Self::Postgres),
             "laravel" => Ok(Self::Laravel),
+            "mysql" => Ok(Self::Mysql),
+            "mariadb" => Ok(Self::Mariadb),
             _ => Err(ShapeError::Shape),
         }
+    }
+
+    /// Whether the namespace is one of the MySQL-family members; the
+    /// charset/collation/prefix-index rules key off this split.
+    pub const fn is_mysql_family(self) -> bool {
+        matches!(self, Self::Mysql | Self::Mariadb)
     }
 
     /// Whether one declared storage-type token exists in this
@@ -90,6 +109,67 @@ impl Namespace {
                     | "binary"
                     | "json"
             ),
+            Self::Mysql => matches!(
+                text,
+                "boolean"
+                    | "tinyint"
+                    | "smallint"
+                    | "mediumint"
+                    | "int"
+                    | "bigint"
+                    | "decimal"
+                    | "float"
+                    | "double"
+                    | "varchar"
+                    | "char"
+                    | "text"
+                    | "tinytext"
+                    | "mediumtext"
+                    | "longtext"
+                    | "date"
+                    | "time"
+                    | "datetime"
+                    | "timestamp"
+                    | "year"
+                    | "json"
+                    | "binary"
+                    | "varbinary"
+                    | "blob"
+                    | "tinyblob"
+                    | "mediumblob"
+                    | "longblob"
+            ),
+            Self::Mariadb => matches!(
+                text,
+                "boolean"
+                    | "tinyint"
+                    | "smallint"
+                    | "mediumint"
+                    | "int"
+                    | "bigint"
+                    | "decimal"
+                    | "float"
+                    | "double"
+                    | "varchar"
+                    | "char"
+                    | "text"
+                    | "tinytext"
+                    | "mediumtext"
+                    | "longtext"
+                    | "date"
+                    | "time"
+                    | "datetime"
+                    | "timestamp"
+                    | "year"
+                    | "json"
+                    | "binary"
+                    | "varbinary"
+                    | "blob"
+                    | "tinyblob"
+                    | "mediumblob"
+                    | "longblob"
+                    | "uuid"
+            ),
         }
     }
 
@@ -98,15 +178,19 @@ impl Namespace {
         match self {
             Self::Postgres => "bigint",
             Self::Laravel => "biginteger",
+            Self::Mysql | Self::Mariadb => "bigint",
         }
     }
 
     /// The namespace instant type token (the audit and soft-delete
-    /// policy type).
+    /// policy type). The MySQL family renders `datetime(6)` canonically:
+    /// naive, stable, no session-time-zone conversion; the `timestamp`
+    /// storage type stays a declared opt-in through technical columns.
     pub const fn instant(self) -> &'static str {
         match self {
             Self::Postgres => "timestamptz",
             Self::Laravel => "datetime",
+            Self::Mysql | Self::Mariadb => "datetime(6)",
         }
     }
 
@@ -115,6 +199,7 @@ impl Namespace {
         match self {
             Self::Postgres => "varchar",
             Self::Laravel => "string",
+            Self::Mysql | Self::Mariadb => "varchar",
         }
     }
 }
@@ -132,8 +217,11 @@ impl StorageType {
         let valid = matches!(
             text,
             "boolean"
+                | "tinyint"
                 | "smallint"
+                | "mediumint"
                 | "integer"
+                | "int"
                 | "bigint"
                 | "biginteger"
                 | "real"
@@ -141,16 +229,28 @@ impl StorageType {
                 | "double precision"
                 | "numeric"
                 | "decimal"
+                | "float"
                 | "text"
+                | "tinytext"
+                | "mediumtext"
+                | "longtext"
                 | "varchar"
+                | "char"
                 | "string"
                 | "uuid"
                 | "date"
+                | "time"
                 | "datetime"
                 | "timestamp"
                 | "timestamptz"
+                | "year"
                 | "bytea"
                 | "binary"
+                | "varbinary"
+                | "blob"
+                | "tinyblob"
+                | "mediumblob"
+                | "longblob"
                 | "json"
                 | "jsonb"
         );
@@ -164,6 +264,24 @@ impl StorageType {
     /// The exact declared token.
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Whether the type is one of the textual, collation-bearing
+    /// families (the collation-sensitive-uniqueness surface).
+    pub fn is_textual(text: &str) -> bool {
+        matches!(
+            text,
+            "text" | "tinytext" | "mediumtext" | "longtext" | "varchar" | "char" | "string"
+        )
+    }
+
+    /// Whether the type is one of the blob families that can never be
+    /// an index key part without an explicit prefix length.
+    pub fn is_blob_family(text: &str) -> bool {
+        matches!(
+            text,
+            "blob" | "tinyblob" | "mediumblob" | "longblob" | "varbinary" | "binary" | "bytea"
+        )
     }
 }
 
@@ -255,12 +373,49 @@ impl GeneratedColumn {
     }
 }
 
+/// The closed index kinds. MySQL and MariaDB evidence the non-default
+/// kinds in the bound storage-engine-profile attachment; the grammar
+/// keeps them declarable so the evidence can bind to a named index.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum IndexKind {
+    /// The default ordered index.
+    Btree,
+    /// The full-text search index (never unique, textual columns only).
+    Fulltext,
+    /// The spatial index (geometry columns only).
+    Spatial,
+}
+
+impl IndexKind {
+    /// The exact wire key.
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Btree => "btree",
+            Self::Fulltext => "fulltext",
+            Self::Spatial => "spatial",
+        }
+    }
+
+    /// Parse one wire key.
+    pub fn parse(text: &str) -> Result<Self, ShapeError> {
+        match text {
+            "btree" => Ok(Self::Btree),
+            "fulltext" => Ok(Self::Fulltext),
+            "spatial" => Ok(Self::Spatial),
+            _ => Err(ShapeError::Shape),
+        }
+    }
+}
+
 /// One declared index over resolved columns.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Index {
     pub(crate) name: Option<StorageName>,
     pub(crate) columns: Vec<StorageName>,
     pub(crate) unique: bool,
+    pub(crate) kind: IndexKind,
+    pub(crate) prefix_lengths: Option<Vec<Option<u16>>>,
+    pub(crate) descending: Option<Vec<bool>>,
 }
 
 impl Index {
@@ -278,6 +433,26 @@ impl Index {
     pub const fn unique(&self) -> bool {
         self.unique
     }
+
+    /// The declared index kind.
+    pub const fn kind(&self) -> IndexKind {
+        self.kind
+    }
+
+    /// The per-column prefix lengths parallel to `columns`, when
+    /// declared. Sparse per position: `Some(n)` prefixes that key part
+    /// to `n` characters, `None` (wire `null`) declares no prefix for
+    /// that position — a mixed textual+non-textual composite index
+    /// prefixes only the textual members (round-4 review F-1).
+    pub fn prefix_lengths(&self) -> Option<&[Option<u16>]> {
+        self.prefix_lengths.as_deref()
+    }
+
+    /// The per-column descending flags parallel to `columns`, when
+    /// declared.
+    pub fn descending(&self) -> Option<&[bool]> {
+        self.descending.as_deref()
+    }
 }
 
 /// One declared table: the storage home of exactly one local entity.
@@ -292,6 +467,8 @@ pub struct Table {
     pub(crate) tenant_key: Option<(StorageName, StorageType)>,
     pub(crate) timestamps: Option<(StorageName, StorageName)>,
     pub(crate) indexes: Vec<Index>,
+    pub(crate) charset: Option<String>,
+    pub(crate) collation: Option<String>,
 }
 
 impl Table {
@@ -338,6 +515,18 @@ impl Table {
     /// The declared indexes.
     pub fn indexes(&self) -> &[Index] {
         &self.indexes
+    }
+
+    /// The declared table character set, when declared.
+    pub fn charset(&self) -> Option<&str> {
+        self.charset.as_deref()
+    }
+
+    /// The declared table collation, when declared. The declared value
+    /// is never the engine implicit default: collation-sensitive
+    /// uniqueness must be a visible decision.
+    pub fn collation(&self) -> Option<&str> {
+        self.collation.as_deref()
     }
 }
 
@@ -437,6 +626,7 @@ pub struct Projection {
     pub(crate) tables: Vec<Table>,
     pub(crate) joins: Vec<Join>,
     pub(crate) polymorphics: Vec<Polymorphic>,
+    pub(crate) text_defaults: Option<(String, String)>,
 }
 
 impl Projection {
@@ -458,5 +648,14 @@ impl Projection {
     /// The declared polymorphic materializations.
     pub fn polymorphics(&self) -> &[Polymorphic] {
         &self.polymorphics
+    }
+
+    /// The declared `(charset, collation)` defaults for textual
+    /// columns, when declared. The declared collation is never the
+    /// engine implicit default.
+    pub fn text_defaults(&self) -> Option<(&str, &str)> {
+        self.text_defaults
+            .as_ref()
+            .map(|(charset, collation)| (charset.as_str(), collation.as_str()))
     }
 }

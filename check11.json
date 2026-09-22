@@ -1,0 +1,25 @@
+{
+  "id": "2e5d7030-9462-440c-a1e4-d328df06c17d",
+  "ok": false,
+  "error": {
+    "code": "waiter_exists",
+    "message": "Run run_d17b9193ea96 already has an active actionable waiter. Orchestration mutation request ID: b2b321ec-8e5c-4307-a1d7-8e417008303f.",
+    "data": {
+      "orchestrationRequestId": "b2b321ec-8e5c-4307-a1d7-8e417008303f",
+      "originalCommand": [
+        "orca",
+        "orchestration",
+        "check",
+        "--wait",
+        "--types",
+        "worker_done,escalation,question",
+        "--timeout-ms",
+        "1500000",
+        "--json"
+      ]
+    }
+  },
+  "_meta": {
+    "runtimeId": "34a2d20b-810e-4f0e-aa59-57034c5fe2ab"
+  }
+}

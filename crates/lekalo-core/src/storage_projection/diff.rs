@@ -16,7 +16,7 @@
 //! the typed error set, never a guessed classification. Paths are
 //! deterministic and byte-sorted.
 
-use super::projection::{DataRisk, Projection, Table};
+use super::projection::{DataRisk, Index, IndexKind, Projection, Table};
 use super::{diagnostic, StorageProjectionAttachment};
 use crate::diagnostics::DiagnosticSet;
 
@@ -510,6 +510,19 @@ fn compare_projection(
     prefix: &str,
     paths: &mut Vec<DiffPath>,
 ) {
+    // The projection-wide text defaults are the declared collation
+    // surface of every textual column: a change is a breaking rewrite
+    // of uniqueness semantics (the `_ci` ↔ `_bin` class), never a
+    // silent no-op.
+    if base.text_defaults() != candidate.text_defaults() {
+        push(
+            paths,
+            format!("{prefix}/textDefaults"),
+            DiffLayer::Storage,
+            DiffClass::Breaking,
+            Some(DataRisk::Destructive),
+        );
+    }
     for table in base.tables() {
         let key = table.entity().as_str();
         let Some(other) = candidate
@@ -549,6 +562,20 @@ fn compare_projection(
 
 /// One table's comparison.
 fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<DiffPath>) {
+    // The declared charset/collation members cohere with the text
+    // defaults (validation), so comparing the members pairwise covers
+    // both the explicit and the inherited defaults. A collation change
+    // rewrites the equality surface of every textual column of the
+    // table — breaking with destructive data risk, per ADR-0042 §6.
+    if base.charset() != candidate.charset() || base.collation() != candidate.collation() {
+        push(
+            paths,
+            format!("{prefix}/charsetCollation"),
+            DiffLayer::Storage,
+            DiffClass::Breaking,
+            Some(DataRisk::Destructive),
+        );
+    }
     if base.table() != candidate.table() {
         push(
             paths,
@@ -699,8 +726,76 @@ fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<
             );
         }
     }
-    // Indexes: one aggregate path; a pure addition is non-breaking.
+    // Indexes: member-level comparison first, one exact path per
+    // changed index, then the aggregate coverage path for structural
+    // add/remove. The aggregate stays a policy path; member-level
+    // changes classify by engine semantics below.
+    for index in base.indexes() {
+        let Some(other) = candidate
+            .indexes()
+            .iter()
+            .find(|candidate| same_index_identity(index, candidate))
+        else {
+            continue;
+        };
+        if index == other {
+            continue;
+        }
+        // A uniqueness narrowing drops a declared uniqueness guarantee;
+        // that is breaking. Kind, prefix lengths, and descending flags
+        // rewrite the physical key or its ordering: storage-layer
+        // policy with a rewrite obligation (kind/prefix), or a pure
+        // re-index for the order flags alone.
+        if index.unique() && !other.unique() {
+            push(
+                paths,
+                format!("{prefix}/indexes/{}", index_path_key(index)),
+                DiffLayer::Storage,
+                DiffClass::Breaking,
+                Some(DataRisk::Destructive),
+            );
+        } else if index.kind() != other.kind() || index.prefix_lengths() != other.prefix_lengths() {
+            push(
+                paths,
+                format!("{prefix}/indexes/{}", index_path_key(index)),
+                DiffLayer::Storage,
+                DiffClass::PolicyChange,
+                Some(DataRisk::Destructive),
+            );
+        } else if index.descending() != other.descending() {
+            push(
+                paths,
+                format!("{prefix}/indexes/{}", index_path_key(index)),
+                DiffLayer::Storage,
+                DiffClass::PolicyChange,
+                None,
+            );
+        }
+    }
     if base.indexes() != candidate.indexes() {
+        // A removed index that carried a guarantee — uniqueness, or a
+        // non-default physical kind — is the same semantic loss as its
+        // member-level flip: classified breaking + destructive at its
+        // own path, never hidden inside the aggregate policy path
+        // (round-4 review F-4).
+        for removed in base.indexes() {
+            let still_present = candidate
+                .indexes()
+                .iter()
+                .any(|candidate| same_index_identity(removed, candidate));
+            if still_present {
+                continue;
+            }
+            if removed.unique() || removed.kind() != IndexKind::Btree {
+                push(
+                    paths,
+                    format!("{prefix}/indexes/{}", index_path_key(removed)),
+                    DiffLayer::Storage,
+                    DiffClass::Breaking,
+                    Some(DataRisk::Destructive),
+                );
+            }
+        }
         let pure_addition = candidate.indexes().len() > base.indexes().len()
             && candidate
                 .indexes()
@@ -719,6 +814,44 @@ fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<
             None,
         );
     }
+}
+
+/// Whether two declared indexes share the same identity: the same
+/// optional name, or — for anonymous indexes — the same column list and
+/// uniqueness. Identity is the join key for member-level comparison and
+/// is stable under member changes.
+fn same_index_identity(base: &Index, candidate: &Index) -> bool {
+    match (base.name(), candidate.name()) {
+        (Some(base_name), Some(candidate_name)) => base_name == candidate_name,
+        // Anonymous indexes key on the column list alone: `unique` is
+        // a member of the index (compared in the member loop below),
+        // not part of its identity. Keying on it let a uniqueness
+        // change break identity and escape member-level
+        // classification into the aggregate policy path — the same
+        // semantic change classified differently for named indexes
+        // (round-3 review F-2).
+        _ => {
+            base.name().is_none()
+                && candidate.name().is_none()
+                && base.columns() == candidate.columns()
+        }
+    }
+}
+
+/// The bounded path key of one declared index: the name when declared,
+/// else the byte-sorted column list. Deterministic and collision-free
+/// within one table (validation refuses duplicate names; two anonymous
+/// indexes over one column list are the same declaration).
+fn index_path_key(index: &Index) -> String {
+    if let Some(name) = index.name() {
+        return name.as_str().to_owned();
+    }
+    index
+        .columns()
+        .iter()
+        .map(|column| column.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// Join comparison.

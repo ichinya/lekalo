@@ -17,8 +17,9 @@ Everything after the program path is passed to the adapter verbatim
 
 ## Checks and classes
 
-The closed catalog carries twenty-three checks in fixed order (the
-five `transport.*` rows were added by issue #70). Every check
+The closed catalog carries twenty-eight checks in fixed order (the
+five `transport.*` rows were added by issue #70 and the five
+`storage.*` rows by issue #117). Every check
 has one inherent failure class; a recorded failure carries the class of
 what actually failed, so a crash during a feature check is a
 process-class failure and a refusal during any exchange is a
@@ -49,6 +50,11 @@ security-class one:
 | `transport.unsupported-capability` | feature | declared streaming/upload/download unsupported by the runtime is reported `unsupported`, never silent |
 | `transport.blackbox-scenarios` | feature | fixture endpoint scenarios execute/normalize through the declared backend binding (execution stays with #47/#56/#107 owners) |
 | `transport.wire-diff-block` | feature | breaking wire change in the fixture pair is classified `breaking` and blocks under `wire-consumer` |
+| `storage.projection-parity` | feature | adapter's verify answer is an honest ok over the fixture and the mysql derivation holds (issue #117) |
+| `storage.profile-evidence` | feature | honest `scan.schema`/`verify.schema-projection` capability declaration (issue #117) |
+| `storage.introspection-checked` | security | declared scan surface answers a real read-only exchange; evidence grammar stays checked, read-only, credential-free (issue #117) |
+| `storage.migration-gate` | feature | destructive diff of the fixture produces an explicitly gated plan step (issue #117) |
+| `storage.collation-uniqueness` | feature | declared collation stays visible beside the derived unique index (issue #117) |
 
 Skipped checks record a bounded reason (`operation-undeclared`,
 `legacy-session`, `no-ir-operations`, `default-profile`,

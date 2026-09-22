@@ -5578,6 +5578,46 @@
       "lifecycle": "active"
     },
     {
+      "id": "storage.introspection-diff-invalid",
+      "code": "LEK-SEP-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage.introspection-diff-invalid",
+      "default_message": "The declared projection and the introspection evidence cannot be compared as the same family.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage.introspection-invalid",
+      "code": "LEK-SEP-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage.introspection-invalid",
+      "default_message": "The storage-introspection evidence document is malformed or violates its closed grammar.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "storage.mapping-invalid",
       "code": "LEK-STO-005",
       "category": "semantic",
@@ -5595,6 +5635,70 @@
         },
         {
           "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage.profile-diff-invalid",
+      "code": "LEK-SEP-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage.profile-diff-invalid",
+      "default_message": "The two storage-engine-profile attachments cannot be compared as the same family.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage.profile-invalid",
+      "code": "LEK-SEP-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage.profile-invalid",
+      "default_message": "The storage-engine-profile document is malformed or violates its closed grammar.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage.profile-limit",
+      "code": "LEK-SEP-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage.profile-limit",
+      "default_message": "The canonical storage-engine-profile payload exceeds the export bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
           "type": "token"
         }
       ],

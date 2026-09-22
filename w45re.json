@@ -1,0 +1,32 @@
+{
+  "id": "714c5b2b-d4e2-4d1b-b572-e03db808d1ba",
+  "ok": false,
+  "error": {
+    "code": "task_not_startable",
+    "message": "Task task_a3738f5e3a61 is dispatched; only a ready Task can start. Orchestration mutation request ID: 40267fe5-3ccb-40f3-b6a5-917d74a65782.",
+    "data": {
+      "taskId": "task_a3738f5e3a61",
+      "status": "dispatched",
+      "unmetDependencies": [],
+      "nextSteps": [
+        "The Task already has an active Dispatch; inspect it with orca orchestration dispatch-show --task task_a3738f5e3a61 --json."
+      ],
+      "orchestrationRequestId": "40267fe5-3ccb-40f3-b6a5-917d74a65782",
+      "originalCommand": [
+        "orca",
+        "orchestration",
+        "worker-start",
+        "--task",
+        "task_a3738f5e3a61",
+        "--terminal",
+        "term_809f87d6-4d28-4c00-9414-0ca479830682",
+        "--worktree",
+        "name:m4-issue-45",
+        "--json"
+      ]
+    }
+  },
+  "_meta": {
+    "runtimeId": "34a2d20b-810e-4f0e-aa59-57034c5fe2ab"
+  }
+}

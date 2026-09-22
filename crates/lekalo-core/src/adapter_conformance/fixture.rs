@@ -43,6 +43,12 @@ pub const OPENSPEC_MARKER: &str = include_str!(
     "../../../../tests/fixtures/adapter-conformance/project/openspec/specs/conformance.md"
 );
 
+/// The declared storage projection fixture (issue #117): the mysql
+/// parity target the evidence checks bind to, decoded through the
+/// production storage-projection normalizer before any adapter runs.
+pub const STORAGE_PROJECTION: &str =
+    include_str!("../../../../tests/fixtures/storage-projection/valid/planner-storage.json");
+
 /// The logical IR path of the fixture input.
 pub const IR_PATH: &str = ".lekalo/ir/minimal.json";
 /// The logical path of the invalid-references input.
@@ -178,6 +184,27 @@ fn walk(root: &Path, dir: &Path, out: &mut Observation) -> Result<(), std::io::E
         out.insert(logical, digest);
     }
     Ok(())
+}
+
+/// Decode the storage projection fixture through the production
+/// storage-projection module; a fixture that fails its own custody
+/// fails every evidence-keyed storage check (issue #117).
+pub fn storage_custody(
+) -> Result<crate::storage_projection::StorageProjectionAttachment, CheckOutcome> {
+    let json: serde_json::Value = serde_json::from_str(STORAGE_PROJECTION).map_err(|_| {
+        CheckOutcome::fail(
+            CheckId::StorageProfileEvidence,
+            CheckId::StorageProfileEvidence.class(),
+            "fixture-json",
+        )
+    })?;
+    crate::storage_projection::StorageProjectionAttachment::from_value(&json).map_err(|_| {
+        CheckOutcome::fail(
+            CheckId::StorageProfileEvidence,
+            CheckId::StorageProfileEvidence.class(),
+            "fixture-custody",
+        )
+    })
 }
 
 fn logical_to_native(path: &str) -> std::path::PathBuf {

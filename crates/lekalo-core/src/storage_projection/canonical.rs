@@ -252,6 +252,15 @@ fn projection_payload(projection: &super::projection::Projection) -> String {
     object(vec![
         ("namespace", Some(string(projection.namespace().key()))),
         (
+            "textDefaults",
+            projection.text_defaults().map(|(charset, collation)| {
+                object(vec![
+                    ("charset", Some(string(charset))),
+                    ("collation", Some(string(collation))),
+                ])
+            }),
+        ),
+        (
             "tables",
             Some(array(
                 &projection
@@ -353,6 +362,8 @@ fn table_payload(table: &super::projection::Table) -> String {
                     .collect::<Vec<String>>(),
             ),
         ),
+        ("charset", table.charset().map(string)),
+        ("collation", table.collation().map(string)),
     ])
 }
 
@@ -395,7 +406,45 @@ fn index_payload(index: &super::projection::Index) -> String {
             )),
         ),
         ("unique", Some(flag(index.unique()))),
+        ("kind", optional_string_if_not(index.kind().key(), "btree")),
+        (
+            "prefixLengths",
+            index.prefix_lengths().map(|lengths| {
+                // Sparse positions render as `null`; positions with a
+                // length render as the number (round-4 review F-1).
+                array(
+                    &lengths
+                        .iter()
+                        .map(|length| match length {
+                            Some(length) => length.to_string(),
+                            None => "null".to_owned(),
+                        })
+                        .collect::<Vec<String>>(),
+                )
+            }),
+        ),
+        (
+            "descending",
+            index.descending().map(|flags| {
+                array(
+                    &flags
+                        .iter()
+                        .map(|flag| flag.to_string())
+                        .collect::<Vec<String>>(),
+                )
+            }),
+        ),
     ])
+}
+
+/// One canonical string member only when the value is not the default
+/// spelling (the btree index kind is the implicit default).
+fn optional_string_if_not(value: &str, default: &str) -> Option<String> {
+    if value == default {
+        None
+    } else {
+        Some(string(value))
+    }
 }
 
 /// One canonical join table.
@@ -517,6 +566,7 @@ fn derived_table_payload(table: &super::derivation::DerivedTable) -> String {
                     .collect::<Vec<String>>(),
             ),
         ),
+        ("collation", table.collation.as_deref().map(string)),
     ])
 }
 

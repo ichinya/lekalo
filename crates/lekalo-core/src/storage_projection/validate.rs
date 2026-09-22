@@ -15,11 +15,11 @@
 use super::diagnostic::{self, DOMAIN_INVALID, PROJECTION_INVALID, RELATION_INVALID};
 use super::entity::DomainEntity;
 use super::id::{EntityKey, StorageName};
-use super::projection::Projection;
+use super::projection::{Namespace, Projection};
 use super::relation::{DeleteBehavior, Relation, RelationKind};
 use super::StorageProjectionAttachment;
 use crate::diagnostics::DiagnosticSet;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 /// The semantic self-check over one assembled attachment.
 pub(crate) fn semantic_self_check(
@@ -189,11 +189,77 @@ fn check_detach_minimum(relation: &Relation, subject: &str) -> Result<(), Diagno
 /// polymorphic materializations.
 fn check_projections(attachment: &StorageProjectionAttachment) -> Result<(), DiagnosticSet> {
     for projection in attachment.projections() {
+        check_charset_coherence(projection)?;
+        check_sequence_namespace(projection)?;
         check_mapping(attachment, projection)?;
         check_tables(attachment, projection)?;
         check_joins(attachment, projection)?;
         check_join_coverage(attachment, projection)?;
         check_polymorphics(attachment, projection)?;
+    }
+    Ok(())
+}
+
+/// The declared charset/collation members cohere: a table collation
+/// belongs to its declared charset, the projection text defaults are
+/// declared as a pair, and every table collation belongs to the
+/// projection default charset. The closed owner-approved membership
+/// pairs keep the check pure and offline.
+fn check_charset_coherence(projection: &Projection) -> Result<(), DiagnosticSet> {
+    let defaults = projection.text_defaults();
+    if let Some((charset, collation)) = defaults {
+        if !collation_belongs_to_charset(collation, charset) {
+            return Err(projection_invalid("collation-charset-mismatch"));
+        }
+    }
+    for table in projection.tables() {
+        if let Some(collation) = table.collation() {
+            let charset = table
+                .charset()
+                .or_else(|| defaults.map(|(charset, _)| charset))
+                .ok_or_else(|| projection_invalid("collation-without-charset"))?;
+            if !collation_belongs_to_charset(collation, charset) {
+                return Err(projection_invalid("collation-charset-mismatch"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The closed charset/collation membership pairs of the v1 grammar.
+/// Membership is decided by the collation prefix convention (`utf8mb4_
+/// ` for utf8mb4, `utf8_` for utf8/utf8mb3, `latin1_` for latin1) plus
+/// the known MariaDB uca1400 family, never by a live engine query.
+fn collation_belongs_to_charset(collation: &str, charset: &str) -> bool {
+    if let Some(rest) = collation.strip_prefix(charset) {
+        if rest.starts_with('_') {
+            return true;
+        }
+    }
+    // The utf8mb3/utf8 spellings share the utf8_ collation prefix.
+    if charset == "utf8mb3" && collation.starts_with("utf8_") {
+        return true;
+    }
+    // The MariaDB 11.4+ uca1400 family is defined over utf8mb4.
+    charset == "utf8mb4" && collation.starts_with("uca1400_")
+}
+
+/// The `sequence` generated kind is MariaDB-only (10.3+ evidence): the
+/// `mysql` namespace refuses it instead of guessing an
+/// auto-increment substitute.
+fn check_sequence_namespace(projection: &Projection) -> Result<(), DiagnosticSet> {
+    if projection.namespace() != Namespace::Mysql {
+        return Ok(());
+    }
+    for table in projection.tables() {
+        for generated in table.generated_columns() {
+            if generated.kind() == super::projection::GeneratedKind::Sequence {
+                return Err(projection_invalid_subject(
+                    "sequence-unsupported",
+                    table.entity().as_str(),
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -338,9 +404,287 @@ fn check_tables(
                     return Err(projection_invalid_subject("unknown-index-column", subject));
                 }
             }
+            check_index(index, table, projection, entity, attachment)?;
         }
     }
     Ok(())
+}
+
+/// The closed index rules over one declared index of one table:
+/// prefix lengths parallel to columns, textual/blob key parts require a
+/// prefix in the MySQL namespaces, fulltext never unique and textual
+/// only, and generated `sequence` columns refuse in the `mysql`
+/// namespace (MariaDB sequences are version-evidenced at 10.3+).
+fn check_index(
+    index: &super::projection::Index,
+    table: &super::projection::Table,
+    projection: &Projection,
+    entity: &DomainEntity,
+    attachment: &StorageProjectionAttachment,
+) -> Result<(), DiagnosticSet> {
+    let columns = index.columns();
+    if let Some(lengths) = index.prefix_lengths() {
+        if lengths.len() != columns.len() {
+            return Err(projection_invalid_subject(
+                "prefix-arity",
+                table.entity().as_str(),
+            ));
+        }
+    }
+    if let Some(flags) = index.descending() {
+        if flags.len() != columns.len() {
+            return Err(projection_invalid_subject(
+                "descending-arity",
+                table.entity().as_str(),
+            ));
+        }
+    }
+    if index.kind() == super::projection::IndexKind::Fulltext {
+        if index.unique() {
+            return Err(projection_invalid_subject(
+                "fulltext-unique",
+                table.entity().as_str(),
+            ));
+        }
+        for column in columns {
+            // Fulltext key parts must render to a textual family in
+            // the declaring namespace: field columns resolve through
+            // the same table as the prefix rule (issue #117 review
+            // F-3), so a domain string/text field is textual while a
+            // bigint/binary render is refused. The resolver is
+            // visited-set bounded: a pk→fk cycle is a typed refusal,
+            // never a stack overflow (round-3 review F-1).
+            let textual = index_column_type(
+                attachment,
+                projection,
+                table,
+                entity,
+                column,
+                &mut BTreeSet::new(),
+            )
+            .map_err(|_| {
+                projection_invalid_subject("cyclic-key-resolution", table.entity().as_str())
+            })?
+            .map(|render| super::projection::StorageType::is_textual(render_family(&render)));
+            if textual != Some(true) {
+                return Err(projection_invalid_subject(
+                    "fulltext-textual-only",
+                    table.entity().as_str(),
+                ));
+            }
+        }
+    }
+    if projection.namespace().is_mysql_family() {
+        for (position, column) in columns.iter().enumerate() {
+            // The declared or derived storage family of the indexed
+            // column: field columns resolve through the domain type's
+            // namespace render, so the prefix rules cover every
+            // indexable column instead of only explicitly declared
+            // ones (issue #117 review F-3). The resolver is
+            // visited-set bounded: a grammar-legal pk→fk cycle is a
+            // typed refusal, never a stack overflow (round-3 F-1).
+            let Some(declared) = index_column_type(
+                attachment,
+                projection,
+                table,
+                entity,
+                column,
+                &mut BTreeSet::new(),
+            )
+            .map_err(|_| {
+                projection_invalid_subject("cyclic-key-resolution", table.entity().as_str())
+            })?
+            else {
+                continue;
+            };
+            let family = render_family(&declared);
+            let textual = super::projection::StorageType::is_textual(family);
+            let blob = super::projection::StorageType::is_blob_family(family);
+            let declared_prefix = index
+                .prefix_lengths()
+                .and_then(|lengths| lengths.get(position))
+                .copied()
+                .flatten();
+            if !(textual || blob) {
+                // A prefix length on a non-textual, non-blob key part
+                // is inexpressible engine semantics: refused, never
+                // silently ignored (a sparse `None` position declares
+                // no prefix and is fine — round-4 review F-1).
+                if declared_prefix.is_some() {
+                    return Err(projection_invalid_subject(
+                        "prefix-on-non-textual",
+                        table.entity().as_str(),
+                    ));
+                }
+                continue;
+            }
+            // Fixed-width binary family within the InnoDB key cap
+            // needs no prefix: `binary(16)` is 16 bytes against 3072.
+            // Only unbounded textual/blob families (or a declared
+            // width beyond the cap) mandate one (round-4 review F-3).
+            if !prefix_required_family(&declared) {
+                continue;
+            }
+            if declared_prefix.is_none() {
+                return Err(projection_invalid_subject(
+                    "prefix-required",
+                    table.entity().as_str(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether one resolved render's family mandates a prefix length on a
+/// MySQL-family key part: the unbounded textual and blob families do;
+/// sized `binary(n)`/`varbinary(n)` with `n ≤ 3072` bytes fit the
+/// InnoDB key cap and index without one. A declared width beyond the
+/// cap (or an unsized binary spelling, whose width is unbounded)
+/// requires the prefix. Byte width is the character bound times 4
+/// (utf8mb4 worst case) for textual families; binary families count
+/// bytes directly (round-4 review F-3).
+fn prefix_required_family(render: &str) -> bool {
+    const INNODB_KEY_CAP_BYTES: u64 = 3072;
+    let family = render_family(render);
+    let width = render.find('(').and_then(|open| {
+        let close = render.rfind(')')?;
+        render[open + 1..close].trim().parse::<u64>().ok()
+    });
+    match family {
+        // Unbounded textual families: always require a prefix.
+        "text" | "tinytext" | "mediumtext" | "longtext" => true,
+        // `varchar(n)`/`char(n)`: prefix required when the utf8mb4
+        // byte width can exceed the key cap.
+        "varchar" | "char" | "string" => width
+            .map(|length| length * 4 > INNODB_KEY_CAP_BYTES)
+            .unwrap_or(true),
+        // Sized binary fits when the byte width fits the cap; bare
+        // `binary`/`varbinary` (no width) is unbounded → prefix.
+        "binary" | "varbinary" => width
+            .map(|length| length > INNODB_KEY_CAP_BYTES)
+            .unwrap_or(true),
+        // Unbounded blob families: always require a prefix.
+        "blob" | "tinyblob" | "mediumblob" | "longblob" => true,
+        _ => false,
+    }
+}
+
+/// The declared or derived storage type of one locally owned column,
+/// resolved to the exact namespace render the index rules need:
+/// technical, generated, and tenant declarations keep their token,
+/// field columns map through the namespace type table, and the policy
+/// columns resolve to their derived spellings (issue #117 review F-3).
+/// Foreign-key and polymorphic key columns derive from the referenced
+/// table's single-column primary key and resolve through the same
+/// render at the referenced side.
+fn index_column_type(
+    attachment: &StorageProjectionAttachment,
+    projection: &Projection,
+    table: &super::projection::Table,
+    entity: &DomainEntity,
+    column: &StorageName,
+    visited: &mut BTreeSet<(EntityKey, StorageName)>,
+) -> Result<Option<String>, ()> {
+    // The grammar legally admits pk→fk cycles (a primary key may name
+    // a foreign-key column), so the recursion carries a visited set
+    // of `(entity, column)` pairs: a revisited pair proves a cyclic
+    // resolution chain, reported as the typed `Err` arm — a refusal,
+    // never a stack overflow (round-3 review F-1). `Ok(None)` is the
+    // honest unresolvable case (no declared or derivable family).
+    let identity = (entity.entity_key().clone(), column.clone());
+    if !visited.insert(identity) {
+        return Err(());
+    }
+    let namespace = projection.namespace();
+    for field in entity.fields() {
+        if field.name().as_str() == column.as_str() {
+            return Ok(Some(super::derivation::render_type(
+                namespace,
+                field.field_type(),
+            )));
+        }
+    }
+    for technical in table.technical_columns() {
+        if technical.name() == column {
+            return Ok(Some(technical.storage_type().as_str().to_owned()));
+        }
+    }
+    for generated in table.generated_columns() {
+        if generated.name() == column {
+            return Ok(Some(
+                generated
+                    .storage_type()
+                    .map(|storage_type| storage_type.as_str().to_owned())
+                    .unwrap_or_else(|| namespace.big_integer().to_owned()),
+            ));
+        }
+    }
+    if let Some((tenant, storage_type)) = table.tenant_key() {
+        if tenant == column {
+            return Ok(Some(storage_type.as_str().to_owned()));
+        }
+    }
+    if let Some((created_at, updated_at)) = table.timestamps() {
+        if created_at == column || updated_at == column {
+            return Ok(Some(namespace.instant().to_owned()));
+        }
+    }
+    if table.soft_delete() == Some(column) {
+        return Ok(Some(namespace.instant().to_owned()));
+    }
+    // Foreign-key and polymorphic key columns derive from the
+    // referenced table's single-column primary key: resolve through
+    // the same render that derivation uses, non-iteratively.
+    for relation in attachment.relations() {
+        let places_here = (relation.kind().target_foreign_key()
+            && relation.target().as_str() == table.entity().as_str())
+            || (relation.kind().owner_foreign_key()
+                && relation.owner().as_str() == table.entity().as_str());
+        if !places_here || relation.foreign_key() != Some(column) {
+            continue;
+        }
+        let referenced = if relation.kind().owner_foreign_key() {
+            relation.target()
+        } else {
+            relation.owner()
+        };
+        let referenced_table = projection
+            .tables()
+            .iter()
+            .find(|table| table.entity().as_str() == referenced.as_str());
+        let Some(referenced_table) = referenced_table else {
+            // The referenced side has no table (e.g. an external
+            // entity): non-cyclic and unresolvable — the honest
+            // `Ok(None)` arm, not the cyclic refusal (round-4 F-2).
+            return Ok(None);
+        };
+        if referenced_table.primary_key().len() != 1 {
+            return Ok(None);
+        }
+        let primary = &referenced_table.primary_key()[0];
+        let Some(referenced_entity) = attachment.entity(referenced) else {
+            // Unreachable (check_relations resolves both endpoints
+            // first), but unresolvable, not cyclic — same honest arm.
+            return Ok(None);
+        };
+        return index_column_type(
+            attachment,
+            projection,
+            referenced_table,
+            referenced_entity,
+            primary,
+            visited,
+        );
+    }
+    Ok(None)
+}
+
+/// Reduce one namespace render to its base family token:
+/// `varchar(200)` → `varchar`, `bigint unsigned` → `bigint`.
+fn render_family(render: &str) -> &str {
+    let base = render.split('(').next().unwrap_or(render);
+    base.split(' ').next().unwrap_or(base)
 }
 
 /// Join-level rules: each join materializes one many-to-many relation

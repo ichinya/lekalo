@@ -16,6 +16,13 @@ use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::process::ExitCode;
 
+/// The storage-projection attachment type of the `lekalo storage`
+/// commands (issue #117).
+type StorageAttachment = lekalo_core::storage_projection::StorageProjectionAttachment;
+/// The storage-engine-profile attachment type of the `lekalo
+/// storage-profile` commands (issue #117).
+type ProfileAttachment = lekalo_core::storage_engine_profile::StorageEngineProfile;
+
 mod doctor_git;
 mod git_input;
 
@@ -260,6 +267,20 @@ enum Commands {
     Expressions {
         #[command(subcommand)]
         command: ExpressionsCommands,
+    },
+    /// Validate, project, or compare storage-projection attachments,
+    /// or compare a declared projection against introspection
+    /// evidence (issue #117). The core owns every decision; this
+    /// binary only reads documents, selects, renders, and maps exits.
+    Storage {
+        #[command(subcommand)]
+        command: StorageCommands,
+    },
+    /// Validate, project, or compare storage-engine-profile
+    /// capability evidence (issue #117).
+    StorageProfile {
+        #[command(subcommand)]
+        command: StorageProfileCommands,
     },
     /// Check generated-artifact ownership and drift, or plan and apply a
     /// confirmed clean of orphaned generated files.
@@ -1143,6 +1164,139 @@ enum ExpressionsCommands {
     },
 }
 
+/// The `storage` subcommands (issue #117): the thin
+/// validate/project/diff/introspect-check handoff over the core
+/// storage-projection family.
+#[derive(Debug, Subcommand)]
+enum StorageCommands {
+    /// Validate one attachment against the selected project and emit
+    /// the derived-projection summary of every declared namespace.
+    Validate {
+        /// Path to the storage-projection attachment JSON document.
+        path: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Derive one namespace's storage projection from one attachment
+    /// and emit its canonical bytes.
+    Project {
+        /// Path to the storage-projection attachment JSON document.
+        path: String,
+        /// The closed target namespace vocabulary.
+        #[arg(long, value_enum)]
+        namespace: StorageNamespace,
+    },
+    /// Compare two same-family attachments and classify every changed
+    /// path; the verdict stays data, never an exit code.
+    Diff {
+        /// Path to the base attachment JSON document.
+        base: String,
+        /// Path to the candidate attachment JSON document.
+        candidate: String,
+    },
+    /// Compare one declared projection against one adapter-produced
+    /// introspection evidence document; drift is data, never a
+    /// guessed repair. No database connection exists anywhere.
+    IntrospectCheck {
+        /// Path to the declared storage-projection attachment.
+        #[arg(long, value_name = "PATH")]
+        projection: String,
+        /// Path to the storage-introspection evidence document.
+        #[arg(long, value_name = "PATH")]
+        evidence: String,
+        /// The closed target namespace vocabulary.
+        #[arg(long, value_enum)]
+        namespace: StorageNamespace,
+    },
+    /// Derive the non-executable migration plan over one comparison;
+    /// destructive and backfill steps carry the explicit gate. The
+    /// plan-id acknowledgment stays data: with `--confirm` and the
+    /// exact plan identity the envelope records the acknowledgment,
+    /// and a wrong identity refuses as stale.
+    Plan {
+        /// Path to the base attachment JSON document.
+        base: String,
+        /// Path to the candidate attachment JSON document.
+        candidate: String,
+        /// The exact plan identity to acknowledge.
+        #[arg(long, value_name = "PLAN_ID")]
+        confirm: Option<String>,
+    },
+}
+
+/// The closed storage namespace vocabulary of the CLI.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum StorageNamespace {
+    /// The PostgreSQL namespace.
+    Postgres,
+    /// The Laravel (Eloquent migration) namespace.
+    Laravel,
+    /// The MySQL namespace.
+    Mysql,
+    /// The MariaDB namespace.
+    Mariadb,
+}
+
+impl StorageNamespace {
+    /// The core namespace key.
+    const fn key(self) -> &'static str {
+        match self {
+            Self::Postgres => "postgres",
+            Self::Laravel => "laravel",
+            Self::Mysql => "mysql",
+            Self::Mariadb => "mariadb",
+        }
+    }
+
+    /// The core enum value.
+    const fn core(self) -> lekalo_core::storage_projection::Namespace {
+        match self {
+            Self::Postgres => lekalo_core::storage_projection::Namespace::Postgres,
+            Self::Laravel => lekalo_core::storage_projection::Namespace::Laravel,
+            Self::Mysql => lekalo_core::storage_projection::Namespace::Mysql,
+            Self::Mariadb => lekalo_core::storage_projection::Namespace::Mariadb,
+        }
+    }
+}
+
+/// The `storage-profile` subcommands (issue #117): the thin
+/// validate/capabilities/portability/diff handoff over the core
+/// storage-engine-profile family.
+#[derive(Debug, Subcommand)]
+enum StorageProfileCommands {
+    /// Validate one engine profile attachment and emit the identity
+    /// summary.
+    Validate {
+        /// Path to the storage-engine-profile attachment JSON document.
+        path: String,
+    },
+    /// Emit the capability snapshot JSON of one profile (the #24
+    /// bridge input).
+    Capabilities {
+        /// Path to the storage-engine-profile attachment JSON document.
+        path: String,
+    },
+    /// Compare two profiles and emit the portability report.
+    Portability {
+        /// Path to the source engine profile JSON document.
+        base: String,
+        /// Path to the target engine profile JSON document.
+        target: String,
+        /// Attach the named PostgreSQL-specific semantics block.
+        #[arg(long)]
+        postgres_divergences: bool,
+    },
+    /// Compare two same-family profiles and classify every changed
+    /// path; the verdict stays data, never an exit code.
+    Diff {
+        /// Path to the base profile JSON document.
+        base: String,
+        /// Path to the candidate profile JSON document.
+        candidate: String,
+    },
+}
+
 /// The closed expression render target vocabulary.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ExpressionTarget {
@@ -1363,6 +1517,18 @@ struct MigrateArgs {
 }
 
 fn main() -> ExitCode {
+    // The combined subcommand surface overflows the default main-thread
+    // stack in debug builds during clap's recursive tree walk; run the
+    // CLI on a worker thread with an explicit stack reservation.
+    std::thread::Builder::new()
+        .stack_size(32 * 1024 * 1024)
+        .spawn(cli_main)
+        .expect("the cli worker thread spawns")
+        .join()
+        .expect("the cli worker thread joins")
+}
+
+fn cli_main() -> ExitCode {
     let json_requested = std::env::args_os()
         .skip(1)
         .take_while(|argument| argument != OsStr::new("--"))
@@ -1412,6 +1578,8 @@ fn main() -> ExitCode {
             } => run_diff(first, second, base, profiles),
             Commands::QueryModel { command } => run_query_model(command),
             Commands::Transport { command } => run_transport(command),
+            Commands::Storage { command } => run_storage(command),
+            Commands::StorageProfile { command } => run_storage_profile(command),
             Commands::Expressions { command } => run_expressions(command),
             Commands::Graph { command } => run_graph(command, cli.no_cache),
             Commands::Effects { command } => run_effects(command, cli.no_cache),
@@ -4394,6 +4562,498 @@ fn query_model_diff(base_path: &str, candidate_path: &str) -> DomainResult {
     );
     let human = format!(
         "query model diff: equal {}; breaking {}; non-breaking {}; policy-change {}",
+        diff.equal(),
+        breaking,
+        non_breaking,
+        policy_change,
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// The `lekalo storage` subcommands: a thin handoff to the core
+/// storage-projection family (issue #117). The documents are read at
+/// the given paths and every decision — wire validation, semantic
+/// self-check, derivation, comparison, and the drift check — lives in
+/// the core. Nothing is ever written; no database is ever contacted.
+fn run_storage(command: StorageCommands) -> DomainResult {
+    match command {
+        StorageCommands::Validate { path, project: _ } => storage_validate(&path),
+        StorageCommands::Project { path, namespace } => storage_project(&path, namespace),
+        StorageCommands::Diff { base, candidate } => storage_diff(&base, &candidate),
+        StorageCommands::Plan {
+            base,
+            candidate,
+            confirm,
+        } => storage_plan(&base, &candidate, confirm.as_deref()),
+        StorageCommands::IntrospectCheck {
+            projection,
+            evidence,
+            namespace,
+        } => storage_introspect_check(&projection, &evidence, namespace),
+    }
+}
+
+/// Read one attachment document from disk with a classified read-only
+/// failure. `family` selects the registered rule: `storage` maps onto
+/// `storage.input-invalid`, `profile` onto `storage.profile-invalid`,
+/// and `evidence` onto `storage.introspection-invalid`.
+fn read_storage_document(
+    family: StorageDocFamily,
+    path: &str,
+) -> Result<serde_json::Value, DomainResult> {
+    let io = |detail: &str| match family {
+        StorageDocFamily::Projection => {
+            DomainResult::invalid(lekalo_core::storage_projection::io_failure(detail))
+        }
+        StorageDocFamily::Profile | StorageDocFamily::Evidence => DomainResult::usage_error(),
+    };
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                io::ErrorKind::NotFound => "file-missing",
+                _ => "file-unreadable",
+            };
+            return Err(io(detail));
+        }
+    };
+    serde_json::from_slice(&bytes).map_err(|_| io("invalid-json"))
+}
+
+/// The closed document-family selector of the storage CLI readers.
+#[derive(Clone, Copy, Debug)]
+enum StorageDocFamily {
+    /// The storage-projection attachment.
+    Projection,
+    /// The storage-engine-profile attachment.
+    Profile,
+    /// The storage-introspection evidence.
+    Evidence,
+}
+
+/// `lekalo storage validate`: validate the attachment and emit the
+/// deterministic summary of every declared projection.
+fn storage_validate(path: &str) -> DomainResult {
+    let document = match read_storage_document(StorageDocFamily::Projection, path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let attachment = match StorageAttachment::from_value(&document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let namespaces: Vec<String> = attachment
+        .projections()
+        .iter()
+        .map(|projection| projection.namespace().key().to_owned())
+        .collect();
+    let json = format!(
+        "{{\"status\":\"valid\",\"storage\":{{\"projectId\":\"{}\",\"attachmentRevision\":\"{}\",\"entities\":{},\"relations\":{},\"namespaces\":[{}]}}}}",
+        attachment.project_id().as_str(),
+        attachment.attachment_revision().as_str(),
+        attachment.entities().len(),
+        attachment.relations().len(),
+        namespaces
+            .iter()
+            .map(|namespace| format!("\"{namespace}\""))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    let human = format!(
+        "storage attachment {}: {} entities, {} relations, namespaces {}",
+        attachment.project_id().as_str(),
+        attachment.entities().len(),
+        attachment.relations().len(),
+        namespaces.join(", "),
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo storage project`: derive one namespace's projection and
+/// emit its canonical bytes.
+fn storage_project(path: &str, namespace: StorageNamespace) -> DomainResult {
+    let document = match read_storage_document(StorageDocFamily::Projection, path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let attachment = match StorageAttachment::from_value(&document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let derived = match lekalo_core::storage_projection::project(&attachment, namespace.core()) {
+        Ok(derived) => derived,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let bytes = match lekalo_core::storage_projection::canonical::derived_bytes(&derived) {
+        Ok(bytes) => bytes,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let human = format!(
+        "derived {} projection: {} tables, {} joins",
+        namespace.key(),
+        derived.tables().len(),
+        derived.joins().len(),
+    );
+    DomainResult::graph(bytes, human, Vec::new())
+}
+
+/// `lekalo storage diff`: the pure semantic comparison of two
+/// same-family attachments; the verdict stays data.
+fn storage_diff(base_path: &str, candidate_path: &str) -> DomainResult {
+    let base_document = match read_storage_document(StorageDocFamily::Projection, base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let candidate_document =
+        match read_storage_document(StorageDocFamily::Projection, candidate_path) {
+            Ok(document) => document,
+            Err(result) => return result,
+        };
+    let base = match StorageAttachment::from_value(&base_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let candidate = match StorageAttachment::from_value(&candidate_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let diff = match lekalo_core::storage_projection::compare(&base, &candidate) {
+        Ok(diff) => diff,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let count = |class| -> usize {
+        diff.paths()
+            .iter()
+            .filter(|path| path.class() == class)
+            .count()
+    };
+    let breaking = count(lekalo_core::storage_projection::DiffClass::Breaking);
+    let non_breaking = count(lekalo_core::storage_projection::DiffClass::NonBreaking);
+    let policy_change = count(lekalo_core::storage_projection::DiffClass::PolicyChange);
+    let paths: Vec<String> = diff
+        .paths()
+        .iter()
+        .map(|path| {
+            let risk = path
+                .risk()
+                .map(|risk| format!(",\"risk\":\"{}\"", risk.key()))
+                .unwrap_or_default();
+            format!(
+                "{{\"path\":\"{}\",\"layer\":\"{}\",\"class\":\"{}\"{}}}",
+                path.path(),
+                path.layer().key(),
+                path.class().key(),
+                risk
+            )
+        })
+        .collect();
+    let json = format!(
+        "{{\"status\":\"valid\",\"storageDiff\":{{\"equal\":{},\"breaking\":{},\"nonBreaking\":{},\"policyChange\":{},\"paths\":[{}]}}}}",
+        diff.equal(),
+        breaking,
+        non_breaking,
+        policy_change,
+        paths.join(","),
+    );
+    let human = format!(
+        "storage diff: equal {}; breaking {}; non-breaking {}; policy-change {}",
+        diff.equal(),
+        breaking,
+        non_breaking,
+        policy_change,
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo storage plan`: the non-executable migration plan over one
+/// comparison, with the plan-id acknowledgment plumbing.
+fn storage_plan(base_path: &str, candidate_path: &str, confirm: Option<&str>) -> DomainResult {
+    let base_document = match read_storage_document(StorageDocFamily::Projection, base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let candidate_document =
+        match read_storage_document(StorageDocFamily::Projection, candidate_path) {
+            Ok(document) => document,
+            Err(result) => return result,
+        };
+    let base = match StorageAttachment::from_value(&base_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let candidate = match StorageAttachment::from_value(&candidate_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let diff = match lekalo_core::storage_projection::compare(&base, &candidate) {
+        Ok(diff) => diff,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let plan = lekalo_core::storage_projection::migration_plan(&diff);
+    // The plan-id acknowledgment: echoing the exact identity records
+    // the acknowledgment; a wrong identity refuses as stale instead of
+    // acknowledging a plan the caller never saw.
+    let acknowledged = match confirm {
+        None => false,
+        Some(plan_id) if plan_id == plan.plan_id => true,
+        Some(_) => {
+            return DomainResult::invalid(lekalo_core::storage_projection::io_failure(
+                "plan-changed",
+            ))
+        }
+    };
+    let json = serde_json::to_string(&plan).unwrap_or_else(|_| "{}".to_owned());
+    let json = format!("{{\"status\":\"valid\",\"acknowledged\":{acknowledged},\"plan\":{json}}}");
+    let human = format!(
+        "storage plan {}: {} steps, {} gated; acknowledged {acknowledged}",
+        &plan.plan_id[..19.min(plan.plan_id.len())],
+        plan.steps.len(),
+        plan.gated,
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo storage introspect-check`: the closed drift comparison of
+/// one declared projection against one evidence document. Read-only;
+/// drift is data.
+fn storage_introspect_check(
+    projection_path: &str,
+    evidence_path: &str,
+    namespace: StorageNamespace,
+) -> DomainResult {
+    let projection_document =
+        match read_storage_document(StorageDocFamily::Projection, projection_path) {
+            Ok(document) => document,
+            Err(result) => return result,
+        };
+    let evidence_document = match read_storage_document(StorageDocFamily::Evidence, evidence_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let attachment = match StorageAttachment::from_value(&projection_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let evidence = match lekalo_core::storage_introspection::StorageIntrospection::from_value(
+        &evidence_document,
+    ) {
+        Ok(evidence) => evidence,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let report = match lekalo_core::storage_introspection::introspect_check(
+        &attachment,
+        namespace.core(),
+        &evidence,
+    ) {
+        Ok(report) => report,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let drifts: Vec<String> = report
+        .drifts
+        .iter()
+        .map(|drift| {
+            format!(
+                "{{\"kind\":\"{}\",\"path\":\"{}\"}}",
+                drift.kind.key(),
+                drift.path
+            )
+        })
+        .collect();
+    let json = format!(
+        "{{\"status\":\"valid\",\"introspectCheck\":{{\"equal\":{},\"drifts\":[{}]}}}}",
+        report.equal,
+        drifts.join(","),
+    );
+    let human = format!(
+        "introspect check: equal {}; drifts {}",
+        report.equal,
+        report.drifts.len(),
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// The `lekalo storage-profile` subcommands: the thin handoff to the
+/// core storage-engine-profile family (issue #117).
+fn run_storage_profile(command: StorageProfileCommands) -> DomainResult {
+    match command {
+        StorageProfileCommands::Validate { path } => storage_profile_validate(&path),
+        StorageProfileCommands::Capabilities { path } => storage_profile_capabilities(&path),
+        StorageProfileCommands::Portability {
+            base,
+            target,
+            postgres_divergences,
+        } => storage_profile_portability(&base, &target, postgres_divergences),
+        StorageProfileCommands::Diff { base, candidate } => storage_profile_diff(&base, &candidate),
+    }
+}
+
+/// Read one profile document from disk with a classified read-only
+/// failure.
+fn read_profile_document(
+    family: StorageDocFamily,
+    path: &str,
+) -> Result<serde_json::Value, DomainResult> {
+    read_storage_document(family, path)
+}
+
+/// `lekalo storage-profile validate`.
+fn storage_profile_validate(path: &str) -> DomainResult {
+    let document = match read_profile_document(StorageDocFamily::Profile, path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let profile = match ProfileAttachment::from_value(&document) {
+        Ok(profile) => profile,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let json = format!(
+        "{{\"status\":\"valid\",\"storageProfile\":{{\"projectId\":\"{}\",\"engine\":\"{}\",\"engineVersion\":\"{}\",\"capabilities\":{}}}}}",
+        profile.project_id().as_str(),
+        profile.engine().engine().key(),
+        profile.engine().engine_version(),
+        profile.capabilities().len(),
+    );
+    let human = format!(
+        "storage profile {} {}: {} declared capabilities",
+        profile.engine().engine().key(),
+        profile.engine().engine_version(),
+        profile.capabilities().len(),
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo storage-profile capabilities`: the #24 snapshot bridge
+/// input as data.
+fn storage_profile_capabilities(path: &str) -> DomainResult {
+    let document = match read_profile_document(StorageDocFamily::Profile, path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let profile = match ProfileAttachment::from_value(&document) {
+        Ok(profile) => profile,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let snapshot = lekalo_core::storage_engine_profile::to_snapshot(&profile);
+    // The snapshot has no direct serialization; emit the declared
+    // support states byte-sorted instead — the exact bridge input.
+    let mut entries: Vec<String> = profile
+        .capabilities()
+        .iter()
+        .map(|(id, capability)| {
+            format!(
+                "{{\"capability\":\"{}\",\"support\":\"{}\"}}",
+                id.key(),
+                capability.support().key()
+            )
+        })
+        .collect();
+    entries.sort();
+    let _ = &snapshot;
+    let json = format!(
+        "{{\"status\":\"valid\",\"capabilitySnapshot\":{{\"engine\":\"{}\",\"entries\":[{}]}}}}",
+        profile.engine().engine().key(),
+        entries.join(","),
+    );
+    let human = format!("capability snapshot: {} entries", entries.len(),);
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo storage-profile portability`: the engine portability
+/// report as data.
+fn storage_profile_portability(
+    base_path: &str,
+    target_path: &str,
+    postgres_divergences: bool,
+) -> DomainResult {
+    let base_document = match read_profile_document(StorageDocFamily::Profile, base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let target_document = match read_profile_document(StorageDocFamily::Profile, target_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let base = match ProfileAttachment::from_value(&base_document) {
+        Ok(profile) => profile,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let target = match ProfileAttachment::from_value(&target_document) {
+        Ok(profile) => profile,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let report = lekalo_core::storage_engine_profile::portability(&base, &target);
+    let report = if postgres_divergences {
+        lekalo_core::storage_engine_profile::named_postgres_divergences(report)
+    } else {
+        report
+    };
+    let json = serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_owned());
+    let human = format!(
+        "portability {} -> {}: {} changes, {} losses, {} gains",
+        report.source,
+        report.target,
+        report.changes.len(),
+        report.loses.len(),
+        report.gains.len(),
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo storage-profile diff`: the pure comparison of two
+/// same-family profiles; the verdict stays data.
+fn storage_profile_diff(base_path: &str, candidate_path: &str) -> DomainResult {
+    let base_document = match read_profile_document(StorageDocFamily::Profile, base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let candidate_document = match read_profile_document(StorageDocFamily::Profile, candidate_path)
+    {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let base = match ProfileAttachment::from_value(&base_document) {
+        Ok(profile) => profile,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let candidate = match ProfileAttachment::from_value(&candidate_document) {
+        Ok(profile) => profile,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let diff = match lekalo_core::storage_engine_profile::compare(&base, &candidate) {
+        Ok(diff) => diff,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let count = |class| -> usize {
+        diff.paths()
+            .iter()
+            .filter(|path| path.class() == class)
+            .count()
+    };
+    let breaking = count(lekalo_core::storage_engine_profile::DiffClass::Breaking);
+    let non_breaking = count(lekalo_core::storage_engine_profile::DiffClass::NonBreaking);
+    let policy_change = count(lekalo_core::storage_engine_profile::DiffClass::PolicyChange);
+    let paths: Vec<String> = diff
+        .paths()
+        .iter()
+        .map(|path| {
+            format!(
+                "{{\"path\":\"{}\",\"layer\":\"{}\",\"class\":\"{}\"}}",
+                path.path(),
+                path.layer().key(),
+                path.class().key()
+            )
+        })
+        .collect();
+    let json = format!(
+        "{{\"status\":\"valid\",\"storageProfileDiff\":{{\"equal\":{},\"breaking\":{},\"nonBreaking\":{},\"policyChange\":{},\"paths\":[{}]}}}}",
+        diff.equal(),
+        breaking,
+        non_breaking,
+        policy_change,
+        paths.join(","),
+    );
+    let human = format!(
+        "storage profile diff: equal {}; breaking {}; non-breaking {}; policy-change {}",
         diff.equal(),
         breaking,
         non_breaking,
