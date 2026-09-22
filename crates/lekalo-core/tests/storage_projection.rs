@@ -648,6 +648,41 @@ fn collation_and_index_member_changes_classify_in_the_diff() {
         .expect("the anonymous narrowing path");
     assert_eq!(anon_path.class(), DiffClass::Breaking);
     assert_eq!(anon_path.risk(), Some(DataRisk::Destructive));
+    // Removing a unique index wholesale is the same guarantee loss as
+    // the unique→false flip: breaking + destructive at the index's own
+    // path, not a risk-free aggregate policy change (round-4 F-4).
+    let mut removal: serde_json::Value = serde_json::from_slice(DIFF_BASE).expect("json");
+    removal["projections"]
+        .as_array_mut()
+        .expect("projections")
+        .iter_mut()
+        .for_each(|projection| {
+            if projection["namespace"] == "mysql" {
+                for table in projection["tables"].as_array_mut().expect("tables") {
+                    if table["entity"] == "task_external_link" {
+                        table["indexes"] = table["indexes"]
+                            .as_array()
+                            .expect("indexes")
+                            .iter()
+                            .filter(|index| index["name"] != "uq_external_identity")
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .into();
+                    }
+                }
+            }
+        });
+    let removal_candidate = StorageProjectionAttachment::from_value(&removal).expect("parses");
+    let removal_diff = compare(&base, &removal_candidate).expect("comparable");
+    let removal_path = removal_diff
+        .paths()
+        .iter()
+        .find(|path| {
+            path.path() == "storage/mysql/tables/task_external_link/indexes/uq_external_identity"
+        })
+        .expect("the removal path");
+    assert_eq!(removal_path.class(), DiffClass::Breaking);
+    assert_eq!(removal_path.risk(), Some(DataRisk::Destructive));
 }
 
 #[test]

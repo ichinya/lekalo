@@ -16,7 +16,7 @@
 //! the typed error set, never a guessed classification. Paths are
 //! deterministic and byte-sorted.
 
-use super::projection::{DataRisk, Index, Projection, Table};
+use super::projection::{DataRisk, Index, IndexKind, Projection, Table};
 use super::{diagnostic, StorageProjectionAttachment};
 use crate::diagnostics::DiagnosticSet;
 
@@ -773,6 +773,29 @@ fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<
         }
     }
     if base.indexes() != candidate.indexes() {
+        // A removed index that carried a guarantee — uniqueness, or a
+        // non-default physical kind — is the same semantic loss as its
+        // member-level flip: classified breaking + destructive at its
+        // own path, never hidden inside the aggregate policy path
+        // (round-4 review F-4).
+        for removed in base.indexes() {
+            let still_present = candidate
+                .indexes()
+                .iter()
+                .any(|candidate| same_index_identity(removed, candidate));
+            if still_present {
+                continue;
+            }
+            if removed.unique() || removed.kind() != IndexKind::Btree {
+                push(
+                    paths,
+                    format!("{prefix}/indexes/{}", index_path_key(removed)),
+                    DiffLayer::Storage,
+                    DiffClass::Breaking,
+                    Some(DataRisk::Destructive),
+                );
+            }
+        }
         let pure_addition = candidate.indexes().len() > base.indexes().len()
             && candidate
                 .indexes()
