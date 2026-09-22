@@ -5620,9 +5620,9 @@ fn run_contract_support(
 enum ClassificationCommands {
     /// Validate one classification attachment and its governing policy
     /// against the project: custody pins, subject resolution, grant
-    /// coherence, and the strict-profile sensitive-sink rule. The
-    /// documents are read from the given project-relative paths; the
-    /// core owns every decision.
+    /// coherence, and (under the strict profile) the sensitive-sink rule
+    /// over the declared graph. The documents are read from the given
+    /// project-relative paths; the core owns every decision.
     Validate {
         /// The classification attachment document path.
         #[arg(long, value_name = "PATH")]
@@ -5752,6 +5752,7 @@ fn run_classification(command: ClassificationCommands) -> DomainResult {
                 &attachment,
                 &policy,
                 &resolution,
+                &compilation.project,
             ) {
                 Err(set) => DomainResult::invalid(set),
                 Ok(outcome) => {

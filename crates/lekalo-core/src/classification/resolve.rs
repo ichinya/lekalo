@@ -111,6 +111,13 @@ impl Resolution {
         self.exact.get(subject.as_str()).copied()
     }
 
+    /// The explicit definition-level entry covering one subject (the
+    /// head semantic id), when declared — distinct from the profile
+    /// defaults, which cover everything and never count as explicit.
+    pub fn definition_default(&self, subject: &SubjectPath) -> Option<DataKind> {
+        self.definition_defaults.get(subject.semantic_id()).copied()
+    }
+
     /// The declared grants for one subject, canonically ordered.
     pub fn grants(&self, subject: &SubjectPath) -> &[super::wire::Declassification] {
         self.grants

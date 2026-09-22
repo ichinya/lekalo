@@ -228,6 +228,7 @@ pub fn validate_policy_and_grants(
     attachment: &Attachment,
     policy: &PolicyAttachment,
     resolution: &Resolution,
+    project: &CompiledProject,
 ) -> Result<ValidationOutcome, DiagnosticSet> {
     let mut outcome = ValidationOutcome::default();
     // Every resolvable kind must have a policy row (plan §1.2: policy
@@ -294,34 +295,97 @@ pub fn validate_policy_and_grants(
             });
         }
     }
+    // The strict-profile sensitive-sink rule (plan §2.3): declared
+    // graph subjects with no explicit classification reject.
+    outcome
+        .rows
+        .extend(strict_sensitive_sink_findings(attachment, &project));
+    if outcome
+        .rows
+        .iter()
+        .any(|row| row.rule == "classification.unclassified-sensitive-sink")
+    {
+        outcome.invalid = true;
+    }
     // The grant profile rule: unclassified subjects never resolve
     // through a grant; nothing to check here beyond the resolution.
     Ok(outcome)
 }
 
-/// The strict-profile sensitive-sink rule over one resolution: every
-/// sensitive subject must be explicitly classified (plan §2.3: no
-/// entry plus no covering default is the unclassified state, which the
-/// strict profile rejects on sensitive sinks).
+/// The strict-profile sensitive-sink rule over the compilation (plan
+/// §2.3): every sensitive declared-graph subject must be explicitly
+/// classified — a definition-level entry, a field-level entry, or a
+/// grant — never just the profile default. A subject whose kind comes
+/// only from `unclassifiedFields`/`unclassifiedPayloads` is the
+/// unclassified-on-a-sensitive-sink state the strict profile rejects.
 pub fn strict_sensitive_sink_findings(
     attachment: &Attachment,
-    resolution: &Resolution,
+    project: &CompiledProject,
 ) -> Vec<FindingRow> {
     let mut rows = Vec::new();
-    if resolution.profile() != super::types::Profile::Strict {
+    if attachment.defaults().profile() != super::types::Profile::Strict {
         return rows;
     }
-    for entry in attachment.classifications() {
-        if let ResolvedKind::Classified(kind) = resolution.resolve(entry.subject()) {
-            if kind.is_sensitive() && resolution.exact(entry.subject()).is_none() {
-                rows.push(FindingRow {
-                    rule: "classification.unclassified-sensitive-sink".to_owned(),
-                    subject: entry.subject().as_str().to_owned(),
-                });
-            }
+    let resolution = super::resolve::Resolution::build(attachment);
+    // The sensitive subjects of the declared graph: every entity the
+    // queries read and the declared effects write, plus every emitted
+    // event. Unclassified counts as sensitive (unknown is never safe).
+    for subject in declared_graph_subjects(project) {
+        let kind = resolution.resolve(&subject);
+        let covered = resolution.exact(&subject).is_some()
+            || resolution.definition_default(&subject).is_some();
+        if covered {
+            continue;
         }
+        if !kind.is_sensitive() {
+            continue;
+        }
+        rows.push(FindingRow {
+            rule: "classification.unclassified-sensitive-sink".to_owned(),
+            subject: subject.as_str().to_owned(),
+        });
     }
     rows
+}
+
+/// Every definition-level subject the declared effect graph touches:
+/// the entities of declared reads and effects, plus the events they
+/// emit.
+fn declared_graph_subjects(project: &CompiledProject) -> Vec<super::types::SubjectPath> {
+    let mut subjects = std::collections::BTreeSet::new();
+    for definition in &project.definitions {
+        match definition {
+            crate::ir::Definition::Query(query) => {
+                for read in &query.reads {
+                    push_subject(&mut subjects, read.as_str());
+                }
+            }
+            crate::ir::Definition::Command(command) => {
+                for effect in &command.effects {
+                    if let Some(crate::ir::Definition::Effect(effect_definition)) = project
+                        .definitions
+                        .iter()
+                        .find(|definition| definition.id().as_str() == effect.as_str())
+                    {
+                        push_subject(&mut subjects, effect_definition.entity.as_str());
+                        for emitted in &effect_definition.emits {
+                            push_subject(&mut subjects, emitted.as_str());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    subjects.into_iter().collect()
+}
+
+/// Parse and record one definition-level subject; malformed ids cannot
+/// reach compilation, so a parse failure here is a skip, not an error.
+fn push_subject(subjects: &mut std::collections::BTreeSet<super::types::SubjectPath>, id: &str) {
+    if let Ok(subject) = super::types::SubjectPath::parse(id) {
+        subjects.insert(subject);
+    }
 }
 
 /// Whether the kind is sink-eligible for the given ceiling.
@@ -348,4 +412,70 @@ pub fn discover(
         .map_err(|_| diagnostic::policy_missing("policy-document-unreadable"))?;
     let policy = PolicyAttachment::parse(&policy_bytes)?;
     Ok(Some((attachment, policy)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Serializes every test that changes the process working directory.
+    static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// The strict rule over the committed planner fixture: every
+    /// declared-graph subject carries an explicit entry or a
+    /// definition-level default, so no finding fires; removing one
+    /// entry produces exactly that finding.
+    #[test]
+    fn strict_rule_flags_only_subjects_without_explicit_entries() {
+        let _guard = CWD_LOCK.lock().expect("cwd lock");
+        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("workspace root")
+            .to_path_buf();
+        let fixture = "tests/fixtures/classification/valid/planner";
+        let original = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(&workspace).expect("enter workspace root");
+        let compilation = {
+            let model = crate::loader::normalize_model(&crate::loader::LoadSelection {
+                project: Some(fixture.to_owned()),
+            })
+            .expect("loads");
+            crate::ir::compile(&model).expect("compiles")
+        };
+        let attachment = Attachment::parse(
+            &std::fs::read(workspace.join(fixture).join("lekalo/classification.json"))
+                .expect("read"),
+        )
+        .expect("parses");
+        std::env::set_current_dir(original).expect("restore cwd");
+
+        // The full attachment covers the graph: no strict findings.
+        assert!(strict_sensitive_sink_findings(&attachment, &compilation.project).is_empty());
+
+        // Removing the definition-level `notify.user` entry leaves the
+        // entity covered only by the profile default: exactly one
+        // finding, on that subject.
+        let stripped = Attachment::parse(
+            serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": "lekalo/data-classification/v0.4.0",
+                "identity": "dev.lekalo.data-classification@0.4.0",
+                "attachmentRevision": "1.0.0",
+                "projectId": "planner",
+                "modelRef": {"modelVersion": "0.2.16", "digest": attachment.model_ref().1.as_str()},
+                "irRef": {"irVersion": "0.2.16", "digest": attachment.ir_ref().1.as_str()},
+                "defaults": {"profile": "strict", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"},
+                "classifications": attachment.classifications().iter().filter(|entry| entry.subject().as_str() != "notify.user").map(|entry| serde_json::json!({"subject": entry.subject().as_str(), "kind": entry.kind().as_str()})).collect::<Vec<_>>(),
+                "declassifications": [],
+                "openQuestions": []
+            }))
+            .expect("serializes")
+            .as_slice(),
+        )
+        .expect("parses");
+        let rows = strict_sensitive_sink_findings(&stripped, &compilation.project);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].rule, "classification.unclassified-sensitive-sink");
+        assert_eq!(rows[0].subject, "notify.user");
+    }
 }

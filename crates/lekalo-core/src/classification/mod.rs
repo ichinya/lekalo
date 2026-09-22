@@ -56,8 +56,8 @@ pub use version::{
 };
 
 pub use validate::{
-    discover, validate_custody, validate_policy_and_grants, validate_subjects, FindingRow,
-    ValidationOutcome, ATTACHMENT_PATH, POLICY_PATH,
+    discover, strict_sensitive_sink_findings, validate_custody, validate_policy_and_grants,
+    validate_subjects, FindingRow, ValidationOutcome, ATTACHMENT_PATH, POLICY_PATH,
 };
 pub use wire::{Attachment, Classification, Declassification, Defaults, OpenQuestion};
 
