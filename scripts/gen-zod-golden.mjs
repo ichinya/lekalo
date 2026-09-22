@@ -22,7 +22,7 @@ const ir = JSON.parse(bytes.toString("utf8"));
 const files = emitFiles({
   modules: mapProject(ir).modules,
   inputDigest: sha256(bytes.toString("utf8")),
-  adapterVersion: "0.3.2",
+  adapterVersion: "0.4.0",
   irIdentity: "dev.lekalo.ir@0.2.16",
 });
 

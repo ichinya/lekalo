@@ -211889,7 +211889,7 @@ var PROTOCOL_TOKEN = "lekalo.target/v1";
 var VERSION = "0.3.2";
 var SUPPORTED_VERSIONS = Object.freeze([VERSION]);
 var ADAPTER_ID = "lekalo-target-node-typescript";
-var ADAPTER_VERSION = "0.3.2";
+var ADAPTER_VERSION = "0.4.0";
 var MAX_REQUEST_BYTES = 1024 * 1024;
 var MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 var MAX_JSON_DEPTH = 64;
@@ -217514,7 +217514,7 @@ function parsePolicyYaml(text) {
 }
 
 // src/zod-gen.mjs
-var ZOD_EXTENSION_VERSION = "0.3.2";
+var ZOD_EXTENSION_VERSION = "0.4.0";
 var ZOD_WRITE_SCOPES = [`${ZOD_DIR}/**`];
 var DRIFT = "zod.drift";
 var descriptor = {

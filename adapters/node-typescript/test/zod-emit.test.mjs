@@ -35,7 +35,7 @@ const FIXTURE_DIR = join(repoRoot, "tests", "fixtures", "ir", "valid-zod-matrix"
 const CONTEXT = {
   inputDigest:
     "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-  adapterVersion: "0.3.2",
+  adapterVersion: "0.4.0",
   irIdentity: "dev.lekalo.ir@0.2.16",
 };
 

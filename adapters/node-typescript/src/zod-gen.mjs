@@ -27,7 +27,7 @@ import {
 import { POLICY_PATH, resolvePolicy } from "./zod-policy.mjs";
 
 /** The extension descriptor version (the adapter's release line). */
-export const ZOD_EXTENSION_VERSION = "0.3.2";
+export const ZOD_EXTENSION_VERSION = "0.4.0";
 
 /** The write scope every generated file lives under. */
 export const ZOD_WRITE_SCOPES = [`${ZOD_DIR}/**`];

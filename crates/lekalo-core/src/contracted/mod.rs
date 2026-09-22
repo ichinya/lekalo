@@ -43,7 +43,7 @@ pub const MAX_DECLARATION_BYTES: usize = version::MAX_REGISTRY_BYTES;
 
 /// The exact `schema_version` literal of an adapter declaration
 /// document.
-pub const DECLARATION_SCHEMA_VERSION: &str = "lekalo/contracted-declaration/v0.3.2";
+pub const DECLARATION_SCHEMA_VERSION: &str = "lekalo/contracted-declaration/v0.4.0";
 
 /// The loaded project context every contracted operation runs against.
 pub struct Context {

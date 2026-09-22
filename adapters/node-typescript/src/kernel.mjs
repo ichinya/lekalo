@@ -77,7 +77,7 @@ export const SUPPORTED_VERSIONS = Object.freeze([VERSION]);
 /** The adapter identity token. */
 export const ADAPTER_ID = "lekalo-target-node-typescript";
 /** The adapter release version (the reserved product version). */
-export const ADAPTER_VERSION = "0.3.2";
+export const ADAPTER_VERSION = "0.4.0";
 /** The maximum request size this kernel reads (mirrors the core bound). */
 export const MAX_REQUEST_BYTES = 1024 * 1024;
 /** The maximum response size this kernel writes (mirrors the core cap). */

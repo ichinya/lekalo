@@ -94,7 +94,7 @@ fn rewrite_declaration(sandbox: &Sandbox, name: &str, mutate: impl FnOnce(&mut s
 #[test]
 fn declaration_wire_fails_closed_on_unknown_keys_and_bad_grammar() {
     let base = br#"{
-        "schemaVersion": "lekalo/contracted-declaration/v0.3.2",
+        "schemaVersion": "lekalo/contracted-declaration/v0.4.0",
         "adapter": {"id": "lekalo-target-node-typescript", "version": "0.2.16", "digest": null},
         "project": "planner",
         "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

@@ -43,7 +43,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 const readText = (relative) => readFileSync(resolve(root, relative), "utf8");
 
-const schema = read("contracts/contracted-declaration.schema.v0.3.2.json");
+const schema = read("contracts/contracted-declaration.schema.v0.4.0.json");
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateDeclaration = ajv.compile(schema);
@@ -62,7 +62,7 @@ const initial = read(`${DECLARATION_DIR}/initial.json`);
 if (!validateDeclaration(initial)) {
   fail("declaration-invalid", validateDeclaration.errors);
 }
-if (initial.schemaVersion !== "lekalo/contracted-declaration/v0.3.2") {
+if (initial.schemaVersion !== "lekalo/contracted-declaration/v0.4.0") {
   fail("declaration-identity", initial.schemaVersion);
 }
 if (initial.adapter.id !== "lekalo-target-node-typescript") {
@@ -239,7 +239,7 @@ process.stdout.write(
   `${JSON.stringify(
     {
       ok: true,
-      schema: "lekalo/contracted-declaration/v0.3.2",
+      schema: "lekalo/contracted-declaration/v0.4.0",
       declarationSymbols: ids.length,
       refusalVectors: 6,
       registryEntries: registry119.entries.length,

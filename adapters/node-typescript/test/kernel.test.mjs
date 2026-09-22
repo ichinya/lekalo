@@ -61,7 +61,7 @@ test("identity constants are the frozen #43 values", () => {
   assert.deepEqual(SUPPORTED_VERSIONS, ["0.3.2"]);
   assert.equal(VERSION, "0.3.2");
   assert.equal(ADAPTER_ID, "lekalo-target-node-typescript");
-  assert.equal(ADAPTER_VERSION, "0.3.2");
+  assert.equal(ADAPTER_VERSION, "0.4.0");
   assert.match(entryDigest(), /^sha256:[0-9a-f]{64}$/);
 });
 
