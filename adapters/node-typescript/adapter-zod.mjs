@@ -2505,11 +2505,17 @@ function collectImports(module) {
 }
 function recordFieldPaths(module, mapped, byExport) {
   const fields = module.fields;
-  fields[mapped.exportName] = mapped.semanticId;
+  if (!Object.hasOwn(fields, mapped.exportName)) {
+    fields[mapped.exportName] = mapped.semanticId;
+  }
   if (mapped.kind !== "object") return;
-  fields[""] = mapped.semanticId;
+  if (!Object.hasOwn(fields, "")) {
+    fields[""] = mapped.semanticId;
+  }
   for (const field of mapped.fields) {
-    fields[field.name] = mapped.semanticId;
+    if (!Object.hasOwn(fields, field.name)) {
+      fields[field.name] = mapped.semanticId;
+    }
     flattenFieldPath(fields, field.expr, field.name, mapped, byExport, 0);
   }
 }
@@ -2536,7 +2542,9 @@ function flattenFieldPath(fields, expr, prefix, owner, byExport, depth) {
   if (!declaration || declaration.kind !== "object") return;
   for (const field of declaration.fields) {
     const path = `${prefix}.${field.name}`;
-    fields[path] = declaration.semanticId;
+    if (!Object.hasOwn(fields, path)) {
+      fields[path] = declaration.semanticId;
+    }
     flattenFieldPath(fields, field.expr, path, declaration, byExport, depth + 1);
   }
 }
@@ -2670,6 +2678,10 @@ export function normalizeIssues(issues, fields, owner) {
 }
 
 /**
+ * Exact path first, then the closest enclosing mapped path, then the
+ * mapped root symbol (the \`""\` entry), and only then the owner
+ * argument \u2014 one fallback chain, coherent with the sidecar bytes.
+ *
  * @param {Record<string, string>} fields
  * @param {string} path
  * @param {string} owner
@@ -2687,6 +2699,9 @@ function resolveFieldOwner(fields, path, owner) {
     if (Object.prototype.hasOwnProperty.call(fields, prefix)) {
       return fields[prefix];
     }
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, "")) {
+    return fields[""];
   }
   return owner;
 }
@@ -2740,7 +2755,17 @@ function emissionGroups(modules) {
       modules: members,
       declarations: members.flatMap((member) => member.declarations),
       imports: members.flatMap((member) => member.imports),
-      fields: Object.assign({}, ...members.map((member) => member.fields))
+      // First-wins merge in the members' (sorted) order: a colliding
+      // field path keeps the first deterministic owner instead of
+      // silently moving to the last writer (issue #45 review F-2).
+      fields: members.reduce((merged, member) => {
+        for (const key of Object.keys(member.fields)) {
+          if (!Object.hasOwn(merged, key)) {
+            merged[key] = member.fields[key];
+          }
+        }
+        return merged;
+      }, {})
     });
   }
   return groups;
@@ -2783,12 +2808,13 @@ ${imports.join("\n")}
   }
   const text = `${[...header, "", ...imports, "", ...body].join("\n")}
 `;
+  const owner = Object.hasOwn(module.fields, "") ? module.fields[""] : module.modules[0].id;
   return {
     text,
     map: {
       contract: MAP_CONTRACT,
       adapter: { id: ADAPTER_ID2, version: context.adapterVersion },
-      owner: module.modules[0].id,
+      owner,
       fields: module.fields,
       declarations
     }

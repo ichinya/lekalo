@@ -50,6 +50,10 @@ export function normalizeIssues(issues, fields, owner) {
 }
 
 /**
+ * Exact path first, then the closest enclosing mapped path, then the
+ * mapped root symbol (the `""` entry), and only then the owner
+ * argument — one fallback chain, coherent with the sidecar bytes.
+ *
  * @param {Record<string, string>} fields
  * @param {string} path
  * @param {string} owner
@@ -67,6 +71,9 @@ function resolveFieldOwner(fields, path, owner) {
     if (Object.prototype.hasOwnProperty.call(fields, prefix)) {
       return fields[prefix];
     }
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, "")) {
+    return fields[""];
   }
   return owner;
 }

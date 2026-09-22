@@ -464,19 +464,53 @@ test("sidecar field paths flatten through same-module object refs", () => {
     ]),
   );
   const planner = modules.find((module) => module.id === "planner");
-  // Object roots overwrite each other on the shared "" key; the last
-  // declaration in semantic-id order wins deterministically, and every
-  // flattened path still resolves to its owning symbol.
+  // Object roots collide on the shared "" key; first-wins in semantic-id
+  // order keeps the byte-order-smallest symbol (planner.task) —
+  // deterministic and independent of merge order (issue #45 review F-2),
+  // and every flattened path still resolves to its owning symbol.
   assert.deepEqual(planner.fields, {
     PlannerTagSchema: "planner.tag",
     PlannerTaskSchema: "planner.task",
     PlannerWindowSchema: "planner.window",
-    "": "planner.window",
+    "": "planner.task",
     due: "planner.task",
     window: "planner.task",
     "window.0.from": "planner.window",
     from: "planner.window",
   });
+});
+
+test("colliding leaf paths keep their first deterministic owner (F-2)", () => {
+  const { modules } = mapProject(
+    project([
+      { id: "planner.text", kind: "scalar", base: "string" },
+      {
+        id: "planner.alpha_row",
+        kind: "value-object",
+        fields: [field("title", ref("planner.text"))],
+      },
+      {
+        id: "planner.beta_row",
+        kind: "value-object",
+        fields: [field("title", ref("planner.text"))],
+      },
+      {
+        id: "planner.holder",
+        kind: "value-object",
+        fields: [
+          field("first", ref("planner.alpha_row")),
+          field("second", ref("planner.beta_row")),
+        ],
+      },
+    ]),
+  );
+  const planner = modules.find((module) => module.id === "planner");
+  // alpha_row < beta_row in byte order, so alpha_row maps first and the
+  // colliding bare `title` keeps planner.alpha_row (never last-writer-wins).
+  // Unambiguous qualified paths stay exact per owning symbol.
+  assert.equal(planner.fields["title"], "planner.alpha_row");
+  assert.equal(planner.fields["first.title"], "planner.alpha_row");
+  assert.equal(planner.fields["second.title"], "planner.beta_row");
 });
 
 test("module records sort by id and declarations by semantic id", () => {

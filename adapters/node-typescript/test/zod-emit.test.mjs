@@ -189,6 +189,37 @@ function byteLength(text) {
   return Buffer.byteLength(text, "utf8");
 }
 
+test("merged groups attribute colliding paths first-wins and owner agrees with the root entry", () => {
+  // alpha + beta merge into one emission group (beta references alpha),
+  // and both modules carry colliding leaf names.
+  const ir = {
+    contract: "dev.lekalo.ir@0.2.16",
+    modelVersion: "0.2.16",
+    definitions: [
+      { id: "alpha.text", kind: "scalar", base: "string" },
+      { id: "alpha.aa_row", kind: "value-object", fields: [{ name: "title", type: { ref: "alpha.text" }, required: true }] },
+      { id: "alpha.task", kind: "value-object", fields: [{ name: "title", type: { ref: "alpha.text" }, required: true }] },
+      { id: "beta.report", kind: "value-object", fields: [{ name: "title", type: { ref: "alpha.text" }, required: true }] },
+      { id: "beta.bridge", kind: "value-object", fields: [{ name: "row", type: { ref: "alpha.aa_row" }, required: true }] },
+    ],
+    modules: [
+      { id: "alpha", kind: "module", version: 1 },
+      { id: "beta", kind: "module", version: 1, imports: ["alpha"] },
+    ],
+  };
+  const files = emitFiles({ modules: mapProject(ir).modules, ...CONTEXT });
+  const sidecar = files.find((file) => file.path.endsWith("/alpha.map.json"));
+  const map = sidecar.map;
+  // One merged group: the group id names the head module, but the owner
+  // is the mapped root symbol (fields[""]), not blindly the head id.
+  const smallestObject = "alpha.aa_row"; // byte-order-first object root
+  assert.equal(map.fields[""], smallestObject);
+  assert.equal(map.owner, smallestObject);
+  // Colliding bare leaves keep their first deterministic owner
+  // (alpha.aa_row wins byte order over alpha.task and beta.report).
+  assert.equal(map.fields["title"], smallestObject);
+});
+
 // ---------------------------------------------------------------------------
 // Runtime execution of the generated output (AC-5).
 // ---------------------------------------------------------------------------

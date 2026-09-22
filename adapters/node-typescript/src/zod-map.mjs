@@ -29,7 +29,16 @@
  *   without `.parse` — and branding never tightens the base validation.
  */
 
-/** The sidecar micro-contract token (adapter-owned, plan §3.6). */
+/**
+ * The sidecar micro-contract token (adapter-owned, plan §3.6).
+ *
+ * Attribution contract (issue #45 review F-2): a merged emission group
+ * shares one flat field-path key space, so `fields` entries are
+ * first-wins over the sorted declaration order — a colliding leaf keeps
+ * the first deterministic owner instead of silently moving to the last
+ * writer. Exact per-symbol paths remain available through the runtime
+ * export entry of each declaration.
+ */
 export const MAP_CONTRACT = "lekalo/zod-map/v0.3.2";
 
 /** The sole IR contract this mapper accepts. */
@@ -433,11 +442,21 @@ function collectImports(module) {
  */
 function recordFieldPaths(module, mapped, byExport) {
   const fields = module.fields;
-  fields[mapped.exportName] = mapped.semanticId;
+  // First-wins: one declaration never rewrites another's attribution.
+  // Within one module declarations arrive sorted by semantic id, so the
+  // winner is the byte-order-smallest symbol — deterministic, and never
+  // the artifact of a merge order.
+  if (!Object.hasOwn(fields, mapped.exportName)) {
+    fields[mapped.exportName] = mapped.semanticId;
+  }
   if (mapped.kind !== "object") return;
-  fields[""] = mapped.semanticId;
+  if (!Object.hasOwn(fields, "")) {
+    fields[""] = mapped.semanticId;
+  }
   for (const field of mapped.fields) {
-    fields[field.name] = mapped.semanticId;
+    if (!Object.hasOwn(fields, field.name)) {
+      fields[field.name] = mapped.semanticId;
+    }
     flattenFieldPath(fields, field.expr, field.name, mapped, byExport, 0);
   }
 }
@@ -465,7 +484,9 @@ function flattenFieldPath(fields, expr, prefix, owner, byExport, depth) {
   if (!declaration || declaration.kind !== "object") return;
   for (const field of declaration.fields) {
     const path = `${prefix}.${field.name}`;
-    fields[path] = declaration.semanticId;
+    if (!Object.hasOwn(fields, path)) {
+      fields[path] = declaration.semanticId;
+    }
     flattenFieldPath(fields, field.expr, path, declaration, byExport, depth + 1);
   }
 }

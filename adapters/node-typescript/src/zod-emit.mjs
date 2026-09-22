@@ -179,6 +179,10 @@ export function normalizeIssues(issues, fields, owner) {
 }
 
 /**
+ * Exact path first, then the closest enclosing mapped path, then the
+ * mapped root symbol (the \`""\` entry), and only then the owner
+ * argument — one fallback chain, coherent with the sidecar bytes.
+ *
  * @param {Record<string, string>} fields
  * @param {string} path
  * @param {string} owner
@@ -196,6 +200,9 @@ function resolveFieldOwner(fields, path, owner) {
     if (Object.prototype.hasOwnProperty.call(fields, prefix)) {
       return fields[prefix];
     }
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, "")) {
+    return fields[""];
   }
   return owner;
 }
@@ -263,7 +270,17 @@ export function emissionGroups(modules) {
       modules: members,
       declarations: members.flatMap((member) => member.declarations),
       imports: members.flatMap((member) => member.imports),
-      fields: Object.assign({}, ...members.map((member) => member.fields)),
+      // First-wins merge in the members' (sorted) order: a colliding
+      // field path keeps the first deterministic owner instead of
+      // silently moving to the last writer (issue #45 review F-2).
+      fields: members.reduce((merged, member) => {
+        for (const key of Object.keys(member.fields)) {
+          if (!Object.hasOwn(merged, key)) {
+            merged[key] = member.fields[key];
+          }
+        }
+        return merged;
+      }, {}),
     });
   }
   return groups;
@@ -303,12 +320,18 @@ function emitModule(module, context) {
     cursor = end + 1; // the blank line between declarations
   }
   const text = `${[...header, "", ...imports, "", ...body].join("\n")}\n`;
+  // The owner fallback agrees with the flat map: the root path entry wins
+  // when present (a merged group's head module need not own the root
+  // symbol), and the head module id is only the last-resort fallback.
+  const owner = Object.hasOwn(module.fields, "")
+    ? module.fields[""]
+    : module.modules[0].id;
   return {
     text,
     map: {
       contract: MAP_CONTRACT,
       adapter: { id: ADAPTER_ID, version: context.adapterVersion },
-      owner: module.modules[0].id,
+      owner,
       fields: module.fields,
       declarations,
     },
