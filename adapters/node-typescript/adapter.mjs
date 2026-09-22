@@ -216201,6 +216201,13 @@ var PLANNER_VERSION2 = "0.3.2";
 var launchPolicy = null;
 var adapterIdentity = null;
 function setAdapterIdentity(identity) {
+  if (identity !== null && identity !== void 0) {
+    if (identity !== null && identity.version !== ADAPTER_VERSION) {
+      throw new Error(
+        "adapter identity version " + identity.version + " does not match the adapter release " + ADAPTER_VERSION
+      );
+    }
+  }
   adapterIdentity = identity;
 }
 function setLaunchPolicy(policy) {
@@ -216783,7 +216790,7 @@ function mapDefinition(definition, context) {
       case "scalar":
         return mapScalar(definition, naming, context, moduleId);
       case "enum":
-        return mapEnum(definition, naming, moduleId);
+        return mapEnum(definition, naming, context, moduleId);
       case "value-object":
       case "entity":
       case "command":
@@ -216819,11 +216826,13 @@ function mapScalar(definition, naming, context, moduleId) {
     expr: branded ? { k: "brand", inner: expr, brand: definition.id } : expr
   };
 }
-function mapEnum(definition, naming, moduleId) {
+function mapEnum(definition, naming, context, moduleId) {
   const values = (definition.values ?? []).map((value) => value?.value);
   if (values.length === 0 || values.some((value) => typeof value !== "string")) {
     throw new Unsupported(definition.id);
   }
+  const expr = { k: "enum", values };
+  const branded = context.branded.has(definition.id);
   return {
     semanticId: definition.id,
     module: moduleId,
@@ -216832,7 +216841,8 @@ function mapEnum(definition, naming, moduleId) {
     typeName: naming.typeName,
     // Declared order is semantic; never sort enum members.
     values,
-    expr: { k: "enum", values }
+    branded,
+    expr: branded ? { k: "brand", inner: expr, brand: definition.id } : expr
   };
 }
 function mapObject(definition, naming, context, moduleId) {
@@ -216843,6 +216853,12 @@ function mapObject(definition, naming, context, moduleId) {
     const expr = field.required === true ? inner : { k: "optional", inner };
     return { name: field.name, required: field.required === true, expr };
   });
+  const object = {
+    k: "object",
+    strict,
+    fields: fields.map((field) => ({ name: field.name, expr: field.expr }))
+  };
+  const branded = context.branded.has(definition.id);
   return {
     semanticId: definition.id,
     module: moduleId,
@@ -216852,11 +216868,8 @@ function mapObject(definition, naming, context, moduleId) {
     typeName: naming.typeName,
     strict,
     fields,
-    expr: {
-      k: "object",
-      strict,
-      fields: fields.map((field) => ({ name: field.name, expr: field.expr }))
-    }
+    branded,
+    expr: branded ? { k: "brand", inner: object, brand: definition.id } : object
   };
 }
 function mapQuery(definition, naming, context, moduleId) {
