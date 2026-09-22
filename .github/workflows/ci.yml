@@ -192,6 +192,8 @@ jobs:
         run: node scripts/test-node-native-gates.mjs
       - name: Run the transport generator gate (issue #70)
         run: node scripts/test-node-typescript-transport.mjs
+      - name: Run the scenario-test compiler gate (issue #47)
+        run: node scripts/test-node-scenario-tests.mjs
       - name: Provision exact Ajv 8.17.1 outside the checkout (issue #48)
         run: |
           set -euo pipefail
