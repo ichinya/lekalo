@@ -179,6 +179,7 @@ export function mapScenario(input) {
     version: scenario.scenarioVersion,
     summary: scenario.summary,
     projectId: scenario.projectId,
+    irDigest: scenario.irRef?.digest ?? null,
     runner,
     binding: bindingModel(scenario),
     tags: scenario.tags ?? [],
@@ -324,7 +325,9 @@ function operationIndex(ir) {
  * exact definition id wins; otherwise the kind-qualified wire spelling
  * (`<module>.command.<name>` / `<module>.query.<name>`) resolves when the
  * base id without the kind segment is declared with exactly that kind.
- * Anything else is unresolved — never a guessed call kind.
+ * The resolved id is always the canonical IR identity; the original
+ * reference rides along as `ref` when it differed. Anything else is
+ * unresolved — never a guessed call kind.
  */
 export function resolveOperation(index, id) {
   const exact = index.get(id);
@@ -334,7 +337,7 @@ export function resolveOperation(index, id) {
     const kind = segments[segments.length - 2];
     if (kind === "command" || kind === "query") {
       const base = [...segments.slice(0, -2), segments[segments.length - 1]].join(".");
-      if (index.get(base) === kind) return { id, kind };
+      if (index.get(base) === kind) return { id: base, kind, ref: id };
     }
   }
   return null;

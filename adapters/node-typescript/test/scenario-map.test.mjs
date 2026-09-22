@@ -104,7 +104,7 @@ test("the happy path maps to a resolved command invocation with no findings", ()
   assert.equal(model.projectId, "planner");
   assert.equal(model.runner.id, "node:test");
   const invoke = model.when[0];
-  assert.deepEqual(invoke.operation, { id: "planner.command.focus_task", kind: "command" });
+  assert.deepEqual(invoke.operation, { id: "planner.focus_task", kind: "command", ref: "planner.command.focus_task" });
   assert.deepEqual(
     invoke.input.map((entry) => entry.field),
     ["task_id", "user_id"],
@@ -211,7 +211,7 @@ test("port surfaces that are absent compile to explicit unsupported rows", () =>
   // Three unsupported rows exist; none of them is a pass.
   assert.equal(model.unsupported.length, 0, "step-level rows stay on their steps");
   const invoke = model.when[0];
-  assert.deepEqual(invoke.operation, { id: "planner.command.focus_task", kind: "command" });
+  assert.deepEqual(invoke.operation, { id: "planner.focus_task", kind: "command", ref: "planner.command.focus_task" });
 });
 
 test("an absent port declaration is a compile-time finding", () => {
