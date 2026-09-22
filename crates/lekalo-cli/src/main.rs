@@ -6031,7 +6031,11 @@ fn run_dataflow(command: DataflowCommands) -> DomainResult {
                         report.unknowns().len()
                     );
                     if denied {
-                        DomainResult::denied(diagnostics)
+                        // Denied, but never evidence-free: the denied
+                        // envelope carries the report JSON alongside the
+                        // mirrored findings so the user sees the rows
+                        // that produced the verdict (F-11).
+                        DomainResult::denied_json(json, human, diagnostics)
                     } else {
                         DomainResult::graph(json, human, Vec::new())
                     }

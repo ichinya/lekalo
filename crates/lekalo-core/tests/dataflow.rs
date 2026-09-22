@@ -242,3 +242,56 @@ fn export_sinks_above_their_ceiling_are_findings() {
     );
     assert_eq!(analysis.report.verdict().as_str(), "pass");
 }
+
+// ---------------------------------------------------------------------------
+// Issue #87 r1 F-3: the strict-profile sensitive-sink rule over the
+// committed planner fixture (lives in the integration binary: the loader
+// resolves the fixture selection against the process cwd, which must not
+// race the lib tests).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn strict_rule_flags_only_subjects_without_explicit_entries() {
+    let fixture = "tests/fixtures/classification/valid/planner";
+    let compilation = planner_project();
+    let attachment_path = workspace_root()
+        .join(fixture)
+        .join("lekalo/classification.json");
+    let attachment =
+        Attachment::parse(&std::fs::read(&attachment_path).expect("read")).expect("parses");
+
+    // The full attachment covers the graph: no strict findings.
+    assert!(lekalo_core::classification::strict_sensitive_sink_findings(
+        &attachment,
+        &compilation.project
+    )
+    .is_empty());
+
+    // Removing the definition-level `notify.user` entry leaves the
+    // entity covered only by the profile default: exactly one finding,
+    // on that subject.
+    let stripped = Attachment::parse(
+        serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": "lekalo/data-classification/v0.4.0",
+            "identity": "dev.lekalo.data-classification@0.4.0",
+            "attachmentRevision": "1.1.0",
+            "projectId": "planner",
+            "modelRef": {"modelVersion": "0.2.16", "digest": attachment.model_ref().1.as_str()},
+            "irRef": {"irVersion": "0.2.16", "digest": attachment.ir_ref().1.as_str()},
+            "defaults": {"profile": "strict", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"},
+            "classifications": attachment.classifications().iter().filter(|entry| entry.subject().as_str() != "notify.user").map(|entry| serde_json::json!({"subject": entry.subject().as_str(), "kind": entry.kind().as_str()})).collect::<Vec<_>>(),
+            "declassifications": [],
+            "openQuestions": []
+        }))
+        .expect("serializes")
+        .as_slice(),
+    )
+    .expect("parses");
+    let rows = lekalo_core::classification::strict_sensitive_sink_findings(
+        &stripped,
+        &compilation.project,
+    );
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].rule, "classification.unclassified-sensitive-sink");
+    assert_eq!(rows[0].subject, "notify.user");
+}

@@ -9,6 +9,7 @@
 //! unsupported 4/stdout, unsupported-version 5/stderr.
 
 use serde::Serialize;
+use serde_json::Value as Json;
 use std::fmt;
 
 use crate::diagnostics::normalize::build;
@@ -167,6 +168,14 @@ pub enum DomainResult {
     Denied {
         diagnostics: DiagnosticSet,
     },
+    /// A denial that carries the evidence behind it: the derived report
+    /// JSON and the human summary ride the diagnostics so a denied
+    /// surface never hides the rows that produced the verdict.
+    DeniedWithEvidence {
+        diagnostics: DiagnosticSet,
+        json: String,
+        human: String,
+    },
     Unavailable {
         diagnostics: DiagnosticSet,
     },
@@ -296,6 +305,17 @@ impl DomainResult {
         Self::Denied { diagnostics }
     }
 
+    /// A denial carrying the evidence behind it: the derived payload
+    /// JSON and the human summary ride the envelope so the denied user
+    /// sees the rows that produced the verdict.
+    pub fn denied_json(json: String, human: String, diagnostics: DiagnosticSet) -> Self {
+        Self::DeniedWithEvidence {
+            diagnostics,
+            json,
+            human,
+        }
+    }
+
     pub fn unavailable(diagnostics: DiagnosticSet) -> Self {
         Self::Unavailable { diagnostics }
     }
@@ -316,7 +336,7 @@ impl DomainResult {
         match self {
             Self::Valid { .. } => Status::Valid,
             Self::Invalid { .. } => Status::Invalid,
-            Self::Denied { .. } => Status::Denied,
+            Self::Denied { .. } | Self::DeniedWithEvidence { .. } => Status::Denied,
             Self::Unavailable { .. } => Status::Unavailable,
             Self::Unsupported { .. } | Self::UnsupportedOperation { .. } => Status::Unsupported,
             Self::UnsupportedVersion { .. } => Status::UnsupportedVersion,
@@ -345,6 +365,7 @@ impl DomainResult {
             Self::Valid { diagnostics, .. } => diagnostics,
             Self::Invalid { diagnostics }
             | Self::Denied { diagnostics }
+            | Self::DeniedWithEvidence { diagnostics, .. }
             | Self::Unavailable { diagnostics }
             | Self::UnsupportedOperation { diagnostics }
             | Self::UnsupportedVersion { diagnostics } => diagnostics.as_slice(),
@@ -367,6 +388,7 @@ impl DomainResult {
     /// Project the exact JSON envelope bytes (without trailing newline).
     pub fn to_json_string(&self) -> String {
         match self {
+            Self::DeniedWithEvidence { json, .. } => json.clone(),
             Self::Valid {
                 payload,
                 diagnostics,
@@ -414,6 +436,8 @@ impl DomainResult {
                     status: &'a str,
                     #[serde(skip_serializing_if = "Option::is_none")]
                     capability: Option<Capability>,
+                    #[serde(skip_serializing_if = "Option::is_none")]
+                    payload: Option<&'a Json>,
                     #[serde(rename = "diagnostics")]
                     diagnostics: &'a [crate::diagnostics::Diagnostic],
                     #[serde(rename = "reasonCodes")]
@@ -424,9 +448,18 @@ impl DomainResult {
                     .iter()
                     .map(|diagnostic| diagnostic.id())
                     .collect();
+                // The denied-with-evidence variant embeds its derived
+                // payload JSON (a denial never hides its rows).
+                let payload = match self {
+                    Self::DeniedWithEvidence { json, .. } => {
+                        serde_json::from_str::<Json>(json).ok()
+                    }
+                    _ => None,
+                };
                 let envelope = FailureEnvelope {
                     status: self.status().as_str(),
                     capability: self.capability(),
+                    payload: payload.as_ref(),
                     diagnostics: self.diagnostics(),
                     reason_codes,
                 };
@@ -459,6 +492,13 @@ impl DomainResult {
                 };
                 for diagnostic in diagnostics {
                     lines.extend(diagnostic_lines("valid", diagnostic));
+                }
+                lines.join("\n")
+            }
+            Self::DeniedWithEvidence { human, .. } => {
+                let mut lines: Vec<String> = human.lines().map(|line| line.to_owned()).collect();
+                for diagnostic in self.diagnostics() {
+                    lines.extend(diagnostic_lines("denied", diagnostic));
                 }
                 lines.join("\n")
             }

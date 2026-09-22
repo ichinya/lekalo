@@ -440,7 +440,7 @@ pub(crate) fn ir_pin(json: &Json) -> Result<(String, Sha256Digest), DiagnosticSe
         .get("irVersion")
         .and_then(Json::as_str)
         .ok_or_else(|| diagnostic::document_invalid("ir-version", None))?;
-    if ir_version != "0.2.16" {
+    if ir_version != crate::ir::VERSION {
         return Err(diagnostic::document_invalid("ir-version", None));
     }
     let digest = Sha256Digest::parse(
