@@ -861,7 +861,12 @@ fn a_renamed_table_renames_its_sequence_and_a_dropped_column_retires_it() {
         "ALTER SEQUENCE \"seq_focus_session_session_no\" RENAME TO \"seq_session_session_no\";"
     );
 
-    // A dropped sequence column retires its sequence.
+    // A dropped sequence column on a surviving table plans no explicit
+    // retirement: the column carries DEFAULT nextval(<sequence>) and
+    // the OWNED BY dependency, so its DROP COLUMN auto-drops the
+    // sequence — an explicit DROP SEQUENCE cannot execute in either
+    // order (before the column the default blocks it; after it the
+    // sequence no longer exists).
     let mut candidate_value: serde_json::Value =
         serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
     for projection in candidate_value
@@ -901,16 +906,18 @@ fn a_renamed_table_renames_its_sequence_and_a_dropped_column_retires_it() {
         Some(&plan_id),
     )
     .expect("confirmed");
-    let drop = plan
-        .steps()
-        .iter()
-        .find(|step| step.kind() == "drop_sequence")
-        .expect("the orphaned sequence is retired");
-    assert_eq!(
-        drop.statement(),
-        "DROP SEQUENCE \"seq_focus_session_session_no\";"
+    // No explicit sequence drop: the DROP COLUMN retires the owned
+    // sequence, so the plan stays executable.
+    assert!(
+        !plan
+            .steps()
+            .iter()
+            .any(|step| step.kind() == "drop_sequence"),
+        "DROP SEQUENCE cannot execute around a DROP COLUMN of its owner"
     );
-    assert_eq!(drop.risk().key(), "destructive");
+    assert!(plan.steps().iter().any(|step| {
+        step.kind() == "drop_column" && step.statement().contains("\"session_no\"")
+    }));
 }
 
 #[test]

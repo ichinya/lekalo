@@ -482,31 +482,16 @@ fn plan_sequence_lifecycle(
             }
         }
     }
-    for base_table in base.tables() {
-        let candidate_table = candidate.table(base_table.entity());
-        for column in base_table.columns() {
-            if column.generated_kind() != Some(GeneratedKind::Sequence) {
-                continue;
-            }
-            let survived = candidate_table
-                .map(|candidate| {
-                    candidate
-                        .columns()
-                        .iter()
-                        .any(|candidate| candidate.name() == column.name())
-                })
-                .unwrap_or(false);
-            if survived {
-                continue;
-            }
-            // A dropped sequence column retires its sequence; a
-            // dropped table carries its sequence with it (rank-3 DROP
-            // TABLE — no sequence drop, the table drop owns it).
-            if candidate_table.is_some() {
-                drops.push(sequence_of(base_table.table(), column.name())?);
-            }
-        }
-    }
+    // A dropped sequence column on a surviving table plans no
+    // explicit retirement: the column carries
+    // DEFAULT nextval(<sequence>) and the OWNED BY dependency, so its
+    // DROP COLUMN auto-drops the sequence — an explicit DROP SEQUENCE
+    // cannot execute in either order (before the column the default
+    // blocks it; after it the sequence no longer exists). A dropped
+    // table carries its sequence with the rank-3 DROP TABLE the same
+    // way. The only retirement an owner could owe — surviving without
+    // its nextval default — is refused earlier as a generated-kind
+    // change, so `drops` stays empty by construction.
     owners.sort();
     renames.sort();
     drops.sort();
