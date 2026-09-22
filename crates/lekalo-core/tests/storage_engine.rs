@@ -809,6 +809,92 @@ fn a_dropped_column_owns_its_check_and_index_drops() {
 }
 
 #[test]
+fn a_renamed_join_renames_and_rederives_its_foreign_keys() {
+    // A join-table rename emits rename_table only — never a fresh
+    // CREATE TABLE of the renamed table (which would fail `relation
+    // already exists`) — and re-derives its foreign keys: the old
+    // fk_<oldjoin>_* names drop, the fresh fk_<newjoin>_* names re-add
+    // wired to the drops.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        for join in projection
+            .get_mut("joins")
+            .and_then(|j| j.as_array_mut())
+            .expect("joins")
+        {
+            if join.get("relation").and_then(serde_json::Value::as_str)
+                == Some("planner.relation.task_tags")
+            {
+                join["table"] = serde_json::Value::String("task_tagging".to_owned());
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    // No create_table for the renamed join.
+    assert!(
+        !plan.steps().iter().any(|step| {
+            step.kind() == "create_table" && step.statement().contains("task_tagging")
+        }),
+        "a rename never re-creates the table"
+    );
+    let rename = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "rename_table")
+        .expect("the join rename is planned");
+    assert!(rename.statement().contains("RENAME TO \"task_tagging\""));
+    // Old derived FK names drop; fresh names re-add, wired to the drops.
+    let old_drops: Vec<usize> = plan
+        .steps()
+        .iter()
+        .filter(|step| {
+            step.kind() == "drop_constraint" && step.statement().contains("fk_task_tag_")
+        })
+        .map(|step| step.id())
+        .collect();
+    assert_eq!(old_drops.len(), 2, "one old-name drop per join side");
+    let adds: Vec<&lekalo_core::storage_engine::migration::Step> = plan
+        .steps()
+        .iter()
+        .filter(|step| {
+            step.kind() == "add_foreign_key" && step.statement().contains("fk_task_tagging_")
+        })
+        .collect();
+    assert_eq!(adds.len(), 2, "one fresh-name add per join side");
+    for add in &adds {
+        assert_eq!(
+            add.requires(),
+            &old_drops,
+            "each re-add depends on the old-name drops"
+        );
+    }
+    assert!(plan.gated());
+}
+
+#[test]
 fn a_rematerialized_join_plans_drop_before_create_of_the_same_name() {
     // A join whose shape changed (here: the delete behavior) is
     // rematerialized under the same deterministic table name: the DROP

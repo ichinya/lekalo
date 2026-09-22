@@ -1074,6 +1074,54 @@ fn plan_tables(
                     Vec::new(),
                     None,
                 );
+                // The join foreign-key names embed the table name, so
+                // the renamed join's FKs drop under their old names and
+                // re-add under the fresh deterministic ones — the
+                // migrated schema never keeps a stale `fk_<oldjoin>_*`
+                // a fresh render would not produce (the same contract
+                // the entity-table rename block holds).
+                let mut rename_requires = Vec::new();
+                for column in existing.columns() {
+                    let old_name =
+                        StorageName::parse(&format!("fk_{}_{}", existing.table(), column.name()))
+                            .map_err(|_| {
+                            diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
+                        })?;
+                    let drop_id = steps.len();
+                    push_step(
+                        steps,
+                        "drop_constraint",
+                        format!(
+                            "ALTER TABLE {} DROP CONSTRAINT {};",
+                            quote(join.table()),
+                            quote(&old_name)
+                        ),
+                        DataRisk::Destructive,
+                        Vec::new(),
+                        None,
+                    );
+                    rename_requires.push(drop_id + 1);
+                }
+                let mut statements = create_join_and_fks(candidate_attachment, candidate, join)?;
+                // The renamed table exists already; only its FK names
+                // change, so the create statement (statements[0]) is
+                // not re-emitted — the FK adds carry the full
+                // re-derivation.
+                statements.remove(0);
+                table_ids
+                    .entry(join.table().as_str().to_owned())
+                    .or_insert(usize::MAX);
+                for fk in statements {
+                    push_step(
+                        steps,
+                        "add_foreign_key",
+                        fk,
+                        DataRisk::None,
+                        rename_requires.clone(),
+                        None,
+                    );
+                }
+                continue;
             } else if rematerialized {
                 // The table is rematerialized under the same name: the
                 // drop of the old shape must stay paired with the
