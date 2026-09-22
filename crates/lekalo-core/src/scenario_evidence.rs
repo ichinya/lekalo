@@ -58,6 +58,8 @@ pub struct RunRecord {
     pub test: (String, String, String),
     /// The binding mode the test was generated/checked under.
     pub binding_mode: String,
+    /// The sorted operation symbols the run executed.
+    pub operations: Vec<String>,
     /// One bounded outcome row per executed assertion.
     pub assertions: Vec<AssertionRow>,
 }
@@ -221,6 +223,17 @@ impl RunRecord {
         ) {
             return Err(run_invalid("binding-mode"));
         }
+        let operations = {
+            let items = scenario
+                .get("operations")
+                .and_then(Json::as_array)
+                .ok_or_else(|| run_invalid("scenario-lists"))?;
+            let mut operations = Vec::with_capacity(items.len());
+            for item in items {
+                operations.push(bounded_token(Some(item), "scenario-lists")?);
+            }
+            operations
+        };
         bounded_token(object.get("started_by"), "started-by")?;
         let assertions = object
             .get("assertions")
@@ -264,6 +277,7 @@ impl RunRecord {
             runner: (runner_id, runner_version),
             test: (test_id, test_path, test_fingerprint.to_owned()),
             binding_mode,
+            operations,
             assertions: rows,
         })
     }
@@ -282,6 +296,141 @@ fn bounded_token(value: Option<&Json>, detail: &'static str) -> Result<String, D
 
 fn bounded_token_text(text: &str) -> bool {
     !text.is_empty() && text.chars().count() <= 256 && !text.chars().any(char::is_control)
+}
+
+/// The provenance/stamp context one trace export needs (plan S10).
+#[derive(Clone, Debug)]
+pub struct TraceContext {
+    /// The manifest revision the exported relations confirm under.
+    pub manifest_revision: String,
+    /// The optional gate identity exporting the edges.
+    pub gate: Option<String>,
+}
+
+impl TraceContext {
+    /// One context for `manifest_revision`, without a gate.
+    pub fn new(manifest_revision: impl Into<String>) -> Self {
+        Self {
+            manifest_revision: manifest_revision.into(),
+            gate: None,
+        }
+    }
+}
+
+/// The typed trace edges of one run record (issue #47, plan S10): the
+/// `verifies` edges the record's identities license — native_test →
+/// scenario, and native_test → each executed operation symbol — plus,
+/// when a gate context is present, the `evidences` edges gate →
+/// native_test and gate → scenario. Every relation is validated through
+/// the production legality matrix, the canonical id recomputation, and
+/// the confirmed-status policy, so an illegal edge is a construction
+/// refusal, never an exported lie.
+pub fn trace_relations(
+    record: &RunRecord,
+    context: &TraceContext,
+) -> Result<Vec<crate::trace::relation::Relation>, DiagnosticSet> {
+    use crate::trace::id;
+    use crate::trace::node::NodeKind;
+    use crate::trace::provenance::{Confidence, Origin, Provenance, Status};
+    use crate::trace::relation::{Relation, RelationKind};
+    // Trace node ids are prefixed semantic ids (plan §7/§10): the native
+    // test, the scenario, each executed operation symbol, and the gate
+    // all carry their closed kind prefix.
+    let test_node = format!("native_test:{}", record.test.0);
+    let scenario_node = format!("scenario:{}", record.scenario_id);
+    if !id::is_node_id(&test_node) || !id::is_node_id(&scenario_node) {
+        return Err(run_invalid("trace-node"));
+    }
+    let provenance = Provenance {
+        origin: Origin::Declared,
+        source_system: crate::trace::node::ExternalSystem::SourceNative
+            .as_str()
+            .to_owned(),
+        source_revision: context.manifest_revision.clone(),
+        source_digest: record.test.2.clone(),
+        recorded_by: "lekalo.core".to_owned(),
+        source_path: Some(record.test.1.clone()),
+    };
+    provenance
+        .validate()
+        .map_err(|_| run_invalid("trace-provenance"))?;
+    let build = |kind: RelationKind,
+                 from: &str,
+                 from_kind: NodeKind,
+                 to: &str,
+                 to_kind: NodeKind,
+                 occurrence: u64|
+     -> Result<Relation, DiagnosticSet> {
+        if !id::is_node_id(from) || !id::is_node_id(to) {
+            return Err(run_invalid("trace-node"));
+        }
+        let occurrence = format!("scenario-run-{occurrence}");
+        if !id::is_occurrence(&occurrence) {
+            return Err(run_invalid("trace-occurrence"));
+        }
+        if !kind.endpoints_legal(from_kind, to_kind) {
+            return Err(run_invalid("trace-endpoints"));
+        }
+        let relation = Relation {
+            relation_id: Relation::canonical_id(kind, from, to, &occurrence),
+            relation_kind: kind,
+            from_node: from.to_owned(),
+            to_node: to.to_owned(),
+            occurrence,
+            provenance: provenance.clone(),
+            confidence: Confidence::Exact,
+            status: Status::Confirmed,
+            evidence_refs: vec![test_node.to_owned()],
+        };
+        relation
+            .validate(&context.manifest_revision)
+            .map_err(|_| run_invalid("trace-relation"))?;
+        Ok(relation)
+    };
+    let mut relations = Vec::new();
+    let mut occurrence = 0u64;
+    occurrence += 1;
+    relations.push(build(
+        RelationKind::Verifies,
+        &test_node,
+        NodeKind::NativeTest,
+        &scenario_node,
+        NodeKind::Scenario,
+        occurrence,
+    )?);
+    for operation in &record.operations {
+        occurrence += 1;
+        let symbol_node = format!("symbol:{operation}");
+        relations.push(build(
+            RelationKind::Verifies,
+            &test_node,
+            NodeKind::NativeTest,
+            &symbol_node,
+            NodeKind::Symbol,
+            occurrence,
+        )?);
+    }
+    if let Some(gate) = &context.gate {
+        let gate_node = format!("gate:{gate}");
+        if !id::is_node_id(&gate_node) {
+            return Err(run_invalid("trace-node"));
+        }
+        for (to, to_kind) in [
+            (&test_node, NodeKind::NativeTest),
+            (&scenario_node, NodeKind::Scenario),
+        ] {
+            occurrence += 1;
+            relations.push(build(
+                RelationKind::Evidences,
+                &gate_node,
+                NodeKind::Gate,
+                to,
+                to_kind,
+                occurrence,
+            )?);
+        }
+    }
+    Ok(relations)
 }
 
 /// The fatal set for one run-record violation: the registered
@@ -414,5 +563,53 @@ mod tests {
         assert_eq!(INGEST_DIR, ".lekalo/import/scenario-runs");
         assert_eq!(SCHEMA_VERSION, "lekalo/scenario-run/v0.4.0");
         assert_eq!(IDENTITY, "dev.lekalo.scenario-run@0.4.0");
+    }
+
+    #[test]
+    fn trace_relations_export_the_verifies_and_evidences_edges() {
+        let record = RunRecord::from_value(&valid()).expect("valid record");
+        let context = TraceContext::new("3".repeat(64));
+        let relations = trace_relations(&record, &context).expect("legal edges");
+        // native_test -> scenario + native_test -> each operation symbol.
+        assert_eq!(relations.len(), 2);
+        assert_eq!(
+            relations[0].from_node,
+            "native_test:planner.scenario.focus_happy"
+        );
+        assert_eq!(
+            relations[0].to_node,
+            "scenario:planner.scenario.focus_happy"
+        );
+        assert_eq!(relations[1].to_node, "symbol:planner.focus_task");
+        for relation in &relations {
+            assert!(matches!(
+                relation.status,
+                crate::trace::provenance::Status::Confirmed
+            ));
+            assert_eq!(
+                relation.evidence_refs,
+                ["native_test:planner.scenario.focus_happy"]
+            );
+        }
+        // With a gate context the evidences edges ride along.
+        let gated = TraceContext {
+            manifest_revision: "3".repeat(64),
+            gate: Some("planner.gate.scenario".to_owned()),
+        };
+        let relations = trace_relations(&record, &gated).expect("legal edges");
+        assert_eq!(relations.len(), 4);
+        assert_eq!(relations[2].from_node, "gate:planner.gate.scenario");
+        assert_eq!(
+            relations[3].to_node,
+            "scenario:planner.scenario.focus_happy"
+        );
+    }
+
+    #[test]
+    fn trace_relations_refuse_non_node_endpoints() {
+        let mut document = valid();
+        document["scenario"]["id"] = json!("not a node id!");
+        let record = RunRecord::from_value(&document).expect("valid record");
+        assert!(trace_relations(&record, &TraceContext::new("rev")).is_err());
     }
 }
