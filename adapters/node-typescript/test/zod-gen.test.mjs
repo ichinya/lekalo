@@ -198,9 +198,7 @@ test("an apply without a plan id refuses", () => {
     const kernel = kernelFor(box.dir);
     const outcome = dispatch(kernel, request("generate", { dry_run: false }));
     assert.equal(outcome.response.status, "error");
-    assert.equal(outcome.response.error.code, "outcome-partial-unsupported-constructs"
-      ? outcome.response.error.code
-      : outcome.response.error.code);
+    assert.equal(outcome.response.error.code, "outcome-failed-missing-plan-id");
   } finally {
     box.close();
   }
@@ -277,25 +275,45 @@ test("policy documents outside the read roots resolve to defaults silently", () 
   }
 });
 
-test("a malformed present policy document fails the operation in-envelope", () => {
+test("a malformed readable policy document fails the operation in-envelope", () => {
   const box = sandbox("badpolicy", MATRIX_IR);
   try {
-    // Grant a project-wide tree root so the policy file is readable.
+    // The malformed document sits at the policy path; the read roots
+    // cover it, so the refusal must be in-envelope — never a silent
+    // fallback to defaults.
     const dir = box.dir;
     const lekaloDir = join(dir, "lekalo", "targets");
     mkdirSync(lekaloDir, { recursive: true });
     writeFileSync(join(lekaloDir, "node-typescript.yaml"), "zod:\n  date: weekly\n");
     const profile = profileFor(dir);
-    profile.readRoots = [{ path: ".lekalo/cache/ir", kind: "tree" }];
+    profile.readRoots = [
+      { path: ".lekalo/cache/ir", kind: "tree" },
+      { path: "lekalo/targets", kind: "tree" },
+    ];
     const kernel = createKernel({
       resolvedProjectProfile: profile,
       extensionRegistry: [descriptor],
     });
-    void kernel;
-    // The policy path is not inside the read roots of this profile, so
-    // the malformed file is invisible: the run still succeeds with
-    // defaults. Malformed *readable* policies are covered by the
-    // zod-policy suite's refusal vectors.
+    const { response } = dispatch(kernel, request("generate", { dry_run: true }));
+    assert.equal(response.status, "error");
+    assert.equal(response.error.code, "outcome-failed-policy-date-value");
+    assert.ok(!existsSync(join(dir, ZOD_DIR, "alpha.ts")), "nothing written");
+  } finally {
+    box.close();
+  }
+});
+
+test("a malformed policy document outside the read roots resolves to defaults", () => {
+  // The unreadable-policy fallback: a malformed file the profile cannot
+  // see is invisible, exactly like an absent one. The in-envelope
+  // refusal for a readable malformed policy is the vector above.
+  const box = sandbox("hiddenpolicy", MATRIX_IR);
+  try {
+    const dir = box.dir;
+    const lekaloDir = join(dir, "lekalo", "targets");
+    mkdirSync(lekaloDir, { recursive: true });
+    writeFileSync(join(lekaloDir, "node-typescript.yaml"), "zod:\n  date: weekly\n");
+    const kernel = kernelFor(box.dir);
     const { response } = dispatch(kernel, request("generate", { dry_run: true }));
     assert.equal(response.status, "ok");
   } finally {

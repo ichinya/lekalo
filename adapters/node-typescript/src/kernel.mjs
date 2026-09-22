@@ -2464,7 +2464,7 @@ export function createWriteView(permittedRoot, scopes, { writable = false } = {}
 /** The fixed protected write homes of the protocol (mirrors the core). */
 function protectedHomeViolation(logicalPath) {
   const segments = logicalPath.split("/");
-  if (segments[0] === "lekalo" || segments[0] === "openspec/") {
+  if (segments[0] === "lekalo" || segments[0] === "openspec") {
     return true;
   }
   if (segments[0] === ".lekalo") {

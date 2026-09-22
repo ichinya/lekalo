@@ -339,31 +339,6 @@ function emitModule(module, context) {
 }
 
 /**
- * Cross-group imports of one emission group: references reaching outside
- * the group, one sorted statement per target group, names sorted.
- */
-function collectGroupImports(group) {
-  const groupIds = new Set(group.modules.map((module) => module.id));
-  const localExports = new Set(group.declarations.map((decl) => decl.exportName));
-  const byModule = new Map();
-  for (const entry of group.imports) {
-    if (groupIds.has(entry.module)) continue;
-    const names = entry.names.filter((name) => !localExports.has(name));
-    if (names.length === 0) continue;
-    let bucket = byModule.get(entry.module);
-    if (!bucket) {
-      bucket = new Set();
-      byModule.set(entry.module, bucket);
-    }
-    for (const name of names) bucket.add(name);
-  }
-  return [...byModule.keys()].sort().map((moduleId) => {
-    const names = [...byModule.get(moduleId)].sort();
-    return `import { ${names.join(", ")} } from "./${moduleId}";`;
-  });
-}
-
-/**
  * Cross-group imports of one mapped module (pre-merge), filtered to a
  * target set of group ids; mutual references inside one group contribute
  * no imports because the referenced declarations are emitted locally.
