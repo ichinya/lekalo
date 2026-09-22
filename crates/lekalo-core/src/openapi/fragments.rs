@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value as Json};
 
 use super::diagnostic;
-use super::id::{paths_pointer, schemas_pointer};
+use super::id::{escape_pointer, paths_pointer};
 use super::version::{GENERATOR_ID, GENERATOR_VERSION, OWNERSHIP_CONTRACT};
 use super::OpenApiDocument;
 
@@ -107,6 +107,11 @@ impl OwnershipManifest {
 
     /// Assemble the manifest of one rendered document. `inputs` are
     /// the canonical input digests (`model`, `ir`, `transport`).
+    /// Operations are owned by their endpoint id; schemas by their
+    /// `x-lekalo-symbol`; shared category responses and security
+    /// schemes by the generator itself — every generated fragment
+    /// pointer is claimed, so a merge never classifies our own bytes
+    /// as manual content.
     pub fn of_document(document: &OpenApiDocument, inputs: BTreeMap<String, String>) -> Self {
         let mut pointers = BTreeMap::new();
         // Operations: owned by the endpoint id (the render's pointer
@@ -114,20 +119,31 @@ impl OwnershipManifest {
         for (pointer, endpoint) in document.operation_pointers() {
             pointers.insert(pointer.clone(), endpoint.clone());
         }
-        // Schemas: owned by the carried `x-lekalo-symbol`.
-        if let Some(schemas) = document
-            .root()
-            .get("components")
-            .and_then(|components| components.get("schemas"))
-            .and_then(Json::as_object)
-        {
-            for (name, schema) in schemas {
-                let pointer = schemas_pointer(name);
-                if pointers.contains_key(&pointer) {
+        // Components: schemas carry their symbol; shared responses and
+        // security schemes are generator-owned.
+        if let Some(components) = document.root().get("components").and_then(Json::as_object) {
+            for (section, owner) in [
+                ("schemas", None),
+                ("responses", Some(GENERATOR_ID)),
+                ("securitySchemes", Some(GENERATOR_ID)),
+            ] {
+                let Some(members) = components.get(section).and_then(Json::as_object) else {
                     continue;
-                }
-                if let Some(symbol) = schema.get("x-lekalo-symbol").and_then(Json::as_str) {
-                    pointers.insert(pointer, symbol.to_owned());
+                };
+                for (name, value) in members {
+                    let pointer = format!("/components/{section}/{}", escape_pointer(name));
+                    if pointers.contains_key(&pointer) {
+                        continue;
+                    }
+                    let owner = match owner {
+                        Some(generator) => generator.to_owned(),
+                        None => value
+                            .get("x-lekalo-symbol")
+                            .and_then(Json::as_str)
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| GENERATOR_ID.to_owned()),
+                    };
+                    pointers.insert(pointer, owner);
                 }
             }
         }

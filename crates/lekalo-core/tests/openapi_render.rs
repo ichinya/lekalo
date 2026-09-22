@@ -103,6 +103,9 @@ fn run_suite() {
     operation_pointers_cover_every_endpoint();
     the_declared_30_variant_renders_the_nullable_sibling();
     unbound_registry_renders_open_error_responses();
+    checked_mode_accepts_the_pinned_golden();
+    checked_mode_reports_drift_and_unresolved_anchors();
+    fragments_round_trip_the_golden();
 }
 
 fn golden_render_is_pinned_and_byte_stable() {
@@ -211,6 +214,119 @@ fn unbound_registry_renders_open_error_responses() {
     assert!(
         !text.contains("components/schemas/PlannerStoreUnavailable"),
         "no dangling error variant refs"
+    );
+}
+
+fn checked_mode_accepts_the_pinned_golden() {
+    let suite = session();
+    let context = suite.context();
+    let rendered = render(&suite.attachment, &context, &RenderConfig::new()).expect("renders");
+    let existing =
+        serde_json::from_str::<serde_json::Value>(rendered.canonical_bytes()).expect("re-parses");
+    let report = lekalo_core::openapi::check(
+        &existing,
+        &suite.attachment,
+        &context,
+        &RenderConfig::new(),
+        &lekalo_core::openapi::OwnershipManifest::default(),
+    )
+    .expect("checks");
+    if !report.is_conformant() {
+        panic!(
+            "drifts={:?} conflicts={:?} unresolved={:?} manual={:?}",
+            report.drifts, report.conflicts, report.unresolved, report.manual
+        );
+    }
+    assert!(
+        report.bound_clean + report.manual.len() >= suite.attachment.endpoints().len(),
+        "every endpoint binds cleanly: bound={} manual={}",
+        report.bound_clean,
+        report.manual.len()
+    );
+    assert!(
+        report.diagnostics().as_slice().is_empty(),
+        "a conformant check carries no diagnostics"
+    );
+}
+
+fn checked_mode_reports_drift_and_unresolved_anchors() {
+    let suite = session();
+    let context = suite.context();
+    let rendered = render(&suite.attachment, &context, &RenderConfig::new()).expect("renders");
+    let mut existing =
+        serde_json::from_str::<serde_json::Value>(rendered.canonical_bytes()).expect("re-parses");
+    // Drift: one bound operation carries stale human text.
+    existing["paths"]["/tasks"]["get"]["summary"] = "stale text".into();
+    // Unresolved: an operation anchored to an endpoint the attachment
+    // no longer declares.
+    existing["paths"]["/legacy"] = serde_json::json!({
+        "get": {
+            "operationId": "legacyRoute",
+            "x-lekalo-endpoint": "planner.endpoint_removed"
+        }
+    });
+    let report = lekalo_core::openapi::check(
+        &existing,
+        &suite.attachment,
+        &context,
+        &RenderConfig::new(),
+        &lekalo_core::openapi::OwnershipManifest::default(),
+    )
+    .expect("checks");
+    assert!(!report.is_conformant());
+    assert_eq!(report.drifts.len(), 1, "the stale operation drifts");
+    assert_eq!(report.drifts[0].0, "/paths/~1tasks/get");
+    assert_eq!(report.unresolved.len(), 1, "the legacy anchor refuses");
+    let diagnostics = report.diagnostics();
+    let ids: Vec<&str> = diagnostics
+        .as_slice()
+        .iter()
+        .map(|diagnostic| diagnostic.id())
+        .collect();
+    assert!(ids.contains(&"openapi.drift"));
+    assert!(ids.contains(&"openapi.binding-unresolved"));
+}
+
+fn fragments_round_trip_the_golden() {
+    let suite = session();
+    let context = suite.context();
+    let rendered = render(&suite.attachment, &context, &RenderConfig::new()).expect("renders");
+    let fragments = lekalo_core::openapi::Fragments::new(&rendered);
+    // Every operation and schema pointer is present, byte-sorted.
+    let pointers: Vec<&str> = fragments
+        .pointers()
+        .map(|pointer| pointer.as_str())
+        .collect();
+    assert!(pointers.contains(&"/paths/~1tasks/get"));
+    assert!(pointers.contains(&"/components/schemas/PlannerTask"));
+    let mut sorted = pointers.clone();
+    sorted.sort_unstable();
+    assert_eq!(pointers, sorted, "fragments byte-sorted");
+
+    // The manifest maps each operation to its endpoint id.
+    let manifest =
+        lekalo_core::openapi::OwnershipManifest::of_document(&rendered, Default::default());
+    assert_eq!(
+        manifest.owner("/paths/~1tasks/get"),
+        Some(&"planner.endpoint_list_tasks".to_owned())
+    );
+    assert_eq!(
+        manifest.owner("/components/schemas/PlannerTask"),
+        Some(&"planner.task".to_owned())
+    );
+
+    // Merge the fragments into an empty tree: the golden reconstructs.
+    let outcome = lekalo_core::openapi::merge(
+        &serde_json::json!({"openapi": "3.1.0", "info": {}, "paths": {}}),
+        &fragments,
+        &manifest,
+        &lekalo_core::openapi::OwnershipManifest::default(),
+    )
+    .expect("merges");
+    assert!(outcome.is_clean());
+    assert_eq!(
+        outcome.tree()["paths"]["/tasks"]["get"]["operationId"],
+        "listTasks"
     );
 }
 

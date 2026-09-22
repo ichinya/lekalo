@@ -159,10 +159,28 @@ pub fn merge(
                     outcome.replaced.push(pointer.clone());
                     continue;
                 }
-                // Manual or unclaimed. The bind check applies to
-                // operations: a manual operation bound to this
-                // generated endpoint is clean when identical, drift
-                // when different, a collision otherwise.
+                // Unclaimed (no sidecar entry) or manual. Identical
+                // bytes are generator output whose sidecar entry was
+                // never written — informational, not a collision:
+                // there is nothing to overwrite.
+                if existing_value == fragment {
+                    let bound_anchor = existing_operations
+                        .get(pointer)
+                        .and_then(|(binding, _)| binding.clone())
+                        .and_then(|binding| binding.endpoint)
+                        .is_some();
+                    let kind = if bound_anchor {
+                        "bound-identical"
+                    } else {
+                        "unclaimed-identical"
+                    };
+                    outcome.manual.push((pointer.clone(), kind.to_owned()));
+                    continue;
+                }
+                // Differing bytes under manual ownership. The bind
+                // check applies to operations: a manual operation
+                // bound to this generated endpoint drifts; anything
+                // else collides.
                 let owner = generated.owner(pointer);
                 if let (Some(owner), Some((binding, _))) = (owner, existing_operations.get(pointer))
                 {
@@ -174,13 +192,7 @@ pub fn merge(
                         .as_ref()
                         .is_some_and(|key| key.binds(owner, fragment_operation_id))
                     {
-                        if existing_value == fragment {
-                            outcome
-                                .manual
-                                .push((pointer.clone(), "bound-identical".to_owned()));
-                        } else {
-                            outcome.drifts.push((pointer.clone(), owner.clone()));
-                        }
+                        outcome.drifts.push((pointer.clone(), owner.clone()));
                         continue;
                     }
                 }
