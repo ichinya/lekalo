@@ -59,6 +59,11 @@ impl<'a> SchemaMapper<'a> {
         &self.components
     }
 
+    /// The declared version the mapper renders at.
+    pub const fn version(&self) -> DocumentVersion {
+        self.version
+    }
+
     /// Record one not-expressible member.
     pub(crate) fn partial(&mut self, symbol: &str, detail: &str) {
         self.findings.push(Finding {
@@ -106,7 +111,7 @@ impl<'a> SchemaMapper<'a> {
     }
 
     /// The `$ref` (or open-fallback) schema of one symbol name.
-    fn map_symbol(&mut self, symbol: &str) -> Json {
+    pub fn map_symbol(&mut self, symbol: &str) -> Json {
         let resolved = self.project.definitions.iter().any(|definition| {
             definition.id().as_str() == symbol && component_kind(definition).is_some()
         });

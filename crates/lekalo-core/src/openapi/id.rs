@@ -55,7 +55,7 @@ pub fn paths_pointer(template: &str, method: &str) -> String {
 
 /// The JSON pointer of one reusable schema component.
 pub fn schemas_pointer(name: &str) -> String {
-    format!("/components/schemas/{}", escape_pointer(name))
+    format!("{}/{}", COMPONENTS_SCHEMAS, escape_pointer(name))
 }
 
 #[cfg(test)]
@@ -83,7 +83,7 @@ mod tests {
         );
         assert_eq!(
             schemas_pointer("PlannerTask"),
-            "/components/schemas/PlannerTask"
+            "#/components/schemas/PlannerTask"
         );
     }
 

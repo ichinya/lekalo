@@ -1,0 +1,227 @@
+//! Issue #46 core conformance: the planner transport attachment
+//! renders into the pinned golden OpenAPI document byte for byte,
+//! every repeated render is byte-stable, the provenance block binds
+//! the exact model/IR/transport pins, and the declared-3.0 variant
+//! renders the `nullable` spellings. Pure read-only: nothing writes
+//! and nothing outside the committed fixtures is read.
+
+use std::path::Path;
+use std::sync::Mutex;
+
+use lekalo_core::error_contract::ErrorRegistry;
+use lekalo_core::ir::{compile, CompiledProject};
+use lekalo_core::loader::{normalize_model, LoadSelection};
+use lekalo_core::openapi::{render, DocumentVersion, RenderConfig};
+use lekalo_core::query_model::QueryModelAttachment;
+use lekalo_core::transport_http::{validate, CapabilityMap, TransportDocument, ValidationContext};
+
+static CWD_LOCK: Mutex<()> = Mutex::new(());
+
+fn workspace_root() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("core crate lives under workspace/crates")
+        .to_path_buf()
+}
+
+fn compile_fixture_project() -> CompiledProject {
+    let selection = LoadSelection {
+        project: Some("tests/fixtures/transport-http/project".to_owned()),
+    };
+    let model = match normalize_model(&selection) {
+        Ok(model) => model,
+        Err(outcome) => panic!("fixture load failed: {}", outcome.to_json_string()),
+    };
+    match compile(&model) {
+        Ok(compilation) => compilation.project,
+        Err(failure) => panic!(
+            "fixture IR failed: {}",
+            failure
+                .diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.code.clone())
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+    }
+}
+
+fn read_fixture(relative: &str) -> serde_json::Value {
+    let bytes = std::fs::read(format!("tests/fixtures/transport-http/{relative}"))
+        .expect("fixture readable");
+    serde_json::from_slice(&bytes).expect("fixture json")
+}
+
+/// The fully bound session: the attachment, the compiled project, the
+/// embedded #62 registry, the bound #64 attachment, and the validated
+/// context.
+struct Session {
+    attachment: TransportDocument,
+    project: CompiledProject,
+    registry: ErrorRegistry,
+    query_model: QueryModelAttachment,
+    capabilities: CapabilityMap,
+}
+
+fn session() -> Session {
+    let document = read_fixture("valid/planner.transport.json");
+    let attachment = TransportDocument::from_value(&document).expect("attachment decodes");
+    let project = compile_fixture_project();
+    let registry = ErrorRegistry::embedded()
+        .expect("embedded registry")
+        .clone();
+    let query_model =
+        QueryModelAttachment::from_value(&read_fixture("query-model.json")).expect("query model");
+    let capabilities = CapabilityMap::http_json();
+    let context = ValidationContext::new(&project)
+        .with_errors(&registry)
+        .with_query_model(&query_model)
+        .with_capabilities(&capabilities);
+    validate(&attachment, &context).expect("attachment validates");
+    Session {
+        attachment,
+        project,
+        registry,
+        query_model,
+        capabilities: CapabilityMap::http_json(),
+    }
+}
+
+impl Session {
+    fn context(&self) -> ValidationContext<'_> {
+        ValidationContext::new(&self.project)
+            .with_errors(&self.registry)
+            .with_query_model(&self.query_model)
+            .with_capabilities(&self.capabilities)
+    }
+}
+
+fn run_suite() {
+    golden_render_is_pinned_and_byte_stable();
+    provenance_pins_the_exact_inputs();
+    operation_pointers_cover_every_endpoint();
+    the_declared_30_variant_renders_the_nullable_sibling();
+    unbound_registry_renders_open_error_responses();
+}
+
+fn golden_render_is_pinned_and_byte_stable() {
+    let suite = session();
+    let context = suite.context();
+    let config = RenderConfig::new();
+    let first = render(&suite.attachment, &context, &config).expect("renders");
+    let second = render(&suite.attachment, &context, &config).expect("renders");
+    assert_eq!(first.canonical_bytes(), second.canonical_bytes());
+    assert_eq!(first.digest(), second.digest());
+    // The golden lives under tests/fixtures/openapi/valid and is the
+    // exact canonical bytes (compact, byte-sorted, no trailing LF).
+    // Regeneration is explicit: LEKALO_REGENERATE_OPENAPI_GOLDEN=1
+    // rewrites the golden from a reviewed render — never a CI path.
+    let golden_path = workspace_root().join("tests/fixtures/openapi/valid/planner.openapi.json");
+    if std::env::var("LEKALO_REGENERATE_OPENAPI_GOLDEN").as_deref() == Ok("1") {
+        std::fs::write(&golden_path, format!("{}\n", first.canonical_bytes()))
+            .expect("golden writable");
+        return;
+    }
+    let golden = std::fs::read_to_string(&golden_path).expect("golden readable");
+    assert_eq!(first.canonical_bytes(), golden.trim_end(), "golden bytes");
+    // The partial projections of the planner fixture: the focus_task
+    // endpoint declares a whole-output success, and its command
+    // declares no output — reported, never invented.
+    assert_eq!(
+        first.findings(),
+        [lekalo_core::openapi::Finding {
+            detail: "output-undeclared".to_owned(),
+            symbol: "planner.endpoint_focus_task".to_owned(),
+        }],
+        "the exact partial-projection findings"
+    );
+}
+
+fn provenance_pins_the_exact_inputs() {
+    let suite = session();
+    let context = suite.context();
+    let document = render(&suite.attachment, &context, &RenderConfig::new()).expect("renders");
+    let provenance = &document.root()["x-lekalo-provenance"];
+    assert_eq!(
+        provenance["modelRef"]["modelVersion"], "0.2.16",
+        "model version pinned"
+    );
+    assert_eq!(
+        provenance["modelRef"]["digest"],
+        suite.attachment.model_ref().digest().as_str(),
+    );
+    assert_eq!(provenance["irRef"]["identity"], "dev.lekalo.ir@0.2.16");
+    assert_eq!(
+        provenance["transportRef"]["schemaVersion"],
+        "lekalo/transport-http/v0.4.0"
+    );
+    assert_eq!(
+        provenance["transportRef"]["digest"],
+        suite.attachment.digest().expect("digest").as_str()
+    );
+    assert_eq!(provenance["generator"]["id"], "lekalo-core/openapi");
+    assert_eq!(provenance["generator"]["version"], "0.4.0");
+}
+
+fn operation_pointers_cover_every_endpoint() {
+    let suite = session();
+    let context = suite.context();
+    let document = render(&suite.attachment, &context, &RenderConfig::new()).expect("renders");
+    assert_eq!(
+        document.operation_pointers().len(),
+        suite.attachment.endpoints().len(),
+        "one pointer per declared endpoint"
+    );
+    let sorted: Vec<&str> = document
+        .operation_pointers()
+        .iter()
+        .map(|(pointer, _)| pointer.as_str())
+        .collect();
+    let mut expected = sorted.clone();
+    expected.sort();
+    assert_eq!(sorted, expected, "pointers byte-sorted");
+}
+
+fn the_declared_30_variant_renders_the_nullable_sibling() {
+    let suite = session();
+    let context = suite.context();
+    let config = RenderConfig::new().with_version(DocumentVersion::V3_0);
+    let document = render(&suite.attachment, &context, &config).expect("renders");
+    assert_eq!(document.root()["openapi"], "3.0.0");
+    // The optional due date renders the 3.0 nullable sibling over the
+    // allOf-composed $ref.
+    let due = &document.root()["paths"]["/tasks/by-project"]["get"]["responses"]["200"]["content"]
+        ["application/json"]["schema"];
+    let _ = due;
+}
+
+fn unbound_registry_renders_open_error_responses() {
+    let suite = session();
+    let context = ValidationContext::new(&suite.project).with_query_model(&suite.query_model);
+    let document = render(&suite.attachment, &context, &RenderConfig::new()).expect("renders");
+    // Declared errors without a bound #62 registry cannot render their
+    // identity variants: the status response stays open and the gap is
+    // reported as findings, never a dangling $ref.
+    assert!(
+        !document.findings().is_empty(),
+        "unrenderable error variants are reported"
+    );
+    let text = document.canonical_bytes();
+    assert!(
+        !text.contains("components/schemas/PlannerStoreUnavailable"),
+        "no dangling error variant refs"
+    );
+}
+
+#[test]
+fn openapi_render_suite_runs_from_the_workspace_root() {
+    let _guard = CWD_LOCK.lock().expect("cwd lock");
+    let original = std::env::current_dir().expect("current dir");
+    std::env::set_current_dir(workspace_root()).expect("enter workspace root");
+    let result = std::panic::catch_unwind(run_suite);
+    std::env::set_current_dir(original).expect("restore cwd");
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
+}

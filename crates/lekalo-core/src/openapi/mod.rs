@@ -22,12 +22,14 @@
 
 mod diagnostic;
 mod id;
+mod render;
 mod schema;
 mod types;
 mod version;
 
 pub use diagnostic::{io_failure, rule_set};
 pub use id::{component_name, escape_pointer, paths_pointer, schemas_pointer, COMPONENTS_SCHEMAS};
+pub use render::{render, OpenApiDocument};
 pub use schema::{component_body, SchemaMapper};
 pub use types::{DocumentMode, DocumentVersion, Finding, RenderConfig};
 pub use version::{
