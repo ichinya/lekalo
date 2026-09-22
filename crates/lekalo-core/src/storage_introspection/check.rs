@@ -136,11 +136,6 @@ pub fn introspect_check(
     Ok(check_derived_with(&derived, evidence, &table_collation))
 }
 
-/// Compare one already-derived projection against the evidence.
-pub fn check_derived(derived: &DerivedProjection, evidence: &StorageIntrospection) -> DriftReport {
-    check_derived_with(derived, evidence, &|_| None)
-}
-
 /// The full comparison with the declared table-collation resolver.
 fn check_derived_with<'a>(
     derived: &DerivedProjection,
