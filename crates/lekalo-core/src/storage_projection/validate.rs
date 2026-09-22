@@ -652,13 +652,22 @@ fn index_column_type(
         let referenced_table = projection
             .tables()
             .iter()
-            .find(|table| table.entity().as_str() == referenced.as_str())
-            .ok_or(())?;
+            .find(|table| table.entity().as_str() == referenced.as_str());
+        let Some(referenced_table) = referenced_table else {
+            // The referenced side has no table (e.g. an external
+            // entity): non-cyclic and unresolvable — the honest
+            // `Ok(None)` arm, not the cyclic refusal (round-4 F-2).
+            return Ok(None);
+        };
         if referenced_table.primary_key().len() != 1 {
             return Ok(None);
         }
         let primary = &referenced_table.primary_key()[0];
-        let referenced_entity = attachment.entity(referenced).ok_or(())?;
+        let Some(referenced_entity) = attachment.entity(referenced) else {
+            // Unreachable (check_relations resolves both endpoints
+            // first), but unresolvable, not cyclic — same honest arm.
+            return Ok(None);
+        };
         return index_column_type(
             attachment,
             projection,

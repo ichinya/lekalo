@@ -1060,6 +1060,60 @@ fn cyclic_key_resolution_refuses_instead_of_crashing() {
     );
 }
 
+/// A foreign key whose referenced side is an external (unmapped)
+/// entity is non-cyclic and unresolvable: the index rules skip the
+/// column honestly instead of firing the lying cyclic refusal
+/// (round-4 review F-2).
+#[test]
+fn external_entity_foreign_key_index_skips_prefix_rules_honestly() {
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("json");
+    // Flip the external_reference relation into an FK-bearing relation
+    // owned by the external jira_issue entity, and add a matching field
+    // plus an index on the FK column in the mysql projection.
+    let relation = value["relations"]
+        .as_array_mut()
+        .expect("relations")
+        .iter_mut()
+        .find(|relation| relation["relationId"] == "planner.relation.link_provider")
+        .expect("link_provider");
+    relation["kind"] = serde_json::json!("one_to_many");
+    relation["deleteBehavior"] = serde_json::json!("restrict");
+    relation["owner"] = serde_json::json!("jira_issue");
+    relation["target"] = serde_json::json!("task_external_link");
+    relation["foreignKey"] = serde_json::json!("jira_id");
+    let external = value["entities"]
+        .as_array_mut()
+        .expect("entities")
+        .iter_mut()
+        .find(|entity| entity["entityKey"] == "jira_issue")
+        .expect("jira_issue");
+    external["fields"]
+        .as_array_mut()
+        .expect("fields")
+        .push(serde_json::json!({
+            "field": "jira_id",
+            "required": true,
+            "type": {"name": "uuid"},
+            "visibility": "internal"
+        }));
+    for projection in value["projections"].as_array_mut().expect("projections") {
+        if projection["namespace"] == "mysql" {
+            for table in projection["tables"].as_array_mut().expect("tables") {
+                if table["entity"] == "task_external_link" {
+                    table["indexes"]
+                        .as_array_mut()
+                        .expect("indexes")
+                        .push(serde_json::json!({"columns": ["jira_id"], "unique": false}));
+                }
+            }
+        }
+    }
+    let attachment = StorageProjectionAttachment::from_value(&value).expect("parses");
+    attachment
+        .validate_attachment()
+        .expect("a non-cyclic unresolvable reference validates");
+}
+
 /// Collation-sensitive uniqueness is visible in the derived surface:
 /// the declared tag table carries its collation evidence, and the
 /// derived unique index over the textual column stays visible with it.
