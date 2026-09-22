@@ -2,8 +2,12 @@
 //! compilation (issue #87).
 //!
 //! Custody checks bind the attachment and policy to the exact project,
-//! Model pin, and IR pin; subject resolution rejects unknown symbols
-//! and unaddressable members; the policy/grant coherence checks encode
+//! Model pin, and IR pin — the declared `modelRef`/`irRef` digests are
+//! compared against the exact digests of the loaded compilation (the
+//! canonical Model bytes and the canonical IR bytes, the same spelling
+//! the effect-graph builder records), and any mismatch refuses before
+//! any work; subject resolution rejects unknown symbols and
+//! unaddressable members; the policy/grant coherence checks encode
 //! the hard rules — every resolved kind has a policy row, grants are
 //! strict lowerings through declared roles, `credential` never
 //! declassifies, and approvals are never self-referential.
@@ -77,25 +81,47 @@ impl ValidationOutcome {
 
 /// Bind the attachment and policy to the exact project custody: same
 /// project id, same Model pin, same IR pin across the two documents
-/// and the bound compilation.
+/// and the bound compilation. The Model pin binds the exact canonical
+/// Model bytes the compilation came from; the IR pin binds the exact
+/// canonical IR bytes (the same digest the effect-graph builder
+/// records). A stale or foreign attachment is a refusal, never a pass.
 pub fn validate_custody(
     attachment: &Attachment,
     policy: &PolicyAttachment,
     project: &CompiledProject,
+    model_json: &str,
 ) -> Result<(), DiagnosticSet> {
-    let declared_project = project
-        .project
-        .as_ref()
-        .map(|project| project.id.as_str().to_owned());
-    if let Some(project_id) = &declared_project {
-        if attachment.project_id().as_str() != project_id {
-            return Err(diagnostic::document_invalid("custody-project", None));
-        }
-        if policy.project_id().as_str() != project_id {
-            return Err(diagnostic::document_invalid("custody-project", None));
+    let Some(declared_project) = project.project.as_ref() else {
+        return Err(diagnostic::document_invalid("custody-project", None));
+    };
+    let project_id = declared_project.id.as_str();
+    if attachment.project_id().as_str() != project_id {
+        return Err(diagnostic::document_invalid("custody-project", None));
+    }
+    if policy.project_id().as_str() != project_id {
+        return Err(diagnostic::document_invalid("custody-project", None));
+    }
+    // The Model pin: the exact canonical Model bytes of the loaded
+    // project (the same digest the #85 NFR custody check records).
+    let model_digest = format!(
+        "sha256:{}",
+        crate::digest::sha256_hex(model_json.as_bytes())
+    );
+    for pin in [attachment.model_ref(), policy.model_ref()] {
+        if pin.0 != project.model_version.as_str() || pin.1.as_str() != model_digest {
+            return Err(diagnostic::document_invalid("custody-model", None));
         }
     }
-    let _ = (attachment.model_ref(), policy.model_ref());
+    // The IR pin: the exact canonical IR bytes of the compilation.
+    let ir_digest = format!(
+        "sha256:{}",
+        crate::digest::sha256_hex(project.to_canonical_json().as_bytes())
+    );
+    for pin in [attachment.ir_ref(), policy.ir_ref()] {
+        if pin.1.as_str() != ir_digest {
+            return Err(diagnostic::document_invalid("custody-ir", None));
+        }
+    }
     Ok(())
 }
 

@@ -5679,18 +5679,19 @@ fn read_document(path: &str) -> Result<Vec<u8>, DomainResult> {
 /// the shared loader seam with the same cache semantics as validate.
 fn load_compiled_for(
     project: &Option<String>,
-) -> Result<lekalo_core::ir::Compilation, DomainResult> {
+) -> Result<(String, lekalo_core::ir::Compilation), DomainResult> {
     let selection = LoadSelection {
         project: project
             .clone()
             .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
     };
     #[allow(clippy::question_mark)] // DomainResult is not an error type
-    let (_model, compilation) = match lekalo_core::cache::load_compiled(&selection, false) {
+    let (model, compilation) = match lekalo_core::cache::load_compiled(&selection, false) {
         Err(result) => return Err(result),
         Ok(pair) => pair,
     };
-    Ok(compilation)
+    let model_json = lekalo_core::loader::canonical_model_bytes(&model);
+    Ok((model_json, compilation))
 }
 
 /// Parse the classification attachment and its governing policy, and
@@ -5700,6 +5701,7 @@ fn parse_classification_pair(
     attachment_path: &str,
     policy_path: &str,
     compilation: &lekalo_core::ir::Compilation,
+    model_json: &str,
 ) -> Result<
     (
         lekalo_core::classification::Attachment,
@@ -5714,9 +5716,12 @@ fn parse_classification_pair(
         .map_err(DomainResult::invalid)?;
     let policy = lekalo_core::classification::PolicyAttachment::parse(&policy_bytes)
         .map_err(DomainResult::invalid)?;
-    if let Err(set) =
-        lekalo_core::classification::validate_custody(&attachment, &policy, &compilation.project)
-    {
+    if let Err(set) = lekalo_core::classification::validate_custody(
+        &attachment,
+        &policy,
+        &compilation.project,
+        &model_json,
+    ) {
         return Err(DomainResult::invalid(set));
     }
     let resolution = lekalo_core::classification::validate_subjects(&attachment, compilation)
@@ -5734,12 +5739,12 @@ fn run_classification(command: ClassificationCommands) -> DomainResult {
             policy,
             project,
         } => {
-            let compilation = match load_compiled_for(&project) {
+            let (model_json, compilation) = match load_compiled_for(&project) {
                 Err(result) => return result,
-                Ok(compilation) => compilation,
+                Ok(pair) => pair,
             };
             let (attachment, policy, resolution) =
-                match parse_classification_pair(&attachment, &policy, &compilation) {
+                match parse_classification_pair(&attachment, &policy, &compilation, &model_json) {
                     Err(result) => return result,
                     Ok(parts) => parts,
                 };
@@ -5764,12 +5769,12 @@ fn run_classification(command: ClassificationCommands) -> DomainResult {
             policy,
             project,
         } => {
-            let compilation = match load_compiled_for(&project) {
+            let (model_json, compilation) = match load_compiled_for(&project) {
                 Err(result) => return result,
-                Ok(compilation) => compilation,
+                Ok(pair) => pair,
             };
             let (attachment, _policy, resolution) =
-                match parse_classification_pair(&attachment, &policy, &compilation) {
+                match parse_classification_pair(&attachment, &policy, &compilation, &model_json) {
                     Err(result) => return result,
                     Ok(parts) => parts,
                 };
@@ -5856,17 +5861,22 @@ fn run_dataflow(command: DataflowCommands) -> DomainResult {
             policy,
             project,
         } => {
-            let compilation = match load_compiled_for(&project) {
+            let (model_json, compilation) = match load_compiled_for(&project) {
                 Err(result) => return result,
-                Ok(compilation) => compilation,
+                Ok(pair) => pair,
             };
             let (attachment, policy, resolution) =
-                match parse_classification_pair(&attachment, &policy, &compilation) {
+                match parse_classification_pair(&attachment, &policy, &compilation, &model_json) {
                     Err(result) => return result,
                     Ok(parts) => parts,
                 };
-            match lekalo_core::dataflow::run_report(&compilation, &attachment, &policy, &resolution)
-            {
+            match lekalo_core::dataflow::run_report(
+                &compilation,
+                &model_json,
+                &attachment,
+                &policy,
+                &resolution,
+            ) {
                 Err(set) => DomainResult::invalid(set),
                 Ok((report, diagnostics)) => {
                     let bytes = match lekalo_core::dataflow::report_canonical_bytes(&report) {

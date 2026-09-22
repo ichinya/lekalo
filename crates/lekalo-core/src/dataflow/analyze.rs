@@ -564,12 +564,19 @@ mod tests {
 /// mirrored findings for exit mapping.
 pub fn run_report(
     compilation: &crate::ir::Compilation,
+    model_json: &str,
     attachment: &crate::classification::Attachment,
     policy: &crate::classification::PolicyAttachment,
     resolution: &crate::classification::Resolution,
 ) -> Result<(crate::dataflow::Report, crate::diagnostics::DiagnosticSet), DiagnosticSet> {
-    // Custody: the attachment binds the exact compilation.
-    crate::classification::validate::validate_custody(attachment, policy, &compilation.project)?;
+    // Custody: the attachment binds the exact compilation (project,
+    // Model bytes, and IR bytes).
+    crate::classification::validate::validate_custody(
+        attachment,
+        policy,
+        &compilation.project,
+        model_json,
+    )?;
     crate::classification::validate::validate_subjects(attachment, compilation)?;
     let graph = crate::effects::build_with_classification(&compilation.project, Some(resolution))?;
     let (model_digest, ir_digest) = compile_digests(compilation);

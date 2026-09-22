@@ -785,9 +785,9 @@ pub(crate) fn render_model_envelope(
     render_load_output(model, spans_requested)
 }
 
-/// Render the terminal CLI envelope from one normalized aggregate (phase 9):
-/// canonical model bytes, the optional sorted source map, and the success
-/// line. Byte-identical to the pre-#8 rendering.
+/// Render the terminal CLI envelope from one normalized aggregate (phase
+/// 9): canonical model bytes, the optional sorted source map, and the
+/// success line. Byte-identical to the pre-#8 rendering.
 fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> DomainResult {
     let model_version = model.model_version;
     let mut source_map: Vec<SourceMapEntry> = Vec::new();
@@ -830,31 +830,7 @@ fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> DomainR
         }
     }
 
-    let project_canonical = model
-        .project
-        .as_ref()
-        .map(|project| Canonical::from_node(&project.node));
-    let modules_canonical: Vec<Canonical> = model
-        .modules
-        .iter()
-        .map(|module| Canonical::from_node(&module.node))
-        .collect();
-    let definitions_canonical: Vec<Canonical> = model
-        .definitions
-        .iter()
-        .map(|definition| Canonical::from_node(&definition.node))
-        .collect();
-
-    let mut canonical = String::new();
-    canonical.push_str("{\"definitions\":");
-    Canonical::Seq(definitions_canonical).write_json(&mut canonical);
-    canonical.push_str(",\"modules\":");
-    Canonical::Seq(modules_canonical).write_json(&mut canonical);
-    if let Some(project) = &project_canonical {
-        canonical.push_str(",\"project\":");
-        project.write_json(&mut canonical);
-    }
-    canonical.push('}');
+    let canonical = canonical_model_bytes(model);
 
     let mut json = String::from("{\"status\":\"valid\",\"modelVersion\":");
     json.push_str(&Canonical::Str(model_version.as_str().to_owned()).to_json());
@@ -881,6 +857,38 @@ fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> DomainR
     );
 
     DomainResult::model(json, human)
+}
+
+/// The exact canonical Model bytes of one normalized aggregate: compact
+/// JSON with byte-sorted keys and semantic-ID-ordered collections — the
+/// same bytes the load envelope renders (phase 9) and the same digest
+/// input the Model-custody pins bind to.
+pub fn canonical_model_bytes(model: &NormalizedModel) -> String {
+    let project_canonical = model
+        .project
+        .as_ref()
+        .map(|project| Canonical::from_node(&project.node));
+    let modules_canonical: Vec<Canonical> = model
+        .modules
+        .iter()
+        .map(|module| Canonical::from_node(&module.node))
+        .collect();
+    let definitions_canonical: Vec<Canonical> = model
+        .definitions
+        .iter()
+        .map(|definition| Canonical::from_node(&definition.node))
+        .collect();
+    let mut canonical = String::new();
+    canonical.push_str("{\"definitions\":");
+    Canonical::Seq(definitions_canonical).write_json(&mut canonical);
+    canonical.push_str(",\"modules\":");
+    Canonical::Seq(modules_canonical).write_json(&mut canonical);
+    if let Some(project) = &project_canonical {
+        canonical.push_str(",\"project\":");
+        project.write_json(&mut canonical);
+    }
+    canonical.push('}');
+    canonical
 }
 
 fn structure_failure(outcome: crate::project_fs::StructureOutcome) -> DomainResult {
