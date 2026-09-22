@@ -133,6 +133,7 @@ test("the idempotency replay scenario preserves the replay metadata", () => {
   assert.deepEqual(idempotency.payload, {
     replay: "focus",
     equivalence: "identical",
+    duplicates: "none",
   });
   assert.equal(idempotency.unsupported, null);
 });

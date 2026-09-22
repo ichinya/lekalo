@@ -82,6 +82,10 @@ function focusTask(input, ctx) {
     };
   }
   const focusedAt = ctx?.clock ?? frozenClock ?? "2026-01-01T00:00:00Z";
+  // The command persists its effect on the row: state assertions observe
+  // the focused flip and the deterministic timestamp.
+  task.focused = true;
+  task.focused_at = focusedAt;
   const value = { task_id: taskId, user_id: input?.user_id ?? null, focused: true, focused_at: focusedAt };
   return { ok: true, value, event: { kind: "event", id: "planner.task_focused" }, effects: [{ effect: "planner.create_task", entity: "planner.task" }] };
 }

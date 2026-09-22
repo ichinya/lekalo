@@ -632,7 +632,7 @@ function renderChecks(step, model, stepVars, clockIsos, observed) {
               + ` ${emitValue(literalOf(entry.leaf, stepVars))} }), "error-fields");`),
       ];
     case "entity_state": {
-      const selector = selectorObject(payload.selector, stepVars);
+      const selector = selectorObject(payload.where, stepVars);
       const exactFields = {};
       const matchFields = [];
       for (const [field, expectation] of Object.entries(payload.fields ?? {})) {
@@ -640,7 +640,7 @@ function renderChecks(step, model, stepVars, clockIsos, observed) {
           matchFields.push(field);
           continue;
         }
-        exactFields[field] = literalOf(expectation, stepVars);
+        exactFields[field] = literalOf(expectation?.value ?? expectation, stepVars);
       }
       const selectorText = emitValue(selector);
       const fieldsText = emitValue(exactFields);
@@ -686,7 +686,7 @@ function renderChecks(step, model, stepVars, clockIsos, observed) {
       const checks = [
         `assert.ok(typedEqual(${observed}, ${original}), "replay-equivalence");`,
       ];
-      if (originalStep?.operation) {
+      if (payload.duplicates === "none" && originalStep?.operation) {
         checks.push(
           `assert.ok(port.emissions().filter((entry) => entry.operation === ${JSON.stringify(originalStep.operation.id)}).length <= 1,`,
           `  "duplicates-none");`,
@@ -721,13 +721,13 @@ function observesOperation(model, step) {
 }
 
 function expectCount(expect) {
-  if (expect !== null && typeof expect === "object" && "count" in expect) return expect.count;
-  if (typeof expect === "number") return expect;
-  switch (expect) {
-    case "exists": return 1;
-    case "missing": return 0;
-    default: return expect;
+  if (expect !== null && typeof expect === "object") {
+    if ("count" in expect) return expect.count;
+    if (expect.presence === "missing") return 0;
+    if (expect.presence === "exists") return 1;
   }
+  if (typeof expect === "number") return expect;
+  return expect;
 }
 
 function emitCount(count) {

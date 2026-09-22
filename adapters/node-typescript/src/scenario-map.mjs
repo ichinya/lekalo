@@ -673,6 +673,7 @@ function mapThen(then, context, portSurface) {
     if (kind === "idempotency") {
       mapped.payload.replay = assertion.replay;
       mapped.payload.equivalence = assertion.equivalence;
+      mapped.payload.duplicates = assertion.duplicates ?? null;
       return mapped;
     }
     const surface = surfaceOf[kind];
