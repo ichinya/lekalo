@@ -414,7 +414,7 @@ pub struct Index {
     pub(crate) columns: Vec<StorageName>,
     pub(crate) unique: bool,
     pub(crate) kind: IndexKind,
-    pub(crate) prefix_lengths: Option<Vec<u16>>,
+    pub(crate) prefix_lengths: Option<Vec<Option<u16>>>,
     pub(crate) descending: Option<Vec<bool>>,
 }
 
@@ -440,8 +440,11 @@ impl Index {
     }
 
     /// The per-column prefix lengths parallel to `columns`, when
-    /// declared.
-    pub fn prefix_lengths(&self) -> Option<&[u16]> {
+    /// declared. Sparse per position: `Some(n)` prefixes that key part
+    /// to `n` characters, `None` (wire `null`) declares no prefix for
+    /// that position — a mixed textual+non-textual composite index
+    /// prefixes only the textual members (round-4 review F-1).
+    pub fn prefix_lengths(&self) -> Option<&[Option<u16>]> {
         self.prefix_lengths.as_deref()
     }
 

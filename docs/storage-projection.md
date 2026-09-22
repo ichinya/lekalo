@@ -132,9 +132,17 @@ optimistic type table.
 
 MySQL-family indexes carry the closed `kind` (`btree` default,
 `fulltext` never unique and textual-columns only, `spatial`),
-per-column `prefixLengths` (mandatory for textual/blob key parts,
-bounds-checked 1..=3072 against the InnoDB key cap), and per-column
-`descending` flags. Tables and projections declare their `charset`,
+per-column sparse `prefixLengths` (each position is a length bounded
+1..=3072 against the InnoDB key cap or `null` for no prefix, so a
+mixed textual+non-textual composite prefixes only the textual
+members), and per-column `descending` flags. A prefix length is
+mandatory exactly where the engine needs one: unbounded textual and
+blob families (`text`/`tinytext`/`mediumtext`/`longtext`,
+`blob`/`tinyblob`/`mediumblob`/`longblob`), a `varchar(n)`/`char(n)`
+whose utf8mb4 width can exceed the key cap, and unsized
+`binary`/`varbinary`; fixed-width `binary(n)`/`varbinary(n)` within
+the cap (e.g. the `binary(16)` uuid render) indexes without one.
+Tables and projections declare their `charset`,
 `collation`, and `textDefaults` explicitly: the engine implicit
 default is never accepted silently, and the collation/charset
 coherence is checked over the closed prefix convention (including the

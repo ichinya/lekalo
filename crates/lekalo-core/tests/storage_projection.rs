@@ -967,6 +967,42 @@ fn mysql_namespace_stays_separate_from_mariadb() {
     assert_eq!(session_no.storage_type(), "bigint");
 }
 
+/// The valid coverage vector for the round-4 F-1 fix: a mixed
+/// textual+non-textual composite index with sparse prefixLengths
+/// `[16, null]` validates, and the sparse positions survive
+/// normalization (null = no prefix) and canonical re-rendering.
+#[test]
+fn mixed_textual_and_non_textual_composite_index_is_expressible() {
+    const MIXED: &[u8] = include_bytes!(
+        "../../../tests/fixtures/storage-projection/valid/mixed-composite-prefix.json"
+    );
+    let attachment = parse(MIXED);
+    attachment
+        .validate_attachment()
+        .expect("the mixed composite validates");
+    let projection = attachment
+        .projection(Namespace::Mysql)
+        .expect("mysql projection");
+    let task = projection
+        .tables()
+        .iter()
+        .find(|table| table.entity().as_str() == "task")
+        .expect("task table");
+    let mixed = task
+        .indexes()
+        .iter()
+        .find(|index| index.columns().len() == 2)
+        .expect("the mixed composite index");
+    let lengths = mixed.prefix_lengths().expect("sparse lengths");
+    assert_eq!(lengths[0], Some(16), "the textual member keeps its prefix");
+    assert_eq!(lengths[1], None, "the non-textual member declares none");
+    // Canonical bytes re-render the sparse position as null.
+    let bytes = canonical::attachment_bytes(&attachment).expect("canonical");
+    assert!(bytes.contains("prefixLengths\":[16,null]"));
+    // Deriving the namespace still works over the mixed index.
+    project(&attachment, Namespace::Mysql).expect("derives");
+}
+
 /// A grammar-legal pk→fk cycle (a primary key naming a foreign-key
 /// column, resolution crossing the self-referencing FK) must refuse
 /// with the typed `cyclic-key-resolution` rule — never overflow the

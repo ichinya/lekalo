@@ -500,15 +500,17 @@ fn check_index(
             let family = render_family(&declared);
             let textual = super::projection::StorageType::is_textual(family);
             let blob = super::projection::StorageType::is_blob_family(family);
+            let declared_prefix = index
+                .prefix_lengths()
+                .and_then(|lengths| lengths.get(position))
+                .copied()
+                .flatten();
             if !(textual || blob) {
                 // A prefix length on a non-textual, non-blob key part
                 // is inexpressible engine semantics: refused, never
-                // silently ignored.
-                if index
-                    .prefix_lengths()
-                    .and_then(|lengths| lengths.get(position))
-                    .is_some()
-                {
+                // silently ignored (a sparse `None` position declares
+                // no prefix and is fine — round-4 review F-1).
+                if declared_prefix.is_some() {
                     return Err(projection_invalid_subject(
                         "prefix-on-non-textual",
                         table.entity().as_str(),
@@ -516,11 +518,14 @@ fn check_index(
                 }
                 continue;
             }
-            let prefixed = index
-                .prefix_lengths()
-                .and_then(|lengths| lengths.get(position))
-                .is_some();
-            if !prefixed {
+            // Fixed-width binary family within the InnoDB key cap
+            // needs no prefix: `binary(16)` is 16 bytes against 3072.
+            // Only unbounded textual/blob families (or a declared
+            // width beyond the cap) mandate one (round-4 review F-3).
+            if !prefix_required_family(&declared) {
+                continue;
+            }
+            if declared_prefix.is_none() {
                 return Err(projection_invalid_subject(
                     "prefix-required",
                     table.entity().as_str(),
@@ -529,6 +534,40 @@ fn check_index(
         }
     }
     Ok(())
+}
+
+/// Whether one resolved render's family mandates a prefix length on a
+/// MySQL-family key part: the unbounded textual and blob families do;
+/// sized `binary(n)`/`varbinary(n)` with `n ≤ 3072` bytes fit the
+/// InnoDB key cap and index without one. A declared width beyond the
+/// cap (or an unsized binary spelling, whose width is unbounded)
+/// requires the prefix. Byte width is the character bound times 4
+/// (utf8mb4 worst case) for textual families; binary families count
+/// bytes directly (round-4 review F-3).
+fn prefix_required_family(render: &str) -> bool {
+    const INNODB_KEY_CAP_BYTES: u64 = 3072;
+    let family = render_family(render);
+    let width = render.find('(').and_then(|open| {
+        let close = render.rfind(')')?;
+        render[open + 1..close].trim().parse::<u64>().ok()
+    });
+    match family {
+        // Unbounded textual families: always require a prefix.
+        "text" | "tinytext" | "mediumtext" | "longtext" => true,
+        // `varchar(n)`/`char(n)`: prefix required when the utf8mb4
+        // byte width can exceed the key cap.
+        "varchar" | "char" | "string" => width
+            .map(|length| length * 4 > INNODB_KEY_CAP_BYTES)
+            .unwrap_or(true),
+        // Sized binary fits when the byte width fits the cap; bare
+        // `binary`/`varbinary` (no width) is unbounded → prefix.
+        "binary" | "varbinary" => width
+            .map(|length| length > INNODB_KEY_CAP_BYTES)
+            .unwrap_or(true),
+        // Unbounded blob families: always require a prefix.
+        "blob" | "tinyblob" | "mediumblob" | "longblob" => true,
+        _ => false,
+    }
 }
 
 /// The declared or derived storage type of one locally owned column,

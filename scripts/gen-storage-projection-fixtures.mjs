@@ -1176,6 +1176,23 @@ addInvalid(
   "prefix-shape",
 );
 
+// A valid mixed textual+non-textual composite index (round-4 F-1):
+// the sparse prefixLengths `[16, null]` prefixes the textual member
+// and declares no prefix for the non-textual member — the composite
+// shape is expressible without splitting the index.
+write(
+  "valid/mixed-composite-prefix.json",
+  mutate({}, (clone) => {
+    findProjection(clone, "mysql").tables
+      .find((entry) => entry.entity === "task")
+      .indexes.push({
+        columns: ["title", "due_date"],
+        prefixLengths: [16, null],
+        unique: false,
+      });
+  }),
+);
+
 
 
 // --- summary ---------------------------------------------------------------
@@ -1185,6 +1202,6 @@ process.stdout.write(
     diffVectors: 4,
     invalidVectors: invalid.length + 1,
     ok: true,
-    validGoldens: 1,
+    validGoldens: 2,
   })}\n`,
 );

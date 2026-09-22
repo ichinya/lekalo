@@ -1002,13 +1002,24 @@ fn indexes(array: &[Json]) -> Result<Vec<Index>, DiagnosticSet> {
                 }
                 let mut parsed = Vec::with_capacity(array.len());
                 for entry in array {
-                    let length = entry
-                        .as_u64()
-                        .ok_or_else(|| diagnostic::input_invalid("prefix-shape"))?;
-                    if !(1..=3072).contains(&length) {
-                        return Err(diagnostic::input_invalid("prefix-bound"));
-                    }
-                    parsed.push(length as u16);
+                    // Sparse per position: `null` declares no prefix
+                    // for that key part, so a mixed textual+non-textual
+                    // composite prefixes only the textual members
+                    // (round-4 review F-1). A present length stays
+                    // bounded 1..=3072.
+                    let length = match entry {
+                        Json::Null => None,
+                        value => {
+                            let length = value
+                                .as_u64()
+                                .ok_or_else(|| diagnostic::input_invalid("prefix-shape"))?;
+                            if !(1..=3072).contains(&length) {
+                                return Err(diagnostic::input_invalid("prefix-bound"));
+                            }
+                            Some(length as u16)
+                        }
+                    };
+                    parsed.push(length);
                 }
                 Some(parsed)
             }

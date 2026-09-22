@@ -410,10 +410,15 @@ fn index_payload(index: &super::projection::Index) -> String {
         (
             "prefixLengths",
             index.prefix_lengths().map(|lengths| {
+                // Sparse positions render as `null`; positions with a
+                // length render as the number (round-4 review F-1).
                 array(
                     &lengths
                         .iter()
-                        .map(|length| length.to_string())
+                        .map(|length| match length {
+                            Some(length) => length.to_string(),
+                            None => "null".to_owned(),
+                        })
                         .collect::<Vec<String>>(),
                 )
             }),
