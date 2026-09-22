@@ -20,15 +20,21 @@
 //! `transport_http::DiffClass` paths onto the document locations they
 //! touch; no second taxonomy exists.
 
+mod bind;
 mod diagnostic;
+mod fragments;
 mod id;
+mod merge;
 mod render;
 mod schema;
 mod types;
 mod version;
 
+pub use bind::BindingKey;
 pub use diagnostic::{io_failure, rule_set};
+pub use fragments::{Fragments, OwnershipManifest};
 pub use id::{component_name, escape_pointer, paths_pointer, schemas_pointer, COMPONENTS_SCHEMAS};
+pub use merge::{merge, MergeOutcome};
 pub use render::{render, OpenApiDocument};
 pub use schema::{component_body, SchemaMapper};
 pub use types::{DocumentMode, DocumentVersion, Finding, RenderConfig};

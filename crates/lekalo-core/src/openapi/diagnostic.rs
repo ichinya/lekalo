@@ -10,7 +10,8 @@
 
 use crate::diagnostics::normalize::{build, BuildError};
 use crate::diagnostics::types::{bound_token, token_value, DataObject, DataValue};
-use crate::diagnostics::{Diagnostic, DiagnosticSet};
+use crate::diagnostics::Diagnostic;
+pub use crate::diagnostics::DiagnosticSet;
 use crate::result::{singleton_set, Status};
 
 /// The registered rule for fatal document/config input violations.
