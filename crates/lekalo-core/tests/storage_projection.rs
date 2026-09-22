@@ -967,6 +967,70 @@ fn mysql_namespace_stays_separate_from_mariadb() {
     assert_eq!(session_no.storage_type(), "bigint");
 }
 
+/// Prefix obligation is decided per resolved spelling, not family:
+/// fixed-width `binary(16)` (the uuid/FK render) indexes without a
+/// spurious prefix, while unbounded `text` still refuses. The
+/// dominant index shape in real mysql schemas is now ceremony-free
+/// (round-4 review F-3).
+#[test]
+fn prefix_required_decides_per_resolved_spelling() {
+    // (a) uuid pk index (binary(16)) without a prefix: valid.
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("json");
+    for projection in value["projections"].as_array_mut().expect("projections") {
+        if projection["namespace"] == "mysql" {
+            for table in projection["tables"].as_array_mut().expect("tables") {
+                if table["entity"] == "tag" {
+                    table["indexes"]
+                        .as_array_mut()
+                        .expect("indexes")
+                        .push(serde_json::json!({"columns": ["id"], "unique": false}));
+                }
+            }
+        }
+    }
+    StorageProjectionAttachment::from_value(&value)
+        .expect("parses")
+        .validate_attachment()
+        .expect("binary(16) indexes without a prefix");
+    // (b) FK index (binary(16) via the referenced pk) without a
+    // prefix: valid.
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("json");
+    for projection in value["projections"].as_array_mut().expect("projections") {
+        if projection["namespace"] == "mysql" {
+            for table in projection["tables"].as_array_mut().expect("tables") {
+                if table["entity"] == "task_external_link" {
+                    table["indexes"]
+                        .as_array_mut()
+                        .expect("indexes")
+                        .push(serde_json::json!({"columns": ["task_id"], "unique": false}));
+                }
+            }
+        }
+    }
+    StorageProjectionAttachment::from_value(&value)
+        .expect("parses")
+        .validate_attachment()
+        .expect("FK binary(16) indexes without a prefix");
+    // (c) unbounded text still refuses without a prefix.
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("json");
+    for projection in value["projections"].as_array_mut().expect("projections") {
+        if projection["namespace"] == "mysql" {
+            for table in projection["tables"].as_array_mut().expect("tables") {
+                if table["entity"] == "task" {
+                    table["indexes"]
+                        .as_array_mut()
+                        .expect("indexes")
+                        .push(serde_json::json!({"columns": ["note"], "unique": false}));
+                }
+            }
+        }
+    }
+    let error = StorageProjectionAttachment::from_value(&value)
+        .expect_err("unbounded text without a prefix refuses");
+    let rendered = serde_json::to_string(&error).expect("diagnostic json");
+    assert!(rendered.contains("prefix-required"));
+}
+
 /// The valid coverage vector for the round-4 F-1 fix: a mixed
 /// textual+non-textual composite index with sparse prefixLengths
 /// `[16, null]` validates, and the sparse positions survive
