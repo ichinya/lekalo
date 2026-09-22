@@ -129,7 +129,7 @@ pub fn introspect_check(
     // drift engine and the canonical derived rendering share one
     // source of truth (round-4 review F-5). A named `fn` carries the
     // elided lifetime the closure cannot.
-    fn resolve<'a>(table: &'a DerivedTable) -> Option<&'a str> {
+    fn resolve(table: &DerivedTable) -> Option<&str> {
         table.collation()
     }
     Ok(check_derived_with(&derived, evidence, &resolve))
