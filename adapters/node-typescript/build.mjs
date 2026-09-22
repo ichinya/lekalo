@@ -56,6 +56,9 @@ const zodMapPath = join(adapterRoot, "src", "zod-map.mjs");
 const zodEmitPath = join(adapterRoot, "src", "zod-emit.mjs");
 const zodPolicyPath = join(adapterRoot, "src", "zod-policy.mjs");
 const generationCompositePath = join(adapterRoot, "src", "generation-composite.mjs");
+const scenarioGenPath = join(adapterRoot, "src", "scenario-gen.mjs");
+const scenarioMapPath = join(adapterRoot, "src", "scenario-map.mjs");
+const scenarioEmitPath = join(adapterRoot, "src", "scenario-emit.mjs");
 const libsPath = join(adapterRoot, "src", "libs.mjs");
 const scratchRoot = join(adapterRoot, ".build");
 const zodScratchRoot = join(adapterRoot, ".build-zod");
@@ -296,6 +299,9 @@ async function buildArtifact() {
   writeFileSync(join(scratchRoot, "src", "zod-emit.mjs"), readFileSync(zodEmitPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "zod-policy.mjs"), readFileSync(zodPolicyPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "generation-composite.mjs"), readFileSync(generationCompositePath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "scenario-gen.mjs"), readFileSync(scenarioGenPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "scenario-map.mjs"), readFileSync(scenarioMapPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "scenario-emit.mjs"), readFileSync(scenarioEmitPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "main.mjs"), entryText);
   // The exact compiler pin must resolve from the adapter's own provisioning.
   const tsPackageDir = dirname(require.resolve("typescript/package.json"));

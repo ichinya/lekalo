@@ -84,7 +84,7 @@ function map(scenario, options = {}) {
 
 test("the mapper contract constants are pinned", () => {
   assert.equal(SCENARIO_IDENTITY, "dev.lekalo.scenario-ir@0.2.16");
-  assert.equal(SCENARIO_TESTS_DIR, ".lekalo/generated/scenario-tests");
+  assert.equal(SCENARIO_TESTS_DIR, "src/generated/node-typescript/scenario-tests");
   assert.equal(DEFAULT_RUNNER, "node:test");
   assert.deepEqual(RUNNER_REGISTRY["node:test"].capabilities, [
     "testing.clock",

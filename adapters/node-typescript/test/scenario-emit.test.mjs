@@ -140,13 +140,13 @@ test("emission layout, ordering, and the byte-stability contract", () => {
   const paths = files.map((entry) => entry.path);
   assert.deepEqual(paths, [...paths].sort(canonicalByteOrder));
   assert.deepEqual(paths, [
-    ".lekalo/generated/scenario-tests/_port.ts",
-    ".lekalo/generated/scenario-tests/_reporter.mjs",
-    ".lekalo/generated/scenario-tests/_testkit.ts",
-    ".lekalo/generated/scenario-tests/planner/planner.scenario.idempotent_focus.map.json",
-    ".lekalo/generated/scenario-tests/planner/planner.scenario.idempotent_focus.test.ts",
-    ".lekalo/generated/scenario-tests/planner/planner.scenario.minimal.map.json",
-    ".lekalo/generated/scenario-tests/planner/planner.scenario.minimal.test.ts",
+    "src/generated/node-typescript/scenario-tests/planner/planner.scenario.idempotent_focus.map.json",
+    "src/generated/node-typescript/scenario-tests/planner/planner.scenario.idempotent_focus.test.ts",
+    "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.map.json",
+    "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.ts",
+    "src/generated/node-typescript/scenario-tests/port.ts",
+    "src/generated/node-typescript/scenario-tests/reporter.mjs",
+    "src/generated/node-typescript/scenario-tests/testkit.ts",
   ]);
   for (const entry of files) {
     assert.equal(entry.text.endsWith("\n"), true, `${entry.path} single final newline`);
@@ -223,9 +223,9 @@ test("whole-scenario unsupported compiles to rows and a skip, never a pass", () 
 
 test("reserved module collisions are refused", () => {
   const scenario = happyScenario();
-  scenario.scenarioId = "_testkit.scenario.mystery";
+  scenario.scenarioId = "testkit.scenario.mystery";
   assert.throws(() => emit(map(scenario).scenarios), /reserved emitted file/);
-  assert.ok(RESERVED_MODULES.includes("_port"));
+  assert.ok(RESERVED_MODULES.includes("port"));
 });
 
 test("generated tests execute green under node:test against the fixture port", () => {
@@ -233,7 +233,7 @@ test("generated tests execute green under node:test against the fixture port", (
   try {
     materializeFixtureProject(dir);
     const result = spawnSync(process.execPath, ["--test", ...generatedTestFiles(dir)], {
-      cwd: join(dir, ".lekalo", "generated", "scenario-tests"),
+      cwd: join(dir, SCENARIO_DIR),
       encoding: "utf8",
       timeout: 120000,
       env: spawnedEnv(),
@@ -276,7 +276,7 @@ test("reruns are isolated: the port reset clears state between runs", () => {
     const args = ["--test", ...generatedTestFiles(dir)];
     const run = (what) => {
       const result = spawnSync(process.execPath, args, {
-        cwd: join(dir, ".lekalo", "generated", "scenario-tests"),
+        cwd: join(dir, SCENARIO_DIR),
         encoding: "utf8",
         timeout: 120000,
         env: spawnedEnv(),
@@ -315,7 +315,7 @@ test("the concurrency scenario skips and records unsupported, never a pass", () 
       writeFileSync(target, entry.text);
     }
     const result = spawnSync(process.execPath, ["--test", ...generatedTestFiles(dir)], {
-      cwd: join(dir, ".lekalo", "generated", "scenario-tests"),
+      cwd: join(dir, SCENARIO_DIR),
       encoding: "utf8",
       timeout: 120000,
       env: spawnedEnv(),
@@ -426,14 +426,14 @@ declare var ImportMeta: { url: string };
         else if (/\.(ts|mjs)$/.test(entry)) rootNames.push(full);
       }
     };
-    walk(join(dir, ".lekalo"));
+    walk(join(dir, SCENARIO_DIR));
     const program = ts.createProgram(
       [...rootNames, join(dir, "ambient.d.ts")],
       {
         noEmit: true,
         strict: true,
         // Documented carve-outs (mirrors issue #45 review r2 F-4): the
-        // emitted _port.ts shim imports the plain-JavaScript project port
+        // emitted port.ts shim imports the plain-JavaScript project port
         // (its own @ts-expect-error covers that edge), so noImplicitAny
         // is relaxed, and catch blocks treat thrown values as opaque
         // (the emitted code reads only a bounded message off them);

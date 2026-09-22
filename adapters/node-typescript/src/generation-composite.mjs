@@ -36,6 +36,10 @@ import {
   TRANSPORT_CAPABILITY,
   OPENAPI_CAPABILITY,
 } from "./transport-extension.mjs";
+import {
+  scenarioDescriptor,
+  SCENARIO_WRITE_SCOPES,
+} from "./scenario-gen.mjs";
 
 /** The resolved transport descriptor (never registered separately). */
 const transport = transportExtensionDescriptor();
@@ -103,9 +107,49 @@ function unionOutcomes(zodOutcome, transportOutcome) {
   };
 }
 
-/** The dispatch entry: verify delegates; generate unions. */
+/**
+ * The identity of the document at `ir_path`, read through the view:
+ * `"scenario"` for a Scenario IR document (routed to the scenario-test
+ * compiler), `"project"` for the compiled project IR (the Zod/transport
+ * pipeline), `null` when the document carries neither closed identity —
+ * the Zod pipeline then reports its own honest refusal.
+ */
+function documentIdentity(readView, irPath) {
+  if (!irPath || typeof irPath !== "string" || !readView.canRead(irPath)) {
+    return null;
+  }
+  let bytes;
+  try {
+    bytes = readView.readFile(irPath);
+  } catch {
+    return null;
+  }
+  let document;
+  try {
+    document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    return null;
+  }
+  if (document === null || typeof document !== "object") {
+    return null;
+  }
+  if (document.schemaVersion === "lekalo/scenario-ir/v0.2.16"
+    && document.identity === "dev.lekalo.scenario-ir@0.2.16") {
+    return "scenario";
+  }
+  if (document.contract === "dev.lekalo.ir@0.2.16") {
+    return "project";
+  }
+  return null;
+}
+
+/** The dispatch entry: document-identity routing; generate unions. */
 function compositeOperation(context) {
-  if (context.operation === "verify") {
+  const { operation, request, readView } = context;
+  if (documentIdentity(readView, request?.ir_path) === "scenario") {
+    return scenarioDescriptor.invoke(context);
+  }
+  if (operation === "verify") {
     return zodDescriptor.invoke(context);
   }
   const zodOutcome = zodDescriptor.invoke(context);
@@ -124,8 +168,13 @@ export const descriptor = {
     "generate.zod": "full",
     [TRANSPORT_CAPABILITY]: "partial",
     [OPENAPI_CAPABILITY]: "unsupported",
+    // Issue #47: the scenario-test compiler joins the composite and
+    // advertises the existing reviewed capability id; the kernel's
+    // default map keeps `verify.scenarios: "unsupported"` for the
+    // extension-free describe.
+    "verify.scenarios": "full",
   },
   acceptedIrVersions: ["0.2.16"],
-  writeScopes: [...ZOD_WRITE_SCOPES, ROUTE_WRITE_ROOT],
+  writeScopes: [...ZOD_WRITE_SCOPES, ROUTE_WRITE_ROOT, ...SCENARIO_WRITE_SCOPES],
   invoke: (context) => compositeOperation(context),
 };

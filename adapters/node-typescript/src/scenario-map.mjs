@@ -33,7 +33,7 @@ export const SCENARIO_IDENTITY = "dev.lekalo.scenario-ir@0.2.16";
 export const IR_IDENTITY = "dev.lekalo.ir@0.2.16";
 
 /** The generated scenario-test home under the generated root. */
-export const SCENARIO_TESTS_DIR = ".lekalo/generated/scenario-tests";
+export const SCENARIO_TESTS_DIR = "src/generated/node-typescript/scenario-tests";
 
 /** The project test-port declaration path (issue #47, plan S2). */
 export const PORT_DOC_PATH = "lekalo/test-port.json";
@@ -91,7 +91,7 @@ export const RUNNER_REGISTRY = Object.freeze({
     ]),
     concurrency: false,
     eventCapture: "partial",
-    reporter: "_reporter.mjs",
+    reporter: "reporter.mjs",
     syntax: "node-test",
   }),
 });
