@@ -1032,6 +1032,9 @@ fn plan_tables(
     // covers only entity tables), so the create carries the whole
     // materialized relation exactly as the document renders it.
     for join in candidate.joins() {
+        // The create of a rematerialized join is wired behind the drop
+        // of its old shape; empty when the join is new or unchanged.
+        let mut rematerialize_requires: Vec<usize> = Vec::new();
         let base_join = base
             .joins()
             .iter()
@@ -1072,6 +1075,15 @@ fn plan_tables(
                     None,
                 );
             } else if rematerialized {
+                // The table is rematerialized under the same name: the
+                // drop of the old shape must stay paired with the
+                // re-create that follows (both name the same quoted
+                // table), or the ordering pass would move the DROP
+                // TABLE behind the create — which fails with `relation
+                // already exists` on a confirmed plan. The create is
+                // wired behind the drop so the pair survives any
+                // reordering.
+                let drop_id = steps.len();
                 push_step(
                     steps,
                     "drop_table",
@@ -1080,6 +1092,7 @@ fn plan_tables(
                     Vec::new(),
                     None,
                 );
+                rematerialize_requires = vec![drop_id + 1];
             }
         }
         // The FK statements of the DDL renderer's join block are
@@ -1092,7 +1105,7 @@ fn plan_tables(
             "create_table",
             create,
             DataRisk::None,
-            Vec::new(),
+            rematerialize_requires.clone(),
             None,
         );
         table_ids.insert(join.table().as_str().to_owned(), steps.len() - 1);
@@ -1860,10 +1873,16 @@ fn order_drops_last(steps: &mut [Step]) {
         let step = &steps[index];
         if !step.kind.starts_with("drop_") {
             0
+        } else if is_paired(index, steps) {
+            // A replaced drop (a later step re-creates the same quoted
+            // object) stays with the constructive steps in emission
+            // order — moving it behind them would fail the re-create:
+            // `DROP TABLE` before `CREATE TABLE` of the same name is
+            // the required order, and the create is `requires`-wired
+            // to the drop.
+            0
         } else if step.kind == "drop_table" {
             3
-        } else if is_paired(index, steps) {
-            0
         } else if step.kind == "drop_column" {
             // The column's checks, FKs, and indexes drop first: the
             // column drop auto-removes every object involving it.

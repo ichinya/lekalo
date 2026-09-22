@@ -809,6 +809,78 @@ fn a_dropped_column_owns_its_check_and_index_drops() {
 }
 
 #[test]
+fn a_rematerialized_join_plans_drop_before_create_of_the_same_name() {
+    // A join whose shape changed (here: the delete behavior) is
+    // rematerialized under the same deterministic table name: the DROP
+    // TABLE stays paired with the CREATE TABLE that follows, and the
+    // create is requires-wired to the drop — CREATE before DROP would
+    // fail `relation already exists` on a confirmed plan.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for relation in candidate_value
+        .get_mut("relations")
+        .and_then(|relations| relations.as_array_mut())
+        .expect("relations")
+    {
+        if relation
+            .get("relationId")
+            .and_then(serde_json::Value::as_str)
+            == Some("planner.relation.task_tags")
+        {
+            relation["deleteBehavior"] = serde_json::Value::String("restrict".to_owned());
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    let drop_position = plan
+        .steps()
+        .iter()
+        .position(|step| {
+            step.kind() == "drop_table" && step.statement().contains("DROP TABLE \"task_tag\"")
+        })
+        .expect("the old join drops");
+    let create_position = plan
+        .steps()
+        .iter()
+        .position(|step| {
+            step.kind() == "create_table" && step.statement().contains("CREATE TABLE \"task_tag\"")
+        })
+        .expect("the new join is created");
+    assert!(
+        drop_position < create_position,
+        "the drop precedes the re-create: {}",
+        plan.steps()
+            .iter()
+            .map(|step| step.statement())
+            .collect::<Vec<&str>>()
+            .join(" | ")
+    );
+    let create = &plan.steps()[create_position];
+    assert_eq!(
+        create.requires(),
+        &[plan.steps()[drop_position].id()],
+        "the re-create depends on the drop"
+    );
+}
+
+#[test]
 fn a_dropped_join_plans_a_gated_drop_table() {
     // Join tables are planned: dropping a many-to-many relation is a
     // destructive DROP TABLE, never a silently-empty ready plan.
