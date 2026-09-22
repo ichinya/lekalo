@@ -5803,7 +5803,7 @@ fn parse_classification_pair(
         &attachment,
         &policy,
         &compilation.project,
-        &model_json,
+        model_json,
     ) {
         return Err(DomainResult::invalid(set));
     }

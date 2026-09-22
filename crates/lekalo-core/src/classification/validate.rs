@@ -299,7 +299,7 @@ pub fn validate_policy_and_grants(
     // graph subjects with no explicit classification reject.
     outcome
         .rows
-        .extend(strict_sensitive_sink_findings(attachment, &project));
+        .extend(strict_sensitive_sink_findings(attachment, project));
     if outcome
         .rows
         .iter()
