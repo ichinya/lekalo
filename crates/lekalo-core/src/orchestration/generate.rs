@@ -792,6 +792,14 @@ fn artifact_kind_for(path: &str) -> ArtifactKind {
     if path.ends_with(".ts") && path.split('/').any(|segment| segment == "zod") {
         return ArtifactKind::Schema;
     }
+    // Issue #47: the generated scenario-test compiler owns the
+    // scenario-tests home — test files and the shared testkit are `test`
+    // artifacts; the port shim and reporter stay support `source`.
+    if path.split('/').any(|segment| segment == "scenario-tests")
+        && (path.ends_with(".test.ts") || path.ends_with("/_testkit.ts"))
+    {
+        return ArtifactKind::Test;
+    }
     ArtifactKind::Source
 }
 
@@ -944,6 +952,44 @@ mod tests {
         assert_eq!(
             super::super::receipt::ComponentState::Unsupported.as_str(),
             "unsupported"
+        );
+    }
+
+    /// Issue #47 (plan S6): the ownership manifest classifies generated
+    /// scenario tests as `test` artifacts, their sidecars and the shared
+    /// modules stay `data`/`source`, and the zod home keeps `schema`.
+    #[test]
+    fn artifact_kinds_classify_by_path_convention() {
+        use super::artifact_kind_for;
+        assert_eq!(
+            artifact_kind_for(".lekalo/generated/scenario-tests/planner/planner.scenario.minimal.test.ts"),
+            ArtifactKind::Test
+        );
+        assert_eq!(
+            artifact_kind_for(".lekalo/generated/scenario-tests/_testkit.ts"),
+            ArtifactKind::Test
+        );
+        assert_eq!(
+            artifact_kind_for(
+                ".lekalo/generated/scenario-tests/planner/planner.scenario.minimal.test.ts.map.json"
+            ),
+            ArtifactKind::Data
+        );
+        // The port shim and the reporter are support code, never tests.
+        assert_eq!(
+            artifact_kind_for(".lekalo/generated/scenario-tests/_port.ts"),
+            ArtifactKind::Source
+        );
+        assert_eq!(
+            artifact_kind_for(".lekalo/generated/scenario-tests/_reporter.mjs"),
+            ArtifactKind::Source
+        );
+        // A test-looking file outside the scenario-tests home stays source.
+        assert_eq!(artifact_kind_for("src/generated/other/minimal.test.ts"), ArtifactKind::Source);
+        // The zod home keeps its issue #45 classification.
+        assert_eq!(
+            artifact_kind_for(".lekalo/generated/node-typescript/zod/planner.ts"),
+            ArtifactKind::Schema
         );
     }
 }
