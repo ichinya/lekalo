@@ -229,15 +229,24 @@ const policy = (fixture) => join(fixture, "lekalo/classification-policy.json");
   if (!publicOutput.includes("dataflow.exposed-private-field")) {
     fail("endpoint-public-rule", publicOutput);
   }
-  // The denied envelope carries the full report: status "denied",
-  // the flow rows, and the exposure finding (a denial never hides
-  // the evidence behind it).
+  // The denied envelope carries the full report as its payload:
+  // status "denied", the report rows, the mirrored diagnostics, and
+  // the derived reason codes (a denial never hides the evidence
+  // behind it).
   const deniedDoc = JSON.parse(publicRun.stdout);
   if (deniedDoc.status !== "denied") fail("endpoint-public-status", deniedDoc.status);
-  const exposed = (deniedDoc.report.findings ?? []).filter(
+  const exposed = (deniedDoc.payload?.report?.findings ?? []).filter(
     (finding) => finding.ruleId === "dataflow.exposed-private-field",
   );
-  if (exposed.length !== 1) fail("endpoint-public-finding", deniedDoc.report.findings);
+  if (exposed.length !== 1) fail("endpoint-public-finding", deniedDoc.payload);
+  if (!(deniedDoc.diagnostics ?? []).some(
+    (diagnostic) => diagnostic.id === "dataflow.exposed-private-field",
+  )) {
+    fail("endpoint-public-diagnostic", deniedDoc.diagnostics);
+  }
+  if (!deniedDoc.reasonCodes.includes("dataflow.exposed-private-field")) {
+    fail("endpoint-public-reason-codes", deniedDoc.reasonCodes);
+  }
 
   // 6e. The validate-pipeline review (F-2 fix): the broken attachments
   // invalidate in the strict profile; the valid fixture stays green.

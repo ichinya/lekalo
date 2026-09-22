@@ -388,7 +388,39 @@ impl DomainResult {
     /// Project the exact JSON envelope bytes (without trailing newline).
     pub fn to_json_string(&self) -> String {
         match self {
-            Self::DeniedWithEvidence { json, .. } => json.clone(),
+            Self::DeniedWithEvidence { .. } => {
+                // The failure envelope with the derived report embedded:
+                // status denied, the payload, and the mirrored findings.
+                #[derive(Serialize)]
+                struct EvidenceEnvelope<'a> {
+                    status: &'a str,
+                    payload: &'a Json,
+                    #[serde(rename = "diagnostics")]
+                    diagnostics: &'a [crate::diagnostics::Diagnostic],
+                    #[serde(rename = "reasonCodes")]
+                    reason_codes: Vec<&'a str>,
+                }
+                let (json, diagnostics) = match self {
+                    Self::DeniedWithEvidence {
+                        json, diagnostics, ..
+                    } => (json, diagnostics),
+                    _ => unreachable!("arm guarded above"),
+                };
+                let payload: Json =
+                    serde_json::from_str(json).expect("evidence payload serializes");
+                let reason_codes: Vec<&str> = diagnostics
+                    .as_slice()
+                    .iter()
+                    .map(|diagnostic| diagnostic.id())
+                    .collect();
+                let envelope = EvidenceEnvelope {
+                    status: self.status().as_str(),
+                    payload: &payload,
+                    diagnostics: diagnostics.as_slice(),
+                    reason_codes,
+                };
+                serde_json::to_string_pretty(&envelope).expect("envelope serializes")
+            }
             Self::Valid {
                 payload,
                 diagnostics,
