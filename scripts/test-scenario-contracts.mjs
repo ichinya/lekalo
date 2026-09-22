@@ -220,10 +220,51 @@ for (const name of readdirSync(resolve(root, invalidDir)).sort()) {
 
 if (invalidCount === 0) failEarly("no-adversarials", "the invalid fixture directory is empty");
 
+// Issue #47: the project test-port contract rides the same pinned Ajv
+// gate — the schema compiles, the committed fixture declaration
+// validates, and closed-shape adversarials are rejected.
+const portSchema = JSON.parse(
+  readFileSync(resolve(root, "contracts/test-port.schema.v0.4.0.json"), "utf8"),
+);
+let validatePort;
+try {
+  validatePort = ajv.compile(portSchema);
+} catch (error) {
+  failEarly("test-port-schema", String(error));
+}
+const portDocPath = "tests/fixtures/orchestration/project/lekalo/test-port.json";
+const portDoc = JSON.parse(readFileSync(resolve(root, portDocPath), "utf8"));
+if (!validatePort(portDoc)) {
+  fail(
+    "test-port:fixture",
+    `fixture declaration must validate: ${ajv.errorsText(validatePort.errors)}`,
+  );
+}
+const portAdversarials = [
+  ["unknown-member", { ...portDoc, extra: 1 }],
+  ["invoke-false", replacePath(portDoc, "invoke", false)],
+  ["unknown-export", replacePath(portDoc, "mystery", true)],
+  ["escape-path", { ...portDoc, port: { ...portDoc.port, path: "../escape.mjs" } }],
+  ["absolute-path", { ...portDoc, port: { ...portDoc.port, path: "/port.mjs" } }],
+  ["json-path", { ...portDoc, port: { ...portDoc.port, path: "src/port.json" } }],
+  ["wrong-identity", { ...portDoc, identity: "dev.lekalo.test-port@0.2.16" }],
+];
+let portInvalidCount = 0;
+for (const [caseName, document] of portAdversarials) {
+  if (validatePort(document)) {
+    fail(`test-port:${caseName}`, "schema must reject the adversarial declaration");
+  }
+  portInvalidCount += 1;
+}
+
+function replacePath(document, key, value) {
+  return { ...document, port: { ...document.port, exports: { ...document.port.exports, [key]: value } } };
+}
+
 if (failures.length > 0) {
   process.stderr.write(`${JSON.stringify({ ok: false, failures }, null, 2)}\n`);
   process.exit(1);
 }
 process.stdout.write(
-  `${JSON.stringify({ ok: true, checked: "scenario-contracts-v1", goldenCount, invalidCount }, null, 2)}\n`,
+  `${JSON.stringify({ ok: true, checked: "scenario-contracts-v1", goldenCount, invalidCount, portInvalidCount }, null, 2)}\n`,
 );

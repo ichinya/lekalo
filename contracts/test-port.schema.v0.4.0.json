@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.test-port-schema@0.4.0",
+  "title": "Lekalo project test-port contract v0.4.0",
+  "description": "Closed wire shape of the project-declared test port (issue #47): the only seam generated scenario tests may bind to. The declaration lives at `lekalo/test-port.json` in the project contract home and names the runtime port module plus the port surface it exports. Every optional member absent means the corresponding scenario feature compiles to an explicit unsupported diagnostic, never a guess. No expressions, no code, no framework names: paths and closed export flags only.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/test-port/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.test-port@0.4.0"
+    },
+    "port": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/portPath"
+        },
+        "exports": {
+          "$ref": "#/$defs/portExports"
+        }
+      },
+      "required": [
+        "path",
+        "exports"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "identity",
+    "port"
+  ],
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "$defs": {
+    "portPath": {
+      "type": "string",
+      "description": "Project-relative logical path of the runtime port module. Forward slashes, no `..` segment, never absolute, always a `.mjs` or `.ts` module.",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._/-]*\\.(mjs|ts)$",
+      "maxLength": 256,
+      "not": {
+        "pattern": "(^|/)\\.\\.($|/)"
+      }
+    },
+    "portExports": {
+      "type": "object",
+      "description": "Closed port surface. `invoke` is mandatory and always true; every optional member is a declared boolean and absent means unsupported.",
+      "properties": {
+        "invoke": {
+          "const": true
+        },
+        "state": {
+          "type": "boolean"
+        },
+        "fixtures": {
+          "type": "boolean"
+        },
+        "actor": {
+          "type": "boolean"
+        },
+        "clock": {
+          "type": "boolean"
+        },
+        "ids": {
+          "type": "boolean"
+        },
+        "emissions": {
+          "type": "boolean"
+        },
+        "effects": {
+          "type": "boolean"
+        },
+        "authorize": {
+          "type": "boolean"
+        },
+        "contractCheck": {
+          "type": "boolean"
+        },
+        "fixtureDigest": {
+          "type": "boolean"
+        },
+        "reset": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "invoke"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
