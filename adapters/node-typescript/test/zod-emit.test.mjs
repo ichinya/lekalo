@@ -296,15 +296,20 @@ test("generated modules parse, validate, and attribute issues to semantic ids", 
  * node_modules, so plain node_modules resolution (never NODE_PATH, never
  * a package manager) resolves the generated `import * as z from "zod"`.
  */
-function materialize() {
+function materialize(keepTypeScript = false) {
   const dir = mkdtempSync(join(tmpdir(), "lekalo-zod-emit-"));
   const zodDir = join(dir, "src", "generated", "node-typescript", "zod");
   mkdirSync(zodDir, { recursive: true });
   const files = matrixFiles({ ...CONTEXT, inputDigest: sha256(readFileSync(join(FIXTURE_DIR, "ir.json")).toString("utf8")) });
   for (const file of files) {
-    const target = join(dir, `${file.path.replace(/\.ts$/, ".js")}`);
+    const target = join(
+      dir,
+      keepTypeScript ? file.path : file.path.replace(/\.ts$/, ".js"),
+    );
     mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, toRunnable(file.text));
+    // The runnable copy erases type-only lines; the typecheck copy is
+    // the exact emitted TypeScript bytes.
+    writeFileSync(target, keepTypeScript ? file.text : toRunnable(file.text));
   }
   copyPackage(join(ADAPTER_ROOT, "node_modules", "zod"), join(dir, "node_modules", "zod"));
   return dir;
@@ -394,6 +399,56 @@ test("normalizeIssues attributes nested paths through the sidecar map", async ()
       sidecar.owner,
     );
     assert.ok(root[0].semanticId.length > 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Typecheck of the generated TypeScript (AC-5, typecheck half).
+// ---------------------------------------------------------------------------
+
+test("generated modules typecheck cleanly under the pinned typescript", async () => {
+  // The exact compiler pin the adapter bundles, resolved from the
+  // adapter's build-time node_modules — never ambient resolution.
+  const { createRequire } = await import("node:module");
+  const require = createRequire(join(ADAPTER_ROOT, "package.json"));
+  const ts = require("typescript/lib/typescript.js");
+  assert.equal(ts.version, "5.9.3", "compiler pin drift");
+  const dir = materialize(/* keepTypeScript */ true);
+  try {
+    const zodDir = join(dir, "src", "generated", "node-typescript", "zod");
+    // The hermetic temp root carries only the trimmed JavaScript copy of
+    // zod (the runtime suites strip declarations on copy), so the
+    // typecheck resolves zod through paths to the declaration entry of
+    // the exact same pin inside the adapter's build-time node_modules.
+    const program = ts.createProgram(
+      ["alpha.ts", "runtime.ts", "index.ts"].map((name) => join(zodDir, name)),
+      {
+        noEmit: true,
+        strict: true,
+        noImplicitAny: false, // the runtime helper is JSDoc-typed plain JS by contract
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ESNext,
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
+        skipLibCheck: true,
+        types: [],
+        baseUrl: dir,
+        paths: {
+          zod: [join(ADAPTER_ROOT, "node_modules", "zod", "index.d.ts")],
+        },
+      },
+      ts.createCompilerHost({}, /*setParentNodes*/ true),
+    );
+    const diagnostics = ts.getPreEmitDiagnostics(program).filter(
+      (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
+    );
+    const report = ts.formatDiagnostics(diagnostics, {
+      getCurrentDirectory: () => dir,
+      getCanonicalFileName: (name) => name,
+      getNewLine: () => "\n",
+    });
+    assert.equal(diagnostics.length, 0, report);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

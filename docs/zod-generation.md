@@ -131,5 +131,7 @@ expected/observed digest fragments.
 
 The adapter never embeds zod. Consumers of the generated modules supply
 their own zod (minimum 3.22); the pinned `zod@3.25.76` dev dependency exists
-only for the committed fixture suites, which execute and typecheck the
-generated output (see `THIRD_PARTY_NOTICES.md`).
+only for the committed fixture suites, which execute the generated output
+against the pinned runtime and typecheck it with the exact vendored
+TypeScript pin (`tsc` semantics via the compiler API, `--noEmit`, strict —
+see the `zod-emit` suite; see also `THIRD_PARTY_NOTICES.md`).
