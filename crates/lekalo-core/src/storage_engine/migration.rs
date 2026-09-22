@@ -1980,9 +1980,15 @@ fn plan_indexes(
 /// quoted identifier, never a substring: a dropped column's name
 /// embeds in its derived `idx_*`/`chk_*` names, and pairing on that
 /// embedding would let the DROP COLUMN run first — PostgreSQL
-/// auto-drops the objects involving the column, and the later explicit
-/// drops would fail on objects that no longer exist. Stable for
-/// identical inputs.
+/// auto-drops the objects involving a dropped column, and the later
+/// explicit drops would fail on objects that no longer exist. The
+/// pairing is also role-aware, not token-blind: only a re-creation of
+/// the same object pairs — `drop_table` pairs a later `CREATE TABLE`
+/// of the same table, and a constraint/index drop pairs a later
+/// `ADD CONSTRAINT`/`CREATE INDEX` of the same object — while a
+/// `drop_column` never pairs, because a column name recurring inside
+/// a later statement (a join create's column list) does not mean the
+/// column is re-created. Stable for identical inputs.
 fn order_drops_last(steps: &mut [Step]) {
     // The last quoted identifier of one statement, with its opening
     // and closing delimiters: the object a drop names or an add
@@ -1997,13 +2003,63 @@ fn order_drops_last(steps: &mut [Step]) {
         let name_start = inner[..name_end].rfind('"')?;
         Some(inner[name_start..=name_end].to_owned())
     }
+    // The created-object token of a create statement: the first
+    // quoted identifier after the object keyword, so a column that
+    // merely appears inside a created table's column list cannot be
+    // mistaken for the created object.
+    fn created_object_token(statement: &str) -> Option<String> {
+        let inner = statement.strip_suffix(';')?;
+        let upper = inner.to_ascii_uppercase();
+        let offset = if upper.starts_with("CREATE TABLE ") {
+            "CREATE TABLE ".len()
+        } else if upper.starts_with("CREATE UNIQUE INDEX ") {
+            "CREATE UNIQUE INDEX ".len()
+        } else if upper.starts_with("CREATE INDEX ") {
+            "CREATE INDEX ".len()
+        } else if upper.starts_with("ALTER TABLE ") && upper.contains(" ADD CONSTRAINT ") {
+            upper.find(" ADD CONSTRAINT ")? + " ADD CONSTRAINT ".len()
+        } else {
+            return None;
+        };
+        let rest = &inner[offset..];
+        let name_start = rest.find('"')?;
+        let name_end = rest[name_start + 1..].find('"')? + name_start + 1;
+        Some(rest[name_start..=name_end].to_owned())
+    }
     let is_paired = |index: usize, steps: &[Step]| -> bool {
-        let Some(name) = dropped_object_name(&steps[index].statement) else {
+        let step = &steps[index];
+        // A dropped column is never re-created: no later statement
+        // creates a column object, so a `drop_column` never pairs —
+        // its name can only recur inside another statement (a join
+        // create's column list), which is not a re-creation.
+        if step.kind == "drop_column" {
+            return false;
+        }
+        let Some(name) = dropped_object_name(&step.statement) else {
             return false;
         };
         steps[index + 1..]
             .iter()
-            .any(|later| later.statement.contains(&name))
+            // Role-aware: only a create of the same object pairs. A
+            // `drop_table` pairs a `create_table` of the same table;
+            // a constraint/index drop pairs a re-add of the same
+            // constraint/index under a constant derived name. A token
+            // appearing elsewhere (a column inside a created table,
+            // an unrelated identifier) is not a re-creation.
+            .filter(|later| {
+                matches!(
+                    (step.kind, later.kind),
+                    ("drop_table", "create_table")
+                        | ("drop_constraint", "add_foreign_key")
+                        | ("drop_constraint", "add_primary_key")
+                        | ("drop_check", "add_check")
+                        | ("drop_index", "add_index")
+                )
+            })
+            .any(|later| match created_object_token(&later.statement) {
+                Some(created) => created == name,
+                None => later.statement.contains(&name),
+            })
     };
     let rank = |index: usize, steps: &[Step]| {
         let step = &steps[index];
@@ -2149,6 +2205,47 @@ mod tests {
             vec!["create_extension", "drop_check", "add_check", "drop_column",],
             "the replaced drop stays paired in place ahead of the column drop"
         );
+    }
+
+    #[test]
+    fn a_column_drop_never_pairs_with_a_recurring_name_inside_a_later_create() {
+        // Role-aware pairing: a column name recurring inside a later
+        // join create's column list is not a re-creation of the
+        // column — pairing on the recurrence would demote the column
+        // drop to rank 0 and let it run before its own dependent
+        // constraint/index drops, which then fail on apply (PostgreSQL
+        // auto-drops the objects involving the column).
+        let mut steps = vec![
+            step("create_extension"),
+            step("drop_column"),
+            step("drop_table"),
+            step("create_table"),
+            step("drop_constraint"),
+        ];
+        steps[1].statement = "ALTER TABLE \"task_detail\" DROP COLUMN \"task_id\";".to_owned();
+        steps[2].statement = "DROP TABLE \"task_tag\";".to_owned();
+        steps[3].statement = "CREATE TABLE \"task_tag\" (\"task_id\" uuid NOT NULL, \"tag_id\" varchar(64) NOT NULL, PRIMARY KEY (\"task_id\", \"tag_id\"));".to_owned();
+        steps[3].risk = DataRisk::None;
+        steps[4].statement =
+            "ALTER TABLE \"task_detail\" DROP CONSTRAINT \"fk_task_detail_task_id\";".to_owned();
+        order_drops_last(&mut steps);
+        let kinds: Vec<&str> = steps.iter().map(|step| step.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                "create_extension",
+                "drop_table",
+                "create_table",
+                "drop_constraint",
+                "drop_column",
+            ],
+            "the paired remat drop/create stay in place; the column drop and its dependent sort behind"
+        );
+        // And the same-name drop_table/create_table pair still pairs:
+        // the drop keeps rank 0 with its create, ahead of the
+        // unpaired member drops.
+        assert_eq!(steps[1].kind, "drop_table");
+        assert_eq!(steps[2].kind, "create_table");
     }
 
     #[test]
