@@ -51,6 +51,14 @@ export const SCENARIO_DRIFT = "scenario.drift";
 /** The canonical evidence home of the compiled project IR (core-owned). */
 export const IR_EVIDENCE_HOME = ".lekalo/cache/ir";
 
+/** The observed index document the checked-binding join reads (plan S8). */
+export const OBSERVED_INDEX_PATH = ".lekalo/import/observed/index.json";
+
+/** The finding codes of the checked-binding join (plan §6). */
+export const BINDING_MISSING = "scenario.binding-missing";
+export const BINDING_AMBIGUOUS = "scenario.binding-ambiguous";
+export const BINDING_MISMATCH = "scenario.binding-mismatch";
+
 /**
  * The scenario compiler descriptor. Like the transport generator it is a
  * composite member, never a registered launch extension — the composite
@@ -146,7 +154,11 @@ export function scenarioOperation(context) {
       return generateOperation(context, files, mapped.findings);
     }
     if (operation === "verify") {
-      return verifyOperation(context, files, mapped.findings);
+      const bindingFindings = joinCheckedBindingsFromView(
+        readView,
+        scenario.document,
+      );
+      return verifyOperation(context, files, [...mapped.findings, ...bindingFindings]);
     }
     return { state: "unsupported" };
   } catch (error) {
@@ -159,6 +171,18 @@ export function scenarioOperation(context) {
 /** The plan identity of one write set (the shared composite domain). */
 export function scenarioPlanIdOf(writes) {
   return "plan-" + sha256(canonicalJson(writes)).slice("sha256:".length);
+}
+
+/** Read the observed index (absent → null) and run the checked join. */
+function joinCheckedBindingsFromView(readView, scenarioDocument) {
+  if (!readView.canRead(OBSERVED_INDEX_PATH)) {
+    return [];
+  }
+  const index = readDocument(readView, OBSERVED_INDEX_PATH);
+  if (index.refusal) {
+    return [];
+  }
+  return joinCheckedBindings(scenarioDocument, index.document);
 }
 
 function generateOperation(context, byteFiles, findings) {
@@ -214,6 +238,88 @@ function verifyOperation(context, byteFiles, findings) {
   }
   const all = [...findings, ...verification];
   return { state: "complete", data: { writes: [], findings: all } };
+}
+
+/**
+ * The checked-binding join (plan S8, plan §6): every native binding with
+ * `mode: "checked"` joins by id against the observed index's native test
+ * records — produced by the scan pipeline from the `lekalo:<id>` title
+ * convention. The join is read-only and never rewrites: a missing,
+ * ambiguous, or stale binding is a typed finding, never a silent pass.
+ *
+ * `indexDocument` is the parsed observed index (null when absent — legal
+ * absence, the join simply has nothing to say). Returns one finding per
+ * violated binding, ordered by the binding order of the document.
+ */
+export function joinCheckedBindings(scenarioDocument, indexDocument) {
+  const findings = [];
+  const records = indexDocument?.test_bindings;
+  if (!Array.isArray(records)) {
+    return findings;
+  }
+  const claims = records
+    .filter((record) => record !== null && typeof record === "object")
+    .map((record) => ({
+      ids: parseClaimedIds(record.id),
+      symbol: typeof record.symbol === "string" ? record.symbol : null,
+      fingerprint: typeof record.fingerprint === "string" ? record.fingerprint : null,
+    }))
+    .filter((record) => record.ids.length > 0);
+  for (const binding of scenarioDocument?.bindings ?? []) {
+    if (binding === null || typeof binding !== "object") continue;
+    if (binding.backend !== "native" || binding.mode !== "checked") continue;
+    if (typeof binding.test !== "string") continue;
+    const testId = binding.test;
+    const claiming = claims.filter((record) => record.ids.includes(testId));
+    if (claiming.length === 0) {
+      findings.push({ code: BINDING_MISSING, symbol: testId, detail: "no-scanned-test" });
+      continue;
+    }
+    if (claiming.length > 1) {
+      findings.push({
+        code: BINDING_AMBIGUOUS,
+        symbol: testId,
+        detail: `claimed-by-${claiming.length}-tests`,
+      });
+      continue;
+    }
+    const record = claiming[0];
+    if (record.ids.length > 1) {
+      // One native test claiming several scenario identities stays
+      // unresolved — the existing binding-proposal semantics.
+      findings.push({
+        code: BINDING_AMBIGUOUS,
+        symbol: testId,
+        detail: "test-claims-several-ids",
+      });
+      continue;
+    }
+    if (typeof binding.evidenceDigest === "string"
+      && binding.evidenceDigest.length > 0
+      && record.fingerprint !== null
+      && binding.evidenceDigest !== record.fingerprint) {
+      findings.push({
+        code: BINDING_MISMATCH,
+        symbol: testId,
+        detail: "stale-evidence-digest",
+      });
+    }
+  }
+  return findings;
+}
+
+/**
+ * The claimed scenario ids of one observed test-binding id: the core
+ * spells them `<test-path>#lekalo:<id>[,lekalo:<id>…]`; a bare
+ * `lekalo:<id>` (no path half) still joins.
+ */
+function parseClaimedIds(id) {
+  if (typeof id !== "string") return [];
+  const name = id.includes("#") ? id.slice(id.lastIndexOf("#") + 1) : id;
+  return name
+    .split(",")
+    .map((part) => (part.startsWith("lekalo:") ? part.slice("lekalo:".length) : null))
+    .filter((part) => part !== null && part.length > 0);
 }
 
 /** Read, decode, and parse one JSON document through the read view. */

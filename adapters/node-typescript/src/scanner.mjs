@@ -1661,17 +1661,32 @@ export function scanOperation(context) {
     return { state: "partial", diagnostics: [{ reason: "scan-incomplete" }] };
   }
   const entries = [];
+  // Issue #47 (plan S8): native tests claiming a scenario identity via
+  // the `lekalo:<id>` title convention ride the FIRST top-level symbol
+  // entry of their module as the bounded `t` member (the observed scan
+  // contract's native-test slot). The join with scenario bindings
+  // happens in the scenario verify; here we only record what was found.
+  const lekaloIdsByModule = lekaloTestIdsByModule(index.tests);
+  const moduleSeen = new Set();
   for (const symbol of index.symbols) {
     if (symbol.memberOf !== null) continue; // members ride their owner
+    const detail = {
+      s: semanticProposalFor(symbol, index),
+      n: symbol.native,
+      l: symbol.line,
+      q: symbol.declarationOnly ? "low" : "medium",
+    };
+    if (!moduleSeen.has(symbol.module)) {
+      moduleSeen.add(symbol.module);
+      const ids = lekaloIdsByModule.get(symbol.module);
+      if (ids) {
+        detail.t = `${symbol.module}#${ids.map((id) => `lekalo:${id}`).join(",")}`;
+      }
+    }
     entries.push({
       path: symbol.module,
       kind: "entity",
-      detail: JSON.stringify({
-        s: semanticProposalFor(symbol, index),
-        n: symbol.native,
-        l: symbol.line,
-        q: symbol.declarationOnly ? "low" : "medium",
-      }),
+      detail: JSON.stringify(detail),
       evidence: buildEntryEvidence(symbol, index),
     });
   }
@@ -1708,6 +1723,33 @@ export function scanOperation(context) {
       counts,
     },
   };
+}
+
+/**
+ * The scenario-identity test titles of one scan, grouped by module:
+ * bounded to 8 ids per module and 200 name characters per binding (the
+ * observed `t` member's own bounds), sorted, deduplicated.
+ */
+export function lekaloTestIdsByModule(tests) {
+  const byModule = new Map();
+  for (const test of tests ?? []) {
+    if (typeof test?.name !== "string" || typeof test?.path !== "string") continue;
+    if (!test.name.startsWith("lekalo:")) continue;
+    const id = test.name.slice("lekalo:".length);
+    if (id.length === 0 || id.length > 128) continue;
+    const bucket = byModule.get(test.path) ?? [];
+    if (bucket.includes(id)) continue;
+    if (bucket.length >= 8) continue;
+    bucket.push(id);
+    byModule.set(test.path, bucket);
+  }
+  for (const [module, ids] of byModule) {
+    ids.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    while (ids.map((id) => id.length + 8).reduce((sum, n) => sum + n, 0) > 200) {
+      ids.pop();
+    }
+  }
+  return byModule;
 }
 
 /** The semantic id proposal of one symbol: package-scoped dotted name. */

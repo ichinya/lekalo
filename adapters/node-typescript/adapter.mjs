@@ -214005,6 +214005,7 @@ __export(scanner_exports, {
   assertCompilerAvailable: () => assertCompilerAvailable,
   buildInputManifest: () => buildInputManifest,
   enumerateInventory: () => enumerateInventory,
+  lekaloTestIdsByModule: () => lekaloTestIdsByModule,
   nativeId: () => nativeId,
   nativeIdentityTuple: () => nativeIdentityTuple,
   runScan: () => runScan,
@@ -215255,17 +215256,27 @@ function scanOperation(context) {
     return { state: "partial", diagnostics: [{ reason: "scan-incomplete" }] };
   }
   const entries = [];
+  const lekaloIdsByModule = lekaloTestIdsByModule(index.tests);
+  const moduleSeen = /* @__PURE__ */ new Set();
   for (const symbol of index.symbols) {
     if (symbol.memberOf !== null) continue;
+    const detail = {
+      s: semanticProposalFor(symbol, index),
+      n: symbol.native,
+      l: symbol.line,
+      q: symbol.declarationOnly ? "low" : "medium"
+    };
+    if (!moduleSeen.has(symbol.module)) {
+      moduleSeen.add(symbol.module);
+      const ids = lekaloIdsByModule.get(symbol.module);
+      if (ids) {
+        detail.t = `${symbol.module}#${ids.map((id) => `lekalo:${id}`).join(",")}`;
+      }
+    }
     entries.push({
       path: symbol.module,
       kind: "entity",
-      detail: JSON.stringify({
-        s: semanticProposalFor(symbol, index),
-        n: symbol.native,
-        l: symbol.line,
-        q: symbol.declarationOnly ? "low" : "medium"
-      }),
+      detail: JSON.stringify(detail),
       evidence: buildEntryEvidence(symbol, index)
     });
   }
@@ -215302,6 +215313,27 @@ function scanOperation(context) {
       counts
     }
   };
+}
+function lekaloTestIdsByModule(tests) {
+  const byModule = /* @__PURE__ */ new Map();
+  for (const test of tests ?? []) {
+    if (typeof test?.name !== "string" || typeof test?.path !== "string") continue;
+    if (!test.name.startsWith("lekalo:")) continue;
+    const id = test.name.slice("lekalo:".length);
+    if (id.length === 0 || id.length > 128) continue;
+    const bucket = byModule.get(test.path) ?? [];
+    if (bucket.includes(id)) continue;
+    if (bucket.length >= 8) continue;
+    bucket.push(id);
+    byModule.set(test.path, bucket);
+  }
+  for (const [module, ids] of byModule) {
+    ids.sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    while (ids.map((id) => id.length + 8).reduce((sum, n) => sum + n, 0) > 200) {
+      ids.pop();
+    }
+  }
+  return byModule;
 }
 function semanticProposalFor(symbol, index) {
   const pkg = index.packages.find((candidate) => symbol.module === candidate.root || symbol.module.startsWith(candidate.root + "/"));
@@ -219284,6 +219316,10 @@ var SCENARIO_EXTENSION_VERSION = "0.4.0";
 var SCENARIO_WRITE_SCOPES = [`${SCENARIO_DIR}/**`];
 var SCENARIO_DRIFT = "scenario.drift";
 var IR_EVIDENCE_HOME = ".lekalo/cache/ir";
+var OBSERVED_INDEX_PATH = ".lekalo/import/observed/index.json";
+var BINDING_MISSING = "scenario.binding-missing";
+var BINDING_AMBIGUOUS = "scenario.binding-ambiguous";
+var BINDING_MISMATCH = "scenario.binding-mismatch";
 var scenarioDescriptor = {
   id: "scenario-test-compiler",
   version: SCENARIO_EXTENSION_VERSION,
@@ -219365,7 +219401,11 @@ function scenarioOperation(context) {
       return generateOperation2(context, files, mapped.findings);
     }
     if (operation === "verify") {
-      return verifyOperation2(context, files, mapped.findings);
+      const bindingFindings = joinCheckedBindingsFromView(
+        readView,
+        scenario.document
+      );
+      return verifyOperation2(context, files, [...mapped.findings, ...bindingFindings]);
     }
     return { state: "unsupported" };
   } catch (error) {
@@ -219374,6 +219414,16 @@ function scenarioOperation(context) {
 }
 function scenarioPlanIdOf(writes) {
   return "plan-" + sha256(canonicalJson3(writes)).slice("sha256:".length);
+}
+function joinCheckedBindingsFromView(readView, scenarioDocument) {
+  if (!readView.canRead(OBSERVED_INDEX_PATH)) {
+    return [];
+  }
+  const index = readDocument(readView, OBSERVED_INDEX_PATH);
+  if (index.refusal) {
+    return [];
+  }
+  return joinCheckedBindings(scenarioDocument, index.document);
 }
 function generateOperation2(context, byteFiles, findings) {
   const { request, writeView } = context;
@@ -219425,6 +219475,59 @@ function verifyOperation2(context, byteFiles, findings) {
   }
   const all = [...findings, ...verification];
   return { state: "complete", data: { writes: [], findings: all } };
+}
+function joinCheckedBindings(scenarioDocument, indexDocument) {
+  const findings = [];
+  const records = indexDocument?.test_bindings;
+  if (!Array.isArray(records)) {
+    return findings;
+  }
+  const claims = records.filter((record) => record !== null && typeof record === "object").map((record) => ({
+    ids: parseClaimedIds(record.id),
+    symbol: typeof record.symbol === "string" ? record.symbol : null,
+    fingerprint: typeof record.fingerprint === "string" ? record.fingerprint : null
+  })).filter((record) => record.ids.length > 0);
+  for (const binding of scenarioDocument?.bindings ?? []) {
+    if (binding === null || typeof binding !== "object") continue;
+    if (binding.backend !== "native" || binding.mode !== "checked") continue;
+    if (typeof binding.test !== "string") continue;
+    const testId = binding.test;
+    const claiming = claims.filter((record2) => record2.ids.includes(testId));
+    if (claiming.length === 0) {
+      findings.push({ code: BINDING_MISSING, symbol: testId, detail: "no-scanned-test" });
+      continue;
+    }
+    if (claiming.length > 1) {
+      findings.push({
+        code: BINDING_AMBIGUOUS,
+        symbol: testId,
+        detail: `claimed-by-${claiming.length}-tests`
+      });
+      continue;
+    }
+    const record = claiming[0];
+    if (record.ids.length > 1) {
+      findings.push({
+        code: BINDING_AMBIGUOUS,
+        symbol: testId,
+        detail: "test-claims-several-ids"
+      });
+      continue;
+    }
+    if (typeof binding.evidenceDigest === "string" && binding.evidenceDigest.length > 0 && record.fingerprint !== null && binding.evidenceDigest !== record.fingerprint) {
+      findings.push({
+        code: BINDING_MISMATCH,
+        symbol: testId,
+        detail: "stale-evidence-digest"
+      });
+    }
+  }
+  return findings;
+}
+function parseClaimedIds(id) {
+  if (typeof id !== "string") return [];
+  const name = id.includes("#") ? id.slice(id.lastIndexOf("#") + 1) : id;
+  return name.split(",").map((part) => part.startsWith("lekalo:") ? part.slice("lekalo:".length) : null).filter((part) => part !== null && part.length > 0);
 }
 function readDocument(readView, path) {
   if (!path || !readView.canRead(path)) {
