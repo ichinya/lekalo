@@ -1,0 +1,14 @@
+{
+  "id": "generate",
+  "mode": "observed",
+  "target": "node-typescript",
+  "readRoots": [
+    { "path": ".lekalo/ir", "kind": "tree" }
+  ],
+  "exclusions": [],
+  "provenance": {
+    "origin": "declared",
+    "revision": "issue-45-generation-0001",
+    "disposition": "public-fixture"
+  }
+}

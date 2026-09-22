@@ -229,7 +229,10 @@ fn compare_endpoint(
     // are policy; a serialization-style or explode change breaks
     // (the wire encoding of values changed).
     let binding_key = |param: &super::types::ParamBinding| {
-        (param.name.as_str().to_owned(), param.location.as_str().to_owned())
+        (
+            param.name.as_str().to_owned(),
+            param.location.as_str().to_owned(),
+        )
     };
     for param in &base.params {
         match candidate
@@ -398,9 +401,7 @@ fn compare_endpoint(
             .find(|other| other.capability == decl.capability);
         match still {
             Some(other) => {
-                if other.minimum_support != decl.minimum_support
-                    || other.detail != decl.detail
-                {
+                if other.minimum_support != decl.minimum_support || other.detail != decl.detail {
                     push_path(&at("capabilities"), DiffClass::PolicyChange, paths);
                 }
             }
@@ -453,7 +454,11 @@ fn compare_body_pair(
     }
     let member = |field: &super::types::FieldProjection| field.name.as_str().to_owned();
     for field in &base.fields {
-        match candidate.fields.iter().find(|other| member(other) == member(field)) {
+        match candidate
+            .fields
+            .iter()
+            .find(|other| member(other) == member(field))
+        {
             Some(other) => {
                 if other != field {
                     push_path(path, DiffClass::PolicyChange, paths);
@@ -463,7 +468,11 @@ fn compare_body_pair(
         }
     }
     for field in &candidate.fields {
-        if !base.fields.iter().any(|other| member(other) == member(field)) {
+        if !base
+            .fields
+            .iter()
+            .any(|other| member(other) == member(field))
+        {
             let class = if field.required {
                 DiffClass::Breaking
             } else {

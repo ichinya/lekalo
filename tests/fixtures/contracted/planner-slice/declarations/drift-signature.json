@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "lekalo/contracted-declaration/v0.2.16",
+  "schemaVersion": "lekalo/contracted-declaration/v0.4.0",
   "adapter": {
     "id": "lekalo-target-node-typescript",
     "version": "0.2.16",

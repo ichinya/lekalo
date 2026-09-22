@@ -1,0 +1,17 @@
+[
+  {
+    "path": "src/generated/node-typescript/zod/planner.ts",
+    "code": "zod.unsupported-construct",
+    "detail": "symbol:planner.count"
+  },
+  {
+    "path": "src/generated/node-typescript/zod/planner.ts",
+    "code": "zod.unsupported-construct",
+    "detail": "symbol:planner.ghosted"
+  },
+  {
+    "path": "src/generated/node-typescript/zod/planner.ts",
+    "code": "zod.unsupported-construct",
+    "detail": "symbol:planner.report"
+  }
+]

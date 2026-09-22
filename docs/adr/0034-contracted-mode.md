@@ -45,7 +45,8 @@ bound, verified, and governed without ever being rewritten.
    Missing evidence is `unknown`/reported, never silent success.
 5. **No code is parsed, executed, or rewritten.** The declaration is
    adapter-owned evidence with its own published wire schema
-   (`lekalo/contracted-declaration/v0.2.16`); accuracy is the adapter's
+   (`lekalo/contracted-declaration/v0.4.0` since the issue #45 review
+   reserve; accuracy is the adapter's
    custody. The generator boundary is structural: only the derived
    registry and `.lekalo/generated/**` are writable, so handler
    bodies, SQL, application services, and maintained tests cannot be

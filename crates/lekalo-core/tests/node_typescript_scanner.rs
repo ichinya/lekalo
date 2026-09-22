@@ -140,12 +140,36 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
         described.capabilities.adapter.id,
         "lekalo-target-node-typescript"
     );
+    // The merged 0.4.0 adapter surface: describe plus the scanner,
+    // the native-gate planner, and the composite generation extension
+    // (issues #45 and #70 — the closed wire has exactly one generate
+    // operation, so zod schemas and the transport route layer compose
+    // under one descriptor).
     assert_eq!(described.capabilities.adapter.version, "0.4.0");
-    assert_eq!(described.capabilities.operations.len(), 3);
+    assert_eq!(described.capabilities.operations.len(), 5);
     assert!(described.capabilities.operations.contains(&Operation::Scan));
+    assert!(described
+        .capabilities
+        .operations
+        .contains(&Operation::Generate));
+    assert!(described
+        .capabilities
+        .operations
+        .contains(&Operation::Verify));
     assert_eq!(
-        described.capabilities.read_scopes,
-        vec!["src/**".to_owned()]
+        described.capabilities.write_scopes,
+        vec![
+            "src/generated/node-typescript/zod/**".to_owned(),
+            "src/routes/**".to_owned()
+        ]
+    );
+    assert_eq!(
+        described
+            .capabilities
+            .capabilities
+            .get("generate.zod")
+            .copied(),
+        Some(SupportState::Full)
     );
     assert_eq!(
         described
@@ -154,6 +178,14 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
             .get("scan.symbols")
             .copied(),
         Some(SupportState::Full)
+    );
+    assert_eq!(
+        described
+            .capabilities
+            .capabilities
+            .get("generate.transport-http")
+            .copied(),
+        Some(SupportState::Partial)
     );
 }
 

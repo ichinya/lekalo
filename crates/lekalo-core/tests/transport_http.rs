@@ -445,19 +445,31 @@ fn wire_diff_classifies_and_blocks_breaking_changes() {
         ),
         (
             "candidate-move-param-location",
-            vec![("endpoints/planner.endpoint_focus_task_by_id/params", "breaking")],
+            vec![(
+                "endpoints/planner.endpoint_focus_task_by_id/params",
+                "breaking",
+            )],
         ),
         (
             "candidate-param-explode",
-            vec![("endpoints/planner.endpoint_focus_task_by_id/params", "breaking")],
+            vec![(
+                "endpoints/planner.endpoint_focus_task_by_id/params",
+                "breaking",
+            )],
         ),
         (
             "candidate-body-required-field",
-            vec![("endpoints/planner.endpoint_focus_task_by_id/body", "breaking")],
+            vec![(
+                "endpoints/planner.endpoint_focus_task_by_id/body",
+                "breaking",
+            )],
         ),
         (
             "candidate-success-body-narrowed",
-            vec![("endpoints/planner.endpoint_count_focused/success", "breaking")],
+            vec![(
+                "endpoints/planner.endpoint_count_focused/success",
+                "breaking",
+            )],
         ),
         (
             "candidate-scheme-edit",

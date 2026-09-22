@@ -267,8 +267,11 @@ target adapter (`lekalo-target-node-typescript`, product version 0.3.0):
 a dependency-free, read-only, single-file Node kernel. It implements the
 mandatory `describe` handshake at protocol 0.3.1 and nothing else on
 the wire: `scan` belongs to #44, native gates to #48, and generation to
-#45–#47, so its operation surface is exactly `["describe"]` and its five
-declared capability ids are all `unsupported`. A direct request to an
+#45–#47. From #45 the adapter family declares `generate`/`verify` with
+the named capability `generate.zod` and a declared write scope; the
+dedicated generation artifact `adapter-zod.mjs` (kernel plus the Zod
+generator, self-contained) carries that surface — see
+[zod-generation.md](zod-generation.md). A direct request to an
 unimplemented operation returns one valid `unsupported` error envelope
 (fixed code `operation-unsupported`), and core refuses undeclared
 operations before launch as usual.

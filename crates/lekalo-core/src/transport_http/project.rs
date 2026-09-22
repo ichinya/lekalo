@@ -224,13 +224,7 @@ fn route_json(
     if !binding.capabilities.is_empty() {
         route.insert(
             "capabilities".to_owned(),
-            Json::Array(
-                binding
-                    .capabilities
-                    .iter()
-                    .map(capability_json)
-                    .collect(),
-            ),
+            Json::Array(binding.capabilities.iter().map(capability_json).collect()),
         );
     }
     Ok(Json::Object(route))
@@ -411,7 +405,10 @@ fn inspect_success_json(success: &SuccessBinding) -> Json {
 /// declared field subset (an explicit body always carries its fields).
 fn inspect_body_json(body: &BodyBinding) -> Json {
     let mut object = Map::new();
-    object.insert("mode".to_owned(), Json::String(body.mode.body_str().to_owned()));
+    object.insert(
+        "mode".to_owned(),
+        Json::String(body.mode.body_str().to_owned()),
+    );
     if !body.fields.is_empty() {
         object.insert(
             "fields".to_owned(),
@@ -420,7 +417,10 @@ fn inspect_body_json(body: &BodyBinding) -> Json {
                     .iter()
                     .map(|field| {
                         let mut entry = Map::new();
-                        entry.insert("name".to_owned(), Json::String(field.name.as_str().to_owned()));
+                        entry.insert(
+                            "name".to_owned(),
+                            Json::String(field.name.as_str().to_owned()),
+                        );
                         entry.insert("field".to_owned(), Json::String(field.field.as_str()));
                         entry.insert("required".to_owned(), Json::Bool(field.required));
                         Json::Object(entry)
@@ -718,8 +718,14 @@ mod tests {
             "Planner/planner/focus_taskController"
         );
         // The other namespaces never carry the root segment.
-        assert_eq!(handler_identity("go", "Planner", "planner", "list"), "planner.listHandler");
-        assert_eq!(handler_identity("rust", "Planner", "planner", "list"), "planner::listRoute");
+        assert_eq!(
+            handler_identity("go", "Planner", "planner", "list"),
+            "planner.listHandler"
+        );
+        assert_eq!(
+            handler_identity("rust", "Planner", "planner", "list"),
+            "planner::listRoute"
+        );
         assert_eq!(
             handler_identity("node", "Planner", "planner", "list"),
             "planner/list.handler"

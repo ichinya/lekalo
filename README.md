@@ -608,7 +608,7 @@ native tests to semantic symbols, and a module moves from observed to
 contracted by promotion plus one declaration merge, without a rewrite.
 The mode lives in [docs/contracted-mode.md](docs/contracted-mode.md),
 [ADR-0034](docs/adr/0034-contracted-mode.md), and
-`contracts/contracted-declaration.schema.v0.2.16.json`; the planner
+`contracts/contracted-declaration.schema.v0.4.0.json`; the planner
 reference module is the first contracted slice under
 `tests/fixtures/contracted/planner-slice/`.
 

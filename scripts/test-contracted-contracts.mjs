@@ -43,7 +43,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 const readText = (relative) => readFileSync(resolve(root, relative), "utf8");
 
-const schema = read("contracts/contracted-declaration.schema.v0.2.16.json");
+const schema = read("contracts/contracted-declaration.schema.v0.4.0.json");
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateDeclaration = ajv.compile(schema);
@@ -62,7 +62,7 @@ const initial = read(`${DECLARATION_DIR}/initial.json`);
 if (!validateDeclaration(initial)) {
   fail("declaration-invalid", validateDeclaration.errors);
 }
-if (initial.schemaVersion !== "lekalo/contracted-declaration/v0.2.16") {
+if (initial.schemaVersion !== "lekalo/contracted-declaration/v0.4.0") {
   fail("declaration-identity", initial.schemaVersion);
 }
 if (initial.adapter.id !== "lekalo-target-node-typescript") {
@@ -148,6 +148,43 @@ refusal("unknown-effect-kind", (document) => {
   document.symbols[0].effects[0].kind = "drop-database";
 }, "enum");
 
+// Issue #45: the shape claim is closed — unknown members, foreign scalar
+// bases, and empty shape objects refuse.
+refusal("shape-unknown-key", (document) => {
+  const entity = document.symbols.find((symbol) => symbol.kind === "entity");
+  entity.shape = { ghost: 1 };
+}, "additionalProperties");
+refusal("shape-foreign-base", (document) => {
+  const scalar = document.symbols.find((symbol) => symbol.kind === "scalar");
+  if (!scalar) fail("shape-scalar-missing", "fixture lacks a bound scalar");
+  scalar.shape = { base: "decimal" };
+}, "enum");
+refusal("shape-empty", (document) => {
+  document.symbols[0].shape = {};
+}, "minProperties");
+
+// The committed planner-slice declaration gains the issue #45 shape
+// claims: the conformance gate recomputes them from the typed IR.
+const shapeClaims = initial.symbols.filter((symbol) => symbol.shape);
+for (const symbol of shapeClaims) {
+  if (symbol.kind === "entity" || symbol.kind === "value-object") {
+    if (!Array.isArray(symbol.shape.fields) || symbol.shape.fields.length === 0) {
+      fail("shape-fields-missing", symbol.id);
+    }
+  } else if (symbol.kind === "scalar") {
+    if (!symbol.shape.base) fail("shape-base-missing", symbol.id);
+  } else if (symbol.kind === "enum") {
+    if (!Array.isArray(symbol.shape.values) || symbol.shape.values.length === 0) {
+      fail("shape-values-missing", symbol.id);
+    }
+  } else {
+    fail("shape-kind-unsupported", symbol.id);
+  }
+}
+if (shapeClaims.length === 0) {
+  fail("shape-claims-missing", "the fixture must exercise the shape claim");
+}
+
 // ---------------------------------------------------------------------------
 // 4. Source-level custody invariants: the persisted registry home, the
 // support-path grammar, the mode identity, and the diagnostic family
@@ -176,6 +213,7 @@ for (const detail of [
   '"effects"',
   '"unimplemented"',
   '"content-stale"',
+  '"shape"',
   '"artifact-missing"',
 ]) {
   if (!checkRust.includes(detail)) fail("custody-drift-detail", detail);
@@ -201,7 +239,7 @@ process.stdout.write(
   `${JSON.stringify(
     {
       ok: true,
-      schema: "lekalo/contracted-declaration/v0.2.16",
+      schema: "lekalo/contracted-declaration/v0.4.0",
       declarationSymbols: ids.length,
       refusalVectors: 6,
       registryEntries: registry119.entries.length,

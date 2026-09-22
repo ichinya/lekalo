@@ -160,8 +160,8 @@ fn the_first_contracted_slice_passes_conformance() {
         "proj",
     ]);
     assert_eq!(receipt["status"], "valid");
-    assert_eq!(receipt["symbols"], 3);
-    assert_eq!(receipt["recorded"].as_array().expect("recorded").len(), 3);
+    assert_eq!(receipt["symbols"], 4);
+    assert_eq!(receipt["recorded"].as_array().expect("recorded").len(), 4);
 
     // Attach native coverage to both bound operations.
     let receipt = sandbox.json(&[
@@ -221,8 +221,8 @@ fn the_first_contracted_slice_passes_conformance() {
 
     let receipt = sandbox.json(&["contract", "check", "--project", "proj"]);
     assert_eq!(receipt["status"], "valid");
-    assert_eq!(receipt["symbols"], 3);
-    assert_eq!(receipt["conformant"], 3);
+    assert_eq!(receipt["symbols"], 4);
+    assert_eq!(receipt["conformant"], 4);
     assert_eq!(receipt["stale"], 0);
     assert_eq!(receipt["artifacts"], 1);
     assert_eq!(receipt["staleArtifacts"], 0);
@@ -466,4 +466,88 @@ fn missing_registry_refuses_the_gate() {
         "{}",
         stderr_text(&output)
     );
+}
+
+/// Issue #45 checked-schema linkage: a maintained Zod schema file binds
+/// through a `types` support claim with the `checked` lifecycle; the
+/// conformance gate re-digests it, and a stale (regenerated) schema
+/// fails the gate — exactly the existing-schema linkage path the issue
+/// accepts. The canonical shape claim keeps the semantic drift covered
+/// (the schema content may change without breaking conformance, but the
+/// model's shape always governs).
+#[test]
+fn a_checked_zod_schema_binds_as_a_types_support_claim() {
+    let sandbox = Sandbox::new("zod-types");
+    sandbox.update("proj/declarations/initial.json");
+    // The declaration's own openapi claim needs its exact bytes.
+    std::fs::create_dir_all(sandbox.project().join(".lekalo/generated/openapi"))
+        .expect("create generated home");
+    std::fs::copy(
+        sandbox.project().join("openapi-planner.json"),
+        sandbox
+            .project()
+            .join(".lekalo/generated/openapi/planner.json"),
+    )
+    .expect("materialize the declaration's openapi claim");
+    // The bound operations need their native coverage before any gate.
+    for symbol in ["planner.focus_task", "planner.list_tasks"] {
+        sandbox.json(&[
+            "contract",
+            "attach",
+            symbol,
+            "--native-test",
+            "npm test",
+            "--project",
+            "proj",
+        ]);
+    }
+
+    // The adapter's generated schema, copied into the project as the
+    // maintained checked artifact (hand-linked in contracted mode).
+    let schema_path = sandbox.project().join(".lekalo/generated/types.ts");
+    std::fs::create_dir_all(sandbox.project().join(".lekalo/generated")).expect("home");
+    std::fs::write(
+        &schema_path,
+        "// generated zod schema (checked)\nexport const PlannerTaskSchema = null;\n",
+    )
+    .expect("write the schema");
+    let digest = {
+        let bytes = std::fs::read(&schema_path).expect("artifact");
+        format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes))
+    };
+    let digest = digest.leak() as &str;
+    let receipt = sandbox.json(&[
+        "contract",
+        "support",
+        "planner.task",
+        "--kind",
+        "types",
+        "--lifecycle",
+        "checked",
+        "--path",
+        ".lekalo/generated/types.ts",
+        "--digest",
+        digest,
+        "--project",
+        "proj",
+    ]);
+    assert_eq!(receipt["kind"], "types");
+    assert_eq!(receipt["lifecycle"], "checked");
+
+    // The gate is clean: the exact bytes match the recorded digest.
+    let receipt = sandbox.json(&["contract", "check", "--project", "proj"]);
+    assert_eq!(receipt["status"], "valid", "{}", receipt);
+    assert_eq!(receipt["staleArtifacts"], 0);
+
+    // Regeneration overwrites the file: the checked claim reports the
+    // exact-bytes drift (validate-only lifecycle: reported, never fixed).
+    std::fs::write(
+        &schema_path,
+        "// regenerated\nexport const PlannerTaskSchema = 1;\n",
+    )
+    .expect("regenerate");
+    let rows = sandbox.check_invalid();
+    assert!(rows
+        .iter()
+        .any(|(id, detail, _)| id == "contracted.stale-artifact" && detail == "content-stale"));
 }

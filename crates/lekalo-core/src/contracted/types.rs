@@ -18,6 +18,9 @@ use super::version;
 
 /// The closed definition kinds the registry can bind; the same kinds the
 /// observed scan can record and the conformance checks can classify.
+/// Issue #45 adds the type-bearing kinds (`scalar`, `enum`,
+/// `value-object`) so maintained Zod schemas can bind their canonical
+/// shapes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SymbolKind {
@@ -26,16 +29,22 @@ pub enum SymbolKind {
     Effect,
     Endpoint,
     Entity,
+    Scalar,
+    Enum,
+    ValueObject,
 }
 
 impl SymbolKind {
     /// The closed kinds in canonical (Model kind-stem) order.
-    pub const KEYS: [Self; 5] = [
+    pub const KEYS: [Self; 8] = [
         Self::Command,
         Self::Query,
         Self::Effect,
         Self::Endpoint,
         Self::Entity,
+        Self::Scalar,
+        Self::Enum,
+        Self::ValueObject,
     ];
 
     /// The wire spelling (the Model `kind` word).
@@ -46,6 +55,9 @@ impl SymbolKind {
             Self::Effect => "effect",
             Self::Endpoint => "endpoint",
             Self::Entity => "entity",
+            Self::Scalar => "scalar",
+            Self::Enum => "enum",
+            Self::ValueObject => "value-object",
         }
     }
 
@@ -303,6 +315,9 @@ pub struct ConformedSymbol {
     pub signature: Option<SignatureEvidence>,
     /// The declared effects the code claims, sorted.
     pub effects: Vec<DeclaredEffect>,
+    /// The canonical shape claim of a type-bearing symbol (issue #45),
+    /// recomputed from the typed IR on every conformance run.
+    pub shape: Option<ShapeEvidence>,
     /// The attached verbatim native-test ids, sorted.
     pub native_tests: Vec<String>,
     /// The attached verbatim gate ids, sorted.
@@ -361,6 +376,23 @@ pub struct DeclaredSymbol {
     pub fingerprint: Option<String>,
     pub signature: Option<SignatureEvidence>,
     pub effects: Vec<DeclaredEffect>,
+    pub shape: Option<ShapeEvidence>,
+}
+
+/// The canonical shape claim of one type-bearing symbol (issue #45):
+/// the field list of a value-object/entity, the base of a scalar, or the
+/// declared values of an enum — exactly one member per kind.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ShapeEvidence {
+    /// The canonical field list, sorted by name (value-object/entity).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<SignatureField>,
+    /// The closed scalar base (scalar only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    /// The declared enum values in canonical order (enum only).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub values: Vec<String>,
 }
 
 /// The validated adapter declaration document.
