@@ -441,6 +441,10 @@ pub fn exposure_findings(
         if kind.rank() <= DataKind::Public.rank() {
             continue;
         }
+        // Only a fully valid grant clears the exposure: a real strict
+        // lowering to public, never self-approved, not expired. The
+        // structural role/approval checks run in validation; here the
+        // grant must at least not be the grant's own approval.
         let lowered_to_public = resolution
             .grants(&exposure.result_subject)
             .iter()
@@ -448,6 +452,7 @@ pub fn exposure_findings(
                 grant.from_kind() == kind
                     && grant.to_kind() == DataKind::Public
                     && grant.from_kind().declassifiable()
+                    && grant.approved_by().as_str() != grant.id().as_str()
             });
         if lowered_to_public {
             continue;
@@ -857,6 +862,15 @@ pub fn run_report(
         model_json,
     )?;
     crate::classification::validate::validate_subjects(attachment, compilation)?;
+    // Grant validity: the report never rests on an invalid grant
+    // (kind-rule-missing, self-approval, expiry); violations are
+    // terminal for the report surface.
+    crate::classification::validate_policy_and_grants(
+        attachment,
+        policy,
+        resolution,
+        &compilation.project,
+    )?;
     let graph = crate::effects::build_with_classification(&compilation.project, Some(resolution))?;
     let (model_digest, ir_digest) = compile_digests(compilation);
     let project_id = match compilation.project.project.as_ref() {

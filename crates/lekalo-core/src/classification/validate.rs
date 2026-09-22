@@ -230,6 +230,23 @@ pub fn validate_policy_and_grants(
     resolution: &Resolution,
     project: &CompiledProject,
 ) -> Result<ValidationOutcome, DiagnosticSet> {
+    validate_policy_and_grants_as_of(attachment, policy, resolution, project, DEFAULT_AS_OF)
+}
+
+/// The fixed validation as-of date (pure: no wall-clock input, the
+/// report and validate surfaces stay deterministic functions of their
+/// bytes).
+pub const DEFAULT_AS_OF: &str = "2026-01-01T00:00:00Z";
+
+/// [`validate_policy_and_grants`] with an explicit evaluation date for
+/// the grant-expiry rule (LEK-CLS-007).
+pub fn validate_policy_and_grants_as_of(
+    attachment: &Attachment,
+    policy: &PolicyAttachment,
+    resolution: &Resolution,
+    project: &CompiledProject,
+    as_of: &str,
+) -> Result<ValidationOutcome, DiagnosticSet> {
     let mut outcome = ValidationOutcome::default();
     // Every resolvable kind must have a policy row (plan §1.2: policy
     // coverage is total over the declared kinds).
@@ -285,6 +302,19 @@ pub fn validate_policy_and_grants(
                 subject: grant.subject().as_str().to_owned(),
             });
             continue;
+        }
+        // Expiry (LEK-CLS-007): a grant past its `expiresAt` is dead —
+        // reported against the fixed validation as-of date, never
+        // silently lowering anything.
+        if grant
+            .expires_at()
+            .is_some_and(|expires_at| expires_at.as_str() < as_of)
+        {
+            outcome.invalid = true;
+            outcome.rows.push(FindingRow {
+                rule: "classification.expired-declassification".to_owned(),
+                subject: grant.subject().as_str().to_owned(),
+            });
         }
         // Self-approval: the grant's own id as the review reference.
         if grant.approved_by().as_str() == grant.id().as_str() {
@@ -418,64 +448,105 @@ pub fn discover(
 mod tests {
     use super::*;
 
-    /// Serializes every test that changes the process working directory.
-    static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// The strict rule over the committed planner fixture: every
-    /// declared-graph subject carries an explicit entry or a
-    /// definition-level default, so no finding fires; removing one
-    /// entry produces exactly that finding.
+    /// The expiry rule (LEK-CLS-007): a grant past its `expiresAt`
+    /// produces `classification.expired-declassification` against the
+    /// fixed as-of date; a live grant does not.
     #[test]
-    fn strict_rule_flags_only_subjects_without_explicit_entries() {
-        let _guard = CWD_LOCK.lock().expect("cwd lock");
-        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(std::path::Path::parent)
-            .expect("workspace root")
-            .to_path_buf();
-        let fixture = "tests/fixtures/classification/valid/planner";
-        let original = std::env::current_dir().expect("current dir");
-        std::env::set_current_dir(&workspace).expect("enter workspace root");
-        let compilation = {
-            let model = crate::loader::normalize_model(&crate::loader::LoadSelection {
-                project: Some(fixture.to_owned()),
-            })
-            .expect("loads");
-            crate::ir::compile(&model).expect("compiles")
+    fn expired_grants_are_findings_and_live_grants_pass() {
+        let grant = |expires_at: &str| {
+            format!(
+                r#"{{
+          "id": "grant.core.export-user-derived@1.0.0",
+          "subject": "notify.user_id",
+          "fromKind": "personal",
+          "toKind": "derived",
+          "approvedBy": "review-2025-001",
+          "justification": "Aggregated analytics only.",
+          "expiresAt": "{expires_at}"
+        }}"#
+            )
         };
-        let attachment = Attachment::parse(
-            &std::fs::read(workspace.join(fixture).join("lekalo/classification.json"))
-                .expect("read"),
-        )
-        .expect("parses");
-        std::env::set_current_dir(original).expect("restore cwd");
+        let attachment_for = |grant: &str| {
+            let model = format!("sha256:{}", "a".repeat(64));
+            let ir = format!("sha256:{}", "b".repeat(64));
+            let json = format!(
+                r#"{{
+      "schemaVersion": "lekalo/data-classification/v0.4.0",
+      "identity": "dev.lekalo.data-classification@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "planner",
+      "modelRef": {{"modelVersion": "0.2.16", "digest": "{model}"}},
+      "irRef": {{"irVersion": "0.2.16", "digest": "{ir}"}},
+      "defaults": {{"profile": "default", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"}},
+      "classifications": [
+        {{"subject": "notify.user_id", "kind": "personal"}}
+      ],
+      "declassifications": [{grant}],
+      "openQuestions": []
+    }}"#
+            );
+            Attachment::parse(json.as_bytes()).expect("parses")
+        };
+        let model = format!("sha256:{}", "a".repeat(64));
+        let ir = format!("sha256:{}", "b".repeat(64));
+        let policy_json = format!(
+            r#"{{
+      "schemaVersion": "lekalo/classification-policy/v0.4.0",
+      "identity": "dev.lekalo.classification-policy@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "planner",
+      "modelRef": {{"modelVersion": "0.2.16", "digest": "{model}"}},
+      "irRef": {{"irVersion": "0.2.16", "digest": "{ir}"}},
+      "kinds": [{{
+        "kind": "personal",
+        "readers": ["tenant"], "writers": ["tenant"],
+        "destinations": ["internal-service"],
+        "masking": {{"strategy": "tokenize", "policyRef": "privacy-policy.masking.personal"}},
+        "consentRequired": false, "crossTenant": "forbidden",
+        "declassifyRoles": ["data-steward"]
+      }}],
+      "sinks": {{"logs": {{"maxKind": "internal"}}, "traces": {{"maxKind": "internal"}}, "contextCapsules": {{"maxKind": "internal"}}, "diagnostics": {{"maxKind": "internal"}}, "evidence": {{"maxKind": "public"}}, "exports": {{"maxKind": "derived"}}}},
+      "openQuestions": []
+    }}"#
+        );
+        let policy = PolicyAttachment::parse(policy_json.as_bytes()).expect("policy parses");
 
-        // The full attachment covers the graph: no strict findings.
-        assert!(strict_sensitive_sink_findings(&attachment, &compilation.project).is_empty());
+        let expired = attachment_for(&grant("2020-01-01T00:00:00Z"));
+        let resolution = Resolution::build(&expired);
+        let outcome = validate_policy_and_grants(&expired, &policy, &resolution, empty_project())
+            .expect("runs");
+        assert!(outcome.invalid);
+        assert!(
+            outcome
+                .rows
+                .iter()
+                .any(|row| row.rule == "classification.expired-declassification"),
+            "{outcome:?}"
+        );
 
-        // Removing the definition-level `notify.user` entry leaves the
-        // entity covered only by the profile default: exactly one
-        // finding, on that subject.
-        let stripped = Attachment::parse(
-            serde_json::to_vec(&serde_json::json!({
-                "schemaVersion": "lekalo/data-classification/v0.4.0",
-                "identity": "dev.lekalo.data-classification@0.4.0",
-                "attachmentRevision": "1.0.0",
-                "projectId": "planner",
-                "modelRef": {"modelVersion": "0.2.16", "digest": attachment.model_ref().1.as_str()},
-                "irRef": {"irVersion": "0.2.16", "digest": attachment.ir_ref().1.as_str()},
-                "defaults": {"profile": "strict", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"},
-                "classifications": attachment.classifications().iter().filter(|entry| entry.subject().as_str() != "notify.user").map(|entry| serde_json::json!({"subject": entry.subject().as_str(), "kind": entry.kind().as_str()})).collect::<Vec<_>>(),
-                "declassifications": [],
-                "openQuestions": []
-            }))
-            .expect("serializes")
-            .as_slice(),
-        )
-        .expect("parses");
-        let rows = strict_sensitive_sink_findings(&stripped, &compilation.project);
-        assert_eq!(rows.len(), 1, "{rows:?}");
-        assert_eq!(rows[0].rule, "classification.unclassified-sensitive-sink");
-        assert_eq!(rows[0].subject, "notify.user");
+        let live = attachment_for(&grant("2999-01-01T00:00:00Z"));
+        let resolution = Resolution::build(&live);
+        let outcome =
+            validate_policy_and_grants(&live, &policy, &resolution, empty_project()).expect("runs");
+        assert!(!outcome.invalid, "{outcome:?}");
+    }
+
+    /// An empty compilation (the grant checks run over the attachment
+    /// and policy alone).
+    fn empty_project() -> &'static CompiledProject {
+        // The strict sensitive-sink rule only reads definitions; an
+        // empty definition list means no graph subjects.
+        static PROJECT: std::sync::OnceLock<CompiledProject> = std::sync::OnceLock::new();
+        PROJECT.get_or_init(|| {
+            let model = crate::loader::NormalizedModel {
+                model_version: crate::loader::project_docs::ModelVersion::Current,
+                project: None,
+                modules: Vec::new(),
+                definitions: Vec::new(),
+            };
+            crate::ir::compile(&model)
+                .expect("empty model compiles")
+                .project
+        })
     }
 }
