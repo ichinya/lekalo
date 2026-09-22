@@ -29,7 +29,7 @@ pub mod report;
 pub mod types;
 pub mod version;
 
-pub use analyze::{analyze, run_report, Analysis, Inputs};
+pub use analyze::{analyze, run_report, Analysis, EndpointActor, EndpointExposure, Inputs};
 pub use report::report_canonical_bytes;
 pub use report::{Report, ReportWire, Verdict};
 pub use types::{

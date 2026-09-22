@@ -321,10 +321,18 @@ pub fn exposure_findings(
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     for exposure in exposures {
-        let ResolvedKind::Classified(kind) = resolution.resolve(&exposure.result_subject) else {
+        if exposure.actor != EndpointActor::Public {
             continue;
+        }
+        // Unclassified on a public endpoint counts as sensitive (the
+        // resolution widens unclassified to the most restrictive rank,
+        // and unknown is never safe): it is an exposure finding unless
+        // an approved grant covers the subject explicitly.
+        let kind = match resolution.resolve(&exposure.result_subject) {
+            ResolvedKind::Classified(kind) => kind,
+            ResolvedKind::Unclassified => DataKind::Credential,
         };
-        if exposure.actor != EndpointActor::Public || kind.rank() <= DataKind::Public.rank() {
+        if kind.rank() <= DataKind::Public.rank() {
             continue;
         }
         let lowered_to_public = resolution
@@ -568,6 +576,7 @@ pub fn run_report(
     attachment: &crate::classification::Attachment,
     policy: &crate::classification::PolicyAttachment,
     resolution: &crate::classification::Resolution,
+    endpoint_exposures: &[EndpointExposure],
 ) -> Result<(crate::dataflow::Report, crate::diagnostics::DiagnosticSet), DiagnosticSet> {
     // Custody: the attachment binds the exact compilation (project,
     // Model bytes, and IR bytes).
@@ -604,7 +613,7 @@ pub fn run_report(
         policy_ref: &policy_ref,
         generated_by: GENERATED_BY,
         report_revision: REPORT_REVISION,
-        endpoint_exposures: &[],
+        endpoint_exposures,
     })?;
     let diagnostics = analysis.diagnostics.clone();
     Ok((analysis.report, diagnostics))
@@ -681,16 +690,19 @@ mod exposure_tests {
     }
 
     #[test]
-    fn authenticated_actors_and_unresolved_subjects_never_expose() {
+    fn authenticated_actors_never_expose_and_unresolved_subjects_fail_closed() {
         let resolution = resolution();
         let mut authenticated = exposure_of("core.entity.user/email");
         authenticated.actor = EndpointActor::Authenticated;
         let unresolved = exposure_of("core.entity.user");
         let findings = super::exposure_findings(&resolution, &[authenticated, unresolved]);
-        // Only public actors over resolvable subjects above public are
-        // findings; an unresolvable subject stays silent here (the
-        // unclassified rules cover it) — the rule never guesses.
-        assert!(findings.is_empty());
+        // An authenticated actor never triggers the exposure rule, but
+        // a public endpoint whose result subject never resolved is the
+        // unsafe-unknown state: unclassified counts as sensitive and
+        // fails closed (exactly one finding, on the unresolved subject).
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].rule_id, "dataflow.exposed-private-field");
+        assert_eq!(findings[0].subject, "core.entity.user");
     }
 
     #[test]

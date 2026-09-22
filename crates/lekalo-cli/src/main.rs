@@ -5749,7 +5749,55 @@ enum DataflowCommands {
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
+        /// One transport endpoint-actor binding (issue #70 seam, plan
+        /// §5.1): `SYMBOL:ACTOR` where ACTOR is `public` or
+        /// `authenticated`; the binding resolves the endpoint's invoked
+        /// operation result. Repeatable.
+        #[arg(long = "endpoint", value_name = "SYMBOL:ACTOR")]
+        endpoints: Vec<String>,
     },
+}
+
+/// Parse one `--endpoint SYMBOL:ACTOR` binding into a typed exposure
+/// (issue #70 seam): the endpoint symbol must resolve to a declared
+/// endpoint definition and its actor must be the closed vocabulary.
+fn parse_endpoint_exposures(
+    endpoints: &[String],
+    compilation: &lekalo_core::ir::Compilation,
+) -> Result<Vec<lekalo_core::dataflow::EndpointExposure>, DomainResult> {
+    let mut exposures = Vec::new();
+    for endpoint in endpoints {
+        let Some((symbol, actor)) = endpoint.rsplit_once(':') else {
+            return Err(DomainResult::usage_error());
+        };
+        let actor = match actor {
+            "public" => lekalo_core::dataflow::EndpointActor::Public,
+            "authenticated" => lekalo_core::dataflow::EndpointActor::Authenticated,
+            _ => return Err(DomainResult::usage_error()),
+        };
+        let Some(lekalo_core::ir::Definition::Endpoint(definition)) = compilation
+            .project
+            .definitions
+            .iter()
+            .find(|definition| definition.id().as_str() == symbol)
+        else {
+            return Err(DomainResult::invalid(
+                lekalo_core::classification::diagnostic::unknown_subject(
+                    "endpoint-unknown",
+                    symbol,
+                ),
+            ));
+        };
+        exposures.push(lekalo_core::dataflow::EndpointExposure {
+            endpoint: symbol.to_owned(),
+            actor,
+            result_subject: lekalo_core::classification::SubjectPath::parse(
+                definition.invokes.as_str(),
+            )
+            .map_err(|_| DomainResult::usage_error())?,
+        });
+    }
+    Ok(exposures)
 }
 
 /// Read one attachment document; IO failure is a typed invalid set.
@@ -5944,6 +5992,7 @@ fn run_dataflow(command: DataflowCommands) -> DomainResult {
             attachment,
             policy,
             project,
+            endpoints,
         } => {
             let (model_json, compilation) = match load_compiled_for(&project) {
                 Err(result) => return result,
@@ -5954,12 +6003,17 @@ fn run_dataflow(command: DataflowCommands) -> DomainResult {
                     Err(result) => return result,
                     Ok(parts) => parts,
                 };
+            let exposures = match parse_endpoint_exposures(&endpoints, &compilation) {
+                Err(result) => return result,
+                Ok(exposures) => exposures,
+            };
             match lekalo_core::dataflow::run_report(
                 &compilation,
                 &model_json,
                 &attachment,
                 &policy,
                 &resolution,
+                &exposures,
             ) {
                 Err(set) => DomainResult::invalid(set),
                 Ok((report, diagnostics)) => {

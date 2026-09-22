@@ -49,6 +49,7 @@ const CROSSING = join(root, "tests/fixtures/classification/invalid/tenant-crossi
 const SINK = join(root, "tests/fixtures/classification/invalid/secret-in-sink");
 const SEALED = join(root, "tests/fixtures/classification/invalid/credential-declassified");
 const UNCLOSED = join(root, "tests/fixtures/classification/invalid/unclosed-policy");
+const ENDPOINT = join(root, "tests/fixtures/classification/invalid/public-endpoint-private-field");
 const attachment = (fixture) => join(fixture, "lekalo/classification.json");
 const policy = (fixture) => join(fixture, "lekalo/classification-policy.json");
 
@@ -185,6 +186,84 @@ const policy = (fixture) => join(fixture, "lekalo/classification-policy.json");
   }
 }
 
+// 6d. The public-endpoint acceptance case (plan §8): the same project
+// through an `authenticated` binding stays valid; the identical
+// `public` binding exposes the internal task entity —
+// dataflow.exposed-private-field, verdict denied (exit 3).
+{
+  const authenticated = run(
+    [
+      "dataflow",
+      "report",
+      "--attachment",
+      attachment(ENDPOINT),
+      "--policy",
+      policy(ENDPOINT),
+      "--endpoint",
+      "planner.api_focus:authenticated",
+      "--json",
+    ],
+    ENDPOINT,
+  );
+  if (authenticated.code !== 0) fail("endpoint-authenticated-exit", authenticated);
+  if (JSON.parse(authenticated.stdout).report.verdict !== "pass") {
+    fail("endpoint-authenticated-verdict", authenticated.stdout);
+  }
+  const publicRun = run(
+    [
+      "dataflow",
+      "report",
+      "--attachment",
+      attachment(ENDPOINT),
+      "--policy",
+      policy(ENDPOINT),
+      "--endpoint",
+      "planner.api_focus:public",
+      "--json",
+    ],
+    ENDPOINT,
+  );
+  if (publicRun.code !== 3) fail("endpoint-public-exit", publicRun);
+  const publicOutput = publicRun.stdout + publicRun.stderr;
+  if (!publicOutput.includes("dataflow.exposed-private-field")) {
+    fail("endpoint-public-rule", publicOutput);
+  }
+  // The denied envelope carries the finding as a diagnostic (the
+  // dropped report rows are core-side; the rule id is what asserts).
+  const deniedDoc = JSON.parse(publicRun.stdout);
+  const exposed = deniedDoc.diagnostics.filter(
+    (diagnostic) => diagnostic.id === "dataflow.exposed-private-field",
+  );
+  if (exposed.length !== 1) fail("endpoint-public-diagnostic", deniedDoc.diagnostics);
+
+  // 6e. The validate-pipeline review (F-2 fix): the broken attachments
+  // invalidate in the strict profile; the valid fixture stays green.
+  // In the default profile structured refusals stay invalid while
+  // finding-level issues are recorded without failing — but never
+  // silently: the rule id is visible in every profile.
+  for (const [fixture, rule, strictCode, defaultCode] of [
+    [UNKNOWN, "classification.unknown-subject", 1, 1],
+    [SEALED, "classification.invalid-declassification", 1, 1],
+    [UNCLOSED, "classification.kind-rule-missing", 1, 0],
+    [VALID, null, 3, 0],
+  ]) {
+    const strictRun = run(["validate", "--strict", "--json"], fixture);
+    if (strictRun.code !== strictCode) {
+      fail("validate-review-exit", { fixture, strictCode, ...strictRun });
+    }
+    if (rule !== null && !strictRun.stdout.includes(rule) && !strictRun.stderr.includes(rule)) {
+      fail("validate-review-rule", { fixture, rule, ...strictRun });
+    }
+    const defaultRun = run(["validate", "--json"], fixture);
+    if (defaultRun.code !== defaultCode) {
+      fail("validate-review-default-exit", { fixture, defaultCode, ...defaultRun });
+    }
+    if (rule !== null && !defaultRun.stdout.includes(rule) && !defaultRun.stderr.includes(rule)) {
+      fail("validate-review-recorded", { fixture, rule });
+    }
+  }
+}
+
 // 7. Non-disclosure byte-scan: the sentinel secret value never appears
 // in any committed classification fixture artifact or in any CLI output
 // over them. Classification metadata flows; values never do.
@@ -204,7 +283,7 @@ const SENTINEL = "LEKALO-SENTINEL-SECRET-9f2c";
     const bytes = readFileSync(path, "utf8");
     if (bytes.includes(SENTINEL)) fail("sentinel-in-fixture", path);
   }
-  for (const fixture of [VALID, DECLASSIFIED, UNKNOWN, SEALED, UNCLOSED, CROSSING, SINK]) {
+  for (const fixture of [VALID, DECLASSIFIED, UNKNOWN, SEALED, UNCLOSED, CROSSING, SINK, ENDPOINT]) {
     for (const command of [
       ["classification", "validate", "--attachment", attachment(fixture), "--policy", policy(fixture)],
       ["classification", "inspect", "--attachment", attachment(fixture), "--policy", policy(fixture)],
@@ -222,7 +301,7 @@ process.stdout.write(`${JSON.stringify({
   fixtures: {
     valid: 1,
     declassified: 1,
-    invalid: 5,
+    invalid: 6,
   },
   sentinelScanned: true,
 }, null, 2)}\n`);
