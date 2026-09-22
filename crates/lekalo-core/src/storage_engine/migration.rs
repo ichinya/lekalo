@@ -1827,12 +1827,25 @@ fn plan_indexes(
 /// quoted object name — a changed constraint predicate, enum member
 /// list, or FK action under a constant derived name) stays with the
 /// constructive steps, because the re-add of an existing name would
-/// fail if the drop ran after it. Stable for identical inputs.
+/// fail if the drop ran after it. The pairing matches the whole
+/// quoted identifier, never a substring: a dropped column's name
+/// embeds in its derived `idx_*`/`chk_*` names, and pairing on that
+/// embedding would let the DROP COLUMN run first — PostgreSQL
+/// auto-drops the objects involving the column, and the later explicit
+/// drops would fail on objects that no longer exist. Stable for
+/// identical inputs.
 fn order_drops_last(steps: &mut [Step]) {
+    // The last quoted identifier of one statement, with its opening
+    // and closing delimiters: the object a drop names or an add
+    // creates (the constraint/index/column/table token). Keeping the
+    // quote characters makes the later pairing a whole-identifier
+    // match — `"due_date"` must not pair with `DROP INDEX
+    // "idx_task_due_date"`, where the identifier is embedded in the
+    // derived name, not equal to it.
     fn dropped_object_name(statement: &str) -> Option<String> {
         let inner = statement.strip_suffix(';')?;
         let name_end = inner.rfind('"')?;
-        let name_start = inner[..name_end].rfind('"')? + 1;
+        let name_start = inner[..name_end].rfind('"')?;
         Some(inner[name_start..=name_end].to_owned())
     }
     let is_paired = |index: usize, steps: &[Step]| -> bool {
@@ -1906,6 +1919,59 @@ mod tests {
         assert!(!assignment_castable("timestamptz", "date"));
         assert!(!assignment_castable("bytea", "text"));
         assert!(!assignment_castable("some unknown", "bigint"));
+    }
+
+    #[test]
+    fn a_column_drop_never_pairs_with_its_dependents_derived_names() {
+        // The pairing matches the whole quoted identifier, never a
+        // substring: a dropped column's name embeds in the derived
+        // names of its own index and check (`idx_task_due_date`,
+        // `chk_tag_color`), and pairing on that embedding would let
+        // the DROP COLUMN run first — PostgreSQL auto-drops the objects
+        // involving the column, so the later explicit drops of those
+        // same objects would fail on apply.
+        let mut steps = vec![
+            step("create_extension"),
+            step("drop_column"),
+            step("drop_index"),
+            step("drop_check"),
+        ];
+        steps[1].statement = "ALTER TABLE \"task\" DROP COLUMN \"due_date\";".to_owned();
+        steps[2].statement = "DROP INDEX \"idx_task_due_date\";".to_owned();
+        steps[3].statement = "ALTER TABLE \"tag\" DROP CONSTRAINT \"chk_tag_color\";".to_owned();
+        order_drops_last(&mut steps);
+        let kinds: Vec<&str> = steps.iter().map(|step| step.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                "create_extension",
+                "drop_index",
+                "drop_check",
+                "drop_column",
+            ],
+            "the dependent drops precede the column that owns them"
+        );
+        // A genuinely replaced drop (a later step re-adds the same
+        // quoted name) still pairs and stays in place.
+        let mut steps = vec![
+            step("create_extension"),
+            step("drop_check"),
+            step("add_check"),
+            step("drop_column"),
+        ];
+        steps[1].statement = "ALTER TABLE \"tag\" DROP CONSTRAINT \"chk_tag_color\";".to_owned();
+        steps[2].statement =
+            "ALTER TABLE \"tag\" ADD CONSTRAINT \"chk_tag_color\" CHECK (\"color\" IN ('red'));"
+                .to_owned();
+        steps[2].risk = DataRisk::None;
+        steps[3].statement = "ALTER TABLE \"tag\" DROP COLUMN \"color\";".to_owned();
+        order_drops_last(&mut steps);
+        let kinds: Vec<&str> = steps.iter().map(|step| step.kind).collect();
+        assert_eq!(
+            kinds,
+            vec!["create_extension", "drop_check", "add_check", "drop_column",],
+            "the replaced drop stays paired in place ahead of the column drop"
+        );
     }
 
     #[test]
