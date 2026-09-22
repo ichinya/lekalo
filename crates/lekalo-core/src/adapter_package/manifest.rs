@@ -638,9 +638,8 @@ struct ConformanceWire {
     #[serde(default)]
     #[allow(dead_code)]
     badge: Option<Json>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    suite_registry: Option<String>,
+    #[serde(rename = "suiteRegistry")]
+    suite_registry: String,
 }
 
 impl ManifestWire {
@@ -757,5 +756,24 @@ impl ManifestWire {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod committed_exemplar_tests {
+    /// The shipped exemplar must parse through the exact wire structs:
+    /// this is the structural schema-parity guard for the serde spellings
+    /// (issue #32 fix round 1, finding F-1).
+    #[test]
+    fn the_committed_adapter_manifest_parses() {
+        let bytes = include_bytes!("../../../../adapters/node-typescript/adapter.manifest.json",);
+        let document = super::ManifestDocument::from_bytes(bytes)
+            .expect("the committed adapter manifest must parse");
+        assert_eq!(document.adapter_id(), "lekalo-target-node-typescript");
+        assert_eq!(document.adapter_version().as_str(), "0.3.2");
+        assert_eq!(
+            document.package_digest().as_str(),
+            "sha256:8bb2a397509c4b36f25a8e91fb829fc1b7c761eb9490f3ebe11f72568648731e"
+        );
     }
 }
