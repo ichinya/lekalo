@@ -65,6 +65,19 @@ fn verify_synthesized(manifest: &ManifestDocument) -> Result<(), PackageFailure>
 
 fn verify_tree(root: &Path, manifest: &ManifestDocument) -> Result<(), PackageFailure> {
     let identity = manifest.adapter_id().to_owned();
+    // 0. The manifest self-contribution is implicit in the package
+    //    digest domain (the manifest cannot cover its own digest), so
+    //    listing it in files[] would double-frame it and make the
+    //    declared packageDigest circular.
+    if manifest
+        .files()
+        .iter()
+        .any(|file| file.path() == MANIFEST_FILE)
+    {
+        return Err(PackageFailure::ManifestInvalid {
+            reason: "manifest-self-entry".to_owned(),
+        });
+    }
     // 1. Every declared file must exist with exactly the declared bytes.
     for file in manifest.files() {
         let path = root.join(file.path().replace('/', std::path::MAIN_SEPARATOR_STR));
@@ -113,9 +126,6 @@ fn package_root_bytes(
             domain: "file".to_owned(),
             identity: file.path().to_owned(),
         })?;
-        if file.path() == MANIFEST_FILE {
-            bytes = manifest_stripped_bytes(&bytes)?;
-        }
         let mut part = Vec::with_capacity(file.path().len() + bytes.len() + 16);
         part.extend_from_slice(file.path().as_bytes());
         part.push(0);
@@ -124,14 +134,23 @@ fn package_root_bytes(
         part.extend_from_slice(&bytes);
         parts.push(part);
     }
+    // The manifest's own contribution: canonical bytes minus the
+    // self-referential manifestDigest member with packageDigest
+    // zeroed — the same exclusion the JS generator applies. This is
+    // the normative domain of ADR-0042; one definition, both sides.
+    parts.push(framed_manifest_part(manifest.digest_domain_bytes()));
     Ok(parts)
 }
 
-/// Parse one stored manifest and return its digest-domain canonical
-/// bytes (the document minus the self-referential member).
-fn manifest_stripped_bytes(stored: &[u8]) -> Result<Vec<u8>, PackageFailure> {
-    let document = ManifestDocument::from_bytes(stored)?;
-    Ok(document.canonical_bytes())
+/// Frame the implicit manifest self-contribution.
+fn framed_manifest_part(canonical_manifest: Vec<u8>) -> Vec<u8> {
+    let mut part = Vec::with_capacity(MANIFEST_FILE.len() + canonical_manifest.len() + 16);
+    part.extend_from_slice(MANIFEST_FILE.as_bytes());
+    part.push(0);
+    part.extend_from_slice(&canonical_manifest.len().to_be_bytes());
+    part.push(0);
+    part.extend_from_slice(&canonical_manifest);
+    part
 }
 
 /// The package digest over the canonical byte set.
@@ -194,7 +213,18 @@ mod tests {
         let bytes = std::fs::read(root.join(entry_rel)).expect("entry bytes");
         assert_eq!(format!("sha256:{}", digest_of(&bytes)), entry_digest);
         part.extend_from_slice(&bytes);
-        format!("sha256:{}", package_digest_hex(&[part]))
+        // The normative domain appends the implicit manifest part:
+        // canonical bytes minus manifestDigest, packageDigest zeroed.
+        let stored = std::fs::read(root.join(MANIFEST_FILE)).expect("manifest on disk");
+        let parsed =
+            crate::adapter_package::ManifestDocument::from_bytes(&stored).expect("manifest parses");
+        let mut manifest_part = Vec::new();
+        manifest_part.extend_from_slice(MANIFEST_FILE.as_bytes());
+        manifest_part.push(0);
+        manifest_part.extend_from_slice(&parsed.digest_domain_bytes().len().to_be_bytes());
+        manifest_part.push(0);
+        manifest_part.extend_from_slice(&parsed.digest_domain_bytes());
+        format!("sha256:{}", package_digest_hex(&[part, manifest_part]))
     }
 
     #[test]
@@ -205,6 +235,15 @@ mod tests {
         let entry = root.join("adapter.mjs");
         std::fs::write(&entry, b"export const x = 1;\n").expect("write");
         let entry_digest = format!("sha256:{}", digest_of(b"export const x = 1;\n"));
+        // The manifest must be on disk first: the normative package
+        // digest domain includes its implicit self-contribution.
+        let provisional = serde_json::to_vec(&manifest_json(
+            b"export const x = 1;\n",
+            &entry_digest,
+            &format!("sha256:{}", "0".repeat(64)),
+        ))
+        .unwrap();
+        std::fs::write(root.join(MANIFEST_FILE), &provisional).expect("manifest");
         let package_digest = package_digest_for(
             &root,
             "adapter.mjs",
@@ -285,5 +324,50 @@ mod tests {
             synthesized: true,
         };
         assert!(verify_package(&candidate).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod committed_exemplar_tests {
+    use super::*;
+
+    /// The cross-check both reviews demanded: the Rust verifier accepts
+    /// exactly what the JS generator (scripts/regen-adapter-manifest.mjs)
+    /// emits for the shipped exemplar. If the two digest domains ever
+    /// diverge again, this fails (issue #32 fix round 1, finding F-2).
+    #[test]
+    fn the_committed_exemplar_clears_the_integrity_gate() {
+        let root = std::env::temp_dir().join(format!(
+            "lekalo-ap-exemplar-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("mkdir");
+        let manifest_source =
+            include_bytes!("../../../../adapters/node-typescript/adapter.manifest.json");
+        let document = crate::adapter_package::ManifestDocument::from_bytes(manifest_source)
+            .expect("committed manifest parses");
+        for file in document.files() {
+            let bytes = include_bytes!(concat!(
+                "../../../../adapters/node-typescript/",
+                "adapter.mjs"
+            ));
+            let _ = bytes;
+            break; // the only payload file; the real copy happens below
+        }
+        // Copy the committed payload into the temp package root.
+        let payload = include_bytes!("../../../../adapters/node-typescript/adapter.mjs");
+        std::fs::write(root.join("adapter.mjs"), payload).expect("payload");
+        std::fs::write(root.join(MANIFEST_FILE), manifest_source).expect("manifest");
+        let candidate = crate::adapter_package::discovery::DiscoveryCandidate {
+            manifest: document,
+            package_root: Some(root.clone()),
+            synthesized: false,
+        };
+        verify_package(&candidate).expect("the shipped exemplar passes verify_package");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

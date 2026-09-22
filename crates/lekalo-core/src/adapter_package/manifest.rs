@@ -305,6 +305,23 @@ impl ManifestDocument {
         canonical::canonical_bytes(&self.canonical)
     }
 
+    /// The package-digest-domain bytes: the canonical form with the
+    /// self-referential `integrity.packageDigest` zeroed — a digest
+    /// cannot cover the member it defines. The JS generator applies the
+    /// same exclusion (issue #32 fix round 1, finding F-2).
+    pub fn digest_domain_bytes(&self) -> Vec<u8> {
+        let mut value = self.canonical.clone();
+        if let serde_json::Value::Object(ref mut map) = value {
+            if let Some(serde_json::Value::Object(integrity)) = map.get_mut("integrity") {
+                integrity.insert(
+                    "packageDigest".to_owned(),
+                    serde_json::Value::String(format!("sha256:{}", "0".repeat(64))),
+                );
+            }
+        }
+        super::canonical::canonical_bytes(&value)
+    }
+
     /// The manifest identity digest (SHA-256 over
     /// [`ManifestDocument::canonical_bytes`]).
     pub fn digest(&self) -> ManifestDigest {

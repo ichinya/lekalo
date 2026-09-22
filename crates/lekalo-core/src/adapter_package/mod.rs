@@ -301,14 +301,9 @@ mod resolve_tests {
         let entry_bytes = b"export const gate = true;\n";
         std::fs::write(package.join("a.mjs"), entry_bytes).expect("entry");
         let entry_digest = crate::digest::sha256_hex(entry_bytes);
-        // The package digest over the single framed part.
-        let mut part = Vec::new();
-        part.extend_from_slice(b"a.mjs");
-        part.push(0);
-        part.extend_from_slice(&(entry_bytes.len() as u64).to_be_bytes());
-        part.push(0);
-        part.extend_from_slice(entry_bytes);
-        let package_digest = super::integrity::package_digest_hex(&[part]);
+        // The manifest must exist on disk before the package digest is
+        // computed: the normative domain includes its implicit
+        // self-contribution (canonical bytes, packageDigest zeroed).
         let manifest_json = serde_json::json!({
             "schemaVersion": crate::adapter_package::version::MANIFEST_SCHEMA_VERSION,
             "identity": crate::adapter_package::version::MANIFEST_IDENTITY,
@@ -321,7 +316,7 @@ mod resolve_tests {
             },
             "executable": { "entry": "a.mjs" },
             "integrity": {
-                "packageDigest": format!("sha256:{package_digest}"),
+                "packageDigest": format!("sha256:{}", "0".repeat(64)),
                 "files": [ { "path": "a.mjs", "digest": format!("sha256:{entry_digest}"), "bytes": entry_bytes.len() } ],
                 "signaturePolicy": "unsigned",
                 "signature": null
@@ -329,7 +324,33 @@ mod resolve_tests {
             "status": "active",
             "revocation": null
         });
-        let manifest_bytes = serde_json::to_vec_pretty(&manifest_json).unwrap();
+        let provisional = serde_json::to_vec_pretty(&manifest_json).unwrap();
+        std::fs::write(package.join(super::integrity::MANIFEST_FILE), &provisional)
+            .expect("manifest");
+        let parsed = ManifestDocument::from_bytes(&provisional).expect("manifest parses");
+        let manifest_part = {
+            let mut part = Vec::new();
+            part.extend_from_slice(super::integrity::MANIFEST_FILE.as_bytes());
+            part.push(0);
+            part.extend_from_slice(&parsed.digest_domain_bytes().len().to_be_bytes());
+            part.push(0);
+            part.extend_from_slice(&parsed.digest_domain_bytes());
+            part
+        };
+        let entry_part = {
+            let mut part = Vec::new();
+            part.extend_from_slice(b"a.mjs");
+            part.push(0);
+            part.extend_from_slice(&(entry_bytes.len() as u64).to_be_bytes());
+            part.push(0);
+            part.extend_from_slice(entry_bytes);
+            part
+        };
+        let package_digest = super::integrity::package_digest_hex(&[entry_part, manifest_part]);
+        let mut final_manifest = manifest_json;
+        final_manifest["integrity"]["packageDigest"] =
+            serde_json::Value::String(format!("sha256:{package_digest}"));
+        let manifest_bytes = serde_json::to_vec_pretty(&final_manifest).unwrap();
         std::fs::write(
             package.join(super::integrity::MANIFEST_FILE),
             &manifest_bytes,
