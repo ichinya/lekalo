@@ -95,11 +95,16 @@ No second taxonomy exists.
 
 The validator contract is the official OpenAPI Initiative 3.1
 meta-schema (pinned file plus sha256 sidecar, the contract-golden
-convention) compiled by the already-provisioned exact Ajv 8.17.1
-Draft 2020-12 implementation — no new runtime dependency. The 3.0.x
-meta-schema is draft-04, which the pinned Ajv 2020-12 processor does
-not compile; declared-3.0 renders are pinned by core vectors and
-goldens instead, recorded here as the v1 validator-custody choice.
+convention). At implementation time the plan §7 fallback was exercised:
+the upstream schema's `$dynamicRef`-based Parameter/Response
+discrimination is unreliable under direct Ajv 2020-12 compilation, so
+the document pass runs through the pinned
+`@seriousme/openapi-schema-validator@2.8.0` (Ajv 8.x family) while the
+official schema stays compiled and pinned as the custody contract.
+The 3.0.x meta-schema is draft-04, which the pinned Ajv 2020-12
+processor does not compile; declared-3.0 renders are pinned by core
+vectors and goldens instead, recorded here as the v1
+validator-custody choice.
 
 ## Consequences
 

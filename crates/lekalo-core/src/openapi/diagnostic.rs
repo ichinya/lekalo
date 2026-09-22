@@ -20,8 +20,9 @@ pub(crate) const INPUT_INVALID: &str = "openapi.input-invalid";
 pub(crate) const PROJECTION_PARTIAL: &str = "openapi.projection-partial";
 /// The registered rule for a construct impossible at the declared version.
 pub(crate) const VERSION_UNSUPPORTED: &str = "openapi.version-unsupported";
-/// The registered rule for a document that fails the OpenAPI meta-schema.
-pub(crate) const SCHEMA_INVALID: &str = "openapi.schema-invalid";
+/// The registered rule for a document that fails the OpenAPI meta-schema:
+/// never emitted by this issue (the meta-schema pass belongs to the JS
+/// contract gate); the rule stays registered for its runtime owner.
 /// The registered rule for a pointer collision with manual ownership.
 pub(crate) const MERGE_CONFLICT: &str = "openapi.merge-conflict";
 /// The registered rule for an unresolved operation binding.
@@ -177,7 +178,6 @@ mod tests {
             INPUT_INVALID,
             PROJECTION_PARTIAL,
             VERSION_UNSUPPORTED,
-            SCHEMA_INVALID,
             MERGE_CONFLICT,
             BINDING_UNRESOLVED,
             DRIFT,

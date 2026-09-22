@@ -96,10 +96,20 @@ openapi:
 
 Rendered documents validate against the official OpenAPI Initiative
 3.1 meta-schema (pinned file + sha256 sidecar under
-`tests/fixtures/openapi/meta/`) with the repo-standard exact Ajv
-8.17.1 Draft 2020-12 provisioning — see
+`tests/fixtures/openapi/meta/`). The document pass runs through the
+plan's sanctioned fallback `@seriousme/openapi-schema-validator`
+(pinned 2.8.0, Ajv 8.x family), because the upstream meta-schema's
+`$dynamicRef`-based Parameter/Response discrimination is unreliable
+under direct Ajv 2020-12 compilation; the official schema itself stays
+compiled and pinned as the custody contract — see
 `scripts/test-openapi-contracts.mjs`. Render evidence lands under
 `.lekalo/cache/openapi/<project>.json` beside the transport evidence.
+Import bounds `openapi.yaml` by the closed loader frontend: plain
+scalars must not be float-like, so the OpenAPI version is quoted
+(`openapi: "3.1.0"` — the adapter emitter's spelling), and exactly two
+empty flow literals (`{}` and `[]`) are tolerated because block-style
+YAML cannot spell them; any other flow content, anchors, aliases,
+tags, and multi-document streams refuse as `openapi.input-invalid`.
 
 ## Diagnostics
 

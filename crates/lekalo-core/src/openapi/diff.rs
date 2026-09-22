@@ -17,7 +17,7 @@ use serde_json::json;
 
 use crate::diagnostics::DiagnosticSet;
 use crate::ir::{CompiledProject, Definition};
-use crate::transport_http::{compare, DiffClass, DiffPath, DiffResult, TransportDocument};
+use crate::transport_http::{compare, DiffClass, DiffPath, TransportDocument};
 
 use super::id::{escape_pointer, paths_pointer};
 use super::types::DocumentVersion;

@@ -30,6 +30,7 @@ pub struct Fragments {
 
 impl Fragments {
     /// Assemble from a pointer map (crate internal and tests).
+    #[cfg(test)]
     pub(crate) fn from_map(pointers: BTreeMap<String, Json>) -> Self {
         Self { pointers }
     }
@@ -93,6 +94,7 @@ pub struct OwnershipManifest {
 
 impl OwnershipManifest {
     /// Assemble from parts (crate internal and tests).
+    #[cfg(test)]
     pub(crate) fn from_map(
         generator: (String, String),
         inputs: BTreeMap<String, String>,

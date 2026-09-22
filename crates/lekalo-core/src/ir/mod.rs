@@ -648,22 +648,4 @@ pub(crate) mod test_support {
             Self(text.to_owned())
         }
     }
-
-    impl super::Text {
-        pub(crate) fn of(text: &str) -> Self {
-            Self(text.to_owned())
-        }
-    }
-
-    impl super::ProjectId {
-        pub(crate) fn of(text: &str) -> Self {
-            Self(text.to_owned())
-        }
-    }
-
-    impl super::ModuleId {
-        pub(crate) fn of(text: &str) -> Self {
-            Self(text.to_owned())
-        }
-    }
 }

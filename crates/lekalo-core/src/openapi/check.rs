@@ -116,7 +116,7 @@ pub fn check(
         let Some(anchor) = binding.and_then(|key| key.endpoint) else {
             continue;
         };
-        if !endpoints.iter().any(|id| *id == anchor) {
+        if !endpoints.contains(&anchor) {
             report.unresolved.push((
                 pointer,
                 format!("endpoint:{}", diagnostic::bounded(&anchor)),

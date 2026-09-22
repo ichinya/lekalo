@@ -760,18 +760,10 @@ fn responses_json(
     );
     if binding.success.status != 204 {
         let returns = query_returns(context.project, endpoint.invokes.as_str());
-        let mut schema = json!({});
-        match &binding.success.body {
-            Some(body) => match body.mode {
-                ProjectionMode::Whole => {
-                    schema = success_body_schema(body, returns, context.project, subject, mapper);
-                }
-                ProjectionMode::Explicit => {
-                    schema = success_body_schema(body, returns, context.project, subject, mapper);
-                }
-            },
-            None => {}
-        }
+        let schema = match &binding.success.body {
+            Some(body) => success_body_schema(body, returns, context.project, subject, mapper),
+            None => json!({}),
+        };
         let mut content = Map::new();
         content.insert("application/json".to_owned(), json!({ "schema": schema }));
         // Declared server-sent events ride beside the JSON projection.
