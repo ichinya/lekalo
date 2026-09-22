@@ -625,3 +625,45 @@ impl SourceMap {
         serde_json::to_string(&self.entries).expect("source map serializes")
     }
 }
+
+/// Test-only constructors for the closed newtype surface. Compiled
+/// exclusively under `cargo test`; never part of the IR contract and
+/// never reachable from release builds.
+#[cfg(test)]
+pub(crate) mod test_support {
+    impl super::SymbolId {
+        pub(crate) fn of(text: &str) -> Self {
+            Self(text.to_owned())
+        }
+    }
+
+    impl super::FieldName {
+        pub(crate) fn of(text: &str) -> Self {
+            Self(text.to_owned())
+        }
+    }
+
+    impl super::EndpointPath {
+        pub(crate) fn of(text: &str) -> Self {
+            Self(text.to_owned())
+        }
+    }
+
+    impl super::Text {
+        pub(crate) fn of(text: &str) -> Self {
+            Self(text.to_owned())
+        }
+    }
+
+    impl super::ProjectId {
+        pub(crate) fn of(text: &str) -> Self {
+            Self(text.to_owned())
+        }
+    }
+
+    impl super::ModuleId {
+        pub(crate) fn of(text: &str) -> Self {
+            Self(text.to_owned())
+        }
+    }
+}
