@@ -216636,6 +216636,7 @@ var MAP_CONTRACT = "lekalo/zod-map/v0.3.2";
 var IR_IDENTITY = "dev.lekalo.ir@0.2.16";
 var ZOD_DIR = "src/generated/node-typescript/zod";
 var UNSUPPORTED = "zod.unsupported-construct";
+var RESERVED_MODULE_IDS = deepFreeze2(["runtime", "index"]);
 var DEFAULT_POLICY = deepFreeze2({
   date: "date-string",
   unknownKeys: "strict"
@@ -216681,9 +216682,17 @@ function mapProject(ir, policy = DEFAULT_POLICY) {
   const modules = /* @__PURE__ */ new Map();
   for (const definition of ir.definitions ?? []) {
     if (!SCHEMA_KINDS.includes(definition.kind)) continue;
+    const moduleId = definition.id.split(".")[0];
+    if (RESERVED_MODULE_IDS.includes(moduleId)) {
+      context.findings.push({
+        path: `${ZOD_DIR}/${moduleId}.ts`,
+        code: UNSUPPORTED,
+        detail: `module:${definition.id}`
+      });
+      continue;
+    }
     const mapped = mapDefinition(definition, context);
     if (!mapped) continue;
-    const moduleId = definition.id.split(".")[0];
     let module = modules.get(moduleId);
     if (!module) {
       module = { id: moduleId, declarations: [], imports: [], fields: {} };

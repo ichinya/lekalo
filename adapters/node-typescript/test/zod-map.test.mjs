@@ -306,6 +306,37 @@ test("identity refs through a list wrapper do not brand collection members", () 
 });
 
 // ---------------------------------------------------------------------------
+// Reserved emitted filenames (F-6).
+// ---------------------------------------------------------------------------
+
+test("modules named runtime or index are refused with a finding, never a duplicate path", () => {
+  const { modules, findings } = mapProject(
+    project([
+      { id: "runtime.entry", kind: "scalar", base: "string" },
+      { id: "index.root", kind: "scalar", base: "string" },
+      { id: "planner.text", kind: "scalar", base: "string" },
+    ]),
+  );
+  // The reserved modules contribute no declarations at all.
+  assert.deepEqual(
+    modules.map((module) => module.id),
+    ["planner"],
+  );
+  assert.deepEqual(findings, [
+    {
+      path: "src/generated/node-typescript/zod/index.ts",
+      code: UNSUPPORTED,
+      detail: "module:index.root",
+    },
+    {
+      path: "src/generated/node-typescript/zod/runtime.ts",
+      code: UNSUPPORTED,
+      detail: "module:runtime.entry",
+    },
+  ]);
+});
+
+// ---------------------------------------------------------------------------
 // Policies.
 // ---------------------------------------------------------------------------
 

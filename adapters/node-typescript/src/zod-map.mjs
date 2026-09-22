@@ -50,6 +50,15 @@ export const ZOD_DIR = "src/generated/node-typescript/zod";
 /** The closed finding code for constructs outside the mappable subset. */
 export const UNSUPPORTED = "zod.unsupported-construct";
 
+/**
+ * Reserved emitted filenames (issue #45 review F-6): the emitter always
+ * writes `zod/runtime.ts` and `zod/index.ts`, so a module with one of
+ * these ids would collide with the reserved outputs. Such modules are
+ * refused at mapping time with a finding naming the module — never a
+ * duplicate write path.
+ */
+export const RESERVED_MODULE_IDS = deepFreeze(["runtime", "index"]);
+
 /** The documented default codegen policy (plan §4, R4). */
 export const DEFAULT_POLICY = deepFreeze({
   date: "date-string",
@@ -130,9 +139,17 @@ export function mapProject(ir, policy = DEFAULT_POLICY) {
   const modules = new Map();
   for (const definition of ir.definitions ?? []) {
     if (!SCHEMA_KINDS.includes(definition.kind)) continue;
+    const moduleId = definition.id.split(".")[0];
+    if (RESERVED_MODULE_IDS.includes(moduleId)) {
+      context.findings.push({
+        path: `${ZOD_DIR}/${moduleId}.ts`,
+        code: UNSUPPORTED,
+        detail: `module:${definition.id}`,
+      });
+      continue;
+    }
     const mapped = mapDefinition(definition, context);
     if (!mapped) continue;
-    const moduleId = definition.id.split(".")[0];
     let module = modules.get(moduleId);
     if (!module) {
       module = { id: moduleId, declarations: [], imports: [], fields: {} };
