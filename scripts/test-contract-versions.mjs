@@ -26,7 +26,14 @@ try {
   assert.notEqual(check().status, 0, "changed contract requires the product version");
   renameSync(join(root, contract), join(root, "contracts/example.schema.v0.2.17.json"));
   assert.equal(check().status, 0, "renamed current contract passes");
-  console.log(JSON.stringify({ ok: true, cases: 4 }));
+  // Frozen restore: re-adding the retired genesis file with its exact
+  // historical bytes is an archival restore, never a version change.
+  writeFileSync(join(root, contract), '{}\n');
+  assert.equal(check().status, 0, "frozen restore of historical bytes passes");
+  // A restore with different content is a version change and still fails.
+  writeFileSync(join(root, contract), '{\\"not\\":\\"the genesis bytes\\"}\n');
+  assert.notEqual(check().status, 0, "altered restore requires the product version");
+  console.log(JSON.stringify({ ok: true, cases: 6 }));
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
