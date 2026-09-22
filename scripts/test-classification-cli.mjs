@@ -11,7 +11,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const binary = process.env.LEKALO_BIN ?? join(root, "target", "debug", "lekalo.exe");
+const binary = process.env.LEKALO_BIN ??
+  join(root, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
 
 const fail = (reason, detail) => {
   process.stderr.write(`${JSON.stringify({ ok: false, reason, detail }, null, 2)}\n`);

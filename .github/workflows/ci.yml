@@ -81,7 +81,6 @@ jobs:
           node scripts/check-privacy.mjs
           node scripts/test-privacy-contracts.mjs
           node scripts/test-privacy-cli.mjs
-          node scripts/test-classification-cli.mjs
           node scripts/test-privacy-coherence.mjs
           node scripts/test-privacy-decisions.mjs
           node scripts/test-privacy-output-schema.mjs
@@ -152,6 +151,8 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
+      - name: Run the classification CLI e2e gate (issue #87)
+        run: node scripts/test-classification-cli.mjs
       - name: Load the CI-only AppArmor launcher prerequisite
         if: runner.os == 'Linux'
         id: apparmor
