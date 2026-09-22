@@ -108,7 +108,9 @@ changes the exit class by itself.
 
 `plan_migration` diffs the two derived projections mechanically and
 emits ordered steps — extensions, sequences, tables, join tables,
-foreign keys, checks, indexes, sequence ownership, RLS, drops last —
+foreign keys, checks, indexes, sequence ownership and lifecycle (a
+renamed table renames its `seq_*` sequence; a dropped sequence
+column retires it), RLS, drops last —
 each with its closed `DataRisk`. A plan with a destructive step is
 `gated`; its status stays `blocked` until the caller names the exact
 `planId` (`lekalo storage migrate-plan … --confirm sha256:…`), the

@@ -309,14 +309,37 @@ pub fn plan(
     )?;
     // Sequence ownership after the tables exist: the executable order
     // mirrors the DDL document — every created sequence is bound to
-    // its owning column before the constraint passes run.
-    let sequence_owners = owned_sequences(&derived_base, &derived_candidate)?;
-    for (sequence, owner) in &sequence_owners {
+    // its owning column before the constraint passes run. Renames and
+    // drops ride the same pass: a renamed table's sequence renames to
+    // its fresh deterministic name, and a dropped sequence column
+    // retires its sequence instead of orphaning it.
+    let sequence_plan = plan_sequence_lifecycle(&derived_base, &derived_candidate)?;
+    for (sequence, owner) in &sequence_plan.owners {
         push_step(
             &mut steps,
             "alter_sequence",
             format!("ALTER SEQUENCE {} OWNED BY {owner};", quote(sequence)),
             DataRisk::None,
+            Vec::new(),
+            None,
+        );
+    }
+    for (from, to) in &sequence_plan.renames {
+        push_step(
+            &mut steps,
+            "rename_sequence",
+            format!("ALTER SEQUENCE {} RENAME TO {};", quote(from), quote(to)),
+            DataRisk::None,
+            Vec::new(),
+            None,
+        );
+    }
+    for sequence in &sequence_plan.drops {
+        push_step(
+            &mut steps,
+            "drop_sequence",
+            format!("DROP SEQUENCE {};", quote(sequence)),
+            DataRisk::Destructive,
             Vec::new(),
             None,
         );
@@ -395,38 +418,103 @@ fn digest_of(attachment: &StorageProjectionAttachment) -> Result<String, Diagnos
 /// the DDL document — yields `(sequence, "\"table\".\"column\"")`,
 /// the exact `ALTER SEQUENCE … OWNED BY` target the document renders
 /// (golden statement 23). Byte-sorted for determinism.
-fn owned_sequences(
+/// The sequence lifecycle a plan must establish: ownership for newly
+/// created sequences, renames where a renamed table re-derives its
+/// sequence name, and drops where a sequence column leaves the
+/// candidate — the migrated schema then carries exactly the sequence
+/// objects a fresh render would produce. All three lists are
+/// byte-sorted for determinism.
+struct SequencePlan {
+    owners: Vec<(StorageName, String)>,
+    renames: Vec<(StorageName, StorageName)>,
+    drops: Vec<StorageName>,
+}
+
+fn plan_sequence_lifecycle(
     base: &DerivedProjection,
     candidate: &DerivedProjection,
-) -> Result<Vec<(StorageName, String)>, DiagnosticSet> {
+) -> Result<SequencePlan, DiagnosticSet> {
+    // The deterministic sequence name of one generated sequence
+    // column: `seq_<table>_<column>`.
+    let sequence_of = |table: &StorageName, column: &StorageName| {
+        StorageName::parse(&format!("seq_{}_{}", table, column))
+            .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "sequence-name", None))
+    };
     let mut owners: Vec<(StorageName, String)> = Vec::new();
+    let mut renames: Vec<(StorageName, StorageName)> = Vec::new();
+    let mut drops: Vec<StorageName> = Vec::new();
     for table in candidate.tables() {
+        let base_table = base.table(table.entity());
         for column in table.columns() {
             if column.generated_kind() != Some(GeneratedKind::Sequence) {
                 continue;
             }
-            let existed = base
-                .table(table.entity())
-                .map(|base_table| {
-                    base_table
-                        .columns()
-                        .iter()
-                        .any(|base| base.name() == column.name())
-                })
-                .unwrap_or(false);
-            if existed {
+            let base_table_column = base_table.and_then(|base_table| {
+                base_table
+                    .columns()
+                    .iter()
+                    .find(|base| base.name() == column.name())
+                    .map(|base| (base_table.table(), base))
+            });
+            match base_table_column {
+                // The column survived with a renamed table: the
+                // sequence re-derives its name with the table, the same
+                // contract the fk_/idx_/chk_ names hold.
+                Some((base_name, _)) if base_name != table.table() => {
+                    let from = sequence_of(base_name, column.name())?;
+                    let to = sequence_of(table.table(), column.name())?;
+                    if from != to {
+                        renames.push((from, to));
+                    }
+                }
+                // The column survived on a same-named table: nothing
+                // to do — the sequence exists and is owned.
+                Some((_, _)) => {}
+                // A brand-new sequence column: the planner already
+                // created its sequence; plan the ownership binding.
+                None => {
+                    let sequence = sequence_of(table.table(), column.name())?;
+                    owners.push((
+                        sequence,
+                        format!("{}.{}", quote(table.table()), quote(column.name())),
+                    ));
+                }
+            }
+        }
+    }
+    for base_table in base.tables() {
+        let candidate_table = candidate.table(base_table.entity());
+        for column in base_table.columns() {
+            if column.generated_kind() != Some(GeneratedKind::Sequence) {
                 continue;
             }
-            let sequence = StorageName::parse(&format!("seq_{}_{}", table.table(), column.name()))
-                .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "sequence-name", None))?;
-            owners.push((
-                sequence,
-                format!("{}.{}", quote(table.table()), quote(column.name())),
-            ));
+            let survived = candidate_table
+                .map(|candidate| {
+                    candidate
+                        .columns()
+                        .iter()
+                        .any(|candidate| candidate.name() == column.name())
+                })
+                .unwrap_or(false);
+            if survived {
+                continue;
+            }
+            // A dropped sequence column retires its sequence; a
+            // dropped table carries its sequence with it (rank-3 DROP
+            // TABLE — no sequence drop, the table drop owns it).
+            if candidate_table.is_some() {
+                drops.push(sequence_of(base_table.table(), column.name())?);
+            }
         }
     }
     owners.sort();
-    Ok(owners)
+    renames.sort();
+    drops.sort();
+    Ok(SequencePlan {
+        owners,
+        renames,
+        drops,
+    })
 }
 
 /// Push one step with deferred ordinal assignment.

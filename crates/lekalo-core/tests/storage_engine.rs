@@ -809,6 +809,111 @@ fn a_dropped_column_owns_its_check_and_index_drops() {
 }
 
 #[test]
+fn a_renamed_table_renames_its_sequence_and_a_dropped_column_retires_it() {
+    // The sequence name derives from the table and column: a renamed
+    // table renames its sequence to the fresh deterministic name, and
+    // a dropped sequence column retires its sequence instead of
+    // orphaning it (step kinds rename_sequence / drop_sequence).
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    // Rename focus_session to session.
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        for table in projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+        {
+            if table.get("table").and_then(serde_json::Value::as_str) == Some("focus_session") {
+                table["table"] = serde_json::Value::String("session".to_owned());
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    let rename = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "rename_sequence")
+        .expect("the sequence rename is planned");
+    assert_eq!(
+        rename.statement(),
+        "ALTER SEQUENCE \"seq_focus_session_session_no\" RENAME TO \"seq_session_session_no\";"
+    );
+
+    // A dropped sequence column retires its sequence.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        for table in projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+        {
+            if table.get("table").and_then(serde_json::Value::as_str) == Some("focus_session") {
+                table
+                    .as_object_mut()
+                    .expect("object")
+                    .remove("generatedColumns");
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    let drop = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "drop_sequence")
+        .expect("the orphaned sequence is retired");
+    assert_eq!(
+        drop.statement(),
+        "DROP SEQUENCE \"seq_focus_session_session_no\";"
+    );
+    assert_eq!(drop.risk().key(), "destructive");
+}
+
+#[test]
 fn a_renamed_join_renames_and_rederives_its_foreign_keys() {
     // A join-table rename emits rename_table only — never a fresh
     // CREATE TABLE of the renamed table (which would fail `relation

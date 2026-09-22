@@ -140,6 +140,8 @@
             "create_policy",
             "create_sequence",
             "alter_sequence",
+            "rename_sequence",
+            "drop_sequence",
             "create_extension",
             "backfill"
           ]
