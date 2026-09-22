@@ -122,6 +122,7 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
     // validation owns kind-rule-missing; the analyzer simply reads
     // rows and treats a missing row as policy-unresolved).
     let mut ordinal = 0usize;
+    let mut has_unknowns = false;
     for edge in inputs.graph.declared() {
         let resource = edge.key().subject().resource().as_str();
         let subject = match SubjectPath::parse(resource) {
@@ -132,13 +133,20 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
         let kind = match resolved {
             ResolvedKind::Classified(kind) => kind,
             ResolvedKind::Unclassified => {
-                // Declared edges without classification stay unknown
-                // and never gate; the unclassified-sensitive-sink rule
-                // is validation's, applied under the strict profile.
+                // Unknown is never safe (plan §4.3): the flow is
+                // recorded as unknown, its rule finding fires, and the
+                // verdict denies — never a silent skip.
                 unknowns.push(UnknownFlow {
-                    source: subject,
+                    source: subject.clone(),
                     reason: UnknownReason::UnresolvedSubject,
                 });
+                findings.push(Finding {
+                    rule_id: "dataflow.unknown-flow".to_owned(),
+                    severity: Severity::Error,
+                    subject: subject.as_str().to_owned(),
+                    detail: "unresolved-subject".to_owned(),
+                });
+                has_unknowns = true;
                 continue;
             }
         };
@@ -244,6 +252,101 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
             }
         }
     }
+    // Detected (observed) edges are analyzed too: adapter-reported
+    // effects are never invisible to the analysis. They project flows
+    // with `observed` provenance, degraded confidence, and incomplete
+    // project inputs (plan §4.3: observed never promotes to canonical).
+    let mut ordinal = ordinal;
+    for edge in inputs.graph.detected() {
+        let resource = edge.key().subject().resource().as_str();
+        let subject = match SubjectPath::parse(resource) {
+            Ok(subject) => subject,
+            Err(_) => continue,
+        };
+        let resolved = inputs.classification.resolve(&subject);
+        let kind = match resolved {
+            ResolvedKind::Classified(kind) => kind,
+            ResolvedKind::Unclassified => {
+                unknowns.push(UnknownFlow {
+                    source: subject.clone(),
+                    reason: UnknownReason::UnresolvedSubject,
+                });
+                findings.push(Finding {
+                    rule_id: "dataflow.unknown-flow".to_owned(),
+                    severity: Severity::Error,
+                    subject: subject.as_str().to_owned(),
+                    detail: "unresolved-subject".to_owned(),
+                });
+                has_unknowns = true;
+                continue;
+            }
+        };
+        inputs_complete = false;
+        let sink_kind = sink_kind_of(edge.key().kind().key());
+        let tenant_relation = tenant_relation_of(inputs, &subject, kind);
+        let gate = gate_outcome(
+            inputs,
+            &subject,
+            &kind,
+            sink_kind,
+            Confidence::Unknown,
+            resolved,
+        );
+        let gate_wire = gate.as_ref().map(|outcome| Gate {
+            required: outcome.required,
+            satisfied: outcome.satisfied,
+            reason: outcome.reason,
+        });
+        ordinal += 1;
+        flows.push(Flow {
+            id: flow_id(ordinal, &subject),
+            source: subject.clone(),
+            path: vec![format!(
+                "effect:{}:{}",
+                edge.key().operation().as_str(),
+                edge.key().kind().key()
+            )],
+            sink: sink_symbol(edge),
+            sink_kind,
+            provenance: Provenance::Observed,
+            confidence: Confidence::Unknown,
+            tenant_relation,
+            classification: kind,
+            gate: gate_wire,
+        });
+        // A sensitive flow resting on observed evidence is a finding
+        // (plan §4.3), and the project-wide incompleteness rule fires.
+        if kind.is_sensitive() {
+            findings.push(Finding {
+                rule_id: "dataflow.low-confidence-sensitive".to_owned(),
+                severity: Severity::Error,
+                subject: subject.as_str().to_owned(),
+                detail: Confidence::Unknown.as_str().to_owned(),
+            });
+        }
+        findings.push(Finding {
+            rule_id: "dataflow.observed-incomplete".to_owned(),
+            severity: Severity::Error,
+            subject: subject.as_str().to_owned(),
+            detail: "observed-edge".to_owned(),
+        });
+        // Observed credential flows keep the unconditional ceiling.
+        if kind == DataKind::Credential {
+            for sink in [SinkName::Diagnostics, SinkName::Traces] {
+                if let Some(ceiling) = inputs.policy.sink(sink) {
+                    if DataKind::Credential.rank() > ceiling.max_kind().rank() {
+                        findings.push(Finding {
+                            rule_id: "classification.sink-ceiling-exceeded".to_owned(),
+                            severity: Severity::Error,
+                            subject: subject.as_str().to_owned(),
+                            detail: format!("sink-{}", sink.as_str()),
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+    }
     // Declared edge coverage of the event-publish and external sinks
     // through extended-effects is consumed by the CLI validation hook;
     // this module projects what the graph itself carries so analysis
@@ -300,6 +403,7 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
         findings.clone(),
         unknowns,
         Vec::new(),
+        has_unknowns,
     );
     // Mirror the findings into one normalized set for CLI exits. Any
     // construction failure collapses to the invariant set (double

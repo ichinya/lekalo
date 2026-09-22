@@ -117,8 +117,16 @@ impl Report {
         findings: Vec<Finding>,
         unknowns: Vec<UnknownFlow>,
         open_questions: Vec<ReportQuestion>,
+        has_unknowns: bool,
     ) -> Self {
-        let verdict = verdict_of(&findings, inputs_complete);
+        // Unknown is never safe (plan §4.3): any unresolved flow denies
+        // the verdict in addition to error findings and incomplete
+        // inputs.
+        let verdict = if has_unknowns {
+            Verdict::Denied
+        } else {
+            verdict_of(&findings, inputs_complete)
+        };
         Self {
             report_revision,
             project_id,
