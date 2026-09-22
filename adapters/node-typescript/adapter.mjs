@@ -47357,14 +47357,14 @@ ${lanes.join("\n")}
         if (!value.length) return fromCache.slice();
         return [...fromCache, ...value];
       }
-      function readPackageJsonField(jsonContent, fieldName, typeOfTag, state) {
-        if (!hasProperty(jsonContent, fieldName)) {
+      function readPackageJsonField(jsonContent2, fieldName, typeOfTag, state) {
+        if (!hasProperty(jsonContent2, fieldName)) {
           if (state.traceEnabled) {
             trace(state.host, Diagnostics.package_json_does_not_have_a_0_field, fieldName);
           }
           return;
         }
-        const value = jsonContent[fieldName];
+        const value = jsonContent2[fieldName];
         if (typeof value !== typeOfTag || value === null) {
           if (state.traceEnabled) {
             trace(state.host, Diagnostics.Expected_type_of_0_field_in_package_json_to_be_1_got_2, fieldName, typeOfTag, value === null ? "null" : typeof value);
@@ -47373,8 +47373,8 @@ ${lanes.join("\n")}
         }
         return value;
       }
-      function readPackageJsonPathField(jsonContent, fieldName, baseDirectory, state) {
-        const fileName = readPackageJsonField(jsonContent, fieldName, "string", state);
+      function readPackageJsonPathField(jsonContent2, fieldName, baseDirectory, state) {
+        const fileName = readPackageJsonField(jsonContent2, fieldName, "string", state);
         if (fileName === void 0) {
           return;
         }
@@ -47390,25 +47390,25 @@ ${lanes.join("\n")}
         }
         return path;
       }
-      function readPackageJsonTypesFields(jsonContent, baseDirectory, state) {
-        return readPackageJsonPathField(jsonContent, "typings", baseDirectory, state) || readPackageJsonPathField(jsonContent, "types", baseDirectory, state);
+      function readPackageJsonTypesFields(jsonContent2, baseDirectory, state) {
+        return readPackageJsonPathField(jsonContent2, "typings", baseDirectory, state) || readPackageJsonPathField(jsonContent2, "types", baseDirectory, state);
       }
-      function readPackageJsonTSConfigField(jsonContent, baseDirectory, state) {
-        return readPackageJsonPathField(jsonContent, "tsconfig", baseDirectory, state);
+      function readPackageJsonTSConfigField(jsonContent2, baseDirectory, state) {
+        return readPackageJsonPathField(jsonContent2, "tsconfig", baseDirectory, state);
       }
-      function readPackageJsonMainField(jsonContent, baseDirectory, state) {
-        return readPackageJsonPathField(jsonContent, "main", baseDirectory, state);
+      function readPackageJsonMainField(jsonContent2, baseDirectory, state) {
+        return readPackageJsonPathField(jsonContent2, "main", baseDirectory, state);
       }
-      function readPackageJsonTypesVersionsField(jsonContent, state) {
-        const typesVersions = readPackageJsonField(jsonContent, "typesVersions", "object", state);
+      function readPackageJsonTypesVersionsField(jsonContent2, state) {
+        const typesVersions = readPackageJsonField(jsonContent2, "typesVersions", "object", state);
         if (typesVersions === void 0) return;
         if (state.traceEnabled) {
           trace(state.host, Diagnostics.package_json_has_a_typesVersions_field_with_version_specific_path_mappings);
         }
         return typesVersions;
       }
-      function readPackageJsonTypesVersionPaths(jsonContent, state) {
-        const typesVersions = readPackageJsonTypesVersionsField(jsonContent, state);
+      function readPackageJsonTypesVersionPaths(jsonContent2, state) {
+        const typesVersions = readPackageJsonTypesVersionsField(jsonContent2, state);
         if (typesVersions === void 0) return;
         if (state.traceEnabled) {
           for (const key in typesVersions) {
@@ -84838,12 +84838,12 @@ ${lanes.join("\n")}
             checkTypeRelatedTo(elemInstanceType, combined, assignableRelation, openingLikeElement.tagName, Diagnostics.Its_element_type_0_is_not_a_valid_JSX_element, generateInitialErrorChain);
           }
           function generateInitialErrorChain() {
-            const componentName = getTextOfNode(openingLikeElement.tagName);
+            const componentName2 = getTextOfNode(openingLikeElement.tagName);
             return chainDiagnosticMessages(
               /*details*/
               void 0,
               Diagnostics._0_cannot_be_used_as_a_JSX_component,
-              componentName
+              componentName2
             );
           }
         }
@@ -84932,12 +84932,12 @@ ${lanes.join("\n")}
               const tagName = jsxOpeningLikeNode.tagName;
               const tagType = isJsxIntrinsicTagName(tagName) ? getStringLiteralType(intrinsicTagNameToString(tagName)) : checkExpression(tagName);
               checkTypeRelatedTo(tagType, elementTypeConstraint, assignableRelation, tagName, Diagnostics.Its_type_0_is_not_a_valid_JSX_element_type, () => {
-                const componentName = getTextOfNode(tagName);
+                const componentName2 = getTextOfNode(tagName);
                 return chainDiagnosticMessages(
                   /*details*/
                   void 0,
                   Diagnostics._0_cannot_be_used_as_a_JSX_component,
-                  componentName
+                  componentName2
                 );
               });
             } else {
@@ -135554,7 +135554,7 @@ ${lanes.join("\n")}
       var resetEscapeSequence = "\x1B[0m";
       var ellipsis = "...";
       var halfIndent = "  ";
-      var indent = "    ";
+      var indent2 = "    ";
       function getCategoryFormat(category) {
         switch (category) {
           case 1:
@@ -135656,10 +135656,10 @@ ${lanes.join("\n")}
               if (file2) {
                 output += host.getNewLine();
                 output += halfIndent + formatLocation(file2, start, host);
-                output += formatCodeSpan(file2, start, length2, indent, "\x1B[96m", host);
+                output += formatCodeSpan(file2, start, length2, indent2, "\x1B[96m", host);
               }
               output += host.getNewLine();
-              output += indent + flattenDiagnosticMessageText(messageText, host.getNewLine());
+              output += indent2 + flattenDiagnosticMessageText(messageText, host.getNewLine());
             }
           }
           output += host.getNewLine();
@@ -148305,11 +148305,11 @@ ${lanes.join("\n")}
         return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}:${d.getSeconds().toString().padStart(2, "0")}.${d.getMilliseconds().toString().padStart(3, "0")}`;
       }
       var indentStr = "\n    ";
-      function indent2(str) {
+      function indent22(str) {
         return indentStr + str.replace(/\n/g, indentStr);
       }
       function stringifyIndented(json) {
-        return indent2(JSON.stringify(json, void 0, 2));
+        return indent22(JSON.stringify(json, void 0, 2));
       }
       function isTypingUpToDate(cachedTyping, availableTypingVersions) {
         const availableVersion = new Version(getProperty(availableTypingVersions, `ts${versionMajorMinor}`) || getProperty(availableTypingVersions, "latest"));
@@ -197998,7 +197998,7 @@ ${options.prefix}` : "\n" : options.prefix
         getLocationInNewDocument: () => getLocationInNewDocument,
         hasArgument: () => hasArgument,
         hasNoTypeScriptSource: () => hasNoTypeScriptSource,
-        indent: () => indent2,
+        indent: () => indent22,
         isBackgroundProject: () => isBackgroundProject,
         isConfigFile: () => isConfigFile2,
         isConfiguredProject: () => isConfiguredProject,
@@ -207554,9 +207554,9 @@ ${json}${newLine}`;
         logErrorWorker(err, cmd, fileRequest) {
           let msg = "Exception on executing command " + cmd;
           if (err.message) {
-            msg += ":\n" + indent2(err.message);
+            msg += ":\n" + indent22(err.message);
             if (err.stack) {
-              msg += "\n" + indent2(err.stack);
+              msg += "\n" + indent22(err.stack);
             }
           }
           if (this.logger.hasLevel(
@@ -207571,7 +207571,7 @@ ${json}${newLine}`;
                   const text = getSnapshotText(scriptInfo.getSnapshot());
                   msg += `
 
-File text of ${fileRequest.file}:${indent2(text)}
+File text of ${fileRequest.file}:${indent22(text)}
 `;
                 }
               } catch {
@@ -209569,7 +209569,7 @@ Additional information: BADCLIENT: Bad error code, ${badCode} not found in range
               3
               /* verbose */
             )) {
-              this.logger.info(`request:${indent2(this.toStringMessage(message))}`);
+              this.logger.info(`request:${indent22(this.toStringMessage(message))}`);
             }
           }
           let request;
@@ -210737,7 +210737,7 @@ Additional information: BADCLIENT: Bad error code, ${badCode} not found in range
         getLocationInNewDocument: () => getLocationInNewDocument,
         hasArgument: () => hasArgument,
         hasNoTypeScriptSource: () => hasNoTypeScriptSource,
-        indent: () => indent2,
+        indent: () => indent22,
         isBackgroundProject: () => isBackgroundProject,
         isConfigFile: () => isConfigFile2,
         isConfiguredProject: () => isConfiguredProject,
@@ -213145,8 +213145,8 @@ function isInsideRoot(root, candidate) {
   const rootNormalized = normalize(root);
   const candidateNormalized = normalize(candidate);
   const separator = process.platform === "win32" ? "\\" : "/";
-  const bounded2 = candidateNormalized === rootNormalized ? false : candidateNormalized.startsWith(rootNormalized + separator);
-  return Boolean(bounded2 && rootNormalized.length > 0);
+  const bounded3 = candidateNormalized === rootNormalized ? false : candidateNormalized.startsWith(rootNormalized + separator);
+  return Boolean(bounded3 && rootNormalized.length > 0);
 }
 function validateExtensionDescriptor(descriptor3) {
   const invalid = (reason) => {
@@ -213457,8 +213457,8 @@ function createKernel(options = {}) {
   };
 }
 function boundToken(text) {
-  const bounded2 = text.replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 128);
-  return bounded2 === "" ? "unspecified" : bounded2;
+  const bounded3 = text.replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 128);
+  return bounded3 === "" ? "unspecified" : bounded3;
 }
 function recordSink(sink, request, outcome, profile) {
   if (!sink) {
@@ -213928,8 +213928,8 @@ function readSyncFailable(fd, buffer) {
   return readSync(fd, buffer, 0, buffer.length, null);
 }
 function stderrDiagnostic(code) {
-  const bounded2 = boundToken(code);
-  return JSON.stringify({ kernel: ADAPTER_ID, diagnostic: bounded2 });
+  const bounded3 = boundToken(code);
+  return JSON.stringify({ kernel: ADAPTER_ID, diagnostic: bounded3 });
 }
 function extractProjectProfileJson(argv = process.argv.slice(2)) {
   const markers = argv.filter((argument) => argument === "--lekalo-project-profile-json");
@@ -216667,6 +216667,9 @@ __export(transport_extension_exports, {
   TRANSPORT_EVIDENCE_DIR: () => TRANSPORT_EVIDENCE_DIR,
   TRANSPORT_OPERATION: () => TRANSPORT_OPERATION,
   TRANSPORT_READ_ROOT: () => TRANSPORT_READ_ROOT,
+  decodeEvidence: () => decodeEvidence,
+  decodeIrEvidence: () => decodeIrEvidence,
+  evidencePathFor: () => evidencePathFor,
   planRouteLayer: () => planRouteLayer,
   transportExtensionDescriptor: () => transportExtensionDescriptor,
   transportGenerateOperation: () => transportGenerateOperation
@@ -217713,8 +217716,8 @@ function renderDeclaration(declaration) {
   ];
   return lines.join("\n");
 }
-function renderExpr(expr, indent) {
-  const inner = indentUnit(indent);
+function renderExpr(expr, indent2) {
+  const inner = indentUnit(indent2);
   switch (expr.k) {
     case "string":
       return `z.string()`;
@@ -217735,15 +217738,15 @@ function renderExpr(expr, indent) {
     case "enum":
       return `z.enum([${expr.values.map((value) => JSON.stringify(value)).join(", ")}])`;
     case "brand":
-      return `lekaloBrand(${renderExpr(expr.inner, indent)}, ${JSON.stringify(expr.brand)})`;
+      return `lekaloBrand(${renderExpr(expr.inner, indent2)}, ${JSON.stringify(expr.brand)})`;
     case "ref":
       return expr.name;
     case "array":
-      return `z.array(${renderExpr(expr.item, indent)})`;
+      return `z.array(${renderExpr(expr.item, indent2)})`;
     case "nullable":
-      return `${renderExpr(expr.inner, indent)}.nullable()`;
+      return `${renderExpr(expr.inner, indent2)}.nullable()`;
     case "optional":
-      return `${renderExpr(expr.inner, indent)}.optional()`;
+      return `${renderExpr(expr.inner, indent2)}.optional()`;
     case "object": {
       if (expr.fields.length === 0) {
         return expr.strict ? `z.object({}).strict()` : `z.object({}).strip()`;
@@ -217759,8 +217762,8 @@ ${inner}})${expr.strict ? ".strict()" : ".strip()"}`;
       throw new TypeError(`unrenderable expression kind ${expr?.k}`);
   }
 }
-function indentUnit(indent) {
-  return indent;
+function indentUnit(indent2) {
+  return indent2;
 }
 function byteLength(text) {
   return Buffer.byteLength(text, "utf8");
@@ -217788,7 +217791,7 @@ function resolvePolicy(text) {
 }
 function parsePolicyYaml(text) {
   const lines = text.split(/\r?\n/);
-  let inZod = false;
+  let section = null;
   const seen = /* @__PURE__ */ new Set();
   const policy = {};
   for (let index = 0; index < lines.length; index += 1) {
@@ -217805,17 +217808,20 @@ function parsePolicyYaml(text) {
       if (!match) {
         return { refusal: "top-level-key" };
       }
-      if (match[1] !== "zod") {
+      if (match[1] !== "zod" && match[1] !== "openapi") {
         return { refusal: "unknown-section" };
       }
-      if (inZod) {
+      if (section === match[1]) {
         return { refusal: "duplicate-section" };
       }
-      inZod = true;
+      section = match[1];
       continue;
     }
-    if (!inZod) {
+    if (section === null) {
       return { refusal: "orphan-key" };
+    }
+    if (section === "openapi") {
+      continue;
     }
     const keyMatch = stripped.match(/^ {2}([a-z][a-z0-9_-]*):\s*(\S.*)?$/);
     if (!keyMatch || stripped.startsWith("    ")) {
@@ -218005,10 +218011,984 @@ function bounded(text) {
   return String(text ?? "unknown").replace(/[^a-zA-Z0-9._: -]+/g, "?").slice(0, 128);
 }
 
+// src/openapi-emit.mjs
+function canonicalJson4(value) {
+  if (value === null) return "null";
+  switch (typeof value) {
+    case "boolean":
+      return value ? "true" : "false";
+    case "number":
+      if (!Number.isFinite(value)) throw new TypeError("non-finite number");
+      return Number.isInteger(value) && Math.abs(value) < 1e15 ? String(value) : JSON.stringify(value);
+    case "string":
+      return JSON.stringify(value);
+    case "object": {
+      if (Array.isArray(value)) {
+        return `[${value.map(canonicalJson4).join(",")}]`;
+      }
+      const keys = Object.keys(value).filter((key) => value[key] !== void 0).sort(byUtf8Bytes);
+      return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson4(value[key])}`).join(",")}}`;
+    }
+    default:
+      throw new TypeError("unserializable value");
+  }
+}
+function byUtf8Bytes(left, right) {
+  const leftBytes = Buffer.from(left, "utf8");
+  const rightBytes = Buffer.from(right, "utf8");
+  const length = Math.min(leftBytes.length, rightBytes.length);
+  for (let index = 0; index < length; index += 1) {
+    if (leftBytes[index] !== rightBytes[index]) {
+      return leftBytes[index] - rightBytes[index];
+    }
+  }
+  return leftBytes.length - rightBytes.length;
+}
+function toYaml(value) {
+  const lines = [];
+  emitValue(value, 0, lines, "$");
+  return `${lines.join("\n")}
+`;
+}
+function emitValue(value, depth, lines, at) {
+  if (isEmptyContainer(value)) {
+    lines.push(`${indent(depth)}${inlineEmpty(value)}`);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      emitSequenceItem(item, depth, lines, `${at}[${index}]`);
+    }
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const key of Object.keys(value).sort(byUtf8Bytes)) {
+      emitMember(key, value[key], depth, lines, `${at}.${key}`);
+    }
+    return;
+  }
+  lines.push(`${indent(depth)}${scalar(value, at)}`);
+}
+function emitMember(key, value, depth, lines, at) {
+  const name = scalar(key, `${at}::key`);
+  if (isEmptyContainer(value)) {
+    lines.push(`${indent(depth)}${name}: ${inlineEmpty(value)}`);
+    return;
+  }
+  if (isContainer(value)) {
+    lines.push(`${indent(depth)}${name}:`);
+    emitValue(value, depth + 1, lines, at);
+    return;
+  }
+  lines.push(`${indent(depth)}${name}: ${scalar(value, at)}`);
+}
+function emitSequenceItem(value, depth, lines, at) {
+  if (value !== null && typeof value === "object" && !isEmptyContainer(value)) {
+    if (!Array.isArray(value)) {
+      const keys = Object.keys(value).sort(byUtf8Bytes);
+      const [first, ...rest] = keys;
+      const name = scalar(first, `${at}::key`);
+      const head = value[first];
+      if (isContainer(head) && !isEmptyContainer(head)) {
+        lines.push(`${indent(depth)}- ${name}:`);
+        emitValue(head, depth + 2, lines, `${at}.${first}`);
+      } else if (isEmptyContainer(head)) {
+        lines.push(`${indent(depth)}- ${name}: ${inlineEmpty(head)}`);
+      } else {
+        lines.push(`${indent(depth)}- ${name}: ${scalar(head, `${at}.${first}`)}`);
+      }
+      for (const key of rest) {
+        emitMember(key, value[key], depth + 1, lines, `${at}.${key}`);
+      }
+      return;
+    }
+    lines.push(`${indent(depth)}-`);
+    emitValue(value, depth + 1, lines, at);
+    return;
+  }
+  if (isEmptyContainer(value)) {
+    lines.push(`${indent(depth)}- ${inlineEmpty(value)}`);
+    return;
+  }
+  lines.push(`${indent(depth)}- ${scalar(value, at)}`);
+}
+function isEmptyContainer(value) {
+  if (Array.isArray(value)) return value.length === 0;
+  return value !== null && typeof value === "object" ? Object.keys(value).length === 0 : false;
+}
+function isContainer(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== null && typeof value === "object" ? Object.keys(value).length > 0 : false;
+}
+function inlineEmpty(value) {
+  return Array.isArray(value) ? "[]" : "{}";
+}
+function indent(depth) {
+  return "  ".repeat(depth);
+}
+function scalar(value, at) {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (value === null) return "null";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new TypeError(`non-finite number at ${at}`);
+    return String(value);
+  }
+  throw new TypeError(`unserializable scalar at ${at}: ${typeof value}`);
+}
+
+// src/openapi-gen.mjs
+import { createHash as createHash9 } from "node:crypto";
+
+// src/openapi-policy.mjs
+var POLICY_PATH2 = "lekalo/targets/node-typescript.yaml";
+var MAX_POLICY_BYTES2 = 16 * 1024;
+var VERSIONS = ["3.1", "3.0"];
+var MODES = ["full", "fragments"];
+var DEFAULT_POLICY2 = Object.freeze({
+  version: "3.1",
+  mode: "full",
+  path: "docs/openapi.yaml"
+});
+function resolvePolicy2(text) {
+  if (text === null || text === void 0) {
+    return { policy: { ...DEFAULT_POLICY2 }, source: "defaults" };
+  }
+  if (typeof text !== "string") {
+    return { refusal: "not-text" };
+  }
+  if (Buffer.byteLength(text, "utf8") > MAX_POLICY_BYTES2) {
+    return { refusal: "overbound" };
+  }
+  const parsed = parsePolicyYaml2(text);
+  if (parsed.refusal) {
+    return { refusal: parsed.refusal };
+  }
+  return { policy: parsed.policy, source: "document" };
+}
+function parsePolicyYaml2(text) {
+  const lines = text.split(/\r?\n/);
+  let section = null;
+  const seen = /* @__PURE__ */ new Set();
+  const policy = {};
+  for (const raw of lines) {
+    const stripped = raw.replace(/(^|\s)#.*$/, "");
+    if (stripped.trim() === "") {
+      continue;
+    }
+    if (stripped.includes("	")) {
+      return { refusal: "tab-indentation" };
+    }
+    if (!stripped.startsWith(" ") && !stripped.startsWith("-")) {
+      const match = stripped.match(/^([a-z][a-z0-9_-]*):\s*(\S.*)?$/);
+      if (!match) {
+        return { refusal: "top-level-key" };
+      }
+      if (match[1] !== "zod" && match[1] !== "openapi") {
+        return { refusal: "unknown-section" };
+      }
+      if (match[2] !== void 0) {
+        return { refusal: "key-shape" };
+      }
+      if (section === match[1]) {
+        return { refusal: "duplicate-section" };
+      }
+      section = match[1];
+      continue;
+    }
+    if (section === null) {
+      return { refusal: "orphan-key" };
+    }
+    if (section === "zod") {
+      continue;
+    }
+    const keyMatch = stripped.match(/^ {2}([a-z][a-z0-9_-]*):\s*(\S.*)?$/);
+    if (!keyMatch || stripped.startsWith("    ")) {
+      return { refusal: "key-shape" };
+    }
+    const key = keyMatch[1];
+    const value = keyMatch[2]?.trim();
+    if (seen.has(key)) {
+      return { refusal: "duplicate-key" };
+    }
+    seen.add(key);
+    if (key === "version") {
+      if (!VERSIONS.includes(unquote(value))) {
+        return { refusal: "version-value" };
+      }
+      policy.version = unquote(value);
+      continue;
+    }
+    if (key === "mode") {
+      if (!MODES.includes(value)) {
+        return { refusal: "mode-value" };
+      }
+      policy.mode = value;
+      continue;
+    }
+    if (key === "path") {
+      const path = unquote(value);
+      if (!/^[a-z][a-z0-9._/-]*\.yaml$/.test(path) || path.includes("..")) {
+        return { refusal: "path-value" };
+      }
+      policy.path = path;
+      continue;
+    }
+    return { refusal: "unknown-key" };
+  }
+  return { policy: { ...DEFAULT_POLICY2, ...policy } };
+}
+function unquote(value) {
+  if (value === void 0) {
+    return "";
+  }
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+// src/openapi-gen.mjs
+var GENERATOR_ID = "lekalo-core/openapi";
+var GENERATOR_VERSION = "0.4.0";
+var OWNERSHIP_CONTRACT = "lekalo/openapi-map/v0.4.0";
+var OPENAPI_WRITE_SCOPES = ["docs/**"];
+var MAX_DOCUMENT_BYTES = 4 * 1024 * 1024;
+var IR_IDENTITY3 = "dev.lekalo.ir@0.2.16";
+var sha256Text4 = (text) => "sha256:" + createHash9("sha256").update(text, "utf8").digest("hex");
+function openapiGenerateOperation(context) {
+  const { request, readView } = context;
+  if (!readView) {
+    return { state: "unsupported", diagnostics: [{ reason: "profile-absent" }] };
+  }
+  try {
+    const policy = resolvePolicyFromContext2(readView);
+    if (policy.refusal) {
+      return { state: "failed", diagnostics: [{ reason: `policy-${policy.refusal}` }] };
+    }
+    const transportPath = evidencePathFor(request, readView, TRANSPORT_EVIDENCE_DIR);
+    if (!transportPath) {
+      return {
+        state: "failed",
+        diagnostics: [{ reason: "transport-evidence-absent" }]
+      };
+    }
+    const decoded = decodeEvidence(readView.readFile(transportPath));
+    if (decoded.error) {
+      return { state: "failed", diagnostics: [{ reason: decoded.error }] };
+    }
+    const irPath = evidencePathFor(request, readView, IR_EVIDENCE_DIR);
+    if (!irPath) {
+      return {
+        state: "failed",
+        diagnostics: [{ reason: "ir-evidence-absent" }]
+      };
+    }
+    const ir = decodeIrEvidenceFull(readView.readFile(irPath));
+    if (ir.error) {
+      return { state: "failed", diagnostics: [{ reason: ir.error }] };
+    }
+    if (!ir.value.projectId || ir.value.projectId !== decoded.value.projectId) {
+      return {
+        state: "failed",
+        diagnostics: [{ reason: "transport-project-mismatch" }]
+      };
+    }
+    const rendered = renderDocument(decoded.value, ir.value, policy.policy);
+    if (rendered.canonical.length > MAX_DOCUMENT_BYTES) {
+      return {
+        state: "failed",
+        diagnostics: [{ reason: "openapi-export-limit" }]
+      };
+    }
+    return writePlan(context, rendered, policy.policy);
+  } catch (error) {
+    throw new Error("openapi-generator: " + bounded2(error?.message));
+  }
+}
+function openapiVerifyOperation(context) {
+  const outcome = openapiGenerateOperation({
+    ...context,
+    // The recomputation never writes: a dry-run request plus a no-op
+    // write view make the verify posture inert by construction.
+    request: { ...context.request, dry_run: true },
+    writeView: context.writeView ?? { exists: () => false, write: () => {
+    } }
+  });
+  if (outcome.state !== "complete") {
+    return outcome;
+  }
+  const verification = [];
+  for (const write of outcome.data.writes) {
+    if (!context.readView.canRead(write.path)) {
+      verification.push({
+        path: write.path,
+        code: "openapi.drift",
+        detail: "unreadable-or-missing"
+      });
+      continue;
+    }
+    const observed = context.readView.readFile(write.path);
+    const expected = outcome.data.bodies?.get?.(write.path);
+    if (expected === void 0) {
+      continue;
+    }
+    if (!observed.equals(Buffer.from(expected, "utf8"))) {
+      verification.push({
+        path: write.path,
+        code: "openapi.drift",
+        detail: `expected:${write.sha256.slice(7, 19)} observed:${digestOf(observed).slice(7, 19)}`
+      });
+    }
+  }
+  return {
+    state: "complete",
+    data: { writes: [], findings: [...outcome.data.findings, ...verification] }
+  };
+}
+function resolvePolicyFromContext2(readView) {
+  if (!readView.canRead(POLICY_PATH2)) {
+    return { policy: { version: "3.1", mode: "full", path: "docs/openapi.yaml" } };
+  }
+  const bytes = readView.readFile(POLICY_PATH2);
+  return resolvePolicy2(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+}
+function decodeIrEvidenceFull(bytes) {
+  const decoded = decodeIrEvidence(bytes);
+  if (decoded.error) {
+    return decoded;
+  }
+  let document;
+  try {
+    document = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    return { error: "ir-evidence-invalid" };
+  }
+  if (document.contract !== IR_IDENTITY3) {
+    return { error: "ir-evidence-version" };
+  }
+  return { value: { ...decoded.value, definitions: document.definitions } };
+}
+function renderDocument(attachment, ir, policy) {
+  const definitions = /* @__PURE__ */ new Map();
+  for (const definition of ir.definitions ?? []) {
+    if (definition && typeof definition.id === "string") {
+      definitions.set(definition.id, definition);
+    }
+  }
+  const state = {
+    version: policy.version,
+    components: /* @__PURE__ */ new Map(),
+    sharedResponses: {},
+    findings: [],
+    partial(symbol, detail) {
+      const finding = { detail, symbol };
+      if (!state.findings.some(
+        (existing) => existing.symbol === symbol && existing.detail === detail
+      )) {
+        state.findings.push(finding);
+      }
+    }
+  };
+  const pathItems = /* @__PURE__ */ new Map();
+  const pointers = [];
+  for (const endpoint of attachment.endpoints) {
+    const definition = definitions.get(endpoint.endpoint);
+    if (!definition || definition.kind !== "endpoint") {
+      state.partial(endpoint.endpoint, "endpoint-unresolved");
+      continue;
+    }
+    const operation = operationOf(attachment, endpoint, definition, definitions, state);
+    const template = definition.path;
+    const method = definition.method.toLowerCase();
+    const pointer = pathsPointer(template, method);
+    pointers.push([pointer, endpoint.endpoint]);
+    const item = pathItems.get(template) ?? {};
+    item[method] = operation;
+    pathItems.set(template, item);
+  }
+  pointers.sort((left, right) => left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0);
+  const schemas = {};
+  for (const [symbol, name] of [...state.components].sort(byKey)) {
+    const definition = definitions.get(symbol);
+    if (!definition) continue;
+    const body = componentBody(definition, definitions, state);
+    if (body !== null) {
+      schemas[name] = withSymbol(body, symbol);
+    }
+  }
+  const root = {
+    openapi: versionWire(policy.version),
+    info: { title: attachment.projectId, version: "0.4.0" },
+    paths: Object.fromEntries(
+      [...pathItems.entries()].sort(byKey).map(([template, item]) => [
+        template,
+        Object.fromEntries(Object.keys(item).sort().map((method) => [method, item[method]]))
+      ])
+    )
+  };
+  if (Object.keys(schemas).length > 0 || Object.keys(state.sharedResponses ?? {}).length > 0) {
+    root.components = {};
+    if (Object.keys(schemas).length > 0) {
+      root.components.schemas = sortKeys(schemas);
+    }
+    if (Object.keys(state.sharedResponses ?? {}).length > 0) {
+      root.components.responses = sortKeys(state.sharedResponses);
+    }
+  }
+  root["x-lekalo-provenance"] = {
+    generator: { id: GENERATOR_ID, version: GENERATOR_VERSION },
+    irRef: { digest: attachment.irRef?.digest ?? "", identity: attachment.irRef?.identity ?? "" },
+    modelRef: {
+      digest: attachment.modelRef?.digest ?? "",
+      modelVersion: attachment.modelRef?.modelVersion ?? ""
+    },
+    transportRef: {
+      digest: digestOf(Buffer.from(canonicalJson4(attachment), "utf8")),
+      schemaVersion: "lekalo/transport-http/v0.4.0"
+    }
+  };
+  const canonical = canonicalJson4(root);
+  return {
+    root,
+    canonical,
+    digest: sha256Text4(canonical),
+    findings: state.findings.sort(compareFindings2),
+    pointers
+  };
+}
+function operationOf(attachment, endpoint, definition, definitions, state) {
+  const operation = {
+    operationId: effectiveOperationId2(endpoint),
+    responses: responsesOf(attachment, endpoint, definition, definitions, state),
+    "x-lekalo-endpoint": endpoint.endpoint,
+    "x-lekalo-operation": definition.invokes
+  };
+  if (endpoint.tags !== void 0) {
+    operation.tags = [...endpoint.tags];
+  }
+  if (endpoint.summary !== void 0) {
+    operation.summary = endpoint.summary;
+  }
+  const parameters = [];
+  for (const param of endpoint.params ?? []) {
+    parameters.push(paramOf(param, definition, definitions, state));
+  }
+  if (endpoint.pagination !== void 0) {
+    for (const name of [
+      endpoint.pagination.limitParam,
+      endpoint.pagination.offsetParam,
+      endpoint.pagination.cursorParam
+    ]) {
+      if (name === void 0 || name === null) continue;
+      parameters.push({ in: "query", name, required: false, schema: {} });
+    }
+  }
+  if (endpoint.idempotency !== void 0) {
+    parameters.push({
+      in: "header",
+      name: endpoint.idempotency.header,
+      required: endpoint.idempotency.required === true,
+      schema: {}
+    });
+  }
+  if (endpoint.correlation !== void 0) {
+    for (const header of endpoint.correlation.headers ?? []) {
+      parameters.push({ in: "header", name: header, required: false, schema: {} });
+    }
+  }
+  if (endpoint.apiVersion !== void 0 && endpoint.apiVersion.in === "header") {
+    parameters.push({
+      in: "header",
+      name: endpoint.apiVersion.name,
+      required: false,
+      schema: {}
+    });
+  }
+  if (parameters.length > 0) {
+    operation.parameters = parameters;
+  }
+  if (endpoint.body !== void 0 && endpoint.body !== null) {
+    const command = definitions.get(definition.invokes);
+    const input = command && command.kind === "command" ? command.input ?? [] : null;
+    if (endpoint.body.mode === "whole-input") {
+      if (input === null) {
+        state.partial(endpoint.endpoint, "input-undeclared");
+        operation.requestBody = jsonContent({});
+      } else {
+        operation.requestBody = jsonContent(objectSchema(input, definitions, state));
+      }
+    } else {
+      operation.requestBody = jsonContent(
+        explicitObject(endpoint.body.fields ?? [], definitions, input, null, state)
+      );
+    }
+  }
+  if (endpoint.auth !== void 0 && endpoint.auth !== null) {
+    const auth = endpoint.auth;
+    if (auth.actor === "public") {
+      operation.security = [];
+    } else {
+      const schemes = attachment.securitySchemes ?? [];
+      const renderable = (id) => {
+        const scheme = schemes.find((candidate) => candidate.id === id);
+        if (scheme === void 0) return false;
+        return !["oauth2", "custom"].includes(scheme.kind);
+      };
+      const requirement = {};
+      const annotated = [];
+      for (const id of auth.schemes ?? []) {
+        if (renderable(id)) {
+          requirement[id] = [];
+        } else {
+          annotated.push(id);
+          state.partial(id, "scheme-not-expressible");
+        }
+      }
+      if (Object.keys(requirement).length > 0) {
+        operation.security = [requirement];
+      }
+      if (annotated.length > 0) {
+        operation["x-lekalo-scheme"] = annotated.sort();
+      }
+      if (auth.policyRef !== void 0) {
+        operation["x-lekalo-policy"] = auth.policyRef;
+      }
+    }
+  }
+  if (endpoint.rateLimit !== void 0) {
+    operation["x-lekalo-rate-limit"] = {
+      limit: endpoint.rateLimit.limit,
+      scope: endpoint.rateLimit.scope,
+      windowSeconds: endpoint.rateLimit.windowSeconds
+    };
+  }
+  if (endpoint.cache !== void 0) {
+    operation["x-lekalo-cache"] = {
+      etag: endpoint.cache.etag === true,
+      maxAgeSeconds: endpoint.cache.maxAgeSeconds,
+      policy: endpoint.cache.policy
+    };
+  }
+  if (endpoint.apiVersion !== void 0 && endpoint.apiVersion.in === "path") {
+    operation["x-lekalo-api-version"] = {
+      in: "path",
+      name: endpoint.apiVersion.name
+    };
+  }
+  if ((endpoint.capabilities ?? []).length > 0) {
+    operation["x-lekalo-capabilities"] = endpoint.capabilities.map((decl) => ({
+      capability: decl.capability,
+      detail: decl.detail,
+      minimumSupport: decl.minimumSupport
+    }));
+  }
+  return operation;
+}
+function responsesOf(attachment, endpoint, definition, definitions, state) {
+  void attachment;
+  const responses = {};
+  const success = { description: "Success response." };
+  const status = String(endpoint.success?.status ?? 200);
+  if (endpoint.success?.status !== 204) {
+    const body = endpoint.success?.body;
+    if (body === void 0 || body === null) {
+      success.content = { "application/json": { schema: {} } };
+    } else {
+      const query = definitions.get(definition.invokes);
+      const returns = query && query.kind === "query" ? query.returns ?? null : null;
+      let schema;
+      if (body.mode === "whole-output") {
+        if (returns === null) {
+          state.partial(endpoint.endpoint, "output-undeclared");
+          schema = {};
+        } else {
+          schema = typeOf(returns, definitions, state);
+        }
+      } else {
+        schema = explicitObject(body.fields ?? [], definitions, null, returns, state);
+      }
+      const content = { "application/json": { schema } };
+      if ((endpoint.capabilities ?? []).some(
+        (decl) => decl.capability === "streaming" && decl.detail === "sse"
+      )) {
+        content["text/event-stream"] = {};
+      }
+      success.content = content;
+    }
+  }
+  if ((endpoint.success?.headers ?? []).length > 0) {
+    success.headers = Object.fromEntries(
+      endpoint.success.headers.map((header) => [
+        header.name,
+        { required: header.required === true, schema: {} }
+      ])
+    );
+  }
+  if (endpoint.pagination?.cursorField !== void 0) {
+    success["x-lekalo-cursor-field"] = endpoint.pagination.cursorField;
+  }
+  responses[status] = success;
+  const byStatus = /* @__PURE__ */ new Map();
+  for (const entry of endpoint.errors ?? []) {
+    const list = byStatus.get(entry.status) ?? [];
+    list.push(entry.error);
+    byStatus.set(entry.status, list);
+  }
+  for (const [code, errors] of [...byStatus.entries()].sort(byNumericKey)) {
+    for (const error of errors) {
+      state.partial(error, "error-variant-unrendered");
+    }
+    responses[code] = {
+      content: { "application/json": { schema: {} } },
+      description: "Error response."
+    };
+  }
+  const defaults = endpoint.errorDefaults ?? {};
+  const covered = /* @__PURE__ */ new Set([...byStatus.keys()]);
+  const shared = {};
+  for (const [category, code] of Object.entries(defaults)) {
+    if (code === 0 || covered.has(code) || responses[code] !== void 0) continue;
+    responses[code] = { $ref: `#/components/responses/Error${pascal2(category)}` };
+  }
+  if (Object.keys(defaults).length > 0) {
+    for (const [category, code] of Object.entries(defaults)) {
+      if (code === 0) continue;
+      const name = `Error${pascal2(category)}`;
+      shared[name] = categoryResponse(category);
+    }
+    if (Object.keys(shared).length > 0 && state.components.size >= 0) {
+      state.sharedResponses = shared;
+    }
+  }
+  return responses;
+}
+function paramOf(param, definition, definitions, state) {
+  const result = { in: param.in, name: param.name, required: param.required === true };
+  if (param.style !== void 0) {
+    result.style = param.style;
+  }
+  if (param.explode !== void 0) {
+    result.explode = param.explode;
+  }
+  result.schema = fieldSchema(param.field, definition, definitions, state);
+  return result;
+}
+function fieldSchema(field, definition, definitions, state) {
+  if (typeof field === "string" && field.startsWith("input.")) {
+    const name = field.slice("input.".length);
+    const command = definitions.get(definition.invokes);
+    const member = command && command.kind === "command" ? (command.input ?? []).find((candidate) => candidate.name === name) : void 0;
+    if (member !== void 0) {
+      return typeOf(member.type, definitions, state);
+    }
+    state.partial(name, "input-member-unresolved");
+    return {};
+  }
+  state.partial(typeof field === "string" ? field : String(field), "parameter-unresolved");
+  return {};
+}
+function explicitObject(fields, definitions, input, returns, state) {
+  const properties = {};
+  const required = [];
+  for (const field of fields) {
+    let schema = {};
+    if (input !== null) {
+      const member = input.find((candidate) => candidate.name === field.field?.slice?.(6));
+      schema = member !== void 0 ? typeOf(member.type, definitions, state) : schema;
+    } else if (returns !== null && typeof returns.ref === "string") {
+      const source = definitions.get(returns.ref);
+      const member = source && Array.isArray(source.fields) ? source.fields.find((candidate) => candidate.name === field.field) : void 0;
+      schema = member !== void 0 ? typeOf(member.type, definitions, state) : schema;
+    }
+    properties[field.name] = schema;
+    if (field.required === true) {
+      required.push(field.name);
+    }
+  }
+  return objectSchemaFrom(properties, required);
+}
+function objectSchema(fields, definitions, state) {
+  const properties = {};
+  const required = [];
+  for (const field of fields) {
+    let schema = typeOf(field.type, definitions, state);
+    if (field.description !== void 0) {
+      schema = { ...schema, description: field.description };
+    }
+    properties[field.name] = schema;
+    if (field.required === true) {
+      required.push(field.name);
+    }
+  }
+  return objectSchemaFrom(properties, required);
+}
+function objectSchemaFrom(properties, required) {
+  const object = {
+    additionalProperties: false,
+    properties: sortKeys(properties),
+    type: "object"
+  };
+  if (required.length > 0) {
+    object.required = [...required].sort();
+  }
+  return object;
+}
+function typeOf(type, definitions, state) {
+  if (type === null || typeof type !== "object") {
+    return {};
+  }
+  if (typeof type.ref === "string") {
+    return refSchema(type.ref, definitions, state);
+  }
+  if (type.list !== void 0) {
+    return { items: typeOf(type.list, definitions, state), type: "array" };
+  }
+  if (type.optional !== void 0) {
+    return optionalOf(typeOf(type.optional, definitions, state));
+  }
+  return {};
+}
+function refSchema(symbol, definitions, state) {
+  const definition = definitions.get(symbol);
+  if (definition === void 0 || componentKind(definition) === void 0) {
+    state.partial(symbol, "symbol-unresolved");
+    return {};
+  }
+  const name = componentName(symbol);
+  if (!state.components.has(symbol)) {
+    state.components.set(symbol, name);
+  }
+  return { $ref: `#/components/schemas/${name}` };
+}
+function optionalOf(inner) {
+  if (inner !== null && typeof inner === "object" && inner.$ref !== void 0) {
+    return { oneOf: [inner, { type: "null" }] };
+  }
+  if (inner !== null && typeof inner === "object" && inner.type !== void 0) {
+    const types = Array.isArray(inner.type) ? [...inner.type] : [inner.type];
+    types.push("null");
+    return { ...inner, type: types };
+  }
+  return inner;
+}
+function componentBody(definition, definitions, state) {
+  switch (definition.kind) {
+    case "scalar":
+      return scalarSchema(definition.base);
+    case "enum":
+      return {
+        enum: definition.values.map((value) => value.value),
+        type: "string"
+      };
+    case "value-object":
+    case "entity":
+      return objectSchema(definition.fields ?? [], definitions, state);
+    default:
+      return null;
+  }
+}
+function scalarSchema(base) {
+  switch (base) {
+    case "string":
+      return { type: "string" };
+    case "number":
+      return { type: "number" };
+    case "boolean":
+      return { type: "boolean" };
+    case "date":
+      return { format: "date", type: "string" };
+    case "datetime":
+      return { format: "date-time", type: "string" };
+    case "uuid":
+      return { format: "uuid", type: "string" };
+    case "uri":
+      return { format: "uri", type: "string" };
+    default:
+      return {};
+  }
+}
+function categoryResponse(category) {
+  return {
+    content: {
+      "application/json": {
+        schema: {
+          additionalProperties: false,
+          properties: {
+            error: {
+              additionalProperties: false,
+              properties: {
+                category: { const: category },
+                payload: { type: "object" }
+              },
+              required: ["category", "payload"],
+              type: "object"
+            },
+            ok: { const: false }
+          },
+          required: ["error", "ok"],
+          type: "object"
+        }
+      }
+    },
+    description: "Error response."
+  };
+}
+function withSymbol(body, symbol) {
+  return { ...body, "x-lekalo-symbol": symbol };
+}
+function componentKind(definition) {
+  switch (definition.kind) {
+    case "scalar":
+    case "enum":
+    case "value-object":
+    case "entity":
+      return definition.kind;
+    default:
+      return void 0;
+  }
+}
+function pascal2(text) {
+  return text.split("_").filter((part) => part.length > 0).map((part) => part[0].toUpperCase() + part.slice(1)).join("");
+}
+function componentName(symbol) {
+  const [module, local] = splitSymbol(symbol);
+  return pascal2(module) + pascal2(local);
+}
+function splitSymbol(symbol) {
+  const index = symbol.indexOf(".");
+  return index < 0 ? ["", symbol] : [symbol.slice(0, index), symbol.slice(index + 1)];
+}
+function effectiveOperationId2(endpoint) {
+  if (typeof endpoint.operationId === "string" && endpoint.operationId.length > 0) {
+    return endpoint.operationId;
+  }
+  return endpoint.endpoint.split(".").map(
+    (segment, index) => index === 0 ? segment : segment.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join("")
+  ).join("");
+}
+function pathsPointer(template, method) {
+  return `/paths/${template.replaceAll("~", "~0").replaceAll("/", "~1")}/${method}`;
+}
+function versionWire(version) {
+  return version === "3.0" ? "3.0.0" : "3.1.0";
+}
+function jsonContent(schema) {
+  return { content: { "application/json": { schema } }, required: true };
+}
+function sortKeys(object) {
+  return Object.fromEntries(Object.keys(object).sort(byKey).map((key) => [key, object[key]]));
+}
+function byKey(left, right) {
+  const a = Buffer.from(left, "utf8");
+  const b = Buffer.from(right, "utf8");
+  const length = Math.min(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    if (a[index] !== b[index]) return a[index] - b[index];
+  }
+  return a.length - b.length;
+}
+function byNumericKey(left, right) {
+  return Number(left[0]) - Number(right[0]);
+}
+function compareFindings2(left, right) {
+  const symbol = byKey(left.symbol, right.symbol);
+  return symbol !== 0 ? symbol : byKey(left.detail, right.detail);
+}
+function digestOf(bytes) {
+  return "sha256:" + createHash9("sha256").update(bytes).digest("hex");
+}
+function bounded2(text) {
+  return String(text ?? "unknown").replace(/[^a-zA-Z0-9._: -]+/g, "?").slice(0, 128);
+}
+function writePlan(context, rendered, policy) {
+  const { request, writeView } = context;
+  const ownership = ownershipManifest(rendered);
+  const map = pointerMap(rendered);
+  const files = /* @__PURE__ */ new Map([
+    [policy.path, toYaml(rendered.root)],
+    [sidecarPath(policy.path, "ownership.json"), `${canonicalJson4(ownership)}
+`],
+    [sidecarPath(policy.path, "map.json"), `${canonicalJson4(map)}
+`]
+  ]);
+  const writes = [];
+  for (const [path, text] of files) {
+    writes.push({ path, action: writeView.exists(path) ? "replace" : "create", sha256: sha256Text4(text) });
+  }
+  writes.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+  if (request.dry_run === false) {
+    if (!request.plan_id) {
+      return { state: "failed", diagnostics: [{ reason: "missing-plan-id" }] };
+    }
+    for (const write of writes) {
+      writeView.write(write.path, write.action, Buffer.from(files.get(write.path), "utf8"));
+    }
+  }
+  return {
+    state: "complete",
+    data: {
+      writes,
+      // The wire reserves result.findings for validate/verify; the
+      // partial projections ride as bounded evidence notes — the
+      // document is emitted, and every unrenderable member is reported,
+      // never silent (the transport notes precedent).
+      findings: [],
+      partial: rendered.findings.slice(0, 16),
+      bodies: files,
+      plan_id: planIdOf2(writes)
+    },
+    evidence: {
+      document: policy.path,
+      projectId: rendered.root.info.title,
+      partialCount: rendered.findings.length
+    }
+  };
+}
+function planIdOf2(writes) {
+  return "plan-" + sha256Text4(canonicalJson4(writes)).slice("sha256:".length);
+}
+function ownershipManifest(rendered) {
+  const pointers = {};
+  for (const [pointer, endpoint] of rendered.pointers) {
+    pointers[pointer] = endpoint;
+  }
+  const schemas = rendered.root.components?.schemas ?? {};
+  for (const [name, schema] of Object.entries(schemas)) {
+    const pointer = `/components/schemas/${name.replaceAll("~", "~0").replaceAll("/", "~1")}`;
+    if (pointers[pointer] === void 0) {
+      pointers[pointer] = schema["x-lekalo-symbol"] ?? GENERATOR_ID;
+    }
+  }
+  return {
+    contract: OWNERSHIP_CONTRACT,
+    generator: { id: GENERATOR_ID, version: GENERATOR_VERSION },
+    inputs: {},
+    pointers: sortKeys(pointers)
+  };
+}
+function pointerMap(rendered) {
+  const map = {};
+  for (const [pointer, endpoint] of rendered.pointers) {
+    map[pointer] = endpoint;
+  }
+  const schemas = rendered.root.components?.schemas ?? {};
+  for (const [name, schema] of Object.entries(schemas)) {
+    if (schema["x-lekalo-symbol"] !== void 0) {
+      map[`/components/schemas/${name}`] = schema["x-lekalo-symbol"];
+    }
+  }
+  return sortKeys(map);
+}
+function sidecarPath(documentPath, suffix) {
+  const stem = documentPath.replace(/\.yaml$/, "");
+  return `${stem}.${suffix}`;
+}
+
 // src/generation-composite.mjs
 var transport = transportExtensionDescriptor();
 var COMPOSITE_VERSION = "0.4.0";
-function transportApplicable(profile) {
+function evidenceApplicable(profile) {
   if (!profile) {
     return false;
   }
@@ -218018,8 +218998,7 @@ function transportApplicable(profile) {
 function byPath2(left, right) {
   return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
 }
-function unionOutcomes(zodOutcome, transportOutcome) {
-  const outcomes = [zodOutcome, transportOutcome];
+function unionOutcomes(outcomes) {
   if (outcomes.some((outcome) => outcome.state !== "complete")) {
     return {
       state: "failed",
@@ -218043,11 +219022,24 @@ function unionOutcomes(zodOutcome, transportOutcome) {
 }
 function compositeOperation(context) {
   if (context.operation === "verify") {
-    return descriptor.invoke(context);
+    const openapi = evidenceApplicable(context.profile) ? openapiVerifyOperation(context) : { state: "complete", data: { writes: [], findings: [] } };
+    const zod = descriptor.invoke(context);
+    if (zod.state !== "complete" || openapi.state !== "complete") {
+      return {
+        state: "failed",
+        diagnostics: [zod, openapi].filter((outcome) => outcome.state !== "complete").flatMap((outcome) => outcome.diagnostics ?? []).slice(0, 16)
+      };
+    }
+    return {
+      state: "complete",
+      data: { writes: [], findings: [...zod.data?.findings ?? [], ...openapi.data?.findings ?? []] }
+    };
   }
   const zodOutcome = descriptor.invoke(context);
-  const transportOutcome = transportApplicable(context.profile) ? transport.invoke(context) : { state: "complete", data: { writes: [] } };
-  return unionOutcomes(zodOutcome, transportOutcome);
+  const applicable = evidenceApplicable(context.profile);
+  const transportOutcome = applicable ? transport.invoke(context) : { state: "complete", data: { writes: [] } };
+  const openapiOutcome = applicable ? openapiGenerateOperation(context) : { state: "complete", data: { writes: [] } };
+  return unionOutcomes([zodOutcome, transportOutcome, openapiOutcome]);
 }
 var descriptor2 = {
   id: "node-generation-composite",
@@ -218056,10 +219048,10 @@ var descriptor2 = {
   namedCapabilities: {
     "generate.zod": "full",
     [TRANSPORT_CAPABILITY]: "partial",
-    [OPENAPI_CAPABILITY]: "unsupported"
+    [OPENAPI_CAPABILITY]: "partial"
   },
   acceptedIrVersions: ["0.2.16"],
-  writeScopes: [...ZOD_WRITE_SCOPES, ROUTE_WRITE_ROOT],
+  writeScopes: [...ZOD_WRITE_SCOPES, ROUTE_WRITE_ROOT, ...OPENAPI_WRITE_SCOPES],
   invoke: (context) => compositeOperation(context)
 };
 

@@ -53,10 +53,12 @@ export function resolvePolicy(text) {
  * Parse the closed two-key grammar. Returns `{policy}` or `{refusal}`.
  * Indentation is exactly two spaces for the key block; tabs are refused
  * (the closed YAML dialect of every target document in this repo).
+ * The `openapi` block of the same document belongs to the OpenAPI
+ * generator (issue #46) and is tolerated but never interpreted here.
  */
 export function parsePolicyYaml(text) {
   const lines = text.split(/\r?\n/);
-  let inZod = false;
+  let section = null;
   const seen = new Set();
   const policy = {};
   for (let index = 0; index < lines.length; index += 1) {
@@ -73,18 +75,24 @@ export function parsePolicyYaml(text) {
       if (!match) {
         return { refusal: "top-level-key" };
       }
-      if (match[1] !== "zod") {
+      if (match[1] !== "zod" && match[1] !== "openapi") {
         // A different top-level section is foreign to this document.
         return { refusal: "unknown-section" };
       }
-      if (inZod) {
+      if (section === match[1]) {
         return { refusal: "duplicate-section" };
       }
-      inZod = true;
+      section = match[1];
       continue;
     }
-    if (!inZod) {
+    if (section === null) {
       return { refusal: "orphan-key" };
+    }
+    // The openapi block belongs to the other generator; its members
+    // are skipped here (its own policy parser owns the closed
+    // grammar).
+    if (section === "openapi") {
+      continue;
     }
     const keyMatch = stripped.match(/^ {2}([a-z][a-z0-9_-]*):\s*(\S.*)?$/);
     if (!keyMatch || stripped.startsWith("    ")) {

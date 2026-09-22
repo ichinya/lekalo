@@ -1,0 +1,905 @@
+/**
+ * The OpenAPI generation capability of `lekalo-target-node-typescript`
+ * (issue #46): `generate.openapi`, composed inside the single
+ * generation descriptor (the closed target-protocol wire has exactly
+ * one `generate` operation).
+ *
+ * The generator reads the canonical transport evidence
+ * (`.lekalo/cache/transport/<project>.json`) joined with the
+ * compiled-IR evidence (`.lekalo/cache/ir/<project>.json`) through the
+ * kernel read view, resolves the target-document policy, renders the
+ * deterministic document, and returns the write plan:
+ * `<policy.path>`, the `<stem>.ownership.json` pointer manifest, and
+ * the `<stem>.map.json` pointer→semantic-id sidecar.
+ *
+ * Partial honesty: the adapter's read roots carry no #62 error
+ * registry and no #64 query-model attachment, so the identity error
+ * variants and the declared filter/sort annotations cannot render —
+ * every affected member surfaces as an `openapi.partial` finding and
+ * the capability claims `partial`, never `full`. Everything else
+ * mirrors the core projection semantics member for member; on the
+ * same inputs the canonical JSON is byte-identical.
+ */
+
+import { canonicalJson, toYaml } from "./openapi-emit.mjs";
+import { createHash } from "node:crypto";
+import {
+  decodeEvidence,
+  decodeIrEvidence,
+  TRANSPORT_EVIDENCE_DIR,
+  IR_EVIDENCE_DIR,
+  evidencePathFor,
+} from "./transport-extension.mjs";
+import { POLICY_PATH, resolvePolicy } from "./openapi-policy.mjs";
+
+/** The capability this generator claims inside the composite. */
+export const OPENAPI_CAPABILITY = "generate.openapi";
+/** The canonical generator identity carried in the provenance block. */
+export const GENERATOR_ID = "lekalo-core/openapi";
+/** The generator version: the product version of the landing commit. */
+export const GENERATOR_VERSION = "0.4.0";
+/** The ownership sidecar contract. */
+export const OWNERSHIP_CONTRACT = "lekalo/openapi-map/v0.4.0";
+/** The write scopes the generated files live under (the policy path
+ * default lives in docs/). */
+export const OPENAPI_WRITE_SCOPES = ["docs/**"];
+
+/** The document byte bound (the core's export bound). */
+export const MAX_DOCUMENT_BYTES = 4 * 1024 * 1024;
+/** The exact embedded IR contract identity the join accepts. */
+const IR_IDENTITY = "dev.lekalo.ir@0.2.16";
+
+const sha256Text = (text) =>
+  "sha256:" + createHash("sha256").update(text, "utf8").digest("hex");
+
+/** The one extension entry over the kernel read/write views. */
+export function openapiGenerateOperation(context) {
+  const { request, readView } = context;
+  if (!readView) {
+    return { state: "unsupported", diagnostics: [{ reason: "profile-absent" }] };
+  }
+  try {
+    const policy = resolvePolicyFromContext(readView);
+    if (policy.refusal) {
+      return { state: "failed", diagnostics: [{ reason: `policy-${policy.refusal}` }] };
+    }
+    const transportPath = evidencePathFor(request, readView, TRANSPORT_EVIDENCE_DIR);
+    if (!transportPath) {
+      return {
+        state: "failed",
+        diagnostics: [{ reason: "transport-evidence-absent" }],
+      };
+    }
+    const decoded = decodeEvidence(readView.readFile(transportPath));
+    if (decoded.error) {
+      return { state: "failed", diagnostics: [{ reason: decoded.error }] };
+    }
+    const irPath = evidencePathFor(request, readView, IR_EVIDENCE_DIR);
+    if (!irPath) {
+      return {
+        state: "failed",
+        diagnostics: [{ reason: "ir-evidence-absent" }],
+      };
+    }
+    const ir = decodeIrEvidenceFull(readView.readFile(irPath));
+    if (ir.error) {
+      return { state: "failed", diagnostics: [{ reason: ir.error }] };
+    }
+    if (!ir.value.projectId || ir.value.projectId !== decoded.value.projectId) {
+      return {
+        state: "failed",
+        diagnostics: [{ reason: "transport-project-mismatch" }],
+      };
+    }
+    const rendered = renderDocument(decoded.value, ir.value, policy.policy);
+    if (rendered.canonical.length > MAX_DOCUMENT_BYTES) {
+      return {
+        state: "failed",
+        diagnostics: [{ reason: "openapi-export-limit" }],
+      };
+    }
+    return writePlan(context, rendered, policy.policy);
+  } catch (error) {
+    throw new Error("openapi-generator: " + bounded(error?.message));
+  }
+}
+
+/** The verify posture: recompute the expected bytes and diff them
+ * against the on-disk files, reporting `openapi.drift` findings — the
+ * semantic companion of the byte-digest gate. */
+export function openapiVerifyOperation(context) {
+  const outcome = openapiGenerateOperation({
+    ...context,
+    // The recomputation never writes: a dry-run request plus a no-op
+    // write view make the verify posture inert by construction.
+    request: { ...context.request, dry_run: true },
+    writeView: context.writeView ?? { exists: () => false, write: () => {} },
+  });
+  if (outcome.state !== "complete") {
+    return outcome;
+  }
+  const verification = [];
+  for (const write of outcome.data.writes) {
+    if (!context.readView.canRead(write.path)) {
+      verification.push({
+        path: write.path,
+        code: "openapi.drift",
+        detail: "unreadable-or-missing",
+      });
+      continue;
+    }
+    const observed = context.readView.readFile(write.path);
+    const expected = outcome.data.bodies?.get?.(write.path);
+    if (expected === undefined) {
+      continue;
+    }
+    if (!observed.equals(Buffer.from(expected, "utf8"))) {
+      verification.push({
+        path: write.path,
+        code: "openapi.drift",
+        detail: `expected:${write.sha256.slice(7, 19)} observed:${digestOf(observed).slice(7, 19)}`,
+      });
+    }
+  }
+  return {
+    state: "complete",
+    data: { writes: [], findings: [...outcome.data.findings, ...verification] },
+  };
+}
+
+/** Resolve the policy document through the read view (absent → defaults). */
+function resolvePolicyFromContext(readView) {
+  if (!readView.canRead(POLICY_PATH)) {
+    return { policy: { version: "3.1", mode: "full", path: "docs/openapi.yaml" } };
+  }
+  const bytes = readView.readFile(POLICY_PATH);
+  return resolvePolicy(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+}
+
+/** The full IR evidence decode: the route layer needs only endpoint
+ * symbols; the document renderer needs every definition. */
+function decodeIrEvidenceFull(bytes) {
+  const decoded = decodeIrEvidence(bytes);
+  if (decoded.error) {
+    return decoded;
+  }
+  let document;
+  try {
+    document = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    return { error: "ir-evidence-invalid" };
+  }
+  if (document.contract !== IR_IDENTITY) {
+    return { error: "ir-evidence-version" };
+  }
+  return { value: { ...decoded.value, definitions: document.definitions } };
+}
+
+// ---------------------------------------------------------------------------
+// The closed mapping table (plan §2.3): the exact core semantics.
+// ---------------------------------------------------------------------------
+
+/** The document render over one decoded evidence join. */
+function renderDocument(attachment, ir, policy) {
+  const definitions = new Map();
+  for (const definition of ir.definitions ?? []) {
+    if (definition && typeof definition.id === "string") {
+      definitions.set(definition.id, definition);
+    }
+  }
+  const state = {
+    version: policy.version,
+    components: new Map(),
+    sharedResponses: {},
+    findings: [],
+    partial(symbol, detail) {
+      const finding = { detail, symbol };
+      if (
+        !state.findings.some(
+          (existing) => existing.symbol === symbol && existing.detail === detail,
+        )
+      ) {
+        state.findings.push(finding);
+      }
+    },
+  };
+  // Pass one: every operation.
+  const pathItems = new Map();
+  const pointers = [];
+  for (const endpoint of attachment.endpoints) {
+    const definition = definitions.get(endpoint.endpoint);
+    if (!definition || definition.kind !== "endpoint") {
+      state.partial(endpoint.endpoint, "endpoint-unresolved");
+      continue;
+    }
+    const operation = operationOf(attachment, endpoint, definition, definitions, state);
+    const template = definition.path;
+    const method = definition.method.toLowerCase();
+    const pointer = pathsPointer(template, method);
+    pointers.push([pointer, endpoint.endpoint]);
+    const item = pathItems.get(template) ?? {};
+    item[method] = operation;
+    pathItems.set(template, item);
+  }
+  pointers.sort((left, right) => (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0));
+
+  // Pass two: the reusable components (schemas only — the #62 identity
+  // variants cannot render without the bound registry; every declared
+  // error response stays open with a finding).
+  const schemas = {};
+  for (const [symbol, name] of [...state.components].sort(byKey)) {
+    const definition = definitions.get(symbol);
+    if (!definition) continue;
+    const body = componentBody(definition, definitions, state);
+    if (body !== null) {
+      schemas[name] = withSymbol(body, symbol);
+    }
+  }
+
+  // The root: canonical member order is the byte-sorted key order.
+  const root = {
+    openapi: versionWire(policy.version),
+    info: { title: attachment.projectId, version: "0.4.0" },
+    paths: Object.fromEntries(
+      [...pathItems.entries()].sort(byKey).map(([template, item]) => [
+        template,
+        Object.fromEntries(Object.keys(item).sort().map((method) => [method, item[method]])),
+      ]),
+    ),
+  };
+  if (Object.keys(schemas).length > 0 || Object.keys(state.sharedResponses ?? {}).length > 0) {
+    root.components = {};
+    if (Object.keys(schemas).length > 0) {
+      root.components.schemas = sortKeys(schemas);
+    }
+    if (Object.keys(state.sharedResponses ?? {}).length > 0) {
+      root.components.responses = sortKeys(state.sharedResponses);
+    }
+  }
+  root["x-lekalo-provenance"] = {
+    generator: { id: GENERATOR_ID, version: GENERATOR_VERSION },
+    irRef: { digest: attachment.irRef?.digest ?? "", identity: attachment.irRef?.identity ?? "" },
+    modelRef: {
+      digest: attachment.modelRef?.digest ?? "",
+      modelVersion: attachment.modelRef?.modelVersion ?? "",
+    },
+    transportRef: {
+      digest: digestOf(Buffer.from(canonicalJson(attachment), "utf8")),
+      schemaVersion: "lekalo/transport-http/v0.4.0",
+    },
+  };
+  const canonical = canonicalJson(root);
+  return {
+    root,
+    canonical,
+    digest: sha256Text(canonical),
+    findings: state.findings.sort(compareFindings),
+    pointers,
+  };
+}
+
+/** One rendered operation object. */
+function operationOf(attachment, endpoint, definition, definitions, state) {
+  const operation = {
+    operationId: effectiveOperationId(endpoint),
+    responses: responsesOf(attachment, endpoint, definition, definitions, state),
+    "x-lekalo-endpoint": endpoint.endpoint,
+    "x-lekalo-operation": definition.invokes,
+  };
+  if (endpoint.tags !== undefined) {
+    operation.tags = [...endpoint.tags];
+  }
+  if (endpoint.summary !== undefined) {
+    operation.summary = endpoint.summary;
+  }
+  const parameters = [];
+  for (const param of endpoint.params ?? []) {
+    parameters.push(paramOf(param, definition, definitions, state));
+  }
+  if (endpoint.pagination !== undefined) {
+    for (const name of [
+      endpoint.pagination.limitParam,
+      endpoint.pagination.offsetParam,
+      endpoint.pagination.cursorParam,
+    ]) {
+      if (name === undefined || name === null) continue;
+      parameters.push({ in: "query", name, required: false, schema: {} });
+    }
+  }
+  if (endpoint.idempotency !== undefined) {
+    parameters.push({
+      in: "header",
+      name: endpoint.idempotency.header,
+      required: endpoint.idempotency.required === true,
+      schema: {},
+    });
+  }
+  if (endpoint.correlation !== undefined) {
+    for (const header of endpoint.correlation.headers ?? []) {
+      parameters.push({ in: "header", name: header, required: false, schema: {} });
+    }
+  }
+  if (endpoint.apiVersion !== undefined && endpoint.apiVersion.in === "header") {
+    parameters.push({
+      in: "header",
+      name: endpoint.apiVersion.name,
+      required: false,
+      schema: {},
+    });
+  }
+  if (parameters.length > 0) {
+    operation.parameters = parameters;
+  }
+  if (endpoint.body !== undefined && endpoint.body !== null) {
+    const command = definitions.get(definition.invokes);
+    const input =
+      command && command.kind === "command" ? (command.input ?? []) : null;
+    if (endpoint.body.mode === "whole-input") {
+      if (input === null) {
+        state.partial(endpoint.endpoint, "input-undeclared");
+        operation.requestBody = jsonContent({});
+      } else {
+        operation.requestBody = jsonContent(objectSchema(input, definitions, state));
+      }
+    } else {
+      operation.requestBody = jsonContent(
+        explicitObject(endpoint.body.fields ?? [], definitions, input, null, state),
+      );
+    }
+  }
+  // Security: the native requirement when every declared scheme
+  // renders; annotated otherwise.
+  if (endpoint.auth !== undefined && endpoint.auth !== null) {
+    const auth = endpoint.auth;
+    if (auth.actor === "public") {
+      operation.security = [];
+    } else {
+      const schemes = attachment.securitySchemes ?? [];
+      const renderable = (id) => {
+        const scheme = schemes.find((candidate) => candidate.id === id);
+        if (scheme === undefined) return false;
+        return !["oauth2", "custom"].includes(scheme.kind);
+      };
+      const requirement = {};
+      const annotated = [];
+      for (const id of auth.schemes ?? []) {
+        if (renderable(id)) {
+          requirement[id] = [];
+        } else {
+          annotated.push(id);
+          state.partial(id, "scheme-not-expressible");
+        }
+      }
+      if (Object.keys(requirement).length > 0) {
+        operation.security = [requirement];
+      }
+      if (annotated.length > 0) {
+        operation["x-lekalo-scheme"] = annotated.sort();
+      }
+      if (auth.policyRef !== undefined) {
+        operation["x-lekalo-policy"] = auth.policyRef;
+      }
+    }
+  }
+  if (endpoint.rateLimit !== undefined) {
+    operation["x-lekalo-rate-limit"] = {
+      limit: endpoint.rateLimit.limit,
+      scope: endpoint.rateLimit.scope,
+      windowSeconds: endpoint.rateLimit.windowSeconds,
+    };
+  }
+  if (endpoint.cache !== undefined) {
+    operation["x-lekalo-cache"] = {
+      etag: endpoint.cache.etag === true,
+      maxAgeSeconds: endpoint.cache.maxAgeSeconds,
+      policy: endpoint.cache.policy,
+    };
+  }
+  if (endpoint.apiVersion !== undefined && endpoint.apiVersion.in === "path") {
+    operation["x-lekalo-api-version"] = {
+      in: "path",
+      name: endpoint.apiVersion.name,
+    };
+  }
+  if ((endpoint.capabilities ?? []).length > 0) {
+    operation["x-lekalo-capabilities"] = endpoint.capabilities.map((decl) => ({
+      capability: decl.capability,
+      detail: decl.detail,
+      minimumSupport: decl.minimumSupport,
+    }));
+  }
+  return operation;
+}
+
+/** The responses object of one operation. */
+function responsesOf(attachment, endpoint, definition, definitions, state) {
+  void attachment;
+  const responses = {};
+  const success = { description: "Success response." };
+  const status = String(endpoint.success?.status ?? 200);
+  if (endpoint.success?.status !== 204) {
+    const body = endpoint.success?.body;
+    if (body === undefined || body === null) {
+      success.content = { "application/json": { schema: {} } };
+    } else {
+      const query = definitions.get(definition.invokes);
+      const returns = query && query.kind === "query" ? (query.returns ?? null) : null;
+      let schema;
+      if (body.mode === "whole-output") {
+        if (returns === null) {
+          state.partial(endpoint.endpoint, "output-undeclared");
+          schema = {};
+        } else {
+          schema = typeOf(returns, definitions, state);
+        }
+      } else {
+        schema = explicitObject(body.fields ?? [], definitions, null, returns, state);
+      }
+      const content = { "application/json": { schema } };
+      if (
+        (endpoint.capabilities ?? []).some(
+          (decl) => decl.capability === "streaming" && decl.detail === "sse",
+        )
+      ) {
+        content["text/event-stream"] = {};
+      }
+      success.content = content;
+    }
+  }
+  if ((endpoint.success?.headers ?? []).length > 0) {
+    success.headers = Object.fromEntries(
+      endpoint.success.headers.map((header) => [
+        header.name,
+        { required: header.required === true, schema: {} },
+      ]),
+    );
+  }
+  if (endpoint.pagination?.cursorField !== undefined) {
+    success["x-lekalo-cursor-field"] = endpoint.pagination.cursorField;
+  }
+  responses[status] = success;
+
+  // The declared error statuses: without the bound #62 registry the
+  // identity variants cannot render — the status response stays open
+  // and the gap is reported, never a dangling $ref.
+  const byStatus = new Map();
+  for (const entry of endpoint.errors ?? []) {
+    const list = byStatus.get(entry.status) ?? [];
+    list.push(entry.error);
+    byStatus.set(entry.status, list);
+  }
+  for (const [code, errors] of [...byStatus.entries()].sort(byNumericKey)) {
+    for (const error of errors) {
+      state.partial(error, "error-variant-unrendered");
+    }
+    responses[code] = {
+      content: { "application/json": { schema: {} } },
+      description: "Error response.",
+    };
+  }
+  // The category defaults: uncovered statuses reference the shared
+  // category response, rendered once under components.responses.
+  const defaults = endpoint.errorDefaults ?? {};
+  const covered = new Set([...byStatus.keys()]);
+  const shared = {};
+  for (const [category, code] of Object.entries(defaults)) {
+    if (code === 0 || covered.has(code) || responses[code] !== undefined) continue;
+    responses[code] = { $ref: `#/components/responses/Error${pascal(category)}` };
+  }
+  if (Object.keys(defaults).length > 0) {
+    for (const [category, code] of Object.entries(defaults)) {
+      if (code === 0) continue;
+      const name = `Error${pascal(category)}`;
+      shared[name] = categoryResponse(category);
+    }
+    if (Object.keys(shared).length > 0 && state.components.size >= 0) {
+      state.sharedResponses = shared;
+    }
+  }
+  return responses;
+}
+
+/** One declared parameter with its resolved schema. */
+function paramOf(param, definition, definitions, state) {
+  const result = { in: param.in, name: param.name, required: param.required === true };
+  if (param.style !== undefined) {
+    result.style = param.style;
+  }
+  if (param.explode !== undefined) {
+    result.explode = param.explode;
+  }
+  result.schema = fieldSchema(param.field, definition, definitions, state);
+  return result;
+}
+
+/** The schema of one field reference: a command input member's type. */
+function fieldSchema(field, definition, definitions, state) {
+  if (typeof field === "string" && field.startsWith("input.")) {
+    const name = field.slice("input.".length);
+    const command = definitions.get(definition.invokes);
+    const member =
+      command && command.kind === "command"
+        ? (command.input ?? []).find((candidate) => candidate.name === name)
+        : undefined;
+    if (member !== undefined) {
+      return typeOf(member.type, definitions, state);
+    }
+    state.partial(name, "input-member-unresolved");
+    return {};
+  }
+  // A bare query-model parameter name: the adapter carries no #64
+  // attachment, so the type cannot resolve — reported, never guessed.
+  state.partial(typeof field === "string" ? field : String(field), "parameter-unresolved");
+  return {};
+}
+
+/** One explicit-projection object schema. */
+function explicitObject(fields, definitions, input, returns, state) {
+  const properties = {};
+  const required = [];
+  for (const field of fields) {
+    let schema = {};
+    if (input !== null) {
+      const member = input.find((candidate) => candidate.name === field.field?.slice?.(6));
+      schema = member !== undefined ? typeOf(member.type, definitions, state) : schema;
+    } else if (returns !== null && typeof returns.ref === "string") {
+      const source = definitions.get(returns.ref);
+      const member =
+        source && Array.isArray(source.fields)
+          ? source.fields.find((candidate) => candidate.name === field.field)
+          : undefined;
+      schema = member !== undefined ? typeOf(member.type, definitions, state) : schema;
+    }
+    properties[field.name] = schema;
+    if (field.required === true) {
+      required.push(field.name);
+    }
+  }
+  return objectSchemaFrom(properties, required);
+}
+
+/** The object schema over declared fields (the §2.3 shape). */
+function objectSchema(fields, definitions, state) {
+  const properties = {};
+  const required = [];
+  for (const field of fields) {
+    let schema = typeOf(field.type, definitions, state);
+    if (field.description !== undefined) {
+      schema = { ...schema, description: field.description };
+    }
+    properties[field.name] = schema;
+    if (field.required === true) {
+      required.push(field.name);
+    }
+  }
+  return objectSchemaFrom(properties, required);
+}
+
+/** Assemble one object schema from sorted properties. */
+function objectSchemaFrom(properties, required) {
+  const object = {
+    additionalProperties: false,
+    properties: sortKeys(properties),
+    type: "object",
+  };
+  if (required.length > 0) {
+    object.required = [...required].sort();
+  }
+  return object;
+}
+
+/** The closed `type` expression mapping (the §2.3 table). */
+function typeOf(type, definitions, state) {
+  if (type === null || typeof type !== "object") {
+    return {};
+  }
+  if (typeof type.ref === "string") {
+    return refSchema(type.ref, definitions, state);
+  }
+  if (type.list !== undefined) {
+    return { items: typeOf(type.list, definitions, state), type: "array" };
+  }
+  if (type.optional !== undefined) {
+    return optionalOf(typeOf(type.optional, definitions, state));
+  }
+  return {};
+}
+
+/** The `$ref` (or open fallback) of one named symbol. */
+function refSchema(symbol, definitions, state) {
+  const definition = definitions.get(symbol);
+  if (definition === undefined || componentKind(definition) === undefined) {
+    state.partial(symbol, "symbol-unresolved");
+    return {};
+  }
+  const name = componentName(symbol);
+  if (!state.components.has(symbol)) {
+    state.components.set(symbol, name);
+  }
+  return { $ref: `#/components/schemas/${name}` };
+}
+
+/** The 3.1 nullable composition (the shared table's Optional row). */
+function optionalOf(inner) {
+  if (inner !== null && typeof inner === "object" && inner.$ref !== undefined) {
+    return { oneOf: [inner, { type: "null" }] };
+  }
+  if (inner !== null && typeof inner === "object" && inner.type !== undefined) {
+    const types = Array.isArray(inner.type) ? [...inner.type] : [inner.type];
+    types.push("null");
+    return { ...inner, type: types };
+  }
+  return inner;
+}
+
+/** The body of one reusable component, or nothing. */
+function componentBody(definition, definitions, state) {
+  switch (definition.kind) {
+    case "scalar":
+      return scalarSchema(definition.base);
+    case "enum":
+      return {
+        enum: definition.values.map((value) => value.value),
+        type: "string",
+      };
+    case "value-object":
+    case "entity":
+      return objectSchema(definition.fields ?? [], definitions, state);
+    default:
+      return null;
+  }
+}
+
+/** The closed scalar-base projection. */
+function scalarSchema(base) {
+  switch (base) {
+    case "string":
+      return { type: "string" };
+    case "number":
+      return { type: "number" };
+    case "boolean":
+      return { type: "boolean" };
+    case "date":
+      return { format: "date", type: "string" };
+    case "datetime":
+      return { format: "date-time", type: "string" };
+    case "uuid":
+      return { format: "uuid", type: "string" };
+    case "uri":
+      return { format: "uri", type: "string" };
+    default:
+      return {};
+  }
+}
+
+/** One shared category response body (no declared id/code). */
+function categoryResponse(category) {
+  return {
+    content: {
+      "application/json": {
+        schema: {
+          additionalProperties: false,
+          properties: {
+            error: {
+              additionalProperties: false,
+              properties: {
+                category: { const: category },
+                payload: { type: "object" },
+              },
+              required: ["category", "payload"],
+              type: "object",
+            },
+            ok: { const: false },
+          },
+          required: ["error", "ok"],
+          type: "object",
+        },
+      },
+    },
+    description: "Error response.",
+  };
+}
+
+/** Attach the semantic-id anchor to one reusable component. */
+function withSymbol(body, symbol) {
+  return { ...body, "x-lekalo-symbol": symbol };
+}
+
+/** The component kinds that render as reusable schemas. */
+function componentKind(definition) {
+  switch (definition.kind) {
+    case "scalar":
+    case "enum":
+    case "value-object":
+    case "entity":
+      return definition.kind;
+    default:
+      return undefined;
+  }
+}
+
+/** `task_id` → `TaskId`; the #45 export-name rule. */
+export function pascal(text) {
+  return text
+    .split("_")
+    .filter((part) => part.length > 0)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join("");
+}
+
+/** The reusable-schema component name of one semantic id. */
+export function componentName(symbol) {
+  const [module, local] = splitSymbol(symbol);
+  return pascal(module) + pascal(local);
+}
+
+function splitSymbol(symbol) {
+  const index = symbol.indexOf(".");
+  return index < 0 ? ["", symbol] : [symbol.slice(0, index), symbol.slice(index + 1)];
+}
+
+/** `validation` → `Validation` (one-token Pascal). */
+/** The deterministic operation id (the camel-case derivation). */
+function effectiveOperationId(endpoint) {
+  if (typeof endpoint.operationId === "string" && endpoint.operationId.length > 0) {
+    return endpoint.operationId;
+  }
+  return endpoint.endpoint
+    .split(".")
+    .map((segment, index) =>
+      index === 0
+        ? segment
+        : segment
+            .split("_")
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(""),
+    )
+    .join("");
+}
+
+/** The RFC 6901 escaped operation pointer. */
+function pathsPointer(template, method) {
+  return `/paths/${template.replaceAll("~", "~0").replaceAll("/", "~1")}/${method}`;
+}
+
+/** The emitted `openapi` root member of one declared version. */
+function versionWire(version) {
+  return version === "3.0" ? "3.0.0" : "3.1.0";
+}
+
+/** The JSON content member of one schema. */
+function jsonContent(schema) {
+  return { content: { "application/json": { schema } }, required: true };
+}
+
+/** Sort object keys by unsigned UTF-8 bytes. */
+function sortKeys(object) {
+  return Object.fromEntries(Object.keys(object).sort(byKey).map((key) => [key, object[key]]));
+}
+
+/** The unsigned UTF-8 byte order comparison. */
+function byKey(left, right) {
+  const a = Buffer.from(left, "utf8");
+  const b = Buffer.from(right, "utf8");
+  const length = Math.min(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    if (a[index] !== b[index]) return a[index] - b[index];
+  }
+  return a.length - b.length;
+}
+
+/** Numeric map-key ordering for the status codes. */
+function byNumericKey(left, right) {
+  return Number(left[0]) - Number(right[0]);
+}
+
+/** Findings order: symbol then detail, byte-sorted, deduplicated. */
+function compareFindings(left, right) {
+  const symbol = byKey(left.symbol, right.symbol);
+  return symbol !== 0 ? symbol : byKey(left.detail, right.detail);
+}
+
+/** The sha256 of exact bytes. */
+function digestOf(bytes) {
+  return "sha256:" + createHash("sha256").update(bytes).digest("hex");
+}
+
+/** Bound one echoed reason token. */
+function bounded(text) {
+  return String(text ?? "unknown").replace(/[^a-zA-Z0-9._: -]+/g, "?").slice(0, 128);
+}
+
+/** Build the write plan: the document, the ownership manifest, and the
+ * pointer sidecar. Dry runs never write; applies publish the exact
+ * bytes inside the permitted root. */
+function writePlan(context, rendered, policy) {
+  const { request, writeView } = context;
+  const ownership = ownershipManifest(rendered);
+  const map = pointerMap(rendered);
+  const files = new Map([
+    [policy.path, toYaml(rendered.root)],
+    [sidecarPath(policy.path, "ownership.json"), `${canonicalJson(ownership)}\n`],
+    [sidecarPath(policy.path, "map.json"), `${canonicalJson(map)}\n`],
+  ]);
+  const writes = [];
+  for (const [path, text] of files) {
+    writes.push({ path, action: writeView.exists(path) ? "replace" : "create", sha256: sha256Text(text) });
+  }
+  writes.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  if (request.dry_run === false) {
+    if (!request.plan_id) {
+      return { state: "failed", diagnostics: [{ reason: "missing-plan-id" }] };
+    }
+    for (const write of writes) {
+      writeView.write(write.path, write.action, Buffer.from(files.get(write.path), "utf8"));
+    }
+  }
+  return {
+    state: "complete",
+    data: {
+      writes,
+      // The wire reserves result.findings for validate/verify; the
+      // partial projections ride as bounded evidence notes — the
+      // document is emitted, and every unrenderable member is reported,
+      // never silent (the transport notes precedent).
+      findings: [],
+      partial: rendered.findings.slice(0, 16),
+      bodies: files,
+      plan_id: planIdOf(writes),
+    },
+    evidence: {
+      document: policy.path,
+      projectId: rendered.root.info.title,
+      partialCount: rendered.findings.length,
+    },
+  };
+}
+
+/** The plan identity of one write set (the composite union domain). */
+export function planIdOf(writes) {
+  return "plan-" + sha256Text(canonicalJson(writes)).slice("sha256:".length);
+}
+
+/** The ownership manifest of one render: every generated pointer with
+ * the semantic id that owns it. */
+function ownershipManifest(rendered) {
+  const pointers = {};
+  for (const [pointer, endpoint] of rendered.pointers) {
+    pointers[pointer] = endpoint;
+  }
+  const schemas = rendered.root.components?.schemas ?? {};
+  for (const [name, schema] of Object.entries(schemas)) {
+    const pointer = `/components/schemas/${name.replaceAll("~", "~0").replaceAll("/", "~1")}`;
+    if (pointers[pointer] === undefined) {
+      pointers[pointer] = schema["x-lekalo-symbol"] ?? GENERATOR_ID;
+    }
+  }
+  return {
+    contract: OWNERSHIP_CONTRACT,
+    generator: { id: GENERATOR_ID, version: GENERATOR_VERSION },
+    inputs: {},
+    pointers: sortKeys(pointers),
+  };
+}
+
+/** The pointer→semantic-id sidecar of one render. */
+function pointerMap(rendered) {
+  const map = {};
+  for (const [pointer, endpoint] of rendered.pointers) {
+    map[pointer] = endpoint;
+  }
+  const schemas = rendered.root.components?.schemas ?? {};
+  for (const [name, schema] of Object.entries(schemas)) {
+    if (schema["x-lekalo-symbol"] !== undefined) {
+      map[`/components/schemas/${name}`] = schema["x-lekalo-symbol"];
+    }
+  }
+  return sortKeys(map);
+}
+
+/** The sidecar path of one document path (`docs/openapi.yaml` →
+ * `docs/openapi.<suffix>`). */
+function sidecarPath(documentPath, suffix) {
+  const stem = documentPath.replace(/\.yaml$/, "");
+  return `${stem}.${suffix}`;
+}

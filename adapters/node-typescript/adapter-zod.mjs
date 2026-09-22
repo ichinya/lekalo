@@ -143,10 +143,12 @@ var OPERATION_TOKENS = Object.freeze([
 var SUPPORT_STATES = Object.freeze(["full", "partial", "unsupported", "unknown"]);
 var CAPABILITY_IDS = Object.freeze([
   "generate.openapi",
+  "generate.transport-http",
   "generate.ui",
   "generate.zod",
   "scan.symbols",
   "verify.scenarios",
+  "verify.transport-http",
   "plan.native-gates"
 ]);
 function entryDigest() {
@@ -933,7 +935,7 @@ function validateProfileBinding(request, profile) {
   if (!profile) {
     return refusal("profile-absent");
   }
-  if (request.profile !== profile.id) {
+  if (request.profile !== void 0 && request.profile !== profile.id) {
     return refusal("profile-id");
   }
   if (request.target !== void 0 && request.target !== profile.target) {
@@ -1002,6 +1004,9 @@ function describeCapabilities(profile = null, extensions = []) {
       }
       for (const scope of extension.writeScopes ?? []) {
         writeScopes.add(scope);
+      }
+      for (const root of extension.writeRoots ?? []) {
+        writeScopes.add(root);
       }
       for (const version of extension.acceptedIrVersions ?? []) {
         irVersions.add(version);
@@ -1364,7 +1369,7 @@ function validateExtensionDescriptor(descriptor2) {
   if (typeof descriptor2 !== "object" || descriptor2 === null) {
     invalid("not an object");
   }
-  const allowed = ["id", "version", "operations", "namedCapabilities", "acceptedIrVersions", "writeScopes", "invoke"];
+  const allowed = ["id", "version", "operations", "namedCapabilities", "acceptedIrVersions", "writeScopes", "writeRoots", "readRoots", "invoke"];
   for (const key of Object.keys(descriptor2)) {
     if (!allowed.includes(key)) {
       invalid(`unknown member ${key}`);
@@ -1402,6 +1407,16 @@ function validateExtensionDescriptor(descriptor2) {
       invalid("writeScopes");
     }
   }
+  if (hasOwn(descriptor2, "writeRoots") && descriptor2.writeRoots !== void 0) {
+    if (!Array.isArray(descriptor2.writeRoots) || descriptor2.writeRoots.length === 0 || descriptor2.writeRoots.length > 8 || !descriptor2.writeRoots.every((root) => typeof root === "string" && /^([a-z0-9][a-z0-9._-]*\/)+\*\*$/.test(root) && !root.includes(".."))) {
+      invalid("writeRoots");
+    }
+  }
+  if (hasOwn(descriptor2, "readRoots") && descriptor2.readRoots !== void 0) {
+    if (!Array.isArray(descriptor2.readRoots) || descriptor2.readRoots.length === 0 || descriptor2.readRoots.length > 8 || !descriptor2.readRoots.every((root) => typeof root === "string" && root.length > 0 && root.length <= 512 && !root.includes("..") && !root.startsWith("/") && !root.includes("**"))) {
+      invalid("readRoots");
+    }
+  }
   if (typeof descriptor2.invoke !== "function") {
     invalid("invoke");
   }
@@ -1412,6 +1427,8 @@ function validateExtensionDescriptor(descriptor2) {
     namedCapabilities: descriptor2.namedCapabilities ? deepFreeze({ ...descriptor2.namedCapabilities }) : void 0,
     acceptedIrVersions: descriptor2.acceptedIrVersions ? Object.freeze([...descriptor2.acceptedIrVersions]) : void 0,
     writeScopes: descriptor2.writeScopes ? Object.freeze([...descriptor2.writeScopes]) : void 0,
+    writeRoots: descriptor2.writeRoots ? Object.freeze([...descriptor2.writeRoots]) : void 0,
+    readRoots: descriptor2.readRoots ? Object.freeze([...descriptor2.readRoots]) : void 0,
     invoke: descriptor2.invoke
   });
 }
@@ -1458,6 +1475,12 @@ function createKernel(options = {}) {
     for (const operation of validated.operations) {
       if ([...extensions.values()].some((candidate) => candidate.operations.includes(operation))) {
         throw new RequestRefusal("extension-invalid", `duplicate operation claim ${operation}`);
+      }
+    }
+    if (profile && validated.readRoots) {
+      const covered = validated.readRoots.every((required) => profile.readRoots.some((root) => root.kind === "tree" && (root.path === required || root.path.startsWith(required + "/")) || root.kind === "file" && root.path.startsWith(required + "/")));
+      if (!covered) {
+        continue;
       }
     }
     extensions.set(validated.id, validated);
@@ -3020,7 +3043,7 @@ function resolvePolicy(text) {
 }
 function parsePolicyYaml(text) {
   const lines = text.split(/\r?\n/);
-  let inZod = false;
+  let section = null;
   const seen = /* @__PURE__ */ new Set();
   const policy = {};
   for (let index = 0; index < lines.length; index += 1) {
@@ -3037,17 +3060,20 @@ function parsePolicyYaml(text) {
       if (!match) {
         return { refusal: "top-level-key" };
       }
-      if (match[1] !== "zod") {
+      if (match[1] !== "zod" && match[1] !== "openapi") {
         return { refusal: "unknown-section" };
       }
-      if (inZod) {
+      if (section === match[1]) {
         return { refusal: "duplicate-section" };
       }
-      inZod = true;
+      section = match[1];
       continue;
     }
-    if (!inZod) {
+    if (section === null) {
       return { refusal: "orphan-key" };
+    }
+    if (section === "openapi") {
+      continue;
     }
     const keyMatch = stripped.match(/^ {2}([a-z][a-z0-9_-]*):\s*(\S.*)?$/);
     if (!keyMatch || stripped.startsWith("    ")) {
