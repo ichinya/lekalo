@@ -9,10 +9,11 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { createKernel, validateExtensionDescriptor, VERSION } from "../main.mjs";
+import { ADAPTER_ID, ADAPTER_VERSION, createKernel, validateExtensionDescriptor, VERSION } from "../main.mjs";
 import { descriptor } from "../src/zod-gen.mjs";
 import { ZOD_DIR } from "../src/zod-map.mjs";
 import { sha256 } from "../src/zod-emit.mjs";
@@ -318,5 +319,23 @@ test("a malformed policy document outside the read roots resolves to defaults", 
     assert.equal(response.status, "ok");
   } finally {
     box.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Artifact identity probe (issue #45 review round 2, F-1): the committed
+// bundles derive their adapter identity from the kernel constant — never a
+// stale literal — so a version reserve cannot leave them behind.
+// ---------------------------------------------------------------------------
+
+test("committed bundles expose __lekaloAdapterIdentity equal to ADAPTER_VERSION", async () => {
+  const adapterRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  for (const artifact of ["adapter-zod.mjs", "adapter.mjs"]) {
+    const mod = await import(
+      pathToFileURL(join(adapterRoot, artifact)).href
+    );
+    assert.equal(mod.__lekaloAdapterIdentity.version, ADAPTER_VERSION, artifact);
+    assert.equal(mod.__lekaloAdapterIdentity.id, ADAPTER_ID, artifact);
+    assert.match(mod.__lekaloAdapterIdentity.digest, /^sha256:[0-9a-f]{64}$/);
   }
 });

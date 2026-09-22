@@ -175,7 +175,7 @@ export const __lekaloWorkspace = workspace;
 export const __lekaloNativePlan = nativePlan;
 export const __lekaloLaunchPolicy = nativePolicy;
 export const __lekaloZodGen = zodDescriptor;
-export const __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: "0.3.2", digest: kernel.entryDigest() };
+export const __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: kernel.ADAPTER_VERSION, digest: kernel.entryDigest() };
 await kernel.runIfEntry(import.meta.url);
 `;
 
@@ -215,7 +215,7 @@ import { descriptor as zodDescriptor } from "./zod-gen.mjs";
 
 kernel.__setLaunchExtensions([zodDescriptor]);
 export const __lekaloKernel = kernel;
-export const __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: "0.3.2", digest: kernel.entryDigest() };
+export const __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: kernel.ADAPTER_VERSION, digest: kernel.entryDigest() };
 await kernel.runIfEntry(import.meta.url);
 `;
   writeFileSync(join(zodScratchRoot, "src", "main.mjs"), zodEntry);

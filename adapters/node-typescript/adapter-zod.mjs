@@ -3234,7 +3234,7 @@ function bounded(text) {
 // src/main.mjs
 __setLaunchExtensions([descriptor]);
 var __lekaloKernel = kernel_exports;
-var __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: "0.3.2", digest: entryDigest() };
+var __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: ADAPTER_VERSION, digest: entryDigest() };
 await runIfEntry(import.meta.url);
 export {
   __lekaloAdapterIdentity,

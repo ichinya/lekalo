@@ -217709,7 +217709,7 @@ var __lekaloWorkspace = workspace_exports;
 var __lekaloNativePlan = native_plan_exports;
 var __lekaloLaunchPolicy = native_policy_default;
 var __lekaloZodGen = descriptor;
-var __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: "0.3.2", digest: entryDigest() };
+var __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: ADAPTER_VERSION, digest: entryDigest() };
 await runIfEntry(import.meta.url);
 export {
   __lekaloAdapterIdentity,
