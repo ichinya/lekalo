@@ -4493,6 +4493,190 @@
       "lifecycle": "active"
     },
     {
+      "id": "openapi.binding-unresolved",
+      "code": "LEK-OAPI-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "openapi.binding-unresolved",
+      "default_message": "An OpenAPI operation binding does not resolve to a declared endpoint or symbol.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "openapi.drift",
+      "code": "LEK-OAPI-007",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "openapi.drift",
+      "default_message": "A bound OpenAPI operation differs from its recomputed fragment.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "pointer",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "openapi.export-limit",
+      "code": "LEK-OAPI-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "openapi.export-limit",
+      "default_message": "The canonical OpenAPI payload exceeds its bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "openapi.input-invalid",
+      "code": "LEK-OAPI-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "openapi.input-invalid",
+      "default_message": "The OpenAPI document or configuration violates its closed input contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "openapi.merge-conflict",
+      "code": "LEK-OAPI-005",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "openapi.merge-conflict",
+      "default_message": "A generated OpenAPI pointer collides with manually owned document content.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "pointer",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "openapi.projection-partial",
+      "code": "LEK-OAPI-002",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "openapi.projection-partial",
+      "default_message": "A declared member is not expressible in the OpenAPI projection and is reported instead of silently dropped.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "symbol",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "openapi.schema-invalid",
+      "code": "LEK-OAPI-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "openapi.schema-invalid",
+      "default_message": "A rendered OpenAPI document fails its declared meta-schema.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "openapi.version-unsupported",
+      "code": "LEK-OAPI-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "openapi.version-unsupported",
+      "default_message": "A declared construct cannot be expressed at the declared OpenAPI version.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "version",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "publication.consent-missing",
       "code": "LEK-XE-006",
       "category": "compatibility",
