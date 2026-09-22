@@ -128,9 +128,10 @@ compiled project IR inside the kernel's read/write views:
   with `symbol:<id>` details, and because the v0.3.2 wire reserves the
   findings member for validate/verify, a generate run carrying any
   finding surfaces as an honest partial error and claims nothing.
-- brand: entity identity scalars emit branded (`lekaloBrand("id")`),
-  so `z.infer` yields `string & z.BRAND<"id">` and raw strings cannot
-  masquerade as opaque ids without `.parse`.
+- brand: entity identity members emit branded over their own schema
+  (`lekaloBrand(<schema>, "id")`) for every ref kind — scalar, enum,
+  value-object, entity — so `z.infer` seals the type and raw values
+  cannot masquerade as opaque ids without `.parse`.
 - error mapping: runtime zod issues resolve to Lekalo semantic ids
   through the sibling sidecar (`normalizeIssues`), exact field paths
   first, then the closest enclosing path, then the module owner.

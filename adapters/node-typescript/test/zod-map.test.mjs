@@ -286,6 +286,57 @@ test("identity refs through the optional wrapper brand too (F-5)", () => {
   assert.equal(declaration.branded, true);
 });
 
+test("identity members typed by an enum brand the enum schema (r2 F-5)", () => {
+  const { modules } = mapProject(
+    project([
+      {
+        id: "planner.state",
+        kind: "enum",
+        values: [{ value: "draft" }, { value: "done" }],
+      },
+      {
+        id: "planner.task",
+        kind: "entity",
+        identity: ["state"],
+        fields: [field("state", ref("planner.state"))],
+      },
+    ]),
+  );
+  const state = modules[0].declarations[0];
+  assert.equal(state.branded, true);
+  assert.deepEqual(state.expr, {
+    k: "brand",
+    inner: { k: "enum", values: ["draft", "done"] },
+    brand: "planner.state",
+  });
+});
+
+test("identity members typed by a value-object brand that schema (r2 F-5)", () => {
+  const { modules } = mapProject(
+    project([
+      { id: "planner.key", kind: "scalar", base: "string" },
+      {
+        id: "planner.composite",
+        kind: "value-object",
+        fields: [field("key", ref("planner.key"))],
+      },
+      {
+        id: "planner.thing",
+        kind: "entity",
+        identity: ["composite"],
+        fields: [field("composite", ref("planner.composite"))],
+      },
+    ]),
+  );
+  const composite = modules[0].declarations.find(
+    (declaration) => declaration.semanticId === "planner.composite",
+  );
+  assert.equal(composite.branded, true);
+  assert.equal(composite.expr.k, "brand");
+  assert.equal(composite.expr.brand, "planner.composite");
+  assert.equal(composite.expr.inner.k, "object");
+});
+
 test("identity refs through a list wrapper do not brand collection members", () => {
   const { modules } = mapProject(
     project([

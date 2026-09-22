@@ -76,7 +76,7 @@ object-property level only.
 | `list(T)` | `z.array(T)` |
 | field absent `required` | `.optional()` appended outermost (key presence axis) |
 | `optional(T)` wrapper | `.nullable()` innermost (value nullability axis) |
-| identity-member scalar | branded: `lekaloBrand("semantic.id")` — `z.infer` yields `string & z.BRAND<"id">`, raw strings must `.parse` |
+| identity-member definition (scalar, enum, value-object, entity) | branded over its own schema: `lekaloBrand(<schema>, "semantic.id")` — `z.infer` seals the type, raw values must `.parse` |
 
 **Optional ≠ nullable.** `required` governs key presence; the `optional`
 type wrapper governs value nullability. The four combinations are distinct:

@@ -204,6 +204,10 @@ function collectBrandedScalars(ir) {
       return;
     }
     if (typeof type.ref === "string") {
+      // Issue #45 review r2 F-5: branding covers every schema-bearing
+      // ref kind — an identity member typed by an enum, value-object, or
+      // entity is branded over its own schema, never left silently
+      // unbranded.
       branded.add(type.ref);
       return;
     }
@@ -259,7 +263,7 @@ function mapDefinition(definition, context) {
       case "scalar":
         return mapScalar(definition, naming, context, moduleId);
       case "enum":
-        return mapEnum(definition, naming, moduleId);
+        return mapEnum(definition, naming, context, moduleId);
       case "value-object":
       case "entity":
       case "command":
@@ -297,7 +301,7 @@ function mapScalar(definition, naming, context, moduleId) {
   };
 }
 
-function mapEnum(definition, naming, moduleId) {
+function mapEnum(definition, naming, context, moduleId) {
   const values = (definition.values ?? []).map((value) => value?.value);
   if (
     values.length === 0 ||
@@ -305,6 +309,10 @@ function mapEnum(definition, naming, moduleId) {
   ) {
     throw new Unsupported(definition.id);
   }
+  const expr = { k: "enum", values };
+  // Review r2 F-5: an enum named as an identity member's type brands over
+  // its own schema, exactly like a scalar identity.
+  const branded = context.branded.has(definition.id);
   return {
     semanticId: definition.id,
     module: moduleId,
@@ -313,7 +321,8 @@ function mapEnum(definition, naming, moduleId) {
     typeName: naming.typeName,
     // Declared order is semantic; never sort enum members.
     values,
-    expr: { k: "enum", values },
+    branded,
+    expr: branded ? { k: "brand", inner: expr, brand: definition.id } : expr,
   };
 }
 
@@ -331,6 +340,14 @@ function mapObject(definition, naming, context, moduleId) {
     const expr = field.required === true ? inner : { k: "optional", inner };
     return { name: field.name, required: field.required === true, expr };
   });
+  const object = {
+    k: "object",
+    strict,
+    fields: fields.map((field) => ({ name: field.name, expr: field.expr })),
+  };
+  // Review r2 F-5: a value-object/entity named as another identity
+  // member's type brands over its own schema like any other kind.
+  const branded = context.branded.has(definition.id);
   return {
     semanticId: definition.id,
     module: moduleId,
@@ -340,11 +357,10 @@ function mapObject(definition, naming, context, moduleId) {
     typeName: naming.typeName,
     strict,
     fields,
-    expr: {
-      k: "object",
-      strict,
-      fields: fields.map((field) => ({ name: field.name, expr: field.expr })),
-    },
+    branded,
+    expr: branded
+      ? { k: "brand", inner: object, brand: definition.id }
+      : object,
   };
 }
 
