@@ -575,20 +575,12 @@ pub(crate) fn column_storage_type(
     else {
         return Ok(column.storage_type().to_owned());
     };
-    match super::types::map_type(field_type, profile.policies()) {
-        Ok(rendered) => Ok(rendered),
-        Err(error)
-            if error.reason_ids().first().copied() == Some(RENDER_UNSUPPORTED)
-                // The policy table refuses an enum field only under
-                // `native_enum`, which `create_table` already refuses
-                // on its own; a field the table does not own keeps the
-                // derived spelling.
-                && !matches!(field_type, crate::storage_projection::entity::DomainType::Enum { .. }) =>
-        {
-            Err(error)
-        }
-        Err(_) => Ok(column.storage_type().to_owned()),
-    }
+    // The policy table's refusal propagates for every field-origin
+    // column — including enums under `native_enum`: silently keeping
+    // the derived varchar would emit a schema the declared policy
+    // refuses to render (the planner and the DDL document must never
+    // disagree on a declared-refuse path).
+    super::types::map_type(field_type, profile.policies())
 }
 
 /// Render one bounded predicate conjunction.

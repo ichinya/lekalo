@@ -1337,6 +1337,52 @@ fn a_new_sequence_column_plans_its_creation_and_ownership() {
 }
 
 #[test]
+fn an_added_enum_column_under_native_enum_refuses_the_plan() {
+    // The enum arm of the policy table propagates: under
+    // `native_enum` an added enum column refuses the plan with the
+    // registered rule instead of silently planning the derived
+    // varchar — the planner and the DDL document must never disagree
+    // on a declared-refuse path.
+    let mut profile_value: serde_json::Value = serde_json::from_slice(PROFILE).expect("profile");
+    profile_value["policies"]["enum"] = serde_json::Value::String("native_enum".to_owned());
+    let native = StorageEngineAttachment::from_value(&profile_value).expect("valid profile");
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    let entity = candidate_value
+        .get_mut("entities")
+        .and_then(|entities| entities.as_array_mut())
+        .and_then(|entities| {
+            entities.iter_mut().find(|entity| {
+                entity.get("entityKey").and_then(serde_json::Value::as_str) == Some("task")
+            })
+        })
+        .expect("task entity");
+    entity["fields"]
+        .as_array_mut()
+        .expect("fields")
+        .push(serde_json::json!({
+            "field": "shade",
+            "type": {"members": ["warm", "cold"], "name": "enum"},
+            "visibility": "internal"
+        }));
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let error = lekalo_core::storage_engine::plan_migration(
+        &native,
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        None,
+    )
+    .expect_err("native_enum refuses the added enum column");
+    assert_eq!(
+        error.reason_ids().first().copied(),
+        Some("storage-engine.render-unsupported")
+    );
+    let rendered = serde_json::to_string(&error).expect("json");
+    assert!(rendered.contains("native-enum"));
+}
+
+#[test]
 fn a_profile_bound_to_a_foreign_projection_refuses_to_plan() {
     // The binding guarantee holds on the migration surface too: the
     // profile is authored against the base state, and a profile bound
