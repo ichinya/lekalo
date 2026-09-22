@@ -1029,10 +1029,19 @@ mod tests {
         }"#;
         let document = decode(text.as_bytes()).expect("decodes");
         let failure = resolve(&document).expect_err("removal blocks");
+        // Issue #47: `node-native` additionally provides the scenario
+        // runner capabilities (`testing.clock`, `testing.event-capture`,
+        // `testing.fixtures`); switching the testing axis to `go-native`
+        // removes them exactly like the runtime typing capability.
         assert_eq!(
             failure,
             ProfileFailure::InheritanceWeakening {
-                capabilities: vec!["runtime.typing".to_owned()],
+                capabilities: vec![
+                    "runtime.typing".to_owned(),
+                    "testing.clock".to_owned(),
+                    "testing.event-capture".to_owned(),
+                    "testing.fixtures".to_owned(),
+                ],
             }
         );
     }

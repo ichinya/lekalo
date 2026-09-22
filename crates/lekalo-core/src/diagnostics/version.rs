@@ -32,7 +32,9 @@ pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.4.0";
 /// family LEK-NGT-001..014) -> 0.4.0 (issues #85, #70, and #45: the
 /// `nfr.*` family LEK-NFR-001..013 and the reserved `transport.*`
 /// family LEK-TRN-001..009, both at the reserved 0.4.0 product
-/// generation; issue #45 ships no new diagnostic families).
+/// generation; issue #45 ships no new diagnostic families) -> issue #47
+/// (the reserved `scenario.*` family LEK-SCN-001..011, additive at the
+/// same 0.4.0 product generation).
 pub const REGISTRY_VERSION: &str = "0.4.0";
 
 /// The closed diagnostic schema version.
