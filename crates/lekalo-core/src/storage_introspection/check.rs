@@ -24,12 +24,17 @@ use crate::storage_projection::{
 
 use super::{SqlModeEcho, StorageIntrospection};
 
-/// The closed sql-mode tokens every contracted engine profile of this
-/// generation declares (the `STRICT` + zero-date + engine-substitution
-/// baseline shared by the mysql and mariadb goldens). An observed mode
-/// missing any token is sql-mode drift: silently relaxed server mode is
-/// exactly the class of divergence this comparison exists to surface.
-const REQUIRED_SQL_MODE: [SqlModeEcho; 5] = [
+/// The closed sql-mode baseline of this contract generation: the exact
+/// token list the shipped mysql-8.0 and mariadb-10.11 engine profiles
+/// declare. The baseline is a generation constant, not a live lookup —
+/// a future profile re-version that moves the baseline must change
+/// this constant in the same commit (the paired test below pins it to
+/// the shipped profile fixtures so the two cannot drift silently;
+/// round-2 review F-R2-2). Consequence: a stock MariaDB session (no
+/// `NO_ZERO_DATE`/`NO_ZERO_IN_DATE` effect) reports sql-mode drift
+/// until a profile carries that baseline — the honest direction, an
+/// evidence-based refusal instead of a silent pass.
+pub const REQUIRED_SQL_MODE: [SqlModeEcho; 5] = [
     SqlModeEcho::ErrorForDivisionByZero,
     SqlModeEcho::NoEngineSubstitution,
     SqlModeEcho::NoZeroDate,
@@ -377,6 +382,11 @@ fn compare_engine(namespace: Namespace, engine: &super::ObservedEngine, drifts: 
         });
     }
     // The sql mode must carry every token of the declared baseline.
+    // The check is one-directional by design: extra observed tokens
+    // (e.g. `ANSI_QUOTES`) are session-level presentation choices the
+    // closed grammar tolerates; a missing baseline token is the
+    // silently-relaxed-server divergence this comparison exists to
+    // surface (round-2 review F-R2-3).
     if REQUIRED_SQL_MODE
         .iter()
         .any(|required| !engine.sql_mode().contains(required))

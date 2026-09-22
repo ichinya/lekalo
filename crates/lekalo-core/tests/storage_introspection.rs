@@ -6,7 +6,9 @@
 //! The tests are hermetic: every fixture is embedded at compile time,
 //! nothing touches the network, and no database is ever contacted.
 
-use lekalo_core::storage_introspection::{introspect_check, DriftKind, StorageIntrospection};
+use lekalo_core::storage_introspection::{
+    introspect_check, DriftKind, StorageIntrospection, REQUIRED_SQL_MODE,
+};
 use lekalo_core::storage_projection::Namespace;
 use lekalo_core::storage_projection::StorageProjectionAttachment;
 
@@ -207,6 +209,35 @@ fn agreeing_baseline_carries_no_engine_or_column_drift() {
                     | DriftKind::NullabilityMismatch
             ),
             "the agreeing baseline must not drift on observed members: {drift:?}"
+        );
+    }
+}
+
+/// The sql-mode baseline is a contract-generation constant, but it is
+/// pinned here to the shipped engine-profile fixtures: a future
+/// profile re-version that moves the declared baseline cannot silently
+/// diverge from the drift engine (round-2 review F-R2-2).
+#[test]
+fn sql_mode_baseline_matches_the_shipped_engine_profiles() {
+    const MYSQL_80: &[u8] =
+        include_bytes!("../../../tests/fixtures/storage-engine-profile/valid/mysql-8.0.json");
+    const MARIADB_1011: &[u8] =
+        include_bytes!("../../../tests/fixtures/storage-engine-profile/valid/mariadb-10.11.json");
+    for (name, bytes) in [("mysql-8.0", MYSQL_80), ("mariadb-10.11", MARIADB_1011)] {
+        let value: serde_json::Value = serde_json::from_slice(bytes).expect("profile json");
+        let declared: Vec<String> = value["engine"]["sqlMode"]
+            .as_array()
+            .expect("declared sqlMode")
+            .iter()
+            .map(|token| token.as_str().expect("token").to_owned())
+            .collect();
+        let required: Vec<String> = REQUIRED_SQL_MODE
+            .iter()
+            .map(|token| token.key().to_owned())
+            .collect();
+        assert_eq!(
+            required, declared,
+            "{name}: the drift baseline and the profile declaration must stay identical"
         );
     }
 }

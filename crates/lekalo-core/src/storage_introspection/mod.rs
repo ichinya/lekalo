@@ -24,7 +24,7 @@ mod validate;
 pub mod version;
 pub mod wire;
 
-pub use check::{introspect_check, Drift, DriftKind, DriftReport};
+pub use check::{introspect_check, Drift, DriftKind, DriftReport, REQUIRED_SQL_MODE};
 pub use id::SchemaName;
 pub use version::{FAMILY, IDENTITY, SCHEMA_VERSION, VERSION};
 
