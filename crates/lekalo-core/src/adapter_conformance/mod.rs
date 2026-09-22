@@ -304,11 +304,22 @@ impl Runner {
         let verify = usable(schema_verify);
         // Fixture custody runs once: the parity target is decoded
         // through the production normalizer before any adapter is
-        // trusted with it.
+        // trusted with it. A custody failure is a developer fault in
+        // the fixture, so every storage row records the failure — the
+        // report keeps all five rows visible instead of silently
+        // dropping four (round-3 review F-5).
         let attachment = match fixture::storage_custody() {
             Ok(attachment) => attachment,
             Err(outcome) => {
                 self.record(outcome);
+                for id in [
+                    CheckId::StorageProjectionParity,
+                    CheckId::StorageIntrospectionChecked,
+                    CheckId::StorageMigrationGate,
+                    CheckId::StorageCollationUniqueness,
+                ] {
+                    self.record(CheckOutcome::fail(id, id.class(), "fixture-custody"));
+                }
                 return;
             }
         };
