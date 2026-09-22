@@ -14,6 +14,13 @@ pub const IR_EVIDENCE_DIR: &str = ".lekalo/cache/ir";
 /// canonical home  owns that copy).
 pub const TRANSPORT_EVIDENCE_DIR: &str = ".lekalo/cache/transport";
 
+/// The runtime home of the canonical OpenAPI render evidence one
+/// generate run writes (issue #46): the canonical document bytes
+/// projected from the validated transport home — derived runtime cache
+/// under the reserved area, never source, never the only copy (the
+/// repo-conventional document owns that copy).
+pub const OPENAPI_EVIDENCE_DIR: &str = ".lekalo/cache/openapi";
+
 /// The default adapter-operation deadline, in milliseconds. The value
 /// matches the accepted protocol default; callers may lower it.
 pub const DEFAULT_TIMEOUT_MS: u64 = 600_000;

@@ -75,7 +75,7 @@ pub(crate) fn input_invalid(detail: &str) -> DiagnosticSet {
 /// The warning set for one not-expressible member: the symbol and the
 /// fixed detail tag travel as bounded tokens. The set stays `valid` —
 /// the projection is partial, not wrong.
-pub(crate) fn projection_partial(findings: &[crate::openapi::types::Finding]) -> DiagnosticSet {
+pub fn projection_partial(findings: &[crate::openapi::types::Finding]) -> DiagnosticSet {
     let mut diagnostics = Vec::new();
     for finding in findings.iter().take(64) {
         let mut data = DataObject::new();

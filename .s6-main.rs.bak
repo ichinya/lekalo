@@ -1131,10 +1131,8 @@ enum OpenapiCommands {
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum OpenapiVersion {
     /// OpenAPI 3.1 (the default).
-    #[value(name = "3.1")]
     V31,
     /// OpenAPI 3.0 (the declared alternative).
-    #[value(name = "3.0")]
     V30,
 }
 
@@ -1481,23 +1479,6 @@ struct MigrateArgs {
 }
 
 fn main() -> ExitCode {
-    // The clap derive builds one deep command tree at startup, and the
-    // debug build's frames overflow the OS default main-thread stack as
-    // the surface grows (issue #46 added the `openapi` subcommand).
-    // One large-stack worker keeps the growth of the surface bounded by
-    // memory, never by the thread default; a panic exits 101 exactly as
-    // an unwinding main would.
-    const WORKER_STACK_BYTES: usize = 256 * 1024 * 1024;
-    match std::thread::Builder::new()
-        .stack_size(WORKER_STACK_BYTES)
-        .spawn(main_worker)
-    {
-        Ok(worker) => worker.join().unwrap_or_else(|_| std::process::exit(101)),
-        Err(_) => std::process::exit(101),
-    }
-}
-
-fn main_worker() -> ExitCode {
     let json_requested = std::env::args_os()
         .skip(1)
         .take_while(|argument| argument != OsStr::new("--"))
@@ -4464,9 +4445,7 @@ fn openapi_config(version: &str, mode: &str) -> Result<lekalo_core::openapi::Ren
 }
 
 /// Read one ownership sidecar manifest, or the default when absent.
-fn read_ownership(
-    path: Option<&str>,
-) -> Result<lekalo_core::openapi::OwnershipManifest, DomainResult> {
+fn read_ownership(path: Option<&str>) -> Result<lekalo_core::openapi::OwnershipManifest, DomainResult> {
     let resolved = match path {
         Some(path) => std::path::PathBuf::from(path),
         None => return Ok(lekalo_core::openapi::OwnershipManifest::default()),
@@ -4477,13 +4456,14 @@ fn read_ownership(
             return Ok(lekalo_core::openapi::OwnershipManifest::default());
         }
         Err(_) => {
-            return Err(DomainResult::invalid(lekalo_core::openapi::io_failure(
-                "ownership-unreadable",
-            )))
+            return Err(DomainResult::invalid(
+                lekalo_core::openapi::io_failure("ownership-unreadable"),
+            ))
         }
     };
-    let value: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|_| DomainResult::invalid(lekalo_core::openapi::io_failure("ownership-json")))?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
+        DomainResult::invalid(lekalo_core::openapi::io_failure("ownership-json"))
+    })?;
     lekalo_core::openapi::OwnershipManifest::from_value(&value).map_err(DomainResult::invalid)
 }
 
@@ -4619,11 +4599,7 @@ fn openapi_inspect(
     if let Err(diagnostics) = lekalo_core::transport_http::validate(&session.attachment, &context) {
         return DomainResult::invalid(diagnostics);
     }
-    let document = match lekalo_core::openapi::render(
-        &session.attachment,
-        &context,
-        &lekalo_core::openapi::RenderConfig::new(),
-    ) {
+    let document = match lekalo_core::openapi::render(&session.attachment, &context, &lekalo_core::openapi::RenderConfig::new()) {
         Ok(document) => document,
         Err(diagnostics) => return DomainResult::invalid(diagnostics),
     };
