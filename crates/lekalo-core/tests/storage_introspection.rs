@@ -274,6 +274,62 @@ fn parameter_drift_is_type_drift_and_suffix_is_not() {
         .any(|drift| drift.path == "tables/task/columns/tenant_id"));
 }
 
+/// One-sided parameters are display abbreviations, not width changes:
+/// the declared `varchar(64)` echoed as bare `varchar` (and real-world
+/// display-width spellings like `bigint(20)` → `bigint`) agree, while
+/// a two-sided numeric difference still drifts, and the same width
+/// spelled with leading zeros agrees (round-3 review F-4).
+#[test]
+fn one_sided_and_zero_padded_parameters_agree() {
+    let attachment = projection();
+    // One-sided: declared varchar(64) observed as bare varchar.
+    let mut value: serde_json::Value = serde_json::from_slice(GOLDEN).expect("json");
+    value["tables"]
+        .as_array_mut()
+        .expect("tables")
+        .iter_mut()
+        .find(|table| table["name"] == "tag")
+        .expect("tag table")["columns"][1]["type"] =
+        serde_json::Value::String("varchar".to_owned());
+    let abbreviated = StorageIntrospection::from_value(&value).expect("parses");
+    let report = introspect_check(&attachment, Namespace::Mysql, &abbreviated).expect("comparable");
+    assert!(!report
+        .drifts
+        .iter()
+        .any(|drift| drift.path == "tables/tag/columns/label"));
+    // Zero-padded spelling: varchar(064) is the same width as (64).
+    let mut value: serde_json::Value = serde_json::from_slice(GOLDEN).expect("json");
+    value["tables"]
+        .as_array_mut()
+        .expect("tables")
+        .iter_mut()
+        .find(|table| table["name"] == "tag")
+        .expect("tag table")["columns"][1]["type"] =
+        serde_json::Value::String("varchar(064)".to_owned());
+    let padded = StorageIntrospection::from_value(&value).expect("parses");
+    let report = introspect_check(&attachment, Namespace::Mysql, &padded).expect("comparable");
+    assert!(!report
+        .drifts
+        .iter()
+        .any(|drift| drift.path == "tables/tag/columns/label"));
+    // A two-sided numeric difference still drifts.
+    let mut value: serde_json::Value = serde_json::from_slice(GOLDEN).expect("json");
+    value["tables"]
+        .as_array_mut()
+        .expect("tables")
+        .iter_mut()
+        .find(|table| table["name"] == "tag")
+        .expect("tag table")["columns"][1]["type"] =
+        serde_json::Value::String("varchar(128)".to_owned());
+    let widened = StorageIntrospection::from_value(&value).expect("parses");
+    let report = introspect_check(&attachment, Namespace::Mysql, &widened).expect("comparable");
+    assert!(report
+        .drifts
+        .iter()
+        .any(|drift| drift.kind == DriftKind::TypeMismatch
+            && drift.path == "tables/tag/columns/label"));
+}
+
 /// A collation drift pair built from the golden: the tag table flips to
 /// `utf8mb4_bin` and the observed column collation follows, so the
 /// declared `_ai_ci` uniqueness surface disagrees — collation-mismatch

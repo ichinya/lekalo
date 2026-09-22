@@ -271,13 +271,20 @@ fn compare_column<'a>(
 ) {
     let path = format!("{prefix}/columns/{}", declared.name().as_str());
     // Type comparison: the base family must agree, and numeric
-    // parameters must agree whenever both spellings carry them —
-    // `varchar(200)` vs `varchar(64)` is width drift, `datetime(6)` vs
-    // `datetime` is precision drift. A parameter present on one side
-    // only (e.g. `bigint unsigned`) is a presentation difference, not
-    // a type change, and compares equal.
+    // parameters must agree numerically whenever both spellings carry
+    // them — `varchar(200)` vs `varchar(64)` is width drift,
+    // `datetime(6)` vs `datetime` is precision drift, and `varchar(64)`
+    // vs `varchar(064)` is the same width spelled differently. A
+    // parameter present on one side only is a display/presentation
+    // difference (the engine abbreviates its canonical render, e.g.
+    // `bigint(20)` echoes as `bigint`): it compares equal, never
+    // hides a real width change because a two-sided parameter
+    // difference still drifts (round-3 review F-4).
     if base_name(declared.storage_type()) != base_name(observed.storage_type())
-        || parameters(declared.storage_type()) != parameters(observed.storage_type())
+        || !parameters_agree(
+            parameters(declared.storage_type()),
+            parameters(observed.storage_type()),
+        )
     {
         drifts.push(Drift {
             kind: DriftKind::TypeMismatch,
@@ -324,6 +331,30 @@ fn parameters(storage_type: &str) -> Option<&str> {
         return None;
     }
     Some(&storage_type[open + 1..close])
+}
+
+/// Whether two parameter spellings agree: `None` on either side is a
+/// one-sided presentation difference (equal); two-sided spellings
+/// agree when they are numerically equal per comma-separated position
+/// — `varchar(64)` and `varchar(064)` are the same width, `decimal`
+/// compares `precision, scale` positionally. A non-numeric parameter
+/// on either side falls back to exact spelling.
+fn parameters_agree(base: Option<&str>, observed: Option<&str>) -> bool {
+    match (base, observed) {
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => true,
+        (Some(base), Some(observed)) => {
+            let base_parts: Vec<&str> = base.split(',').collect();
+            let observed_parts: Vec<&str> = observed.split(',').collect();
+            base_parts.len() == observed_parts.len()
+                && base_parts.iter().zip(observed_parts.iter()).all(|(b, o)| {
+                    match (b.trim().parse::<u64>(), o.trim().parse::<u64>()) {
+                        (Ok(b_number), Ok(o_number)) => b_number == o_number,
+                        _ => b.trim() == o.trim(),
+                    }
+                })
+        }
+    }
 }
 
 /// The engine echo comparison: the observed engine token against the
