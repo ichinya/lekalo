@@ -6021,8 +6021,10 @@ fn run_dataflow(command: DataflowCommands) -> DomainResult {
                         Err(set) => return DomainResult::invalid(set),
                         Ok(bytes) => bytes,
                     };
-                    let json = format!("{{\"status\":\"valid\",\"report\":{bytes}}}");
                     let denied = report.verdict().as_str() == "denied";
+                    // The embedded envelope states the real verdict: a
+                    // denial never prints "valid" at the top level.
+                    let json = format!("{{\"status\":\"{}\",\"report\":{bytes}}}", report.verdict().as_str());
                     let human = format!(
                         "dataflow {}: {} flow(s), {} finding(s), {} unknown(s)",
                         report.verdict().as_str(),
