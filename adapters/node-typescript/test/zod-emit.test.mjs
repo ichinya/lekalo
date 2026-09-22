@@ -285,6 +285,11 @@ test("generated modules parse, validate, and attribute issues to semantic ids", 
   // branding only seals the type.
   assert.equal(index.AlphaTagSchema.safeParse("acme-7").success, true);
   assert.equal(index.AlphaTagSchema.safeParse(42).success, false);
+  // F-1 end to end: a BRANDED string-base identity scalar keeps its base
+  // validation too (the exact review repro — branding never narrows a
+  // non-uuid identity to uuid).
+  assert.equal(index.AlphaSlugSchema.safeParse("acme-7").success, true);
+  assert.equal(index.AlphaSlugSchema.safeParse(42).success, false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
