@@ -1650,6 +1650,21 @@ fn run_validate(
     match outcome {
         Err(set) => DomainResult::invalid(set),
         Ok(report) => {
+            // Classification review (#87): when the attachment is
+            // present, its custody/subject/grant/sink review runs
+            // automatically, before every other surface so a
+            // present-but-broken attachment is never masked. The strict
+            // profile invalidates on any error finding; the default
+            // profile records the findings in the report diagnostics.
+            let (review, recorded) = classification_validate_review(
+                &compilation,
+                &lekalo_core::loader::canonical_model_bytes(&model),
+                &selection,
+                strict,
+            );
+            if let Some(result) = review {
+                return result;
+            }
             // Authorization review (#25): reference integrity is
             // invalid in every profile; the strict profile blocks
             // uncovered protected effects, stale model pins, and
@@ -1665,10 +1680,78 @@ fn run_validate(
                 Ok(lekalo_core::authorization::Review::Ok) => {}
             }
             let (json, human) = render_validate_success(&model, &report);
-            let diagnostics = report.diagnostics().as_slice().to_vec();
+            let mut diagnostics = report.diagnostics().as_slice().to_vec();
+            diagnostics.extend(recorded);
             DomainResult::validation(json, human, diagnostics)
         }
     }
+}
+
+/// The classification review inside `lekalo validate` (issue #87): the
+/// declared attachment (discovered at the canonical home under the
+/// project root) plus its governing policy run the full custody,
+/// subject-resolution, policy/grant, and strict sensitive-sink review.
+/// Returns the terminal review result, if any, plus the recorded
+/// findings (default profile keeps the run valid with the findings
+/// visible in the diagnostics; the strict profile invalidates on any
+/// error-severity finding). The first tuple member is `None` when no
+/// attachment is declared.
+fn classification_validate_review(
+    compilation: &lekalo_core::ir::Compilation,
+    model_json: &str,
+    selection: &LoadSelection,
+    strict: bool,
+) -> (
+    Option<DomainResult>,
+    Vec<lekalo_core::diagnostics::Diagnostic>,
+) {
+    let root = match lekalo_core::doctor::project_root(selection) {
+        Err(_) => return (None, Vec::new()),
+        Ok(root) => root,
+    };
+    let (attachment, policy) = match lekalo_core::classification::discover(&root) {
+        Ok(Some(pair)) => pair,
+        Ok(None) => return (None, Vec::new()),
+        Err(set) => return (Some(DomainResult::invalid(set)), Vec::new()),
+    };
+    // Custody and subject resolution: structured violations are
+    // terminal invalid sets in every profile.
+    if let Err(set) = lekalo_core::classification::validate_custody(
+        &attachment,
+        &policy,
+        &compilation.project,
+        model_json,
+    ) {
+        return (Some(DomainResult::invalid(set)), Vec::new());
+    }
+    let resolution = match lekalo_core::classification::validate_subjects(&attachment, compilation)
+    {
+        Err(set) => return (Some(DomainResult::invalid(set)), Vec::new()),
+        Ok(resolution) => resolution,
+    };
+    let outcome = match lekalo_core::classification::validate_policy_and_grants(
+        &attachment,
+        &policy,
+        &resolution,
+        &compilation.project,
+    ) {
+        Err(set) => return (Some(DomainResult::invalid(set)), Vec::new()),
+        Ok(outcome) => outcome,
+    };
+    if strict && outcome.invalid {
+        return (
+            Some(DomainResult::invalid(
+                lekalo_core::classification::findings_set(&outcome),
+            )),
+            Vec::new(),
+        );
+    }
+    // Recorded, never silently skipped: the findings ride the success
+    // diagnostics as warning-class rows.
+    let recorded = lekalo_core::classification::findings_set(&outcome)
+        .as_slice()
+        .to_vec();
+    (None, recorded)
 }
 
 /// Run `lekalo inspect`: load and compile the project, build the graph
