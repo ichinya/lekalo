@@ -1,0 +1,4 @@
+{
+  "rule": "transport.param-invalid",
+  "detail": "path-param-unused"
+}

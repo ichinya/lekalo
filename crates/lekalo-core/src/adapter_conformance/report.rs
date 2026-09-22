@@ -342,6 +342,8 @@ fn is_core(id: CheckId) -> bool {
             | CheckId::ScenarioNormalization
             | CheckId::ArtifactManifestEvidence
             | CheckId::ProcessCancellation
+            | CheckId::TransportProjectionParity
+            | CheckId::TransportBlackboxScenarios
     )
 }
 

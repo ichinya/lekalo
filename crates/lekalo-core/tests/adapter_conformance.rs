@@ -119,6 +119,39 @@ fn the_fluent_adapter_passes_strict_with_the_current_badge() {
 }
 
 #[test]
+fn the_transport_blackbox_check_covers_its_pass_and_failure_paths() {
+    // Pass path: the adapter declares `verify.transport-http`, the
+    // scenario fixture sits inside its read scopes, and the verify
+    // exchange completes — the row records a pass, never a skip, so
+    // the feature-class check cannot silently rot (issue #70 review
+    // F-8/C-9). The shipped Node adapter stays honest and keeps its
+    // declaration absent.
+    let passing = run(
+        &adapter_command(&["--lekalo-adapter-variant", "transport"]),
+        &timed_options("default"),
+    )
+    .expect("the suite completes");
+    let (state, detail) = check(&passing, "transport.blackbox-scenarios");
+    assert_eq!(state, "pass", "{detail:?}");
+
+    // Failure path: the same declaration with a verify exchange that
+    // fails in envelope records the failed row instead of a skip.
+    let failing = run(
+        &adapter_command(&[
+            "--lekalo-adapter-variant",
+            "transport",
+            "--lekalo-fault",
+            "fail-verify",
+        ]),
+        &timed_options("default"),
+    )
+    .expect("the suite completes");
+    let (state, detail) = check(&failing, "transport.blackbox-scenarios");
+    assert_eq!(state, "fail");
+    assert_eq!(detail, Some("operation-failed"));
+}
+
+#[test]
 fn report_bytes_stay_deterministic_and_redacted() {
     let first = run_suite(&adapter_command(&[]), "default");
     let second = run_suite(&adapter_command(&[]), "default");

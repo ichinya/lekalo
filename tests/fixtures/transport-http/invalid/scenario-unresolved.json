@@ -1,0 +1,322 @@
+{
+  "schemaVersion": "lekalo/transport-http/v0.4.0",
+  "identity": "dev.lekalo.transport-http@0.4.0",
+  "attachmentRevision": "0.4.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "0.2.16",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.2.16",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "wire": {
+    "dialect": "lekalo-http-wire/v1",
+    "contentType": "application/json"
+  },
+  "defaults": {
+    "errorEnvelope": "canonical-v1",
+    "idempotencyHeader": "Idempotency-Key",
+    "correlationHeaders": [
+      "X-Correlation-Id",
+      "X-Request-Id"
+    ]
+  },
+  "securitySchemes": [
+    {
+      "id": "svc_apikey",
+      "kind": "api-key",
+      "in": "header",
+      "name": "X-Api-Key"
+    },
+    {
+      "id": "user_bearer",
+      "kind": "bearer",
+      "format": "jwt"
+    }
+  ],
+  "endpoints": [
+    {
+      "endpoint": "planner.endpoint_count_focused",
+      "summary": "Focused task count",
+      "success": {
+        "status": 200,
+        "body": {
+          "mode": "whole-output"
+        }
+      },
+      "errors": [
+        {
+          "error": "planner.store_unavailable",
+          "status": 503
+        }
+      ],
+      "errorDefaults": {
+        "validation": 400,
+        "auth": 403,
+        "conflict": 409,
+        "not-found": 404,
+        "domain": 422,
+        "infrastructure": 500
+      },
+      "apiVersion": {
+        "in": "header",
+        "name": "v1"
+      }
+    },
+    {
+      "endpoint": "planner.endpoint_focus_task",
+      "summary": "Focus one task from a JSON body",
+      "body": {
+        "contentType": "application/json",
+        "mode": "whole-input"
+      },
+      "success": {
+        "status": 200,
+        "body": {
+          "mode": "whole-output"
+        }
+      },
+      "errors": [
+        {
+          "error": "planner.focus_conflict",
+          "status": 409
+        },
+        {
+          "error": "planner.focus_denied",
+          "status": 403
+        },
+        {
+          "error": "planner.input_invalid",
+          "status": 400
+        },
+        {
+          "error": "planner.store_unavailable",
+          "status": 503
+        },
+        {
+          "error": "planner.task_not_found",
+          "status": 404
+        }
+      ],
+      "errorDefaults": {
+        "validation": 400,
+        "auth": 403,
+        "conflict": 409,
+        "not-found": 404,
+        "domain": 422,
+        "infrastructure": 500
+      },
+      "auth": {
+        "actor": "identity.user",
+        "schemes": [
+          "user_bearer"
+        ],
+        "policyRef": "planner.focus_owner_only"
+      },
+      "idempotency": {
+        "header": "Idempotency-Key",
+        "required": true
+      },
+      "correlation": {
+        "headers": [
+          "X-Request-Id",
+          "X-Correlation-Id"
+        ]
+      },
+      "scenarios": [
+        "planner.not_a_scenario"
+      ]
+    },
+    {
+      "endpoint": "planner.endpoint_focus_task_by_id",
+      "summary": "Focus one task from a path id",
+      "params": [
+        {
+          "name": "task_id",
+          "in": "path",
+          "field": "input.task_id",
+          "required": true,
+          "style": "simple"
+        }
+      ],
+      "body": {
+        "contentType": "application/json",
+        "mode": "explicit",
+        "fields": [
+          {
+            "name": "task_id",
+            "field": "input.task_id",
+            "required": true
+          }
+        ]
+      },
+      "success": {
+        "status": 202
+      },
+      "errors": [
+        {
+          "error": "planner.focus_conflict",
+          "status": 409
+        },
+        {
+          "error": "planner.focus_denied",
+          "status": 403
+        },
+        {
+          "error": "planner.input_invalid",
+          "status": 400
+        },
+        {
+          "error": "planner.store_unavailable",
+          "status": 503
+        },
+        {
+          "error": "planner.task_not_found",
+          "status": 404
+        }
+      ],
+      "errorDefaults": {
+        "validation": 400,
+        "auth": 403,
+        "conflict": 409,
+        "not-found": 404,
+        "domain": 422,
+        "infrastructure": 500
+      },
+      "auth": {
+        "actor": "identity.user",
+        "schemes": [
+          "user_bearer"
+        ],
+        "policyRef": "planner.focus_owner_only"
+      },
+      "idempotency": {
+        "header": "Idempotency-Key",
+        "required": true
+      }
+    },
+    {
+      "endpoint": "planner.endpoint_list_tasks",
+      "operationId": "listTasks",
+      "tags": [
+        "tasks"
+      ],
+      "summary": "Public task listing",
+      "success": {
+        "status": 200,
+        "body": {
+          "mode": "whole-output"
+        }
+      },
+      "errors": [
+        {
+          "error": "planner.input_invalid",
+          "status": 400
+        },
+        {
+          "error": "planner.store_unavailable",
+          "status": 503
+        }
+      ],
+      "errorDefaults": {
+        "validation": 400,
+        "auth": 403,
+        "conflict": 409,
+        "not-found": 404,
+        "domain": 422,
+        "infrastructure": 500
+      },
+      "rateLimit": {
+        "limit": 120,
+        "windowSeconds": 60,
+        "scope": "actor"
+      },
+      "cache": {
+        "policy": "private",
+        "maxAgeSeconds": 0,
+        "etag": false
+      }
+    },
+    {
+      "endpoint": "planner.endpoint_task_stream",
+      "summary": "Server-sent task stream",
+      "success": {
+        "status": 200,
+        "body": {
+          "mode": "whole-output"
+        }
+      },
+      "errors": [
+        {
+          "error": "planner.input_invalid",
+          "status": 400
+        },
+        {
+          "error": "planner.store_unavailable",
+          "status": 503
+        }
+      ],
+      "errorDefaults": {
+        "validation": 400,
+        "auth": 403,
+        "conflict": 409,
+        "not-found": 404,
+        "domain": 422,
+        "infrastructure": 500
+      },
+      "auth": {
+        "actor": "identity.service",
+        "schemes": [
+          "svc_apikey"
+        ]
+      },
+      "capabilities": [
+        {
+          "capability": "streaming",
+          "minimumSupport": "partial",
+          "detail": "sse"
+        }
+      ]
+    },
+    {
+      "endpoint": "planner.endpoint_tasks_by_project",
+      "summary": "Tasks of one project, paged by cursor",
+      "params": [
+        {
+          "name": "project_ref",
+          "in": "path",
+          "field": "project_ref",
+          "required": true,
+          "style": "simple"
+        }
+      ],
+      "success": {
+        "status": 200,
+        "body": {
+          "mode": "whole-output"
+        }
+      },
+      "errorDefaults": {
+        "validation": 400,
+        "auth": 403,
+        "conflict": 409,
+        "not-found": 404,
+        "domain": 422,
+        "infrastructure": 500
+      },
+      "pagination": {
+        "style": "cursor",
+        "limitParam": "limit",
+        "cursorParam": "after_task",
+        "cursorField": "next_cursor"
+      },
+      "cache": {
+        "policy": "no-store",
+        "maxAgeSeconds": 0,
+        "etag": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+{"schema_version":"0.2.16","definitions":[
+{"id":"planner.focus_task","kind":"command","version":1,"description":"Focus one task for a user","input":[{"name":"task_id","type":{"ref":"planner.task_id"},"required":true}]}
+]}

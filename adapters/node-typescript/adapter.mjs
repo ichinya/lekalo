@@ -123765,7 +123765,7 @@ ${lanes.join("\n")}
           }
         }
         function createImportCallExpressionAMD(arg, containsLexicalThis) {
-          const resolve2 = factory2.createUniqueName("resolve");
+          const resolve3 = factory2.createUniqueName("resolve");
           const reject = factory2.createUniqueName("reject");
           const parameters = [
             factory2.createParameterDeclaration(
@@ -123774,7 +123774,7 @@ ${lanes.join("\n")}
               /*dotDotDotToken*/
               void 0,
               /*name*/
-              resolve2
+              resolve3
             ),
             factory2.createParameterDeclaration(
               /*modifiers*/
@@ -123791,7 +123791,7 @@ ${lanes.join("\n")}
                 factory2.createIdentifier("require"),
                 /*typeArguments*/
                 void 0,
-                [factory2.createArrayLiteralExpression([arg || factory2.createOmittedExpression()]), resolve2, reject]
+                [factory2.createArrayLiteralExpression([arg || factory2.createOmittedExpression()]), resolve3, reject]
               )
             )
           ]);
@@ -177750,7 +177750,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           return void 0;
         }
       }
-      function getJSDocParamAnnotation(paramName, initializer, dotDotDotToken, isJs, isObject5, isSnippet, checker, options, preferences, tabstopCounter) {
+      function getJSDocParamAnnotation(paramName, initializer, dotDotDotToken, isJs, isObject6, isSnippet, checker, options, preferences, tabstopCounter) {
         if (isSnippet) {
           Debug.assertIsDefined(tabstopCounter);
         }
@@ -177762,7 +177762,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
         }
         if (isJs) {
           let type = "*";
-          if (isObject5) {
+          if (isObject6) {
             Debug.assert(!dotDotDotToken, `Cannot annotate a rest parameter with type 'Object'.`);
             type = "Object";
           } else {
@@ -177798,7 +177798,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
               type = `\${${tabstopCounter.tabstop++}:${type}}`;
             }
           }
-          const dotDotDot = !isObject5 && dotDotDotToken ? "..." : "";
+          const dotDotDot = !isObject6 && dotDotDotToken ? "..." : "";
           const description3 = isSnippet ? `\${${tabstopCounter.tabstop++}}` : "";
           return `@param {${dotDotDot}${type}} ${paramName} ${description3}`;
         } else {
@@ -210509,8 +210509,8 @@ Additional information: BADCLIENT: Bad error code, ${badCode} not found in range
         installPackage(options) {
           this.packageInstallId++;
           const request = { kind: "installPackage", ...options, id: this.packageInstallId };
-          const promise = new Promise((resolve2, reject) => {
-            (this.packageInstalledPromise ?? (this.packageInstalledPromise = /* @__PURE__ */ new Map())).set(this.packageInstallId, { resolve: resolve2, reject });
+          const promise = new Promise((resolve3, reject) => {
+            (this.packageInstalledPromise ?? (this.packageInstalledPromise = /* @__PURE__ */ new Map())).set(this.packageInstallId, { resolve: resolve3, reject });
           });
           this.installer.send(request);
           return promise;
@@ -211923,10 +211923,12 @@ var OPERATION_TOKENS = Object.freeze([
 var SUPPORT_STATES = Object.freeze(["full", "partial", "unsupported", "unknown"]);
 var CAPABILITY_IDS = Object.freeze([
   "generate.openapi",
+  "generate.transport-http",
   "generate.ui",
   "generate.zod",
   "scan.symbols",
   "verify.scenarios",
+  "verify.transport-http",
   "plan.native-gates"
 ]);
 function entryDigest() {
@@ -212713,7 +212715,7 @@ function validateProfileBinding(request, profile) {
   if (!profile) {
     return refusal("profile-absent");
   }
-  if (request.profile !== profile.id) {
+  if (request.profile !== void 0 && request.profile !== profile.id) {
     return refusal("profile-id");
   }
   if (request.target !== void 0 && request.target !== profile.target) {
@@ -212788,6 +212790,13 @@ function describeCapabilities(profile = null, extensions = []) {
     capabilities.read_scopes = profile.readRoots.map((root) => root.scope);
     capabilities.profiles = [profile.id];
     capabilities.ir_versions = [...irVersions].sort();
+    const writeScopes = /* @__PURE__ */ new Set();
+    for (const extension of extensions) {
+      for (const root of extension.writeRoots ?? []) {
+        writeScopes.add(root);
+      }
+    }
+    capabilities.write_scopes = [...writeScopes].sort();
   }
   return capabilities;
 }
@@ -213139,7 +213148,7 @@ function validateExtensionDescriptor(descriptor) {
   if (typeof descriptor !== "object" || descriptor === null) {
     invalid("not an object");
   }
-  const allowed = ["id", "version", "operations", "namedCapabilities", "acceptedIrVersions", "invoke"];
+  const allowed = ["id", "version", "operations", "namedCapabilities", "acceptedIrVersions", "writeRoots", "readRoots", "invoke"];
   for (const key of Object.keys(descriptor)) {
     if (!allowed.includes(key)) {
       invalid(`unknown member ${key}`);
@@ -213172,6 +213181,16 @@ function validateExtensionDescriptor(descriptor) {
       invalid("acceptedIrVersions");
     }
   }
+  if (hasOwn(descriptor, "writeRoots") && descriptor.writeRoots !== void 0) {
+    if (!Array.isArray(descriptor.writeRoots) || descriptor.writeRoots.length === 0 || descriptor.writeRoots.length > 8 || !descriptor.writeRoots.every((root) => typeof root === "string" && /^([a-z0-9][a-z0-9._-]*\/)+\*\*$/.test(root) && !root.includes(".."))) {
+      invalid("writeRoots");
+    }
+  }
+  if (hasOwn(descriptor, "readRoots") && descriptor.readRoots !== void 0) {
+    if (!Array.isArray(descriptor.readRoots) || descriptor.readRoots.length === 0 || descriptor.readRoots.length > 8 || !descriptor.readRoots.every((root) => typeof root === "string" && root.length > 0 && root.length <= 512 && !root.includes("..") && !root.startsWith("/") && !root.includes("**"))) {
+      invalid("readRoots");
+    }
+  }
   if (typeof descriptor.invoke !== "function") {
     invalid("invoke");
   }
@@ -213181,6 +213200,8 @@ function validateExtensionDescriptor(descriptor) {
     operations: Object.freeze([...descriptor.operations]),
     namedCapabilities: descriptor.namedCapabilities ? deepFreeze({ ...descriptor.namedCapabilities }) : void 0,
     acceptedIrVersions: descriptor.acceptedIrVersions ? Object.freeze([...descriptor.acceptedIrVersions]) : void 0,
+    writeRoots: descriptor.writeRoots ? Object.freeze([...descriptor.writeRoots]) : void 0,
+    readRoots: descriptor.readRoots ? Object.freeze([...descriptor.readRoots]) : void 0,
     invoke: descriptor.invoke
   });
 }
@@ -213223,6 +213244,12 @@ function createKernel(options = {}) {
     for (const operation of validated.operations) {
       if ([...extensions.values()].some((candidate) => candidate.operations.includes(operation))) {
         throw new RequestRefusal("extension-invalid", `duplicate operation claim ${operation}`);
+      }
+    }
+    if (profile && validated.readRoots) {
+      const covered = validated.readRoots.every((required) => profile.readRoots.some((root) => root.kind === "tree" && (root.path === required || root.path.startsWith(required + "/")) || root.kind === "file" && root.path.startsWith(required + "/")));
+      if (!covered) {
+        continue;
       }
     }
     extensions.set(validated.id, validated);
@@ -213434,6 +213461,9 @@ function buildUnsupportedResponse(request) {
 }
 function projectOutcome(request, outcome) {
   if (outcome.state === "complete") {
+    if (Array.isArray(outcome.data?.writes) && outcome.data.writes.length <= 64 && outcome.data.writes.every((write) => typeof write?.path === "string" && write.path.length > 0 && write.path.length <= 128 && write.action === "create" && isSha256Digest(write.sha256))) {
+      return buildResponse(request, { writes: outcome.data.writes });
+    }
     const result = projectResult(outcome.data);
     if (result) {
       return buildResponse(request, { result });
@@ -216423,6 +216453,305 @@ var native_policy_default = {
   }
 };
 
+// src/transport-extension.mjs
+var transport_extension_exports = {};
+__export(transport_extension_exports, {
+  EXTENSION_VERSION: () => EXTENSION_VERSION,
+  IR_EVIDENCE_DIR: () => IR_EVIDENCE_DIR,
+  IR_READ_ROOT: () => IR_READ_ROOT,
+  OPENAPI_CAPABILITY: () => OPENAPI_CAPABILITY,
+  ROUTE_WRITE_ROOT: () => ROUTE_WRITE_ROOT,
+  TRANSPORT_CAPABILITY: () => TRANSPORT_CAPABILITY,
+  TRANSPORT_EVIDENCE_DIR: () => TRANSPORT_EVIDENCE_DIR,
+  TRANSPORT_OPERATION: () => TRANSPORT_OPERATION,
+  TRANSPORT_READ_ROOT: () => TRANSPORT_READ_ROOT,
+  planRouteLayer: () => planRouteLayer,
+  transportExtensionDescriptor: () => transportExtensionDescriptor,
+  transportGenerateOperation: () => transportGenerateOperation
+});
+import { createHash as createHash6 } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join as join2, resolve as resolve2 } from "node:path";
+var TRANSPORT_OPERATION = "generate";
+var TRANSPORT_CAPABILITY = "generate.transport-http";
+var OPENAPI_CAPABILITY = "generate.openapi";
+var EXTENSION_VERSION = "0.4.0";
+var TRANSPORT_EVIDENCE_DIR = ".lekalo/cache/transport";
+var IR_EVIDENCE_DIR = ".lekalo/cache/ir";
+var ROUTE_WRITE_ROOT = "src/routes/**";
+var TRANSPORT_READ_ROOT = ".lekalo/cache/transport";
+var IR_READ_ROOT = ".lekalo/cache/ir";
+var IR_IDENTITY = "dev.lekalo.ir@0.2.16";
+var sha256Text3 = (text) => "sha256:" + createHash6("sha256").update(text, "utf8").digest("hex");
+var isObject5 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var canonicalJson2 = (value) => {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson2).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const body = Object.keys(value).filter((key) => value[key] !== void 0).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson2(value[key])}`).join(",");
+    return `{${body}}`;
+  }
+  return JSON.stringify(value);
+};
+function decodeEvidence(bytes) {
+  let document;
+  try {
+    document = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    return { error: "transport-evidence-invalid" };
+  }
+  if (!isObject5(document)) return { error: "transport-evidence-invalid" };
+  if (document.schemaVersion !== "lekalo/transport-http/v0.4.0") {
+    return { error: "transport-evidence-version" };
+  }
+  if (!Array.isArray(document.endpoints) || document.endpoints.length === 0) {
+    return { error: "transport-evidence-empty" };
+  }
+  const endpoints = [];
+  for (const endpoint of document.endpoints) {
+    if (!isObject5(endpoint) || typeof endpoint.endpoint !== "string") {
+      return { error: "transport-evidence-invalid" };
+    }
+    endpoints.push(endpoint);
+  }
+  endpoints.sort((left, right) => left.endpoint < right.endpoint ? -1 : 1);
+  return {
+    value: {
+      projectId: document.projectId,
+      wire: document.wire,
+      defaults: document.defaults,
+      securitySchemes: Array.isArray(document.securitySchemes) ? document.securitySchemes : [],
+      endpoints
+    }
+  };
+}
+function decodeIrEvidence(bytes) {
+  let document;
+  try {
+    document = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    return { error: "ir-evidence-invalid" };
+  }
+  if (!isObject5(document) || document.contract !== IR_IDENTITY) {
+    return { error: "ir-evidence-version" };
+  }
+  if (!Array.isArray(document.definitions)) {
+    return { error: "ir-evidence-invalid" };
+  }
+  const endpoints = /* @__PURE__ */ new Map();
+  for (const definition of document.definitions) {
+    if (!isObject5(definition)) return { error: "ir-evidence-invalid" };
+    if (definition.kind !== "endpoint") continue;
+    if (typeof definition.id !== "string" || typeof definition.method !== "string" || typeof definition.path !== "string" || typeof definition.invokes !== "string") {
+      return { error: "ir-evidence-invalid" };
+    }
+    endpoints.set(definition.id, {
+      method: definition.method,
+      path: definition.path,
+      invokes: definition.invokes
+    });
+  }
+  const projectId = isObject5(document.project) && typeof document.project.id === "string" ? document.project.id : null;
+  return { value: { endpoints, projectId } };
+}
+function effectiveOperationId(endpoint) {
+  if (typeof endpoint.operationId === "string" && endpoint.operationId.length > 0) {
+    return endpoint.operationId;
+  }
+  return endpoint.endpoint.split(".").map(
+    (segment, index) => index === 0 ? segment : segment.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join("")
+  ).join("");
+}
+function unsupportedNotes(endpoints) {
+  const notes = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const endpoint of endpoints) {
+    for (const declaration of endpoint.capabilities ?? []) {
+      const key = `${declaration.capability}/${declaration.detail ?? "unspecified"}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      notes.push({
+        capability: declaration.capability,
+        detail: declaration.detail ?? "unspecified",
+        minimumSupport: declaration.minimumSupport ?? "partial",
+        state: "unsupported"
+      });
+    }
+  }
+  notes.sort(
+    (left, right) => (left.capability + left.detail).localeCompare(right.capability + right.detail)
+  );
+  return notes;
+}
+function routeModuleText(moduleId, endpoints, defaults, joins) {
+  const routes = endpoints.map((endpoint) => {
+    const joined = joins.get(endpoint.endpoint);
+    if (!joined) {
+      throw new TypeError("transport-endpoint-unjoined");
+    }
+    const route = {
+      endpoint: endpoint.endpoint,
+      operationId: effectiveOperationId(endpoint),
+      method: joined.method,
+      path: joined.path,
+      invokes: joined.invokes,
+      params: endpoint.params ?? [],
+      body: endpoint.body ?? null,
+      success: endpoint.success ?? null,
+      errors: endpoint.errors ?? [],
+      errorDefaults: endpoint.errorDefaults ?? null,
+      auth: endpoint.auth ?? null,
+      headers: endpoint.idempotency || endpoint.correlation ? {
+        idempotency: endpoint.idempotency ?? null,
+        correlation: endpoint.correlation ?? null
+      } : null
+    };
+    for (const member of ["pagination", "rateLimit", "cache", "apiVersion", "tags", "summary", "scenarios"]) {
+      if (endpoint[member] !== void 0) route[member] = endpoint[member];
+    }
+    return route;
+  });
+  const payload = {
+    module: moduleId,
+    wire: "lekalo-http-wire/v1",
+    errorEnvelope: defaults?.errorEnvelope ?? "canonical-v1",
+    // The canonical error envelope: the #62 identity quadruple with
+    // public payload fields only; statuses are projections.
+    envelope: { error: ["category", "code", "id", "payload"], ok: false },
+    routes: [...routes].sort(
+      (left, right) => left.operationId.localeCompare(right.operationId)
+    )
+  };
+  return `// Generated by lekalo-target-node-typescript transport extension ${EXTENSION_VERSION} \u2014 never edit.
+// Route declarations derived from the canonical transport evidence
+// joined with the compiled-IR evidence (method, path, invokes).
+export const routes = ${canonicalJson2(payload)};
+`;
+}
+function planRouteLayer(evidence, projectId, joins) {
+  const byModule = /* @__PURE__ */ new Map();
+  for (const endpoint of evidence.endpoints) {
+    if (!joins.has(endpoint.endpoint)) {
+      throw new TypeError("transport-endpoint-unjoined");
+    }
+    const moduleId = endpoint.endpoint.split(".")[0] ?? "default";
+    const bucket = byModule.get(moduleId) ?? [];
+    bucket.push(endpoint);
+    byModule.set(moduleId, bucket);
+  }
+  const writes = [];
+  for (const moduleId of [...byModule.keys()].sort()) {
+    const text = routeModuleText(moduleId, byModule.get(moduleId), evidence.defaults, joins);
+    writes.push({
+      path: `src/routes/${moduleId}.routes.ts`,
+      action: "create",
+      sha256: sha256Text3(text),
+      bytes: text
+    });
+  }
+  return {
+    writes: writes.map(({ path, action, sha256 }) => ({ path, action, sha256 })),
+    bodies: writes,
+    notes: unsupportedNotes(evidence.endpoints),
+    projectId
+  };
+}
+function evidencePathFor(request, readView, home) {
+  const candidates = [];
+  const irName = request.ir_path?.split("/").pop();
+  if (irName?.endsWith(".json")) {
+    candidates.push(`${home}/${irName}`);
+  }
+  for (const root of readView.roots ?? []) {
+    if (root.kind === "file" && root.path.startsWith(`${home}/`)) {
+      candidates.push(root.path);
+    }
+  }
+  return candidates.find((candidate) => readView.canRead(candidate));
+}
+function transportGenerateOperation(context) {
+  const { request, readView } = context;
+  if (!readView) {
+    return { state: "unsupported", diagnostics: [{ reason: "profile-absent" }] };
+  }
+  const permittedProjectRoot = readView.permittedProjectRoot;
+  const evidencePath = evidencePathFor(request, readView, TRANSPORT_EVIDENCE_DIR);
+  if (!evidencePath) {
+    return {
+      state: "failed",
+      diagnostics: [{ reason: "transport-evidence-absent" }]
+    };
+  }
+  const decoded = decodeEvidence(readView.readFile(evidencePath));
+  if (decoded.error) {
+    return { state: "failed", diagnostics: [{ reason: decoded.error }] };
+  }
+  const evidence = decoded.value;
+  const irPath = evidencePathFor(request, readView, IR_EVIDENCE_DIR) ?? (request.ir_path !== void 0 && readView.canRead(request.ir_path) ? request.ir_path : void 0);
+  if (!irPath) {
+    return {
+      state: "failed",
+      diagnostics: [{ reason: "ir-evidence-absent" }]
+    };
+  }
+  const ir = decodeIrEvidence(readView.readFile(irPath));
+  if (ir.error) {
+    return { state: "failed", diagnostics: [{ reason: ir.error }] };
+  }
+  if (!ir.value.projectId || ir.value.projectId !== evidence.projectId) {
+    return {
+      state: "failed",
+      diagnostics: [{ reason: "transport-project-mismatch" }]
+    };
+  }
+  const joins = /* @__PURE__ */ new Map();
+  for (const endpoint of evidence.endpoints) {
+    const joined = ir.value.endpoints.get(endpoint.endpoint);
+    if (!joined) {
+      return {
+        state: "failed",
+        diagnostics: [{ reason: "transport-endpoint-unjoined" }]
+      };
+    }
+    joins.set(endpoint.endpoint, joined);
+  }
+  const plan = planRouteLayer(evidence, evidence.projectId ?? "project", joins);
+  if (request.dry_run === false) {
+    const absolute = resolve2(permittedProjectRoot);
+    for (const write of plan.bodies) {
+      const target = join2(absolute, ...write.path.split("/"));
+      mkdirSync(join2(target, ".."), { recursive: true });
+      writeFileSync(target, write.bytes, "utf8");
+    }
+  }
+  return {
+    state: "complete",
+    data: {
+      writes: plan.writes,
+      unsupported: plan.notes
+    },
+    evidence: {
+      transportEvidence: evidencePath,
+      projectId: plan.projectId,
+      unsupportedCount: plan.notes.length
+    }
+  };
+}
+function transportExtensionDescriptor() {
+  return {
+    id: "http-transport-generator",
+    version: EXTENSION_VERSION,
+    operations: [TRANSPORT_OPERATION],
+    namedCapabilities: {
+      [TRANSPORT_CAPABILITY]: "partial",
+      [OPENAPI_CAPABILITY]: "unsupported"
+    },
+    acceptedIrVersions: ["0.2.16"],
+    writeRoots: [ROUTE_WRITE_ROOT],
+    readRoots: [TRANSPORT_READ_ROOT, IR_READ_ROOT],
+    invoke: (context) => transportGenerateOperation(context)
+  };
+}
+
 // src/main.mjs
 __setCompilerMetadata({
   vendored: true,
@@ -216451,7 +216780,8 @@ __setLaunchExtensions([
     namedCapabilities: { "plan.native-gates": "full" },
     acceptedIrVersions: ["0.2.16"],
     invoke: (context) => planNativeOperation(context, launchPolicy)
-  }
+  },
+  transportExtensionDescriptor()
 ]);
 var compilerHostApi = ts;
 var __lekaloKernel = kernel_exports;
@@ -216459,6 +216789,7 @@ var __lekaloScanner = scanner_exports;
 var __lekaloNativeGate = native_gate_extension_exports;
 var __lekaloWorkspace = workspace_exports;
 var __lekaloNativePlan = native_plan_exports;
+var __lekaloTransport = transport_extension_exports;
 var __lekaloLaunchPolicy = native_policy_default;
 var __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: "0.3.2", digest: entryDigest() };
 await runIfEntry(import.meta.url);
@@ -216469,6 +216800,7 @@ export {
   __lekaloNativeGate,
   __lekaloNativePlan,
   __lekaloScanner,
+  __lekaloTransport,
   __lekaloWorkspace,
   compilerHostApi
 };

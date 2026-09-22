@@ -241,6 +241,13 @@ enum Commands {
         #[command(subcommand)]
         command: RequirementsCommands,
     },
+    /// Validate, inspect, project or compare HTTP/JSON transport
+    /// attachments (issue #70). The core owns every decision; this
+    /// binary only selects, renders, and maps exits.
+    Transport {
+        #[command(subcommand)]
+        command: TransportCommands,
+    },
     /// Validate one declarative query-model attachment against the
     /// project, or compare two attachments of the same family.
     QueryModel {
@@ -970,6 +977,100 @@ enum RequirementsCommands {
 /// path and every decision — wire validation, semantic self-check,
 /// Model custody, reference resolution, the strict tenant gate, and
 /// the plan projection — lives in the core. Nothing is ever written.
+/// The `transport` subcommands (issue #70): the thin
+/// validate/inspect/project/diff handoff over the core transport-http
+/// family. The attachment document is read at the given path and every
+/// decision — wire validation, semantic validation, the projection,
+/// and the diff classification — lives in the core.
+#[derive(Debug, Subcommand)]
+enum TransportCommands {
+    /// Validate the attachment against the selected project: wire
+    /// normalization, custody, the semantic pass, and — under
+    /// `--strict` — the mapping-completeness and capability gates.
+    Validate {
+        /// Path to the transport attachment JSON document.
+        path: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Path to the bound #62 error registry the error map checks
+        /// against; without it the embedded seed registry (the planner
+        /// seed) is bound, so any non-seed project with declared error
+        /// entries must pass --errors or refuses as unbound.
+        #[arg(long, value_name = "FILE")]
+        errors: Option<String>,
+        /// Path to the bound #64 query-model attachment the query
+        /// endpoint checks resolve against.
+        #[arg(long, value_name = "FILE")]
+        query_model: Option<String>,
+        /// Enforce the strict profile gates.
+        #[arg(long)]
+        strict: bool,
+    },
+    /// Inspect one endpoint binding: the joined Model surface (method,
+    /// path, invokes) plus every declared transport member.
+    Inspect {
+        /// Path to the transport attachment JSON document.
+        path: String,
+        /// The endpoint symbol to inspect.
+        #[arg(long, value_name = "SYMBOL")]
+        endpoint: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Project the attachment into the canonical route surface of one
+    /// closed namespace (node, laravel, go, or rust).
+    Project {
+        /// Path to the transport attachment JSON document.
+        path: String,
+        /// The closed projection namespace.
+        #[arg(long, value_enum)]
+        namespace: TransportNamespace,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Path to the bound #62 error registry.
+        #[arg(long, value_name = "FILE")]
+        errors: Option<String>,
+        /// Path to the bound #64 query-model attachment.
+        #[arg(long, value_name = "FILE")]
+        query_model: Option<String>,
+    },
+    /// Compare two same-family attachments and classify every changed
+    /// path; the verdict stays data, never an exit code.
+    Diff {
+        /// Path to the base attachment JSON document.
+        base: String,
+        /// Path to the candidate attachment JSON document.
+        candidate: String,
+    },
+}
+
+/// The closed projection namespace vocabulary.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum TransportNamespace {
+    /// Node (ECMAScript) route table.
+    Node,
+    /// Laravel controller surface.
+    Laravel,
+    /// Go handler surface.
+    Go,
+    /// Rust (axum-style) route surface.
+    Rust,
+}
+
+impl TransportNamespace {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Node => "node",
+            Self::Laravel => "laravel",
+            Self::Go => "go",
+            Self::Rust => "rust",
+        }
+    }
+}
+
 #[derive(Debug, Subcommand)]
 enum QueryModelCommands {
     /// Validate the attachment against the selected project and emit
@@ -1310,6 +1411,7 @@ fn main() -> ExitCode {
                 format: DiffFormat::Json,
             } => run_diff(first, second, base, profiles),
             Commands::QueryModel { command } => run_query_model(command),
+            Commands::Transport { command } => run_transport(command),
             Commands::Expressions { command } => run_expressions(command),
             Commands::Graph { command } => run_graph(command, cli.no_cache),
             Commands::Effects { command } => run_effects(command, cli.no_cache),
@@ -1638,6 +1740,29 @@ fn run_validate(
                     return DomainResult::denied(set);
                 }
                 Ok(lekalo_core::authorization::Review::Ok) => {}
+            }
+            // Transport home (#70): when `lekalo/transport.yaml`
+            // exists, the semantic pass includes it — wire
+            // normalization plus the Model-bound checks; the
+            // cross-family gates (error union, query model,
+            // capabilities) stay with `lekalo transport validate`,
+            // which binds their explicit contexts.
+            let root = match lekalo_core::orchestration::project_root(&selection) {
+                Ok(root) => root,
+                Err(result) => return result,
+            };
+            match lekalo_core::transport_http::read_document(&root) {
+                Err(diagnostics) => return DomainResult::invalid(diagnostics),
+                Ok(Some(attachment)) => {
+                    let context =
+                        lekalo_core::transport_http::ValidationContext::new(&compilation.project);
+                    if let Err(diagnostics) =
+                        lekalo_core::transport_http::validate(&attachment, &context)
+                    {
+                        return DomainResult::invalid(diagnostics);
+                    }
+                }
+                Ok(None) => {}
             }
             let (json, human) = render_validate_success(&model, &report);
             let diagnostics = report.diagnostics().as_slice().to_vec();
@@ -3746,6 +3871,388 @@ fn nfr_query(resolution: &lekalo_core::nfr::Resolution, selector: &str) -> Domai
             )
         }
     }
+}
+
+/// Read one transport attachment document from disk with a classified
+/// read-only failure routed through the transport family.
+fn read_transport_document(path: &str) -> Result<serde_json::Value, DomainResult> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                io::ErrorKind::NotFound => "file-missing",
+                _ => "file-unreadable",
+            };
+            return Err(DomainResult::invalid(
+                lekalo_core::transport_http::io_failure(detail),
+            ));
+        }
+    };
+    serde_json::from_slice(&bytes)
+        .map_err(|_| DomainResult::invalid(lekalo_core::transport_http::io_failure("invalid-json")))
+}
+
+/// Run one `lekalo transport` operation. The core owns every
+/// decision; this binary only reads the documents, selects, renders,
+/// and maps exits.
+fn run_transport(command: TransportCommands) -> DomainResult {
+    match command {
+        TransportCommands::Validate {
+            path,
+            project,
+            errors,
+            query_model,
+            strict,
+        } => transport_validate(
+            &path,
+            &project,
+            errors.as_deref(),
+            query_model.as_deref(),
+            strict,
+        ),
+        TransportCommands::Inspect {
+            path,
+            endpoint,
+            project,
+        } => transport_inspect(&path, &endpoint, &project),
+        TransportCommands::Project {
+            path,
+            namespace,
+            project,
+            errors,
+            query_model,
+        } => transport_project(
+            &path,
+            namespace.as_str(),
+            &project,
+            errors.as_deref(),
+            query_model.as_deref(),
+        ),
+        TransportCommands::Diff { base, candidate } => transport_diff(&base, &candidate),
+    }
+}
+
+/// Read one optional context document from disk.
+fn read_context_document(path: Option<&str>) -> Result<Option<serde_json::Value>, DomainResult> {
+    match path {
+        None => Ok(None),
+        Some(path) => {
+            let bytes = match std::fs::read(path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    let detail = match error.kind() {
+                        io::ErrorKind::NotFound => "file-missing",
+                        _ => "file-unreadable",
+                    };
+                    return Err(DomainResult::invalid(
+                        lekalo_core::transport_http::io_failure(detail),
+                    ));
+                }
+            };
+            serde_json::from_slice(&bytes).map(Some).map_err(|_| {
+                DomainResult::invalid(lekalo_core::transport_http::io_failure("invalid-json"))
+            })
+        }
+    }
+}
+
+/// One loaded transport session: the attachment, the compiled
+/// project, the bound registry, the optional query model, and the
+/// validated context every transport command shares.
+struct TransportSession {
+    attachment: lekalo_core::transport_http::TransportDocument,
+    compilation: lekalo_core::ir::Compilation,
+    registry: lekalo_core::error_contract::ErrorRegistry,
+    query_model: Option<lekalo_core::query_model::QueryModelAttachment>,
+    capabilities: lekalo_core::transport_http::CapabilityMap,
+}
+
+/// Load and bind one transport session: the document, the project
+/// (load, compile, custody), the error registry, and the optional
+/// query model.
+fn transport_session(
+    path: &str,
+    project: &Option<String>,
+    errors_path: Option<&str>,
+    query_model_path: Option<&str>,
+) -> Result<TransportSession, DomainResult> {
+    let document = read_transport_document(path)?;
+    let attachment = match lekalo_core::transport_http::TransportDocument::from_value(&document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return Err(DomainResult::invalid(diagnostics)),
+    };
+    let selection = selection_for(project);
+    // The bound #62 registry: explicit path, or the embedded seed.
+    let registry = match read_context_document(errors_path)? {
+        Some(json) => serde_json::to_string(&json)
+            .map_err(|_| lekalo_core::transport_http::io_failure("errors-registry-invalid"))
+            .and_then(|canonical| {
+                lekalo_core::error_contract::ErrorRegistry::from_bytes(canonical.as_bytes())
+            })
+            .map_err(DomainResult::invalid)?,
+        None => lekalo_core::error_contract::ErrorRegistry::embedded()
+            .cloned()
+            .map_err(DomainResult::invalid)?,
+    };
+    let query_model = match read_context_document(query_model_path)? {
+        Some(json) => Some(
+            lekalo_core::query_model::QueryModelAttachment::from_value(&json)
+                .map_err(DomainResult::invalid)?,
+        ),
+        None => None,
+    };
+    // The project: load, compile, and check custody exactly like the
+    // query-model resolver (project id, Model version, Model digest).
+    let model = lekalo_core::loader::normalize_model(&selection)?;
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Ok(compilation) => compilation,
+        Err(failure) => return Err(failure.into_result()),
+    };
+    let model_json = match lekalo_core::loader::run(&selection, false) {
+        DomainResult::Valid {
+            payload: lekalo_core::result::SuccessPayload::Model { json, .. },
+            ..
+        } => json,
+        other => return Err(other),
+    };
+    let computed = lekalo_core::digest::sha256_hex(model_json.as_bytes());
+    if attachment.model_ref().digest().as_str() != format!("sha256:{computed}") {
+        return Err(DomainResult::invalid(
+            lekalo_core::transport_http::rule_set(
+                "transport.contract-invalid",
+                "model-digest",
+                None,
+            ),
+        ));
+    }
+    Ok(TransportSession {
+        attachment,
+        compilation,
+        registry,
+        query_model,
+        capabilities: lekalo_core::transport_http::CapabilityMap::http_json(),
+    })
+}
+
+impl TransportSession {
+    /// The validation context of this session.
+    fn context(&self) -> lekalo_core::transport_http::ValidationContext<'_> {
+        let context =
+            lekalo_core::transport_http::ValidationContext::new(&self.compilation.project)
+                .with_errors(&self.registry)
+                .with_capabilities(&self.capabilities);
+        match &self.query_model {
+            Some(model) => context.with_query_model(model),
+            None => context,
+        }
+    }
+}
+
+/// `lekalo transport validate`: wire normalization, custody, and the
+/// semantic pass against the selected project and every bound context.
+fn transport_validate(
+    path: &str,
+    project: &Option<String>,
+    errors_path: Option<&str>,
+    query_model_path: Option<&str>,
+    strict: bool,
+) -> DomainResult {
+    let session = match transport_session(path, project, errors_path, query_model_path) {
+        Ok(session) => session,
+        Err(result) => return result,
+    };
+    let attachment = &session.attachment;
+    let context = session.context();
+    let context = if strict { context.strict() } else { context };
+    if let Err(diagnostics) = lekalo_core::transport_http::validate(attachment, &context) {
+        return DomainResult::invalid(diagnostics);
+    }
+    let digest = attachment
+        .digest()
+        .map(|digest| digest.as_str().to_owned())
+        .unwrap_or_default();
+    let json = format!(
+        "{{\"status\":\"valid\",\"transport\":{{\"projectId\":\"{}\",\"endpoints\":{},\"schemes\":{},\"canonicalDigest\":\"{}\"}}}}",
+        attachment.project_id().as_str(),
+        attachment.endpoints().len(),
+        attachment.schemes().len(),
+        digest,
+    );
+    let human = format!(
+        "transport {}: {} endpoints, {} schemes",
+        attachment.project_id().as_str(),
+        attachment.endpoints().len(),
+        attachment.schemes().len(),
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo transport project`: the canonical route surface of one
+/// closed namespace, byte-stable and deterministic.
+fn transport_project(
+    path: &str,
+    namespace: &str,
+    project: &Option<String>,
+    errors_path: Option<&str>,
+    query_model_path: Option<&str>,
+) -> DomainResult {
+    let session = match transport_session(path, project, errors_path, query_model_path) {
+        Ok(session) => session,
+        Err(result) => return result,
+    };
+    let attachment = &session.attachment;
+    let context = session.context();
+    // The projection requires a validated attachment: an unresolved
+    // endpoint refuses rather than guessing a route.
+    if let Err(diagnostics) = lekalo_core::transport_http::validate(attachment, &context) {
+        return DomainResult::invalid(diagnostics);
+    }
+    let surface = match lekalo_core::transport_http::project(attachment, &context, namespace) {
+        Ok(surface) => surface,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let json = format!(
+        "{{\"status\":\"valid\",\"surface\":{}}}",
+        surface.canonical_bytes(),
+    );
+    let human = format!(
+        "route surface {}: {} routes",
+        namespace,
+        attachment.endpoints().len(),
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo transport diff`: the pure semantic comparison of two
+/// same-family attachments; the verdict stays data and the strict
+/// `wire-consumer` blocking signal rides along.
+fn transport_diff(base_path: &str, candidate_path: &str) -> DomainResult {
+    let base_document = match read_transport_document(base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let base = match lekalo_core::transport_http::TransportDocument::from_value(&base_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let candidate_document = match read_transport_document(candidate_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let candidate =
+        match lekalo_core::transport_http::TransportDocument::from_value(&candidate_document) {
+            Ok(attachment) => attachment,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let diff = match lekalo_core::transport_http::compare(&base, &candidate) {
+        Ok(diff) => diff,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let count = |class| -> usize {
+        diff.paths()
+            .iter()
+            .filter(|path| path.class() == class)
+            .count()
+    };
+    let breaking = count(lekalo_core::transport_http::DiffClass::Breaking);
+    let non_breaking = count(lekalo_core::transport_http::DiffClass::NonBreaking);
+    let policy_change = count(lekalo_core::transport_http::DiffClass::PolicyChange);
+    let paths: Vec<String> = diff
+        .paths()
+        .iter()
+        .map(|path| {
+            format!(
+                "{{\"path\":\"{}\",\"class\":\"{}\"}}",
+                path.path(),
+                path.class().key()
+            )
+        })
+        .collect();
+    let json = format!(
+        "{{\"status\":\"valid\",\"transportDiff\":{{\"equal\":{},\"breaking\":{},\"nonBreaking\":{},\"policyChange\":{},\"wireConsumerBlocked\":{},\"paths\":[{}]}}}}",
+        diff.equal(),
+        breaking,
+        non_breaking,
+        policy_change,
+        diff.wire_consumer_blocked(),
+        paths.join(","),
+    );
+    let human = format!(
+        "transport diff: {} breaking, {} non-breaking, {} policy-change (wire-consumer blocked: {})",
+        breaking,
+        non_breaking,
+        policy_change,
+        diff.wire_consumer_blocked(),
+    );
+    DomainResult::diff(json, human, Vec::new())
+}
+
+/// `lekalo transport inspect`: one endpoint's joined surface.
+fn transport_inspect(path: &str, endpoint: &str, project: &Option<String>) -> DomainResult {
+    let document = match read_transport_document(path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let attachment = match lekalo_core::transport_http::TransportDocument::from_value(&document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let binding = match attachment.endpoint(endpoint) {
+        Some(binding) => binding,
+        None => {
+            return DomainResult::invalid(lekalo_core::transport_http::rule_set(
+                "transport.endpoint-unresolved",
+                "endpoint-missing",
+                Some(endpoint),
+            ));
+        }
+    };
+    // The joined Model surface when a project is selected.
+    let joined = project.as_ref().and_then(|_| {
+        let selection = selection_for(project);
+        let model = lekalo_core::loader::normalize_model(&selection).ok()?;
+        let compilation = lekalo_core::ir::compile(&model).ok()?;
+        compilation
+            .project
+            .definitions
+            .iter()
+            .find_map(|definition| match definition {
+                lekalo_core::ir::Definition::Endpoint(def) if def.id.as_str() == endpoint => {
+                    Some((
+                        def.method.as_str().to_owned(),
+                        def.path.as_str().to_owned(),
+                        def.invokes.as_str().to_owned(),
+                    ))
+                }
+                _ => None,
+            })
+    });
+    // The full declared binding, serialized by the core in its exact
+    // wire spelling: every declared transport member, params as an
+    // array keyed by the (name, location) wire identity.
+    let mut binding_object = match lekalo_core::transport_http::binding_json(binding) {
+        serde_json::Value::Object(map) => map,
+        _ => unreachable!("binding_json renders an object"),
+    };
+    binding_object.insert(
+        "operationId".to_owned(),
+        serde_json::Value::String(binding.effective_operation_id().as_str().to_owned()),
+    );
+    if let Some((method, path, invokes)) = joined {
+        binding_object.insert("method".to_owned(), serde_json::Value::String(method));
+        binding_object.insert("path".to_owned(), serde_json::Value::String(path));
+        binding_object.insert("invokes".to_owned(), serde_json::Value::String(invokes));
+    }
+    let json = format!(
+        "{{\"status\":\"valid\",\"endpoint\":{}}}",
+        serde_json::Value::Object(binding_object),
+    );
+    let human = format!(
+        "endpoint {}: operationId {}",
+        endpoint,
+        binding.effective_operation_id().as_str(),
+    );
+    DomainResult::graph(json, human, Vec::new())
 }
 
 /// Run one `lekalo query-model` operation. The core owns every

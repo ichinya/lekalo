@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "lekalo/query-model/v0.2.16",
+  "identity": "dev.lekalo.query-model@0.2.16",
+  "attachmentRevision": "0.2.16",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "0.2.16",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.2.16",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "tenancy": [
+    {
+      "entity": "planner.task",
+      "field": "tenant"
+    }
+  ],
+  "queries": [
+    {
+      "query": "planner.count_focused",
+      "source": "planner.task",
+      "cardinality": "one",
+      "consistency": "stale-ok"
+    },
+    {
+      "query": "planner.tasks_by_project",
+      "source": "planner.task",
+      "cardinality": "page",
+      "consistency": "stale-ok",
+      "parameters": [
+        {
+          "name": "project_ref",
+          "type": "planner.text"
+        },
+        {
+          "name": "after_task",
+          "type": "planner.task_id"
+        }
+      ],
+      "filter": {
+        "field": "title",
+        "op": "eq",
+        "value": {
+          "param": "project_ref"
+        }
+      },
+      "sort": [
+        {
+          "field": "due",
+          "direction": "asc"
+        },
+        {
+          "field": "task_id",
+          "direction": "asc"
+        }
+      ],
+      "pagination": {
+        "strategy": "cursor",
+        "limit": 100,
+        "keyParameter": "after_task"
+      }
+    }
+  ]
+}

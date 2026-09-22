@@ -37,6 +37,7 @@ use crate::result::{DomainResult, Status};
 use crate::target_protocol::capability;
 use crate::target_protocol::scopes;
 use crate::target_protocol::transport::{AdapterCommand, TransportLimits};
+use crate::target_protocol::wire::SupportState;
 use crate::target_protocol::wire::{self, Capabilities, Operation, ResponseEnvelope};
 use crate::target_protocol::{CallRequest, TargetClient, TargetFailure};
 
@@ -273,6 +274,7 @@ impl Runner {
         self.clean_phase();
         self.scenario_phase();
         self.process_phase();
+        self.transport_phase();
         self.finish_confinement();
         self.redaction_phase();
     }
@@ -846,6 +848,250 @@ impl Runner {
 
     /// Cancellation handling, recovery, and the describe-digest
     /// determinism probe.
+    /// The transport checks (issue #70): the wire-diff gate, the
+    /// error-identity invariant, the explicit-capability refusal, and
+    /// the capability-gated generator/scenario rows. Three checks are
+    /// pure fixture assertions the suite owns; the generator and
+    /// scenario rows run only when the adapter declares the transport
+    /// capabilities, and skip with a bounded reason otherwise —
+    /// execution stays with #47/#56/#107 owners.
+    fn transport_phase(&mut self) {
+        self.transport_wire_diff_block();
+        self.transport_error_identity();
+        self.transport_unsupported_capability();
+        self.transport_projection_parity();
+        self.transport_blackbox_scenarios();
+    }
+
+    /// `transport.wire-diff-block`: the committed breaking pair
+    /// classifies breaking and blocks the `wire-consumer` profile.
+    fn transport_wire_diff_block(&mut self) {
+        let outcome = match (
+            crate::transport_http::TransportDocument::from_value(
+                &serde_json::from_str::<serde_json::Value>(
+                    crate::adapter_conformance::fixture::TRANSPORT_DIFF_BASE,
+                )
+                .unwrap_or(serde_json::Value::Null),
+            ),
+            crate::transport_http::TransportDocument::from_value(
+                &serde_json::from_str::<serde_json::Value>(
+                    crate::adapter_conformance::fixture::TRANSPORT_DIFF_BREAKING,
+                )
+                .unwrap_or(serde_json::Value::Null),
+            ),
+        ) {
+            (Ok(base), Ok(candidate)) => match crate::transport_http::compare(&base, &candidate) {
+                Ok(diff) if diff.wire_consumer_blocked() => {
+                    CheckOutcome::pass(CheckId::TransportWireDiffBlock)
+                }
+                _ => CheckOutcome::fail(
+                    CheckId::TransportWireDiffBlock,
+                    CheckClass::Feature,
+                    "diff-not-blocking",
+                ),
+            },
+            _ => CheckOutcome::fail(
+                CheckId::TransportWireDiffBlock,
+                CheckClass::Feature,
+                "fixture-undecodable",
+            ),
+        };
+        self.record(outcome);
+    }
+
+    /// `transport.error-identity`: every error entry of the fixture
+    /// evidence resolves in the embedded #62 registry and all six
+    /// category defaults are declared.
+    fn transport_error_identity(&mut self) {
+        let ok = (|| -> Option<bool> {
+            let json: serde_json::Value =
+                serde_json::from_str(crate::adapter_conformance::fixture::TRANSPORT_EVIDENCE)
+                    .ok()?;
+            let document = crate::transport_http::TransportDocument::from_value(&json).ok()?;
+            let registry = crate::error_contract::ErrorRegistry::embedded().ok()?;
+            let endpoint = document.endpoints().first()?;
+            for entry in &endpoint.errors {
+                let id = crate::error_contract::id::ErrorId::new(entry.error.as_str())?;
+                registry.error(&id)?;
+            }
+            let defaults = &endpoint.error_defaults;
+            let all_declared = defaults.validation != 0
+                && defaults.auth != 0
+                && defaults.conflict != 0
+                && defaults.not_found != 0
+                && defaults.domain != 0
+                && defaults.infrastructure != 0;
+            all_declared.then_some(true)
+        })()
+        .is_some();
+        self.record(if ok {
+            CheckOutcome::pass(CheckId::TransportErrorIdentity)
+        } else {
+            CheckOutcome::fail(
+                CheckId::TransportErrorIdentity,
+                CheckClass::Feature,
+                "identity-not-preserved",
+            )
+        });
+    }
+
+    /// `transport.unsupported-capability`: the declared streaming
+    /// capability is satisfied by the `http-json` profile surface, and
+    /// an unsatisfied capability declaration is an explicit refusal —
+    /// never a silent downgrade.
+    fn transport_unsupported_capability(&mut self) {
+        let ok = (|| -> Option<bool> {
+            let json: serde_json::Value =
+                serde_json::from_str(crate::adapter_conformance::fixture::TRANSPORT_EVIDENCE)
+                    .ok()?;
+            let document = crate::transport_http::TransportDocument::from_value(&json).ok()?;
+            let map = crate::transport_http::CapabilityMap::http_json();
+            let endpoint = document.endpoints().first()?;
+            let streaming = endpoint.capabilities.first()?;
+            let satisfied = streaming.capability.as_str() == "streaming"
+                && map
+                    .support("transport.streaming")
+                    .satisfies(streaming.minimum_support);
+            if !satisfied {
+                return None;
+            }
+            // The explicit refusal: a full minimum the partial profile
+            // cannot satisfy must refuse with the family rule. (The
+            // upload/download partial declarations are satisfied by the
+            // published http-json surface since the C-6 registry
+            // alignment.)
+            let mut refused = serde_json::from_str::<serde_json::Value>(
+                crate::adapter_conformance::fixture::TRANSPORT_EVIDENCE,
+            )
+            .ok()?;
+            refused["endpoints"][0]["capabilities"] = serde_json::json!([{
+                "capability": "upload",
+                "minimumSupport": "full",
+                "detail": "multipart"
+            }]);
+            let refused = crate::transport_http::TransportDocument::from_value(&refused).ok()?;
+            let refused_with_rule = crate::transport_http::validate_capabilities(
+                &refused,
+                &crate::transport_http::CapabilityMap::http_json(),
+            )
+            .is_err_and(|set| {
+                set.as_slice()
+                    .first()
+                    .is_some_and(|diagnostic| diagnostic.id() == "transport.capability-unsatisfied")
+            });
+            if !refused_with_rule {
+                return None;
+            }
+            Some(true)
+        })()
+        .is_some();
+        self.record(if ok {
+            CheckOutcome::pass(CheckId::TransportUnsupportedCapability)
+        } else {
+            CheckOutcome::fail(
+                CheckId::TransportUnsupportedCapability,
+                CheckClass::Feature,
+                "capability-silent",
+            )
+        });
+    }
+
+    /// `transport.projection-parity`: requires a declared
+    /// `generate.transport-http` capability at a usable support state
+    /// plus the evidence inside the read scopes; the repeated dry-run
+    /// plan is then byte-identical because it derives from the one
+    /// evidence file.
+    fn transport_projection_parity(&mut self) {
+        if !self.transport_capability_declared("generate.transport-http") {
+            self.record(CheckOutcome::skipped(
+                CheckId::TransportProjectionParity,
+                "capability-undeclared",
+            ));
+            return;
+        }
+        // Parity is proven against the already-recorded generate
+        // exchanges of this run: a declared transport generator
+        // derives the canonical route surface of the fixture
+        // evidence, pinned to the byte (the committed golden digest
+        // of src/routes/planner.routes.ts).
+        let mut matched: Option<(String, String)> = None;
+        for bytes in &self.exchanges {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(bytes) else {
+                continue;
+            };
+            let Some(writes) = value.get("writes").and_then(|writes| writes.as_array()) else {
+                continue;
+            };
+            for write in writes {
+                let route_path = write.get("path").and_then(|path| path.as_str());
+                let route_digest = write.get("sha256").and_then(|digest| digest.as_str());
+                if let (Some(path), Some(digest)) = (route_path, route_digest) {
+                    if path == fixture::TRANSPORT_ROUTE_PATH {
+                        matched = Some((path.to_owned(), digest.to_owned()));
+                    }
+                }
+            }
+        }
+        self.record(match matched {
+            Some((_, digest)) if digest == fixture::TRANSPORT_ROUTE_DIGEST => {
+                CheckOutcome::pass(CheckId::TransportProjectionParity)
+            }
+            Some(_) => CheckOutcome::fail(
+                CheckId::TransportProjectionParity,
+                CheckClass::Feature,
+                "surface-diverges",
+            ),
+            None => CheckOutcome::fail(
+                CheckId::TransportProjectionParity,
+                CheckClass::Feature,
+                "no-route-surface",
+            ),
+        });
+    }
+
+    /// `transport.blackbox-scenarios`: requires a declared
+    /// `verify.transport-http` capability plus the scenario fixture
+    /// inside the read scopes; the verify exchange is then normalized
+    /// like every scenario result.
+    fn transport_blackbox_scenarios(&mut self) {
+        if !self.transport_capability_declared("verify.transport-http") {
+            self.record(CheckOutcome::skipped(
+                CheckId::TransportBlackboxScenarios,
+                "capability-undeclared",
+            ));
+            return;
+        }
+        if !self.declared(Operation::Verify) || !self.read_scopes_cover(SCENARIO_PATH) {
+            self.record(CheckOutcome::skipped(
+                CheckId::TransportBlackboxScenarios,
+                "fixture-not-in-read-scopes",
+            ));
+            return;
+        }
+        let shape = CallShape {
+            operation: Operation::Verify,
+            ir_path: Some(IR_PATH.to_owned()),
+            ..CallShape::default()
+        };
+        match self.exchange(&shape) {
+            Exchange::Ok { .. } => {
+                self.record(CheckOutcome::pass(CheckId::TransportBlackboxScenarios));
+            }
+            Exchange::Failed(failure) => {
+                self.record_failure(CheckId::TransportBlackboxScenarios, &failure);
+            }
+        }
+    }
+
+    /// Whether the described adapter declares one transport capability
+    /// at a usable support state (`full` or `partial`).
+    fn transport_capability_declared(&self, id: &str) -> bool {
+        self.capabilities
+            .as_ref()
+            .and_then(|caps| caps.capabilities.get(id).copied())
+            .is_some_and(|state| matches!(state, SupportState::Full | SupportState::Partial))
+    }
+
     fn process_phase(&mut self) {
         let candidate = [
             Operation::Scan,

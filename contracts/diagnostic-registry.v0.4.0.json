@@ -6758,6 +6758,230 @@
       "lifecycle": "active"
     },
     {
+      "id": "transport.capability-unsatisfied",
+      "code": "LEK-TRN-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transport.capability-unsatisfied",
+      "default_message": "A declared endpoint capability is not supported by the resolved transport profile.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "capability",
+          "type": "token"
+        },
+        {
+          "name": "required",
+          "type": "token"
+        },
+        {
+          "name": "actual",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transport.contract-invalid",
+      "code": "LEK-TRN-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transport.contract-invalid",
+      "default_message": "A transport declaration does not match its closed contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transport.endpoint-unresolved",
+      "code": "LEK-TRN-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transport.endpoint-unresolved",
+      "default_message": "A transport endpoint reference does not resolve to a Model endpoint symbol.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transport.export-limit",
+      "code": "LEK-TRN-009",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transport.export-limit",
+      "default_message": "The canonical transport payload exceeds its bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transport.input-invalid",
+      "code": "LEK-TRN-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transport.input-invalid",
+      "default_message": "The transport attachment document violates its closed wire contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transport.mapping-missing",
+      "code": "LEK-TRN-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transport.mapping-missing",
+      "default_message": "A declared operation error union member has no transport status mapping.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transport.pagination-invalid",
+      "code": "LEK-TRN-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transport.pagination-invalid",
+      "default_message": "A pagination declaration conflicts with the bound query model.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transport.param-invalid",
+      "code": "LEK-TRN-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transport.param-invalid",
+      "default_message": "A parameter binding violates the closed transport contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "transport.security-invalid",
+      "code": "LEK-TRN-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "transport.security-invalid",
+      "default_message": "An actor or security scheme declaration violates the closed transport contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "validate.module-unresolved",
       "code": "LEK-VAL-001",
       "category": "infrastructure",

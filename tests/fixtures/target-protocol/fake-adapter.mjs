@@ -17,6 +17,7 @@
  *   noise         write unbounded chatter to stderr
  *   bad-echo      echo a foreign request id
  *   boom          report an in-envelope operation error for any operation
+ *   fail-verify   report an in-envelope operation error for verify only
  *   mutate-dry    write during a dry-run generate (must be refused)
  *   extra-write   write an undeclared file during an apply (must be caught)
  *
@@ -80,6 +81,18 @@ const CAPABILITY_PROFILES = {
     "generate.zod": "full",
     "generate.openapi": "partial",
     "verify.scenarios": "full",
+    "generate.ui": "unsupported",
+  },
+  // The issue #70 fixture variant: the fluent surface plus the
+  // declared `verify.transport-http` capability, so the conformance
+  // battery exercises the black-box scenario row end to end (its pass
+  // and failure paths are pinned in the adapter_conformance suite).
+  transport: {
+    "scan.symbols": "full",
+    "generate.zod": "full",
+    "generate.openapi": "partial",
+    "verify.scenarios": "full",
+    "verify.transport-http": "full",
     "generate.ui": "unsupported",
   },
   unknown: {
@@ -265,6 +278,10 @@ if (fault("hang")) {
       respond(request, { result: { ok: true, findings: [] } });
       break;
     case "verify":
+      if (fault("fail-verify")) {
+        fail(request, "invalid", "fake-verify-failed", "injected verify failure");
+        break;
+      }
       respond(request, { result: { ok: true, findings: [] } });
       break;
     case "generate": {

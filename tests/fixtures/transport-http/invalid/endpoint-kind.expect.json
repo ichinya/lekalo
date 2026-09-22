@@ -1,0 +1,4 @@
+{
+  "rule": "transport.endpoint-unresolved",
+  "detail": "symbol-kind"
+}

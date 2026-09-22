@@ -131,10 +131,12 @@ const SUPPORT_STATES = Object.freeze(["full", "partial", "unsupported", "unknown
 
 const CAPABILITY_IDS = Object.freeze([
   "generate.openapi",
+  "generate.transport-http",
   "generate.ui",
   "generate.zod",
   "scan.symbols",
   "verify.scenarios",
+  "verify.transport-http",
   "plan.native-gates",
 ]);
 
@@ -1066,7 +1068,7 @@ export function validateProfileBinding(request, profile) {
     // (enforced by the caller); any operation request is a mismatch.
     return refusal("profile-absent");
   }
-  if (request.profile !== profile.id) {
+  if (request.profile !== undefined && request.profile !== profile.id) {
     return refusal("profile-id");
   }
   if (request.target !== undefined && request.target !== profile.target) {
@@ -1147,6 +1149,17 @@ export function describeCapabilities(profile = null, extensions = []) {
     capabilities.read_scopes = profile.readRoots.map((root) => root.scope);
     capabilities.profiles = [profile.id];
     capabilities.ir_versions = [...irVersions].sort();
+    // Write scopes come from the installed extensions' declared
+    // write roots (issue #70: the transport generator owns
+    // src/routes/**); they are declared, bounded, and stay inside the
+    // permitted project root under core's staged view.
+    const writeScopes = new Set();
+    for (const extension of extensions) {
+      for (const root of extension.writeRoots ?? []) {
+        writeScopes.add(root);
+      }
+    }
+    capabilities.write_scopes = [...writeScopes].sort();
   }
   return capabilities;
 }
@@ -1591,7 +1604,7 @@ export function validateExtensionDescriptor(descriptor) {
   if (typeof descriptor !== "object" || descriptor === null) {
     invalid("not an object");
   }
-  const allowed = ["id", "version", "operations", "namedCapabilities", "acceptedIrVersions", "invoke"];
+  const allowed = ["id", "version", "operations", "namedCapabilities", "acceptedIrVersions", "writeRoots", "readRoots", "invoke"];
   for (const key of Object.keys(descriptor)) {
     if (!allowed.includes(key)) {
       invalid(`unknown member ${key}`);
@@ -1626,6 +1639,29 @@ export function validateExtensionDescriptor(descriptor) {
       invalid("acceptedIrVersions");
     }
   }
+  if (hasOwn(descriptor, "writeRoots") && descriptor.writeRoots !== undefined) {
+    if (!Array.isArray(descriptor.writeRoots)
+      || descriptor.writeRoots.length === 0
+      || descriptor.writeRoots.length > 8
+      || !descriptor.writeRoots.every((root) =>
+        typeof root === "string" && /^([a-z0-9][a-z0-9._-]*\/)+\*\*$/.test(root)
+          && !root.includes(".."))) {
+      invalid("writeRoots");
+    }
+  }
+  if (hasOwn(descriptor, "readRoots") && descriptor.readRoots !== undefined) {
+    // The deployment gating roots (issue #70): an extension that
+    // needs a specific read tree (the transport evidence home) is
+    // enabled only when the bound profile actually reads it.
+    if (!Array.isArray(descriptor.readRoots)
+      || descriptor.readRoots.length === 0
+      || descriptor.readRoots.length > 8
+      || !descriptor.readRoots.every((root) =>
+        typeof root === "string" && root.length > 0 && root.length <= 512
+          && !root.includes("..") && !root.startsWith("/") && !root.includes("**"))) {
+      invalid("readRoots");
+    }
+  }
   if (typeof descriptor.invoke !== "function") {
     invalid("invoke");
   }
@@ -1638,6 +1674,12 @@ export function validateExtensionDescriptor(descriptor) {
       : undefined,
     acceptedIrVersions: descriptor.acceptedIrVersions
       ? Object.freeze([...descriptor.acceptedIrVersions])
+      : undefined,
+    writeRoots: descriptor.writeRoots
+      ? Object.freeze([...descriptor.writeRoots])
+      : undefined,
+    readRoots: descriptor.readRoots
+      ? Object.freeze([...descriptor.readRoots])
       : undefined,
     invoke: descriptor.invoke,
   });
@@ -1699,6 +1741,19 @@ export function createKernel(options = {}) {
     for (const operation of validated.operations) {
       if ([...extensions.values()].some((candidate) => candidate.operations.includes(operation))) {
         throw new RequestRefusal("extension-invalid", `duplicate operation claim ${operation}`);
+      }
+    }
+    // Deployment gating (issue #70): an extension declaring required
+    // read roots is enabled only when the bound profile's read scopes
+    // cover them; a profile that does not read the transport evidence
+    // never sees the transport generator.
+    if (profile && validated.readRoots) {
+      const covered = validated.readRoots.every((required) =>
+        profile.readRoots.some((root) =>
+          (root.kind === "tree" && (root.path === required || root.path.startsWith(required + "/")))
+          || (root.kind === "file" && root.path.startsWith(required + "/"))));
+      if (!covered) {
+        continue;
       }
     }
     extensions.set(validated.id, validated);
@@ -1937,6 +1992,16 @@ function buildUnsupportedResponse(request) {
  */
 function projectOutcome(request, outcome) {
   if (outcome.state === "complete") {
+    // A generate outcome carries its write plan on the closed wire
+    // (issue #70): every entry is a bounded create with its exact
+    // content digest; anything else is refused, never flattened.
+    if (Array.isArray(outcome.data?.writes)
+      && outcome.data.writes.length <= 64
+      && outcome.data.writes.every((write) =>
+        typeof write?.path === "string" && write.path.length > 0 && write.path.length <= 128
+          && write.action === "create" && isSha256Digest(write.sha256))) {
+      return buildResponse(request, { writes: outcome.data.writes });
+    }
     const result = projectResult(outcome.data);
     if (result) {
       return buildResponse(request, { result });

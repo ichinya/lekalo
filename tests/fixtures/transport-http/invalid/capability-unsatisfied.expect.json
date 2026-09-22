@@ -1,0 +1,4 @@
+{
+  "rule": "transport.capability-unsatisfied",
+  "detail": "capability-unsupported"
+}

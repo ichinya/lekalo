@@ -1,0 +1,4 @@
+{
+  "rule": "transport.input-invalid",
+  "detail": "schema-version"
+}

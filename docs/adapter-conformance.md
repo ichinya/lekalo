@@ -17,7 +17,8 @@ Everything after the program path is passed to the adapter verbatim
 
 ## Checks and classes
 
-The closed catalog carries eighteen checks in fixed order. Every check
+The closed catalog carries twenty-three checks in fixed order (the
+five `transport.*` rows were added by issue #70). Every check
 has one inherent failure class; a recorded failure carries the class of
 what actually failed, so a crash during a feature check is a
 process-class failure and a refusal during any exchange is a
@@ -43,11 +44,17 @@ security-class one:
 | `artifact.manifest-evidence` | feature | applied bytes match declared digests |
 | `redaction.evidence` | security | redaction of durable evidence |
 | `process.cancellation` | process | cancellation and recovery |
+| `transport.projection-parity` | feature | a declared transport generator derives its plan from the one evidence file deterministically |
+| `transport.error-identity` | feature | error responses preserve `{id,code,category}`; infrastructure failures never carry declared ids |
+| `transport.unsupported-capability` | feature | declared streaming/upload/download unsupported by the runtime is reported `unsupported`, never silent |
+| `transport.blackbox-scenarios` | feature | fixture endpoint scenarios execute/normalize through the declared backend binding (execution stays with #47/#56/#107 owners) |
+| `transport.wire-diff-block` | feature | breaking wire change in the fixture pair is classified `breaking` and blocks under `wire-consumer` |
 
 Skipped checks record a bounded reason (`operation-undeclared`,
 `legacy-session`, `no-ir-operations`, `default-profile`,
 `nothing-to-clean`, `no-error-observed`, `fixture-not-in-read-scopes`,
-`no-repeatable-probe`, `not-run`, `no-plan`). A skip is never a pass.
+`no-repeatable-probe`, `not-run`, `no-plan`, `capability-undeclared`). A
+skip is never a pass.
 
 ## Verdict, hard failures, and the badge
 

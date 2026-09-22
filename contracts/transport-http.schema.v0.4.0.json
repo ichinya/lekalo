@@ -1,0 +1,776 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/transport-http.schema.v0.4.0.json",
+  "title": "Lekalo HTTP/JSON Transport Attachment",
+  "description": "Closed independent attachment contract binding each Model endpoint symbol of one project to its full HTTP/JSON wire surface (issue #70): parameter locations, JSON request/response schemas, the typed error-to-status projection of the error-contract family, explicit security schemes over the authorization actor vocabulary, idempotency and correlation headers, pagination projection, rate-limit and cache metadata, content versioning, and declared streaming/upload/download capabilities. The attachment is pure declaration and validation data: method, path, and invokes stay single-sourced in the Model endpoint symbol and are never restated here; it never executes, never carries source text, physical paths, runtime principals, tokens, middleware names, secrets, or provider transcripts, and has no write surface. The same canonical endpoint-surface projection is the single input every runtime route projection (node, laravel, go, rust) and every OpenAPI rendering render from. The contract version is independent of the product release, of the source Model and IR contract versions, of the error-contract, query-model, and authorization families, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "wire",
+    "defaults",
+    "securitySchemes",
+    "endpoints"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/transport-http/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.transport-http@0.4.0"
+    },
+    "attachmentRevision": {
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "modelRef": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "$ref": "#/$defs/irRef"
+    },
+    "wire": {
+      "$ref": "#/$defs/wireDialect"
+    },
+    "defaults": {
+      "$ref": "#/$defs/transportDefaults"
+    },
+    "securitySchemes": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/securityScheme"
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2048,
+      "items": {
+        "$ref": "#/$defs/endpointBinding"
+      }
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "safeText": {
+      "description": "Bounded declaration text. Never source text, paths, credentials, URLs, runtime values, or provider output.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;()/_-]*$"
+    },
+    "safeToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9._-]*$"
+    },
+    "headerName": {
+      "description": "One HTTP header field name (RFC 9110 token grammar, restricted to the portable subset).",
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "pattern": "^[A-Z][A-Za-z0-9-]*$"
+    },
+    "paramName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "fieldName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "fieldRef": {
+      "description": "One declared operation input member (command input, prefixed input.<name>) or one declared query-model parameter (bare name). Never a transport-invented field.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(input\\.)?[a-z][a-z0-9_]*$"
+    },
+    "operationId": {
+      "description": "One explicit operation identity. The default is the deterministic camel-case transform of the endpoint semantic id.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][A-Za-z0-9]{0,191}$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "wireDialect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dialect",
+        "contentType"
+      ],
+      "properties": {
+        "dialect": {
+          "const": "lekalo-http-wire/v1"
+        },
+        "contentType": {
+          "const": "application/json"
+        }
+      }
+    },
+    "transportDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "errorEnvelope",
+        "idempotencyHeader",
+        "correlationHeaders"
+      ],
+      "properties": {
+        "errorEnvelope": {
+          "const": "canonical-v1"
+        },
+        "idempotencyHeader": {
+          "$ref": "#/$defs/headerName"
+        },
+        "correlationHeaders": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/headerName"
+          }
+        }
+      }
+    },
+    "securityScheme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/schemeId"
+        },
+        "kind": {
+          "enum": [
+            "none",
+            "bearer",
+            "api-key",
+            "basic",
+            "oauth2",
+            "mutual-tls",
+            "custom"
+          ]
+        },
+        "format": {
+          "enum": [
+            "jwt"
+          ]
+        },
+        "in": {
+          "enum": [
+            "header",
+            "query",
+            "cookie"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/headerName"
+        },
+        "flowIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/safeToken"
+          }
+        },
+        "capabilityToken": {
+          "$ref": "#/$defs/safeToken"
+        }
+      },
+      "description": "One explicit security scheme declaration. Kind-specific members are enforced fail-closed by the runtime normalizer: bearer requires format, api-key requires in and name, oauth2 requires flowIds, custom requires capabilityToken; kind none carries none of them."
+    },
+    "schemeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "paramLocation": {
+      "enum": [
+        "path",
+        "query",
+        "header",
+        "cookie"
+      ]
+    },
+    "paramStyle": {
+      "enum": [
+        "simple",
+        "form",
+        "deepObject"
+      ]
+    },
+    "paramBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "in",
+        "field",
+        "required"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/paramName"
+        },
+        "in": {
+          "$ref": "#/$defs/paramLocation"
+        },
+        "field": {
+          "$ref": "#/$defs/fieldRef"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "style": {
+          "$ref": "#/$defs/paramStyle"
+        },
+        "explode": {
+          "type": "boolean"
+        }
+      }
+    },
+    "fieldBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "field",
+        "required"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "field": {
+          "$ref": "#/$defs/fieldRef"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "bodyBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contentType",
+        "mode"
+      ],
+      "properties": {
+        "contentType": {
+          "const": "application/json"
+        },
+        "mode": {
+          "enum": [
+            "whole-input",
+            "explicit"
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/fieldBinding"
+          }
+        }
+      }
+    },
+    "responseBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "whole-output",
+            "explicit"
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/fieldBinding"
+          }
+        }
+      }
+    },
+    "responseHeader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "required"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/headerName"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "successBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            200,
+            201,
+            202,
+            204
+          ]
+        },
+        "body": {
+          "$ref": "#/$defs/responseBody"
+        },
+        "headers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/responseHeader"
+          }
+        }
+      }
+    },
+    "errorEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "error",
+        "status"
+      ],
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 599
+        }
+      }
+    },
+    "errorDefaults": {
+      "description": "The fixed category-default statuses of the error projection. Every category of the closed error-contract vocabulary carries exactly one default; validation, auth, conflict, not-found, domain, and infrastructure stay distinguishable on the wire.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "validation",
+        "auth",
+        "conflict",
+        "not-found",
+        "domain",
+        "infrastructure"
+      ],
+      "properties": {
+        "validation": {
+          "$ref": "#/$defs/errorStatus"
+        },
+        "auth": {
+          "$ref": "#/$defs/errorStatus"
+        },
+        "conflict": {
+          "$ref": "#/$defs/errorStatus"
+        },
+        "not-found": {
+          "$ref": "#/$defs/errorStatus"
+        },
+        "domain": {
+          "$ref": "#/$defs/errorStatus"
+        },
+        "infrastructure": {
+          "$ref": "#/$defs/errorStatus"
+        }
+      }
+    },
+    "errorStatus": {
+      "type": "integer",
+      "minimum": 400,
+      "maximum": 599
+    },
+    "actor": {
+      "enum": [
+        "public",
+        "identity.user",
+        "identity.service",
+        "system.job",
+        "internal"
+      ]
+    },
+    "authBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor",
+        "schemes"
+      ],
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/actor"
+        },
+        "schemes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/schemeId"
+          }
+        },
+        "policyRef": {
+          "$ref": "#/$defs/semanticId"
+        }
+      }
+    },
+    "idempotencyBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "header",
+        "required"
+      ],
+      "properties": {
+        "header": {
+          "$ref": "#/$defs/headerName"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "correlationBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "headers"
+      ],
+      "properties": {
+        "headers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/headerName"
+          }
+        }
+      }
+    },
+    "paginationStyle": {
+      "enum": [
+        "offset",
+        "cursor"
+      ]
+    },
+    "paginationBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "style",
+        "limitParam"
+      ],
+      "properties": {
+        "style": {
+          "$ref": "#/$defs/paginationStyle"
+        },
+        "limitParam": {
+          "$ref": "#/$defs/paramName"
+        },
+        "offsetParam": {
+          "$ref": "#/$defs/paramName"
+        },
+        "cursorParam": {
+          "$ref": "#/$defs/paramName"
+        },
+        "cursorField": {
+          "$ref": "#/$defs/fieldName"
+        }
+      }
+    },
+    "rateLimitScope": {
+      "enum": [
+        "actor",
+        "tenant",
+        "endpoint"
+      ]
+    },
+    "rateLimitBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "limit",
+        "windowSeconds",
+        "scope"
+      ],
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "windowSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "scope": {
+          "$ref": "#/$defs/rateLimitScope"
+        }
+      }
+    },
+    "cachePolicy": {
+      "enum": [
+        "no-store",
+        "private",
+        "public"
+      ]
+    },
+    "cacheBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "maxAgeSeconds",
+        "etag"
+      ],
+      "properties": {
+        "policy": {
+          "$ref": "#/$defs/cachePolicy"
+        },
+        "maxAgeSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 604800
+        },
+        "etag": {
+          "type": "boolean"
+        }
+      }
+    },
+    "apiVersionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "in",
+        "name"
+      ],
+      "properties": {
+        "in": {
+          "enum": [
+            "path",
+            "header"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/safeToken"
+        }
+      }
+    },
+    "capabilityKind": {
+      "enum": [
+        "streaming",
+        "upload",
+        "download"
+      ]
+    },
+    "capabilitySupport": {
+      "enum": [
+        "partial",
+        "full"
+      ]
+    },
+    "capabilityDetail": {
+      "enum": [
+        "sse",
+        "chunked",
+        "ws",
+        "multipart",
+        "binary"
+      ]
+    },
+    "capabilityDecl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability",
+        "minimumSupport",
+        "detail"
+      ],
+      "properties": {
+        "capability": {
+          "$ref": "#/$defs/capabilityKind"
+        },
+        "minimumSupport": {
+          "$ref": "#/$defs/capabilitySupport"
+        },
+        "detail": {
+          "$ref": "#/$defs/capabilityDetail"
+        }
+      }
+    },
+    "endpointBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "endpoint",
+        "success",
+        "errorDefaults"
+      ],
+      "properties": {
+        "endpoint": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "operationId": {
+          "$ref": "#/$defs/operationId"
+        },
+        "tags": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/safeToken"
+          }
+        },
+        "summary": {
+          "$ref": "#/$defs/safeText"
+        },
+        "params": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/paramBinding"
+          }
+        },
+        "body": {
+          "$ref": "#/$defs/bodyBinding"
+        },
+        "success": {
+          "$ref": "#/$defs/successBinding"
+        },
+        "errors": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/errorEntry"
+          }
+        },
+        "errorDefaults": {
+          "$ref": "#/$defs/errorDefaults"
+        },
+        "auth": {
+          "$ref": "#/$defs/authBinding"
+        },
+        "idempotency": {
+          "$ref": "#/$defs/idempotencyBinding"
+        },
+        "correlation": {
+          "$ref": "#/$defs/correlationBinding"
+        },
+        "pagination": {
+          "$ref": "#/$defs/paginationBinding"
+        },
+        "rateLimit": {
+          "$ref": "#/$defs/rateLimitBinding"
+        },
+        "cache": {
+          "$ref": "#/$defs/cacheBinding"
+        },
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersionBinding"
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/capabilityDecl"
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        }
+      }
+    }
+  }
+}

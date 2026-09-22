@@ -1,11 +1,12 @@
-// One-off issue #85 reserve regeneration recipe. Repeats the accepted
+// One-off issues #85 and #70 reserve regeneration recipe. Repeats the accepted
 // #48 reserve meaning for the 0.4.0 candidate: asserts the freshly
 // built binary, regenerates the contract-only lock golden plus the two
 // digest constants and the orchestration receipts, all inside new
 // external disposable directories. Run only during authorized
 // implementation, from the repository root. At the reserve stage the
-// target-protocol contract is still 0.3.2; only the nfr contract
-// family and the diagnostic-registry successor ship at 0.4.0.
+// target-protocol contract is still 0.3.2; the nfr contract
+// family, the transport-http family, and the diagnostic-registry
+// successor ship at 0.4.0.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';

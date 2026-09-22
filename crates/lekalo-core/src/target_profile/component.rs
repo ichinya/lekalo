@@ -270,11 +270,19 @@ const DEFINITIONS: &[ComponentDefinition] = &[
         definition_version: COMPONENTS_DEFINITION_VERSION,
         provides: &[
             ProvidedCapability {
+                id: "transport.download",
+                support: Support::Partial,
+            },
+            ProvidedCapability {
                 id: "transport.http",
                 support: Support::Full,
             },
             ProvidedCapability {
                 id: "transport.streaming",
+                support: Support::Partial,
+            },
+            ProvidedCapability {
+                id: "transport.upload",
                 support: Support::Partial,
             },
         ],
