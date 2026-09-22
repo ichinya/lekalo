@@ -4980,7 +4980,7 @@
       "allowed_fix_ids": [],
       "lifecycle": "active"
     },
-    {
+   {
       "id": "scenario.assertion-failed",
       "code": "LEK-SCN-001",
       "category": "semantic",
@@ -5101,6 +5101,30 @@
       "lifecycle": "active"
     },
     {
+      "id": "scenario.ir-ref-mismatch",
+      "code": "LEK-SCN-012",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.ir-ref-mismatch",
+      "default_message": "A scenario irRef digest disagrees with the compiled IR evidence it names.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scenario",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+     {
       "id": "scenario.operation-unresolved",
       "code": "LEK-SCN-006",
       "category": "semantic",
