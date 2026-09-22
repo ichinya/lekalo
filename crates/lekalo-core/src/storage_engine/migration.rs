@@ -1894,9 +1894,31 @@ fn order_drops_last(steps: &mut [Step]) {
     let ranks: Vec<usize> = (0..steps.len()).map(|index| rank(index, steps)).collect();
     let mut order: Vec<usize> = (0..steps.len()).collect();
     order.sort_by_key(|&index| ranks[index]);
+    // The permutation is explicit, so every step's `requires` —
+    // captured as 1-based positions at push time, before the sort — is
+    // remapped to the reordered positions. Without the remap, a plan
+    // whose unpaired drops moved past a wired step would publish edges
+    // naming the wrong steps (including self-loops), and the plan
+    // document is a contract artifact consumers schedule by.
+    let new_position: Vec<usize> = {
+        let mut inverse = vec![0usize; steps.len()];
+        for (new, &old) in order.iter().enumerate() {
+            inverse[old] = new;
+        }
+        inverse
+    };
     let reordered: Vec<Step> = order
         .into_iter()
-        .map(|index| steps[index].clone())
+        .map(|index| {
+            let mut step = steps[index].clone();
+            step.requires = step
+                .requires
+                .iter()
+                .map(|&dep| new_position[dep - 1] + 1)
+                .collect();
+            step.requires.sort_unstable();
+            step
+        })
         .collect();
     steps.clone_from_slice(&reordered);
 }
@@ -2072,5 +2094,92 @@ mod tests {
             vec!["create_extension", "drop_check", "add_check", "drop_column",],
             "the paired drop stays in place ahead of the unpaired drops"
         );
+    }
+
+    #[test]
+    fn requires_edges_follow_the_reordered_steps() {
+        // Every wired edge is captured as a pre-sort position; the
+        // ordering pass must remap it through the permutation. Here a
+        // paired drop (its object name a later step re-creates) is
+        // wired to its re-add, and an unpaired drop_column and a
+        // drop_table land behind both: the sort moves the wired drop's
+        // step position, and its re-add's edge must follow it to the
+        // new position — never name the step that happens to hold the
+        // old position (a self-loop before the fix).
+        let mut steps = vec![
+            step("create_extension"),
+            step("drop_table"),
+            step("create_table"),
+            step("drop_column"),
+        ];
+        steps[1].statement = "DROP TABLE \"task_tag\";".to_owned();
+        steps[2].statement = "CREATE TABLE \"task_tag\" (\"task_id\" uuid NOT NULL);".to_owned();
+        steps[2].requires = vec![2];
+        steps[2].risk = DataRisk::None;
+        steps[3].statement = "ALTER TABLE \"task\" DROP COLUMN \"note\";".to_owned();
+        // A drop_table naming an object a later step re-creates pairs,
+        // so both stay at rank 0 in emission order.
+        order_drops_last(&mut steps);
+        let kinds: Vec<&str> = steps.iter().map(|step| step.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                "create_extension",
+                "drop_table",
+                "create_table",
+                "drop_column"
+            ],
+            "the paired drop/re-create keep their order"
+        );
+        assert_eq!(
+            steps[2].requires,
+            &[2],
+            "the re-create still names the drop"
+        );
+        // Now an unpaired drop_column emitted before a wired pair: the
+        // column drop moves behind, and the wired edge must track its
+        // drop's new position.
+        let mut steps = vec![
+            step("create_extension"),
+            step("drop_column"),
+            step("drop_constraint"),
+            step("add_primary_key"),
+        ];
+        steps[1].statement = "ALTER TABLE \"task\" DROP COLUMN \"note\";".to_owned();
+        steps[2].statement = "ALTER TABLE \"tag\" DROP CONSTRAINT \"pk_tag\";".to_owned();
+        steps[3].statement =
+            "ALTER TABLE \"tag\" ADD CONSTRAINT \"pk_tag\" PRIMARY KEY (\"label\");".to_owned();
+        steps[3].requires = vec![3];
+        steps[3].risk = DataRisk::None;
+        order_drops_last(&mut steps);
+        let kinds: Vec<&str> = steps.iter().map(|step| step.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                "create_extension",
+                "drop_constraint",
+                "add_primary_key",
+                "drop_column",
+            ],
+            "the unpaired column drop sorts behind the wired pair"
+        );
+        // Before the fix, the add held position 3 wired to 3 — a
+        // self-loop after any shift. The remap names the drop's actual
+        // new position.
+        assert_eq!(
+            steps[2].requires,
+            &[2],
+            "the add follows its drop through the permutation"
+        );
+        // No step depends on itself after the remap.
+        for (position, step) in steps.iter().enumerate() {
+            assert!(
+                !step.requires.contains(&(position + 1)),
+                "step {} at position {} must not depend on itself: {:?}",
+                step.kind,
+                position + 1,
+                step.requires
+            );
+        }
     }
 }
