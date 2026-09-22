@@ -235,6 +235,17 @@ impl SinkKind {
                 | Self::Export
         )
     }
+
+    /// Whether the sink is a gated surface: the plan §3.2 sinks whose
+    /// destination, approval, and consent rules are evaluated by the
+    /// analyzer (external-call, publication, public-endpoint response,
+    /// export, cache).
+    pub const fn is_gated(self) -> bool {
+        matches!(
+            self,
+            Self::ExternalCall | Self::Publication | Self::CacheWrite | Self::Export
+        )
+    }
 }
 
 impl Serialize for SinkKind {

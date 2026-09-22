@@ -14,7 +14,7 @@
 //! report is derived: its bytes are a pure function of the exact
 //! input digests and the pinned compilation, with no wall-clock input.
 
-use crate::classification::policy::{PolicyAttachment, SinkName};
+use crate::classification::policy::{DestinationKind, PolicyAttachment, SinkName};
 use crate::classification::resolve::{Resolution, ResolvedKind};
 use crate::classification::types::{DataKind, SubjectPath};
 use crate::diagnostics::DiagnosticSet;
@@ -153,7 +153,7 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
             }
         };
         let tenant_relation = tenant_relation_of(inputs, &subject, kind);
-        let gate = gate_outcome(inputs, &kind, sink_kind, confidence, resolved);
+        let gate = gate_outcome(inputs, &subject, &kind, sink_kind, confidence, resolved);
         let gate_wire = gate.as_ref().map(|outcome| Gate {
             required: outcome.required,
             satisfied: outcome.satisfied,
@@ -401,12 +401,20 @@ fn sink_symbol(edge: &crate::effects::EffectEdge) -> String {
     edge.key().operation().semantic_id().to_owned()
 }
 
-/// The closed sink kind of one effect-kind key.
+/// The closed sink kind of one effect-kind key: every declared
+/// effect-kind key maps to its honest sink kind — never a silent
+/// collapse into `storage-write`.
 fn sink_kind_of(kind_key: &str) -> SinkKind {
     match kind_key {
         "read" => SinkKind::EndpointResponse,
-        "create" | "update" | "delete" => SinkKind::StorageWrite,
+        "create" | "update" | "delete" | "write-field" => SinkKind::StorageWrite,
         "emit-event" => SinkKind::EventPublish,
+        "enqueue-job" => SinkKind::ExternalCall,
+        "external-call" => SinkKind::ExternalCall,
+        "cache-read" | "cache-write" | "cache-invalidate" => SinkKind::CacheWrite,
+        "publish-output" => SinkKind::Publication,
+        "audit-log" => SinkKind::Log,
+        "transaction-boundary" => SinkKind::StorageWrite,
         _ => SinkKind::StorageWrite,
     }
 }
@@ -462,19 +470,21 @@ fn tenant_relation_of(
     }
 }
 
-/// The gate decision for one flow to one sink.
+/// The gate decision for one flow to one sink. Gated sinks —
+/// external-call, publication, public-endpoint response, export, and
+/// cache — evaluate the plan §3.2 rules: the kind's policy row must
+/// declare a destination that accepts the sink (missing-destination),
+/// consent-bearing kinds require an approval record (missing-approval),
+/// and a destination the kind never declares is forbidden
+/// (destination-forbidden). Policy sinks evaluate their ceilings.
 fn gate_outcome(
     inputs: &Inputs<'_>,
+    subject: &SubjectPath,
     kind: &DataKind,
     sink_kind: SinkKind,
     confidence: Confidence,
     resolved: ResolvedKind,
 ) -> Option<GateOutcome> {
-    // Gated sinks: external-call, publication, public-endpoint
-    // response, export, cache. The declared graph carries storage,
-    // event, and read edges; the extended-effects gates are evaluated
-    // at the validation hook with the parsed contracts. Here the
-    // ceiling and confidence rules apply to every sink.
     if resolved == ResolvedKind::Unclassified {
         return Some(GateOutcome {
             required: true,
@@ -505,6 +515,50 @@ fn gate_outcome(
             reason: GateReason::DestinationDeclared,
         });
     }
+    if sink_kind.is_gated() {
+        // The destination the sink consumes (plan §3.2) and the kind's
+        // declared destination set.
+        let Some(kind_rule) = inputs.policy.rule(*kind) else {
+            return Some(GateOutcome {
+                required: true,
+                satisfied: false,
+                reason: GateReason::UnknownFlow,
+            });
+        };
+        let declared: Vec<DestinationKind> = kind_rule.destinations().to_vec();
+        let required_destination = gated_destination_of(sink_kind);
+        match required_destination {
+            None => {
+                return Some(GateOutcome {
+                    required: true,
+                    satisfied: false,
+                    reason: GateReason::MissingDestination,
+                });
+            }
+            Some(destination) if !declared.contains(&destination) => {
+                return Some(GateOutcome {
+                    required: true,
+                    satisfied: false,
+                    reason: GateReason::DestinationForbidden,
+                });
+            }
+            _ => {}
+        }
+        // Consent-bearing kinds require an approval record; grants are
+        // structural until #26 wires review verification.
+        if kind_rule.consent_required() && inputs.grants_of(subject).is_empty() {
+            return Some(GateOutcome {
+                required: true,
+                satisfied: false,
+                reason: GateReason::MissingApproval,
+            });
+        }
+        return Some(GateOutcome {
+            required: true,
+            satisfied: true,
+            reason: GateReason::DestinationDeclared,
+        });
+    }
     Some(GateOutcome {
         required: false,
         satisfied: true,
@@ -512,11 +566,56 @@ fn gate_outcome(
     })
 }
 
+/// The policy destination a gated sink consumes.
+fn gated_destination_of(sink_kind: SinkKind) -> Option<DestinationKind> {
+    match sink_kind {
+        SinkKind::ExternalCall => Some(DestinationKind::InternalService),
+        SinkKind::Publication => Some(DestinationKind::MessageBus),
+        SinkKind::CacheWrite => Some(DestinationKind::InternalService),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod sink_kind_tests {
+    use super::super::types::SinkKind;
+    use super::sink_kind_of;
+
+    /// Every declared effect-kind key maps to its honest sink kind:
+    /// gated kinds survive, they never collapse into storage-write
+    /// (the review's F-5 dead-machinery finding).
+    #[test]
+    fn every_effect_kind_maps_to_its_honest_sink_kind() {
+        assert_eq!(sink_kind_of("read"), SinkKind::EndpointResponse);
+        assert_eq!(sink_kind_of("create"), SinkKind::StorageWrite);
+        assert_eq!(sink_kind_of("update"), SinkKind::StorageWrite);
+        assert_eq!(sink_kind_of("delete"), SinkKind::StorageWrite);
+        assert_eq!(sink_kind_of("write-field"), SinkKind::StorageWrite);
+        assert_eq!(sink_kind_of("emit-event"), SinkKind::EventPublish);
+        assert_eq!(sink_kind_of("external-call"), SinkKind::ExternalCall);
+        assert_eq!(sink_kind_of("enqueue-job"), SinkKind::ExternalCall);
+        assert_eq!(sink_kind_of("publish-output"), SinkKind::Publication);
+        assert_eq!(sink_kind_of("audit-log"), SinkKind::Log);
+        assert_eq!(sink_kind_of("cache-read"), SinkKind::CacheWrite);
+        assert_eq!(sink_kind_of("cache-write"), SinkKind::CacheWrite);
+        assert_eq!(sink_kind_of("cache-invalidate"), SinkKind::CacheWrite);
+        // The closed vocabulary stays total: an unknown key fails
+        // closed into the conservative default rather than panicking.
+        assert_eq!(sink_kind_of("something-else"), SinkKind::StorageWrite);
+    }
+}
+
 impl Inputs<'_> {
     /// Whether the declared graph is the only input (observed sections
     /// present would set this false before analysis).
     const fn inputs_declared_complete(&self) -> bool {
         true
+    }
+
+    /// The declared declassification grants of one subject (the
+    /// approval records the consent rule consults).
+    fn grants_of(&self, subject: &SubjectPath) -> &[crate::classification::Declassification] {
+        self.classification.grants(subject)
     }
 }
 
