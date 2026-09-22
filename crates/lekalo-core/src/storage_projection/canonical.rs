@@ -561,6 +561,7 @@ fn derived_table_payload(table: &super::derivation::DerivedTable) -> String {
                     .collect::<Vec<String>>(),
             ),
         ),
+        ("collation", table.collation.as_deref().map(string)),
     ])
 }
 

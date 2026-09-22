@@ -202,12 +202,22 @@ pub struct DerivedTable {
     pub(crate) foreign_keys: Vec<DerivedForeignKey>,
     pub(crate) indexes: Vec<super::projection::Index>,
     pub(crate) polymorphics: Vec<DerivedPolymorphic>,
+    pub(crate) collation: Option<String>,
 }
 
 impl DerivedTable {
     /// The mapped entity key.
     pub fn entity(&self) -> &EntityKey {
         &self.entity
+    }
+
+    /// The declared table collation, when declared. The projection's
+    /// `textDefaults` collation is the declared default for textual
+    /// columns without their own table member — surfaced so the
+    /// derived rendering carries the collation-sensitive uniqueness
+    /// evidence instead of dropping it (round-2 review F-R2-1).
+    pub fn collation(&self) -> Option<&str> {
+        self.collation.as_deref()
     }
 
     /// The table name.
@@ -589,6 +599,15 @@ fn derive_table(
         foreign_keys,
         indexes,
         polymorphics,
+        collation: table
+            .collation()
+            .map(|collation| collation.to_owned())
+            .or_else(|| {
+                projection
+                    .text_defaults()
+                    .map(|(_, collation)| collation.to_owned())
+            })
+            .filter(|_| projection.namespace().is_mysql_family()),
     })
 }
 
