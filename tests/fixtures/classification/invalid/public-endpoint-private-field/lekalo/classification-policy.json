@@ -3,8 +3,8 @@
   "identity": "dev.lekalo.classification-policy@0.4.0",
   "attachmentRevision": "1.0.0",
   "projectId": "planner",
-  "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:0d6fdbdaab241360ce22cde59b2ff2ab89e2c9660e5428e2ed51254ffcb3803b"},
-  "irRef": {"irVersion": "0.2.16", "digest": "sha256:5b86b430794000b1bbbe5c6bbc13091c81a435062f45b57dd24a3fb3f8f3b9ec"},
+  "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:c3f4899b06d7277178f1f022cb9dd121765217b2cd1532ddd6277417fffaa0a5"},
+  "irRef": {"irVersion": "0.2.16", "digest": "sha256:5401d9af129a0e6072c503f24dfa16d254069bae1efb2a7b71e56e488a41405e"},
   "kinds": [
     {
       "kind": "personal",

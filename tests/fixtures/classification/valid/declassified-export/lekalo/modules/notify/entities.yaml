@@ -16,6 +16,9 @@ definitions:
     version: 1
     description: "A notification-reachable user"
     fields:
+      - name: tenant
+        type: "notify.text"
+        required: true
       - name: user_id
         type: "notify.user_id"
         required: true

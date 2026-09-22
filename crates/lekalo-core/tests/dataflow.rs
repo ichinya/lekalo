@@ -25,7 +25,7 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn planner_project() -> lekalo_core::ir::CompiledProject {
+fn planner_project() -> lekalo_core::ir::Compilation {
     let _guard = CWD_LOCK.lock().expect("cwd lock");
     let original = std::env::current_dir().expect("current dir");
     std::env::set_current_dir(workspace_root()).expect("enter workspace root");
@@ -41,7 +41,7 @@ fn planner_project() -> lekalo_core::ir::CompiledProject {
         Err(failure) => panic!("IR failed: {}", failure.into_result().to_json_string()),
     };
     std::env::set_current_dir(original).expect("restore cwd");
-    compilation.project
+    compilation
 }
 
 /// The classification covering every planner/notify entity, event, and
@@ -128,12 +128,13 @@ fn digests() -> (Sha256Digest, Sha256Digest) {
 
 #[test]
 fn the_analyzer_projects_flows_and_the_report_is_stable() {
-    let project = planner_project();
+    let compilation = planner_project();
+    let project = &compilation.project;
     let classification = Attachment::parse(CLASSIFICATION.as_bytes()).expect("classification");
     let policy = PolicyAttachment::parse(POLICY.as_bytes()).expect("policy");
     let resolution = Resolution::build(&classification);
     let graph =
-        build_with_classification(&project, Some(&resolution)).expect("stamped graph builds");
+        build_with_classification(project, Some(&resolution)).expect("stamped graph builds");
     let (model_digest, ir_digest) = digests();
     let project_id = SemanticId::parse_root("planner").expect("project id");
 
@@ -151,6 +152,7 @@ fn the_analyzer_projects_flows_and_the_report_is_stable() {
         model_ref: ("0.2.16", &model_digest),
         ir_ref: ("0.2.16", &ir_digest),
         graph: &graph,
+        compilation: &compilation,
         classification: &resolution,
         classification_ref: &classification_ref,
         policy: &policy,
@@ -193,7 +195,8 @@ fn the_analyzer_projects_flows_and_the_report_is_stable() {
 
 #[test]
 fn export_sinks_above_their_ceiling_are_findings() {
-    let project = planner_project();
+    let compilation = planner_project();
+    let project = &compilation.project;
     let classification = Attachment::parse(CLASSIFICATION.as_bytes()).expect("classification");
     // The same policy but with an `export` ceiling below `internal`
     // would flag storage flows; here the strict ceilings accept the
@@ -201,7 +204,7 @@ fn export_sinks_above_their_ceiling_are_findings() {
     let policy = PolicyAttachment::parse(POLICY.as_bytes()).expect("policy");
     let resolution = Resolution::build(&classification);
     let graph =
-        build_with_classification(&project, Some(&resolution)).expect("stamped graph builds");
+        build_with_classification(project, Some(&resolution)).expect("stamped graph builds");
     let (model_digest, ir_digest) = digests();
     let project_id = SemanticId::parse_root("planner").expect("project id");
     let classification_ref = Sha256Digest::parse(
@@ -216,6 +219,7 @@ fn export_sinks_above_their_ceiling_are_findings() {
         model_ref: ("0.2.16", &model_digest),
         ir_ref: ("0.2.16", &ir_digest),
         graph: &graph,
+        compilation: &compilation,
         classification: &resolution,
         classification_ref: &classification_ref,
         policy: &policy,

@@ -41,6 +41,9 @@ pub struct Inputs<'a> {
     pub ir_ref: (&'a str, &'a Sha256Digest),
     /// The effect graph (declared plus detected edges).
     pub graph: &'a EffectGraph,
+    /// The bound compilation (the tenant-key join evidence of the
+    /// tenant-relation projection).
+    pub compilation: &'a crate::ir::Compilation,
     /// The classification resolution.
     pub classification: &'a Resolution,
     /// The canonical digest of the classification attachment.
@@ -160,7 +163,7 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
                 (Provenance::Observed, Confidence::Unknown)
             }
         };
-        let tenant_relation = tenant_relation_of(inputs, &subject, kind);
+        let tenant_relation = tenant_relation_of(inputs, &subject, kind, sink_kind);
         let gate = gate_outcome(inputs, &subject, &kind, sink_kind, confidence, resolved);
         let gate_wire = gate.as_ref().map(|outcome| Gate {
             required: outcome.required,
@@ -256,7 +259,6 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
     // effects are never invisible to the analysis. They project flows
     // with `observed` provenance, degraded confidence, and incomplete
     // project inputs (plan §4.3: observed never promotes to canonical).
-    let mut ordinal = ordinal;
     for edge in inputs.graph.detected() {
         let resource = edge.key().subject().resource().as_str();
         let subject = match SubjectPath::parse(resource) {
@@ -283,7 +285,7 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
         };
         inputs_complete = false;
         let sink_kind = sink_kind_of(edge.key().kind().key());
-        let tenant_relation = tenant_relation_of(inputs, &subject, kind);
+        let tenant_relation = tenant_relation_of(inputs, &subject, kind, sink_kind);
         let gate = gate_outcome(
             inputs,
             &subject,
@@ -554,24 +556,89 @@ const fn gate_rule_of(reason: GateReason) -> Option<&'static str> {
     }
 }
 
-/// The tenant relation of one subject/kind pair. With no declared
-/// tenant evidence the relation is `unknown` — never silently `same`.
+/// The tenant relation of one subject/kind pair: the join of the IR
+/// entity's declared tenant-key field (the query-model tenancy
+/// declaration shape of plan §4.4) with the kind's policy cross-tenant
+/// mode. With no declared tenant evidence the relation is `unknown` —
+/// never silently `same` (review F-7): no evidence, no assertion of
+/// safety.
 fn tenant_relation_of(
-    _inputs: &Inputs<'_>,
-    _subject: &SubjectPath,
+    inputs: &Inputs<'_>,
+    subject: &SubjectPath,
     kind: DataKind,
+    sink_kind: SinkKind,
 ) -> TenantRelation {
-    // Tenant-crossing detection joins authorization tenant scopes and
-    // query tenant-filter declarations. The classification-level rule
-    // is conservative: tenant-scoped kinds whose path carries no
-    // declared tenant-filter evidence resolve to `unknown`, which the
-    // gate treats as crossing. The plan's §4.4 representative case is
-    // a tenant-scoped kind on a cross-module event path.
-    if kind == DataKind::TenantScoped {
-        TenantRelation::Unknown
-    } else {
-        TenantRelation::Same
+    // Evidence: the source entity declares a tenant key field (the
+    // query-model tenancy shape of plan §4.4), so the record set is
+    // tenant-partitioned and every access carries a tenant scope.
+    let partitioned = inputs
+        .compilation
+        .project
+        .definitions
+        .iter()
+        .any(|definition| {
+            definition.id().as_str() == subject.semantic_id()
+                && matches!(
+                    definition,
+                    crate::ir::Definition::Entity(entity) if has_tenant_key(entity)
+                )
+        });
+    if !partitioned {
+        // No tenant evidence at all: unknown. Never silently `same` —
+        // no evidence, no assertion of safety.
+        return TenantRelation::Unknown;
     }
+    // Tenant-partitioned source. A declared effect on the entity
+    // (storage/event edge of the project's own commands and queries)
+    // executes inside the tenant scope when the kind's policy grants
+    // the `tenant` actor: the relation is provably `same`.
+    let Some(rule) = inputs.policy.rule(kind) else {
+        return TenantRelation::Unknown;
+    };
+    let tenant_scoped_access = matches!(
+        sink_kind,
+        SinkKind::StorageWrite | SinkKind::EndpointResponse | SinkKind::EventPublish
+    );
+    let tenant_actor = rule
+        .readers()
+        .iter()
+        .chain(rule.writers().iter())
+        .any(|actor| actor.dimension() == crate::classification::policy::ScopeDimension::Tenant);
+    if tenant_scoped_access && tenant_actor {
+        return match rule.cross_tenant() {
+            crate::classification::CrossTenantMode::Reviewed => TenantRelation::Same,
+            // Forbidden kinds stay conservative: tenant-scoped storage
+            // and query-response access through a tenant actor is
+            // provable (the project's own commands and queries execute
+            // inside the tenant scope), but any publication-shaped sink
+            // has no sink-actor bindings yet, so its relation stays
+            // unknown — never silently `same`.
+            crate::classification::CrossTenantMode::Forbidden => {
+                if matches!(
+                    sink_kind,
+                    SinkKind::StorageWrite | SinkKind::EndpointResponse
+                ) {
+                    TenantRelation::Same
+                } else {
+                    TenantRelation::Unknown
+                }
+            }
+        };
+    }
+    // Access outside the tenant scope (external/publication sinks):
+    // the relation cannot be derived.
+    TenantRelation::Unknown
+}
+
+/// Whether one entity declares a tenant-key field (the plan §4.4
+/// tenant-filter declaration: the field the tenant filter must
+/// constrain).
+fn has_tenant_key(entity: &crate::ir::EntityDef) -> bool {
+    entity.fields.iter().any(|field| {
+        field.name.as_str() == "tenant_id"
+            || field.name.as_str() == "tenant"
+            || field.name.as_str().ends_with("_tenant_id")
+    })
 }
 
 /// The gate decision for one flow to one sink. Gated sinks —
@@ -808,8 +875,9 @@ pub fn run_report(
     let analysis = analyze(&Inputs {
         project_id: &project_id,
         model_ref: (compilation.project.model_version.as_str(), &model_digest),
-        ir_ref: ("0.2.16", &ir_digest),
+        ir_ref: (crate::ir::VERSION, &ir_digest),
         graph: &graph,
+        compilation,
         classification: resolution,
         classification_ref: &classification_ref,
         policy,
