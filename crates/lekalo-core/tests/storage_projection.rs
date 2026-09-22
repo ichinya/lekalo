@@ -940,6 +940,63 @@ fn mysql_namespace_stays_separate_from_mariadb() {
     assert_eq!(session_no.storage_type(), "bigint");
 }
 
+/// A grammar-legal pk→fk cycle (a primary key naming a foreign-key
+/// column, resolution crossing the self-referencing FK) must refuse
+/// with the typed `cyclic-key-resolution` rule — never overflow the
+/// stack (round-3 review F-1). Both reproductions from the review are
+/// pinned: the self-FK pk cycle, and the cross-table chain where
+/// task_detail's index on task_id resolves into task's self-FK pk.
+#[test]
+fn cyclic_key_resolution_refuses_instead_of_crashing() {
+    // (a) self-FK cycle: task's pk names its own optional_reference FK
+    // column, and an index keys on it.
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("json");
+    for projection in value["projections"].as_array_mut().expect("projections") {
+        if projection["namespace"] == "mysql" {
+            for table in projection["tables"].as_array_mut().expect("tables") {
+                if table["entity"] == "task" {
+                    table["primaryKey"] = serde_json::json!(["parent_task_id"]);
+                    table["indexes"]
+                        .as_array_mut()
+                        .expect("indexes")
+                        .push(serde_json::json!({"columns": ["parent_task_id"], "unique": false}));
+                }
+            }
+        }
+    }
+    let error =
+        StorageProjectionAttachment::from_value(&value).expect_err("a pk→fk cycle must refuse");
+    let rendered = serde_json::to_string(&error).expect("diagnostic json");
+    assert!(
+        rendered.contains("cyclic-key-resolution"),
+        "expected the cyclic refusal, got {rendered}"
+    );
+    // (b) cross-table chain: task_detail's index on task_id resolves
+    // into task's self-FK pk, which resolves back through the same
+    // chain — bounded, refused, no crash.
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("json");
+    for projection in value["projections"].as_array_mut().expect("projections") {
+        if projection["namespace"] == "mysql" {
+            for table in projection["tables"].as_array_mut().expect("tables") {
+                if table["entity"] == "task" {
+                    table["primaryKey"] = serde_json::json!(["parent_task_id"]);
+                }
+                if table["entity"] == "task_detail" {
+                    table["indexes"] =
+                        serde_json::json!([{"columns": ["task_id"], "unique": false}]);
+                }
+            }
+        }
+    }
+    let error = StorageProjectionAttachment::from_value(&value)
+        .expect_err("the cross-table cycle must refuse");
+    let rendered = serde_json::to_string(&error).expect("diagnostic json");
+    assert!(
+        rendered.contains("cyclic-key-resolution"),
+        "expected the cyclic refusal, got {rendered}"
+    );
+}
+
 /// Collation-sensitive uniqueness is visible in the derived surface:
 /// the declared tag table carries its collation evidence, and the
 /// derived unique index over the textual column stays visible with it.

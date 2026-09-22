@@ -19,7 +19,7 @@ use super::projection::{Namespace, Projection};
 use super::relation::{DeleteBehavior, Relation, RelationKind};
 use super::StorageProjectionAttachment;
 use crate::diagnostics::DiagnosticSet;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 /// The semantic self-check over one assembled attachment.
 pub(crate) fn semantic_self_check(
@@ -451,9 +451,21 @@ fn check_index(
             // the declaring namespace: field columns resolve through
             // the same table as the prefix rule (issue #117 review
             // F-3), so a domain string/text field is textual while a
-            // bigint/binary render is refused.
-            let textual = index_column_type(attachment, projection, table, entity, column)
-                .map(|render| super::projection::StorageType::is_textual(render_family(&render)));
+            // bigint/binary render is refused. The resolver is
+            // visited-set bounded: a pk→fk cycle is a typed refusal,
+            // never a stack overflow (round-3 review F-1).
+            let textual = index_column_type(
+                attachment,
+                projection,
+                table,
+                entity,
+                column,
+                &mut BTreeSet::new(),
+            )
+            .map_err(|_| {
+                projection_invalid_subject("cyclic-key-resolution", table.entity().as_str())
+            })?
+            .map(|render| super::projection::StorageType::is_textual(render_family(&render)));
             if textual != Some(true) {
                 return Err(projection_invalid_subject(
                     "fulltext-textual-only",
@@ -468,8 +480,20 @@ fn check_index(
             // column: field columns resolve through the domain type's
             // namespace render, so the prefix rules cover every
             // indexable column instead of only explicitly declared
-            // ones (issue #117 review F-3).
-            let Some(declared) = index_column_type(attachment, projection, table, entity, column)
+            // ones (issue #117 review F-3). The resolver is
+            // visited-set bounded: a grammar-legal pk→fk cycle is a
+            // typed refusal, never a stack overflow (round-3 F-1).
+            let Some(declared) = index_column_type(
+                attachment,
+                projection,
+                table,
+                entity,
+                column,
+                &mut BTreeSet::new(),
+            )
+            .map_err(|_| {
+                projection_invalid_subject("cyclic-key-resolution", table.entity().as_str())
+            })?
             else {
                 continue;
             };
@@ -521,43 +545,54 @@ fn index_column_type(
     table: &super::projection::Table,
     entity: &DomainEntity,
     column: &StorageName,
-) -> Option<String> {
+    visited: &mut BTreeSet<(EntityKey, StorageName)>,
+) -> Result<Option<String>, ()> {
+    // The grammar legally admits pk→fk cycles (a primary key may name
+    // a foreign-key column), so the recursion carries a visited set
+    // of `(entity, column)` pairs: a revisited pair proves a cyclic
+    // resolution chain, reported as the typed `Err` arm — a refusal,
+    // never a stack overflow (round-3 review F-1). `Ok(None)` is the
+    // honest unresolvable case (no declared or derivable family).
+    let identity = (entity.entity_key().clone(), column.clone());
+    if !visited.insert(identity) {
+        return Err(());
+    }
     let namespace = projection.namespace();
     for field in entity.fields() {
         if field.name().as_str() == column.as_str() {
-            return Some(super::derivation::render_type(
+            return Ok(Some(super::derivation::render_type(
                 namespace,
                 field.field_type(),
-            ));
+            )));
         }
     }
     for technical in table.technical_columns() {
         if technical.name() == column {
-            return Some(technical.storage_type().as_str().to_owned());
+            return Ok(Some(technical.storage_type().as_str().to_owned()));
         }
     }
     for generated in table.generated_columns() {
         if generated.name() == column {
-            return Some(
+            return Ok(Some(
                 generated
                     .storage_type()
                     .map(|storage_type| storage_type.as_str().to_owned())
                     .unwrap_or_else(|| namespace.big_integer().to_owned()),
-            );
+            ));
         }
     }
     if let Some((tenant, storage_type)) = table.tenant_key() {
         if tenant == column {
-            return Some(storage_type.as_str().to_owned());
+            return Ok(Some(storage_type.as_str().to_owned()));
         }
     }
     if let Some((created_at, updated_at)) = table.timestamps() {
         if created_at == column || updated_at == column {
-            return Some(namespace.instant().to_owned());
+            return Ok(Some(namespace.instant().to_owned()));
         }
     }
     if table.soft_delete() == Some(column) {
-        return Some(namespace.instant().to_owned());
+        return Ok(Some(namespace.instant().to_owned()));
     }
     // Foreign-key and polymorphic key columns derive from the
     // referenced table's single-column primary key: resolve through
@@ -578,21 +613,23 @@ fn index_column_type(
         let referenced_table = projection
             .tables()
             .iter()
-            .find(|table| table.entity().as_str() == referenced.as_str())?;
+            .find(|table| table.entity().as_str() == referenced.as_str())
+            .ok_or(())?;
         if referenced_table.primary_key().len() != 1 {
-            return None;
+            return Ok(None);
         }
         let primary = &referenced_table.primary_key()[0];
-        let referenced_entity = attachment.entity(referenced)?;
+        let referenced_entity = attachment.entity(referenced).ok_or(())?;
         return index_column_type(
             attachment,
             projection,
             referenced_table,
             referenced_entity,
             primary,
+            visited,
         );
     }
-    None
+    Ok(None)
 }
 
 /// Reduce one namespace render to its base family token:
