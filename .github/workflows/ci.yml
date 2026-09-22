@@ -65,6 +65,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-target-profile-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-requirements-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-nfr-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-classification-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-implementation-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-orchestration-contracts.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
@@ -80,6 +81,7 @@ jobs:
           node scripts/check-privacy.mjs
           node scripts/test-privacy-contracts.mjs
           node scripts/test-privacy-cli.mjs
+          node scripts/test-classification-cli.mjs
           node scripts/test-privacy-coherence.mjs
           node scripts/test-privacy-decisions.mjs
           node scripts/test-privacy-output-schema.mjs
