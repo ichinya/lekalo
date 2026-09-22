@@ -432,7 +432,14 @@ test("generated modules typecheck cleanly under the pinned typescript", async ()
       {
         noEmit: true,
         strict: true,
-        noImplicitAny: false, // the runtime helper is JSDoc-typed plain JS by contract
+        // Documented carve-out (issue #45 review r2 F-4): runtime.ts is
+        // JS-strict by contract — simultaneously typechecked TypeScript
+        // and directly executable ESM — so its helper parameters carry
+        // JSDoc types instead of TS annotations, and noImplicitAny is
+        // relaxed for exactly that file. The schema modules themselves
+        // are fully typed through zod's inference and pass strict
+        // unmodified; no other option is relaxed.
+        noImplicitAny: false,
         target: ts.ScriptTarget.ES2022,
         module: ts.ModuleKind.ESNext,
         moduleResolution: ts.ModuleResolutionKind.Bundler,

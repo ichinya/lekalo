@@ -135,3 +135,10 @@ only for the committed fixture suites, which execute the generated output
 against the pinned runtime and typecheck it with the exact vendored
 TypeScript pin (`tsc` semantics via the compiler API, `--noEmit`, strict —
 see the `zod-emit` suite; see also `THIRD_PARTY_NOTICES.md`).
+
+One documented strict-mode carve-out: `runtime.ts` is JS-strict by
+contract — simultaneously typechecked TypeScript and directly executable
+ESM — so its helper parameters carry JSDoc types rather than TS
+annotations, and the typecheck relaxes `noImplicitAny` for exactly that
+file. The schema modules themselves are fully typed through zod's
+inference and pass strict unmodified; no other option is relaxed.
