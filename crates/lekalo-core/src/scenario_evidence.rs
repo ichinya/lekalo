@@ -1,0 +1,418 @@
+//! Scenario run-record evidence ingest (issue #47, plan S9).
+//!
+//! One scenario run produces one durable `lekalo/scenario-run/v0.4.0`
+//! document in the adjudicated ingest home
+//! (`.lekalo/import/scenario-runs/`), written by the generated test's
+//! reporter. This module is the closed-shape custody for those
+//! documents: bounded parsing over an already-read document, the closed
+//! outcome vocabulary (an `unsupported` row can never roll up as a
+//! pass), and the deterministic summary the verify component reports.
+//!
+//! The module is pure: reading the ingest directory stays with the
+//! caller (the verify pipeline), exactly like every other evidence
+//! ingest in this crate.
+
+use serde_json::Value as Json;
+
+use crate::diagnostics::DiagnosticSet;
+
+/// The exact wire discriminator of the run-record contract.
+pub const SCHEMA_VERSION: &str = "lekalo/scenario-run/v0.4.0";
+
+/// The exact contract identity.
+pub const IDENTITY: &str = "dev.lekalo.scenario-run@0.4.0";
+
+/// The ingest home of the run records (an adjudicated `.lekalo/import`
+/// home, never the protected ir/cache homes).
+pub const INGEST_DIR: &str = ".lekalo/import/scenario-runs";
+
+/// The closed set of top-level members, in canonical byte-sorted order.
+const TOP_LEVEL_KEYS: &[&str] = &[
+    "assertions",
+    "binding_mode",
+    "identity",
+    "profile",
+    "runner",
+    "scenario",
+    "schema_version",
+    "started_by",
+    "test",
+];
+
+/// The closed outcome vocabulary (plan §7). An `unsupported` outcome is
+/// honest absence: it never rolls up as a pass.
+pub const OUTCOMES: &[&str] = &["pass", "fail", "unsupported", "infrastructure", "degraded"];
+
+/// One validated scenario run record.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RunRecord {
+    /// The stable scenario identity.
+    pub scenario_id: String,
+    /// The explicit scenario contract version.
+    pub scenario_version: String,
+    /// The pinned compiled-IR digest the scenario declared.
+    pub ir_digest: String,
+    /// The runner identity and version the run used.
+    pub runner: (String, String),
+    /// The test identity, path, and byte fingerprint of the run.
+    pub test: (String, String, String),
+    /// The binding mode the test was generated/checked under.
+    pub binding_mode: String,
+    /// One bounded outcome row per executed assertion.
+    pub assertions: Vec<AssertionRow>,
+}
+
+/// One assertion outcome row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssertionRow {
+    /// The observed then-step (or null for scenario-level rows).
+    pub step_id: Option<String>,
+    /// The step the assertion observes.
+    pub observes: Option<String>,
+    /// The closed assertion kind (or `scenario`/`given:` rows).
+    pub kind: String,
+    /// The closed outcome.
+    pub outcome: String,
+}
+
+/// The deterministic roll-up of one run record's rows.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RunSummary {
+    /// Rows that passed.
+    pub passed: usize,
+    /// Rows that failed on an assertion.
+    pub failed: usize,
+    /// Rows that recorded an explicit unsupported outcome.
+    pub unsupported: usize,
+    /// Rows that failed on infrastructure.
+    pub infrastructure: usize,
+    /// Rows recorded as degraded.
+    pub degraded: usize,
+}
+
+impl RunSummary {
+    /// Whether every row passed and none was unsupported — the only
+    /// state a run may be counted as covered execution.
+    pub fn all_passed(&self) -> bool {
+        self.passed > 0
+            && self.failed == 0
+            && self.unsupported == 0
+            && self.infrastructure == 0
+            && self.degraded == 0
+    }
+
+    /// Whether any row blocks: an assertion failure or an
+    /// infrastructure failure.
+    pub fn has_blocking_failure(&self) -> bool {
+        self.failed > 0 || self.infrastructure > 0
+    }
+}
+
+impl RunRecord {
+    /// The deterministic roll-up of this record's rows.
+    pub fn summary(&self) -> RunSummary {
+        let mut summary = RunSummary::default();
+        for row in &self.assertions {
+            match row.outcome.as_str() {
+                "pass" => summary.passed += 1,
+                "fail" => summary.failed += 1,
+                "unsupported" => summary.unsupported += 1,
+                "infrastructure" => summary.infrastructure += 1,
+                "degraded" => summary.degraded += 1,
+                _ => {}
+            }
+        }
+        summary
+    }
+
+    /// Normalize one decoded JSON document into a validated run record,
+    /// or return the typed rejection set. Pure.
+    pub fn from_value(json: &Json) -> Result<RunRecord, DiagnosticSet> {
+        let object = json.as_object().ok_or_else(|| run_invalid("shape"))?;
+        let keys: Vec<&str> = object.keys().map(String::as_str).collect();
+        if keys != TOP_LEVEL_KEYS {
+            return Err(run_invalid(if object.len() == TOP_LEVEL_KEYS.len() {
+                "member-order"
+            } else {
+                "member-set"
+            }));
+        }
+        if object.get("schema_version").and_then(Json::as_str) != Some(SCHEMA_VERSION) {
+            return Err(run_invalid("schema-version"));
+        }
+        if object.get("identity").and_then(Json::as_str) != Some(IDENTITY) {
+            return Err(run_invalid("identity"));
+        }
+        let scenario = object
+            .get("scenario")
+            .and_then(Json::as_object)
+            .ok_or_else(|| run_invalid("scenario-shape"))?;
+        if scenario.keys().map(String::as_str).collect::<Vec<&str>>()
+            != ["id", "ir_digest", "operations", "symbols", "version"]
+        {
+            return Err(run_invalid("scenario-members"));
+        }
+        let scenario_id = bounded_token(scenario.get("id"), "scenario-id")?;
+        let scenario_version = bounded_token(scenario.get("version"), "scenario-version")?;
+        let ir_digest = scenario
+            .get("ir_digest")
+            .and_then(Json::as_str)
+            .ok_or_else(|| run_invalid("ir-digest"))?;
+        if !crate::lockfile::types::Sha256Digest::parse(ir_digest).is_ok() {
+            return Err(run_invalid("ir-digest"));
+        }
+        for member in ["operations", "symbols"] {
+            let items = scenario
+                .get(member)
+                .and_then(Json::as_array)
+                .ok_or_else(|| run_invalid("scenario-lists"))?;
+            if items.len() > 64 {
+                return Err(run_invalid("scenario-lists"));
+            }
+            for item in items {
+                if item.as_str().map(bounded_token_text).is_none() {
+                    return Err(run_invalid("scenario-lists"));
+                }
+            }
+        }
+        let runner = object
+            .get("runner")
+            .and_then(Json::as_object)
+            .ok_or_else(|| run_invalid("runner-shape"))?;
+        if runner.keys().map(String::as_str).collect::<Vec<&str>>() != ["id", "version"] {
+            return Err(run_invalid("runner-members"));
+        }
+        let runner_id = bounded_token(runner.get("id"), "runner-id")?;
+        let runner_version = bounded_token(runner.get("version"), "runner-version")?;
+        let profile = object
+            .get("profile")
+            .ok_or_else(|| run_invalid("profile"))?;
+        match profile {
+            Json::Null => {}
+            Json::Object(map) => {
+                if map.keys().map(String::as_str).collect::<Vec<&str>>()
+                    != ["digest", "id", "version"]
+                {
+                    return Err(run_invalid("profile-members"));
+                }
+            }
+            _ => return Err(run_invalid("profile")),
+        }
+        let test = object
+            .get("test")
+            .and_then(Json::as_object)
+            .ok_or_else(|| run_invalid("test-shape"))?;
+        if test.keys().map(String::as_str).collect::<Vec<&str>>() != ["fingerprint", "id", "path"] {
+            return Err(run_invalid("test-members"));
+        }
+        let test_id = bounded_token(test.get("id"), "test-id")?;
+        let test_path = bounded_token(test.get("path"), "test-path")?;
+        let test_fingerprint = test
+            .get("fingerprint")
+            .and_then(Json::as_str)
+            .ok_or_else(|| run_invalid("test-fingerprint"))?;
+        if !crate::lockfile::types::Sha256Digest::parse(test_fingerprint).is_ok() {
+            return Err(run_invalid("test-fingerprint"));
+        }
+        let binding_mode = bounded_token(object.get("binding_mode"), "binding-mode")?;
+        if !matches!(
+            binding_mode.as_str(),
+            "generated" | "scaffolded" | "checked"
+        ) {
+            return Err(run_invalid("binding-mode"));
+        }
+        bounded_token(object.get("started_by"), "started-by")?;
+        let assertions = object
+            .get("assertions")
+            .and_then(Json::as_array)
+            .ok_or_else(|| run_invalid("assertions-shape"))?;
+        if assertions.is_empty() || assertions.len() > 1024 {
+            return Err(run_invalid("assertions-bound"));
+        }
+        let mut rows = Vec::with_capacity(assertions.len());
+        for row in assertions {
+            let row = row
+                .as_object()
+                .ok_or_else(|| run_invalid("assertion-shape"))?;
+            if row.keys().any(|key| {
+                !["detail", "kind", "observes", "outcome", "step_id"].contains(&key.as_str())
+            }) {
+                return Err(run_invalid("assertion-members"));
+            }
+            let kind = bounded_token(row.get("kind"), "assertion-kind")?;
+            let outcome = bounded_token(row.get("outcome"), "assertion-outcome")?;
+            if !OUTCOMES.contains(&outcome.as_str()) {
+                return Err(run_invalid("assertion-outcome"));
+            }
+            let optional_token = |key: &str| -> Result<Option<String>, DiagnosticSet> {
+                match row.get(key) {
+                    None | Some(Json::Null) => Ok(None),
+                    Some(value) => Ok(Some(bounded_token(Some(value), "assertion-step")?)),
+                }
+            };
+            rows.push(AssertionRow {
+                step_id: optional_token("step_id")?,
+                observes: optional_token("observes")?,
+                kind,
+                outcome,
+            });
+        }
+        Ok(RunRecord {
+            scenario_id,
+            scenario_version,
+            ir_digest: ir_digest.to_owned(),
+            runner: (runner_id, runner_version),
+            test: (test_id, test_path, test_fingerprint.to_owned()),
+            binding_mode,
+            assertions: rows,
+        })
+    }
+}
+
+fn bounded_token(value: Option<&Json>, detail: &'static str) -> Result<String, DiagnosticSet> {
+    let text = value
+        .and_then(Json::as_str)
+        .ok_or_else(|| run_invalid(detail))?;
+    bounded_token_text(text);
+    if text.is_empty() || text.chars().count() > 256 || text.chars().any(char::is_control) {
+        return Err(run_invalid(detail));
+    }
+    Ok(text.to_owned())
+}
+
+fn bounded_token_text(text: &str) -> bool {
+    !text.is_empty() && text.chars().count() <= 256 && !text.chars().any(char::is_control)
+}
+
+/// The fatal set for one run-record violation: the registered
+/// `scenario.run-record-invalid` diagnostic with a fixed class token.
+fn run_invalid(detail: &'static str) -> DiagnosticSet {
+    let mut data = crate::diagnostics::DataObject::new();
+    data.insert(
+        "detail".to_owned(),
+        crate::scenario::diagnostic::token(detail),
+    );
+    match crate::scenario::diagnostic::one("scenario.run-record-invalid", None, data) {
+        Ok(diagnostic) => crate::scenario::diagnostic::invalid_set(vec![diagnostic]),
+        Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn valid() -> Json {
+        // Canonical form: byte-sorted member order at every level, exactly
+        // like the reporter's canonical writer emits.
+        json!({
+            "assertions": [
+                { "kind": "result", "observes": "run", "outcome": "pass", "step_id": "output" },
+                { "kind": "entity_state", "observes": "run", "outcome": "pass", "step_id": "state" }
+            ],
+            "binding_mode": "generated",
+            "identity": "dev.lekalo.scenario-run@0.4.0",
+            "profile": null,
+            "runner": { "id": "node:test", "version": "24.13.0" },
+            "schema_version": "lekalo/scenario-run/v0.4.0",
+            "scenario": {
+                "id": "planner.scenario.focus_happy",
+                "ir_digest": format!("sha256:{}", "1".repeat(64)),
+                "operations": ["planner.focus_task"],
+                "symbols": [],
+                "version": "0.2.16"
+            },
+            "started_by": "lekalo-scenario-harness",
+            "test": {
+                "fingerprint": format!("sha256:{}", "2".repeat(64)),
+                "id": "planner.scenario.focus_happy",
+                "path": "src/generated/node-typescript/scenario-tests/planner/planner.scenario.focus_happy.test.ts"
+            }
+        })
+    }
+
+    #[test]
+    fn parses_a_valid_record_and_rolls_up() {
+        let record = RunRecord::from_value(&valid()).expect("valid record");
+        assert_eq!(record.scenario_id, "planner.scenario.focus_happy");
+        assert_eq!(
+            record.runner,
+            ("node:test".to_owned(), "24.13.0".to_owned())
+        );
+        assert_eq!(record.binding_mode, "generated");
+        let summary = record.summary();
+        assert_eq!(summary.passed, 2);
+        assert!(summary.all_passed());
+        assert!(!summary.has_blocking_failure());
+    }
+
+    #[test]
+    fn unsupported_rows_never_roll_up_as_passed() {
+        let mut document = valid();
+        document["assertions"][0]["outcome"] = json!("unsupported");
+        let record = RunRecord::from_value(&document).expect("valid record");
+        let summary = record.summary();
+        assert_eq!(summary.unsupported, 1);
+        assert!(!summary.all_passed(), "unsupported is never a pass");
+        assert!(!summary.has_blocking_failure());
+    }
+
+    #[test]
+    fn failing_and_infrastructure_rows_block() {
+        let mut document = valid();
+        document["assertions"][0]["outcome"] = json!("fail");
+        assert!(RunRecord::from_value(&document)
+            .expect("valid")
+            .summary()
+            .has_blocking_failure());
+        document["assertions"][0]["outcome"] = json!("infrastructure");
+        assert!(RunRecord::from_value(&document)
+            .expect("valid")
+            .summary()
+            .has_blocking_failure());
+    }
+
+    #[test]
+    fn unknown_members_outcomes_and_digests_are_refused() {
+        let mutated = |mutate: &dyn Fn(&mut Json)| {
+            let mut document = valid();
+            mutate(&mut document);
+            assert!(RunRecord::from_value(&document).is_err());
+        };
+        mutated(&|d| {
+            d["extra"] = json!(1);
+        });
+        mutated(&|d| {
+            d["schema_version"] = json!("lekalo/scenario-run/v0.2.16");
+        });
+        mutated(&|d| {
+            d["identity"] = json!("dev.lekalo.scenario-run@0.2.16");
+        });
+        mutated(&|d| {
+            d["assertions"][0]["outcome"] = json!("skipped");
+        });
+        mutated(&|d| {
+            d["scenario"]["ir_digest"] = json!("sha256:short");
+        });
+        mutated(&|d| {
+            d["test"]["fingerprint"] = json!("nothash");
+        });
+        mutated(&|d| {
+            d["binding_mode"] = json!("mystery");
+        });
+        mutated(&|d| {
+            d["assertions"] = json!([]);
+        });
+        mutated(&|d| {
+            d["profile"] = json!("default");
+        });
+    }
+
+    #[test]
+    fn identity_and_ingest_dir_are_pinned() {
+        assert_eq!(INGEST_DIR, ".lekalo/import/scenario-runs");
+        assert_eq!(SCHEMA_VERSION, "lekalo/scenario-run/v0.4.0");
+        assert_eq!(IDENTITY, "dev.lekalo.scenario-run@0.4.0");
+    }
+}

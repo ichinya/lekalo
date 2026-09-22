@@ -33,6 +33,7 @@ pub mod reference_evaluation;
 pub mod requirements;
 pub mod result;
 pub mod scenario;
+pub mod scenario_evidence;
 pub mod storage_projection;
 pub mod target_profile;
 pub mod target_protocol;

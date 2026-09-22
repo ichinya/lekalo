@@ -199,12 +199,7 @@ fn run(request: VerifyRequest<'_>) -> Result<DomainResult, DomainResult> {
     // Optional components.
     components.push(bindings_component(request.selection));
     components.push(scenarios_component(&compilation, &scope));
-    components.push(Component::state(
-        "scenarios.execution",
-        false,
-        ComponentState::Unsupported,
-        Some("core.capability-unavailable"),
-    ));
+    components.push(scenarios_execution_component(&prepared));
     components.push(Component::state(
         "native.gates",
         false,
@@ -594,6 +589,96 @@ fn bindings_component(selection: &LoadSelection) -> Component {
             )
         }
     }
+}
+
+/// The optional scenario-execution evidence component (issue #47, plan
+/// S9): the durable run records in the adjudicated ingest home roll up
+/// deterministically. A run with any assertion or infrastructure
+/// failure fails the component; unsupported rows degrade it (never a
+/// pass); an empty ingest home stays the declared absence it was before
+/// the backend landed — reported, exit-neutral, never silently skipped.
+fn scenarios_execution_component(prepared: &Prepared) -> Component {
+    let fs = prepared.fs();
+    let dir = crate::scenario_evidence::INGEST_DIR;
+    let entries = match fs.entries(dir) {
+        Ok(entries) => entries,
+        Err(_) => {
+            // No ingest home (or unreadable): the backend has not run.
+            return Component::state(
+                "scenarios.execution",
+                false,
+                ComponentState::Unsupported,
+                Some("core.capability-unavailable"),
+            );
+        }
+    };
+    let mut names: Vec<String> = entries
+        .iter()
+        .filter(|(name, kind)| {
+            *kind == crate::project_fs::EntryType::File && name.ends_with(".json")
+        })
+        .map(|(name, _)| name.clone())
+        .collect();
+    names.sort();
+    if names.is_empty() {
+        return Component::state(
+            "scenarios.execution",
+            false,
+            ComponentState::Unsupported,
+            Some("core.capability-unavailable"),
+        );
+    }
+    let mut blocking = 0usize;
+    let mut unsupported = 0usize;
+    let mut degraded = 0usize;
+    for name in &names {
+        let bytes = match fs.read_file_opt(dir, name, 1 << 20) {
+            Ok(Some(bytes)) => bytes,
+            _ => {
+                blocking += 1;
+                continue;
+            }
+        };
+        let value: serde_json::Value = match serde_json::from_slice(&bytes) {
+            Ok(value) => value,
+            Err(_) => {
+                blocking += 1;
+                continue;
+            }
+        };
+        let record = match crate::scenario_evidence::RunRecord::from_value(&value) {
+            Ok(record) => record,
+            Err(_) => {
+                blocking += 1;
+                continue;
+            }
+        };
+        let summary = record.summary();
+        if summary.has_blocking_failure() {
+            blocking += 1;
+        } else if summary.unsupported > 0 || summary.degraded > 0 {
+            unsupported += 1;
+        } else if summary.all_passed() {
+            // counted as executed; nothing else to aggregate
+        } else {
+            degraded += 1;
+        }
+    }
+    let state = if blocking > 0 {
+        ComponentState::Fail
+    } else if unsupported > 0 || degraded > 0 {
+        ComponentState::Degraded
+    } else {
+        ComponentState::Pass
+    };
+    let reason = match state {
+        ComponentState::Fail => Some("scenario.assertion-failed"),
+        ComponentState::Degraded => Some("scenario.unsupported-capability"),
+        _ => None,
+    };
+    let mut component = Component::state("scenarios.execution", false, state, reason);
+    component.receipt.findings = Some(blocking + unsupported + degraded);
+    component
 }
 
 /// The optional portable-scenario coverage component.

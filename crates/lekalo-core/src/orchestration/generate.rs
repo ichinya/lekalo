@@ -962,7 +962,9 @@ mod tests {
     fn artifact_kinds_classify_by_path_convention() {
         use super::artifact_kind_for;
         assert_eq!(
-            artifact_kind_for(".lekalo/generated/scenario-tests/planner/planner.scenario.minimal.test.ts"),
+            artifact_kind_for(
+                ".lekalo/generated/scenario-tests/planner/planner.scenario.minimal.test.ts"
+            ),
             ArtifactKind::Test
         );
         assert_eq!(
@@ -985,7 +987,10 @@ mod tests {
             ArtifactKind::Source
         );
         // A test-looking file outside the scenario-tests home stays source.
-        assert_eq!(artifact_kind_for("src/generated/other/minimal.test.ts"), ArtifactKind::Source);
+        assert_eq!(
+            artifact_kind_for("src/generated/other/minimal.test.ts"),
+            ArtifactKind::Source
+        );
         // The zod home keeps its issue #45 classification.
         assert_eq!(
             artifact_kind_for(".lekalo/generated/node-typescript/zod/planner.ts"),
