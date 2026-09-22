@@ -123,29 +123,23 @@ pub fn introspect_check(
     // declared text default. The evidence names the authoritative
     // column collation, so this declared inheritance chain decides
     // what counts as agreement.
-    let declared_projection = attachment.projection(namespace);
-    let table_collation = move |table: &DerivedTable| -> Option<&str> {
-        let declared_table = declared_projection
-            .and_then(|projection| {
-                projection
-                    .tables()
-                    .iter()
-                    .find(|declared| declared.entity() == &table.entity)
-            })
-            .and_then(|declared| declared.collation());
-        let default = declared_projection
-            .and_then(|projection| projection.text_defaults())
-            .map(|(_, collation)| collation);
-        declared_table.or(default)
-    };
-    Ok(check_derived_with(&derived, evidence, &table_collation))
+    // The declared collation is read from the derived table itself:
+    // `DerivedTable::collation` already bakes in the declared-table →
+    // textDefaults inheritance and the mysql-family filter, so the
+    // drift engine and the canonical derived rendering share one
+    // source of truth (round-4 review F-5). A named `fn` carries the
+    // elided lifetime the closure cannot.
+    fn resolve<'a>(table: &'a DerivedTable) -> Option<&'a str> {
+        table.collation()
+    }
+    Ok(check_derived_with(&derived, evidence, &resolve))
 }
 
 /// The full comparison with the declared table-collation resolver.
-fn check_derived_with<'a>(
+fn check_derived_with(
     derived: &DerivedProjection,
     evidence: &StorageIntrospection,
-    table_collation: &dyn Fn(&DerivedTable) -> Option<&'a str>,
+    table_collation: &dyn for<'a> Fn(&'a DerivedTable) -> Option<&'a str>,
 ) -> DriftReport {
     let mut drifts: Vec<Drift> = Vec::new();
     let observed_tables = evidence.tables();
@@ -192,10 +186,10 @@ fn check_derived_with<'a>(
 }
 
 /// One table's comparison: engine, collation, columns, and indexes.
-fn compare_table<'a>(
+fn compare_table(
     table: &crate::storage_projection::DerivedTable,
     observed: &super::ObservedTable,
-    table_collation: &dyn Fn(&DerivedTable) -> Option<&'a str>,
+    table_collation: &dyn for<'a> Fn(&'a DerivedTable) -> Option<&'a str>,
     drifts: &mut Vec<Drift>,
 ) {
     let prefix = format!("tables/{}", table.table().as_str());
@@ -266,12 +260,12 @@ fn compare_table<'a>(
 }
 
 /// One column's comparison: type, nullability, and collation.
-fn compare_column<'a>(
+fn compare_column(
     prefix: &str,
     declared: &DerivedColumn,
     observed: &super::ObservedColumn,
     table: &crate::storage_projection::DerivedTable,
-    table_collation: &dyn Fn(&DerivedTable) -> Option<&'a str>,
+    table_collation: &dyn for<'a> Fn(&'a DerivedTable) -> Option<&'a str>,
     drifts: &mut Vec<Drift>,
 ) {
     let path = format!("{prefix}/columns/{}", declared.name().as_str());
@@ -419,10 +413,12 @@ fn version_in_line(version: &str, namespace: Namespace) -> bool {
     let Some(major) = parts.next().and_then(|major| major.parse::<u32>().ok()) else {
         return false;
     };
-    let minor = parts
-        .next()
-        .and_then(|minor| minor.parse::<u32>().ok())
-        .unwrap_or(0);
+    // The minor must parse: `8.x.1` is not `8.0`. Defense-in-depth —
+    // the evidence grammar already refuses non-numeric minors, but the
+    // resolver never guesses one (round-4 review F-5).
+    let Some(minor) = parts.next().and_then(|minor| minor.parse::<u32>().ok()) else {
+        return false;
+    };
     match namespace {
         // 8.0 is the only contracted MySQL generation; 8.4+ is a
         // different generation with its own contract, not a match.
