@@ -22,7 +22,7 @@ export const AlphaDeepSchema = z.object({
 export type AlphaDeep = z.infer<typeof AlphaDeepSchema>;
 export const AlphaFlagSchema = z.boolean();
 export type AlphaFlag = z.infer<typeof AlphaFlagSchema>;
-export const AlphaTaskIdSchema = lekaloBrand("alpha.task_id");
+export const AlphaTaskIdSchema = lekaloBrand(z.string().uuid(), "alpha.task_id");
 export type AlphaTaskId = z.infer<typeof AlphaTaskIdSchema>;
 export const AlphaFocusTaskInputSchema = z.object({
   "task_id": AlphaTaskIdSchema,
@@ -59,7 +59,7 @@ export const AlphaTaskFocusedPayloadSchema = z.object({
   "at": AlphaMomentSchema,
 }).strict();
 export type AlphaTaskFocusedPayload = z.infer<typeof AlphaTaskFocusedPayloadSchema>;
-export const BetaReportIdSchema = lekaloBrand("beta.report_id");
+export const BetaReportIdSchema = lekaloBrand(z.string().uuid(), "beta.report_id");
 export type BetaReportId = z.infer<typeof BetaReportIdSchema>;
 export const BetaReportSchema = z.object({
   "report_id": BetaReportIdSchema,

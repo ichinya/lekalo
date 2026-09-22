@@ -9,16 +9,20 @@ import * as z from "zod";
 export const LekaloDateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 /**
- * Brand one id schema with its Lekalo semantic id: `z.infer` yields
- * `string & z.BRAND<"module.name">`, so raw strings cannot masquerade as
- * opaque ids — they must pass `.parse`. The argument form keeps the
- * emitted files plain-JS executable.
+ * Brand one schema with its Lekalo semantic id: `z.infer` yields
+ * `<base> & z.BRAND<"module.name">`, so raw values cannot masquerade as
+ * opaque ids — they must pass `.parse`. The brand applies over the
+ * scalar's own declared base schema (uuid, string, number, date, …);
+ * branding never tightens validation beyond the base. The two-argument
+ * form keeps the emitted files plain-JS executable.
  *
+ * @template {{ safeParse: Function }} T
+ * @param {T} schema
  * @param {string} semanticId
- * @returns {z.ZodBranded<z.ZodString, string>}
+ * @returns {T}
  */
-export function lekaloBrand(semanticId) {
-  return z.string().uuid().brand(semanticId);
+export function lekaloBrand(schema, semanticId) {
+  return schema.brand(semanticId);
 }
 
 /**

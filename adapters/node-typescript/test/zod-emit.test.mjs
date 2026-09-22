@@ -249,6 +249,11 @@ test("generated modules parse, validate, and attribute issues to semantic ids", 
       "3f2bd13e-8b6d-4d8a-9ba7-2f4a5f4b9c10",
     );
     assert.equal(typeof parsed, "string");
+  // F-1/F-5: a string-base identity scalar keeps its base validation —
+  // plain strings parse (a slug is a slug), non-strings refuse, and
+  // branding only seals the type.
+  assert.equal(index.AlphaTagSchema.safeParse("acme-7").success, true);
+  assert.equal(index.AlphaTagSchema.safeParse(42).success, false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

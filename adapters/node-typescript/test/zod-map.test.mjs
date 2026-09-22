@@ -241,6 +241,70 @@ test("identity member scalars are branded with their semantic id", () => {
   });
 });
 
+test("a string-base identity scalar keeps its base and brands over it (no forced uuid)", () => {
+  const { modules, findings } = mapProject(
+    project([
+      { id: "planner.slug", kind: "scalar", base: "string" },
+      {
+        id: "planner.task",
+        kind: "entity",
+        identity: ["slug"],
+        fields: [field("slug", ref("planner.slug"))],
+      },
+    ]),
+  );
+  // Branding is not a semantic tightening: the mapping is honest and
+  // finding-free (no lossy mapping without warning).
+  assert.deepEqual(findings, []);
+  const declaration = modules[0].declarations.find(
+    (candidate) => candidate.semanticId === "planner.slug",
+  );
+  assert.equal(declaration.branded, true);
+  assert.deepEqual(declaration.expr, {
+    k: "brand",
+    inner: { k: "string" },
+    brand: "planner.slug",
+  });
+});
+
+test("identity refs through the optional wrapper brand too (F-5)", () => {
+  const { modules } = mapProject(
+    project([
+      { id: "planner.slug", kind: "scalar", base: "string" },
+      {
+        id: "planner.task",
+        kind: "entity",
+        identity: ["slug"],
+        // Nullable identity value: the wrapper must not hide the ref.
+        fields: [field("slug", optional(ref("planner.slug")))],
+      },
+    ]),
+  );
+  const declaration = modules[0].declarations.find(
+    (candidate) => candidate.semanticId === "planner.slug",
+  );
+  assert.equal(declaration.branded, true);
+});
+
+test("identity refs through a list wrapper do not brand collection members", () => {
+  const { modules } = mapProject(
+    project([
+      { id: "planner.slug", kind: "scalar", base: "string" },
+      {
+        id: "planner.task",
+        kind: "entity",
+        identity: ["slug"],
+        // A list member is a collection element, never an identity value.
+        fields: [field("slug", list(ref("planner.slug")))],
+      },
+    ]),
+  );
+  const declaration = modules[0].declarations.find(
+    (candidate) => candidate.semanticId === "planner.slug",
+  );
+  assert.equal(declaration.branded, false);
+});
+
 // ---------------------------------------------------------------------------
 // Policies.
 // ---------------------------------------------------------------------------

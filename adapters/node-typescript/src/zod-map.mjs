@@ -23,9 +23,10 @@
  *   silent drop.
  * - Object shapes are closed (`.strict()`) to mirror the closed model;
  *   the `unknown-keys` policy relaxes this to `.strip()` when resolved.
- * - Scalars named by any entity `identity` member are emitted branded
- *   (`.brand<"semantic.id">()`), so opaque ids cannot be constructed from
- *   raw strings without `.parse`.
+ * - Scalars named by any entity `identity` member (directly or through
+ *   an `optional` wrapper) are emitted branded over their own declared
+ *   base schema, so opaque ids cannot be constructed from raw values
+ *   without `.parse` — and branding never tightens the base validation.
  */
 
 /** The sidecar micro-contract token (adapter-owned, plan §3.6). */
@@ -163,21 +164,36 @@ function indexDefinitions(ir) {
 }
 
 /**
- * Scalars named by any entity `identity` member's direct ref are emitted
- * branded: `z.infer` yields `string & z.BRAND<"semantic.id">`, so raw
- * strings cannot masquerade as opaque ids.
+ * Scalars named by any entity `identity` member's type are emitted
+ * branded — through the closed wrapper chain: a direct ref, or an
+ * `optional`-wrapper ref (a nullable identity value is legal IR). The
+ * scalar keeps its declared base; branding (`z.BRAND<"semantic.id">`)
+ * never tightens validation beyond that base, so raw values cannot
+ * masquerade as opaque ids without `.parse`.
  */
 function collectBrandedScalars(ir) {
   const branded = new Set();
+  const visit = (type) => {
+    if (type === null || typeof type !== "object" || Array.isArray(type)) {
+      return;
+    }
+    if (typeof type.ref === "string") {
+      branded.add(type.ref);
+      return;
+    }
+    // Only the optional wrapper composes (the nullability axis); list
+    // elements are collection members, never identity values.
+    if (type.optional !== undefined) {
+      visit(type.optional);
+    }
+  };
   for (const definition of ir.definitions ?? []) {
     if (definition.kind !== "entity") continue;
     const byName = new Map(
       (definition.fields ?? []).map((field) => [field.name, field]),
     );
     for (const name of definition.identity ?? []) {
-      const field = byName.get(name);
-      const ref = field?.type?.ref;
-      if (typeof ref === "string") branded.add(ref);
+      visit(byName.get(name)?.type);
     }
   }
   return branded;
