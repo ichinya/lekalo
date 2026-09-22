@@ -72,6 +72,18 @@ impl DiffPath {
     }
 }
 
+#[cfg(test)]
+impl DiffPath {
+    /// Test-only constructor for sibling-module mapping vectors; never
+    /// compiled into release builds.
+    pub(crate) fn test_of(path: &str, class: DiffClass) -> Self {
+        Self {
+            path: path.to_owned(),
+            class,
+        }
+    }
+}
+
 /// The finished comparison.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DiffResult {

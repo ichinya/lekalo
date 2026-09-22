@@ -1125,6 +1125,21 @@ enum OpenapiCommands {
         #[arg(long, value_name = "FILE")]
         query_model: Option<String>,
     },
+    /// Compare two same-family attachments and report the pointer-level
+    /// view of the transport compatibility classes; the verdict stays
+    /// data, never an exit code.
+    Diff {
+        /// Path to the base attachment JSON document.
+        base: String,
+        /// Path to the candidate attachment JSON document.
+        candidate: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// The declared OpenAPI version for pointer resolution.
+        #[arg(long, value_enum, default_value_t = OpenapiVersion::V31)]
+        version: OpenapiVersion,
+    },
 }
 
 /// The declared OpenAPI version token.
@@ -4450,6 +4465,12 @@ fn run_openapi(command: OpenapiCommands) -> DomainResult {
             errors.as_deref(),
             query_model.as_deref(),
         ),
+        OpenapiCommands::Diff {
+            base,
+            candidate,
+            project,
+            version,
+        } => openapi_diff(&base, &candidate, &project, version.as_str()),
     }
 }
 
@@ -4659,6 +4680,70 @@ fn openapi_inspect(
     );
     let human = format!("openapi endpoint {}: {}", endpoint, pointer);
     DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo openapi diff`: the pointer-level view of the transport
+/// compatibility classes over two same-family attachments; the
+/// verdict stays data and the strict wire-consumer blocking signal
+/// rides along.
+fn openapi_diff(
+    base_path: &str,
+    candidate_path: &str,
+    project: &Option<String>,
+    version: &str,
+) -> DomainResult {
+    let version = match lekalo_core::openapi::DocumentVersion::parse(version) {
+        Some(version) => version,
+        None => return DomainResult::usage_error(),
+    };
+    // Both sides share the one compiled project: compare refuses mixed
+    // pins, so a single session's context serves the mapping.
+    let base_document = match read_transport_document(base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let base = match lekalo_core::transport_http::TransportDocument::from_value(&base_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let candidate_document = match read_transport_document(candidate_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let candidate =
+        match lekalo_core::transport_http::TransportDocument::from_value(&candidate_document) {
+            Ok(attachment) => attachment,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let selection = selection_for(project);
+    let model = match lekalo_core::loader::normalize_model(&selection) {
+        Ok(model) => model,
+        Err(result) => return result,
+    };
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Ok(compilation) => compilation,
+        Err(failure) => return failure.into_result(),
+    };
+
+    let result = match lekalo_core::openapi::compare_documents(
+        &base,
+        &candidate,
+        &compilation.project,
+        version,
+    ) {
+        Ok(result) => result,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let json = format!(
+        "{{\"status\":\"valid\",\"openapiDiff\":{}}}",
+        lekalo_core::openapi::diff_json(&result),
+    );
+    let human = format!(
+        "openapi diff: {} changed paths (wire-consumer blocked: {})",
+        result.paths().len(),
+        result.wire_consumer_blocked(),
+    );
+    DomainResult::diff(json, human, Vec::new())
 }
 
 /// Run one `lekalo query-model` operation. The core owns every

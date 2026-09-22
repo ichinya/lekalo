@@ -106,6 +106,8 @@ fn run_suite() {
     checked_mode_accepts_the_pinned_golden();
     checked_mode_reports_drift_and_unresolved_anchors();
     fragments_round_trip_the_golden();
+    the_wire_diff_fixture_pairs_map_to_pointer_views();
+    equal_implies_byte_equal_renders();
 }
 
 fn golden_render_is_pinned_and_byte_stable() {
@@ -328,6 +330,103 @@ fn fragments_round_trip_the_golden() {
         outcome.tree()["paths"]["/tasks"]["get"]["operationId"],
         "listTasks"
     );
+}
+
+fn the_wire_diff_fixture_pairs_map_to_pointer_views() {
+    use lekalo_core::openapi::compare_documents;
+    let project = compile_fixture_project();
+    let context = ValidationContext::new(&project);
+    let base_value = read_fixture("diff/base.json");
+    let base = TransportDocument::from_value(&base_value).expect("base decodes");
+    validate(&base, &context).expect("base validates");
+
+    // Every committed candidate pair diffs through the same classes
+    // the transport comparison produces, and every path carries at
+    // least one pointer location. Blocking equals the presence of a
+    // breaking class; the fixtures pin one blocking and one
+    // non-blocking verdict by name.
+    let mut candidates: Vec<String> = std::fs::read_dir("tests/fixtures/transport-http/diff")
+        .expect("diff dir")
+        .map(|entry| {
+            entry
+                .expect("entry")
+                .file_name()
+                .to_string_lossy()
+                .to_string()
+        })
+        .filter(|name| name.starts_with("candidate-"))
+        .collect();
+    candidates.sort();
+    assert!(!candidates.is_empty(), "the diff fixture pairs exist");
+    for candidate_name in &candidates {
+        let value = read_fixture(&format!("diff/{candidate_name}"));
+        let candidate = TransportDocument::from_value(&value).expect("candidate decodes");
+        let result = compare_documents(&base, &candidate, &project, DocumentVersion::V3_1)
+            .expect("compares");
+        assert!(!result.equal(), "{candidate_name}");
+        let has_breaking = result
+            .paths()
+            .iter()
+            .any(|path| path.class() == lekalo_core::transport_http::DiffClass::Breaking);
+        assert_eq!(
+            result.wire_consumer_blocked(),
+            has_breaking,
+            "{candidate_name}: blocking equals the breaking class"
+        );
+        for path in result.paths() {
+            assert!(
+                !path.pointers().is_empty(),
+                "{candidate_name}: {} carries pointers",
+                path.path()
+            );
+        }
+    }
+    // The named verdicts: an added endpoint is non-breaking (the
+    // strict wire-consumer profile is not blocked); a required
+    // parameter addition blocks.
+    let added = read_fixture("diff/candidate-add-endpoint.json");
+    let added = TransportDocument::from_value(&added).expect("decodes");
+    let result = compare_documents(&base, &added, &project, DocumentVersion::V3_1).unwrap();
+    assert!(!result.wire_consumer_blocked(), "addition is non-blocking");
+    let required = read_fixture("diff/candidate-add-required-param.json");
+    let required = TransportDocument::from_value(&required).expect("decodes");
+    let result = compare_documents(&base, &required, &project, DocumentVersion::V3_1).unwrap();
+    assert!(result.wire_consumer_blocked(), "required addition blocks");
+    // The breaking pair's pointer view names the operation's parameter
+    // list.
+    let path = result
+        .paths()
+        .iter()
+        .find(|path| path.class() == lekalo_core::transport_http::DiffClass::Breaking)
+        .expect("breaking path present");
+    assert!(
+        path.pointers()
+            .iter()
+            .any(|pointer| pointer.ends_with("/parameters")),
+        "{path:?}"
+    );
+}
+
+fn equal_implies_byte_equal_renders() {
+    use lekalo_core::openapi::compare_documents;
+    let suite = session();
+    let context = suite.context();
+    let project = suite.project.clone();
+    let config = RenderConfig::new();
+    let rendered = render(&suite.attachment, &context, &config).expect("renders");
+    let result = compare_documents(
+        &suite.attachment,
+        &suite.attachment,
+        &project,
+        DocumentVersion::V3_1,
+    )
+    .expect("compares");
+    assert!(result.equal());
+    assert!(!result.wire_consumer_blocked());
+    // Deterministic naming: semantic equality means byte equality —
+    // a rendered-only difference is impossible by construction.
+    let again = render(&suite.attachment, &context, &config).expect("renders");
+    assert_eq!(rendered.canonical_bytes(), again.canonical_bytes());
 }
 
 #[test]

@@ -23,6 +23,7 @@
 mod bind;
 mod check;
 mod diagnostic;
+mod diff;
 mod fragments;
 mod id;
 mod import;
@@ -35,6 +36,7 @@ mod version;
 pub use bind::BindingKey;
 pub use check::{check, CheckReport};
 pub use diagnostic::{io_failure, projection_partial, rule_set};
+pub use diff::{compare_documents, diff_json, DocumentDiffPath, DocumentDiffResult};
 pub use fragments::{Fragments, OwnershipManifest};
 pub use id::{component_name, escape_pointer, paths_pointer, schemas_pointer, COMPONENTS_SCHEMAS};
 pub use import::{parse_document_text, DOCUMENT_BYTES};

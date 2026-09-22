@@ -362,6 +362,70 @@ fn inspect_returns_the_joined_operation() {
 }
 
 #[test]
+fn diff_reports_the_pointer_view_of_the_wire_classes() {
+    let dir = fixture_dir();
+    let base = dir.join("valid/planner.transport.json");
+    let candidate = dir.join("diff/candidate-add-required-param.json");
+    // The diff fixtures carry the placeholder Model pin; the command
+    // resolves the project fixture beside them.
+    let output = lekalo_in(
+        dir.as_path(),
+        &[
+            "--json",
+            "openapi",
+            "diff",
+            base.to_str().unwrap(),
+            candidate.to_str().unwrap(),
+            "--project",
+            "project",
+        ],
+    );
+    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["status"], "valid");
+    assert_eq!(envelope["openapiDiff"]["wireConsumerBlocked"], true);
+    let paths = envelope["openapiDiff"]["paths"]
+        .as_array()
+        .cloned()
+        .unwrap();
+    assert!(!paths.is_empty());
+    // Every changed path names the document locations it touches; the
+    // parameter change points at the operation's parameter list.
+    assert!(paths.iter().any(|path| path["pointers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|pointer| pointer.as_str().unwrap().ends_with("/parameters"))));
+    // The non-breaking addition does not block the strict profile.
+    let added = dir.join("diff/candidate-add-endpoint.json");
+    let addition = lekalo_in(
+        dir.as_path(),
+        &[
+            "--json",
+            "openapi",
+            "diff",
+            base.to_str().unwrap(),
+            added.to_str().unwrap(),
+            "--project",
+            "project",
+        ],
+    );
+    assert_eq!(exit_code(&addition), 0, "{}", stderr_text(&addition));
+    assert_eq!(
+        stdout_json(&addition)["openapiDiff"]["wireConsumerBlocked"],
+        false
+    );
+}
+
+fn fixture_dir() -> PathBuf {
+    alias_free_path(
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../")
+            .join("tests/fixtures/transport-http"),
+    )
+}
+
+#[test]
 fn validate_preflights_the_openapi_projection_of_the_canonical_home() {
     let temp = scratch();
     let dir = temp.path();
