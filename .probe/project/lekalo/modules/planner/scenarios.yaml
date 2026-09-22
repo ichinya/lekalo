@@ -1,9 +1,0 @@
-schema_version: "0.2.16"
-definitions:
-  - id: planner.focus_one_task
-    kind: scenario
-    version: 1
-    description: Focus one task end to end over HTTP
-    summary: POST the focus command through the transport and assert the error identity.
-    covers:
-      - "planner.focus_task"

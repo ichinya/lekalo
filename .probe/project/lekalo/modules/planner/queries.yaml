@@ -1,5 +1,0 @@
-{"schema_version":"0.2.16","definitions":[
-{"id":"planner.count_focused","kind":"query","version":1,"description":"Count focused tasks","reads":["planner.task"],"returns":{"ref":"planner.task_state"}},
-{"id":"planner.list_tasks","kind":"query","version":1,"description":"List tasks","reads":["planner.task"],"returns":{"list":{"ref":"planner.task"}}},
-{"id":"planner.tasks_by_project","kind":"query","version":1,"description":"Tasks of one project, paged by cursor","reads":["planner.task"],"returns":{"list":{"ref":"planner.task"}}}
-]}

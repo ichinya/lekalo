@@ -1,2 +1,0 @@
-
-thread 'main' (223840) has overflowed its stack

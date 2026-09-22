@@ -156,7 +156,9 @@ pub fn render(
     operation_pointers.sort();
 
     // Pass two: reusable components. The claimed error names first,
-    // then the type components under the collision-safe walk.
+    // then the type components. Rendering a body may register further
+    // components (a nested field's own refs), so the pass runs to a
+    // fixpoint — every named ref resolves to a rendered body.
     let mut schemas: BTreeMap<String, Json> = BTreeMap::new();
     if let Some(registry) = context.errors {
         for (symbol, base) in &error_names {
@@ -167,30 +169,39 @@ pub fn render(
             schemas.insert(base.clone(), with_x_symbol(body, symbol));
         }
     }
-    let registered: Vec<(String, String)> = mapper
-        .components()
-        .iter()
-        .map(|(symbol, name)| (symbol.clone(), name.clone()))
-        .collect();
-    for (symbol, base) in registered {
-        let definition = project
-            .definitions
+    let mut processed: std::collections::BTreeSet<String> = error_names.keys().cloned().collect();
+    loop {
+        let registered: Vec<(String, String)> = mapper
+            .components()
             .iter()
-            .find(|definition| definition.id().as_str() == symbol)
-            .expect("registered component resolves");
-        let body = component_body(definition, &mut mapper).expect("registered kinds have bodies");
-        let mut serial = 0usize;
-        let mut name = base.clone();
-        while taken.contains_key(&name) {
-            serial += 1;
-            name = if serial == 1 {
-                format!("{base}Error")
-            } else {
-                format!("{base}Error{serial}")
-            };
+            .map(|(symbol, name)| (symbol.clone(), name.clone()))
+            .filter(|(symbol, _)| !processed.contains(symbol))
+            .collect();
+        if registered.is_empty() {
+            break;
         }
-        taken.insert(name.clone(), symbol.clone());
-        schemas.insert(name, with_x_symbol(body, &symbol));
+        for (symbol, base) in registered {
+            processed.insert(symbol.clone());
+            let definition = project
+                .definitions
+                .iter()
+                .find(|definition| definition.id().as_str() == symbol)
+                .expect("registered component resolves");
+            let body =
+                component_body(definition, &mut mapper).expect("registered kinds have bodies");
+            let mut serial = 0usize;
+            let mut name = base.clone();
+            while taken.contains_key(&name) {
+                serial += 1;
+                name = if serial == 1 {
+                    format!("{base}Error")
+                } else {
+                    format!("{base}Error{serial}")
+                };
+            }
+            taken.insert(name.clone(), symbol.clone());
+            schemas.insert(name, with_x_symbol(body, &symbol));
+        }
     }
 
     // The shared category responses: `Error<Category>` entries derived

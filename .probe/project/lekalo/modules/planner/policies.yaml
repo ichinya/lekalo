@@ -1,3 +1,0 @@
-{"schema_version":"0.2.16","definitions":[
-{"id":"planner.focus_owner_only","kind":"policy","version":1,"description":"Only the task owner may focus it","applies_to":["planner.focus_task"],"decision":"allow"}
-]}

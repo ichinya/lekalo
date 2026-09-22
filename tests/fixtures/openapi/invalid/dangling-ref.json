@@ -1,0 +1,26 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "planner",
+  "version": "0.4.0"
+ },
+ "paths": {
+  "/tasks": {
+   "get": {
+    "operationId": "plannerListTasks",
+    "responses": {
+     "200": {
+      "description": "Success response.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "components/schemas/PlannerTask"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}
