@@ -93,14 +93,18 @@ for (const [id, before] of predEntries) {
   if (!after) fail("predecessor-rule-dropped", id);
   if (projected(before) !== projected(after)) fail("predecessor-rule-drift", id);
 }
-if (registry.entries.length !== predEntries.size + 13 + 21) {
+if (registry.entries.length !== predEntries.size + 13 + 21 + 3) {
+  // The trailing +3 is the r3 F-5 custody increment: dedicated ids for
+  // the project/model/IR pin refusals (LEK-CLS-013..015).
   fail("entry-count", registry.entries.length);
 }
 
-// 4. The classification family is exactly the twelve LEK-CLS rules,
+// 4. The classification family is exactly the fifteen LEK-CLS rules,
 //    each active, error-severity, semantic-category, with closed
 //    status sets: declaration failures invalidate; flow failures may
-//    also deny.
+//    also deny. The three custody ids (review r3, F-5) give the
+//    project/model/IR pin refusals their own greppable rules instead
+//    of the generic unknown-kind id.
 const expectedClassificationRules = [
   ["classification.unknown-kind", "LEK-CLS-001", ["invalid"]],
   ["classification.unknown-subject", "LEK-CLS-002", ["invalid"]],
@@ -114,6 +118,9 @@ const expectedClassificationRules = [
   ["classification.kind-rule-missing", "LEK-CLS-010", ["invalid"]],
   ["classification.sink-ceiling-exceeded", "LEK-CLS-011", ["invalid", "denied"]],
   ["classification.unclassified-sensitive-sink", "LEK-CLS-012", ["invalid", "denied"]],
+  ["classification.custody-project", "LEK-CLS-013", ["invalid"]],
+  ["classification.custody-model", "LEK-CLS-014", ["invalid"]],
+  ["classification.custody-ir", "LEK-CLS-015", ["invalid"]],
 ];
 const registryEntries = new Map(registry.entries.map((entry) => [entry.id, entry]));
 for (const [id, code, statuses] of expectedClassificationRules) {

@@ -92,14 +92,14 @@ pub fn validate_custody(
     model_json: &str,
 ) -> Result<(), DiagnosticSet> {
     let Some(declared_project) = project.project.as_ref() else {
-        return Err(diagnostic::document_invalid("custody-project", None));
+        return Err(diagnostic::custody_project("custody-project"));
     };
     let project_id = declared_project.id.as_str();
     if attachment.project_id().as_str() != project_id {
-        return Err(diagnostic::document_invalid("custody-project", None));
+        return Err(diagnostic::custody_project("custody-project"));
     }
     if policy.project_id().as_str() != project_id {
-        return Err(diagnostic::document_invalid("custody-project", None));
+        return Err(diagnostic::custody_project("custody-project"));
     }
     // The Model pin: the exact canonical Model bytes of the loaded
     // project (the same digest the #85 NFR custody check records).
@@ -109,7 +109,7 @@ pub fn validate_custody(
     );
     for pin in [attachment.model_ref(), policy.model_ref()] {
         if pin.0 != project.model_version.as_str() || pin.1.as_str() != model_digest {
-            return Err(diagnostic::document_invalid("custody-model", None));
+            return Err(diagnostic::custody_model("custody-model"));
         }
     }
     // The IR pin: the exact canonical IR bytes of the compilation.
@@ -119,7 +119,7 @@ pub fn validate_custody(
     );
     for pin in [attachment.ir_ref(), policy.ir_ref()] {
         if pin.1.as_str() != ir_digest {
-            return Err(diagnostic::document_invalid("custody-ir", None));
+            return Err(diagnostic::custody_ir("custody-ir"));
         }
     }
     Ok(())
@@ -569,6 +569,60 @@ mod tests {
         let outcome =
             validate_policy_and_grants(&live, &policy, &resolution, empty_project()).expect("runs");
         assert!(!outcome.invalid, "{outcome:?}");
+    }
+
+    /// The dedicated custody refusal ids (review r3, F-5): a custody
+    /// mismatch refuses under `classification.custody-project` — never
+    /// under the generic `classification.unknown-kind` (LEK-CLS-001)
+    /// with the real reason hidden in `data.detail`.
+    #[test]
+    fn custody_mismatch_refuses_under_the_dedicated_id() {
+        let model = format!("sha256:{}", "a".repeat(64));
+        let ir = format!("sha256:{}", "b".repeat(64));
+        let json = format!(
+            r#"{{
+      "schemaVersion": "lekalo/data-classification/v0.4.0",
+      "identity": "dev.lekalo.data-classification@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "planner",
+      "modelRef": {{"modelVersion": "0.2.16", "digest": "{model}"}},
+      "irRef": {{"irVersion": "0.2.16", "digest": "{ir}"}},
+      "defaults": {{"profile": "default", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"}},
+      "classifications": [],
+      "declassifications": [],
+      "openQuestions": []
+    }}"#
+        );
+        let attachment = Attachment::parse(json.as_bytes()).expect("parses");
+        let policy_json = format!(
+            r#"{{
+      "schemaVersion": "lekalo/classification-policy/v0.4.0",
+      "identity": "dev.lekalo.classification-policy@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "planner",
+      "modelRef": {{"modelVersion": "0.2.16", "digest": "{model}"}},
+      "irRef": {{"irVersion": "0.2.16", "digest": "{ir}"}},
+      "kinds": [{{
+        "kind": "internal",
+        "readers": ["tenant"], "writers": ["tenant"],
+        "destinations": ["internal-service", "message-bus"],
+        "masking": {{"strategy": "redact", "policyRef": "privacy-policy.masking.internal"}},
+        "consentRequired": false, "crossTenant": "reviewed",
+        "declassifyRoles": ["data-steward"]
+      }}],
+      "sinks": {{"logs": {{"maxKind": "internal"}}, "traces": {{"maxKind": "internal"}}, "contextCapsules": {{"maxKind": "internal"}}, "diagnostics": {{"maxKind": "internal"}}, "evidence": {{"maxKind": "public"}}, "exports": {{"maxKind": "derived"}}}},
+      "openQuestions": []
+    }}"#
+        );
+        let policy = PolicyAttachment::parse(policy_json.as_bytes()).expect("policy parses");
+
+        // The empty compilation declares no project, so the project
+        // custody check fires first.
+        let set =
+            validate_custody(&attachment, &policy, empty_project(), "{}").expect_err("refuses");
+        assert_eq!(set.as_slice().len(), 1);
+        assert_eq!(set.as_slice()[0].id(), "classification.custody-project");
+        assert_ne!(set.as_slice()[0].id(), "classification.unknown-kind");
     }
 
     /// An empty compilation (the grant checks run over the attachment

@@ -11,7 +11,9 @@ classification-policy attachment
 `dev.lekalo.classification-policy@0.4.0`), and the derived data-flow
 report (`lekalo/data-flow-report/v0.4.0`, identity
 `dev.lekalo.data-flow-report@0.4.0`) — plus the `classification.*`
-(`LEK-CLS-001..012`) and `dataflow.*` (`LEK-DFL-001..009`) diagnostic
+(`LEK-CLS-001..015`; r3 review F-5 gave the three custody pin
+refusals their own ids, LEK-CLS-013..015) and `dataflow.*`
+(`LEK-DFL-001..009`) diagnostic
 families on the shared diagnostic-registry v0.4.0 successor, the
 `preserve.classification` capability definition on the
 `dev.lekalo.target-capabilities@0.4.0` registry, and the

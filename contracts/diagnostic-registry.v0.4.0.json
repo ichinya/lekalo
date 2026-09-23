@@ -573,6 +573,66 @@
       "lifecycle": "active"
     },
     {
+      "id": "classification.custody-ir",
+      "code": "LEK-CLS-015",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.custody-ir",
+      "default_message": "The classification irRef pin does not match the exact canonical IR bytes of the pinned compilation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.custody-model",
+      "code": "LEK-CLS-014",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.custody-model",
+      "default_message": "The classification modelRef pin does not match the exact canonical Model bytes of the loaded compilation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.custody-project",
+      "code": "LEK-CLS-013",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.custody-project",
+      "default_message": "The classification pair does not bind the project identity of the pinned compilation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "classification.duplicate-subject",
       "code": "LEK-CLS-003",
       "category": "semantic",

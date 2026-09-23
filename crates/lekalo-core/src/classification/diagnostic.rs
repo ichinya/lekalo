@@ -46,6 +46,14 @@ pub const SINK_CEILING_EXCEEDED: &str = "classification.sink-ceiling-exceeded";
 /// The registered rule for an unclassified subject on a sensitive sink
 /// under the strict profile.
 pub const UNCLASSIFIED_SENSITIVE_SINK: &str = "classification.unclassified-sensitive-sink";
+/// The registered rule for a custody mismatch on the project identity
+/// (review r3, F-5: dedicated custody refusal ids, not the generic
+/// `classification.unknown-kind` id).
+pub const CUSTODY_PROJECT: &str = "classification.custody-project";
+/// The registered rule for a stale or foreign `modelRef` pin.
+pub const CUSTODY_MODEL: &str = "classification.custody-model";
+/// The registered rule for a stale or foreign `irRef` pin.
+pub const CUSTODY_IR: &str = "classification.custody-ir";
 
 /// Why one diagnostic could not be finalized (collapsed to the invariant
 /// set by the caller).
@@ -195,6 +203,28 @@ pub fn unclassified_sensitive_sink(detail: &str, subject: &str) -> DiagnosticSet
     )
 }
 
+/// One custody mismatch on the project identity of the pinned
+/// compilation (review r3, F-5).
+pub fn custody_project(detail: &str) -> DiagnosticSet {
+    set(
+        Status::Invalid,
+        vec![diagnostic(CUSTODY_PROJECT, detail, None)],
+    )
+}
+
+/// One stale or foreign `modelRef` pin (review r3, F-5).
+pub fn custody_model(detail: &str) -> DiagnosticSet {
+    set(
+        Status::Invalid,
+        vec![diagnostic(CUSTODY_MODEL, detail, None)],
+    )
+}
+
+/// One stale or foreign `irRef` pin (review r3, F-5).
+pub fn custody_ir(detail: &str) -> DiagnosticSet {
+    set(Status::Invalid, vec![diagnostic(CUSTODY_IR, detail, None)])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,6 +245,9 @@ mod tests {
             kind_rule_missing("probe", "core.entity.user/email"),
             sink_ceiling_exceeded("probe", "core.entity.user/email"),
             unclassified_sensitive_sink("probe", "core.entity.user/email"),
+            custody_project("probe"),
+            custody_model("probe"),
+            custody_ir("probe"),
         ] {
             assert_eq!(set.as_slice().len(), 1);
             assert!(set.as_slice()[0].id().starts_with("classification."));
@@ -251,6 +284,9 @@ mod tests {
             EXPIRED_DECLASSIFICATION,
             SINK_CEILING_EXCEEDED,
             UNCLASSIFIED_SENSITIVE_SINK,
+            CUSTODY_PROJECT,
+            CUSTODY_MODEL,
+            CUSTODY_IR,
         ] {
             let entry = registry.entry(id).unwrap_or_else(|| panic!("{id}"));
             assert!(entry.allows_status(Status::Invalid), "{id}");
