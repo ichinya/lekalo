@@ -303,6 +303,51 @@ const policy = (fixture) => join(fixture, "lekalo/classification-policy.json");
   }
 }
 
+// 6f. The as-of boundary (review r4, F-1): expiry is a lexicographic
+// compare, so malformed `--as-of`/`LEKALO_AS_OF` must refuse at the
+// CLI (usage, exit 1) on every classification surface — malformed
+// input denies, never passes. A bare `YYYY-MM-DD` is normalized to
+// midnight UTC; the expired grants (2020) are live before their
+// expiry, so 2019 validates clean.
+{
+  const asOfArgs = [
+    "--attachment",
+    attachment(EXPIRED),
+    "--policy",
+    policy(EXPIRED),
+  ];
+  for (const bad of ["!", "", "2026-13-01", "2026-01-01T99:00:00Z", "garbage"]) {
+    for (const command of [
+      ["classification", "validate", ...asOfArgs, "--as-of", bad],
+      ["dataflow", "report", ...asOfArgs, "--as-of", bad],
+      ["classification", "inspect", ...asOfArgs, "--as-of", bad],
+    ]) {
+      const outcome = run(command, EXPIRED);
+      if (outcome.code === 0) fail("as-of-fails-open", { bad, command, ...outcome });
+    }
+  }
+  const envProbe = (env, command) => {
+    const previous = process.env.LEKALO_AS_OF;
+    process.env.LEKALO_AS_OF = env;
+    try {
+      return run(command, EXPIRED);
+    } finally {
+      if (previous === undefined) delete process.env.LEKALO_AS_OF;
+      else process.env.LEKALO_AS_OF = previous;
+    }
+  };
+  if (envProbe("garbage", ["classification", "validate", ...asOfArgs]).code === 0) {
+    fail("as-of-env-fails-open", "LEKALO_AS_OF=garbage");
+  }
+  const normalized = envProbe("2019-01-01", ["classification", "validate", ...asOfArgs]);
+  if (normalized.code !== 0) fail("as-of-bare-date-normalization", normalized);
+  const liveFlag = run(
+    ["classification", "validate", ...asOfArgs, "--as-of", "2019-01-01T00:00:00Z"],
+    EXPIRED,
+  );
+  if (liveFlag.code !== 0) fail("as-of-wire-shape", liveFlag);
+}
+
 // 7. Non-disclosure byte-scan: the sentinel secret value never appears
 // in any committed classification fixture artifact or in any CLI output
 // over them. Classification metadata flows; values never do.

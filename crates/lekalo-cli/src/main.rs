@@ -5818,6 +5818,51 @@ fn parse_endpoint_exposures(
     Ok(exposures)
 }
 
+/// Validate the classification as-of input at the CLI boundary (r4
+/// F-1): expiry is a lexicographic compare against the wire's
+/// fixed-width UTC shape, so raw unchecked text fails open (`--as-of
+/// '!'` makes an expired grant live). Accepted spellings: the wire
+/// shape `YYYY-MM-DDTHH:MM:SSZ` (validated date and time), or a bare
+/// `YYYY-MM-DD` normalized to midnight UTC. Anything else refuses
+/// before any evaluation — malformed input denies, never passes.
+fn normalize_as_of(raw: &str) -> Option<String> {
+    let bytes = raw.as_bytes();
+    if bytes.len() == 20 && bytes[10] == b'T' && bytes[19] == b'Z' {
+        lekalo_core::nfr::IsoDate::parse(&raw[..10]).ok()?;
+        let (hour, minute, second) = (&raw[11..13], &raw[14..16], &raw[17..19]);
+        if &raw[13..14] != ":" || &raw[16..17] != ":" {
+            return None;
+        }
+        let digits = [hour, minute, second]
+            .iter()
+            .all(|part| part.len() == 2 && part.bytes().all(|byte| byte.is_ascii_digit()));
+        if !digits {
+            return None;
+        }
+        let (hour, minute, second) = (
+            hour.parse::<u8>().ok()?,
+            minute.parse::<u8>().ok()?,
+            second.parse::<u8>().ok()?,
+        );
+        (hour < 24 && minute < 60 && second < 60).then(|| raw.to_owned())
+    } else if bytes.len() == 10 {
+        let date = lekalo_core::nfr::IsoDate::parse(raw).ok()?;
+        Some(format!("{}T00:00:00Z", date.as_str()))
+    } else {
+        None
+    }
+}
+
+/// Resolve the effective as-of date for one classification surface:
+/// the `--as-of` flag, else `LEKALO_AS_OF`, else the fixed
+/// deterministic default. Malformed input is a usage refusal.
+fn resolve_as_of(flag: Option<String>) -> Result<String, DomainResult> {
+    match flag.or_else(|| std::env::var("LEKALO_AS_OF").ok()) {
+        None => Ok(lekalo_core::classification::DEFAULT_AS_OF.to_owned()),
+        Some(text) => normalize_as_of(&text).ok_or_else(DomainResult::usage_error),
+    }
+}
+
 /// Read one attachment document; IO failure is a typed invalid set.
 fn read_document(path: &str) -> Result<Vec<u8>, DomainResult> {
     std::fs::read(path)
@@ -5889,9 +5934,10 @@ fn run_classification(command: ClassificationCommands) -> DomainResult {
             project,
             as_of,
         } => {
-            let as_of = as_of
-                .or_else(|| std::env::var("LEKALO_AS_OF").ok())
-                .unwrap_or_else(|| lekalo_core::classification::DEFAULT_AS_OF.to_owned());
+            let as_of = match resolve_as_of(as_of) {
+                Err(result) => return result,
+                Ok(resolved) => resolved,
+            };
             let (model_json, compilation) = match load_compiled_for(&project) {
                 Err(result) => return result,
                 Ok(pair) => pair,
@@ -5925,9 +5971,10 @@ fn run_classification(command: ClassificationCommands) -> DomainResult {
             project,
             as_of,
         } => {
-            let as_of = as_of
-                .or_else(|| std::env::var("LEKALO_AS_OF").ok())
-                .unwrap_or_else(|| lekalo_core::classification::DEFAULT_AS_OF.to_owned());
+            let as_of = match resolve_as_of(as_of) {
+                Err(result) => return result,
+                Ok(resolved) => resolved,
+            };
             let (model_json, compilation) = match load_compiled_for(&project) {
                 Err(result) => return result,
                 Ok(pair) => pair,
@@ -6025,9 +6072,10 @@ fn run_dataflow(command: DataflowCommands) -> DomainResult {
             as_of,
             endpoints,
         } => {
-            let as_of = as_of
-                .or_else(|| std::env::var("LEKALO_AS_OF").ok())
-                .unwrap_or_else(|| lekalo_core::classification::DEFAULT_AS_OF.to_owned());
+            let as_of = match resolve_as_of(as_of) {
+                Err(result) => return result,
+                Ok(resolved) => resolved,
+            };
             let (model_json, compilation) = match load_compiled_for(&project) {
                 Err(result) => return result,
                 Ok(pair) => pair,
