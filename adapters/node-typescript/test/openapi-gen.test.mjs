@@ -818,3 +818,23 @@ test("a path-level non-method member rides the merge without a pseudo-pointer no
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("evidence without an attachment revision refuses instead of an empty info.version (r2 F-4)", () => {
+  const transport = JSON.parse(plannerEvidence);
+  delete transport.attachmentRevision;
+  const root = mkdtempSync(join(tmpdir(), "lekalo-openapi-norev-"));
+  try {
+    const evidenceDir = join(root, ".lekalo", "cache", "transport");
+    const irDir = join(root, ".lekalo", "cache", "ir");
+    mkdirSync(evidenceDir, { recursive: true });
+    mkdirSync(irDir, { recursive: true });
+    writeFileSync(join(evidenceDir, "planner.json"), JSON.stringify(transport), "utf8");
+    writeFileSync(join(irDir, "planner.json"), plannerIr, "utf8");
+    const views = viewsFor(root);
+    const outcome = run({ ...views, request: {} });
+    assert.equal(outcome.state, "failed");
+    assert.equal(outcome.diagnostics[0].reason, "attachment-revision-absent");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

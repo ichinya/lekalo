@@ -218403,6 +218403,9 @@ function openapiGenerateOperation(context) {
     if (decoded.error) {
       return { state: "failed", diagnostics: [{ reason: decoded.error }] };
     }
+    if (typeof decoded.value.attachmentRevision !== "string" || decoded.value.attachmentRevision.length === 0) {
+      return { state: "failed", diagnostics: [{ reason: "attachment-revision-absent" }] };
+    }
     const irPath = evidencePathFor(request, readView, IR_EVIDENCE_DIR);
     if (!irPath) {
       return {
@@ -218600,7 +218603,7 @@ function renderDocument(attachment, ir, policy) {
   }
   const root = {
     openapi: versionWire(policy.version),
-    info: { title: attachment.projectId, version: attachment.attachmentRevision ?? "" },
+    info: { title: attachment.projectId, version: attachment.attachmentRevision },
     paths: Object.fromEntries(
       [...pathItems.entries()].sort(byKey).map(([template, item]) => [
         template,

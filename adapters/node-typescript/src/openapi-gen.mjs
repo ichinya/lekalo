@@ -74,6 +74,15 @@ export function openapiGenerateOperation(context) {
     if (decoded.error) {
       return { state: "failed", diagnostics: [{ reason: decoded.error }] };
     }
+    // info.version is the attachment revision; evidence without one
+    // is out of contract — refusing beats emitting a schema-valid
+    // but meaningless empty version (r2 F-4).
+    if (
+      typeof decoded.value.attachmentRevision !== "string" ||
+      decoded.value.attachmentRevision.length === 0
+    ) {
+      return { state: "failed", diagnostics: [{ reason: "attachment-revision-absent" }] };
+    }
     const irPath = evidencePathFor(request, readView, IR_EVIDENCE_DIR);
     if (!irPath) {
       return {
@@ -306,7 +315,7 @@ function renderDocument(attachment, ir, policy) {
   // revision, never the generator's own version (r1 devin F-6).
   const root = {
     openapi: versionWire(policy.version),
-    info: { title: attachment.projectId, version: attachment.attachmentRevision ?? "" },
+    info: { title: attachment.projectId, version: attachment.attachmentRevision },
     paths: Object.fromEntries(
       [...pathItems.entries()].sort(byKey).map(([template, item]) => [
         template,
