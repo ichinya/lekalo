@@ -130,6 +130,20 @@ pub fn resolve_candidate(
     candidate: discovery::DiscoveryCandidate,
     context: &ResolveContext,
 ) -> Result<ResolvedAdapter, PackageFailure> {
+    // Gate 0: compatibility — the manifest's exact-set compatibility must
+    // cover the current protocol and IR contracts before anything else
+    // runs (`adapter.incompatible`, exit 5).
+    {
+        let manifest = &candidate.manifest;
+        if !manifest.covers(
+            crate::target_protocol::version::VERSION,
+            crate::ir::version::VERSION,
+        ) {
+            return Err(PackageFailure::Incompatible {
+                adapter: manifest.adapter_id().to_owned(),
+            });
+        }
+    }
     // Gate 1: integrity — checksums before anything else executes.
     integrity::verify_package(&candidate)?;
     // Gate 2: the declared signature policy, evaluated honestly.
@@ -238,6 +252,50 @@ mod resolve_tests {
             package_root: None,
             synthesized: true,
         }
+    }
+
+    #[test]
+    fn an_incompatible_manifest_refuses_at_the_compatibility_gate() {
+        let context = ResolveContext {
+            root: None,
+            offline: false,
+        };
+        let mut candidate = candidate(
+            "legacy-adapter",
+            b"const x = 1;
+",
+        );
+        // Rebuild the manifest declaring an unsupported protocol: the
+        // integrity data stays honest, so the refusal can only come from
+        // the compatibility gate.
+        let digest = crate::digest::sha256_hex(
+            b"const x = 1;
+",
+        );
+        let mut json = serde_json::json!({
+            "schemaVersion": crate::adapter_package::version::MANIFEST_SCHEMA_VERSION,
+            "identity": crate::adapter_package::version::MANIFEST_IDENTITY,
+            "adapter": { "id": "legacy-adapter", "name": "L", "version": "1.0.0" },
+            "publisher": { "id": "p", "trustAnchor": "none" },
+            "source": { "kind": "path", "coordinate": "path:x", "digest": format!("sha256:{}", "11".repeat(32)) },
+            "license": { "spdx": "MIT", "file": "LICENSE", "fileDigest": format!("sha256:{}", "11".repeat(32)) },
+            "compatibility": { "protocolVersions": [crate::target_protocol::version::VERSION], "irVersions": [crate::ir::version::VERSION], "extensions": [] },
+            "capabilities": { "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] },
+            "executable": { "runtime": { "kind": "node", "minVersion": "18.0.0" }, "entry": "a.mjs", "argvPreview": ["node", "a.mjs"], "assets": [] },
+            "platforms": ["any"],
+            "integrity": { "packageDigest": format!("sha256:{digest}"), "files": [ { "path": "a.mjs", "digest": format!("sha256:{digest}"), "bytes": 15 } ], "signaturePolicy": "unsigned", "signature": null },
+            "permissions": { "filesystem": { "readScopes": [], "writeScopes": [] }, "network": { "mode": "denied", "destinations": [] }, "environment": { "allowlist": [] }, "processes": { "children": "denied" }, "secrets": { "handles": [] } },
+            "hooks": [],
+            "conformance": { "reportDigest": format!("sha256:{}", "11".repeat(32)), "badge": { "protocol": "0.3.2", "ir": "0.2.16", "profile": "default" }, "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2" },
+            "status": "active",
+            "revocation": null
+        });
+        json["compatibility"]["protocolVersions"] = serde_json::json!(["9.9.9"]);
+        json["integrity"]["packageDigest"] =
+            serde_json::Value::String(format!("sha256:{}", "99".repeat(32)));
+        candidate.manifest = ManifestDocument::from_value(json).expect("parses");
+        let error = resolve_candidate(candidate, &context).expect_err("incompatible");
+        assert!(matches!(error, PackageFailure::Incompatible { .. }));
     }
 
     #[test]
