@@ -294,3 +294,60 @@ test("an absent evidence home yields zero openapi writes, not a failure", () => 
 test("the write scopes cover the default policy path", () => {
   assert.deepEqual(OPENAPI_WRITE_SCOPES, ["docs/**"]);
 });
+
+test("a divided errorDefault inlines its category body and never dangles a $ref (r1 F-1)", () => {
+  // Two endpoints: ep0 keeps domain:422, the clone declares domain:423
+  // (a status neither endpoint covers with a declared error) — the
+  // domain pair is divided, so neither may reference a shared
+  // ErrorDomain component; every other uncovered pair stays uniform.
+  const transport = JSON.parse(plannerEvidence);
+  const ir = JSON.parse(plannerIr);
+  const focusDef = ir.definitions.find((def) => def.id === "planner.api_focus");
+  const cloneDef = JSON.parse(JSON.stringify(focusDef));
+  cloneDef.id = "planner.api_focus_divided";
+  cloneDef.path = "/tasks/{task_id}/focus-divided";
+  ir.definitions.push(cloneDef);
+  const cloneEndpoint = JSON.parse(JSON.stringify(transport.endpoints[0]));
+  cloneEndpoint.endpoint = "planner.api_focus_divided";
+  cloneEndpoint.errorDefaults = { ...cloneEndpoint.errorDefaults, domain: 423 };
+  transport.endpoints.push(cloneEndpoint);
+
+  const root = mkdtempSync(join(tmpdir(), "lekalo-openapi-divided-"));
+  try {
+    const evidenceDir = join(root, ".lekalo", "cache", "transport");
+    const irDir = join(root, ".lekalo", "cache", "ir");
+    mkdirSync(evidenceDir, { recursive: true });
+    mkdirSync(irDir, { recursive: true });
+    writeFileSync(join(evidenceDir, "planner.json"), JSON.stringify(transport), "utf8");
+    writeFileSync(join(irDir, "planner.json"), JSON.stringify(ir), "utf8");
+    const views = viewsFor(root);
+    const outcome = run({ ...views, request: {} });
+    assert.equal(outcome.state, "complete", JSON.stringify(outcome.diagnostics ?? []));
+    const yaml = outcome.data.bodies.get("docs/openapi.yaml");
+    // The divided domain statuses carry the inline category envelope…
+    const block422 = yaml.slice(yaml.indexOf('"422":'), yaml.indexOf('"422":') + 600);
+    const block423 = yaml.slice(yaml.indexOf('"423":'), yaml.indexOf('"423":') + 600);
+    assert.ok(/"422":/.test(yaml) && block422.includes('"const": "domain"'),
+      "the divided 422 renders the domain envelope inline");
+    assert.ok(/"423":/.test(yaml) && block423.includes('"const": "domain"'),
+      "the divided 423 renders the domain envelope inline");
+    assert.ok(!yaml.includes('"$ref": "#/components/responses/ErrorDomain"'),
+      "the divided pair never references ErrorDomain");
+    assert.ok(!yaml.includes('"ErrorDomain": {'), "the divided ErrorDomain component is not emitted");
+    // …and every emitted response $ref resolves to a real component.
+    const refs = [...yaml.matchAll(/"\$ref": "#\/components\/responses\/([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+    assert.ok(refs.length > 0, "uniform defaults still share components");
+    const componentsStart = yaml.indexOf('"components":');
+    assert.ok(componentsStart >= 0, "components are emitted");
+    for (const name of refs) {
+      assert.ok(
+        yaml.includes(`"${name}":`, componentsStart),
+        `response $ref target ${name} is emitted under components.responses`,
+      );
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

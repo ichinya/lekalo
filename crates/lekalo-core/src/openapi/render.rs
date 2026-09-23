@@ -425,7 +425,15 @@ fn operation_json(
         );
     }
 
-    let responses = responses_json(binding, endpoint, mapper, context, error_names)?;
+    let responses = responses_json(
+        document,
+        binding,
+        endpoint,
+        mapper,
+        context,
+        error_names,
+        version,
+    )?;
     operation.insert("responses".to_owned(), responses);
 
     if let Some(auth) = &binding.auth {
@@ -743,11 +751,13 @@ fn explicit_object(properties: Map<String, Json>, required: Vec<String>) -> Json
 
 /// The responses object of one operation.
 fn responses_json(
+    document: &TransportDocument,
     binding: &EndpointBinding,
     endpoint: &EndpointDef,
     mapper: &mut SchemaMapper,
     context: &ValidationContext<'_>,
     error_names: &BTreeMap<String, String>,
+    version: DocumentVersion,
 ) -> Result<Json, DiagnosticSet> {
     let subject = binding.endpoint.as_str();
     let mut responses = Map::new();
@@ -835,8 +845,13 @@ fn responses_json(
     }
 
     // The category defaults: statuses not covered by a declared entry
-    // reference the shared `Error<Category>` response. Status zero is
-    // the declared "no projection" and never serializes.
+    // reference the shared `Error<Category>` component — but only when
+    // the `(category, status)` pair is uniform across every endpoint
+    // (the uniform set is exactly what `components.responses` emits).
+    // A divided default renders its category body inline, so no `$ref`
+    // ever targets a component that was never emitted (r1 F-1).
+    // Status zero is the declared "no projection" and never serializes.
+    let uniform = uniform_defaults(document);
     for (category, status) in defaults_members(&binding.error_defaults) {
         if status == 0 || by_status.contains_key(&status) {
             continue;
@@ -844,13 +859,20 @@ fn responses_json(
         if responses.contains_key(&status.to_string()) {
             continue;
         }
-        let name = format!("Error{}", pascal(&category));
-        responses.insert(
-            status.to_string(),
-            json!({
-                "$ref": format!("#/components/responses/{}", escape_pointer(&name))
-            }),
-        );
+        if uniform.contains(&(category.clone(), status)) {
+            let name = format!("Error{}", pascal(&category));
+            responses.insert(
+                status.to_string(),
+                json!({
+                    "$ref": format!("#/components/responses/{}", escape_pointer(&name))
+                }),
+            );
+        } else {
+            responses.insert(
+                status.to_string(),
+                category_response(version, &category, status),
+            );
+        }
     }
     Ok(Json::Object(responses))
 }

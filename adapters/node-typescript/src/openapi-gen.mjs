@@ -179,6 +179,30 @@ function decodeIrEvidenceFull(bytes) {
 // The closed mapping table (plan §2.3): the exact core semantics.
 // ---------------------------------------------------------------------------
 
+/** The document-wide uniform `(category, status)` error-default pairs:
+ * exactly the pairs every endpoint declares alike — the set that may
+ * render once under `components.responses` (r1 F-1). */
+function computeUniformDefaults(attach) {
+  const endpoints = attach?.endpoints ?? [];
+  if (endpoints.length === 0) return new Set();
+  const membersOf = (endpoint) => {
+    const members = new Set();
+    for (const [category, code] of Object.entries(endpoint.errorDefaults ?? {})) {
+      if (code !== 0) members.add(`${category},${code}`);
+    }
+    return members;
+  };
+  const uniform = membersOf(endpoints[0]);
+  for (let index = 1; index < endpoints.length; index++) {
+    const members = membersOf(endpoints[index]);
+    for (const pair of uniform) {
+      if (!members.has(pair)) uniform.delete(pair);
+    }
+  }
+  return uniform;
+}
+
+
 /** The document render over one decoded evidence join. */
 function renderDocument(attachment, ir, policy) {
   const definitions = new Map();
@@ -203,6 +227,7 @@ function renderDocument(attachment, ir, policy) {
       }
     },
   };
+
   // Pass one: every operation.
   const pathItems = new Map();
   const pointers = [];
@@ -358,7 +383,11 @@ function operationOf(attachment, endpoint, definition, definitions, state) {
       const renderable = (id) => {
         const scheme = schemes.find((candidate) => candidate.id === id);
         if (scheme === undefined) return false;
-        return !["oauth2", "custom"].includes(scheme.kind);
+        if (scheme.kind === "oauth2" || scheme.kind === "custom") return false;
+        // mutualTLS exists only in OpenAPI 3.1 (G3): a declared 3.0
+        // render annotates the scheme instead of a native requirement.
+        if (scheme.kind === "mutual-tls" && state.version !== "3.1") return false;
+        return true;
       };
       const requirement = {};
       const annotated = [];
@@ -478,23 +507,32 @@ function responsesOf(attachment, endpoint, definition, definitions, state) {
     };
   }
   // The category defaults: uncovered statuses reference the shared
-  // category response, rendered once under components.responses.
+  // category response if uniform, otherwise inline the category body.
   const defaults = endpoint.errorDefaults ?? {};
   const covered = new Set([...byStatus.keys()]);
+  const uniform = computeUniformDefaults(attachment);
   const shared = {};
   for (const [category, code] of Object.entries(defaults)) {
     if (code === 0 || covered.has(code) || responses[code] !== undefined) continue;
-    responses[code] = { $ref: `#/components/responses/Error${pascal(category)}` };
+    const isUniform = uniform.has(`${category},${code}`);
+    if (isUniform) {
+      responses[code] = { $ref: `#/components/responses/Error${pascal(category)}` };
+    } else {
+      // Divided default: the shared component would be ambiguous, so
+      // the category body renders inline — never a dangling $ref.
+      responses[code] = categoryResponse(category);
+    }
   }
-  if (Object.keys(defaults).length > 0) {
-    for (const [category, code] of Object.entries(defaults)) {
-      if (code === 0) continue;
+  // Build shared components only for uniform defaults
+  for (const [category, code] of Object.entries(defaults)) {
+    if (code === 0) continue;
+    if (uniform.has(`${category},${code}`)) {
       const name = `Error${pascal(category)}`;
       shared[name] = categoryResponse(category);
     }
-    if (Object.keys(shared).length > 0 && state.components.size >= 0) {
-      state.sharedResponses = shared;
-    }
+  }
+  if (Object.keys(shared).length > 0 && state.components.size >= 0) {
+    state.sharedResponses = shared;
   }
   return responses;
 }

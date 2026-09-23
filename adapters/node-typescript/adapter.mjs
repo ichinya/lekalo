@@ -218369,6 +218369,25 @@ function decodeIrEvidenceFull(bytes) {
   }
   return { value: { ...decoded.value, definitions: document.definitions } };
 }
+function computeUniformDefaults(attach) {
+  const endpoints = attach?.endpoints ?? [];
+  if (endpoints.length === 0) return /* @__PURE__ */ new Set();
+  const membersOf = (endpoint) => {
+    const members = /* @__PURE__ */ new Set();
+    for (const [category, code] of Object.entries(endpoint.errorDefaults ?? {})) {
+      if (code !== 0) members.add(`${category},${code}`);
+    }
+    return members;
+  };
+  const uniform = membersOf(endpoints[0]);
+  for (let index = 1; index < endpoints.length; index++) {
+    const members = membersOf(endpoints[index]);
+    for (const pair of uniform) {
+      if (!members.has(pair)) uniform.delete(pair);
+    }
+  }
+  return uniform;
+}
 function renderDocument(attachment, ir, policy) {
   const definitions = /* @__PURE__ */ new Map();
   for (const definition of ir.definitions ?? []) {
@@ -218533,7 +218552,9 @@ function operationOf(attachment, endpoint, definition, definitions, state) {
       const renderable = (id) => {
         const scheme = schemes.find((candidate) => candidate.id === id);
         if (scheme === void 0) return false;
-        return !["oauth2", "custom"].includes(scheme.kind);
+        if (scheme.kind === "oauth2" || scheme.kind === "custom") return false;
+        if (scheme.kind === "mutual-tls" && state.version !== "3.1") return false;
+        return true;
       };
       const requirement = {};
       const annotated = [];
@@ -218646,20 +218667,26 @@ function responsesOf(attachment, endpoint, definition, definitions, state) {
   }
   const defaults = endpoint.errorDefaults ?? {};
   const covered = /* @__PURE__ */ new Set([...byStatus.keys()]);
+  const uniform = computeUniformDefaults(attachment);
   const shared = {};
   for (const [category, code] of Object.entries(defaults)) {
     if (code === 0 || covered.has(code) || responses[code] !== void 0) continue;
-    responses[code] = { $ref: `#/components/responses/Error${pascal2(category)}` };
+    const isUniform = uniform.has(`${category},${code}`);
+    if (isUniform) {
+      responses[code] = { $ref: `#/components/responses/Error${pascal2(category)}` };
+    } else {
+      responses[code] = categoryResponse(category);
+    }
   }
-  if (Object.keys(defaults).length > 0) {
-    for (const [category, code] of Object.entries(defaults)) {
-      if (code === 0) continue;
+  for (const [category, code] of Object.entries(defaults)) {
+    if (code === 0) continue;
+    if (uniform.has(`${category},${code}`)) {
       const name = `Error${pascal2(category)}`;
       shared[name] = categoryResponse(category);
     }
-    if (Object.keys(shared).length > 0 && state.components.size >= 0) {
-      state.sharedResponses = shared;
-    }
+  }
+  if (Object.keys(shared).length > 0 && state.components.size >= 0) {
+    state.sharedResponses = shared;
   }
   return responses;
 }
@@ -218767,7 +218794,9 @@ function optionalOf(inner) {
   }
   if (inner !== null && typeof inner === "object" && inner.type !== void 0) {
     const types = Array.isArray(inner.type) ? [...inner.type] : [inner.type];
-    types.push("null");
+    if (!types.includes("null")) {
+      types.push("null");
+    }
     return { ...inner, type: types };
   }
   return inner;
