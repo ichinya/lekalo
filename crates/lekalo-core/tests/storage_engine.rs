@@ -1244,11 +1244,23 @@ fn a_renamed_join_renames_and_rederives_its_foreign_keys() {
         .collect();
     assert_eq!(adds.len(), 2, "one fresh-name add per join side");
     for add in &adds {
-        assert_eq!(
-            add.requires(),
-            &old_drops,
-            "each re-add depends on the old-name drops"
+        assert!(
+            add.requires().is_empty(),
+            "each re-add claims no dependency: the fresh name does not exist until the add creates it, and the old-name drops sort behind the constructive steps"
         );
+    }
+    // No forward edges anywhere in the plan: a dependency always
+    // precedes its dependent (the r5 finding — the old asserts proved
+    // set equality without proving the drops precede the adds).
+    for step in plan.steps() {
+        for dep in step.requires() {
+            assert!(
+                *dep < step.id(),
+                "step {} depends on later step {}",
+                step.id(),
+                dep
+            );
+        }
     }
     assert!(plan.gated());
 }

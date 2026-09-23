@@ -1352,15 +1352,19 @@ fn plan_tables(
                 // re-add under the fresh deterministic ones — the
                 // migrated schema never keeps a stale `fk_<oldjoin>_*`
                 // a fresh render would not produce (the same contract
-                // the entity-table rename block holds).
-                let mut rename_requires = Vec::new();
+                // the entity-table rename block holds). The drops and
+                // the re-adds are independent statements: the fresh
+                // names do not exist until the adds create them, and
+                // the ordering pass moves the old-name drops behind the
+                // rank-0 constructive steps — so the re-adds claim no
+                // requires edge (a forward edge, dependency > own id,
+                // would contradict the published dependency order).
                 for column in existing.columns() {
                     let old_name =
                         StorageName::parse(&format!("fk_{}_{}", existing.table(), column.name()))
                             .map_err(|_| {
                             diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
                         })?;
-                    let drop_id = steps.len();
                     push_step(
                         steps,
                         "drop_constraint",
@@ -1373,7 +1377,6 @@ fn plan_tables(
                         Vec::new(),
                         None,
                     );
-                    rename_requires.push(drop_id + 1);
                 }
                 let mut statements = create_join_and_fks(candidate_attachment, candidate, join)?;
                 // The renamed table exists already; only its FK names
