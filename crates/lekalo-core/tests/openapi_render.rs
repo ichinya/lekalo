@@ -195,10 +195,29 @@ fn the_declared_30_variant_renders_the_nullable_sibling() {
     let document = render(&suite.attachment, &context, &config).expect("renders");
     assert_eq!(document.root()["openapi"], "3.0.0");
     // The optional due date renders the 3.0 nullable sibling over the
-    // allOf-composed $ref.
-    let due = &document.root()["paths"]["/tasks/by-project"]["get"]["responses"]["200"]["content"]
-        ["application/json"]["schema"];
-    let _ = due;
+    // allOf-composed $ref — never the 3.1 type array.
+    let due = &document.root()["components"]["schemas"]["PlannerTask"]["properties"]["due"];
+    assert_eq!(
+        due,
+        &serde_json::json!({
+            "nullable": true,
+            "allOf": [{ "$ref": "#/components/schemas/PlannerDueDate" }]
+        })
+    );
+    // No 3.1-dialect constructs anywhere: no `type` arrays carrying
+    // `"null"`, no `const` members.
+    let text = document.canonical_bytes();
+    assert!(!text.contains("\"type\":[\"string\",\"null\"]"), "{text}");
+    assert!(
+        !text.contains("\"const\""),
+        "3.0 spells single-value enums, not const: {text}"
+    );
+    // `ok` is a single-value enum at 3.0.
+    assert_eq!(
+        document.root()["components"]["responses"]["ErrorAuth"]["content"]["application/json"]
+            ["schema"]["properties"]["ok"],
+        serde_json::json!({ "enum": [false] })
+    );
 }
 
 fn unbound_registry_renders_open_error_responses() {
