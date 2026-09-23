@@ -8,6 +8,7 @@ use lekalo_core::loader::LoadSelection;
 use lekalo_core::lockfile::plan::LockService;
 use lekalo_core::lockfile::resolution::CandidateSet;
 use lekalo_core::lockfile::{LockFailure, LockReceipt, LockRequirement, UpdateReceipt};
+use lekalo_core::orchestration::catalog;
 use lekalo_core::versioning::compatibility::CompatibilityReport;
 use lekalo_core::versioning::migration::{MigrationReceipt, MigrationService, VersioningFailure};
 use lekalo_core::versioning::{ModelTarget, TargetMalformation, VersionRegistry};
@@ -1778,10 +1779,11 @@ fn run_lock(project: Option<String>, check: bool, program_args: Vec<String>) -> 
             let root =
                 lekalo_core::orchestration::project_root(&selection).expect("root resolved above");
             let mut client = lekalo_core::target_protocol::TargetClient::default();
-            let discovered = match lekalo_core::target_protocol::discovery::Discovery::run(
+            let discovered = match lekalo_core::orchestration::catalog::discover(
                 &mut client,
-                &supply.command,
+                supply,
                 &root,
+                lekalo_core::target_protocol::transport::TransportLimits::default(),
             ) {
                 Ok(discovered) => discovered,
                 Err(failure) => return DomainResult::from(&failure),

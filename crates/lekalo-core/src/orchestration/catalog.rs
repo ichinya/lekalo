@@ -87,7 +87,7 @@ impl AdapterSupply {
 /// synthesized from the entry bytes and the integrity/trust gates run
 /// before any child process exists (checksum before execution,
 /// describe included).
-pub(crate) fn discover(
+pub fn discover(
     client: &mut TargetClient,
     supply: &AdapterSupply,
     root: &Path,
