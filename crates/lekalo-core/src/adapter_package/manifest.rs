@@ -860,18 +860,17 @@ impl PermissionsWire {
             reason: reason.to_owned(),
         };
         let scopes = |member: &Json, key: &str| -> Result<(), PackageFailure> {
-            member
+            // `member` IS the filesystem object: validate its `key` array
+            // in place. (Fix round 4, devin N-2: the previous loop walked
+            // `member.get("filesystem")…get(key)` — always `None` — so
+            // `parse_scope` never ran and traversal spellings like
+            // `"../escape"` were accepted at the Rust boundary while the
+            // schema refused them.)
+            let values = member
                 .get(key)
                 .and_then(|value| value.as_array())
                 .ok_or_else(|| invalid("permissions-filesystem"))?;
-            for scope in member
-                .get("filesystem")
-                .and_then(|filesystem| filesystem.get(key))
-                .and_then(|value| value.as_array())
-                .into_iter()
-                .flatten()
-                .filter_map(|item| item.as_str())
-            {
+            for scope in values.iter().filter_map(|item| item.as_str()) {
                 super::types::parse_scope(scope)?;
             }
             Ok(())
@@ -1168,5 +1167,56 @@ mod schema_parity_tests {
                 "{path}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod filesystem_scope_tests {
+    use super::*;
+
+    fn manifest_with_read_scope(scope: &str) -> Result<ManifestDocument, PackageFailure> {
+        let json = serde_json::json!({
+            "schemaVersion": crate::adapter_package::version::MANIFEST_SCHEMA_VERSION,
+            "identity": crate::adapter_package::version::MANIFEST_IDENTITY,
+            "adapter": { "id": "scope-adapter", "name": "S", "version": "1.0.0" },
+            "publisher": { "id": "p", "trustAnchor": "none" },
+            "source": { "kind": "path", "coordinate": "path:x", "digest": format!("sha256:{}", "11".repeat(32)) },
+            "license": { "spdx": "MIT", "file": "LICENSE", "fileDigest": format!("sha256:{}", "11".repeat(32)) },
+            "compatibility": { "protocolVersions": [crate::target_protocol::version::VERSION], "irVersions": [crate::ir::version::VERSION], "extensions": [] },
+            "capabilities": { "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] },
+            "executable": { "entry": "a.mjs" },
+            "platforms": ["any"],
+            "integrity": { "packageDigest": format!("sha256:{}", "22".repeat(32)), "files": [ { "path": "a.mjs", "digest": format!("sha256:{}", "33".repeat(32)), "bytes": 3 } ], "signaturePolicy": "unsigned", "signature": null },
+            "permissions": {
+                "filesystem": { "readScopes": [scope], "writeScopes": [] },
+                "network": { "mode": "denied", "destinations": [] },
+                "environment": { "allowlist": [] },
+                "processes": { "children": "denied" },
+                "secrets": { "handles": [] }
+            },
+            "hooks": [],
+            "conformance": { "reportDigest": format!("sha256:{}", "44".repeat(32)), "badge": { "protocol": "0.3.2", "ir": "0.2.16", "profile": "default" }, "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2" },
+            "status": "active",
+            "revocation": null
+        });
+        ManifestDocument::from_value(json)
+    }
+
+    /// Regression (fix round 4, devin N-2): the filesystem scope grammar
+    /// actually runs at the Rust boundary. `../escape` must refuse — the
+    /// schema refuses it, and the runtime gate must agree.
+    #[test]
+    fn traversal_scopes_refuse_at_the_rust_boundary() {
+        for scope in ["../escape", "src/../../escape", "/absolute", "drive:C:x"] {
+            let error = manifest_with_read_scope(scope)
+                .expect_err("a traversal scope must refuse the manifest");
+            assert!(
+                matches!(error, PackageFailure::ManifestInvalid { .. }),
+                "{scope} must refuse"
+            );
+        }
+        // Honest scopes still parse, in both read and write positions.
+        assert!(manifest_with_read_scope("src/**").is_ok());
+        assert!(manifest_with_read_scope("generated/out/**").is_ok());
     }
 }
