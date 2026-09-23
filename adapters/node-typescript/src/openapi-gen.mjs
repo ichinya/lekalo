@@ -302,9 +302,11 @@ function renderDocument(attachment, ir, policy) {
   }
 
   // The root: canonical member order is the byte-sorted key order.
+  // info.version is the attachment revision — the documented document
+  // revision, never the generator's own version (r1 devin F-6).
   const root = {
     openapi: versionWire(policy.version),
-    info: { title: attachment.projectId, version: "0.4.0" },
+    info: { title: attachment.projectId, version: attachment.attachmentRevision ?? "" },
     paths: Object.fromEntries(
       [...pathItems.entries()].sort(byKey).map(([template, item]) => [
         template,

@@ -460,3 +460,26 @@ test("the provenance block binds the evidence's model/IR/transport pins (r1 clin
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("info.version is the attachment revision, not a generator constant (r1 devin F-6)", () => {
+  const transport = JSON.parse(plannerEvidence);
+  transport.attachmentRevision = "9.9.9-rc.1";
+  const root = mkdtempSync(join(tmpdir(), "lekalo-openapi-rev-"));
+  try {
+    const evidenceDir = join(root, ".lekalo", "cache", "transport");
+    const irDir = join(root, ".lekalo", "cache", "ir");
+    mkdirSync(evidenceDir, { recursive: true });
+    mkdirSync(irDir, { recursive: true });
+    writeFileSync(join(evidenceDir, "planner.json"), JSON.stringify(transport), "utf8");
+    writeFileSync(join(irDir, "planner.json"), plannerIr, "utf8");
+    const views = viewsFor(root);
+    const outcome = run({ ...views, request: {} });
+    assert.equal(outcome.state, "complete");
+    const yaml = outcome.data.bodies.get("docs/openapi.yaml");
+    assert.ok(yaml.includes('"version": "9.9.9-rc.1"'), "info.version follows the attachment revision");
+    // The generator version stays where it belongs: the provenance block.
+    assert.ok(yaml.includes('"version": "0.4.0"'), "the generator version rides provenance");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
