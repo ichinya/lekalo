@@ -15,7 +15,7 @@ use crate::diagnostics::{DataObject, Diagnostic};
 use crate::result::{DomainResult, Status};
 
 /// The registered rule id of one package failure.
-pub(crate) fn reason_of(failure: &PackageFailure) -> &'static str {
+pub fn reason_of(failure: &PackageFailure) -> &'static str {
     match failure {
         PackageFailure::ManifestInvalid { .. } => reasons::MANIFEST_INVALID,
         PackageFailure::ManifestMismatch { .. } => reasons::MANIFEST_MISMATCH,

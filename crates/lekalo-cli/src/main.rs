@@ -2061,18 +2061,24 @@ fn run_adapter_discover(source: &str, offline: bool, project: &Option<String>) -
             "synthesized": candidate.synthesized,
             "status": manifest.status().as_str(),
         });
-        // The assigned trust level, plus the gate verdict when the
-        // candidate is fully resolvable offline.
+        // The assigned trust level, plus the gate verdict: failures are
+        // surfaced honestly per candidate (devin F-11), never swallowed.
         let level = lekalo_core::adapter_package::assign_trust(candidate);
         row["trust"] = serde_json::json!(level.as_str());
-        if let Ok(resolved) =
-            lekalo_core::adapter_package::resolve_candidate(candidate.clone(), &context)
-        {
-            row["gates"] = serde_json::json!({
-                "integrity": true,
-                "signature": true,
-                "trust": resolved.trust.as_str(),
-            });
+        match lekalo_core::adapter_package::resolve_candidate(candidate.clone(), &context) {
+            Ok(resolved) => {
+                row["gates"] = serde_json::json!({
+                    "integrity": true,
+                    "signature": true,
+                    "trust": resolved.trust.as_str(),
+                });
+            }
+            Err(failure) => {
+                row["gates"] = serde_json::json!({
+                    "integrity": false,
+                    "reason": lekalo_core::adapter_package::diagnostic::reason_of(&failure),
+                });
+            }
         }
         rows.push(row);
     }
