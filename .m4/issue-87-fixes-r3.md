@@ -29,6 +29,7 @@ mistake on `--as-of`; a test written against non-existent APIs) and were
 | `923e93b` | R2-4 tail: contract-gate row for DFL-009 aligned (error, `valid` dropped) |
 | `3f295dfa` | F-5: dedicated custody ids LEK-CLS-013..015 |
 | `6f2905b` | F-3 fix-forward (analyzer-level gated-gate tests) + F-7 emit-event boundary decision + docs |
+| `21510f2` | **fix-forward**: drops the superseded non-compiling detected-edge F-3 draft from the integration binary (HEAD must compile) and rustfmts the inspect payload call |
 
 ## Per-finding table
 
@@ -54,6 +55,7 @@ mistake on `--as-of`; a test written against non-existent APIs) and were
 | `cargo test -p lekalo-core --test dataflow` | 3/3 |
 | `node scripts/test-classification-cli.mjs` | `{ok:true, fixtures:{valid:1, declassified:1, invalid:7}, sentinelScanned:true}` |
 | `NODE_PATH=%TEMP%\lekalo-ajv-8.17.1\node_modules node scripts/test-classification-contracts.mjs` | `{ok:true, ajv:"8.17.1", registryEntries:358, predecessorEntries:321, classificationRules:15, dataflowRules:9}` |
+| `cargo test -p lekalo-core --test dataflow` (against committed HEAD) | 3/3 |
 | R2-2 probe (`expired-public-grant`) | `--as-of 2019-01-01…` → exit 0; default → exit 1 LEK-CLS-007 |
 | F-5 probe (corrupt `modelRef.digest`) | exit 1, `LEK-CLS-014 classification.custody-model` |
 
