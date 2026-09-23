@@ -517,12 +517,12 @@ impl CandidateSet {
             return;
         };
         let digest8: String = package_digest["sha256:".len()..].chars().take(8).collect();
-        let installed_path = format!(".lekalo/adapters/packages/*/{version}-{digest8}");
         for adapter in self
             .adapters
             .iter_mut()
             .filter(|a| a.version.as_str() == version && a.digest.as_str() == package_digest)
         {
+            let installed_path = format!(".lekalo/adapters/packages/{}/{}-{digest8}", adapter.id.as_str(), version);
             let _ = adapter.with_provenance(&installed_path, manifest.clone(), trust, plan.clone());
         }
     }
