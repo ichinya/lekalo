@@ -1928,6 +1928,158 @@ fn a_renamed_tables_named_index_content_change_is_rederived() {
 }
 
 #[test]
+fn a_renamed_tables_pk_swap_swaps_under_one_name_then_renames() {
+    // A primary-key swap on a renamed table swaps under the old
+    // deterministic name and then renames the constraint: the drop and
+    // the add pair under pk_<base> — same-name pairing keeps the add
+    // behind the drop, where a split-name add would fail 42P16 and
+    // publish a forward edge — and every key referencing the swapped
+    // key drops before the old constraint (2BP02) and re-adds,
+    // re-targeted, once the fresh one binds.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        for table in projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+        {
+            if table.get("table").and_then(serde_json::Value::as_str) == Some("task") {
+                table["table"] = serde_json::Value::String("todo".to_owned());
+                table["primaryKey"] = serde_json::json!(["tenant_id"]);
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    let pk_drop = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "drop_constraint"
+                && step.statement() == "ALTER TABLE \"todo\" DROP CONSTRAINT \"pk_task\";"
+        })
+        .expect("the old primary key drops under the base-derived name");
+    let pk_add = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "add_primary_key")
+        .expect("the fresh key adds");
+    assert_eq!(
+        pk_add.statement(),
+        "ALTER TABLE \"todo\" ADD CONSTRAINT \"pk_task\" PRIMARY KEY (\"tenant_id\");",
+        "the fresh key adds under the base-derived name so the drop/add pair"
+    );
+    let pk_rename = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "rename_constraint")
+        .expect("the pair renames to the fresh deterministic name");
+    assert_eq!(
+        pk_rename.statement(),
+        "ALTER TABLE \"todo\" RENAME CONSTRAINT \"pk_task\" TO \"pk_todo\";"
+    );
+    assert!(pk_drop.id() < pk_add.id() && pk_add.id() < pk_rename.id());
+    assert_eq!(pk_add.requires(), &[pk_drop.id()]);
+    assert_eq!(pk_rename.requires(), &[pk_add.id()]);
+    // A dependent key on another table drops before the old primary
+    // key and re-adds, re-targeted, wired to the binding rename.
+    let fk_drop = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "drop_constraint"
+                && step
+                    .statement()
+                    .contains("DROP CONSTRAINT \"fk_task_detail_task_id\"")
+        })
+        .expect("the dependent foreign key drops");
+    assert!(
+        fk_drop.id() < pk_drop.id(),
+        "the dependent key drops before the old primary key"
+    );
+    let fk_add = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "add_foreign_key" && step.statement().contains("fk_task_detail_task_id")
+        })
+        .expect("the dependent foreign key re-adds");
+    assert!(
+        fk_add
+            .statement()
+            .contains("REFERENCES \"todo\"(\"tenant_id\")"),
+        "the re-add targets the fresh key's column: {}",
+        fk_add.statement()
+    );
+    assert_eq!(fk_add.requires(), &[pk_rename.id()]);
+    // The renamed table's own re-derived key waits for the binding too.
+    let self_add = plan
+        .steps()
+        .iter()
+        .find(|step| step.statement().contains("fk_todo_parent_task_id"))
+        .expect("the renamed table's own key re-adds");
+    assert_eq!(self_add.requires(), &[pk_rename.id()]);
+    // A stable join's key referencing the swapped table rides the same
+    // flow instead of blocking the drop.
+    let join_drop = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "drop_constraint"
+                && step
+                    .statement()
+                    .contains("DROP CONSTRAINT \"fk_task_tag_task_id\"")
+        })
+        .expect("the stable join's dependent key drops");
+    assert!(join_drop.id() < pk_drop.id());
+    let join_add = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "add_foreign_key" && step.statement().contains("fk_task_tag_task_id")
+        })
+        .expect("the stable join's dependent key re-adds");
+    assert!(join_add
+        .statement()
+        .contains("REFERENCES \"todo\"(\"tenant_id\")"));
+    assert_eq!(join_add.requires(), &[pk_rename.id()]);
+    for step in plan.steps() {
+        for dep in step.requires() {
+            assert!(*dep < step.id(), "no forward edges");
+        }
+    }
+}
+
+#[test]
 fn a_type_change_without_an_assignment_cast_refuses() {
     // A text-to-integer change cannot execute as a bare ALTER COLUMN
     // TYPE: the planner refuses with the registered rule instead of

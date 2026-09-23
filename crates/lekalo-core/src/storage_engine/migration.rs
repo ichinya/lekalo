@@ -300,7 +300,7 @@ pub fn plan(
             );
         }
     }
-    let (table_ids, renamed_tables) = plan_tables(
+    let (table_ids, renamed_tables, pk_swapped) = plan_tables(
         &mut steps,
         &derived_base,
         &derived_candidate,
@@ -353,6 +353,7 @@ pub fn plan(
         &derived_candidate,
         &table_ids,
         &renamed_tables,
+        &pk_swapped,
     )?;
     plan_checks(&mut steps, base, candidate)?;
     plan_enum_checks(&mut steps, profile, base, candidate)?;
@@ -538,14 +539,199 @@ fn push_step(
 /// step index (0-based, pre-renumber) of each surviving table's create
 /// or existing declaration, keyed by table name, for FK/index
 /// dependency wiring.
+/// One foreign key that references a primary key this plan swaps: the
+/// old constraint (when it already exists) must drop before the old
+/// primary key does — the key take-down fails with `2BP02` while any
+/// foreign key still depends on it — and the fresh definition must
+/// wait for the new primary key so it binds a real unique key, never
+/// a non-key column.
+struct DependentKey {
+    name: StorageName,
+    owner: StorageName,
+    exists: bool,
+    add: Option<String>,
+}
+
+/// The foreign keys referencing `table`'s primary key across the whole
+/// projection — entity tables and stable materialized joins alike,/// keyed to the candidate names the swap flow emits under. A renamed
+/// owner that already re-derived its keys refuses: its rename block
+/// re-added them around the unswapped key, and no sound emission
+/// order spans both re-derivations. A renamed owner not yet processed
+/// is skipped — its rename block re-derives the key after this swap,
+/// against the fresh key. A key removed from the candidate plans as a
+/// drop with no re-add; a dropped owner table carries its keys with
+/// the `DROP TABLE`.
+#[allow(clippy::type_complexity)]
+fn dependent_keys(
+    base: &DerivedProjection,
+    candidate: &DerivedProjection,
+    candidate_attachment: &StorageProjectionAttachment,
+    base_table_name: &StorageName,
+    candidate_table_name: &StorageName,
+    renamed_tables: &std::collections::BTreeMap<String, StorageName>,
+) -> Result<Vec<DependentKey>, DiagnosticSet> {
+    let referenced_pk = candidate
+        .tables()
+        .iter()
+        .find(|table| table.table() == candidate_table_name)
+        .and_then(|table| table.primary_key().first().cloned());
+    let mut dependents: Vec<DependentKey> = Vec::new();
+    // Candidate keys that reference the (possibly renamed) table.
+    for owner in candidate.tables() {
+        for foreign_key in owner.foreign_keys() {
+            if foreign_key.references_table() != candidate_table_name {
+                continue;
+            }
+            if owner.table() != candidate_table_name
+                && renamed_tables.contains_key(owner.entity().as_str())
+            {
+                return Err(diagnostic::rule_invalid(
+                    RENDER_UNSUPPORTED,
+                    "referenced-key-swap-rename",
+                    None,
+                ));
+            }
+            let name =
+                StorageName::parse(&format!("fk_{}_{}", owner.table(), foreign_key.column()))
+                    .map_err(|_| {
+                        diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
+                    })?;
+            let exists = base.table(owner.entity()).is_some_and(|base_table| {
+                base_table
+                    .foreign_keys()
+                    .iter()
+                    .any(|base_key| base_key.column() == foreign_key.column())
+            });
+            let add = referenced_pk.as_ref().map(|referenced| {
+                format!(
+                    "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {}({}) ON DELETE {};",
+                    quote(owner.table()),
+                    quote(&name),
+                    quote(foreign_key.column()),
+                    quote(foreign_key.references_table()),
+                    quote(referenced),
+                    foreign_key.on_delete().key(),
+                )
+            });
+            dependents.push(DependentKey {
+                name,
+                owner: owner.table().clone(),
+                exists,
+                add,
+            });
+        }
+    }
+    // Stable join tables: a join whose shape did not change keeps its
+    // keys in place while the referenced table's key swaps under them.
+    // A new, renamed, or rematerialized join re-renders its keys in
+    // its own flow, after every entity swap, against the fresh key.
+    for join in candidate.joins() {
+        let stable = base.joins().iter().find(|base_join| {
+            base_join.table() == join.table()
+                && base_join.relation() == join.relation()
+                && base_join.unique_pair() == join.unique_pair()
+                && base_join.on_owner_delete() == join.on_owner_delete()
+                && base_join.on_target_delete() == join.on_target_delete()
+                && base_join
+                    .columns()
+                    .iter()
+                    .map(|column| column.name())
+                    .eq(join.columns().iter().map(|column| column.name()))
+        });
+        let Some(base_join) = stable else {
+            continue;
+        };
+        for (index, action) in [
+            (0usize, join.on_owner_delete()),
+            (1usize, join.on_target_delete()),
+        ] {
+            let column = &join.columns()[index];
+            let owner_side = index == 0;
+            let Some((ref_table, ref_pk)) = super::postgres::ddl::referenced_join_target(
+                candidate_attachment,
+                candidate,
+                join,
+                owner_side,
+            ) else {
+                continue;
+            };
+            if ref_table != *candidate_table_name {
+                continue;
+            }
+            let name = StorageName::parse(&format!("fk_{}_{}", join.table(), column.name()))
+                .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None))?;
+            let exists = base_join
+                .columns()
+                .iter()
+                .any(|base_column| base_column.name() == column.name());
+            let add = Some(format!(
+                "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {}({}) ON DELETE {};",
+                quote(join.table()),
+                quote(&name),
+                quote(column.name()),
+                quote(&ref_table),
+                quote(&ref_pk),
+                action.key(),
+            ));
+            dependents.push(DependentKey {
+                name,
+                owner: join.table().clone(),
+                exists,
+                add,
+            });
+        }
+    }
+    // Keys the candidate removed: the drop rides this flow (before the
+    // old primary key), never the FK pass behind it.
+    for owner in base.tables() {
+        for foreign_key in owner.foreign_keys() {
+            if foreign_key.references_table() != base_table_name {
+                continue;
+            }
+            if renamed_tables.contains_key(owner.entity().as_str()) {
+                // A renamed owner dropped its old-name keys in its own
+                // rename block.
+                continue;
+            }
+            let Some(candidate_table) = candidate.table(owner.entity()) else {
+                // The owner is dropped; the DROP TABLE owns its keys.
+                continue;
+            };
+            if candidate_table
+                .foreign_keys()
+                .iter()
+                .any(|candidate_key| candidate_key.column() == foreign_key.column())
+            {
+                continue;
+            }
+            let name =
+                StorageName::parse(&format!("fk_{}_{}", owner.table(), foreign_key.column()))
+                    .map_err(|_| {
+                        diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
+                    })?;
+            dependents.push(DependentKey {
+                name,
+                owner: owner.table().clone(),
+                exists: true,
+                add: None,
+            });
+        }
+    }
+    Ok(dependents)
+}
+
 /// The per-table wiring the table plan hands to the dependency
 /// passes: each surviving table's create/declaration step position
-/// (for FK/index dependencies), and the entity tables whose rename
+/// (for FK/index dependencies), the entity tables whose rename
 /// already re-derived their constraints (so the FK pass skips them),
-/// keyed by entity with the pre-rename table name.
+/// keyed by entity with the pre-rename table name, and every name the
+/// plan knows a primary-key-swapped table under (so the FK pass skips
+/// the keys the swap flow itself drops and re-adds around the fresh
+/// key).
 type TablePlan = (
     std::collections::BTreeMap<String, usize>,
     std::collections::BTreeMap<String, StorageName>,
+    std::collections::BTreeSet<String>,
 );
 
 fn plan_tables(
@@ -562,6 +748,11 @@ fn plan_tables(
     // would double-emit the same constraint.
     let mut renamed_tables: std::collections::BTreeMap<String, StorageName> =
         std::collections::BTreeMap::new();
+    // Tables whose primary key this plan swaps, under every name the
+    // plan knows them by (base and candidate): the FK pass skips their
+    // referencing keys, which the swap flows drop and re-add around
+    // the fresh key itself.
+    let mut pk_swapped: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     // Sequences exist before the tables that use them: every new
     // generated sequence column creates its deterministic sequence —
     // the exact object its default and the ownership pass reference.
@@ -722,6 +913,7 @@ fn plan_tables(
             // drop id) would contradict the published dependency
             // order; executing the adds first is also what makes them
             // succeed.
+            let mut own_key_drops = Vec::new();
             for foreign_key in table.foreign_keys() {
                 let old_name = StorageName::parse(&format!(
                     "fk_{}_{}",
@@ -729,6 +921,7 @@ fn plan_tables(
                     foreign_key.column()
                 ))
                 .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None))?;
+                let drop_id = steps.len();
                 push_step(
                     steps,
                     "drop_constraint",
@@ -741,6 +934,7 @@ fn plan_tables(
                     Vec::new(),
                     None,
                 );
+                own_key_drops.push(drop_id + 1);
             }
             // A declared index name is stable across the rename, but
             // its content is not: a named index whose columns,
@@ -836,6 +1030,112 @@ fn plan_tables(
                     None,
                 );
             }
+            // A changed primary key on a renamed table swaps under one
+            // name and then re-derives the name: the fresh key adds
+            // under the OLD pk_<base> name — a same-name drop/add pair
+            // pairs and wires exactly like the swap on a same-name
+            // table — and the pair then renames to the fresh
+            // deterministic pk_<table>. Splitting the drop and the add
+            // across the two names would defeat the pairing (the add
+            // would sort ahead of the drop and fail 42P16, multiple
+            // primary keys) and publish a forward requires edge.
+            // Every key referencing the swapped key — this table's
+            // own, dropped above, and every other table's — drops
+            // before the old constraint (2BP02) and re-adds after the
+            // fresh one binds.
+            let mut pending_dependents: Vec<DependentKey> = Vec::new();
+            let pk_binding_id: Option<usize> = if base_table.primary_key() != table.primary_key() {
+                let mut dependents = dependent_keys(
+                    base,
+                    candidate,
+                    candidate_attachment,
+                    base_table.table(),
+                    table.table(),
+                    &renamed_tables,
+                )?;
+                pk_swapped.insert(table.table().as_str().to_owned());
+                pk_swapped.insert(base_table.table().as_str().to_owned());
+                let mut before_pk = own_key_drops.clone();
+                for dependent in &dependents {
+                    if dependent.owner == *table.table() || !dependent.exists {
+                        continue;
+                    }
+                    let drop_id = steps.len();
+                    push_step(
+                        steps,
+                        "drop_constraint",
+                        format!(
+                            "ALTER TABLE {} DROP CONSTRAINT {};",
+                            quote(&dependent.owner),
+                            quote(&dependent.name)
+                        ),
+                        DataRisk::Destructive,
+                        Vec::new(),
+                        None,
+                    );
+                    before_pk.push(drop_id + 1);
+                }
+                let old_key_name = StorageName::parse(&format!("pk_{}", base_table.table()))
+                    .map_err(|_| {
+                        diagnostic::rule_invalid(MAPPING_INVALID, "primary-key-name", None)
+                    })?;
+                let drop_id = steps.len();
+                push_step(
+                    steps,
+                    "drop_constraint",
+                    format!(
+                        "ALTER TABLE {} DROP CONSTRAINT {};",
+                        quote(table.table()),
+                        quote(&old_key_name)
+                    ),
+                    DataRisk::Destructive,
+                    before_pk,
+                    None,
+                );
+                let columns = table
+                    .primary_key()
+                    .iter()
+                    .map(quote)
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                let add_id = steps.len();
+                push_step(
+                    steps,
+                    "add_primary_key",
+                    format!(
+                        "ALTER TABLE {} ADD CONSTRAINT {} PRIMARY KEY ({});",
+                        quote(table.table()),
+                        quote(&old_key_name),
+                        columns
+                    ),
+                    DataRisk::Destructive,
+                    vec![drop_id + 1],
+                    None,
+                );
+                let new_key_name =
+                    StorageName::parse(&format!("pk_{}", table.table())).map_err(|_| {
+                        diagnostic::rule_invalid(MAPPING_INVALID, "primary-key-name", None)
+                    })?;
+                let rename_id = steps.len();
+                push_step(
+                    steps,
+                    "rename_constraint",
+                    format!(
+                        "ALTER TABLE {} RENAME CONSTRAINT {} TO {};",
+                        quote(table.table()),
+                        quote(&old_key_name),
+                        quote(&new_key_name)
+                    ),
+                    DataRisk::None,
+                    vec![add_id + 1],
+                    None,
+                );
+                dependents.retain(|dependent| dependent.owner != *table.table());
+                pending_dependents = dependents;
+                Some(rename_id + 1)
+            } else {
+                None
+            };
             // The derived RLS policy name embeds the table name too:
             // the old pol_<oldtable>_tenant drops and the fresh
             // pol_<table>_tenant is created on the renamed table - the
@@ -921,7 +1221,26 @@ fn plan_tables(
                         foreign_key.on_delete().key(),
                     ),
                     DataRisk::None,
-                    Vec::new(),
+                    // The re-derived keys reference this table's (possibly
+                    // freshly swapped) primary key: they wait for the swap
+                    // to bind, and claim no other edge — the r5 contract.
+                    pk_binding_id.into_iter().collect::<Vec<usize>>(),
+                    None,
+                );
+            }
+            // The other tables' keys that referenced the swapped primary
+            // key re-add once the fresh key binds, re-targeted at its
+            // column by the dependent-key rendering.
+            for dependent in &pending_dependents {
+                let Some(add) = &dependent.add else {
+                    continue;
+                };
+                push_step(
+                    steps,
+                    "add_foreign_key",
+                    add.clone(),
+                    DataRisk::None,
+                    pk_binding_id.into_iter().collect::<Vec<usize>>(),
                     None,
                 );
             }
@@ -970,11 +1289,13 @@ fn plan_tables(
         table_ids
             .entry(table.table().as_str().to_owned())
             .or_insert(usize::MAX);
-        // A changed primary key on a surviving table is visible: the
-        // old constraint drops before the new one is added (both names
-        // are deterministic — `pk_<table>`), and the swap is a
-        // destructive rewrite of the table's identity, so it gates.
-        if base_table.primary_key() != table.primary_key() {
+        // A changed primary key on a surviving same-name table is
+        // visible: the old constraint drops before the new one is
+        // added (both names are deterministic — `pk_<table>`), and the
+        // swap is a destructive rewrite of the table's identity, so it
+        // gates. A renamed table's swap rode its rename block above.
+        if !renamed && base_table.primary_key() != table.primary_key() {
+            pk_swapped.insert(table.table().as_str().to_owned());
             let old_key_name = StorageName::parse(&format!("pk_{}", base_table.table()))
                 .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "primary-key-name", None))?;
             let new_key_name = StorageName::parse(&format!("pk_{}", table.table()))
@@ -1554,7 +1875,7 @@ fn plan_tables(
             );
         }
     }
-    Ok((table_ids, renamed_tables))
+    Ok((table_ids, renamed_tables, pk_swapped))
 }
 
 /// Render one join table's create plus its two join foreign keys —
@@ -2019,6 +2340,7 @@ fn plan_foreign_keys(
     candidate: &DerivedProjection,
     table_ids: &std::collections::BTreeMap<String, usize>,
     renamed_tables: &std::collections::BTreeMap<String, StorageName>,
+    pk_swapped: &std::collections::BTreeSet<String>,
 ) -> Result<(), DiagnosticSet> {
     // The primary key of every candidate table, by table name: the
     // deterministic FK target column.
@@ -2043,6 +2365,13 @@ fn plan_foreign_keys(
             continue;
         }
         for foreign_key in table.foreign_keys() {
+            // A referenced primary key this plan swaps took its
+            // referencing keys down with it: the swap flow dropped and
+            // re-added this constraint around the fresh key. Re-diffing
+            // here would double-emit it.
+            if pk_swapped.contains(foreign_key.references_table().as_str()) {
+                continue;
+            }
             let base_foreign_key = base_table.and_then(|base| {
                 base.foreign_keys()
                     .iter()
@@ -2117,6 +2446,12 @@ fn plan_foreign_keys(
             continue;
         }
         for foreign_key in table.foreign_keys() {
+            // A referenced primary key this plan swaps took its keys
+            // down with it: the swap flow dropped this constraint
+            // before the old key. Removed keys ride the same flow.
+            if pk_swapped.contains(foreign_key.references_table().as_str()) {
+                continue;
+            }
             let removed = !candidate_table
                 .map(|candidate| {
                     candidate
@@ -2367,6 +2702,15 @@ fn order_drops_last(steps: &mut [Step]) {
                 None => later.statement.contains(&name),
             })
     };
+    // A drop another step explicitly requires stays at its emission
+    // position: the requirer needs it exactly there (a referenced-key
+    // swap drops its dependent foreign keys before the old primary
+    // key), and sorting it behind the constructive steps would strand
+    // the required drop behind the very statement that depends on it.
+    let required: std::collections::BTreeSet<usize> = steps
+        .iter()
+        .flat_map(|step| step.requires.iter().map(|&dep| dep - 1))
+        .collect();
     let rank = |index: usize, steps: &[Step]| {
         let step = &steps[index];
         if !step.kind.starts_with("drop_") {
@@ -2378,6 +2722,8 @@ fn order_drops_last(steps: &mut [Step]) {
             // `DROP TABLE` before `CREATE TABLE` of the same name is
             // the required order, and the create is `requires`-wired
             // to the drop.
+            0
+        } else if required.contains(&index) {
             0
         } else if step.kind == "drop_table" {
             3
