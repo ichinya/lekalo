@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use super::discovery::{Custody, DiscoveryCandidate};
+use super::discovery::DiscoveryCandidate;
 use super::inventory::{Inventory, InventoryRow};
 use super::manifest::ManifestDocument;
 use super::trust::TrustLevel;
@@ -485,6 +485,7 @@ fn rollback(root: &Path, journal: &[PathBuf]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::adapter_package::discovery::Custody;
 
     fn candidate(id: &str, bytes: &[u8], coordinate: &str) -> DiscoveryCandidate {
         let digest = crate::digest::sha256_hex(bytes);
