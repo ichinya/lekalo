@@ -2975,7 +2975,7 @@ fn run_adapter_quarantine_release(id: &str, project: &Option<String>) -> Adapter
                     package_root: Some(quarantine_dir.clone()),
                     synthesized: false,
                 };
-                lekalo_core::adapter_package::verify_package(&candidate).map(|()| ())
+                lekalo_core::adapter_package::verify_package(&candidate)
             });
         if let Err(failure) = verified {
             return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(

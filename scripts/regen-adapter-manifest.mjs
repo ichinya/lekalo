@@ -55,7 +55,7 @@ const canonicalManifest = () => {
     }
     return JSON.stringify(value);
   };
-  return Buffer.from(canonical(raw), "utf8");
+  return Buffer.from(canonical(stripped), "utf8");
 };
 
 const parts = [
