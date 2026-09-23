@@ -2353,6 +2353,41 @@ enum AdapterRepoint {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// The forward-update selector for `adapter update` without `--to`:
+/// the newest installed row with a version strictly greater than the
+/// selected pin (or the newest row when nothing is selected). Pure and
+/// unit-tested — the SemVer precedence decision and the corrupt-row
+/// refusal are the exact logic the CLI surface executes (fix round 4,
+/// devin N-3: a corrupt inventory row returns the inventory-corruption
+/// diagnostic instead of panicking a comparator).
+fn select_forward_update<'a>(
+    promoted: &'a [lekalo_core::adapter_package::InventoryRow],
+    selected: Option<&lekalo_core::adapter_package::InventoryRow>,
+) -> Result<
+    Option<&'a lekalo_core::adapter_package::InventoryRow>,
+    lekalo_core::adapter_package::PackageFailure,
+> {
+    let corrupt = || lekalo_core::adapter_package::PackageFailure::RecoveryRequired {
+        stage: "inventory".to_owned(),
+    };
+    let parse =
+        |text: &str| lekalo_core::lockfile::types::SemVer::parse(text).map_err(|_| corrupt());
+    let selected_ver = match selected {
+        Some(current) => Some(parse(&current.version)?),
+        None => None,
+    };
+    let mut versions: Vec<(&lekalo_core::adapter_package::InventoryRow, _)> = promoted
+        .iter()
+        .filter(|row| !row.selected)
+        .map(|row| parse(&row.version).map(|parsed| (row, parsed)))
+        .collect::<Result<_, _>>()?;
+    versions.sort_by(|left, right| right.1.cmp(&left.1));
+    Ok(versions
+        .into_iter()
+        .find(|(_, ver)| selected_ver.as_ref().map_or(true, |current| ver > current))
+        .map(|(row, _)| row))
+}
+
 fn run_adapter_repoint(
     kind: AdapterRepoint,
     id: &str,
@@ -2396,28 +2431,14 @@ fn run_adapter_repoint(
         // the command refuses (component-unavailable) rather than
         // silently downgrading (devin F-10).
         (AdapterRepoint::Update, None) => {
-            let selected = inventory.selected(id);
-            let mut candidates: Vec<_> = promoted.iter().filter(|row| !row.selected).collect();
-            // Sort by SemVer descending
-            candidates.sort_by(|a, b| {
-                let ver_a =
-                    lekalo_core::lockfile::types::SemVer::parse(&a.version).expect("valid semver");
-                let ver_b =
-                    lekalo_core::lockfile::types::SemVer::parse(&b.version).expect("valid semver");
-                ver_b.cmp(&ver_a)
-            });
-            let target = if let Some(selected) = selected {
-                let selected_ver = lekalo_core::lockfile::types::SemVer::parse(&selected.version)
-                    .expect("valid semver");
-                candidates.into_iter().find(|row| {
-                    let row_ver = lekalo_core::lockfile::types::SemVer::parse(&row.version)
-                        .expect("valid semver");
-                    row_ver > selected_ver
-                })
-            } else {
-                candidates.first().copied()
-            };
-            target
+            match select_forward_update(&promoted, inventory.selected(id)) {
+                Ok(target) => target,
+                Err(failure) => {
+                    return AdapterRun::Envelope(
+                        lekalo_core::adapter_package::diagnostic::domain_result(&failure),
+                    )
+                }
+            }
         }
         (AdapterRepoint::Rollback, None) => None,
     };
@@ -6163,4 +6184,73 @@ fn main() -> ExitCode {
         .expect("CLI thread")
         .join()
         .unwrap_or(ExitCode::from(1))
+}
+
+#[cfg(test)]
+mod adapter_update_tests {
+    use super::select_forward_update;
+    use lekalo_core::adapter_package::{InventoryRow, PackageFailure};
+
+    fn row(id: &str, version: &str, selected: bool) -> InventoryRow {
+        InventoryRow {
+            id: id.to_owned(),
+            version: version.to_owned(),
+            digest: format!("sha256:{}", "11".repeat(32)),
+            manifest_digest: format!("sha256:{}", "22".repeat(32)),
+            trust: "local-development".to_owned(),
+            source: "path:x".to_owned(),
+            install_plan_id: None,
+            selected,
+            quarantined: false,
+        }
+    }
+
+    /// Regression (fix round 2, cline F-4 / devin F-7, pinned here at
+    /// unit level per fix round 4, cline F-NEW-4): two-digit components
+    /// order by SemVer precedence, never string comparison.
+    #[test]
+    fn forward_selection_orders_two_digit_components_by_semver() {
+        // Selected 0.3.9, installed {0.3.10, 0.3.2}: the honest forward
+        // step is 0.3.10 even though "0.3.10" < "0.3.2" lexically.
+        let rows = vec![row("a", "0.3.10", false), row("a", "0.3.2", false)];
+        let selected = row("a", "0.3.9", true);
+        let target = select_forward_update(&rows, Some(&selected))
+            .expect("rows parse")
+            .expect("a forward update exists");
+        assert_eq!(target.version, "0.3.10");
+
+        // The no-downgrade guard: from 0.3.10, neither older row applies.
+        let selected = row("a", "0.3.10", true);
+        assert!(
+            select_forward_update(&rows, Some(&selected))
+                .expect("rows parse")
+                .is_none(),
+            "no older version may be selected as a forward update"
+        );
+
+        // Nothing selected: the newest row wins.
+        let target = select_forward_update(&rows, None)
+            .expect("rows parse")
+            .expect("the newest row applies");
+        assert_eq!(target.version, "0.3.10");
+    }
+
+    /// Regression (fix round 4, devin N-3): a corrupt inventory row
+    /// returns the inventory-corruption diagnostic instead of panicking
+    /// a SemVer comparator.
+    #[test]
+    fn a_corrupt_row_refuses_with_a_diagnostic() {
+        let rows = vec![row("a", "not-a-version", false)];
+        let error = select_forward_update(&rows, None).expect_err("corrupt row refuses");
+        assert_eq!(
+            error,
+            PackageFailure::RecoveryRequired {
+                stage: "inventory".to_owned()
+            }
+        );
+        // A corrupt selected pin refuses too.
+        let rows = vec![row("a", "1.0.0", false)];
+        let selected = row("a", "0.3", true);
+        assert!(select_forward_update(&rows, Some(&selected)).is_err());
+    }
 }

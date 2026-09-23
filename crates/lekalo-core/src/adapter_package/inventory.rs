@@ -93,6 +93,19 @@ impl Inventory {
         if wire.schema_version != INVENTORY_SCHEMA_VERSION || wire.identity != INVENTORY_IDENTITY {
             return Err(store_failure());
         }
+        // Every row is grammar-checked at load (fix round 4, devin N-3):
+        // a hand-corrupted version or digest must refuse with a
+        // diagnostic when the store loads, never panic a comparator
+        // downstream (the update selector parsed with `.expect`).
+        for row in &wire.packages {
+            if crate::lockfile::types::SemVer::parse(&row.version).is_err()
+                || crate::lockfile::types::Sha256Digest::parse(&row.digest).is_err()
+                || crate::lockfile::types::Sha256Digest::parse(&row.manifest_digest).is_err()
+                || crate::adapter_package::TrustLevel::parse(&row.trust).is_none()
+            {
+                return Err(store_failure());
+            }
+        }
         Ok(Self {
             rows: wire.packages,
         })
@@ -327,5 +340,40 @@ mod tests {
             .map(|row| row.version.as_str())
             .collect();
         assert_eq!(versions, vec!["1.0.0", "2.0.0"]);
+    }
+
+    /// Regression (fix round 4, devin N-3): a hand-corrupted row — a
+    /// non-SemVer version, a malformed digest, or an unknown trust
+    /// token — refuses at load with the inventory-corruption
+    /// diagnostic instead of flowing into a downstream `.expect`.
+    #[test]
+    fn a_corrupt_inventory_row_refuses_at_load() {
+        let good = serde_json::json!({
+            "schemaVersion": crate::adapter_package::version::INVENTORY_SCHEMA_VERSION,
+            "identity": crate::adapter_package::version::INVENTORY_IDENTITY,
+            "packages": [{
+                "id": "a", "version": "1.0.0",
+                "digest": format!("sha256:{}", "11".repeat(32)),
+                "manifestDigest": format!("sha256:{}", "22".repeat(32)),
+                "trust": "local-development", "source": "path:x",
+                "selected": true, "quarantined": false
+            }]
+        });
+        assert!(Inventory::from_bytes(&serde_json::to_vec(&good).expect("serializes")).is_ok());
+
+        for corrupt_version in ["not-a-version", "0.3", "01.2.3"] {
+            let mut json = good.clone();
+            json["packages"][0]["version"] = serde_json::json!(corrupt_version);
+            assert!(
+                Inventory::from_bytes(&serde_json::to_vec(&json).expect("serializes")).is_err(),
+                "corrupt version {corrupt_version} must refuse"
+            );
+        }
+        let mut json = good.clone();
+        json["packages"][0]["digest"] = serde_json::json!("sha256:zz");
+        assert!(Inventory::from_bytes(&serde_json::to_vec(&json).expect("serializes")).is_err());
+        let mut json = good;
+        json["packages"][0]["trust"] = serde_json::json!("verified-by-myself");
+        assert!(Inventory::from_bytes(&serde_json::to_vec(&json).expect("serializes")).is_err());
     }
 }

@@ -58,7 +58,7 @@ pub use diff::{diff_manifests, ManifestDiff};
 pub use discovery::{discover, implicit_local_development, DiscoverySource, ResolvedAdapter};
 pub use install::{ApplyRejection, InstallAction, InstallPlan};
 pub use integrity::verify_package;
-pub use inventory::Inventory;
+pub use inventory::{Inventory, InventoryRow};
 pub use manifest::{ManifestDigest, ManifestDocument};
 pub use signature::evaluate as evaluate_signature;
 pub use trust::{assign as assign_trust, gate as trust_gate, RevocationStore, TrustLevel};
