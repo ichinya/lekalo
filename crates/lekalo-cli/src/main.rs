@@ -2809,16 +2809,18 @@ fn run_adapter_quarantine_purge(all: bool, project: &Option<String>) -> AdapterR
         .cloned()
         .collect();
     for row in &quarantined {
-        let digest8: String = row.digest["sha256:".len()..].chars().take(8).collect();
         // Remove every location the bytes can occupy: the quarantine
         // custody tree and any pre-fix orphan under packages/**.
-        for base in [".lekalo/adapters/quarantine", ".lekalo/adapters/packages"] {
-            let dir = root.join(
-                format!("{}/{}-{}", base, row.id, digest8)
-                    .replace('/', std::path::MAIN_SEPARATOR_STR),
-            );
-            let _ = std::fs::remove_dir_all(dir);
-        }
+        let quarantine_dir = root.join(
+            lekalo_core::adapter_package::quarantine::quarantine_path(&row.id, &row.version, &row.digest)
+                .replace('/', std::path::MAIN_SEPARATOR_STR),
+        );
+        let packages_dir = root.join(
+            lekalo_core::adapter_package::quarantine::package_path(&row.id, &row.version, &row.digest)
+                .replace('/', std::path::MAIN_SEPARATOR_STR),
+        );
+        let _ = std::fs::remove_dir_all(&quarantine_dir);
+        let _ = std::fs::remove_dir_all(&packages_dir);
         inventory
             .rows_mut()
             .retain(|existing| existing.id != row.id || existing.version != row.version);
@@ -2873,17 +2875,16 @@ fn run_adapter_quarantine_release(id: &str, project: &Option<String>) -> Adapter
             ));
         }
     };
-    let digest8: String = row.digest["sha256:".len()..].chars().take(8).collect();
+    // Issue #32 fix round 2 (devin F-4 / cline F-2): use shared custody-path helpers.
+    // The quarantined bytes are already verified at install time, so re-verification
+    // is not strictly required but we keep the verification comment for clarity.
     let quarantine_dir = root.join(
-        format!(".lekalo/adapters/quarantine/{}-{}", id, digest8)
+        lekalo_core::adapter_package::quarantine::quarantine_path(&row.id, &row.version, &row.digest)
             .replace('/', std::path::MAIN_SEPARATOR_STR),
     );
     let packages_dir = root.join(
-        format!(
-            ".lekalo/adapters/packages/{}/{}-{}",
-            id, row.version, digest8
-        )
-        .replace('/', std::path::MAIN_SEPARATOR_STR),
+        lekalo_core::adapter_package::quarantine::package_path(&row.id, &row.version, &row.digest)
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
     );
     if !quarantine_dir.is_dir() {
         return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
