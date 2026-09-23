@@ -204,6 +204,18 @@ cases stay unsupported). The confined adapter never executes the port
 module — the port surface is proven by execution in the project
 harness (`scripts/test-node-scenario-tests.mjs`).
 
+### Orchestration dispatch of scenario documents is deferred
+
+The core orchestration does not yet enumerate `lekalo/scenarios/*.json`:
+`generate`/`verify` still send only the compiled project IR evidence as
+`ir_path`, so the document-identity routing above never receives a
+scenario document from the CLI. Compiling a scenario today is a direct
+adapter exchange (the e2e gate's pattern); `scenario.drift` and the
+checked-binding join run only inside that exchange. Closing the gap
+needs the receipt surface for per-scenario-document exchanges (the
+`GenerateReceipt` wire is closed), so it is recorded as an explicit
+follow-up, not an already-shipped behavior.
+
 ## Operation table
 
 | Operation | Posture | Owner of the real behavior |
