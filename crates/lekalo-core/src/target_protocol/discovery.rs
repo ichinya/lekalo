@@ -85,6 +85,12 @@ pub struct DiscoveredAdapter {
     pub executable_digest: Option<String>,
     /// The named capabilities, sorted by id.
     pub capabilities: Vec<DiscoveredCapability>,
+    /// The declared read scopes, sorted (issue #32 consistency check).
+    pub read_scopes: Vec<String>,
+    /// The declared write scopes, sorted.
+    pub write_scopes: Vec<String>,
+    /// The declared transports, sorted, as wire tokens.
+    pub transports: Vec<String>,
 }
 
 impl DiscoveredAdapter {
@@ -230,6 +236,30 @@ impl Discovery {
             capability_digest: described.capability_digest,
             executable_digest: executable_digest(command),
             capabilities,
+            read_scopes: {
+                let mut scopes = described.capabilities.read_scopes;
+                scopes.sort();
+                scopes
+            },
+            write_scopes: {
+                let mut scopes = described.capabilities.write_scopes;
+                scopes.sort();
+                scopes
+            },
+            transports: {
+                let mut transports: Vec<String> = described
+                    .capabilities
+                    .transports
+                    .iter()
+                    .map(|transport| match transport {
+                        wire::Transport::Stdin => "stdin",
+                        wire::Transport::File => "file",
+                    })
+                    .map(String::from)
+                    .collect();
+                transports.sort();
+                transports
+            },
         })
     }
 }
@@ -351,6 +381,9 @@ mod tests {
                 definition_version: "0.3.1",
                 provenance: Provenance::Declared,
             }],
+            read_scopes: Vec::new(),
+            write_scopes: Vec::new(),
+            transports: Vec::new(),
         }
     }
 

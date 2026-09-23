@@ -94,14 +94,28 @@ pub(crate) fn discover(
     limits: TransportLimits,
 ) -> Result<DiscoveredAdapter, Failure> {
     let _ = limits;
-    gate_supply(supply, root)?;
-    Discovery::run(client, &supply.command, root).map_err(Failure::Target)
+    let manifest = gate_supply(supply, root)?;
+    let discovered = Discovery::run(client, &supply.command, root).map_err(Failure::Target)?;
+    // The manifest-vs-describe consistency check (issue #32): describe
+    // is self-assertion; the verified manifest is the independent
+    // claim. Any disagreement refuses (adapter.manifest-mismatch).
+    if let Some(manifest) = &manifest {
+        crate::adapter_package::consistency::check(manifest, &discovered).map_err(|mismatch| {
+            Failure::AdapterPackage(crate::adapter_package::PackageFailure::ManifestMismatch {
+                field: mismatch.as_str().to_owned(),
+            })
+        })?;
+    }
+    Ok(discovered)
 }
 
 /// Run the issue #32 resolution gate over one invocation-supplied
 /// supply. The project root scopes the revocation store; the gates are
 /// offline-faithful (the implicit descriptor is fully local).
-fn gate_supply(supply: &AdapterSupply, root: &Path) -> Result<(), Failure> {
+fn gate_supply(
+    supply: &AdapterSupply,
+    root: &Path,
+) -> Result<Option<crate::adapter_package::ManifestDocument>, Failure> {
     let entry = supply
         .command
         .args
@@ -109,14 +123,35 @@ fn gate_supply(supply: &AdapterSupply, root: &Path) -> Result<(), Failure> {
         .map(PathBuf::from)
         .filter(|path| path.is_file())
         .unwrap_or_else(|| supply.command.program.clone());
-    let candidate =
-        crate::adapter_package::implicit_local_development(&entry).map_err(package_failure)?;
+    // Prefer a real manifested package: the entry directory may carry
+    // adapter.manifest.json (a manifested path supply).
+    let entry_dir = entry
+        .parent()
+        .map(|parent| parent.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+    let manifested = if entry_dir.join("adapter.manifest.json").is_file() {
+        crate::adapter_package::discover(&crate::adapter_package::DiscoverySource::Path(
+            entry_dir.clone(),
+        ))
+        .map_err(package_failure)?
+        .into_iter()
+        .next()
+    } else {
+        None
+    };
+    let candidate = match manifested {
+        Some(candidate) => candidate,
+        None => {
+            crate::adapter_package::implicit_local_development(&entry).map_err(package_failure)?
+        }
+    };
     let context = crate::adapter_package::ResolveContext {
         root: Some(root.to_path_buf()),
         offline: true,
     };
-    crate::adapter_package::resolve_candidate(candidate, &context).map_err(package_failure)?;
-    Ok(())
+    let resolved =
+        crate::adapter_package::resolve_candidate(candidate, &context).map_err(package_failure)?;
+    Ok(Some(resolved.candidate.manifest))
 }
 
 fn package_failure(failure: crate::adapter_package::PackageFailure) -> Failure {

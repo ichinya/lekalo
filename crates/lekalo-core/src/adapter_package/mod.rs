@@ -38,6 +38,7 @@
 //! nor promotes anything.
 
 pub mod canonical;
+pub mod consistency;
 pub mod diagnostic;
 pub mod diff;
 pub mod discovery;

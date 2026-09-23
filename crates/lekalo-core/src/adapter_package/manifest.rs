@@ -395,6 +395,57 @@ impl ManifestDocument {
         &self.ir_versions
     }
 
+    /// The manifest's canonical JSON value.
+    fn canonical_member(&self, path: &[&str]) -> Option<serde_json::Value> {
+        let mut current = &self.canonical;
+        for key in path {
+            current = current.get(*key)?;
+        }
+        Some(current.clone())
+    }
+
+    /// The declared capability operations, sorted (consistency check).
+    pub fn operations(&self) -> Vec<String> {
+        self.canonical_member(&["capabilities", "operations"])
+            .and_then(|value| serde_json::from_value(value).ok())
+            .unwrap_or_default()
+    }
+
+    /// The declared targets, sorted.
+    pub fn targets(&self) -> Vec<String> {
+        self.canonical_member(&["capabilities", "targets"])
+            .and_then(|value| serde_json::from_value(value).ok())
+            .unwrap_or_default()
+    }
+
+    /// The declared profiles, sorted.
+    pub fn profiles(&self) -> Vec<String> {
+        self.canonical_member(&["capabilities", "profiles"])
+            .and_then(|value| serde_json::from_value(value).ok())
+            .unwrap_or_default()
+    }
+
+    /// The declared read scopes, sorted.
+    pub fn read_scopes(&self) -> Vec<String> {
+        self.canonical_member(&["capabilities", "readScopes"])
+            .and_then(|value| serde_json::from_value(value).ok())
+            .unwrap_or_default()
+    }
+
+    /// The declared write scopes, sorted.
+    pub fn write_scopes(&self) -> Vec<String> {
+        self.canonical_member(&["capabilities", "writeScopes"])
+            .and_then(|value| serde_json::from_value(value).ok())
+            .unwrap_or_default()
+    }
+
+    /// The declared transports, sorted.
+    pub fn transports(&self) -> Vec<String> {
+        self.canonical_member(&["capabilities", "transports"])
+            .and_then(|value| serde_json::from_value(value).ok())
+            .unwrap_or_default()
+    }
+
     /// The sorted declared required extensions.
     pub fn extensions(&self) -> &[String] {
         &self.extensions

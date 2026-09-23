@@ -421,6 +421,9 @@ mod tests {
                     provenance: Provenance::Declared,
                 })
                 .collect(),
+            read_scopes: Vec::new(),
+            write_scopes: Vec::new(),
+            transports: Vec::new(),
         }
     }
 
@@ -808,6 +811,9 @@ mod trust_tests {
                 definition_version: "0.3.1",
                 provenance: Provenance::Declared,
             }],
+            read_scopes: Vec::new(),
+            write_scopes: Vec::new(),
+            transports: Vec::new(),
         }
     }
 
