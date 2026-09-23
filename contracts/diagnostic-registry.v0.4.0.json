@@ -5257,6 +5257,30 @@
       "lifecycle": "active"
     },
     {
+      "id": "scenario.stale-evidence",
+      "code": "LEK-SCN-014",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.stale-evidence",
+      "default_message": "A scenario run record was produced under a previous compiled-IR revision, so its evidence is stale against the current inputs.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scenario",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "scenario.unsupported-capability",
       "code": "LEK-SCN-011",
       "category": "infrastructure",
