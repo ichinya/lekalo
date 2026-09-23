@@ -830,6 +830,138 @@ impl ManifestWire {
         if !self.hooks.is_empty() {
             return Err(invalid("hooks"));
         }
+        // Permission member values are closed-vocabulary validated (fix
+        // round 2, devin F-1): a schema-invalid value like
+        // network.mode:"allowed" must refuse here, before the escalation
+        // evaluator can mistake it for an un-widened member.
+        self.permissions.validate()?;
+        Ok(())
+    }
+}
+
+impl PermissionsWire {
+    /// Closed-vocabulary validation of every permission member value.
+    fn validate(&self) -> Result<(), PackageFailure> {
+        let invalid = |reason: &str| PackageFailure::ManifestInvalid {
+            reason: reason.to_owned(),
+        };
+        let scopes = |member: &Json, key: &str| -> Result<(), PackageFailure> {
+            member
+                .get(key)
+                .and_then(|value| value.as_array())
+                .ok_or_else(|| invalid("permissions-filesystem"))?;
+            for scope in member
+                .get("filesystem")
+                .and_then(|filesystem| filesystem.get(key))
+                .and_then(|value| value.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|item| item.as_str())
+            {
+                super::types::parse_scope(scope)?;
+            }
+            Ok(())
+        };
+        for member in [
+            &self.filesystem,
+            &self.network,
+            &self.environment,
+            &self.processes,
+            &self.secrets,
+        ] {
+            if !member.is_object() {
+                return Err(invalid("permissions-shape"));
+            }
+        }
+        let filesystem = &self.filesystem;
+        scopes(filesystem, "readScopes")?;
+        scopes(filesystem, "writeScopes")?;
+        let network = &self.network;
+        let mode = network
+            .get("mode")
+            .and_then(|mode| mode.as_str())
+            .ok_or_else(|| invalid("permissions-network-mode"))?;
+        if !matches!(mode, "denied" | "allowlist") {
+            return Err(invalid("permissions-network-mode"));
+        }
+        if network
+            .get("destinations")
+            .and_then(|value| value.as_array())
+            .is_none()
+        {
+            return Err(invalid("permissions-network-destinations"));
+        }
+        for destination in network
+            .get("destinations")
+            .and_then(|value| value.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|item| item.as_str())
+        {
+            let valid = !destination.is_empty()
+                && destination.len() <= 64
+                && destination
+                    .strip_prefix("*.")
+                    .unwrap_or(destination)
+                    .bytes()
+                    .all(|byte| {
+                        byte.is_ascii_lowercase()
+                            || byte.is_ascii_digit()
+                            || byte == b'.'
+                            || byte == b'-'
+                    });
+            if !valid {
+                return Err(invalid("permissions-host-token"));
+            }
+        }
+        let environment = &self.environment;
+        for name in environment
+            .get("allowlist")
+            .and_then(|value| value.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|item| item.as_str())
+        {
+            let valid = name
+                .bytes()
+                .next()
+                .map(|first| first.is_ascii_uppercase())
+                .unwrap_or(false)
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
+                && !name.is_empty()
+                && name.len() <= 64;
+            if !valid {
+                return Err(invalid("permissions-env-name"));
+            }
+        }
+        let processes = &self.processes;
+        match processes
+            .get("children")
+            .and_then(|children| children.as_str())
+        {
+            Some("denied") | Some("declared") => {}
+            _ => return Err(invalid("permissions-processes")),
+        }
+        let secrets = &self.secrets;
+        for handle in secrets
+            .get("handles")
+            .and_then(|value| value.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|item| item.as_str())
+        {
+            let valid = !handle.is_empty()
+                && handle.len() <= 64
+                && handle.starts_with(|c: char| c.is_ascii_lowercase())
+                && handle
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+            if !valid {
+                return Err(invalid("permissions-secret-handle"));
+            }
+        }
         Ok(())
     }
 }
@@ -850,5 +982,71 @@ mod committed_exemplar_tests {
             document.package_digest().as_str(),
             "sha256:8bb2a397509c4b36f25a8e91fb829fc1b7c761eb9490f3ebe11f72568648731e"
         );
+    }
+}
+
+#[cfg(test)]
+mod permission_validation_tests {
+    use super::*;
+
+    fn manifest_with_network_mode(mode: &str) -> Result<ManifestDocument, PackageFailure> {
+        let json = serde_json::json!({
+            "schemaVersion": crate::adapter_package::version::MANIFEST_SCHEMA_VERSION,
+            "identity": crate::adapter_package::version::MANIFEST_IDENTITY,
+            "adapter": { "id": "perm-adapter", "name": "P", "version": "1.0.0" },
+            "publisher": { "id": "p", "trustAnchor": "none" },
+            "source": { "kind": "path", "coordinate": "path:x", "digest": format!("sha256:{}", "11".repeat(32)) },
+            "license": { "spdx": "MIT", "file": "LICENSE", "fileDigest": format!("sha256:{}", "11".repeat(32)) },
+            "compatibility": { "protocolVersions": [crate::target_protocol::version::VERSION], "irVersions": [crate::ir::version::VERSION], "extensions": [] },
+            "capabilities": { "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] },
+            "executable": { "runtime": { "kind": "node", "minVersion": "18.0.0" }, "entry": "a.mjs", "argvPreview": ["node", "a.mjs"], "assets": [] },
+            "platforms": ["any"],
+            "integrity": { "packageDigest": format!("sha256:{}", "22".repeat(32)), "files": [ { "path": "a.mjs", "digest": format!("sha256:{}", "33".repeat(32)), "bytes": 3 } ], "signaturePolicy": "unsigned", "signature": null },
+            "permissions": {
+                "filesystem": { "readScopes": ["src/**"], "writeScopes": ["generated/**"] },
+                "network": { "mode": mode, "destinations": [] },
+                "environment": { "allowlist": [] },
+                "processes": { "children": "denied" },
+                "secrets": { "handles": [] }
+            },
+            "hooks": [],
+            "conformance": { "reportDigest": format!("sha256:{}", "44".repeat(32)), "badge": { "protocol": "0.3.2", "ir": "0.2.16", "profile": "default" }, "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2" },
+            "status": "active",
+            "revocation": null
+        });
+        ManifestDocument::from_value(json)
+    }
+
+    /// Regression (fix round 2, devin F-1): schema-invalid permission
+    /// member values refuse at the manifest gate instead of installing
+    /// past the escalation evaluator.
+    #[test]
+    fn schema_invalid_permission_values_refuse() {
+        // network.mode "allowed" is not in the closed vocabulary.
+        let error = manifest_with_network_mode("allowed").expect_err("invalid mode");
+        assert!(matches!(error, PackageFailure::ManifestInvalid { .. }));
+        // The closed values still parse.
+        assert!(manifest_with_network_mode("denied").is_ok());
+        assert!(manifest_with_network_mode("allowlist").is_ok());
+    }
+
+    #[test]
+    fn invalid_env_and_child_values_refuse() {
+        let base = manifest_with_network_mode("denied").expect("parses");
+        let mut json = serde_json::from_slice::<serde_json::Value>(&base.canonical_bytes())
+            .expect("canonical bytes are JSON");
+        json["permissions"]["environment"]["allowlist"] = serde_json::json!(["not_Upper"]);
+        json["integrity"]["packageDigest"] =
+            serde_json::Value::String(format!("sha256:{}", "22".repeat(32)));
+        let error = ManifestDocument::from_value(json).expect_err("bad env name");
+        assert!(matches!(error, PackageFailure::ManifestInvalid { .. }));
+
+        let mut json = serde_json::from_slice::<serde_json::Value>(&base.canonical_bytes())
+            .expect("canonical bytes are JSON");
+        json["permissions"]["processes"]["children"] = serde_json::json!("open");
+        json["integrity"]["packageDigest"] =
+            serde_json::Value::String(format!("sha256:{}", "22".repeat(32)));
+        let error = ManifestDocument::from_value(json).expect_err("bad children");
+        assert!(matches!(error, PackageFailure::ManifestInvalid { .. }));
     }
 }

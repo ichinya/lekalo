@@ -267,7 +267,7 @@ fn evaluate_escalation(
         .get("network")
         .and_then(|network| network.get("mode"))
         .and_then(|mode| mode.as_str());
-    if before_mode == Some("denied") && after_mode == Some("allowlist") {
+    if before_mode == Some("denied") && after_mode.is_some() && after_mode != Some("denied") {
         diff.escalated = true;
         diff.escalated_member = Some("network".to_owned());
         return;
