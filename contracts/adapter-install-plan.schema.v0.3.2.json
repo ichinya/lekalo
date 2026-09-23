@@ -12,12 +12,15 @@
     "digest",
     "manifestDigest",
     "trust",
+    "source",
     "quarantined",
     "actions",
     "diff"
   ],
   "properties": {
-    "schemaVersion": { "const": "lekalo/adapter-install-plan/v0.3.2" },
+    "schemaVersion": {
+      "const": "lekalo/adapter-install-plan/v0.3.2"
+    },
     "id": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]{0,127}$",
@@ -28,22 +31,52 @@
       "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
       "maxLength": 32
     },
-    "digest": { "$ref": "#/$defs/sha256Digest" },
-    "manifestDigest": { "$ref": "#/$defs/sha256Digest" },
-    "trust": { "$ref": "#/$defs/trustLevel" },
-    "quarantined": { "type": "boolean" },
+    "digest": {
+      "$ref": "#/$defs/sha256Digest"
+    },
+    "manifestDigest": {
+      "$ref": "#/$defs/sha256Digest"
+    },
+    "trust": {
+      "$ref": "#/$defs/trustLevel"
+    },
+    "quarantined": {
+      "type": "boolean"
+    },
     "actions": {
       "type": "array",
       "minItems": 1,
       "maxItems": 1024,
-      "items": { "$ref": "#/$defs/action" }
+      "items": {
+        "$ref": "#/$defs/action"
+      }
     },
     "diff": {
-      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/manifestDiff" }]
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/manifestDiff"
+        }
+      ]
     },
     "planId": {
-      "oneOf": [{ "$ref": "#/$defs/sha256Digest" }, { "type": "null" }],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "description": "The plan identity: sha256 over the canonical bytes of this document with planId excluded. Recomputed and compared at apply time; any drift is adapter.source-changed."
+    },
+    "source": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 256,
+      "description": "The closed source coordinate the package came from; bound into the planId so provenance is confirmed with the plan (issue #32 fix round 1, finding F-6). Never a URL or an absolute host path."
     }
   },
   "$defs": {
@@ -52,46 +85,92 @@
       "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "trustLevel": {
-      "enum": ["builtin", "verified", "local-development", "community", "revoked"]
+      "enum": [
+        "builtin",
+        "verified",
+        "local-development",
+        "community",
+        "revoked"
+      ]
     },
     "action": {
       "oneOf": [
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["action", "path", "digest"],
+          "required": [
+            "action",
+            "path",
+            "digest"
+          ],
           "properties": {
-            "action": { "const": "stage" },
-            "path": { "$ref": "#/$defs/packagePath" },
-            "digest": { "$ref": "#/$defs/sha256Digest" }
+            "action": {
+              "const": "stage"
+            },
+            "path": {
+              "$ref": "#/$defs/packagePath"
+            },
+            "digest": {
+              "$ref": "#/$defs/sha256Digest"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["action", "path"],
+          "required": [
+            "action",
+            "path"
+          ],
           "properties": {
-            "action": { "const": "promote" },
-            "path": { "type": "string", "minLength": 1, "maxLength": 512 }
+            "action": {
+              "const": "promote"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["action", "id", "version"],
+          "required": [
+            "action",
+            "id",
+            "version"
+          ],
           "properties": {
-            "action": { "const": "repoint" },
-            "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,127}$" },
-            "version": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" }
+            "action": {
+              "const": "repoint"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,127}$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["action", "path"],
+          "required": [
+            "action",
+            "path"
+          ],
           "properties": {
-            "action": { "const": "quarantine" },
-            "path": { "type": "string", "minLength": 1, "maxLength": 512 }
+            "action": {
+              "const": "quarantine"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
           }
         }
       ]
@@ -104,25 +183,43 @@
     "manifestDiff": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["escalated"],
+      "required": [
+        "escalated"
+      ],
       "properties": {
-        "readScopes": { "$ref": "#/$defs/changeList" },
-        "writeScopes": { "$ref": "#/$defs/changeList" },
+        "readScopes": {
+          "$ref": "#/$defs/changeList"
+        },
+        "writeScopes": {
+          "$ref": "#/$defs/changeList"
+        },
         "networkMode": {
           "type": "array",
           "minItems": 2,
           "maxItems": 2,
-          "items": { "type": "string", "maxLength": 32 }
+          "items": {
+            "type": "string",
+            "maxLength": 32
+          }
         },
-        "networkDestinations": { "$ref": "#/$defs/changeList" },
-        "environment": { "$ref": "#/$defs/changeList" },
+        "networkDestinations": {
+          "$ref": "#/$defs/changeList"
+        },
+        "environment": {
+          "$ref": "#/$defs/changeList"
+        },
         "processes": {
           "type": "array",
           "minItems": 2,
           "maxItems": 2,
-          "items": { "type": "string", "maxLength": 32 }
+          "items": {
+            "type": "string",
+            "maxLength": 32
+          }
         },
-        "secrets": { "$ref": "#/$defs/changeList" },
+        "secrets": {
+          "$ref": "#/$defs/changeList"
+        },
         "namedCapabilities": {
           "type": "array",
           "maxItems": 128,
@@ -130,14 +227,31 @@
             "type": "array",
             "minItems": 3,
             "maxItems": 3,
-            "items": { "type": "string", "maxLength": 128 }
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            }
           }
         },
-        "protocolVersions": { "$ref": "#/$defs/changeList" },
-        "irVersions": { "$ref": "#/$defs/changeList" },
-        "escalated": { "type": "boolean" },
+        "protocolVersions": {
+          "$ref": "#/$defs/changeList"
+        },
+        "irVersions": {
+          "$ref": "#/$defs/changeList"
+        },
+        "escalated": {
+          "type": "boolean"
+        },
         "escalatedMember": {
-          "oneOf": [{ "type": "string", "maxLength": 128 }, { "type": "null" }]
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -148,7 +262,10 @@
         "type": "array",
         "minItems": 2,
         "maxItems": 2,
-        "items": { "type": "string", "maxLength": 256 }
+        "items": {
+          "type": "string",
+          "maxLength": 256
+        }
       }
     }
   }

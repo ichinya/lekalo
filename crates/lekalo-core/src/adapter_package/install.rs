@@ -62,6 +62,9 @@ pub struct InstallPlan {
     pub manifest_digest: String,
 
     pub manifest_bytes: Vec<u8>,
+    /// The closed source coordinate the package came from (plan data,
+    /// bound by the planId).
+    pub source: String,
     /// The assigned trust level at plan time.
     pub trust: TrustLevel,
     /// Whether the bytes enter quarantine custody (community packages).
@@ -89,6 +92,7 @@ impl InstallPlan {
             "version": self.version,
             "digest": self.digest,
             "manifestDigest": self.manifest_digest,
+            "source": self.source,
             "trust": self.trust.as_str(),
             "quarantined": self.quarantined,
             "actions": self.actions,
@@ -164,6 +168,7 @@ pub fn plan(
         digest: manifest.package_digest().as_str().to_owned(),
         manifest_digest: manifest.digest().as_str().to_owned(),
         manifest_bytes,
+        source: manifest.source_coordinate().to_owned(),
         trust,
         quarantined,
         actions,
@@ -309,7 +314,7 @@ fn apply_staged(
         digest: plan.digest.clone(),
         manifest_digest: plan.manifest_digest.clone(),
         trust: plan.trust.as_str().to_owned(),
-        source: String::new(),
+        source: plan.source.clone(),
         install_plan_id: Some(plan.plan_id.clone()),
         selected: false,
         quarantined: plan.quarantined,
