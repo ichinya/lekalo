@@ -218491,8 +218491,43 @@ function mapGiven(given, portSurface) {
     }
     mapped.port = surface;
     mapped.payload = preconditionPayload(precondition);
+    if (kind === "state") {
+      const problem = stateLeafProblem(mapped.payload);
+      if (problem) {
+        mapped.unsupported = {
+          capability: "scenario.value",
+          reason: problem.reason,
+          detail: boundToken2(problem.field)
+        };
+      }
+    }
     return mapped;
   });
+}
+function stateLeafProblem(payload) {
+  for (const term of payload.selector ?? []) {
+    const problem = checkLeaf(term.equals, 0);
+    if (problem) return { reason: problem, field: term.field };
+  }
+  for (const [field, leaf] of payload.fields ?? []) {
+    const problem = checkLeaf(leaf, 0);
+    if (problem) return { reason: problem, field };
+  }
+  return null;
+}
+function entityStateLeafProblem(payload) {
+  for (const term of payload.where ?? []) {
+    const problem = checkLeaf(term?.equals, 0);
+    if (problem) return { reason: problem, field: term.field };
+  }
+  for (const [field, expectation] of Object.entries(payload.fields ?? {})) {
+    if (expectation !== null && typeof expectation === "object" && "match" in expectation) {
+      continue;
+    }
+    const problem = checkLeaf(expectation?.value ?? expectation, 0);
+    if (problem) return { reason: problem, field };
+  }
+  return null;
 }
 function preconditionPayload(precondition) {
   switch (precondition.kind) {
@@ -218689,6 +218724,16 @@ function mapThen(then, context, portSurface) {
     mapped.port = surface ?? null;
     mapped.payload = { ...assertion };
     delete mapped.payload.kind;
+    if (kind === "entity_state") {
+      const problem = entityStateLeafProblem(mapped.payload);
+      if (problem) {
+        mapped.unsupported = {
+          capability: "scenario.value",
+          reason: problem.reason,
+          detail: boundToken2(problem.field)
+        };
+      }
+    }
     for (const [key, value] of Object.entries(mapped.payload)) {
       if (value !== null && typeof value === "object" && !Array.isArray(value) && ("$ref" in value || "type" in value)) {
         const problem = checkLeaf(value, 0);

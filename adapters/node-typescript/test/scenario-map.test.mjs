@@ -28,6 +28,7 @@ import {
   isStepId,
   mapScenario,
 } from "../src/scenario-map.mjs";
+import { emitScenarioTests } from "../src/scenario-emit.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..", "..", "..");
@@ -72,6 +73,16 @@ const idempotentScenario = () => {
   scenario.irRef.digest = irDigest;
   return scenario;
 };
+
+/** Emission over mapped models (the emit-side non-crash probes). */
+function emit(models) {
+  return emitScenarioTests({
+    models,
+    inputDigest: "sha256:" + "1".repeat(64),
+    adapterVersion: "0.4.0-test",
+    portModulePath: "src/testing/port.mjs",
+  });
+}
 
 function map(scenario, options = {}) {
   return mapScenario({
@@ -368,6 +379,81 @@ test("typed leaves outside the closed set or bounds are unsupported, not crashes
     reason: "leaf-value-kind",
     detail: "task_id",
   });
+});
+
+test("state-map leaf problems propagate to unsupported rows, never crash (review R-3)", () => {
+  // The same leafProblem class as F-9, for the nested shapes the
+  // generic payload scan cannot see: given.state selector terms and
+  // seeded field values, and the entity_state where selector and exact
+  // field values.
+  const badLeaf = { type: "float", value: 1.5 };
+
+  // given.state: a bad selector leaf.
+  const selectorVector = happyScenario();
+  selectorVector.given = [{
+    stepId: "seed",
+    precondition: {
+      kind: "state",
+      entity: "planner.task",
+      selector: [{ field: "task_id", equals: badLeaf }],
+      fields: {},
+    },
+  }];
+  const selectorOutcome = map(selectorVector);
+  assert.deepEqual(selectorOutcome.scenarios[0].given[0].unsupported, {
+    capability: "scenario.value",
+    reason: "leaf-value-kind",
+    detail: "task_id",
+  });
+
+  // given.state: a bad seeded-field leaf.
+  const fieldsVector = happyScenario();
+  fieldsVector.given = [{
+    stepId: "seed",
+    precondition: {
+      kind: "state",
+      entity: "planner.task",
+      selector: [],
+      fields: { user_id: badLeaf },
+    },
+  }];
+  const fieldsOutcome = map(fieldsVector);
+  assert.deepEqual(fieldsOutcome.scenarios[0].given[0].unsupported, {
+    capability: "scenario.value",
+    reason: "leaf-value-kind",
+    detail: "user_id",
+  });
+
+  // entity_state: a bad where-selector leaf and a bad exact field value.
+  for (const [label, fields] of [
+    ["where", { focused_at: { match: "datetime" } }],
+    ["fields", { focused_at: { value: badLeaf } }],
+  ]) {
+    const vector = happyScenario();
+    vector.then = [{
+      stepId: "state",
+      observes: "run",
+      assertion: {
+        kind: "entity_state",
+        entity: "planner.task",
+        where: [label === "where" ? { field: "task_id", equals: badLeaf } : { field: "task_id", equals: { type: "string", value: "task-1" } }],
+        expect: "exists",
+        fields,
+      },
+    }];
+    const outcome = map(vector);
+    const step = outcome.scenarios[0].then[0];
+    assert.deepEqual(step.unsupported, {
+      capability: "scenario.value",
+      reason: "leaf-value-kind",
+      detail: label === "where" ? "task_id" : "focused_at",
+    }, `entity_state ${label} vector`);
+    // Emission renders the unsupported row instead of crashing.
+    const files = emit([outcome.scenarios[0]]);
+    const testFile = files.find((entry) => entry.path.endsWith(".test.ts"));
+    assert.match(testFile.text, /outcome: "unsupported"/);
+    assert.doesNotMatch(testFile.text, /unrenderable/);
+  }
 });
 
 test("deep leaves beyond the typed depth bound are refused to leaf-depth", () => {

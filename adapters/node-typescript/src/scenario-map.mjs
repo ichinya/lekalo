@@ -552,8 +552,53 @@ function mapGiven(given, portSurface) {
     }
     mapped.port = surface;
     mapped.payload = preconditionPayload(precondition);
+    // Review R-3: the state maps carry typed leaves (selector equals
+    // terms, seeded field values) that the emitter renders through
+    // literalOf — a leaf outside the closed set must propagate to the
+    // step's unsupported row (the F-9 propagation), never crash
+    // emission mid-render with an untyped TypeError.
+    if (kind === "state") {
+      const problem = stateLeafProblem(mapped.payload);
+      if (problem) {
+        mapped.unsupported = {
+          capability: "scenario.value",
+          reason: problem.reason,
+          detail: boundToken(problem.field),
+        };
+      }
+    }
     return mapped;
   });
+}
+
+/** The first unrenderable leaf of one mapped state precondition. */
+function stateLeafProblem(payload) {
+  for (const term of payload.selector ?? []) {
+    const problem = checkLeaf(term.equals, 0);
+    if (problem) return { reason: problem, field: term.field };
+  }
+  for (const [field, leaf] of payload.fields ?? []) {
+    const problem = checkLeaf(leaf, 0);
+    if (problem) return { reason: problem, field };
+  }
+  return null;
+}
+
+/** The first unrenderable leaf of one mapped entity_state assertion. */
+function entityStateLeafProblem(payload) {
+  for (const term of payload.where ?? []) {
+    const problem = checkLeaf(term?.equals, 0);
+    if (problem) return { reason: problem, field: term.field };
+  }
+  for (const [field, expectation] of Object.entries(payload.fields ?? {})) {
+    // A match-kind expectation is a kind token, never a leaf.
+    if (expectation !== null && typeof expectation === "object" && "match" in expectation) {
+      continue;
+    }
+    const problem = checkLeaf(expectation?.value ?? expectation, 0);
+    if (problem) return { reason: problem, field };
+  }
+  return null;
 }
 
 function preconditionPayload(precondition) {
@@ -774,6 +819,21 @@ function mapThen(then, context, portSurface) {
     mapped.port = surface ?? null;
     mapped.payload = { ...assertion };
     delete mapped.payload.kind;
+    // Review R-3: the entity_state `where` selector terms and the exact
+    // `fields` values are typed leaves the emitter renders through
+    // literalOf (match-kind expectations are kind tokens, not leaves) —
+    // the nested shapes escape the generic payload scan below, so the
+    // leaf problems propagate to the unsupported row explicitly.
+    if (kind === "entity_state") {
+      const problem = entityStateLeafProblem(mapped.payload);
+      if (problem) {
+        mapped.unsupported = {
+          capability: "scenario.value",
+          reason: problem.reason,
+          detail: boundToken(problem.field),
+        };
+      }
+    }
     for (const [key, value] of Object.entries(mapped.payload)) {
       if (value !== null && typeof value === "object" && !Array.isArray(value)
         && ("$ref" in value || "type" in value)) {
