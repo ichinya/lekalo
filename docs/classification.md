@@ -73,7 +73,11 @@ Hard rules:
   validity evaluation is `2026-01-01T00:00:00Z`; the CLI flag
   `--as-of` or the environment variable `LEKALO_AS_OF` can override
   this date on validation surfaces (`classification validate`,
-  `classification inspect`, `dataflow report`). Self-approval rejects.
+  `classification inspect`, `dataflow report`). Self-approval rejects
+  (`classification.self-approved`) — a depth-defense check: the wire
+  grammar already makes it unreachable on parsed input (an `approvedBy`
+  review reference forbids `@`, a grant id requires it), so the rule
+  protects library callers constructing grants in memory.
   The `declassifyRoles` check is structural: `approvedBy` is an opaque
   reference with no role token, so validation verifies the from-kind
   rule declares roles; binding the approving role to the declared set

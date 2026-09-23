@@ -694,6 +694,22 @@ mod tests {
         assert!(early < late);
     }
 
+    /// The r4 F-3 grammar pin: a self-approval on wire input is
+    /// impossible — `approvedBy` parses as a `ReviewRef` whose
+    /// alphabet forbids `@`, while the grant `id` parses as a
+    /// `ContractRef` which requires it. The disjoint spellings keep
+    /// the `classification.self-approved` check at depth-defense only
+    /// (library-constructed grants), exactly as documented.
+    #[test]
+    fn review_ref_and_contract_ref_spellings_are_disjoint() {
+        let grant_id = "grant.core.email-public@1.0.0";
+        assert!(ContractRef::parse(grant_id).is_ok());
+        assert!(ReviewRef::parse(grant_id).is_err());
+        let review = "review-2025-001";
+        assert!(ReviewRef::parse(review).is_ok());
+        assert!(ContractRef::parse(review).is_err());
+    }
+
     #[test]
     fn bounded_text_rejects_source_shape() {
         assert!(BoundedText::parse("Approved aggregate-only export.").is_ok());

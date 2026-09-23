@@ -324,6 +324,12 @@ pub fn validate_policy_and_grants_as_of(
             });
         }
         // Self-approval: the grant's own id as the review reference.
+        // Depth-defense only (r4 F-3): the wire grammar already makes
+        // this unreachable on parsed input — `approvedBy` parses as a
+        // `ReviewRef` whose alphabet forbids `@`, while the grant `id`
+        // parses as a `ContractRef` which requires it — so the two can
+        // never be equal on wire input. The check protects library
+        // callers that construct grants in memory.
         if grant.approved_by().as_str() == grant.id().as_str() {
             outcome.invalid = true;
             outcome.rows.push(FindingRow {
