@@ -299,3 +299,143 @@ fn strict_rule_flags_only_subjects_without_explicit_entries() {
     assert_eq!(rows[0].rule, "classification.unclassified-sensitive-sink");
     assert_eq!(rows[0].subject, "notify.user");
 }
+
+// ---------------------------------------------------------------------------
+// Issue #87 r3 F-3: gated-sink evaluation test coverage via detected edges
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gated_sink_evaluation_via_detected_edge() {
+    // Build a minimal compilation with an external-call effect
+    let mut project = lekalo_core::ir::CompiledProject::default();
+    project.project = Some(lekalo_core::ir::Project {
+        id: lekalo_core::ir::SemanticId::parse_root("test").unwrap(),
+        ..Default::default()
+    });
+
+    // Define an entity with an external-call effect
+    let entity = lekalo_core::ir::EntityDef {
+        id: lekalo_core::ir::SemanticId::parse("test.Entity").unwrap(),
+        fields: Vec::new(),
+        ..Default::default()
+    };
+
+    let effect = lekalo_core::ir::Effect {
+        id: lekalo_core::ir::SemanticId::parse("test.Entity:external").unwrap(),
+        kind: lekalo_core::ir::EffectKind::ExternalCall,
+        reads: Vec::new(),
+        writes: Vec::new(),
+        ..Default::default()
+    };
+
+    let command = lekalo_core::ir::CommandDef {
+        id: lekalo_core::ir::SemanticId::parse("test.Entity").unwrap(),
+        effects: vec![effect.id().as_str().to_owned()],
+        ..Default::default()
+    };
+
+    project.definitions = vec![
+        lekalo_core::ir::Definition::Entity(entity),
+        lekalo_core::ir::Definition::Command(command),
+        lekalo_core::ir::Definition::Effect(lekalo_core::ir::EffectDef {
+            id: effect.id().clone(),
+            entity: lekalo_core::ir::SemanticId::parse("test.Entity").unwrap(),
+            emits: Vec::new(),
+            ..Default::default()
+        }),
+    ];
+
+    // Build a classification that classifies the entity as personal (sink-eligible)
+    let classification_json = r#"{
+      "schemaVersion": "lekalo/data-classification/v0.4.0",
+      "identity": "dev.lekalo.data-classification@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "test",
+      "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:a".repeat(64)},
+      "irRef": {"irVersion": "0.2.16", "digest": "sha256:b".repeat(64)},
+      "defaults": {"profile": "strict", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"},
+      "classifications": [
+        {"subject": "test.Entity", "kind": "personal"}
+      ],
+      "declassifications": [],
+      "openQuestions": []
+    }"#;
+    let classification = lekalo_core::classification::Attachment::parse(classification_json).unwrap();
+
+    // Build a policy that requires an approved grant for personal kinds
+    let policy_json = r#"{
+      "schemaVersion": "lekalo/classification-policy/v0.4.0",
+      "identity": "dev.lekalo.classification-policy@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "test",
+      "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:a".repeat(64)},
+      "irRef": {"irVersion": "0.2.16", "digest": "sha256:b".repeat(64)},
+      "kinds": [
+        {
+          "kind": "personal",
+          "readers": ["tenant"],
+          "writers": ["tenant"],
+          "destinations": ["internal-service"],
+          "masking": {"strategy": "tokenize", "policyRef": "privacy-policy.masking.personal"},
+          "encryptionRefs": ["dev.lekalo.nfr.encryption-at-rest@0.4.0"],
+          "consentRequired": true,
+          "crossTenant": "forbidden",
+          "declassifyRoles": ["data-steward"]
+        }
+      ],
+      "sinks": {
+        "logs": {"maxKind": "internal"},
+        "traces": {"maxKind": "internal"},
+        "contextCapsules": {"maxKind": "internal"},
+        "diagnostics": {"maxKind": "internal"},
+        "evidence": {"maxKind": "public"},
+        "exports": {"maxKind": "derived"}
+      },
+      "openQuestions": []
+    }"#;
+    let policy = lekalo_core::classification::PolicyAttachment::parse(policy_json).unwrap();
+
+    // Create a detected edge with external-call kind
+    let mut graph = lekalo_core::effects::EffectGraph::default();
+    let external_call_edge = lekalo_core::effects::EffectEdge::new(
+        lekalo_core::effects::EffectKey::new(
+            lekalo_core::effects::OperationId::from_semantic("test.Entity:external").unwrap(),
+            lekalo_core::effects::EffectKind::ExternalCall,
+        ),
+        lekalo_core::effects::EffectProvenance::Observed,
+    );
+    graph.add_detected(external_call_edge);
+
+    // Create resolution
+    let resolution = lekalo_core::classification::Resolution::build(&classification);
+
+    // Analyze with the detected edge
+    let inputs = lekalo_core::dataflow::Inputs {
+        project_id: &lekalo_core::scenario::id::SemanticId::parse_root("test").unwrap(),
+        model_ref: ("0.2.16", &format!("sha256:{}", "a".repeat(64))),
+        ir_ref: ("0.2.16", &format!("sha256:{}", "b".repeat(64))),
+        graph: &graph,
+        compilation: &project,
+        classification: &resolution,
+        classification_ref: &lekalo_core::lockfile::types::Sha256Digest::parse(&lekalo_core::classification::attachment_digest(&classification).unwrap()).unwrap(),
+        policy: &policy,
+        policy_ref: &lekalo_core::lockfile::types::Sha256Digest::parse(&lekalo_core::classification::policy_digest(&policy).unwrap()).unwrap(),
+        generated_by: "test",
+        report_revision: "1.0.0",
+        endpoint_exposures: &[],
+        as_of: lekalo_core::classification::DEFAULT_AS_OF,
+        validation_findings: &[],
+    };
+
+    let analysis = lekalo_core::dataflow::analyze(&inputs).unwrap();
+    let report = &analysis.report;
+
+    // Should have one detected flow for external-call
+    assert_eq!(report.flows().len(), 1);
+    let flow = &report.flows()[0];
+    assert_eq!(flow.sink_kind(), lekalo_core::dataflow::types::SinkKind::ExternalCall);
+    assert_eq!(flow.provenance(), lekalo_core::dataflow::types::Provenance::Observed);
+
+    // Should have a gate finding due to missing approval (consentRequired=true but no valid grant)
+    assert!(report.findings().iter().any(|f| f.rule_id() == "dataflow.missing-approval"));
+}
