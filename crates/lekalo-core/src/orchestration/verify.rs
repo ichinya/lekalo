@@ -17,6 +17,7 @@ use crate::artifacts::GenerateService;
 use crate::diagnostics::{DataObject, Diagnostic};
 use crate::ir::Compilation;
 use crate::loader::LoadSelection;
+use crate::project_fs::{EntryType, Fs};
 use crate::lockfile::types::Sha256Digest;
 use crate::result::DomainResult;
 use crate::target_protocol::transport::TransportLimits;
@@ -34,6 +35,10 @@ use super::receipt::{
 };
 use super::version::IR_EVIDENCE_DIR;
 use super::Failure;
+
+// F-7 (issue #47 review): the exported scenario relations flow through
+// the trace manifest mechanism.
+use crate::scenario_evidence::{trace_manifest_document, RunRecord, TraceContext};
 
 /// The request of one verify invocation.
 pub struct VerifyRequest<'a> {
@@ -598,29 +603,9 @@ fn bindings_component(selection: &LoadSelection) -> Component {
 /// pass); an empty ingest home stays the declared absence it was before
 /// the backend landed — reported, exit-neutral, never silently skipped.
 fn scenarios_execution_component(prepared: &Prepared) -> Component {
-    let fs = prepared.fs();
-    let dir = crate::scenario_evidence::INGEST_DIR;
-    let entries = match fs.entries(dir) {
-        Ok(entries) => entries,
-        Err(_) => {
-            // No ingest home (or unreadable): the backend has not run.
-            return Component::state(
-                "scenarios.execution",
-                false,
-                ComponentState::Unsupported,
-                Some("core.capability-unavailable"),
-            );
-        }
-    };
-    let mut names: Vec<String> = entries
-        .iter()
-        .filter(|(name, kind)| {
-            *kind == crate::project_fs::EntryType::File && name.ends_with(".json")
-        })
-        .map(|(name, _)| name.clone())
-        .collect();
-    names.sort();
-    if names.is_empty() {
+    let rollup = scenarios_execution_rollup(prepared.fs(), &scenario_trace_context(prepared));
+    if !rollup.present {
+        // No ingest home (or unreadable): the backend has not run.
         return Component::state(
             "scenarios.execution",
             false,
@@ -628,45 +613,9 @@ fn scenarios_execution_component(prepared: &Prepared) -> Component {
             Some("core.capability-unavailable"),
         );
     }
-    let mut blocking = 0usize;
-    let mut unsupported = 0usize;
-    let mut degraded = 0usize;
-    for name in &names {
-        let bytes = match fs.read_file_opt(dir, name, 1 << 20) {
-            Ok(Some(bytes)) => bytes,
-            _ => {
-                blocking += 1;
-                continue;
-            }
-        };
-        let value: serde_json::Value = match serde_json::from_slice(&bytes) {
-            Ok(value) => value,
-            Err(_) => {
-                blocking += 1;
-                continue;
-            }
-        };
-        let record = match crate::scenario_evidence::RunRecord::from_value(&value) {
-            Ok(record) => record,
-            Err(_) => {
-                blocking += 1;
-                continue;
-            }
-        };
-        let summary = record.summary();
-        if summary.has_blocking_failure() {
-            blocking += 1;
-        } else if summary.unsupported > 0 || summary.degraded > 0 {
-            unsupported += 1;
-        } else if summary.all_passed() {
-            // counted as executed; nothing else to aggregate
-        } else {
-            degraded += 1;
-        }
-    }
-    let state = if blocking > 0 {
+    let state = if rollup.blocking > 0 {
         ComponentState::Fail
-    } else if unsupported > 0 || degraded > 0 {
+    } else if rollup.unsupported > 0 || rollup.degraded > 0 {
         ComponentState::Degraded
     } else {
         ComponentState::Pass
@@ -677,8 +626,119 @@ fn scenarios_execution_component(prepared: &Prepared) -> Component {
         _ => None,
     };
     let mut component = Component::state("scenarios.execution", false, state, reason);
-    component.receipt.findings = Some(blocking + unsupported + degraded);
+    component.receipt.findings = Some(rollup.blocking + rollup.unsupported + rollup.degraded);
+    // F-7: the exported manifest rows ride in the receipt's trace slot,
+    // so the verify receipt carries the emitted relations.
+    component.receipt.trace = rollup.trace;
     component
+}
+
+/// The trace export context of one prepared project (review F-7): the
+/// manifest revision is the exact lock revision, and the manifest header
+/// pins the current Model digest.
+fn scenario_trace_context(prepared: &Prepared) -> TraceContext {
+    let mut context = TraceContext::new(prepared.lock().digest().as_str().to_owned());
+    context.model_digest = format!("sha256:{}", prepared.inputs().ir().digest().as_str());
+    context
+}
+
+/// The deterministic rollup of one ingest home (review F-7): every
+/// durable run record is aggregated exactly like the component does, and
+/// the surviving records are exported through the trace manifest
+/// mechanism — [`trace_manifest_document`] assembles the closed wire
+/// document (the production [`crate::scenario_evidence::trace_relations`]
+/// caller) and [`crate::trace::TraceManifest::parse`] re-validates it
+/// before the rows are published. A document that does not survive the
+/// mechanism is a blocking failure, never a silent skip.
+#[derive(Default)]
+pub(crate) struct ExecutionRollup {
+    /// The ingest home held at least one parsable record.
+    pub present: bool,
+    pub blocking: usize,
+    pub unsupported: usize,
+    pub degraded: usize,
+    pub trace: Option<TraceSummary>,
+}
+
+/// Roll one ingest home up over the validated root capability.
+pub(crate) fn scenarios_execution_rollup(fs: &Fs, context: &TraceContext) -> ExecutionRollup {
+    let dir = crate::scenario_evidence::INGEST_DIR;
+    let mut rollup = ExecutionRollup::default();
+    let entries = match fs.entries(dir) {
+        Ok(entries) => entries,
+        Err(_) => {
+            // No ingest home (or unreadable): the backend has not run.
+            return rollup;
+        }
+    };
+    let mut names: Vec<String> = entries
+        .iter()
+        .filter(|(name, kind)| *kind == EntryType::File && name.ends_with(".json"))
+        .map(|(name, _)| name.clone())
+        .collect();
+    names.sort();
+    if names.is_empty() {
+        return rollup;
+    }
+    rollup.present = true;
+    let mut all_records = Vec::new();
+    for name in &names {
+        let bytes = match fs.read_file_opt(dir, name, 1 << 20) {
+            Ok(Some(bytes)) => bytes,
+            _ => {
+                rollup.blocking += 1;
+                continue;
+            }
+        };
+        let value: serde_json::Value = match serde_json::from_slice(&bytes) {
+            Ok(value) => value,
+            Err(_) => {
+                rollup.blocking += 1;
+                continue;
+            }
+        };
+        let record = match RunRecord::from_value(&value) {
+            Ok(record) => record,
+            Err(_) => {
+                rollup.blocking += 1;
+                continue;
+            }
+        };
+        let summary = record.summary();
+        if summary.has_blocking_failure() {
+            rollup.blocking += 1;
+        } else if summary.unsupported > 0 || summary.degraded > 0 {
+            rollup.unsupported += 1;
+        } else if summary.all_passed() {
+            // counted as executed; nothing else to aggregate
+        } else {
+            rollup.degraded += 1;
+        }
+        all_records.push(record);
+    }
+    if all_records.is_empty() {
+        return rollup;
+    }
+    // F-7: export the aggregated relations through the trace manifest
+    // mechanism; the emitted rows are observable in the rollup.
+    match trace_manifest_document(&all_records, context) {
+        Ok(document) => {
+            let bytes = serde_json::to_vec_pretty(&document).expect("document serializes");
+            match crate::trace::TraceManifest::parse(&bytes) {
+                Ok(parsed) => {
+                    let report = parsed.report();
+                    rollup.trace = Some(TraceSummary {
+                        relations: report.relation_count,
+                        gaps: report.gap_count,
+                        uncovered_sinks: parsed.uncovered_sinks().len(),
+                    });
+                }
+                Err(_) => rollup.blocking += 1,
+            }
+        }
+        Err(_) => rollup.blocking += 1,
+    }
+    rollup
 }
 
 /// The optional portable-scenario coverage component.
@@ -764,5 +824,96 @@ fn trace_component(prepared: &Prepared, logical: &str) -> Component {
             "graph.input-invalid",
             DomainResult::Invalid { diagnostics: set },
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scenarios_execution_rollup;
+    use crate::project_fs::Fs;
+    use crate::scenario_evidence::TraceContext;
+    use serde_json::json;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// The canonical run-record fixture, byte-identical in shape to the
+    /// reporter's canonical writer output (scenario_evidence tests).
+    fn valid_run_record() -> serde_json::Value {
+        json!({
+            "assertions": [
+                { "kind": "result", "observes": "run", "outcome": "pass", "step_id": "output" },
+                { "kind": "entity_state", "observes": "run", "outcome": "pass", "step_id": "state" }
+            ],
+            "binding_mode": "generated",
+            "identity": "dev.lekalo.scenario-run@0.4.0",
+            "profile": null,
+            "runner": { "id": "node:test", "version": "24.13.0" },
+            "schema_version": "lekalo/scenario-run/v0.4.0",
+            "scenario": {
+                "id": "planner.scenario.focus_happy",
+                "ir_digest": format!("sha256:{}", "1".repeat(64)),
+                "operations": ["planner.focus_task"],
+                "symbols": [],
+                "version": "0.2.16"
+            },
+            "started_by": "lekalo-scenario-harness",
+            "test": {
+                "fingerprint": format!("sha256:{}", "2".repeat(64)),
+                "id": "planner.scenario.focus_happy",
+                "path": "src/generated/node-typescript/scenario-tests/planner/planner.scenario.focus_happy.test.ts"
+            }
+        })
+    }
+
+    fn context() -> TraceContext {
+        let mut context = TraceContext::new("3".repeat(64));
+        context.model_digest = format!("sha256:{}", "4".repeat(64));
+        context
+    }
+
+    /// Review F-7: `trace_relations` has a production caller — verify
+    /// ingests the durable run records and exports their relations
+    /// through the trace manifest mechanism; the test observes the
+    /// emitted manifest rows in the rollup.
+    #[test]
+    fn execution_rollup_emits_trace_manifest_rows_from_ingested_records() {
+        let temp = TempDir::new().expect("temp dir");
+        let ingest = temp.path().join(".lekalo/import/scenario-runs");
+        fs::create_dir_all(&ingest).expect("ingest home");
+        fs::write(
+            ingest.join("run.json"),
+            serde_json::to_vec_pretty(&valid_run_record()).expect("record serializes"),
+        )
+        .expect("record written");
+        let fs = Fs::open(temp.path()).expect("validated root");
+
+        let rollup = scenarios_execution_rollup(&fs, &context());
+
+        assert!(rollup.present, "ingest home with one record is present");
+        assert_eq!(rollup.blocking, 0, "a passing record never blocks");
+        assert_eq!(rollup.unsupported, 0);
+        assert_eq!(rollup.degraded, 0);
+        let trace = rollup.trace.expect("the manifest rows are emitted");
+        // One record, one operation, no gate: exactly the two verifies
+        // rows (test→scenario, test→symbol) survive the mechanism.
+        assert_eq!(trace.relations, 2, "verifies rows are exported");
+        // The partial manifest declares the explicit missing-requirement
+        // gap the scenario segment cannot close.
+        assert_eq!(trace.gaps, 1);
+    }
+
+    /// The declared absence is preserved: without an ingest home the
+    /// rollup reports nothing, and the component stays the unsupported
+    /// absence it was before the backend landed.
+    #[test]
+    fn execution_rollup_stays_absent_without_an_ingest_home() {
+        let temp = TempDir::new().expect("temp dir");
+        let fs = Fs::open(temp.path()).expect("validated root");
+
+        let rollup = scenarios_execution_rollup(&fs, &context());
+
+        assert!(!rollup.present);
+        assert!(rollup.trace.is_none());
+        assert_eq!((rollup.blocking, rollup.unsupported, rollup.degraded), (0, 0, 0));
     }
 }

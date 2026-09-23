@@ -298,13 +298,20 @@ fn bounded_token_text(text: &str) -> bool {
     !text.is_empty() && text.chars().count() <= 256 && !text.chars().any(char::is_control)
 }
 
-/// The provenance/stamp context one trace export needs (plan S10).
+/// The provenance/stamp context one trace export needs (plan S10,
+/// extended by review F-7 with the manifest header fields).
 #[derive(Clone, Debug)]
 pub struct TraceContext {
     /// The manifest revision the exported relations confirm under.
     pub manifest_revision: String,
     /// The optional gate identity exporting the edges.
     pub gate: Option<String>,
+    /// The project id the manifest names.
+    pub project: String,
+    /// The manifest id of the exported document.
+    pub manifest_id: String,
+    /// The source Model digest the manifest header pins.
+    pub model_digest: String,
 }
 
 impl TraceContext {
@@ -313,6 +320,9 @@ impl TraceContext {
         Self {
             manifest_revision: manifest_revision.into(),
             gate: None,
+            project: "planner".to_owned(),
+            manifest_id: "lekalo-trace-scenario".to_owned(),
+            model_digest: format!("sha256:{}", "0".repeat(64)),
         }
     }
 }
@@ -433,9 +443,170 @@ pub fn trace_relations(
     Ok(relations)
 }
 
+/// The exported trace manifest document of validated run records (issue
+/// #47 review F-7): assembles the closed trace-manifest wire document —
+/// native_test / scenario / symbol / gate nodes plus the verified
+/// relations — and proves it through the established production
+/// mechanism ([`crate::trace::TraceManifest::parse`]). The manifest is
+/// always `partial` with an explicit missing-requirement gap: scenario
+/// evidence licenses the test→scenario segment, never a full
+/// requirement chain.
+pub fn trace_manifest_document(
+    records: &[RunRecord],
+    context: &TraceContext,
+) -> Result<serde_json::Value, DiagnosticSet> {
+    use crate::trace::node::NodeKind;
+    use crate::trace::relation::{Relation, RelationKind};
+    use serde_json::json;
+    if records.is_empty() {
+        return Err(run_invalid("trace-records-empty"));
+    }
+    let mut nodes = Vec::new();
+    let mut relations: Vec<Relation> = Vec::new();
+    let mut occurrence = 0u64;
+    let mut seen_nodes = std::collections::BTreeSet::new();
+    let push_node = |nodes: &mut Vec<Json>, seen: &mut std::collections::BTreeSet<String>, node: Json| {
+        if seen.insert(node["nodeId"].as_str().unwrap_or_default().to_owned()) {
+            nodes.push(node);
+        }
+    };
+    for record in records {
+        let test_node = format!("native_test:{}", record.test.0);
+        let scenario_node = format!("scenario:{}", record.scenario_id);
+        push_node(
+            &mut nodes,
+            &mut seen_nodes,
+            json!({
+                "nodeId": test_node,
+                "nodeKind": "native_test",
+                "testId": record.test.0,
+                "path": record.test.1,
+                "evidenceDigest": record.test.2,
+            }),
+        );
+        push_node(
+            &mut nodes,
+            &mut seen_nodes,
+            json!({
+                "nodeId": scenario_node,
+                "nodeKind": "scenario",
+                "scenarioId": record.scenario_id,
+            }),
+        );
+        for operation in &record.operations {
+            push_node(
+                &mut nodes,
+                &mut seen_nodes,
+                json!({
+                    "nodeId": format!("symbol:{operation}"),
+                    "nodeKind": "symbol",
+                    "semanticId": operation,
+                }),
+            );
+        }
+        let mut record_relations = trace_relations(record, context)?;
+        // Global occurrence uniqueness: re-stamp per document and derive
+        // the canonical id over the final tuple.
+        for relation in &mut record_relations {
+            occurrence += 1;
+            relation.occurrence = format!("scenario-run-{occurrence}");
+            relation.relation_id = Relation::canonical_id(
+                relation.relation_kind,
+                &relation.from_node,
+                &relation.to_node,
+                &relation.occurrence,
+            );
+            relation
+                .validate(&context.manifest_revision)
+                .map_err(|_| run_invalid("trace-relation"))?;
+        }
+        relations.extend(record_relations);
+    }
+    if let Some(gate) = &context.gate {
+        let gate_node = format!("gate:{gate}");
+        push_node(
+            &mut nodes,
+            &mut seen_nodes,
+            json!({
+                "nodeId": gate_node,
+                "nodeKind": "gate",
+                "gateId": gate,
+            }),
+        );
+        // The evidences edges need the gate node present; rebuild the
+        // gate half once the node set is complete.
+        relations.retain(|relation| relation.relation_kind != RelationKind::Evidences);
+        for record in records {
+            let from = format!("gate:{gate}");
+            for (to, to_kind) in [
+                (format!("native_test:{}", record.test.0), NodeKind::NativeTest),
+                (format!("scenario:{}", record.scenario_id), NodeKind::Scenario),
+            ] {
+                occurrence += 1;
+                let mut relation = Relation {
+                    relation_id: String::new(),
+                    relation_kind: RelationKind::Evidences,
+                    from_node: from.clone(),
+                    to_node: to,
+                    occurrence: format!("scenario-run-{occurrence}"),
+                    provenance: relations
+                        .first()
+                        .expect("relations non-empty")
+                        .provenance
+                        .clone(),
+                    confidence: crate::trace::provenance::Confidence::Exact,
+                    status: crate::trace::provenance::Status::Confirmed,
+                    evidence_refs: vec![format!("native_test:{}", record.test.0)],
+                };
+                relation.relation_id = Relation::canonical_id(
+                    relation.relation_kind,
+                    &relation.from_node,
+                    &relation.to_node,
+                    &relation.occurrence,
+                );
+                relation
+                    .validate(&context.manifest_revision)
+                    .map_err(|_| run_invalid("trace-relation"))?;
+                let _ = to_kind;
+                relations.push(relation);
+            }
+        }
+    }
+    // Partial manifests require at least one explicit gap: the exported
+    // segment covers test→scenario→symbol, never a requirement chain.
+    let anchor = nodes[0]["nodeId"].clone();
+    let document = json!({
+        "schemaVersion": "lekalo/trace-manifest/v0.2.16",
+        "identity": crate::trace::version::IDENTITY,
+        "manifestId": context.manifest_id,
+        "projectRef": context.project,
+        "completeness": "partial",
+        "sourceRevision": context.manifest_revision,
+        "modelRef": {
+            "schemaVersion": "0.2.16",
+            "digest": context.model_digest,
+        },
+        "exportProfile": "requirement-to-test",
+        "nodes": nodes,
+        "relations": relations.iter().map(|relation| serde_json::to_value(relation).expect("relation serializes")).collect::<Vec<Json>>(),
+        "gaps": [{
+            "gapKind": "missing-requirement",
+            "status": "candidate",
+            "anchorNode": anchor,
+        }],
+    });
+    // Production custody: the established parser re-validates every
+    // member, the canonical order, the endpoint legality, and the
+    // completeness policy over the exact assembled bytes.
+    let bytes = serde_json::to_vec_pretty(&document).expect("document serializes");
+    crate::trace::TraceManifest::parse(&bytes)
+        .map_err(|_| run_invalid("trace-manifest"))?;
+    Ok(document)
+}
+
 /// The fatal set for one run-record violation: the registered
 /// `scenario.run-record-invalid` diagnostic with a fixed class token.
-fn run_invalid(detail: &'static str) -> DiagnosticSet {
+pub fn run_invalid(detail: &'static str) -> DiagnosticSet {
     let mut data = crate::diagnostics::DataObject::new();
     data.insert(
         "detail".to_owned(),
@@ -592,10 +763,8 @@ mod tests {
             );
         }
         // With a gate context the evidences edges ride along.
-        let gated = TraceContext {
-            manifest_revision: "3".repeat(64),
-            gate: Some("planner.gate.scenario".to_owned()),
-        };
+        let mut gated = TraceContext::new("3".repeat(64));
+        gated.gate = Some("planner.gate.scenario".to_owned());
         let relations = trace_relations(&record, &gated).expect("legal edges");
         assert_eq!(relations.len(), 4);
         assert_eq!(relations[2].from_node, "gate:planner.gate.scenario");
@@ -611,5 +780,57 @@ mod tests {
         document["scenario"]["id"] = json!("not a node id!");
         let record = RunRecord::from_value(&document).expect("valid record");
         assert!(trace_relations(&record, &TraceContext::new("rev")).is_err());
+    }
+
+    #[test]
+    fn trace_manifest_document_builds_a_parse_valid_manifest_with_rows() {
+        // Review F-7: the exported relations persist through the
+        // established trace manifest mechanism — the builder assembles
+        // the closed document and the production parser re-validates it.
+        let record = RunRecord::from_value(&valid()).expect("valid record");
+        let context = TraceContext {
+            manifest_revision: "3".repeat(64),
+            gate: Some("planner.gate.scenario".to_owned()),
+            project: "planner".to_owned(),
+            manifest_id: "lekalo-trace-scenario".to_owned(),
+            model_digest: format!("sha256:{}", "4".repeat(64)),
+        };
+        let document = trace_manifest_document(&[record], &context).expect("valid manifest");
+        assert_eq!(document["schemaVersion"], json!("lekalo/trace-manifest/v0.2.16"));
+        assert_eq!(document["projectRef"], json!("planner"));
+        assert_eq!(document["completeness"], json!("partial"));
+        // The kinds the scenario evidence licenses, explicitly present.
+        let kinds: Vec<&str> = document["nodes"]
+            .as_array()
+            .expect("nodes")
+            .iter()
+            .map(|node| node["nodeKind"].as_str().expect("kind"))
+            .collect();
+        assert!(kinds.contains(&"native_test"));
+        assert!(kinds.contains(&"scenario"));
+        assert!(kinds.contains(&"symbol"));
+        assert!(kinds.contains(&"gate"));
+        // The verifies/evidences rows are observable in the manifest.
+        let relations = document["relations"].as_array().expect("relations");
+        assert_eq!(relations.len(), 4);
+        assert!(relations
+            .iter()
+            .any(|relation| relation["relationKind"] == json!("verifies")
+                && relation["toNode"] == json!("scenario:planner.scenario.focus_happy")));
+        assert!(relations
+            .iter()
+            .any(|relation| relation["relationKind"] == json!("evidences")));
+        // Production custody: the established parser accepts the bytes.
+        let bytes = serde_json::to_vec_pretty(&document).expect("serialize");
+        let parsed = crate::trace::TraceManifest::parse(&bytes).expect("parse-valid manifest");
+        assert_eq!(parsed.report().relation_count, 4);
+        // The closed query answers through the same document.
+        assert!(parsed.manifest().relations.len() == 4);
+    }
+
+    #[test]
+    fn trace_manifest_document_requires_records() {
+        let context = TraceContext::new("3".repeat(64));
+        assert!(trace_manifest_document(&[], &context).is_err());
     }
 }
