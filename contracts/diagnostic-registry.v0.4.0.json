@@ -1359,9 +1359,8 @@
       "id": "dataflow.observed-incomplete",
       "code": "LEK-DFL-009",
       "category": "semantic",
-      "default_severity": "warning",
+      "default_severity": "error",
       "allowed_statuses": [
-        "valid",
         "invalid",
         "denied"
       ],

@@ -105,6 +105,9 @@ declaration.
   `confidence` (`high`/`low`/`unknown`), `tenantRelation`
   (`same`/`crossing`/`unknown`), the resolved kind, and the gate
   decision `{required, satisfied, reason}` on gated sinks.
+  Note: `tenantRelation: same` is based on a declared-partitioned
+  heuristic (entity declares a field named `tenant`, `tenant_id`, or
+  `*_tenant_id`) and not an enforced tenancy declaration.
 - `findings[]` — registered `classification.*`/`dataflow.*` rule
   violations with bounded detail tokens. Subjects are hashed inside
   diagnostics; the report rows reference paths.
