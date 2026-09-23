@@ -146,6 +146,14 @@ impl Inventory {
         })
     }
 
+    /// Clear the quarantine flag for every row of one id (the explicit
+    /// release transition out of quarantine custody).
+    pub fn quarantine_release(&mut self, id: &str) {
+        for row in self.rows.iter_mut().filter(|row| row.id == id) {
+            row.quarantined = false;
+        }
+    }
+
     /// Insert or replace one row; rows are kept sorted by
     /// (id, version, digest) with no exact duplicates.
     pub fn upsert(&mut self, row: InventoryRow) {

@@ -1996,6 +1996,9 @@ fn run_adapter(command: AdapterCommands) -> AdapterRun {
             QuarantineCommands::Purge { all, project } => {
                 run_adapter_quarantine_purge(all, &project)
             }
+            QuarantineCommands::Release { id, project } => {
+                run_adapter_quarantine_release(&id, &project)
+            }
         },
     }
 }
@@ -2366,6 +2369,8 @@ fn run_adapter_repoint(
         version: target.version.clone(),
         digest: target.digest.clone(),
         manifest_digest: target.manifest_digest.clone(),
+        manifest_bytes: Vec::new(),
+        source: target.source.clone(),
         trust,
         quarantined: false,
         actions: vec![
@@ -2513,6 +2518,16 @@ enum QuarantineCommands {
     List {
         /// Project root selector, relative to the invocation directory.
 
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+
+    /// Release a quarantined package: re-plan it as a normal (trusted)
+    /// install into the live store under explicit confirmation.
+    Release {
+        /// The adapter id.
+        id: String,
+        /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
@@ -2727,14 +2742,15 @@ fn run_adapter_quarantine_purge(all: bool, project: &Option<String>) -> AdapterR
         .collect();
     for row in &quarantined {
         let digest8: String = row.digest["sha256:".len()..].chars().take(8).collect();
-        let dir = root.join(
-            format!(
-                ".lekalo/adapters/quarantine/{}-{}-{}",
-                row.id, row.version, digest8
-            )
-            .replace('/', std::path::MAIN_SEPARATOR_STR),
-        );
-        let _ = std::fs::remove_dir_all(dir);
+        // Remove every location the bytes can occupy: the quarantine
+        // custody tree and any pre-fix orphan under packages/**.
+        for base in [".lekalo/adapters/quarantine", ".lekalo/adapters/packages"] {
+            let dir = root.join(
+                format!("{}/{}-{}", base, row.id, digest8)
+                    .replace('/', std::path::MAIN_SEPARATOR_STR),
+            );
+            let _ = std::fs::remove_dir_all(dir);
+        }
         inventory
             .rows_mut()
             .retain(|existing| existing.id != row.id || existing.version != row.version);
@@ -2754,6 +2770,101 @@ fn run_adapter_quarantine_purge(all: bool, project: &Option<String>) -> AdapterR
         result: DomainResult::receipt(
             serde_json::to_string(&document).expect("purge serializes"),
             format!("quarantine purge : {} package(s)", purged),
+        ),
+    }
+}
+
+/// Run `lekalo adapter quarantine release`: move the quarantined bytes
+/// into the live packages/** store and select the pin. The explicit
+/// transition out of quarantine — never implicit.
+fn run_adapter_quarantine_release(id: &str, project: &Option<String>) -> AdapterRun {
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let mut inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let row = match inventory
+        .rows()
+        .iter()
+        .find(|row| row.id == id && row.quarantined)
+    {
+        Some(row) => row.clone(),
+        None => {
+            return AdapterRun::Envelope(DomainResult::from(
+                lekalo_core::lockfile::LockFailure::ComponentUnavailable {
+                    kind: "adapter",
+                    id: id.to_owned(),
+                },
+            ));
+        }
+    };
+    let digest8: String = row.digest["sha256:".len()..].chars().take(8).collect();
+    let quarantine_dir = root.join(
+        format!(".lekalo/adapters/quarantine/{}-{}", id, digest8)
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
+    );
+    let packages_dir = root.join(
+        format!(
+            ".lekalo/adapters/packages/{}/{}-{}",
+            id, row.version, digest8
+        )
+        .replace('/', std::path::MAIN_SEPARATOR_STR),
+    );
+    if !quarantine_dir.is_dir() {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::Quarantined {
+                id: id.to_owned(),
+                version: row.version.clone(),
+            },
+        ));
+    }
+    if packages_dir.exists() {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::InstallConflict {
+                path: format!("packages/{}/{}-{}", id, row.version, digest8),
+            },
+        ));
+    }
+    if let Some(parent) = packages_dir.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if std::fs::rename(&quarantine_dir, &packages_dir).is_err() {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::RecoveryRequired {
+                stage: "release".to_owned(),
+            },
+        ));
+    }
+    inventory.quarantine_release(id);
+    if let Err(failure) = inventory.select(id, &row.version, &row.digest) {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &failure,
+        ));
+    }
+    if let Err(failure) = inventory.store(&root) {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &failure,
+        ));
+    }
+    let document = serde_json::json!({
+        "status": "valid",
+        "id": id,
+        "version": row.version,
+        "released": true,
+        "selected": true,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("release serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("release serializes"),
+            format!("quarantine release {} : released {}", id, row.version),
         ),
     }
 }

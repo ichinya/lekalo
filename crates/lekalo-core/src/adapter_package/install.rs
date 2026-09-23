@@ -153,13 +153,45 @@ pub fn plan(
             digest: file.digest().as_str().to_owned(),
         });
     }
-    actions.push(InstallAction::Promote {
-        path: package_relative_dir(manifest),
-    });
-    actions.push(InstallAction::Repoint {
-        id: manifest.adapter_id().to_owned(),
-        version: manifest.adapter_version().to_string(),
-    });
+    let digest8 = manifest.package_digest().as_str()["sha256:".len()..]
+        .chars()
+        .take(8)
+        .collect::<String>();
+    if quarantined {
+        actions.push(InstallAction::Quarantine {
+            path: format!(
+                "{}/{}/{}-{}",
+                QUARANTINE_DIR,
+                manifest.adapter_id(),
+                manifest.adapter_version(),
+                digest8
+            ),
+        });
+    }
+    let promote_dir = if quarantined {
+        format!(
+            "{}/{}/{}-{}",
+            QUARANTINE_DIR,
+            manifest.adapter_id(),
+            manifest.adapter_version(),
+            digest8
+        )
+    } else {
+        format!(
+            "{}/{}/{}-{}",
+            PACKAGES_DIR,
+            manifest.adapter_id(),
+            manifest.adapter_version(),
+            digest8
+        )
+    };
+    actions.push(InstallAction::Promote { path: promote_dir });
+    if !quarantined {
+        actions.push(InstallAction::Repoint {
+            id: manifest.adapter_id().to_owned(),
+            version: manifest.adapter_version().to_string(),
+        });
+    }
     let diff = current.map(|current| super::diff::diff_manifests(current, manifest));
     let manifest_bytes = candidate.manifest.stored_bytes().to_vec();
     let plan = InstallPlan {
@@ -294,8 +326,17 @@ fn apply_staged(
     // Promote: rename the verified stage into the immutable store. A
     // foreign occupant of the destination is a conflict, never an
     // overwrite.
-    let destination =
-        root.join(package_store_dir_relative(plan).replace('/', std::path::MAIN_SEPARATOR_STR));
+    // Quarantined custody: community bytes land under quarantine/**,
+    // never in the live packages/** tree; a non-quarantined plan
+    // promotes directly into the immutable store.
+    let destination = root.join(
+        if plan.quarantined {
+            quarantine_dir_relative(plan)
+        } else {
+            package_store_dir_relative(plan)
+        }
+        .replace('/', std::path::MAIN_SEPARATOR_STR),
+    );
     if destination.exists() {
         return Err(ApplyRejection::InstallConflict {
             path: package_relative_dir_of_plan(plan),
@@ -371,6 +412,17 @@ pub fn apply_from_candidate(
     apply_with_source(root, plan, confirmed_plan_id, allow_escalation, &source_dir)
 }
 
+fn quarantine_dir_relative(plan: &InstallPlan) -> String {
+    let digest8 = plan.digest["sha256:".len()..]
+        .chars()
+        .take(8)
+        .collect::<String>();
+    format!(
+        "{}/{}/{}-{}",
+        QUARANTINE_DIR, plan.id, plan.version, digest8
+    )
+}
+
 fn package_store_dir_relative(plan: &InstallPlan) -> String {
     let digest8 = plan.digest["sha256:".len()..]
         .chars()
@@ -383,19 +435,7 @@ fn package_relative_dir_of_plan(plan: &InstallPlan) -> String {
     package_store_dir_relative(plan)
 }
 
-fn package_relative_dir(manifest: &ManifestDocument) -> String {
-    let digest8 = manifest.package_digest().as_str()["sha256:".len()..]
-        .chars()
-        .take(8)
-        .collect::<String>();
-    format!(
-        "{}/{}/{}-{}",
-        PACKAGES_DIR,
-        manifest.adapter_id(),
-        manifest.adapter_version(),
-        digest8
-    )
-}
+
 
 /// Reverse-order rollback of the journal. An incomplete rollback is
 /// `adapter.recovery-required`, never silence.
