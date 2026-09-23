@@ -621,3 +621,25 @@ test('assertion semantics are enforced, never approximated (F-3)', () => {
   assert.match(contractTest.text, /port\.contractCheck\("planner\/error-contract"/);
   assert.match(contractTest.text, /"error-contract"/);
 });
+
+test('checked bindings emit no self-claiming test (F-4)', () => {
+  const scenario = happyScenario();
+  scenario.bindings = [{
+    backend: "native",
+    runner: "node:test",
+    runner_version: "24.0.0",
+    capabilities: [],
+    capability_digest: "sha256:" + "0".repeat(64),
+    test: "planner.scenario.minimal",
+    mode: "checked",
+  }];
+  const files = emit(map(scenario).scenarios);
+  const paths = files.map((entry) => entry.path);
+  // The support files still emit; the scenario identity does not.
+  assert.equal(paths.length, 3, JSON.stringify(paths));
+  for (const path of paths) {
+    assert.doesNotMatch(path, /minimal/, 'no emitted artifact claims the checked id');
+  }
+  assert.ok(!files.some((entry) => entry.text.includes('lekalo:planner.scenario.minimal')),
+    'no emitted file claims the checked lekalo: title');
+});

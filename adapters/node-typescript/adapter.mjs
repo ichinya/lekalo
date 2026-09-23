@@ -218702,6 +218702,9 @@ function emitScenarioTests(input) {
     file2(`${SCENARIO_DIR}/port.ts`, portText(context))
   ];
   for (const model of orderedModels(input.models)) {
+    if (model.binding.mode === "checked") {
+      continue;
+    }
     const module = moduleOf(model.id);
     if (RESERVED_MODULES.includes(module)) {
       throw new TypeError(`scenario module collides with a reserved emitted file: ${module}`);

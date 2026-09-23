@@ -68,6 +68,16 @@ export function emitScenarioTests(input) {
     file(`${SCENARIO_DIR}/port.ts`, portText(context)),
   ];
   for (const model of orderedModels(input.models)) {
+    // Review F-4: a checked binding declares that an EXISTING native
+    // test owns the scenario identity. Emitting a generated test with
+    // the same lekalo:<id> title would (a) self-inflict claimed-by-2
+    // ambiguity in the scan, (b) satisfy binding-missing with the
+    // generated file itself, and (c) mislabel run records as checked.
+    // The checked identity therefore belongs exclusively to the native
+    // test: nothing is emitted for it.
+    if (model.binding.mode === "checked") {
+      continue;
+    }
     const module = moduleOf(model.id);
     if (RESERVED_MODULES.includes(module)) {
       throw new TypeError(`scenario module collides with a reserved emitted file: ${module}`);
