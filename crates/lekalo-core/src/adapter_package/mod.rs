@@ -48,6 +48,7 @@ pub mod inventory;
 pub mod manifest;
 pub mod permissions;
 pub mod quarantine;
+pub mod records;
 pub mod signature;
 pub mod trust;
 pub mod types;

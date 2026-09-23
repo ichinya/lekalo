@@ -158,10 +158,18 @@ pub fn discover(source: &DiscoverySource) -> Result<Vec<DiscoveryCandidate>, Pac
         DiscoverySource::Path(path) => discover_path(path)?,
         DiscoverySource::PathExec(filter) => discover_path_exec(filter.as_deref())?,
         DiscoverySource::Release(coordinate) => {
-            return Err(record_unavailable("releases.json", coordinate))
+            return super::records::resolve_record(
+                ".lekalo/adapters/evidence/releases.json",
+                "release",
+                coordinate,
+            )
         }
         DiscoverySource::Registry(coordinate) => {
-            return Err(record_unavailable("registry.json", coordinate))
+            return super::records::resolve_record(
+                ".lekalo/adapters/evidence/registry.json",
+                "registry",
+                coordinate,
+            )
         }
     };
     // Deterministic candidate order: adapter id, then version ascending.
@@ -177,13 +185,6 @@ pub fn discover(source: &DiscoverySource) -> Result<Vec<DiscoveryCandidate>, Pac
     });
     candidates.truncate(MAX_CANDIDATES);
     Ok(candidates)
-}
-
-fn record_unavailable(record: &str, coordinate: &str) -> PackageFailure {
-    let _ = record;
-    PackageFailure::SourceUnavailable {
-        source: bounded_coordinate(coordinate),
-    }
 }
 
 /// `path`: manifest file or package directory.

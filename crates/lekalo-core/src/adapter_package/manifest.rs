@@ -200,6 +200,7 @@ pub struct ManifestDocument {
     adapter_version: SemVer,
     source_kind: SourceKind,
     source_coordinate: String,
+    source_digest: Sha256Digest,
     entry: PackagePath,
     package_digest: Sha256Digest,
     files: Vec<FileIntegrity>,
@@ -283,6 +284,7 @@ impl ManifestDocument {
                 }
             })?,
             source_coordinate: wire.source.coordinate,
+            source_digest: Sha256Digest::parse(&wire.source.digest)?,
             entry,
             package_digest,
             files,
@@ -355,6 +357,11 @@ impl ManifestDocument {
     /// The exact adapter version.
     pub fn adapter_version(&self) -> &SemVer {
         &self.adapter_version
+    }
+
+    /// The declared source-snapshot digest.
+    pub fn source_digest(&self) -> &Sha256Digest {
+        &self.source_digest
     }
 
     /// The declared source kind.

@@ -89,6 +89,18 @@ answers `adapter.recovery-required`. Rollback is the same machinery
 against an already-installed immutable version — bytes are never
 modified.
 
+## Local release/registry records
+
+Release and registry sources resolve from explicit local records the
+operator pre-stages under `.lekalo/adapters/evidence/`:
+
+- `releases.json` / `registry.json` — `{schemaVersion:
+  "lekalo/adapter-records/v0.3.2", records: [{coordinate,
+  path, digest}]}`. The `path` is project-relative and points at a
+  package directory carrying `adapter.manifest.json` whose source
+  digest equals the record's. A missing or malformed record is the
+  honest `adapter.source-unavailable`; records are never fetched.
+
 ## Offline
 
 `path`, `path-exec`, and the installed inventory are fully offline.
