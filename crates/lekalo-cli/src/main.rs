@@ -2357,7 +2357,30 @@ fn run_adapter_repoint(
             .iter()
             .find(|row| row.version == version)
             .or_else(|| inventory.selected(id).filter(|row| row.version == version)),
-        (AdapterRepoint::Update, None) => promoted.iter().rev().find(|row| !row.selected),
+        // "update" without --to only ever moves forward: the newest
+        // installed row newer than the selected one. With nothing newer
+        // the command refuses (component-unavailable) rather than
+        // silently downgrading (devin F-10).
+        (AdapterRepoint::Update, None) => {
+            let selected = inventory.selected(id);
+            promoted
+                .iter()
+                .rev()
+                .find(|row| {
+                    !row.selected
+                        && selected
+                            .map(|current| row.version.as_str() > current.version.as_str())
+                            .unwrap_or(true)
+                })
+                .or_else(|| {
+                    // Nothing selected: any newest row counts as forward.
+                    if selected.is_none() {
+                        promoted.iter().rev().find(|row| !row.selected)
+                    } else {
+                        None
+                    }
+                })
+        }
         (AdapterRepoint::Rollback, None) => None,
     };
     let Some(target) = target else {
