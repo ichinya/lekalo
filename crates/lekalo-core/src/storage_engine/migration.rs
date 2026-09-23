@@ -1133,6 +1133,37 @@ fn plan_tables(
                 dependents.retain(|dependent| dependent.owner != *table.table());
                 pending_dependents = dependents;
                 Some(rename_id + 1)
+            } else if base_table.primary_key() == table.primary_key() {
+                // A pure rename still re-derives the primary key's
+                // deterministic name: constraint names follow the table
+                // through ALTER TABLE RENAME, so pk_<old> would survive
+                // on the renamed table — the same stale-name failure
+                // the fk_/idx_/pol_/chk_ flows close, resurfacing as
+                // the next pk-touching diff dropping a name a fresh
+                // render never produces.
+                let old_key_name = StorageName::parse(&format!("pk_{}", base_table.table()))
+                    .map_err(|_| {
+                        diagnostic::rule_invalid(MAPPING_INVALID, "primary-key-name", None)
+                    })?;
+                let new_key_name =
+                    StorageName::parse(&format!("pk_{}", table.table())).map_err(|_| {
+                        diagnostic::rule_invalid(MAPPING_INVALID, "primary-key-name", None)
+                    })?;
+                let rename_id = steps.len();
+                push_step(
+                    steps,
+                    "rename_constraint",
+                    format!(
+                        "ALTER TABLE {} RENAME CONSTRAINT {} TO {};",
+                        quote(table.table()),
+                        quote(&old_key_name),
+                        quote(&new_key_name)
+                    ),
+                    DataRisk::None,
+                    Vec::new(),
+                    None,
+                );
+                Some(rename_id + 1)
             } else {
                 None
             };

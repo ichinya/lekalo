@@ -2223,6 +2223,87 @@ fn a_referenced_pk_swap_takes_its_dependent_keys_down_and_back() {
 }
 
 #[test]
+fn a_pure_rename_rederives_its_primary_key_name() {
+    // Constraint names follow the table through ALTER TABLE RENAME, so
+    // a pure rename would leave pk_task on todo — the same stale-name
+    // failure the fk_/idx_/pol_ flows close. The rename block renames
+    // the constraint to the fresh deterministic name.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        for table in projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+        {
+            if table.get("table").and_then(serde_json::Value::as_str) == Some("task") {
+                table["table"] = serde_json::Value::String("todo".to_owned());
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    let rename_table = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "rename_table")
+        .expect("the table renames");
+    let pk_rename = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "rename_constraint"
+                && step.statement()
+                    == "ALTER TABLE \"todo\" RENAME CONSTRAINT \"pk_task\" TO \"pk_todo\";"
+        })
+        .expect("the primary key renames to the fresh deterministic name");
+    assert!(
+        rename_table.id() < pk_rename.id(),
+        "the constraint rename follows the table rename"
+    );
+    assert!(
+        !plan
+            .steps()
+            .iter()
+            .any(|step| step.kind() == "add_primary_key"),
+        "a pure rename never rebuilds the key"
+    );
+    for step in plan.steps() {
+        for dep in step.requires() {
+            assert!(*dep < step.id(), "no forward edges");
+        }
+    }
+}
+
+#[test]
 fn a_type_change_without_an_assignment_cast_refuses() {
     // A text-to-integer change cannot execute as a bare ALTER COLUMN
     // TYPE: the planner refuses with the registered rule instead of
