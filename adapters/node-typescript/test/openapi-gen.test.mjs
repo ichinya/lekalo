@@ -295,6 +295,31 @@ test("the write scopes cover the default policy path", () => {
   assert.deepEqual(OPENAPI_WRITE_SCOPES, ["docs/**"]);
 });
 
+test("a declared scheme requirement carries its components.securitySchemes entry (r1 F-2)", () => {
+  // transport-minimal declares a bearer scheme (user_bearer) and an
+  // operation security requirement over it: the component must be
+  // emitted too, or the requirement names an undeclared scheme.
+  const root = evidenceProject();
+  try {
+    const views = viewsFor(root);
+    const outcome = run({ ...views, request: {} });
+    assert.equal(outcome.state, "complete");
+    const yaml = outcome.data.bodies.get("docs/openapi.yaml");
+    assert.ok(yaml.includes('"user_bearer": []'), "the operation requirement survives");
+    const componentsStart = yaml.indexOf('"components":');
+    assert.ok(componentsStart >= 0, "components are emitted");
+    const schemesStart = yaml.indexOf('"securitySchemes":', componentsStart);
+    assert.ok(schemesStart > componentsStart, "components.securitySchemes is emitted");
+    const schemeBlock = yaml.slice(schemesStart, schemesStart + 300);
+    assert.ok(schemeBlock.includes('"user_bearer":'), "the referenced scheme id is declared");
+    assert.ok(schemeBlock.includes('"type": "http"'), "bearer spells the http type");
+    assert.ok(schemeBlock.includes('"scheme": "bearer"'), "bearer spells the bearer scheme");
+    assert.ok(schemeBlock.includes('"bearerFormat": "jwt"'), "the declared format is carried");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("a divided errorDefault inlines its category body and never dangles a $ref (r1 F-1)", () => {
   // Two endpoints: ep0 keeps domain:422, the clone declares domain:423
   // (a status neither endpoint covers with a declared error) — the

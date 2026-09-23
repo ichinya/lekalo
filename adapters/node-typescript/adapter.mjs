@@ -218388,6 +218388,35 @@ function computeUniformDefaults(attach) {
   }
   return uniform;
 }
+function securitySchemeObject(scheme, version) {
+  switch (scheme.kind) {
+    case "bearer": {
+      const object = { type: "http", scheme: "bearer" };
+      if (scheme.format) {
+        object.bearerFormat = scheme.format;
+      }
+      return object;
+    }
+    case "api-key": {
+      const object = { type: "apiKey" };
+      if (scheme.location) {
+        object.in = scheme.location;
+      }
+      if (scheme.name) {
+        object.name = scheme.name;
+      }
+      return object;
+    }
+    case "basic":
+      return { type: "http", scheme: "basic" };
+    case "mutual-tls":
+      return version === "3.1" ? { type: "mutualTLS" } : null;
+    // oauth2/custom: no native shape without invented URLs or
+    // semantics; mutual-tls at 3.0: not expressible (G3/G4).
+    default:
+      return null;
+  }
+}
 function renderDocument(attachment, ir, policy) {
   const definitions = /* @__PURE__ */ new Map();
   for (const definition of ir.definitions ?? []) {
@@ -218436,6 +218465,13 @@ function renderDocument(attachment, ir, policy) {
       schemas[name] = withSymbol(body, symbol);
     }
   }
+  const securitySchemes = {};
+  for (const scheme of attachment.securitySchemes ?? []) {
+    const object = securitySchemeObject(scheme, policy.version);
+    if (object !== null) {
+      securitySchemes[scheme.id] = withSymbol(object, scheme.id);
+    }
+  }
   const root = {
     openapi: versionWire(policy.version),
     info: { title: attachment.projectId, version: "0.4.0" },
@@ -218446,13 +218482,16 @@ function renderDocument(attachment, ir, policy) {
       ])
     )
   };
-  if (Object.keys(schemas).length > 0 || Object.keys(state.sharedResponses ?? {}).length > 0) {
+  if (Object.keys(schemas).length > 0 || Object.keys(state.sharedResponses ?? {}).length > 0 || Object.keys(securitySchemes).length > 0) {
     root.components = {};
     if (Object.keys(schemas).length > 0) {
       root.components.schemas = sortKeys(schemas);
     }
     if (Object.keys(state.sharedResponses ?? {}).length > 0) {
       root.components.responses = sortKeys(state.sharedResponses);
+    }
+    if (Object.keys(securitySchemes).length > 0) {
+      root.components.securitySchemes = sortKeys(securitySchemes);
     }
   }
   root["x-lekalo-provenance"] = {
