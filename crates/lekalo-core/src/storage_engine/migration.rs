@@ -1215,6 +1215,58 @@ fn plan_tables(
                 .iter()
                 .any(|candidate| candidate.name() == column.name())
             {
+                // A departing tenant-key column owns the table's row
+                // level security: the policy reads the column, so the
+                // DROP COLUMN would fail against it (and RLS would
+                // stay enabled with no policy). The candidate document
+                // covers only tenant-key tables, so both the policy and
+                // the table's RLS mode retire before the column drop.
+                if column.origin().key() == "tenant_key" {
+                    if let Some(tenancy) = profile.tenancy() {
+                        if tenancy.enforcement() == super::Enforcement::Rls {
+                            // The policy name derives from the table's
+                            // name at the base revision: a table that
+                            // renamed in this same plan carries its
+                            // old-name policy onto the renamed table.
+                            let policy_table = renamed_tables
+                                .get(table.entity().as_str())
+                                .cloned()
+                                .unwrap_or_else(|| table.table().clone());
+                            let policy =
+                                StorageName::parse(&format!("pol_{}_tenant", policy_table))
+                                    .map_err(|_| {
+                                        diagnostic::rule_invalid(
+                                            MAPPING_INVALID,
+                                            "policy-name",
+                                            None,
+                                        )
+                                    })?;
+                            push_step(
+                                steps,
+                                "drop_policy",
+                                format!(
+                                    "DROP POLICY {} ON {};",
+                                    quote(&policy),
+                                    quote(table.table())
+                                ),
+                                DataRisk::Destructive,
+                                Vec::new(),
+                                None,
+                            );
+                            push_step(
+                                steps,
+                                "disable_rls",
+                                format!(
+                                    "ALTER TABLE {} DISABLE ROW LEVEL SECURITY;",
+                                    quote(table.table())
+                                ),
+                                DataRisk::None,
+                                Vec::new(),
+                                None,
+                            );
+                        }
+                    }
+                }
                 push_step(
                     steps,
                     "drop_column",

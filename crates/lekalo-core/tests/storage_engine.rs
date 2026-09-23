@@ -1720,6 +1720,109 @@ fn an_added_generated_column_keeps_its_full_shape() {
 }
 
 #[test]
+fn a_removed_tenant_key_retires_its_policy_before_the_column() {
+    // A tenant-key column that leaves a surviving table owns the
+    // table's row level security: the policy reads the column, so the
+    // policy (and the table's RLS mode) must retire before the
+    // DROP COLUMN — otherwise the drop fails against the policy or RLS
+    // stays enabled with no policy. A table that renamed in the same
+    // plan carries its base-derived policy name onto the new name.
+    let candidate_of = |rename: bool| {
+        let mut candidate_value: serde_json::Value =
+            serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+        for projection in candidate_value
+            .get_mut("projections")
+            .and_then(|projections| projections.as_array_mut())
+            .expect("projections")
+        {
+            if projection
+                .get("namespace")
+                .and_then(serde_json::Value::as_str)
+                != Some("postgres")
+            {
+                continue;
+            }
+            for table in projection
+                .get_mut("tables")
+                .and_then(|t| t.as_array_mut())
+                .expect("tables")
+            {
+                if table.get("table").and_then(serde_json::Value::as_str) == Some("task") {
+                    if rename {
+                        table["table"] = serde_json::Value::String("todo".to_owned());
+                    }
+                    if let Some(object) = table.as_object_mut() {
+                        object.remove("tenantKey");
+                        if let Some(indexes) = object
+                            .get_mut("indexes")
+                            .and_then(serde_json::Value::as_array_mut)
+                        {
+                            indexes.retain(|index| {
+                                index.get("name").and_then(serde_json::Value::as_str)
+                                    != Some("idx_task_tenant")
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate")
+    };
+    let confirmed = |candidate: &StorageProjectionAttachment| {
+        let plan_id = {
+            let blocked = lekalo_core::storage_engine::plan_migration(
+                &profile(),
+                &migration_attachment(MIGRATION_BASE),
+                candidate,
+                None,
+            )
+            .expect("plans");
+            blocked.plan_id().to_owned()
+        };
+        lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            candidate,
+            Some(&plan_id),
+        )
+        .expect("confirmed")
+    };
+    let plan = &confirmed(&candidate_of(false));
+    let policy_drop = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "drop_policy"
+                && step.statement() == "DROP POLICY \"pol_task_tenant\" ON \"task\";"
+        })
+        .expect("the tenant policy drops");
+    assert!(
+        plan.steps().iter().any(|step| {
+            step.kind() == "disable_rls"
+                && step.statement() == "ALTER TABLE \"task\" DISABLE ROW LEVEL SECURITY;"
+        }),
+        "the table's RLS mode retires with its policy"
+    );
+    let column_drop = plan
+        .steps()
+        .iter()
+        .find(|step| step.statement().contains("DROP COLUMN \"tenant_id\""))
+        .expect("the tenant column drops");
+    assert!(
+        policy_drop.id() < column_drop.id(),
+        "the policy drops before its column"
+    );
+    let renamed = &confirmed(&candidate_of(true));
+    assert!(
+        renamed.steps().iter().any(|step| {
+            step.kind() == "drop_policy"
+                && step.statement() == "DROP POLICY \"pol_task_tenant\" ON \"todo\";"
+        }),
+        "a renamed table drops its base-derived policy name"
+    );
+}
+
+#[test]
 fn a_type_change_without_an_assignment_cast_refuses() {
     // A text-to-integer change cannot execute as a bare ALTER COLUMN
     // TYPE: the planner refuses with the registered rule instead of
