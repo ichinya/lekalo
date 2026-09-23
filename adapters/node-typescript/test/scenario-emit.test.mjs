@@ -489,3 +489,46 @@ test('the summary is comment-safe: newlines cannot inject code (F-1)', () => {
   }
   assert.equal(commentSafe('a\r\nb\u0000c\n'), 'a b c');
 });
+
+test('observes on a consumed given step resolves the given binding and runs (F-2)', () => {
+  // The core data-flow permits then.observes to name a consumed given
+  // precondition; the emitted test must not reference an undeclared
+  // step_* variable (review reproduced a ReferenceError).
+  const scenario = seededScenario();
+  scenario.then = [{
+    stepId: 'state',
+    observes: 'seed',
+    assertion: {
+      kind: 'entity_state',
+      entity: 'planner.task',
+      where: [{ field: 'task_id', equals: { type: 'string', value: 'task-1' } }],
+      expect: { presence: 'exists' },
+      fields: { user_id: { value: { type: 'string', value: 'user-1' } } },
+    },
+  }];
+  const files = emit(map(scenario).scenarios);
+  const testFile = files.find((entry) => entry.path.endsWith('.test.ts'));
+  assert.match(testFile.text, /given_seed/, 'the given binding exists');
+  assert.doesNotMatch(testFile.text, /\bstep_seed\b/, 'no phantom step_ variable');
+  // The entity_state check queries the port, so the test executes green.
+  const dir = mkdtempSync(join(tmpdir(), 'lekalo-scenario-f2-'));
+  try {
+    materializeFixtureProject(dir);
+    const result = spawnSync(process.execPath, ['--test', ...generatedTestFiles(dir)], {
+      cwd: join(dir, SCENARIO_DIR),
+      encoding: 'utf8',
+      timeout: 120000,
+      env: spawnedEnv(),
+    });
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`.slice(0, 2000));
+    const record = JSON.parse(
+      readFileSync(join(dir, RUN_RECORD_DIR, 'planner.scenario.focus_seed.json'), 'utf8'),
+    );
+    assert.equal(
+      record.assertions.every((row) => row.outcome === 'pass'),
+      true,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

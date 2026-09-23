@@ -607,7 +607,11 @@ function renderWhen(step, stepVars) {
 }
 
 function renderThen(step, model, stepVars, clockIsos) {
-  const observed = `step_${identifierOf(step.observes)}`;
+  // The observed variable resolves through the emitted bindings: a
+  // when step binds step_<id>, a consumed given step binds given_<id>
+  // (review F-2 — the core data-flow deliberately allows observes to
+  // name a consumed given precondition).
+  const observed = stepVars.get(step.observes) ?? `step_${identifierOf(step.observes)}`;
   const meta = `step_id: ${JSON.stringify(step.stepId)}, observes: ${JSON.stringify(step.observes)}, kind: ${JSON.stringify(step.kind)}`;
   if (step.unsupported) {
     return [unsupportedRow(step.stepId, step.observes, step.kind, `${step.unsupported.capability}: ${step.unsupported.reason}`)];

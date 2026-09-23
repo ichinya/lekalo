@@ -219152,7 +219152,7 @@ function renderWhen(step, stepVars) {
   ];
 }
 function renderThen(step, model, stepVars, clockIsos2) {
-  const observed = `step_${identifierOf(step.observes)}`;
+  const observed = stepVars.get(step.observes) ?? `step_${identifierOf(step.observes)}`;
   const meta = `step_id: ${JSON.stringify(step.stepId)}, observes: ${JSON.stringify(step.observes)}, kind: ${JSON.stringify(step.kind)}`;
   if (step.unsupported) {
     return [unsupportedRow(step.stepId, step.observes, step.kind, `${step.unsupported.capability}: ${step.unsupported.reason}`)];
