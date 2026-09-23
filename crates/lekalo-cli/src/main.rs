@@ -5937,12 +5937,8 @@ fn run_classification(command: ClassificationCommands) -> DomainResult {
                     Err(result) => return result,
                     Ok(parts) => parts,
                 };
-            let (json, human) = classification_inspect_payload(
-                &attachment,
-                &policy,
-                &resolution,
-                &as_of,
-            );
+            let (json, human) =
+                classification_inspect_payload(&attachment, &policy, &resolution, &as_of);
             DomainResult::graph(json, human, Vec::new())
         }
     }
