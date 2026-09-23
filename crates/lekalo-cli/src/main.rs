@@ -5826,6 +5826,13 @@ fn parse_endpoint_exposures(
 /// `YYYY-MM-DD` normalized to midnight UTC. Anything else refuses
 /// before any evaluation — malformed input denies, never passes.
 fn normalize_as_of(raw: &str) -> Option<String> {
+    // ASCII only (r5 F-1): the fixed-width checks below slice at byte
+    // offsets, and a multi-byte char spanning a slice boundary would
+    // panic instead of refusing. Non-ASCII input is never a valid
+    // spelling — refuse it before any slicing happens.
+    if !raw.is_ascii() {
+        return None;
+    }
     let bytes = raw.as_bytes();
     if bytes.len() == 20 && bytes[10] == b'T' && bytes[19] == b'Z' {
         lekalo_core::nfr::IsoDate::parse(&raw[..10]).ok()?;

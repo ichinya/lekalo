@@ -316,7 +316,17 @@ const policy = (fixture) => join(fixture, "lekalo/classification-policy.json");
     "--policy",
     policy(EXPIRED),
   ];
-  for (const bad of ["!", "", "2026-13-01", "2026-01-01T99:00:00Z", "garbage"]) {
+  for (const bad of [
+    "!",
+    "",
+    "2026-13-01",
+    "2026-01-01T99:00:00Z",
+    "garbage",
+    // r5 F-1: exactly 20 bytes with a multi-byte char spanning the
+    // time-slice offsets — must refuse as usage, never panic.
+    "2026-01-01T€xxxxxZ",
+    "2026-01-é",
+  ]) {
     for (const command of [
       ["classification", "validate", ...asOfArgs, "--as-of", bad],
       ["dataflow", "report", ...asOfArgs, "--as-of", bad],
