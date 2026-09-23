@@ -12,8 +12,9 @@
 // LEKALO_AJV_NODE_PATH.
 
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
@@ -160,6 +161,100 @@ if (JSON.stringify(gateReasonEnum) !== JSON.stringify(expectedGateReasons)) {
   fail("report-schema-gate-enum-drift", gateReasonEnum);
 }
 
+// 4c. The published report schema must COMPILE, a live emitted report
+//     must validate against it, and no contract schema may carry a
+//     dangling local $ref (r5 F-2: the schema referenced an undefined
+//     #/$defs/boundedToken, so Ajv could not compile it and no
+//     consumer could validate a real report against the contract).
+const reportSchemaDocument = read("contracts/data-flow-report.schema.v0.4.0.json");
+let validateReport;
+try {
+  validateReport = ajv.compile(reportSchemaDocument);
+} catch (error) {
+  fail("report-schema-compile", error.message);
+}
+
+// Dangling local-$ref scan across every contract schema: every
+// `#/...` ref must resolve inside its own document. Catches the whole
+// dangling-definition class, not just this one member.
+{
+  const dangling = [];
+  const walk = (node, root, path) => {
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => walk(item, root, `${path}[${index}]`));
+      return;
+    }
+    if (node && typeof node === "object") {
+      for (const [key, value] of Object.entries(node)) {
+        if (key === "$ref" && typeof value === "string" && value.startsWith("#/")) {
+          let cursor = root;
+          for (const segment of value.slice(2).split("/")) {
+            if (cursor && Object.prototype.hasOwnProperty.call(cursor, segment)) {
+              cursor = cursor[segment];
+            } else {
+              dangling.push({ schema: path, ref: value });
+              cursor = undefined;
+              break;
+            }
+          }
+        } else {
+          walk(value, root, `${path}.${key}`);
+        }
+      }
+    }
+  };
+  const contractSchemas = readdirSync(join(root, "contracts")).filter((name) =>
+    name.endsWith(".json"),
+  );
+  for (const name of contractSchemas) {
+    try {
+      const document = JSON.parse(readFileSync(join(root, "contracts", name), "utf8"));
+      walk(document, document, name);
+    } catch {
+      // Non-JSON contract sidecars (digests, manifests) are out of
+      // scope for the ref scan; Ajv-validated schemas fail above.
+    }
+  }
+  if (dangling.length > 0) fail("schema-dangling-ref", dangling);
+}
+
+// Live validation: a real emitted report must satisfy the published
+// schema. The binary may legitimately be absent when this gate runs
+// in CI (the contract step precedes the build step); that is recorded
+// explicitly. A present binary whose output fails validation is a
+// hard failure.
+let reportLiveValidated = false;
+let reportLiveSkipped = null;
+{
+  const binary =
+    process.env.LEKALO_BIN ??
+    join(root, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
+  if (!existsSync(binary)) {
+    reportLiveSkipped = "binary-missing";
+  } else {
+    const fixture = join(root, "tests/fixtures/classification/valid/planner");
+    const outcome = spawnSync(
+      binary,
+      [
+        "dataflow",
+        "report",
+        "--attachment",
+        join(fixture, "lekalo/classification.json"),
+        "--policy",
+        join(fixture, "lekalo/classification-policy.json"),
+        "--json",
+      ],
+      { cwd: fixture, encoding: "utf8" },
+    );
+    if (outcome.status !== 0) fail("report-schema-live-run", outcome);
+    const emitted = JSON.parse(outcome.stdout).report;
+    if (!validateReport(emitted)) {
+      fail("report-schema-live-validate", validateReport.errors);
+    }
+    reportLiveValidated = true;
+  }
+}
+
 // 5. The dataflow family is exactly the nine LEK-DFL rules; the
 //    observed-incompleteness signal is an error-severity finding whose
 //    project-wide denial rides `inputsComplete: false` (review r2,
@@ -215,4 +310,7 @@ process.stdout.write(`${JSON.stringify({
   predecessorEntries: predEntries.size,
   classificationRules: expectedClassificationRules.length,
   dataflowRules: expectedDataflowRules.length,
+  reportSchemaCompiled: true,
+  reportLiveValidated,
+  reportLiveSkipped,
 }, null, 2)}\n`);
