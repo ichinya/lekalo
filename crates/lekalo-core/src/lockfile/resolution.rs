@@ -18,7 +18,7 @@
 //! an ambiguity, never a source-order choice.
 
 use super::types::{
-    ArtifactPin, CapabilityId, CatalogRef, ComponentId, LockTrust, Lockfile, Platform,
+    ArtifactPin, CapabilityId, CatalogRef, ComponentId, Lockfile, Platform,
     ProviderKind, ProviderRef, SemVer, Sha256Digest, SourceKind, SourceRef, Support,
     RESOLVER_VERSION,
 };
@@ -510,7 +510,7 @@ impl CandidateSet {
         let Ok(trust) = super::types::LockTrust::parse(trust) else {
             return;
         };
-        let (Ok(digest), Ok(manifest), Ok(plan)) = (
+        let (Ok(_digest), Ok(manifest), Ok(plan)) = (
             Sha256Digest::parse(package_digest),
             Sha256Digest::parse(manifest_digest),
             install_plan_id.map(Sha256Digest::parse).transpose(),

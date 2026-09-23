@@ -553,27 +553,6 @@ pub struct ResolvedAdapter {
 }
 
 impl ResolvedAdapter {
-    pub(crate) fn from_parts(
-        id: ComponentId,
-        version: SemVer,
-        digest: Sha256Digest,
-        source: SourceRef,
-        compatibility_digest: Sha256Digest,
-        artifacts: Vec<ArtifactPin>,
-    ) -> Result<Self, LockFailure> {
-        Self::from_parts_with_provenance(
-            id,
-            version,
-            digest,
-            source,
-            compatibility_digest,
-            artifacts,
-            None,
-            None,
-            None,
-        )
-    }
-
     /// Construct one adapter pin with the issue #32 provenance members.
     // The allow is the closed v1 wire: the identity triple plus the
     // three additive provenance members.
