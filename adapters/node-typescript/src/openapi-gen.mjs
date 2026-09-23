@@ -952,6 +952,20 @@ function writePlan(context, rendered, policy) {
         diagnostics: [{ reason: "existing-document-unparseable", detail: error?.reason }],
       };
     }
+    // A maintained document spelling another version than the
+    // fragments are rendered at would merge mixed-dialect content;
+    // the check path refuses the same way (r1 F-4).
+    if (existingTree.openapi !== rendered.root.openapi) {
+      return {
+        state: "failed",
+        diagnostics: [
+          {
+            reason: "existing-document-version",
+            detail: bounded(`${existingTree.openapi}:${rendered.root.openapi}`),
+          },
+        ],
+      };
+    }
     const existingOwnership = readOwnershipManifest(readView, policy.path);
     const merged = mergeFragments(existingTree, existingOwnership, rendered, mergeNotes);
     documentText = toYaml(deepSort(merged));
@@ -1059,13 +1073,30 @@ function mergeFragments(existingTree, existingOwnership, rendered, notes) {
     }
     node[parts[parts.length - 1].replaceAll("~1", "/").replaceAll("~0", "~")] = value;
   };
+  const remove = (pointer) => {
+    const parts = pointer.split("/").slice(1);
+    let node = merged;
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const key = parts[index].replaceAll("~1", "/").replaceAll("~0", "~");
+      if (node === null || typeof node !== "object" || node[key] === undefined) return;
+      node = node[key];
+    }
+    delete node[parts[parts.length - 1].replaceAll("~1", "/").replaceAll("~0", "~")];
+  };
 
-  // The root: generator members ride the regeneration; paths and
-  // components merge fragment by fragment below.
-  const merged = {};
-  for (const [key, value] of Object.entries(rendered.root)) {
-    if (key !== "paths" && key !== "components") merged[key] = value;
-  }
+  // The core-merge posture (merge.rs starts from the maintained tree
+  // and touches only claimed pointers): the merged tree begins as the
+  // maintained document itself, so every unclaimed member — root
+  // members like servers/tags/security/webhooks, manual x-*, hand-
+  // edited info subfields — survives the apply untouched (r2 F-1).
+  // The generator-identity members (the openapi wire member and the
+  // self-pinning provenance block) are the only root members the
+  // regeneration replaces: the fragments were rendered at the policy
+  // version, so a preserved foreign wire member would corrupt the
+  // document.
+  const merged = structuredClone(existingTree);
+  merged.openapi = rendered.root.openapi;
+  merged["x-lekalo-provenance"] = rendered.root["x-lekalo-provenance"];
   for (const [pointer, fragment] of generated) {
     const oldValue = pointerValue(existingTree, pointer);
     const oldOwner = oldOwners[pointer];
@@ -1074,9 +1105,9 @@ function mergeFragments(existingTree, existingOwnership, rendered, notes) {
       continue;
     }
     if (oldOwner === undefined || oldOwner === null) {
-      // Unclaimed content is manual by definition: preserved
-      // verbatim, never overwritten.
-      place(pointer, oldValue);
+      // Unclaimed content is manual by definition: already in place
+      // (the merged tree started as the maintained document), never
+      // overwritten.
       notes.push({
         symbol: pointer,
         detail: deepEqual(oldValue, fragment.value) ? "manual-identical" : "merge-conflict",
@@ -1089,28 +1120,31 @@ function mergeFragments(existingTree, existingOwnership, rendered, notes) {
     }
   }
   // Manual content the new render does not generate survives in
-  // place; generator-owned orphans (claimed, now absent) are dropped.
+  // place (it is already in the cloned tree); generator-owned
+  // orphans (claimed, now absent) are dropped.
   for (const [template, item] of Object.entries(existingTree.paths ?? {})) {
     for (const [method, operation] of Object.entries(item ?? {})) {
+      void operation;
       const pointer = pathsPointer(template, method);
       if (generated.has(pointer)) continue;
       if (oldOwners[pointer] === undefined || oldOwners[pointer] === null) {
-        place(pointer, operation);
         notes.push({ symbol: pointer, detail: "manual-preserved" });
       } else {
+        remove(pointer);
         notes.push({ symbol: pointer, detail: "orphan-removed" });
       }
     }
   }
   for (const section of ["schemas", "responses", "securitySchemes"]) {
     for (const [name, value] of Object.entries(existingTree.components?.[section] ?? {})) {
+      void value;
       const escaped = name.replaceAll("~", "~0").replaceAll("/", "~1");
       const pointer = `/components/${section}/${escaped}`;
       if (generated.has(pointer)) continue;
       if (oldOwners[pointer] === undefined || oldOwners[pointer] === null) {
-        place(pointer, value);
         notes.push({ symbol: pointer, detail: "manual-preserved" });
       } else {
+        remove(pointer);
         notes.push({ symbol: pointer, detail: "orphan-removed" });
       }
     }

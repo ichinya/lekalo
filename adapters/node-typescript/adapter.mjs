@@ -219121,6 +219121,17 @@ function writePlan(context, rendered, policy) {
         diagnostics: [{ reason: "existing-document-unparseable", detail: error?.reason }]
       };
     }
+    if (existingTree.openapi !== rendered.root.openapi) {
+      return {
+        state: "failed",
+        diagnostics: [
+          {
+            reason: "existing-document-version",
+            detail: bounded2(`${existingTree.openapi}:${rendered.root.openapi}`)
+          }
+        ]
+      };
+    }
     const existingOwnership = readOwnershipManifest(readView, policy.path);
     const merged = mergeFragments(existingTree, existingOwnership, rendered, mergeNotes);
     documentText = toYaml(deepSort(merged));
@@ -219218,10 +219229,19 @@ function mergeFragments(existingTree, existingOwnership, rendered, notes) {
     }
     node[parts[parts.length - 1].replaceAll("~1", "/").replaceAll("~0", "~")] = value;
   };
-  const merged = {};
-  for (const [key, value] of Object.entries(rendered.root)) {
-    if (key !== "paths" && key !== "components") merged[key] = value;
-  }
+  const remove = (pointer) => {
+    const parts = pointer.split("/").slice(1);
+    let node = merged;
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const key = parts[index].replaceAll("~1", "/").replaceAll("~0", "~");
+      if (node === null || typeof node !== "object" || node[key] === void 0) return;
+      node = node[key];
+    }
+    delete node[parts[parts.length - 1].replaceAll("~1", "/").replaceAll("~0", "~")];
+  };
+  const merged = structuredClone(existingTree);
+  merged.openapi = rendered.root.openapi;
+  merged["x-lekalo-provenance"] = rendered.root["x-lekalo-provenance"];
   for (const [pointer, fragment] of generated) {
     const oldValue = pointerValue(existingTree, pointer);
     const oldOwner = oldOwners[pointer];
@@ -219230,7 +219250,6 @@ function mergeFragments(existingTree, existingOwnership, rendered, notes) {
       continue;
     }
     if (oldOwner === void 0 || oldOwner === null) {
-      place(pointer, oldValue);
       notes.push({
         symbol: pointer,
         detail: deepEqual(oldValue, fragment.value) ? "manual-identical" : "merge-conflict"
@@ -219244,25 +219263,27 @@ function mergeFragments(existingTree, existingOwnership, rendered, notes) {
   }
   for (const [template, item] of Object.entries(existingTree.paths ?? {})) {
     for (const [method, operation] of Object.entries(item ?? {})) {
+      void operation;
       const pointer = pathsPointer(template, method);
       if (generated.has(pointer)) continue;
       if (oldOwners[pointer] === void 0 || oldOwners[pointer] === null) {
-        place(pointer, operation);
         notes.push({ symbol: pointer, detail: "manual-preserved" });
       } else {
+        remove(pointer);
         notes.push({ symbol: pointer, detail: "orphan-removed" });
       }
     }
   }
   for (const section of ["schemas", "responses", "securitySchemes"]) {
     for (const [name, value] of Object.entries(existingTree.components?.[section] ?? {})) {
+      void value;
       const escaped = name.replaceAll("~", "~0").replaceAll("/", "~1");
       const pointer = `/components/${section}/${escaped}`;
       if (generated.has(pointer)) continue;
       if (oldOwners[pointer] === void 0 || oldOwners[pointer] === null) {
-        place(pointer, value);
         notes.push({ symbol: pointer, detail: "manual-preserved" });
       } else {
+        remove(pointer);
         notes.push({ symbol: pointer, detail: "orphan-removed" });
       }
     }

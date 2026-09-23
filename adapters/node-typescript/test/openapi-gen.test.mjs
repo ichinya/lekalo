@@ -643,3 +643,89 @@ test("fragments mode refuses a maintained document outside the closed dialect", 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("fragments apply carries unclaimed root members and is two-cycle byte-stable (r2 F-1)", () => {
+  const root = evidenceProject();
+  try {
+    const views = viewsFor(root);
+    const first = run({ ...views, request: {} });
+    assert.equal(first.state, "complete");
+    const generatedYaml = first.data.bodies.get("docs/openapi.yaml");
+    const generatedOwnership = first.data.bodies.get("docs/openapi.ownership.json");
+    // Maintain by hand: root members the generator never emits, a
+    // hand-edited info subfield, and a wholly manual path.
+    const manualRoot = [
+      '"servers":',
+      '  - "https://manual.example"',
+      '"externalDocs":',
+      '  "url": "https://manual.example/docs"',
+      '"x-manual-root": "keepme"',
+    ]
+      .map((line) => `${line}\n`)
+      .join("");
+    const maintainedYaml = generatedYaml
+      .replace('"openapi": "3.1.0"\n', `"openapi": "3.1.0"\n${manualRoot}`)
+      .replace(
+        '"info":\n',
+        '"info":\n  "description": "hand note"\n',
+      )
+      .replace('"paths":\n', '"paths":\n  "/hand-written":\n    "get":\n      "operationId": "handWritten"\n');
+    assert.ok(maintainedYaml.includes('"x-manual-root": "keepme"'));
+    assert.ok(maintainedYaml.includes('"hand note"'));
+    const policyText = 'openapi:\n  version: "3.1"\n  mode: fragments\n  path: docs/openapi.yaml\n';
+    const filesFor = (yamlText) =>
+      new Map([
+        ["docs/openapi.yaml", Buffer.from(yamlText, "utf8")],
+        ["docs/openapi.ownership.json", Buffer.from(generatedOwnership, "utf8")],
+        ["lekalo/targets/node-typescript.yaml", Buffer.from(policyText, "utf8")],
+        [".lekalo/cache/transport/planner.json", Buffer.from(plannerEvidence, "utf8")],
+        [".lekalo/cache/ir/planner.json", Buffer.from(plannerIr, "utf8")],
+      ]);
+    const runOver = (yamlText) => {
+      const files = filesFor(yamlText);
+      const fragmentsView = {
+        roots: [],
+        permittedProjectRoot: root,
+        canRead: (path) => files.has(path),
+        readFile: (path) => files.get(path),
+      };
+      return run({
+        readView: fragmentsView,
+        writeView: { exists: () => false, write: () => {} },
+        request: {},
+      });
+    };
+    // Cycle one: the manual root members survive byte-for-byte…
+    const cycle1 = runOver(maintainedYaml);
+    assert.equal(cycle1.state, "complete", JSON.stringify(cycle1.diagnostics ?? []));
+    const out1 = cycle1.data.bodies.get("docs/openapi.yaml");
+    assert.ok(out1.includes('"x-manual-root": "keepme"'), "the manual root member survives");
+    assert.ok(out1.includes("- \"https://manual.example\""), "servers survives");
+    assert.ok(out1.includes('"hand note"'), "the hand-edited info subfield survives");
+    assert.ok(out1.includes("handWritten"), "the manual path survives");
+    assert.ok(out1.includes('"operationId": "plannerApiFocus"'), "the generated operation survives");
+    // …and cycle two over the first output is byte-identical.
+    const cycle2 = runOver(out1);
+    assert.equal(cycle2.state, "complete", JSON.stringify(cycle2.diagnostics ?? []));
+    const out2 = cycle2.data.bodies.get("docs/openapi.yaml");
+    assert.equal(out2, out1, "the second fragments apply is byte-stable");
+    // A maintained document spelling another version refuses instead
+    // of merging mixed-dialect content.
+    const files30 = filesFor(maintainedYaml.replace('"openapi": "3.1.0"', '"openapi": "3.0.0"'));
+    const fragments30 = {
+      roots: [],
+      permittedProjectRoot: root,
+      canRead: (path) => files30.has(path),
+      readFile: (path) => files30.get(path),
+    };
+    const refused = run({
+      readView: fragments30,
+      writeView: { exists: () => false, write: () => {} },
+      request: {},
+    });
+    assert.equal(refused.state, "failed");
+    assert.equal(refused.diagnostics[0].reason, "existing-document-version");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
