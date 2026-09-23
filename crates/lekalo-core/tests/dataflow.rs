@@ -299,3 +299,110 @@ fn strict_rule_flags_only_subjects_without_explicit_entries() {
     assert_eq!(rows[0].rule, "classification.unclassified-sensitive-sink");
     assert_eq!(rows[0].subject, "notify.user");
 }
+
+// ---------------------------------------------------------------------------
+// Issue #87 r4 F-2: the report's modelRef digest must equal the
+// custody-verified pin. run_report receives the canonical Model bytes;
+// the emitted modelRef.digest is sha256 of exactly those bytes (the
+// same spelling validate_custody pins), never a hash of the version
+// string.
+// ---------------------------------------------------------------------------
+
+/// The canonical Model bytes of the planner fixture (the same seam the
+/// CLI's load_compiled_for uses).
+fn planner_model_json() -> String {
+    let _guard = CWD_LOCK.lock().expect("cwd lock");
+    let original = std::env::current_dir().expect("current dir");
+    std::env::set_current_dir(workspace_root()).expect("enter workspace root");
+    let selection = LoadSelection {
+        project: Some(FIXTURE.to_owned()),
+    };
+    let model = match normalize_model(&selection) {
+        Ok(model) => model,
+        Err(outcome) => panic!("load failed: {}", outcome.to_json_string()),
+    };
+    let json = lekalo_core::loader::canonical_model_bytes(&model);
+    std::env::set_current_dir(original).expect("restore cwd");
+    json
+}
+
+#[test]
+fn the_report_pins_the_real_custody_model_digest() {
+    let compilation = planner_project();
+    let model_json = planner_model_json();
+    let model_pin = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(model_json.as_bytes())
+    );
+    let ir_pin = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(compilation.project.to_canonical_json().as_bytes())
+    );
+    let pair = |model_pin: &str, ir_pin: &str| {
+        format!(
+            r#"{{
+      "schemaVersion": "lekalo/data-classification/v0.4.0",
+      "identity": "dev.lekalo.data-classification@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "planner",
+      "modelRef": {{"modelVersion": "0.2.16", "digest": "{model_pin}"}},
+      "irRef": {{"irVersion": "0.2.16", "digest": "{ir_pin}"}},
+      "defaults": {{"profile": "default", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"}},
+      "classifications": [],
+      "declassifications": [],
+      "openQuestions": []
+    }}"#
+        )
+    };
+    let attachment = Attachment::parse(pair(&model_pin, &ir_pin).as_bytes()).expect("attachment");
+    let policy_json = format!(
+        r#"{{
+      "schemaVersion": "lekalo/classification-policy/v0.4.0",
+      "identity": "dev.lekalo.classification-policy@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "planner",
+      "modelRef": {{"modelVersion": "0.2.16", "digest": "{model_pin}"}},
+      "irRef": {{"irVersion": "0.2.16", "digest": "{ir_pin}"}},
+      "kinds": [{{
+        "kind": "internal",
+        "readers": ["tenant"], "writers": ["tenant"],
+        "destinations": ["internal-service", "message-bus"],
+        "masking": {{"strategy": "redact", "policyRef": "privacy-policy.masking.internal"}},
+        "consentRequired": false, "crossTenant": "reviewed",
+        "declassifyRoles": ["data-steward"]
+      }}],
+      "sinks": {{"logs": {{"maxKind": "internal"}}, "traces": {{"maxKind": "internal"}}, "contextCapsules": {{"maxKind": "internal"}}, "diagnostics": {{"maxKind": "internal"}}, "evidence": {{"maxKind": "public"}}, "exports": {{"maxKind": "derived"}}}},
+      "openQuestions": []
+    }}"#
+    );
+    let policy = PolicyAttachment::parse(policy_json.as_bytes()).expect("policy");
+    let resolution = Resolution::build(&attachment);
+
+    // Custody accepts the real pins ...
+    lekalo_core::classification::validate_custody(
+        &attachment,
+        &policy,
+        &compilation.project,
+        &model_json,
+    )
+    .expect("real pins satisfy custody");
+
+    // ... and the derived report emits exactly those pins.
+    let (report, _) = dataflow::run_report(
+        &compilation,
+        &model_json,
+        &attachment,
+        &policy,
+        &resolution,
+        &[],
+        lekalo_core::classification::DEFAULT_AS_OF,
+    )
+    .expect("report derives");
+    let bytes = dataflow::report_canonical_bytes(&report).expect("canonical export");
+    let document: serde_json::Value = serde_json::from_str(&bytes).expect("report JSON");
+    assert_eq!(
+        document["modelRef"]["digest"], model_pin,
+        "modelRef.digest must be sha256(canonical model bytes), not sha256(version string)"
+    );
+    assert_eq!(document["irRef"]["digest"], ir_pin);
+}

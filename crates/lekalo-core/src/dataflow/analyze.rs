@@ -875,7 +875,7 @@ pub fn run_report(
         as_of,
     )?;
     let graph = crate::effects::build_with_classification(&compilation.project, Some(resolution))?;
-    let (model_digest, ir_digest) = compile_digests(compilation);
+    let (model_digest, ir_digest) = compile_digests(compilation, model_json);
     let project_id = match compilation.project.project.as_ref() {
         Some(project) => SemanticId::parse_root(project.id.as_str())
             .map_err(|_| diagnostic::document_invalid("project-id", None))?,
@@ -919,18 +919,25 @@ const REPORT_REVISION: &str = "1.0.0";
 /// spelling the effect-graph builder records).
 fn compile_digests(
     compilation: &crate::ir::Compilation,
+    model_json: &str,
 ) -> (
     crate::lockfile::types::Sha256Digest,
     crate::lockfile::types::Sha256Digest,
 ) {
     use sha2::Digest as _;
+    // The modelRef pin is the exact canonical Model bytes — the same
+    // spelling validate_custody verifies (r4 F-2). Hashing the version
+    // string emitted a digest that matched no custody pin.
+    let model = format!(
+        "sha256:{}",
+        crate::digest::sha256_hex(model_json.as_bytes())
+    );
     let mut hasher = sha2::Sha256::new();
     hasher.update(compilation.project.to_canonical_json().as_bytes());
     let ir = format!("sha256:{:x}", hasher.finalize());
     (
-        crate::lockfile::types::Sha256Digest::from_hex(&crate::digest::sha256_hex(
-            compilation.project.model_version.as_str().as_bytes(),
-        )),
+        crate::lockfile::types::Sha256Digest::parse(&model)
+            .unwrap_or_else(|_| crate::lockfile::types::Sha256Digest::from_hex(&"0".repeat(64))),
         crate::lockfile::types::Sha256Digest::parse(&ir)
             .unwrap_or_else(|_| crate::lockfile::types::Sha256Digest::from_hex(&"0".repeat(64))),
     )
