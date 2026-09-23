@@ -163,6 +163,34 @@ test("emission layout, ordering, and the byte-stability contract", () => {
   assert.match(testFile.text, /test\("lekalo:planner\.scenario\.minimal"/);
 });
 
+test("header comment interpolates every field comment-safe (review R-1)", () => {
+  // Review R-1: `scenarioVersion`, the runner id, and the binding mode
+  // are string-checked adapter-side only — the adapter is the sole
+  // validator on the only live dispatch path. A newline or `*/` in any
+  // of them must collapse into one inert comment line, never split the
+  // generated header into a live statement.
+  const scenario = happyScenario();
+  scenario.scenarioVersion = "0.2.16\nalert(1);";
+  scenario.bindings = [
+    {
+      backend: "native",
+      runner: "node:test",
+      mode: "generated\nalert(1); //",
+      test: "planner.scenario.minimal",
+    },
+  ];
+  const model = map(scenario).scenarios[0];
+  const files = emit([model]);
+  const testFile = files.find((entry) => entry.path.endsWith("minimal.test.ts"));
+  assert.doesNotMatch(testFile.text, /^\s*alert\(1\);/m, "no injected statement line");
+  for (const line of testFile.text.split("\n").slice(0, 8)) {
+    assert.ok(
+      line.trimStart().startsWith("//") || line.trim() === "",
+      `every pre-import line stays a comment: ${JSON.stringify(line)}`,
+    );
+  }
+});
+
 test("repeat emission is byte-identical and independent of host state", () => {
   const first = emit(map([happyScenario()]).scenarios).map((entry) => entry.text);
   const second = emit(map([happyScenario()]).scenarios).map((entry) => entry.text);
