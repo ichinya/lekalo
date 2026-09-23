@@ -232,9 +232,13 @@ function parseNode(lines, index, minimum) {
   throw new YamlReadError("unexpected-line");
 }
 
-/** Parse one block mapping whose members sit at `indent`. */
+/** Parse one block mapping whose members sit at `indent`. Duplicate
+ * keys refuse — the closed import frontend refuses them too, and a
+ * silent last-wins would rewrite a hand-maintained document on a
+ * guess (r2 F-3). */
 function parseMapping(lines, index, indent) {
   const object = {};
+  const seen = new Set();
   let at = index;
   while (at < lines.length) {
     const line = lines[at];
@@ -245,6 +249,10 @@ function parseMapping(lines, index, indent) {
     const match = /^("(?:[^"\\]|\\.)*"):(?: (.*))?$/.exec(content);
     if (!match) throw new YamlReadError("key-shape");
     const key = JSON.parse(match[1]);
+    if (seen.has(key)) {
+      throw new YamlReadError(`duplicate-key:${key}`);
+    }
+    seen.add(key);
     const rest = match[2];
     at += 1;
     if (rest === undefined || rest === "") {

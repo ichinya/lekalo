@@ -708,3 +708,113 @@ test("fragments apply carries unclaimed root members and is two-cycle byte-stabl
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("fromYaml refuses duplicate keys like the closed frontend (r2 F-3)", async () => {
+  const { fromYaml, YamlReadError, toYaml } = await import(
+    "../src/openapi-emit.mjs"
+  );
+  // A repeated key refuses with the frontend's duplicate-key token —
+  // never a silent last-wins over a hand-maintained document.
+  let refusal;
+  try {
+    fromYaml('"a": 1\n"a": 2\n');
+  } catch (error) {
+    refusal = error;
+  }
+  assert.ok(refusal instanceof YamlReadError, "a duplicate key refuses");
+  assert.equal(refusal.reason, "duplicate-key:a");
+  // The generator's own output never duplicates, so the round-trip
+  // law still holds.
+  const tree = { a: 1, b: { c: "x" }, d: [1, 2] };
+  assert.equal(
+    canonicalJson(fromYaml(toYaml(tree))),
+    canonicalJson(tree),
+  );
+});
+
+test("a fragments apply over a duplicate-keyed maintained doc refuses naming the key (r2 F-3)", () => {
+  const root = evidenceProject();
+  try {
+    const views = viewsFor(root);
+    const first = run({ ...views, request: {} });
+    assert.equal(first.state, "complete");
+    const generatedYaml = first.data.bodies.get("docs/openapi.yaml");
+    const generatedOwnership = first.data.bodies.get("docs/openapi.ownership.json");
+    const maintainedYaml = generatedYaml.replace(
+      '"paths":\n',
+      '"paths":\n  "/dup":\n    "get":\n      "operationId": "a"\n  "/dup":\n    "get":\n      "operationId": "b"\n',
+    );
+    const policyText =
+      'openapi:\n  version: "3.1"\n  mode: fragments\n  path: docs/openapi.yaml\n';
+    const files = new Map([
+      ["docs/openapi.yaml", Buffer.from(maintainedYaml, "utf8")],
+      ["docs/openapi.ownership.json", Buffer.from(generatedOwnership, "utf8")],
+      ["lekalo/targets/node-typescript.yaml", Buffer.from(policyText, "utf8")],
+      [".lekalo/cache/transport/planner.json", Buffer.from(plannerEvidence, "utf8")],
+      [".lekalo/cache/ir/planner.json", Buffer.from(plannerIr, "utf8")],
+    ]);
+    const fragmentsView = {
+      roots: [],
+      permittedProjectRoot: root,
+      canRead: (path) => files.has(path),
+      readFile: (path) => files.get(path),
+    };
+    const outcome = run({
+      readView: fragmentsView,
+      writeView: { exists: () => false, write: () => {} },
+      request: {},
+    });
+    assert.equal(outcome.state, "failed");
+    assert.equal(outcome.diagnostics[0].reason, "existing-document-unparseable");
+    assert.equal(outcome.diagnostics[0].detail, "duplicate-key:/dup");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a path-level non-method member rides the merge without a pseudo-pointer note (r2 F-3)", () => {
+  const root = evidenceProject();
+  try {
+    const views = viewsFor(root);
+    const first = run({ ...views, request: {} });
+    assert.equal(first.state, "complete");
+    const generatedYaml = first.data.bodies.get("docs/openapi.yaml");
+    const generatedOwnership = first.data.bodies.get("docs/openapi.ownership.json");
+    // A path-level `parameters` member under the generated template:
+    // not an operation pointer, just maintained content.
+    const maintainedYaml = generatedYaml.replace(
+      '"paths":\n',
+      '"paths":\n  "parameters":\n    - "name": "shared"\n',
+    );
+    const policyText =
+      'openapi:\n  version: "3.1"\n  mode: fragments\n  path: docs/openapi.yaml\n';
+    const files = new Map([
+      ["docs/openapi.yaml", Buffer.from(maintainedYaml, "utf8")],
+      ["docs/openapi.ownership.json", Buffer.from(generatedOwnership, "utf8")],
+      ["lekalo/targets/node-typescript.yaml", Buffer.from(policyText, "utf8")],
+      [".lekalo/cache/transport/planner.json", Buffer.from(plannerEvidence, "utf8")],
+      [".lekalo/cache/ir/planner.json", Buffer.from(plannerIr, "utf8")],
+    ]);
+    const fragmentsView = {
+      roots: [],
+      permittedProjectRoot: root,
+      canRead: (path) => files.has(path),
+      readFile: (path) => files.get(path),
+    };
+    const outcome = run({
+      readView: fragmentsView,
+      writeView: { exists: () => false, write: () => {} },
+      request: {},
+    });
+    assert.equal(outcome.state, "complete", JSON.stringify(outcome.diagnostics ?? []));
+    const merged = outcome.data.bodies.get("docs/openapi.yaml");
+    assert.ok(merged.includes('"shared"'), "the path-level member survives");
+    const notes = JSON.stringify(outcome.data.partial);
+    assert.ok(
+      !notes.includes("/paths/~1tasks~1{task_id}~1focus/parameters"),
+      "no pseudo-pointer note for the non-method key",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

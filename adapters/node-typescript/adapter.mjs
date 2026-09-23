@@ -218186,6 +218186,7 @@ function parseNode(lines, index, minimum) {
 }
 function parseMapping(lines, index, indent2) {
   const object = {};
+  const seen = /* @__PURE__ */ new Set();
   let at = index;
   while (at < lines.length) {
     const line = lines[at];
@@ -218196,6 +218197,10 @@ function parseMapping(lines, index, indent2) {
     const match = /^("(?:[^"\\]|\\.)*"):(?: (.*))?$/.exec(content);
     if (!match) throw new YamlReadError("key-shape");
     const key = JSON.parse(match[1]);
+    if (seen.has(key)) {
+      throw new YamlReadError(`duplicate-key:${key}`);
+    }
+    seen.add(key);
     const rest = match[2];
     at += 1;
     if (rest === void 0 || rest === "") {
@@ -219271,8 +219276,19 @@ function mergeFragments(existingTree, existingOwnership, rendered, notes) {
       notes.push({ symbol: pointer, detail: "generator-replaced" });
     }
   }
+  const methods = /* @__PURE__ */ new Set([
+    "delete",
+    "get",
+    "head",
+    "options",
+    "patch",
+    "post",
+    "put",
+    "trace"
+  ]);
   for (const [template, item] of Object.entries(existingTree.paths ?? {})) {
     for (const [method, operation] of Object.entries(item ?? {})) {
+      if (!methods.has(method)) continue;
       void operation;
       const pointer = pathsPointer(template, method);
       if (generated.has(pointer)) continue;

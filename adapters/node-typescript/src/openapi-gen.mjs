@@ -1138,9 +1138,23 @@ function mergeFragments(existingTree, existingOwnership, rendered, notes) {
   }
   // Manual content the new render does not generate survives in
   // place (it is already in the cloned tree); generator-owned
-  // orphans (claimed, now absent) are dropped.
+  // orphans (claimed, now absent) are dropped. Only the closed HTTP
+  // method keys are operation pointers: a path-level `parameters` or
+  // `summary` member is not a pseudo-pointer — it just rides the
+  // cloned tree, noted by nothing (r2 F-3).
+  const methods = new Set([
+    "delete",
+    "get",
+    "head",
+    "options",
+    "patch",
+    "post",
+    "put",
+    "trace",
+  ]);
   for (const [template, item] of Object.entries(existingTree.paths ?? {})) {
     for (const [method, operation] of Object.entries(item ?? {})) {
+      if (!methods.has(method)) continue;
       void operation;
       const pointer = pathsPointer(template, method);
       if (generated.has(pointer)) continue;
