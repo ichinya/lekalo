@@ -18,9 +18,8 @@
 //! an ambiguity, never a source-order choice.
 
 use super::types::{
-    ArtifactPin, CapabilityId, CatalogRef, ComponentId, Lockfile, Platform,
-    ProviderKind, ProviderRef, SemVer, Sha256Digest, SourceKind, SourceRef, Support,
-    RESOLVER_VERSION,
+    ArtifactPin, CapabilityId, CatalogRef, ComponentId, Lockfile, Platform, ProviderKind,
+    ProviderRef, SemVer, Sha256Digest, SourceKind, SourceRef, Support, RESOLVER_VERSION,
 };
 use super::{canonical, LockFailure};
 use crate::versioning::compatibility::{AdapterCompatibilityManifest, CompatibilityPreflight};

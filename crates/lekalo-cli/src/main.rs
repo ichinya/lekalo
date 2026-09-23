@@ -2569,12 +2569,6 @@ enum QuarantineCommands {
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 
 enum AdapterTrustLevel {
-    /// Distribution trust.
-    Builtin,
-
-    /// Verified publisher trust.
-    Verified,
-
     /// The project's own local development trust.
     LocalDevelopment,
 
@@ -2589,9 +2583,10 @@ fn run_adapter_trust(id: &str, level: AdapterTrustLevel, project: &Option<String
         Ok(root) => root,
         Err(result) => return AdapterRun::Envelope(result),
     };
+    // verified/builtin denote verified provenance; no shipped verifier
+    // exists, so the CLI can never grant them (devin F-8). They are only
+    // earned through a reviewed signature verifier or the distribution.
     let level_token = match level {
-        AdapterTrustLevel::Builtin => "builtin",
-        AdapterTrustLevel::Verified => "verified",
         AdapterTrustLevel::LocalDevelopment => "local-development",
         AdapterTrustLevel::Community => "community",
     };
