@@ -141,9 +141,9 @@ test("emission layout, ordering, and the byte-stability contract", () => {
   const paths = files.map((entry) => entry.path);
   assert.deepEqual(paths, [...paths].sort(canonicalByteOrder));
   assert.deepEqual(paths, [
-    "src/generated/node-typescript/scenario-tests/planner/planner.scenario.idempotent_focus.map.json",
+    "src/generated/node-typescript/scenario-tests/planner/planner.scenario.idempotent_focus.test.map.json",
     "src/generated/node-typescript/scenario-tests/planner/planner.scenario.idempotent_focus.test.ts",
-    "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.map.json",
+    "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.map.json",
     "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.ts",
     "src/generated/node-typescript/scenario-tests/port.ts",
     "src/generated/node-typescript/scenario-tests/reporter.mjs",
@@ -181,7 +181,8 @@ test("sidecars carry the declaration ranges of every then-step", () => {
   assert.ok(ids.includes("then:no_duplicates"));
   for (const declaration of mapDocument.declarations) {
     assert.ok(declaration.start < declaration.end, "half-open ranges");
-    const testFile = files.find((entry) => entry.path === sidecar.path.replace(/\.map\.json$/, ".test.ts"));
+    const testFile = files.find((entry) => entry.path === sidecar.path.replace(/\.map\.json$/, ".ts"));
+    assert.ok(testFile, `the sidecar pairs to its emitted test: ${sidecar.path}`);
     assert.ok(declaration.end <= Buffer.byteLength(testFile.text), "ranges cover the test file, not the sidecar");
   }
   // The sidecar is canonical: byte-sorted keys, compact.

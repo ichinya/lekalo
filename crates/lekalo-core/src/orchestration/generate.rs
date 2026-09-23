@@ -794,9 +794,11 @@ fn artifact_kind_for(path: &str) -> ArtifactKind {
     }
     // Issue #47: the generated scenario-test compiler owns the
     // scenario-tests home — test files and the shared testkit are `test`
-    // artifacts; the port shim and reporter stay support `source`.
+    // artifacts (review F-6: the emitted spellings are `<id>.test.ts`
+    // and `testkit.ts`); the port shim and reporter stay support
+    // `source`.
     if path.split('/').any(|segment| segment == "scenario-tests")
-        && (path.ends_with(".test.ts") || path.ends_with("/_testkit.ts"))
+        && (path.ends_with(".test.ts") || path.ends_with("/testkit.ts"))
     {
         return ArtifactKind::Test;
     }
@@ -955,35 +957,39 @@ mod tests {
         );
     }
 
-    /// Issue #47 (plan S6): the ownership manifest classifies generated
-    /// scenario tests as `test` artifacts, their sidecars and the shared
-    /// modules stay `data`/`source`, and the zod home keeps `schema`.
+    /// Issue #47 (plan S6, aligned by review F-6): the ownership manifest
+    /// classifies the EMITTED scenario-test spellings — test files and
+    /// the shared testkit are test artifacts, .test.map.json sidecars are
+    /// data, the port.ts shim and reporter stay support source, and the
+    /// zod home keeps schema.
     #[test]
     fn artifact_kinds_classify_by_path_convention() {
         use super::artifact_kind_for;
         assert_eq!(
             artifact_kind_for(
-                ".lekalo/generated/scenario-tests/planner/planner.scenario.minimal.test.ts"
+                "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.ts"
             ),
             ArtifactKind::Test
         );
+        // The emitted shared testkit is a test artifact (review F-6: the
+        // classifier pins the EMITTED spelling testkit.ts).
         assert_eq!(
-            artifact_kind_for(".lekalo/generated/scenario-tests/_testkit.ts"),
+            artifact_kind_for("src/generated/node-typescript/scenario-tests/testkit.ts"),
             ArtifactKind::Test
         );
         assert_eq!(
             artifact_kind_for(
-                ".lekalo/generated/scenario-tests/planner/planner.scenario.minimal.test.ts.map.json"
+                "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.map.json"
             ),
             ArtifactKind::Data
         );
         // The port shim and the reporter are support code, never tests.
         assert_eq!(
-            artifact_kind_for(".lekalo/generated/scenario-tests/_port.ts"),
+            artifact_kind_for("src/generated/node-typescript/scenario-tests/port.ts"),
             ArtifactKind::Source
         );
         assert_eq!(
-            artifact_kind_for(".lekalo/generated/scenario-tests/_reporter.mjs"),
+            artifact_kind_for("src/generated/node-typescript/scenario-tests/reporter.mjs"),
             ArtifactKind::Source
         );
         // A test-looking file outside the scenario-tests home stays source.
@@ -991,10 +997,19 @@ mod tests {
             artifact_kind_for("src/generated/other/minimal.test.ts"),
             ArtifactKind::Source
         );
+
         // The zod home keeps its issue #45 classification.
         assert_eq!(
             artifact_kind_for(".lekalo/generated/node-typescript/zod/planner.ts"),
             ArtifactKind::Schema
+        );
+        // Review F-6: the emitted sidecar spelling `.test.map.json` pairs
+        // through module_path_of to the emitted `.test.ts` artifact.
+        assert_eq!(
+            super::module_path_of(
+                "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.map.json",
+            ),
+            "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.ts",
         );
     }
 }

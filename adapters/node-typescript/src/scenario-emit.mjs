@@ -84,9 +84,12 @@ export function emitScenarioTests(input) {
     }
     const testFile = emitTest(model, context);
     files.push(file(`${SCENARIO_DIR}/${module}/${model.id}.test.ts`, testFile.text));
+    // The sidecar name pairs with the emitted test through the core's
+    // `<base>.map.json` → `<base>.ts` convention (review F-6):
+    // `<id>.test.map.json` binds to the emitted `<id>.test.ts`.
     files.push(
       file(
-        `${SCENARIO_DIR}/${module}/${model.id}.map.json`,
+        `${SCENARIO_DIR}/${module}/${model.id}.test.map.json`,
         `${canonicalJson(testFile.map)}\n`,
         testFile.map,
       ),

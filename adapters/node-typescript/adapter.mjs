@@ -218727,7 +218727,7 @@ function emitScenarioTests(input) {
     files.push(file2(`${SCENARIO_DIR}/${module}/${model.id}.test.ts`, testFile.text));
     files.push(
       file2(
-        `${SCENARIO_DIR}/${module}/${model.id}.map.json`,
+        `${SCENARIO_DIR}/${module}/${model.id}.test.map.json`,
         `${canonicalJson3(testFile.map)}
 `,
         testFile.map
