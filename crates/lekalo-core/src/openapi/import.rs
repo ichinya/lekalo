@@ -80,7 +80,7 @@ fn closed_frontend_parse(text: &str) -> Result<Json, DiagnosticSet> {
             if has_duplicate_keys(&node, &mut duplicates) {
                 return Err(diagnostic::input_invalid("duplicate-key"));
             }
-            Ok(node_to_json(&node))
+            node_to_json(&node)
         }
         Err(diagnostics) => {
             let detail = diagnostics
@@ -204,28 +204,37 @@ fn has_duplicate_keys(node: &Node, seen: &mut Vec<String>) -> bool {
 }
 
 /// Convert one frontend node into its JSON form. Scalar typing follows
-/// the closed frontend surface.
-fn node_to_json(node: &Node) -> Json {
+/// the closed frontend surface; numerals outside the JSON envelope
+/// (i128 beyond i64, non-finite floats) are a bounded refusal — never a
+/// silent lossy null.
+fn node_to_json(node: &Node) -> Result<Json, DiagnosticSet> {
     match &node.value {
         Value::Scalar(scalar) => match scalar {
-            Scalar::Null => Json::Null,
-            Scalar::Bool(value) => Json::Bool(*value),
+            Scalar::Null => Ok(Json::Null),
+            Scalar::Bool(value) => Ok(Json::Bool(*value)),
             Scalar::Int(value) => match i64::try_from(*value) {
-                Ok(small) => Json::Number(small.into()),
-                Err(_) => Json::Null,
+                Ok(small) => Ok(Json::Number(small.into())),
+                Err(_) => Err(diagnostic::input_invalid("integer-out-of-range")),
             },
             Scalar::Float(value) => serde_json::Number::from_f64(*value)
                 .map(Json::Number)
-                .unwrap_or(Json::Null),
-            Scalar::Str(text) => Json::String(text.clone()),
+                .map(Ok)
+                .unwrap_or_else(|| Err(diagnostic::input_invalid("float-out-of-range"))),
+            Scalar::Str(text) => Ok(Json::String(text.clone())),
         },
-        Value::Seq(items) => Json::Array(items.iter().map(node_to_json).collect()),
+        Value::Seq(items) => {
+            let mut converted = Vec::new();
+            for item in items {
+                converted.push(node_to_json(item)?);
+            }
+            Ok(Json::Array(converted))
+        }
         Value::Map(entries) => {
             let mut object = Map::new();
             for entry in entries {
-                object.insert(entry.key.clone(), node_to_json(&entry.value));
+                object.insert(entry.key.clone(), node_to_json(&entry.value)?);
             }
-            Json::Object(object)
+            Ok(Json::Object(object))
         }
     }
 }
@@ -298,6 +307,22 @@ mod tests {
     fn duplicate_keys_refuse() {
         let text = "openapi: 3.1.0\nopenapi: 3.0.0\n";
         assert!(parse_document_text(text).is_err());
+    }
+
+    #[test]
+    fn out_of_range_numerals_refuse_instead_of_nulling() {
+        // An i128 beyond i64 and a non-finite float are bounded
+        // refusals — never a silent lossy null.
+        let set = parse_document_text(
+            "big: 99999999999999999999999
+",
+        )
+        .expect_err("refuses");
+        let detail = match set.as_slice()[0].data.get("detail") {
+            Some(crate::diagnostics::DataValue::Token(text)) => text.clone(),
+            other => format!("{:?}", other),
+        };
+        assert!(detail.contains("integer-out-of-range"), "{}", detail);
     }
 
     #[test]

@@ -146,8 +146,10 @@ impl<'a> SchemaMapper<'a> {
                 json!({ "nullable": true, "allOf": [inner] })
             }
             // Value schemas widen in place: the 2020-12 type array
-            // grows a `"null"` member; the 3.0 sibling gains
-            // `nullable: true`.
+            // grows a `"null"` member (exactly once — a nested
+            // `optional<optional<T>>` must not duplicate it, the
+            // meta-schema requires unique enum items); the 3.0 sibling
+            // gains `nullable: true`.
             (DocumentVersion::V3_1, false) => {
                 let mut nullable = Map::new();
                 for (key, value) in object {
@@ -156,7 +158,9 @@ impl<'a> SchemaMapper<'a> {
                             Json::Array(items) => items.clone(),
                             other => vec![other.clone()],
                         };
-                        types.push(Json::String("null".to_owned()));
+                        if !types.iter().any(|item| item == "null") {
+                            types.push(Json::String("null".to_owned()));
+                        }
                         nullable.insert("type".to_owned(), Json::Array(types));
                     } else {
                         nullable.insert(key.clone(), value.clone());
@@ -410,6 +414,19 @@ mod tests {
                 { "type": "null" }
             ] })
         );
+    }
+
+    #[test]
+    fn nested_optional_never_duplicates_null() {
+        // `optional<optional<string>>` widens to exactly one `"null"`
+        // member: the meta-schema requires unique type-array items.
+        let project = empty_project();
+        let mapper = SchemaMapper::new(&project, DocumentVersion::V3_1);
+        let once = mapper.optional(json!({ "type": ["string", "null"] }));
+        assert_eq!(once, json!({ "type": ["string", "null"] }));
+        let inner = mapper.optional(json!({ "type": "string" }));
+        let twice = mapper.optional(inner);
+        assert_eq!(twice, json!({ "type": ["string", "null"] }));
     }
 
     #[test]

@@ -626,7 +626,11 @@ function optionalOf(inner) {
   }
   if (inner !== null && typeof inner === "object" && inner.type !== undefined) {
     const types = Array.isArray(inner.type) ? [...inner.type] : [inner.type];
-    types.push("null");
+    // A nested `optional<optional<T>>` widens to exactly one `"null"`:
+    // the meta-schema requires unique type-array items.
+    if (!types.includes("null")) {
+      types.push("null");
+    }
     return { ...inner, type: types };
   }
   return inner;
