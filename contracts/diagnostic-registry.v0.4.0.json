@@ -5077,6 +5077,30 @@
       "lifecycle": "active"
     },
     {
+      "id": "scenario.drift",
+      "code": "LEK-SCN-013",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.drift",
+      "default_message": "A generated scenario test file is drifted, missing, or unreadable against the compiled scenario IR.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "path",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "scenario.infrastructure",
       "code": "LEK-SCN-005",
       "category": "infrastructure",
