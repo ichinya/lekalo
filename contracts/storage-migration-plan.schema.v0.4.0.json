@@ -138,6 +138,7 @@
             "alter_enum_type",
             "enable_rls",
             "create_policy",
+            "drop_policy",
             "create_sequence",
             "alter_sequence",
             "rename_sequence",

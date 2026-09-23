@@ -753,6 +753,66 @@ fn plan_tables(
                     None,
                 );
             }
+            // The derived RLS policy name embeds the table name too:
+            // the old pol_<oldtable>_tenant drops and the fresh
+            // pol_<table>_tenant is created on the renamed table - the
+            // same no-stale-derived-name contract as fk_/idx_/chk_
+            // (the policy binds by OID, but a name a fresh render
+            // would not produce diverges from the document).
+            if let Some(tenancy) = profile.tenancy() {
+                if tenancy.enforcement() == super::Enforcement::Rls
+                    && table
+                        .columns()
+                        .iter()
+                        .any(|column| column.origin().key() == "tenant_key")
+                {
+                    let old_policy =
+                        StorageName::parse(&format!("pol_{}_tenant", base_table.table())).map_err(
+                            |_| diagnostic::rule_invalid(MAPPING_INVALID, "policy-name", None),
+                        )?;
+                    let policy = StorageName::parse(&format!("pol_{}_tenant", table.table()))
+                        .map_err(|_| {
+                            diagnostic::rule_invalid(MAPPING_INVALID, "policy-name", None)
+                        })?;
+                    if old_policy != policy {
+                        push_step(
+                            steps,
+                            "drop_policy",
+                            format!(
+                                "DROP POLICY {} ON {};",
+                                quote(&old_policy),
+                                quote(table.table())
+                            ),
+                            DataRisk::Destructive,
+                            Vec::new(),
+                            None,
+                        );
+                        let rls = tenancy.rls().ok_or_else(|| {
+                            diagnostic::rule_invalid(MAPPING_INVALID, "rls-policy-missing", None)
+                        })?;
+                        let tenant = table
+                            .columns()
+                            .iter()
+                            .find(|column| column.origin().key() == "tenant_key")
+                            .expect("tenant column");
+                        push_step(
+                            steps,
+                            "create_policy",
+                            format!(
+                                "CREATE POLICY {} ON {} USING ({} = current_setting('{}')::{});",
+                                quote(&policy),
+                                quote(table.table()),
+                                quote(tenant.name()),
+                                rls.session_variable().as_str(),
+                                tenant.storage_type(),
+                            ),
+                            DataRisk::None,
+                            Vec::new(),
+                            None,
+                        );
+                    }
+                }
+            }
             for foreign_key in table.foreign_keys() {
                 let referenced = primary_keys
                     .get(foreign_key.references_table().as_str())

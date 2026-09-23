@@ -810,7 +810,7 @@ fn a_dropped_column_owns_its_check_and_index_drops() {
 }
 
 #[test]
-fn a_renamed_table_rederives_its_self_fk_once() {
+fn a_renamed_table_rederives_its_rls_policy_and_self_fk_once() {
     // The RLS policy name embeds the table name: a rename drops the
     // old pol_<oldtable>_tenant and creates pol_<table>_tenant. The
     // rename re-derivation covers the table's foreign keys — a
@@ -852,6 +852,13 @@ fn a_renamed_table_rederives_its_self_fk_once() {
         Some(&plan_id),
     )
     .expect("confirmed");
+    // The policy re-derivation: old name drops, fresh name is created.
+    assert!(plan.steps().iter().any(|step| {
+        step.kind() == "drop_policy" && step.statement().contains("pol_task_tenant")
+    }));
+    assert!(plan.steps().iter().any(|step| {
+        step.kind() == "create_policy" && step.statement().contains("pol_todo_tenant")
+    }));
     // The self-FK is added exactly once under the fresh name.
     let self_fk_adds = plan
         .steps()
