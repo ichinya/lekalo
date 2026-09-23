@@ -14,6 +14,7 @@
     "baseDigest",
     "candidateDigest",
     "diffDigest",
+    "planId",
     "gated",
     "status",
     "steps"
@@ -44,6 +45,10 @@
     },
     "diffDigest": {
       "description": "The digest binding this plan to the exact semantic diff it was derived from.",
+      "$ref": "#/$defs/sha256"
+    },
+    "planId": {
+      "description": "The canonical digest of this plan itself: the exact name a caller must state to confirm a gated plan.",
       "$ref": "#/$defs/sha256"
     },
     "introspectionDigest": {
