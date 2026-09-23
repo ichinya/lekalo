@@ -119,6 +119,22 @@ declaration.
 - `verdict` — `pass` only when inputs were complete and no
   error-severity finding exists; otherwise `denied`.
 
+### Gated sinks and the emit-event boundary
+
+The gated sink set — the surfaces whose destination, approval/consent,
+and forbidden-destination rules the analyzer evaluates — is
+`external-call`, `publication`, `cache-write`, `export`, and the
+public-endpoint response. `event-publish` (the projection of declared
+`emit-event` edges) is deliberately **not** in that set: a declared
+event edge is an intra-model domain event consumed inside the model
+boundary, while external publication is the detected `publish-output`
+kind (`publication`, gated per ADR-0013 §3). This is a documented
+boundary, not an oversight; cross-tenant safety for emitted events
+still rides the tenant rule (a `forbidden` kind emitting with an
+underivable tenant relation is treated as crossing). Gating
+`event-publish` itself waits for sink-actor bindings on the event bus
+(the same observed-evidence seam as the gated detected kinds).
+
 ## Commands
 
 ```console

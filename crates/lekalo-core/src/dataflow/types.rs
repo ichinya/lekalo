@@ -239,7 +239,13 @@ impl SinkKind {
     /// Whether the sink is a gated surface: the plan §3.2 sinks whose
     /// destination, approval, and consent rules are evaluated by the
     /// analyzer (external-call, publication, public-endpoint response,
-    /// export, cache).
+    /// export, cache). `event-publish` is deliberately NOT gated:
+    /// `emit-event` edges are intra-model domain events consumed
+    /// inside the model boundary, while external publication is the
+    /// detected `publish-output` kind (`publication`, gated). The
+    /// boundary is documented in docs/classification.md; cross-tenant
+    /// safety for emitted events still rides the tenant rule
+    /// (unknown relation → crossing).
     pub const fn is_gated(self) -> bool {
         matches!(
             self,
@@ -819,6 +825,26 @@ mod tests {
             assert_eq!(TenantRelation::parse(reason.as_str()), Some(reason));
         }
         assert_eq!(TenantRelation::parse("shared"), None);
+    }
+
+    /// The r3 F-7 decision, pinned: `emit-event` projects
+    /// `event-publish`, which stays outside the gated surface set —
+    /// intra-model domain events are not destination/consent-gated;
+    /// external publication is the detected `publish-output` kind and
+    /// IS gated. Cross-tenant safety for emitted events still rides
+    /// the tenant rule (`unknown` relation → crossing).
+    #[test]
+    fn event_publish_stays_outside_the_gated_surface_set() {
+        assert!(!SinkKind::EventPublish.is_gated());
+        assert!(SinkKind::Publication.is_gated());
+        for gated in [
+            SinkKind::ExternalCall,
+            SinkKind::Publication,
+            SinkKind::CacheWrite,
+            SinkKind::Export,
+        ] {
+            assert!(gated.is_gated(), "{gated:?}");
+        }
     }
 
     #[test]

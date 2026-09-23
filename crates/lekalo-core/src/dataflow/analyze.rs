@@ -294,13 +294,7 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
         inputs_complete = false;
         let sink_kind = sink_kind_of(edge.key().kind().key());
         let tenant_relation = tenant_relation_of(inputs, &subject, kind, sink_kind);
-        let gate = gate_outcome(
-            inputs,
-            &subject,
-            &kind,
-            sink_kind,
-            resolved,
-        );
+        let gate = gate_outcome(inputs, &subject, &kind, sink_kind, resolved);
         let gate_wire = gate.as_ref().map(|outcome| Gate {
             required: outcome.required,
             satisfied: outcome.satisfied,
@@ -1086,5 +1080,255 @@ mod exposure_tests {
             &exposures,
         );
         assert!(findings.is_empty(), "the grant clears the exposure");
+    }
+}
+
+// The r3 regression (review r3, F-3): the gated-sink evaluation —
+// destination, approval/consent, and forbidden-destination rules over
+// `external-call`/`publication`/cache sinks — is exercised directly at
+// the analyzer level. No shipped surface can reach the branch end to
+// end today (ADR-0013 §3 keeps the gated kinds out of the declared
+// Model, and detected gated edges carry namespaced, unresolvable
+// subjects that the subject-path seam skips), so the unit drives the
+// gate decision itself over a real policy and resolution.
+#[cfg(test)]
+mod gated_sink_tests {
+    use super::*;
+    use crate::classification::Attachment;
+    use crate::effects::build;
+
+    /// The policy rows the gate cases consume: `personal` is
+    /// consent-bearing and declares only the internal-service
+    /// destination; `internal` declares both destinations and needs no
+    /// consent; `health` has no row at all.
+    fn policy() -> PolicyAttachment {
+        PolicyAttachment::parse(
+            r#"{
+      "schemaVersion": "lekalo/classification-policy/v0.4.0",
+      "identity": "dev.lekalo.classification-policy@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "planner",
+      "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "irRef": {"irVersion": "0.2.16", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+      "kinds": [
+        {
+          "kind": "internal",
+          "readers": ["tenant"], "writers": ["tenant"],
+          "destinations": ["internal-service", "message-bus"],
+          "masking": {"strategy": "redact", "policyRef": "privacy-policy.masking.internal"},
+          "consentRequired": false, "crossTenant": "reviewed",
+          "declassifyRoles": ["data-steward"]
+        },
+        {
+          "kind": "personal",
+          "readers": ["tenant"], "writers": ["tenant"],
+          "destinations": ["internal-service"],
+          "masking": {"strategy": "tokenize", "policyRef": "privacy-policy.masking.personal"},
+          "consentRequired": true, "crossTenant": "forbidden",
+          "declassifyRoles": ["data-steward"]
+        }
+      ],
+      "sinks": {"logs": {"maxKind": "internal"}, "traces": {"maxKind": "internal"}, "contextCapsules": {"maxKind": "internal"}, "diagnostics": {"maxKind": "internal"}, "evidence": {"maxKind": "public"}, "exports": {"maxKind": "derived"}},
+      "openQuestions": []
+    }"#
+            .as_bytes(),
+        )
+        .expect("policy parses")
+    }
+
+    /// The classification the gate subjects resolve through: the
+    /// consent-bearing `personal` kind carries no grant, so the
+    /// approval gate must fail.
+    fn resolution() -> Resolution {
+        Resolution::build(
+            &Attachment::parse(
+                r#"{
+      "schemaVersion": "lekalo/data-classification/v0.4.0",
+      "identity": "dev.lekalo.data-classification@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "planner",
+      "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "irRef": {"irVersion": "0.2.16", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+      "defaults": {"profile": "default", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"},
+      "classifications": [{"subject": "notify.user", "kind": "personal"}],
+      "declassifications": [],
+      "openQuestions": []
+    }"#
+                .as_bytes(),
+            )
+            .expect("attachment parses"),
+        )
+    }
+
+    fn attachment() -> Attachment {
+        Attachment::parse(
+            r#"{
+      "schemaVersion": "lekalo/data-classification/v0.4.0",
+      "identity": "dev.lekalo.data-classification@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "planner",
+      "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "irRef": {"irVersion": "0.2.16", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+      "defaults": {"profile": "default", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"},
+      "classifications": [{"subject": "notify.user", "kind": "personal"}],
+      "declassifications": [],
+      "openQuestions": []
+    }"#
+            .as_bytes(),
+        )
+        .expect("attachment parses")
+    }
+
+    fn inputs() -> Inputs<'static> {
+        // The gate decision reads the policy, the resolution, and the
+        // as-of only; an empty compilation and its empty declared graph
+        // are the inert frame the Inputs bundle requires.
+        type GateFrame = (
+            crate::ir::Compilation,
+            EffectGraph,
+            Sha256Digest,
+            Sha256Digest,
+            SemanticId,
+            Sha256Digest,
+            Sha256Digest,
+            Resolution,
+            PolicyAttachment,
+        );
+
+        static FRAME: std::sync::OnceLock<GateFrame> = std::sync::OnceLock::new();
+        let (
+            compilation,
+            graph,
+            model_digest,
+            ir_digest,
+            project_id,
+            classification_ref,
+            policy_ref,
+            resolution,
+            policy,
+        ) = FRAME.get_or_init(|| {
+            let model = crate::loader::NormalizedModel {
+                model_version: crate::loader::project_docs::ModelVersion::Current,
+                project: None,
+                modules: Vec::new(),
+                definitions: Vec::new(),
+            };
+            let compilation = crate::ir::compile(&model).expect("empty model compiles");
+            let graph = build(&compilation.project).expect("empty graph builds");
+            let attachment = attachment();
+            let classification_ref = Sha256Digest::parse(
+                &crate::classification::attachment_digest(&attachment).expect("digest"),
+            )
+            .expect("digest shape");
+            let policy_ref = Sha256Digest::parse(
+                &crate::classification::policy_digest(&policy()).expect("digest"),
+            )
+            .expect("digest shape");
+            (
+                compilation,
+                graph,
+                Sha256Digest::from_hex(&"a".repeat(64)),
+                Sha256Digest::from_hex(&"b".repeat(64)),
+                SemanticId::parse_root("planner").expect("project id"),
+                classification_ref,
+                policy_ref,
+                resolution(),
+                policy(),
+            )
+        });
+        Inputs {
+            project_id,
+            model_ref: ("0.2.16", model_digest),
+            ir_ref: (crate::ir::VERSION, ir_digest),
+            graph,
+            compilation,
+            classification: resolution,
+            classification_ref,
+            policy,
+            policy_ref,
+            generated_by: "lekalo-core/0.3.2",
+            report_revision: "1.0.0",
+            endpoint_exposures: &[],
+            as_of: crate::classification::DEFAULT_AS_OF,
+            validation_findings: &[],
+        }
+    }
+
+    fn subject() -> SubjectPath {
+        SubjectPath::parse("notify.user").expect("subject")
+    }
+
+    /// A consent-bearing kind with no valid approval record fails the
+    /// external-call gate with `missing-approval` (the consent gate
+    /// rides the shared grant-validity predicate).
+    #[test]
+    fn consent_without_a_valid_grant_misses_the_approval_gate() {
+        let inputs = inputs();
+        let outcome = super::gate_outcome(
+            &inputs,
+            &subject(),
+            &DataKind::Personal,
+            SinkKind::ExternalCall,
+            ResolvedKind::Classified(DataKind::Personal),
+        )
+        .expect("gated sinks evaluate");
+        assert!(outcome.required);
+        assert!(!outcome.satisfied);
+        assert_eq!(outcome.reason, GateReason::MissingApproval);
+    }
+
+    /// A destination the kind never declares is forbidden: the
+    /// `personal` row lists only internal-service, so the publication
+    /// sink (message-bus) is refused.
+    #[test]
+    fn an_undeclared_destination_is_forbidden() {
+        let inputs = inputs();
+        let outcome = super::gate_outcome(
+            &inputs,
+            &subject(),
+            &DataKind::Personal,
+            SinkKind::Publication,
+            ResolvedKind::Classified(DataKind::Personal),
+        )
+        .expect("gated sinks evaluate");
+        assert!(outcome.required);
+        assert!(!outcome.satisfied);
+        assert_eq!(outcome.reason, GateReason::DestinationForbidden);
+    }
+
+    /// A kind whose policy row declares the sink's destination and
+    /// needs no consent passes the gate (`destination-declared`).
+    #[test]
+    fn a_declared_destination_satisfies_the_gate() {
+        let inputs = inputs();
+        let outcome = super::gate_outcome(
+            &inputs,
+            &subject(),
+            &DataKind::Internal,
+            SinkKind::Publication,
+            ResolvedKind::Classified(DataKind::Internal),
+        )
+        .expect("gated sinks evaluate");
+        assert!(outcome.required);
+        assert!(outcome.satisfied);
+        assert_eq!(outcome.reason, GateReason::DestinationDeclared);
+    }
+
+    /// A kind without a policy row fails closed (`unknown-flow`) —
+    /// never silently un-gated.
+    #[test]
+    fn a_kind_without_a_policy_row_fails_closed() {
+        let inputs = inputs();
+        let outcome = super::gate_outcome(
+            &inputs,
+            &subject(),
+            &DataKind::Health,
+            SinkKind::ExternalCall,
+            ResolvedKind::Classified(DataKind::Health),
+        )
+        .expect("gated sinks evaluate");
+        assert!(outcome.required);
+        assert!(!outcome.satisfied);
+        assert_eq!(outcome.reason, GateReason::UnknownFlow);
     }
 }
