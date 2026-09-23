@@ -188,6 +188,13 @@ mod tests {
                 "extensions": []
             },
             "executable": { "entry": "adapter.mjs" },
+        "publisher": { "id": "test-pub", "trustAnchor": "none" },
+        "license": { "spdx": "MIT", "file": "LICENSE", "fileDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+        "capabilities": { "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] },
+        "platforms": ["any"],
+        "permissions": { "filesystem": { "readScopes": [], "writeScopes": [] }, "network": { "mode": "denied", "destinations": [] }, "environment": { "allowlist": [] }, "processes": { "children": "denied" }, "secrets": { "handles": [] } },
+        "hooks": [],
+        "conformance": { "reportDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "badge": { "protocol": "0.3.2", "ir": "0.2.16", "profile": "default" }, "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2" },
             "integrity": {
                 "packageDigest": package_digest,
                 "files": [ { "path": "adapter.mjs", "digest": entry_digest, "bytes": entry_bytes.len() } ],
@@ -308,6 +315,13 @@ mod tests {
                 "extensions": []
             },
             "executable": { "entry": "x.mjs" },
+        "publisher": { "id": "test-pub", "trustAnchor": "none" },
+        "license": { "spdx": "MIT", "file": "LICENSE", "fileDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+        "capabilities": { "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] },
+        "platforms": ["any"],
+        "permissions": { "filesystem": { "readScopes": [], "writeScopes": [] }, "network": { "mode": "denied", "destinations": [] }, "environment": { "allowlist": [] }, "processes": { "children": "denied" }, "secrets": { "handles": [] } },
+        "hooks": [],
+        "conformance": { "reportDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "badge": { "protocol": "0.3.2", "ir": "0.2.16", "profile": "default" }, "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2" },
             "integrity": {
                 "packageDigest": format!("sha256:{}", digest_of(b"bytes")),
                 "files": [ { "path": "x.mjs", "digest": format!("sha256:{}", digest_of(b"bytes")), "bytes": 5 } ],

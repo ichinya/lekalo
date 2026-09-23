@@ -476,29 +476,20 @@ struct ManifestWire {
     schema_version: String,
     identity: String,
     adapter: AdapterWire,
-    #[serde(default)]
-    publisher: Option<PublisherWire>,
+    publisher: PublisherWire,
     source: SourceWire,
-    #[serde(default)]
-    license: Option<LicenseWire>,
+    license: LicenseWire,
     compatibility: CompatibilityWire,
-    #[serde(default)]
-    capabilities: Option<CapabilitiesWire>,
+    capabilities: CapabilitiesWire,
     executable: ExecutableWire,
     #[serde(default)]
     #[allow(dead_code)] // schema-complete wire; the closed platform set is
     // enforced by the JSON Schema gate
     platforms: Option<Vec<String>>,
     integrity: IntegrityWire,
-    #[serde(default)]
-    #[allow(dead_code)] // schema-complete wire; the execution policy lives in
-    // permissions.rs (step S6) and reads the canonical JSON
-    permissions: Option<PermissionsWire>,
-    #[serde(default)]
-    hooks: Option<Vec<Json>>,
-    #[serde(default)]
-    #[allow(dead_code)] // the conformance reference is projected by inventory.rs
-    conformance: Option<ConformanceWire>,
+    permissions: PermissionsWire,
+    hooks: Vec<Json>,
+    conformance: ConformanceWire,
     status: String,
     #[serde(default)]
     revocation: Option<Json>,
@@ -629,32 +620,27 @@ struct SignatureWire {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PermissionsWire {
-    #[serde(default)]
+    #[allow(dead_code)] // schema-complete wire; the execution policy lives
+    // in permissions.rs (#89) and reads the canonical JSON
+    filesystem: Json,
     #[allow(dead_code)]
-    filesystem: Option<Json>,
-    #[serde(default)]
+    network: Json,
     #[allow(dead_code)]
-    network: Option<Json>,
-    #[serde(default)]
+    environment: Json,
     #[allow(dead_code)]
-    environment: Option<Json>,
-    #[serde(default)]
+    processes: Json,
     #[allow(dead_code)]
-    processes: Option<Json>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    secrets: Option<Json>,
+    secrets: Json,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ConformanceWire {
-    #[serde(default, rename = "reportDigest")]
+    #[serde(rename = "reportDigest")]
     #[allow(dead_code)]
-    report_digest: Option<String>,
-    #[serde(default)]
+    report_digest: String,
     #[allow(dead_code)]
-    badge: Option<Json>,
+    badge: Json,
     #[serde(rename = "suiteRegistry")]
     suite_registry: String,
 }
@@ -682,21 +668,21 @@ impl ManifestWire {
             return Err(invalid("source-coordinate"));
         }
         Sha256Digest::parse(&self.source.digest)?;
-        if let Some(publisher) = &self.publisher {
-            PackageId::parse(&publisher.id).map_err(|_| invalid("publisher"))?;
+        {
+            PackageId::parse(&self.publisher.id).map_err(|_| invalid("publisher"))?;
             if !matches!(
-                publisher.trust_anchor.as_str(),
+                self.publisher.trust_anchor.as_str(),
                 "builtin" | "registry" | "publisher-key" | "none"
             ) {
                 return Err(invalid("trust-anchor"));
             }
         }
-        if let Some(license) = &self.license {
-            if license.spdx.is_empty() || license.spdx.len() > 64 {
+        {
+            if self.license.spdx.is_empty() || self.license.spdx.len() > 64 {
                 return Err(invalid("license"));
             }
-            PackagePath::parse(&license.file).map_err(|_| invalid("license"))?;
-            Sha256Digest::parse(&license.file_digest)?;
+            PackagePath::parse(&self.license.file).map_err(|_| invalid("license"))?;
+            Sha256Digest::parse(&self.license.file_digest)?;
         }
         if self.compatibility.protocol_versions.is_empty()
             || self.compatibility.protocol_versions.len() > 8
@@ -715,11 +701,12 @@ impl ManifestWire {
                 return Err(invalid("compatibility"));
             }
         }
-        if let Some(capabilities) = &self.capabilities {
-            for scope in capabilities
+        {
+            for scope in self
+                .capabilities
                 .read_scopes
                 .iter()
-                .chain(&capabilities.write_scopes)
+                .chain(&self.capabilities.write_scopes)
             {
                 parse_scope(scope)?;
             }
@@ -767,10 +754,8 @@ impl ManifestWire {
             return Err(invalid("revocation"));
         }
         // No scripts by default is structural: hooks are pinned empty.
-        if let Some(hooks) = &self.hooks {
-            if !hooks.is_empty() {
-                return Err(invalid("hooks"));
-            }
+        if !self.hooks.is_empty() {
+            return Err(invalid("hooks"));
         }
         Ok(())
     }

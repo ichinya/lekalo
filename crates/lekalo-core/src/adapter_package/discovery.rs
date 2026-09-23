@@ -321,10 +321,17 @@ pub fn implicit_local_development(entry: &Path) -> Result<DiscoveryCandidate, Pa
             "irVersions": [crate::ir::version::VERSION],
             "extensions": []
         },
+        "publisher": { "id": "local", "trustAnchor": "none" },
+        "license": { "spdx": "OTHER", "file": "LICENSE", "fileDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+        "capabilities": { "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] },
+        "platforms": ["any"],
         "executable": {
             "entry": sanitize_path_member(&file_name),
             "argvPreview": [sanitize_path_member(&file_name)]
         },
+        "permissions": { "filesystem": { "readScopes": [], "writeScopes": [] }, "network": { "mode": "denied", "destinations": [] }, "environment": { "allowlist": [] }, "processes": { "children": "denied" }, "secrets": { "handles": [] } },
+        "hooks": [],
+        "conformance": { "reportDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "badge": { "protocol": "0.3.2", "ir": "0.2.16", "profile": "default" }, "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2" },
         "integrity": {
             "packageDigest": format!("sha256:{digest}"),
             "files": [ { "path": sanitize_path_member(&file_name),
@@ -429,6 +436,13 @@ mod tests {
                 "extensions": []
             },
             "executable": { "entry": "adapter.mjs", "argvPreview": ["node", "adapter.mjs"] },
+        "publisher": { "id": "test-pub", "trustAnchor": "none" },
+        "license": { "spdx": "MIT", "file": "LICENSE", "fileDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+        "capabilities": { "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] },
+        "platforms": ["any"],
+        "permissions": { "filesystem": { "readScopes": [], "writeScopes": [] }, "network": { "mode": "denied", "destinations": [] }, "environment": { "allowlist": [] }, "processes": { "children": "denied" }, "secrets": { "handles": [] } },
+        "hooks": [],
+        "conformance": { "reportDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "badge": { "protocol": "0.3.2", "ir": "0.2.16", "profile": "default" }, "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2" },
             "integrity": {
                 "packageDigest": format!("sha256:{}", "22".repeat(32)),
                 "files": [ { "path": "adapter.mjs", "digest": format!("sha256:{}", "33".repeat(32)), "bytes": 10 } ],
