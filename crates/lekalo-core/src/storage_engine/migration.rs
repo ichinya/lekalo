@@ -966,81 +966,38 @@ fn plan_tables(
                     table,
                     column,
                 )?;
-                // Handle generated columns: identity adds GENERATED ALWAYS AS IDENTITY,
-                // sequence relies on default (nextval(...)) which is handled below.
-                if column.generated_kind() == Some(GeneratedKind::Identity) {
-                    if !column.nullable() {
-                        // ADD COLUMN ... NOT NULL GENERATED ALWAYS AS IDENTITY
-                        // is not allowed; we need to add nullable, backfill, then
-                        // alter to NOT NULL and add generation.
-                        let add_id = steps.len();
-                        push_step(
-                            steps,
-                            "add_column",
-                            format!(
-                                "ALTER TABLE {} ADD COLUMN {} {};",
-                                quote(table.table()),
-                                quote(column.name()),
-                                storage_type
-                            ),
-                            DataRisk::None,
-                            add_requires,
-                            None,
-                        );
-                        push_step(
-                            steps,
-                            "backfill",
-                            format!(
-                                "UPDATE {} SET {} = DEFAULT WHERE {} IS NULL;",
-                                quote(table.table()),
-                                quote(column.name()),
-                                quote(column.name())
-                            ),
-                            DataRisk::BackfillRequired,
-                            vec![add_id + 1],
-                            None,
-                        );
-                        push_step(
-                            steps,
-                            "set_column_null",
-                            format!(
-                                "ALTER TABLE {} ALTER COLUMN {} SET NOT NULL;",
-                                quote(table.table()),
-                                quote(column.name())
-                            ),
-                            DataRisk::BackfillRequired,
-                            vec![add_id + 2],
-                            None,
-                        );
-                        push_step(
-                            steps,
-                            "set_column_default",
-                            format!(
-                                "ALTER TABLE {} ALTER COLUMN {} SET {};",
-                                quote(table.table()),
-                                quote(column.name()),
-                                "GENERATED ALWAYS AS IDENTITY"
-                            ),
-                            DataRisk::None,
-                            vec![add_id + 3],
-                            None,
-                        );
-                    } else {
-                        // Nullable identity column: add column with generation
-                        push_step(
-                            steps,
-                            "add_column",
-                            format!(
-                                "ALTER TABLE {} ADD COLUMN {} {} GENERATED ALWAYS AS IDENTITY;",
-                                quote(table.table()),
-                                quote(column.name()),
-                                storage_type
-                            ),
-                            DataRisk::None,
-                            add_requires,
-                            None,
-                        );
-                    }
+                // A generated column carries its generation inline,
+                // exactly as the create path renders it: the added
+                // column's full shape must equal what a fresh render of
+                // the candidate would produce, and no backfill is owed —
+                // a sequence default and an identity assignment both
+                // fill the existing rows at ADD time.
+                let generation = match column.generated_kind() {
+                    Some(GeneratedKind::Identity) => " GENERATED ALWAYS AS IDENTITY".to_owned(),
+                    Some(GeneratedKind::Sequence) => format!(
+                        " DEFAULT {}",
+                        super::postgres::ddl::sequence_default(table.table(), column.name())?
+                    ),
+                    // A computed generated column refused above; a
+                    // plain column carries no generation and falls
+                    // through to the declared-default paths.
+                    _ => String::new(),
+                };
+                if !generation.is_empty() {
+                    let hold = if column.nullable() { "" } else { " NOT NULL" };
+                    push_step(
+                        steps,
+                        "add_column",
+                        format!(
+                            "ALTER TABLE {} ADD COLUMN {} {}{generation}{hold};",
+                            quote(table.table()),
+                            quote(column.name()),
+                            storage_type
+                        ),
+                        DataRisk::None,
+                        add_requires,
+                        None,
+                    );
                 } else if !column.nullable() && column.default().is_some() {
                     // The declared default fills existing rows at ADD
                     // time (the fast default), so one step is

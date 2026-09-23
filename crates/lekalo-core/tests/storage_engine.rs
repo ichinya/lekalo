@@ -1611,6 +1611,115 @@ fn a_renamed_tables_changed_index_never_double_creates_or_drops_a_phantom() {
 }
 
 #[test]
+fn an_added_generated_column_keeps_its_full_shape() {
+    // A sequence-generated column adds with its owned sequence, its
+    // nextval default, and NOT NULL — exactly the shape a fresh render
+    // produces — and an identity column adds GENERATED ALWAYS AS
+    // IDENTITY. No zero-value backfill is owed: the generation fills
+    // the existing rows at ADD time.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        for table in projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+        {
+            if table.get("table").and_then(serde_json::Value::as_str) == Some("tag") {
+                table["generatedColumns"] = serde_json::json!([
+                    {"kind": "sequence", "name": "tag_no"},
+                    {"kind": "identity", "name": "row_no"}
+                ]);
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    // The owned sequence is created before the column that defaults to
+    // it, and the ownership binding is planned.
+    plan.steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "create_sequence"
+                && step.statement() == "CREATE SEQUENCE \"seq_tag_tag_no\";"
+        })
+        .expect("the sequence is created");
+    assert!(plan.steps().iter().any(|step| {
+        step.kind() == "alter_sequence" && step.statement().contains("OWNED BY \"tag\".\"tag_no\"")
+    }));
+    let sequence_add = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "add_column" && step.statement().contains("\"tag_no\""))
+        .expect("the sequence column is added");
+    assert!(
+        sequence_add
+            .statement()
+            .contains("DEFAULT nextval('seq_tag_tag_no')"),
+        "the sequence column draws from its owned sequence: {}",
+        sequence_add.statement()
+    );
+    assert!(
+        sequence_add.statement().contains("NOT NULL"),
+        "the sequence column holds NOT NULL: {}",
+        sequence_add.statement()
+    );
+    let identity_add = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "add_column" && step.statement().contains("\"row_no\""))
+        .expect("the identity column is added");
+    assert!(
+        identity_add
+            .statement()
+            .contains("GENERATED ALWAYS AS IDENTITY"),
+        "the identity column carries its generation: {}",
+        identity_add.statement()
+    );
+    assert!(
+        identity_add.statement().contains("NOT NULL"),
+        "the identity column holds NOT NULL: {}",
+        identity_add.statement()
+    );
+    for column in ["tag_no", "row_no"] {
+        assert!(
+            !plan.steps().iter().any(|step| {
+                step.kind() == "backfill" && step.statement().contains(&format!("\"{column}\""))
+            }),
+            "no zero-value backfill is owed for {column}"
+        );
+    }
+}
+
+#[test]
 fn a_type_change_without_an_assignment_cast_refuses() {
     // A text-to-integer change cannot execute as a bare ALTER COLUMN
     // TYPE: the planner refuses with the registered rule instead of
