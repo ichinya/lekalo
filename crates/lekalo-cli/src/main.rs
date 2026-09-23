@@ -4441,14 +4441,24 @@ fn run_openapi(command: OpenapiCommands) -> DomainResult {
             query_model,
             version,
             mode,
-        } => openapi_render(
-            &path,
-            &project,
-            errors.as_deref(),
-            query_model.as_deref(),
-            version.as_str(),
-            mode.as_str(),
-        ),
+        } => {
+            if matches!(mode, OpenapiMode::Fragments) {
+                // Fragments emission is ownership-aware: it merges into
+                // the maintained document on the adapter apply path,
+                // which owns the filesystem views. The stateless render
+                // has nothing to merge into — it refuses instead of
+                // printing a pretend-full document (r1 F-7/cline F-2).
+                return DomainResult::usage_error();
+            }
+            openapi_render(
+                &path,
+                &project,
+                errors.as_deref(),
+                query_model.as_deref(),
+                version.as_str(),
+                mode.as_str(),
+            )
+        }
         OpenapiCommands::Check {
             path,
             project,

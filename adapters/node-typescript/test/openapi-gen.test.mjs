@@ -532,3 +532,114 @@ test("the ownership sidecar claims responses, security schemes, and the input di
   }
 });
 
+
+
+
+test("fragments mode merges ownership-aware and never overwrites manual content (r1 F-7/cline F-2)", () => {
+  // 1. Generate the full document once (dry run).
+  const root = evidenceProject();
+  try {
+    const views = viewsFor(root);
+    const first = run({ ...views, request: {} });
+    assert.equal(first.state, "complete");
+    const generatedYaml = first.data.bodies.get("docs/openapi.yaml");
+    const generatedOwnership = JSON.parse(
+      first.data.bodies.get("docs/openapi.ownership.json"),
+    );
+    // 2. Maintain by hand: edit the generated operation (the pointer
+    // is stripped from the manifest: unclaimed) and add a manual path.
+    const focusPointer = "/paths/~1tasks~1{task_id}~1focus/post";
+    assert.ok(generatedOwnership.pointers[focusPointer], "the fixture operation is claimed");
+    const maintainedOwnership = {
+      ...generatedOwnership,
+      pointers: Object.fromEntries(
+        Object.entries(generatedOwnership.pointers).filter(
+          ([pointer]) => pointer !== focusPointer,
+        ),
+      ),
+    };
+    const manualBlock = [
+      '  "/hand-written":',
+      '    "get":',
+      '      "operationId": "handWritten"',
+      '      "responses":',
+      '        "200":',
+      '          "description": "kept"',
+    ]
+      .map((line) => `${line}\n`)
+      .join("");
+    const maintainedYaml = generatedYaml
+      .replace('"operationId": "plannerApiFocus"', '"operationId": "handEditedOperation"')
+      .replace('"paths":\n', `"paths":\n${manualBlock}`);
+    assert.ok(maintainedYaml.includes("handEditedOperation"));
+    assert.ok(maintainedYaml.includes("handWritten"));
+    // 3. A fragments-mode run over the maintained document.
+    const policyText = 'openapi:\n  version: "3.1"\n  mode: fragments\n  path: docs/openapi.yaml\n';
+    const files = new Map([
+      ["docs/openapi.yaml", Buffer.from(maintainedYaml, "utf8")],
+      ["docs/openapi.ownership.json", Buffer.from(JSON.stringify(maintainedOwnership), "utf8")],
+      ["lekalo/targets/node-typescript.yaml", Buffer.from(policyText, "utf8")],
+      [".lekalo/cache/transport/planner.json", Buffer.from(plannerEvidence, "utf8")],
+      [".lekalo/cache/ir/planner.json", Buffer.from(plannerIr, "utf8")],
+    ]);
+    const fragmentsView = {
+      roots: [],
+      permittedProjectRoot: root,
+      canRead: (path) => files.has(path),
+      readFile: (path) => files.get(path),
+    };
+    const outcome = run({
+      readView: fragmentsView,
+      writeView: views.writeView,
+      writes: views.writes,
+      request: {},
+    });
+    assert.equal(outcome.state, "complete", JSON.stringify(outcome.diagnostics ?? []));
+    const merged = outcome.data.bodies.get("docs/openapi.yaml");
+    // The hand edit at the unclaimed pointer survived verbatim…
+    assert.ok(
+      merged.includes('"operationId": "handEditedOperation"'),
+      "the manual edit is never overwritten",
+    );
+    assert.ok(
+      !merged.includes('"operationId": "plannerApiFocus"'),
+      "the generator did not stomp the manual content",
+    );
+    // …and the wholly manual path survives too.
+    assert.ok(merged.includes("handWritten"), "the manual operation is preserved");
+    // The merge notes report what happened.
+    const notes = JSON.stringify(outcome.data.partial);
+    assert.ok(notes.includes("merge-conflict"), "the manual divergence is reported");
+    assert.ok(notes.includes("manual-preserved"), "the preserved manual path is reported");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("fragments mode refuses a maintained document outside the closed dialect", () => {
+  const root = evidenceProject();
+  try {
+    const policyText = "openapi:\n  mode: fragments\n  path: docs/openapi.yaml\n";
+    const files = new Map([
+      ["docs/openapi.yaml", Buffer.from("a: bare\npaths: {}\n", "utf8")],
+      ["lekalo/targets/node-typescript.yaml", Buffer.from(policyText, "utf8")],
+      [".lekalo/cache/transport/planner.json", Buffer.from(plannerEvidence, "utf8")],
+      [".lekalo/cache/ir/planner.json", Buffer.from(plannerIr, "utf8")],
+    ]);
+    const fragmentsView = {
+      roots: [],
+      permittedProjectRoot: root,
+      canRead: (path) => files.has(path),
+      readFile: (path) => files.get(path),
+    };
+    const outcome = run({
+      readView: fragmentsView,
+      writeView: { exists: () => false, write: () => {} },
+      request: {},
+    });
+    assert.equal(outcome.state, "failed");
+    assert.equal(outcome.diagnostics[0].reason, "existing-document-unparseable");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -4437,9 +4437,9 @@ Node ${formatSyntaxKind(node.kind)} was unexpected.`,
                     if (nodeIsSynthesized(this)) return "";
                     let text = weakNodeTextMap.get(this);
                     if (text === void 0) {
-                      const parseNode = getParseTreeNode(this);
-                      const sourceFile = parseNode && getSourceFileOfNode(parseNode);
-                      text = sourceFile ? getSourceTextOfNodeFromSourceFile(sourceFile, parseNode, includeTrivia) : "";
+                      const parseNode2 = getParseTreeNode(this);
+                      const sourceFile = parseNode2 && getSourceFileOfNode(parseNode2);
+                      text = sourceFile ? getSourceTextOfNodeFromSourceFile(sourceFile, parseNode2, includeTrivia) : "";
                       weakNodeTextMap.set(this, text);
                     }
                     return text;
@@ -21840,12 +21840,12 @@ ${lanes.join("\n")}
         }
       }
       function isDeclarationNameOfEnumOrNamespace(node) {
-        const parseNode = getParseTreeNode(node);
-        if (parseNode) {
-          switch (parseNode.parent.kind) {
+        const parseNode2 = getParseTreeNode(node);
+        if (parseNode2) {
+          switch (parseNode2.parent.kind) {
             case 267:
             case 268:
-              return parseNode === parseNode.parent.name;
+              return parseNode2 === parseNode2.parent.name;
           }
         }
         return false;
@@ -33357,13 +33357,13 @@ ${lanes.join("\n")}
         );
       }
       function getExternalHelpersModuleName(node) {
-        const parseNode = getOriginalNode(node, isSourceFile2);
-        const emitNode = parseNode && parseNode.emitNode;
+        const parseNode2 = getOriginalNode(node, isSourceFile2);
+        const emitNode = parseNode2 && parseNode2.emitNode;
         return emitNode && emitNode.externalHelpersModuleName;
       }
       function hasRecordedExternalHelpers(sourceFile) {
-        const parseNode = getOriginalNode(sourceFile, isSourceFile2);
-        const emitNode = parseNode && parseNode.emitNode;
+        const parseNode2 = getOriginalNode(sourceFile, isSourceFile2);
+        const emitNode = parseNode2 && parseNode2.emitNode;
         return !!emitNode && (!!emitNode.externalHelpersModuleName || !!emitNode.externalHelpers);
       }
       function createExternalHelpersImportDeclarationIfNeeded(nodeFactory, helperFactory, sourceFile, compilerOptions, hasExportStarsToExportValues, hasImportStar, hasImportDefault) {
@@ -33396,8 +33396,8 @@ ${lanes.join("\n")}
                     helperFactory.getUnscopedHelperName(name)
                   ))
                 );
-                const parseNode = getOriginalNode(sourceFile, isSourceFile2);
-                const emitNode = getOrCreateEmitNode(parseNode);
+                const parseNode2 = getOriginalNode(sourceFile, isSourceFile2);
+                const emitNode = getOrCreateEmitNode(parseNode2);
                 emitNode.externalHelpers = true;
                 const externalHelpersImportDeclaration = nodeFactory.createImportDeclaration(
                   /*modifiers*/
@@ -33452,8 +33452,8 @@ ${lanes.join("\n")}
         }
         const create = some(helpers) || (hasExportStarsToExportValues || getESModuleInterop(compilerOptions) && hasImportStarOrImportDefault) && getEmitModuleFormatOfFileWorker(node, compilerOptions) < 4;
         if (create) {
-          const parseNode = getOriginalNode(node, isSourceFile2);
-          const emitNode = getOrCreateEmitNode(parseNode);
+          const parseNode2 = getOriginalNode(node, isSourceFile2);
+          const emitNode = getOrCreateEmitNode(parseNode2);
           return emitNode.externalHelpersModuleName || (emitNode.externalHelpersModuleName = factory2.createUniqueName(externalHelpersModuleNameText));
         }
       }
@@ -99688,9 +99688,9 @@ ${lanes.join("\n")}
             getJsxFactoryEntity,
             getJsxFragmentFactoryEntity,
             isBindingCapturedByNode: (node, decl) => {
-              const parseNode = getParseTreeNode(node);
+              const parseNode2 = getParseTreeNode(node);
               const parseDecl = getParseTreeNode(decl);
-              return !!parseNode && !!parseDecl && (isVariableDeclaration(parseDecl) || isBindingElement(parseDecl)) && isBindingCapturedByNode(parseNode, parseDecl);
+              return !!parseNode2 && !!parseDecl && (isVariableDeclaration(parseDecl) || isBindingElement(parseDecl)) && isBindingCapturedByNode(parseNode2, parseDecl);
             },
             getDeclarationStatementsForSourceFile: (node, flags, internalFlags, tracker) => {
               const n = getParseTreeNode(node);
@@ -131960,8 +131960,8 @@ ${lanes.join("\n")}
           if (!currentSourceFile) return false;
           const leadingCommentRanges = getLeadingCommentRanges(currentSourceFile.text, node.pos);
           if (leadingCommentRanges) {
-            const parseNode = getParseTreeNode(node);
-            if (parseNode && isParenthesizedExpression(parseNode.parent)) {
+            const parseNode2 = getParseTreeNode(node);
+            if (parseNode2 && isParenthesizedExpression(parseNode2.parent)) {
               return true;
             }
           }
@@ -131980,11 +131980,11 @@ ${lanes.join("\n")}
             switch (node.kind) {
               case 356:
                 if (willEmitLeadingNewLine(node)) {
-                  const parseNode = getParseTreeNode(node);
-                  if (parseNode && isParenthesizedExpression(parseNode)) {
+                  const parseNode2 = getParseTreeNode(node);
+                  if (parseNode2 && isParenthesizedExpression(parseNode2)) {
                     const parens = factory.createParenthesizedExpression(node.expression);
                     setOriginalNode(parens, node);
-                    setTextRange(parens, parseNode);
+                    setTextRange(parens, parseNode2);
                     return parens;
                   }
                   return factory.createParenthesizedExpression(node);
@@ -218148,6 +218148,109 @@ function scalar(value, at) {
   }
   throw new TypeError(`unserializable scalar at ${at}: ${typeof value}`);
 }
+function fromYaml(text) {
+  const lines = text.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  for (const line of lines) {
+    if (line.includes("	")) throw new YamlReadError("tab-indentation");
+    if (/^\s*#/.test(line)) throw new YamlReadError("comment");
+  }
+  const [value, next] = parseNode(lines, 0, 0);
+  if (next !== lines.length) throw new YamlReadError("trailing-content");
+  return value;
+}
+var YamlReadError = class extends Error {
+  constructor(reason) {
+    super(reason);
+    this.name = "YamlReadError";
+    this.reason = reason;
+  }
+};
+function indentOf(line) {
+  const match = /^ */.exec(line);
+  return match[0].length;
+}
+function parseNode(lines, index, minimum) {
+  if (index >= lines.length) throw new YamlReadError("unexpected-end");
+  const line = lines[index];
+  const indent2 = indentOf(line);
+  if (indent2 < minimum) throw new YamlReadError("unexpected-dedent");
+  const content = line.slice(indent2);
+  if (content === "-" || content.startsWith("- ")) {
+    return parseSequence(lines, index, indent2);
+  }
+  if (/^"(?:[^"\\]|\\.)*":(?: |$)/.test(content)) {
+    return parseMapping(lines, index, indent2);
+  }
+  throw new YamlReadError("unexpected-line");
+}
+function parseMapping(lines, index, indent2) {
+  const object = {};
+  let at = index;
+  while (at < lines.length) {
+    const line = lines[at];
+    const here = indentOf(line);
+    if (here < indent2) break;
+    if (here > indent2) throw new YamlReadError("bad-indent");
+    const content = line.slice(indent2);
+    const match = /^("(?:[^"\\]|\\.)*"):(?: (.*))?$/.exec(content);
+    if (!match) throw new YamlReadError("key-shape");
+    const key = JSON.parse(match[1]);
+    const rest = match[2];
+    at += 1;
+    if (rest === void 0 || rest === "") {
+      const [value, next] = parseNode(lines, at, indent2 + 1);
+      object[key] = value;
+      at = next;
+      continue;
+    }
+    object[key] = parseInline(rest);
+  }
+  return [object, at];
+}
+function parseSequence(lines, index, indent2) {
+  const array = [];
+  let at = index;
+  while (at < lines.length) {
+    const line = lines[at];
+    const here = indentOf(line);
+    if (here !== indent2 || !(line.slice(indent2) === "-" || line.slice(indent2).startsWith("- "))) {
+      break;
+    }
+    const after = line.slice(indent2 + 2);
+    at += 1;
+    if (after === "") {
+      const [value, next] = parseNode(lines, at, indent2 + 1);
+      array.push(value);
+      at = next;
+      continue;
+    }
+    if (after === "{}" || after === "[]") {
+      array.push(parseInline(after));
+      continue;
+    }
+    if (/^"(?:[^"\\]|\\.)*":/.test(after)) {
+      lines[at - 1] = " ".repeat(indent2 + 2) + after;
+      const [value, next] = parseMapping(lines, at - 1, indent2 + 2);
+      array.push(value);
+      at = next;
+      continue;
+    }
+    array.push(parseInline(after));
+  }
+  return [array, at];
+}
+function parseInline(token) {
+  if (token === "{}" || token === "[]") {
+    return JSON.parse(token);
+  }
+  if (token === "null") return null;
+  if (token === "true") return true;
+  if (token === "false") return false;
+  if (/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(token)) return Number(token);
+  if (/^"(?:[^"\\]|\\.)*"$/.test(token)) return JSON.parse(token);
+  throw new YamlReadError("scalar-spelling");
+}
 
 // src/openapi-gen.mjs
 import { createHash as createHash9 } from "node:crypto";
@@ -218181,6 +218284,7 @@ function resolvePolicy2(text) {
 function parsePolicyYaml2(text) {
   const lines = text.split(/\r?\n/);
   let section = null;
+  const seenSections = /* @__PURE__ */ new Set();
   const seen = /* @__PURE__ */ new Set();
   const policy = {};
   for (const raw of lines) {
@@ -218202,9 +218306,10 @@ function parsePolicyYaml2(text) {
       if (match[2] !== void 0) {
         return { refusal: "key-shape" };
       }
-      if (section === match[1]) {
+      if (seenSections.has(match[1])) {
         return { refusal: "duplicate-section" };
       }
+      seenSections.add(match[1]);
       section = match[1];
       continue;
     }
@@ -218232,15 +218337,19 @@ function parsePolicyYaml2(text) {
       continue;
     }
     if (key === "mode") {
-      if (!MODES.includes(value)) {
+      const modeValue = unquote(value);
+      if (!MODES.includes(modeValue)) {
         return { refusal: "mode-value" };
       }
-      policy.mode = value;
+      policy.mode = modeValue;
       continue;
     }
     if (key === "path") {
       const path = unquote(value);
-      if (!/^[a-z][a-z0-9._/-]*\.yaml$/.test(path) || path.includes("..")) {
+      if (!/^[a-z][a-z0-9._/-]*\.yaml$/.test(path) || path.includes("..") || // The write scopes are docs/**: a path outside them would
+      // only fail later at the scope check — refuse at parse time
+      // where the operator made the mistake (r1 devin F-12).
+      !path.startsWith("docs/")) {
         return { refusal: "path-value" };
       }
       policy.path = path;
@@ -218993,11 +219102,33 @@ function bounded2(text) {
   return String(text ?? "unknown").replace(/[^a-zA-Z0-9._: -]+/g, "?").slice(0, 128);
 }
 function writePlan(context, rendered, policy) {
-  const { request, writeView } = context;
+  const { request, readView, writeView } = context;
   const ownership = ownershipManifest(rendered);
   const map = pointerMap(rendered);
+  let documentText;
+  const mergeNotes = [];
+  if (policy.mode === "fragments" && readView.canRead(policy.path)) {
+    const existingBytes = readView.readFile(policy.path);
+    if (existingBytes === void 0 || existingBytes === null) {
+      return { state: "failed", diagnostics: [{ reason: "existing-document-unreadable" }] };
+    }
+    let existingTree;
+    try {
+      existingTree = fromYaml(new TextDecoder("utf-8", { fatal: true }).decode(existingBytes));
+    } catch (error) {
+      return {
+        state: "failed",
+        diagnostics: [{ reason: "existing-document-unparseable", detail: error?.reason }]
+      };
+    }
+    const existingOwnership = readOwnershipManifest(readView, policy.path);
+    const merged = mergeFragments(existingTree, existingOwnership, rendered, mergeNotes);
+    documentText = toYaml(deepSort(merged));
+  } else {
+    documentText = toYaml(rendered.root);
+  }
   const files = /* @__PURE__ */ new Map([
-    [policy.path, toYaml(rendered.root)],
+    [policy.path, documentText],
     [sidecarPath(policy.path, "ownership.json"), `${canonicalJson4(ownership)}
 `],
     [sidecarPath(policy.path, "map.json"), `${canonicalJson4(map)}
@@ -219025,16 +219156,136 @@ function writePlan(context, rendered, policy) {
       // document is emitted, and every unrenderable member is reported,
       // never silent (the transport notes precedent).
       findings: [],
-      partial: rendered.findings.slice(0, 16),
+      partial: [...rendered.findings, ...mergeNotes].slice(0, 16),
       bodies: files,
       plan_id: planIdOf2(writes)
     },
     evidence: {
       document: policy.path,
       projectId: rendered.root.info.title,
-      partialCount: rendered.findings.length
+      partialCount: rendered.findings.length + mergeNotes.length
     }
   };
+}
+function readOwnershipManifest(readView, documentPath) {
+  const path = sidecarPath(documentPath, "ownership.json");
+  if (!readView.canRead(path)) return { pointers: {} };
+  const bytes = readView.readFile(path);
+  if (bytes === void 0 || bytes === null) return { pointers: {} };
+  try {
+    const parsed = JSON.parse(new TextDecoder("utf-8").decode(bytes));
+    return parsed && typeof parsed === "object" ? parsed : { pointers: {} };
+  } catch {
+    return { pointers: {} };
+  }
+}
+function mergeFragments(existingTree, existingOwnership, rendered, notes) {
+  const oldOwners = existingOwnership?.pointers ?? {};
+  const generated = /* @__PURE__ */ new Map();
+  for (const [pointer, endpoint] of rendered.pointers) {
+    const parts = pointer.split("/");
+    const template = (parts[2] ?? "").replaceAll("~1", "/").replaceAll("~0", "~");
+    const method = parts[3] ?? "";
+    generated.set(pointer, {
+      value: rendered.root.paths?.[template]?.[method],
+      owner: endpoint
+    });
+  }
+  const components = rendered.root.components ?? {};
+  for (const [section, generatorOwned] of [
+    ["schemas", false],
+    ["responses", true],
+    ["securitySchemes", true]
+  ]) {
+    for (const [name, value] of Object.entries(components?.[section] ?? {})) {
+      const escaped = name.replaceAll("~", "~0").replaceAll("/", "~1");
+      generated.set(`/components/${section}/${escaped}`, {
+        value,
+        owner: generatorOwned ? GENERATOR_ID : value["x-lekalo-symbol"] ?? GENERATOR_ID
+      });
+    }
+  }
+  const deepEqual = (left, right) => canonicalJson4(left) === canonicalJson4(right);
+  const place = (pointer, value) => {
+    const parts = pointer.split("/").slice(1);
+    let node = merged;
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const key = parts[index].replaceAll("~1", "/").replaceAll("~0", "~");
+      if (node[key] === void 0 || node[key] === null || typeof node[key] !== "object") {
+        node[key] = {};
+      }
+      node = node[key];
+    }
+    node[parts[parts.length - 1].replaceAll("~1", "/").replaceAll("~0", "~")] = value;
+  };
+  const merged = {};
+  for (const [key, value] of Object.entries(rendered.root)) {
+    if (key !== "paths" && key !== "components") merged[key] = value;
+  }
+  for (const [pointer, fragment] of generated) {
+    const oldValue = pointerValue(existingTree, pointer);
+    const oldOwner = oldOwners[pointer];
+    if (oldValue === void 0) {
+      place(pointer, fragment.value);
+      continue;
+    }
+    if (oldOwner === void 0 || oldOwner === null) {
+      place(pointer, oldValue);
+      notes.push({
+        symbol: pointer,
+        detail: deepEqual(oldValue, fragment.value) ? "manual-identical" : "merge-conflict"
+      });
+      continue;
+    }
+    place(pointer, fragment.value);
+    if (!deepEqual(oldValue, fragment.value)) {
+      notes.push({ symbol: pointer, detail: "generator-replaced" });
+    }
+  }
+  for (const [template, item] of Object.entries(existingTree.paths ?? {})) {
+    for (const [method, operation] of Object.entries(item ?? {})) {
+      const pointer = pathsPointer(template, method);
+      if (generated.has(pointer)) continue;
+      if (oldOwners[pointer] === void 0 || oldOwners[pointer] === null) {
+        place(pointer, operation);
+        notes.push({ symbol: pointer, detail: "manual-preserved" });
+      } else {
+        notes.push({ symbol: pointer, detail: "orphan-removed" });
+      }
+    }
+  }
+  for (const section of ["schemas", "responses", "securitySchemes"]) {
+    for (const [name, value] of Object.entries(existingTree.components?.[section] ?? {})) {
+      const escaped = name.replaceAll("~", "~0").replaceAll("/", "~1");
+      const pointer = `/components/${section}/${escaped}`;
+      if (generated.has(pointer)) continue;
+      if (oldOwners[pointer] === void 0 || oldOwners[pointer] === null) {
+        place(pointer, value);
+        notes.push({ symbol: pointer, detail: "manual-preserved" });
+      } else {
+        notes.push({ symbol: pointer, detail: "orphan-removed" });
+      }
+    }
+  }
+  return merged;
+}
+function pointerValue(tree, pointer) {
+  let node = tree;
+  for (const part of pointer.split("/").slice(1)) {
+    const key = part.replaceAll("~1", "/").replaceAll("~0", "~");
+    if (node === null || typeof node !== "object") return void 0;
+    node = node[key];
+  }
+  return node;
+}
+function deepSort(value) {
+  if (Array.isArray(value)) return value.map(deepSort);
+  if (value !== null && typeof value === "object") {
+    return sortKeys(
+      Object.fromEntries(Object.entries(value).map(([key, item]) => [key, deepSort(item)]))
+    );
+  }
+  return value;
 }
 function planIdOf2(writes) {
   return "plan-" + sha256Text4(canonicalJson4(writes)).slice("sha256:".length);

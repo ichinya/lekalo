@@ -21,7 +21,7 @@
  * same inputs the canonical JSON is byte-identical.
  */
 
-import { canonicalJson, toYaml } from "./openapi-emit.mjs";
+import { canonicalJson, fromYaml, toYaml } from "./openapi-emit.mjs";
 import { createHash } from "node:crypto";
 import {
   decodeEvidence,
@@ -920,13 +920,47 @@ function bounded(text) {
 
 /** Build the write plan: the document, the ownership manifest, and the
  * pointer sidecar. Dry runs never write; applies publish the exact
- * bytes inside the permitted root. */
+ * bytes inside the permitted root.
+ *
+ * Fragments mode is ownership-aware emission (r1 F-7/cline F-2): the
+ * maintained document is read back through the closed YAML reader and
+ * the generated fragments merge into it — generator-owned pointers
+ * replace their own bytes, absent pointers insert, unclaimed manual
+ * content is preserved verbatim and never overwritten, and
+ * generator-owned pointers absent from the new render are removed.
+ * A maintained document outside the closed dialect refuses
+ * (`existing-document-unparseable`) instead of a guess. Full mode
+ * stays the declared wholesale regeneration of one generator-owned
+ * document. */
 function writePlan(context, rendered, policy) {
-  const { request, writeView } = context;
+  const { request, readView, writeView } = context;
   const ownership = ownershipManifest(rendered);
   const map = pointerMap(rendered);
+  let documentText;
+  const mergeNotes = [];
+  if (policy.mode === "fragments" && readView.canRead(policy.path)) {
+    const existingBytes = readView.readFile(policy.path);
+    if (existingBytes === undefined || existingBytes === null) {
+      return { state: "failed", diagnostics: [{ reason: "existing-document-unreadable" }] };
+    }
+    let existingTree;
+    try {
+      existingTree = fromYaml(new TextDecoder("utf-8", { fatal: true }).decode(existingBytes));
+    } catch (error) {
+      return {
+        state: "failed",
+        diagnostics: [{ reason: "existing-document-unparseable", detail: error?.reason }],
+      };
+    }
+    const existingOwnership = readOwnershipManifest(readView, policy.path);
+    const merged = mergeFragments(existingTree, existingOwnership, rendered, mergeNotes);
+    documentText = toYaml(deepSort(merged));
+  } else {
+    // Full mode, or an unmanaged fragments target (first generation).
+    documentText = toYaml(rendered.root);
+  }
   const files = new Map([
-    [policy.path, toYaml(rendered.root)],
+    [policy.path, documentText],
     [sidecarPath(policy.path, "ownership.json"), `${canonicalJson(ownership)}\n`],
     [sidecarPath(policy.path, "map.json"), `${canonicalJson(map)}\n`],
   ]);
@@ -952,16 +986,159 @@ function writePlan(context, rendered, policy) {
       // document is emitted, and every unrenderable member is reported,
       // never silent (the transport notes precedent).
       findings: [],
-      partial: rendered.findings.slice(0, 16),
+      partial: [...rendered.findings, ...mergeNotes].slice(0, 16),
       bodies: files,
       plan_id: planIdOf(writes),
     },
     evidence: {
       document: policy.path,
       projectId: rendered.root.info.title,
-      partialCount: rendered.findings.length,
+      partialCount: rendered.findings.length + mergeNotes.length,
     },
   };
+}
+
+/** The existing ownership manifest of one maintained document, or the
+ * empty default when none was shipped. */
+function readOwnershipManifest(readView, documentPath) {
+  const path = sidecarPath(documentPath, "ownership.json");
+  if (!readView.canRead(path)) return { pointers: {} };
+  const bytes = readView.readFile(path);
+  if (bytes === undefined || bytes === null) return { pointers: {} };
+  try {
+    const parsed = JSON.parse(new TextDecoder("utf-8").decode(bytes));
+    return parsed && typeof parsed === "object" ? parsed : { pointers: {} };
+  } catch {
+    return { pointers: {} };
+  }
+}
+
+/** Merge the generated fragments of one render into the maintained
+ * tree under the old ownership manifest. Generator-owned pointers
+ * replace their own bytes; unclaimed manual content survives
+ * verbatim — never overwritten; orphans of the old generator
+ * ownership are dropped. Every divergence from the pure regeneration
+ * is reported in `notes` (bounded by the caller). */
+function mergeFragments(existingTree, existingOwnership, rendered, notes) {
+  const oldOwners = existingOwnership?.pointers ?? {};
+  const generated = new Map();
+  for (const [pointer, endpoint] of rendered.pointers) {
+    const parts = pointer.split("/");
+    const template = (parts[2] ?? "").replaceAll("~1", "/").replaceAll("~0", "~");
+    const method = parts[3] ?? "";
+    generated.set(pointer, {
+      value: rendered.root.paths?.[template]?.[method],
+      owner: endpoint,
+    });
+  }
+  const components = rendered.root.components ?? {};
+  for (const [section, generatorOwned] of [
+    ["schemas", false],
+    ["responses", true],
+    ["securitySchemes", true],
+  ]) {
+    for (const [name, value] of Object.entries(components?.[section] ?? {})) {
+      const escaped = name.replaceAll("~", "~0").replaceAll("/", "~1");
+      generated.set(`/components/${section}/${escaped}`, {
+        value,
+        owner: generatorOwned ? GENERATOR_ID : (value["x-lekalo-symbol"] ?? GENERATOR_ID),
+      });
+    }
+  }
+
+  const deepEqual = (left, right) => canonicalJson(left) === canonicalJson(right);
+  const place = (pointer, value) => {
+    const parts = pointer.split("/").slice(1);
+    let node = merged;
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const key = parts[index].replaceAll("~1", "/").replaceAll("~0", "~");
+      if (node[key] === undefined || node[key] === null || typeof node[key] !== "object") {
+        node[key] = {};
+      }
+      node = node[key];
+    }
+    node[parts[parts.length - 1].replaceAll("~1", "/").replaceAll("~0", "~")] = value;
+  };
+
+  // The root: generator members ride the regeneration; paths and
+  // components merge fragment by fragment below.
+  const merged = {};
+  for (const [key, value] of Object.entries(rendered.root)) {
+    if (key !== "paths" && key !== "components") merged[key] = value;
+  }
+  for (const [pointer, fragment] of generated) {
+    const oldValue = pointerValue(existingTree, pointer);
+    const oldOwner = oldOwners[pointer];
+    if (oldValue === undefined) {
+      place(pointer, fragment.value);
+      continue;
+    }
+    if (oldOwner === undefined || oldOwner === null) {
+      // Unclaimed content is manual by definition: preserved
+      // verbatim, never overwritten.
+      place(pointer, oldValue);
+      notes.push({
+        symbol: pointer,
+        detail: deepEqual(oldValue, fragment.value) ? "manual-identical" : "merge-conflict",
+      });
+      continue;
+    }
+    place(pointer, fragment.value);
+    if (!deepEqual(oldValue, fragment.value)) {
+      notes.push({ symbol: pointer, detail: "generator-replaced" });
+    }
+  }
+  // Manual content the new render does not generate survives in
+  // place; generator-owned orphans (claimed, now absent) are dropped.
+  for (const [template, item] of Object.entries(existingTree.paths ?? {})) {
+    for (const [method, operation] of Object.entries(item ?? {})) {
+      const pointer = pathsPointer(template, method);
+      if (generated.has(pointer)) continue;
+      if (oldOwners[pointer] === undefined || oldOwners[pointer] === null) {
+        place(pointer, operation);
+        notes.push({ symbol: pointer, detail: "manual-preserved" });
+      } else {
+        notes.push({ symbol: pointer, detail: "orphan-removed" });
+      }
+    }
+  }
+  for (const section of ["schemas", "responses", "securitySchemes"]) {
+    for (const [name, value] of Object.entries(existingTree.components?.[section] ?? {})) {
+      const escaped = name.replaceAll("~", "~0").replaceAll("/", "~1");
+      const pointer = `/components/${section}/${escaped}`;
+      if (generated.has(pointer)) continue;
+      if (oldOwners[pointer] === undefined || oldOwners[pointer] === null) {
+        place(pointer, value);
+        notes.push({ symbol: pointer, detail: "manual-preserved" });
+      } else {
+        notes.push({ symbol: pointer, detail: "orphan-removed" });
+      }
+    }
+  }
+  return merged;
+}
+
+/** The value of one pointer in a tree, or nothing. */
+function pointerValue(tree, pointer) {
+  let node = tree;
+  for (const part of pointer.split("/").slice(1)) {
+    const key = part.replaceAll("~1", "/").replaceAll("~0", "~");
+    if (node === null || typeof node !== "object") return undefined;
+    node = node[key];
+  }
+  return node;
+}
+
+/** Recursively byte-sort every mapping of one merged tree: the merged
+ * output is canonical regardless of where fragments landed. */
+function deepSort(value) {
+  if (Array.isArray(value)) return value.map(deepSort);
+  if (value !== null && typeof value === "object") {
+    return sortKeys(
+      Object.fromEntries(Object.entries(value).map(([key, item]) => [key, deepSort(item)])),
+    );
+  }
+  return value;
 }
 
 /** The plan identity of one write set (the composite union domain). */

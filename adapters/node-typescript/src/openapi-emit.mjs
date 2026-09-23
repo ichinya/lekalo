@@ -177,3 +177,134 @@ function scalar(value, at) {
   }
   throw new TypeError(`unserializable scalar at ${at}: ${typeof value}`);
 }
+
+/**
+ * The closed reader for the emitted dialect: the exact inverse of
+ * [`toYaml`] over the bounded block-style subset (2-space indents,
+ * JSON-quoted keys and strings, bare numbers/booleans/null, the two
+ * inline empty flow literals, `- ` sequence items whose nested mapping
+ * shares the dash line). Anything else — comments, block scalars,
+ * anchors, flow content, tabs, bare scalars — throws `YamlReadError`,
+ * so a document the generator cannot own is refused, never re-written
+ * from a guess (issue #46 r1 F-7/cline F-2). The round-trip law:
+ * `fromYaml(toYaml(value))` deep-equals `value`.
+ */
+export function fromYaml(text) {
+  const lines = text.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  for (const line of lines) {
+    if (line.includes("\t")) throw new YamlReadError("tab-indentation");
+    if (/^\s*#/.test(line)) throw new YamlReadError("comment");
+  }
+  const [value, next] = parseNode(lines, 0, 0);
+  if (next !== lines.length) throw new YamlReadError("trailing-content");
+  return value;
+}
+
+/** The refusal of one out-of-dialect document. */
+export class YamlReadError extends Error {
+  constructor(reason) {
+    super(reason);
+    this.name = "YamlReadError";
+    this.reason = reason;
+  }
+}
+
+/** The leading-space indent of one line. */
+function indentOf(line) {
+  const match = /^ */.exec(line);
+  return match[0].length;
+}
+
+/** Parse one block node at `minimum` indent; returns `[value, nextIndex]`. */
+function parseNode(lines, index, minimum) {
+  if (index >= lines.length) throw new YamlReadError("unexpected-end");
+  const line = lines[index];
+  const indent = indentOf(line);
+  if (indent < minimum) throw new YamlReadError("unexpected-dedent");
+  const content = line.slice(indent);
+  if (content === "-" || content.startsWith("- ")) {
+    return parseSequence(lines, index, indent);
+  }
+  if (/^"(?:[^"\\]|\\.)*":(?: |$)/.test(content)) {
+    return parseMapping(lines, index, indent);
+  }
+  throw new YamlReadError("unexpected-line");
+}
+
+/** Parse one block mapping whose members sit at `indent`. */
+function parseMapping(lines, index, indent) {
+  const object = {};
+  let at = index;
+  while (at < lines.length) {
+    const line = lines[at];
+    const here = indentOf(line);
+    if (here < indent) break;
+    if (here > indent) throw new YamlReadError("bad-indent");
+    const content = line.slice(indent);
+    const match = /^("(?:[^"\\]|\\.)*"):(?: (.*))?$/.exec(content);
+    if (!match) throw new YamlReadError("key-shape");
+    const key = JSON.parse(match[1]);
+    const rest = match[2];
+    at += 1;
+    if (rest === undefined || rest === "") {
+      // The nested block member (the emitter never writes a bare key
+      // without one: empties stay inline).
+      const [value, next] = parseNode(lines, at, indent + 1);
+      object[key] = value;
+      at = next;
+      continue;
+    }
+    object[key] = parseInline(rest);
+  }
+  return [object, at];
+}
+
+/** Parse one block sequence whose `- ` items sit at `indent`. */
+function parseSequence(lines, index, indent) {
+  const array = [];
+  let at = index;
+  while (at < lines.length) {
+    const line = lines[at];
+    const here = indentOf(line);
+    if (here !== indent || !(line.slice(indent) === "-" || line.slice(indent).startsWith("- "))) {
+      break;
+    }
+    const after = line.slice(indent + 2);
+    at += 1;
+    if (after === "") {
+      const [value, next] = parseNode(lines, at, indent + 1);
+      array.push(value);
+      at = next;
+      continue;
+    }
+    if (after === "{}" || after === "[]") {
+      array.push(parseInline(after));
+      continue;
+    }
+    if (/^"(?:[^"\\]|\\.)*":/.test(after)) {
+      // The nested mapping of one item: its first member shares the
+      // dash line; the remaining members sit at dash indent + 2.
+      lines[at - 1] = " ".repeat(indent + 2) + after;
+      const [value, next] = parseMapping(lines, at - 1, indent + 2);
+      array.push(value);
+      at = next;
+      continue;
+    }
+    array.push(parseInline(after));
+  }
+  return [array, at];
+}
+
+/** One inline scalar or empty-flow literal at a value position. */
+function parseInline(token) {
+  if (token === "{}" || token === "[]") {
+    return JSON.parse(token);
+  }
+  if (token === "null") return null;
+  if (token === "true") return true;
+  if (token === "false") return false;
+  if (/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(token)) return Number(token);
+  if (/^"(?:[^"\\]|\\.)*"$/.test(token)) return JSON.parse(token);
+  throw new YamlReadError("scalar-spelling");
+}

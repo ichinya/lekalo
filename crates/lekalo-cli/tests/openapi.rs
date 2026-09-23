@@ -106,6 +106,29 @@ fn prepared_attachment(dir: &Path) -> PathBuf {
 }
 
 #[test]
+fn render_refuses_fragments_mode_instead_of_printing_a_pretend_full_document() {
+    // Fragments emission is ownership-aware and lives on the adapter
+    // apply path; the stateless render refuses the mode (r1 F-7).
+    let temp = scratch();
+    let dir = temp.path();
+    let attachment = prepared_attachment(dir);
+    let output = lekalo_in(
+        dir,
+        &[
+            "--json",
+            "openapi",
+            "render",
+            "--mode",
+            "fragments",
+            attachment.to_str().unwrap(),
+            "--project",
+            "().",
+        ],
+    );
+    assert_eq!(exit_code(&output), 1);
+}
+
+#[test]
 fn render_produces_the_canonical_envelope() {
     let temp = scratch();
     let dir = temp.path();
