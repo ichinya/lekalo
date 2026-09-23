@@ -214005,6 +214005,7 @@ __export(scanner_exports, {
   assertCompilerAvailable: () => assertCompilerAvailable,
   buildInputManifest: () => buildInputManifest,
   enumerateInventory: () => enumerateInventory,
+  lekaloCarrierlessModules: () => lekaloCarrierlessModules,
   lekaloTestIdsByModule: () => lekaloTestIdsByModule,
   nativeId: () => nativeId,
   nativeIdentityTuple: () => nativeIdentityTuple,
@@ -215288,6 +215289,14 @@ function scanOperation(context) {
       evidence: buildEntryEvidence(symbol, index)
     });
   }
+  for (const absent of lekaloCarrierlessModules(lekaloIdsByModule.byModule, moduleSeen)) {
+    index.anyUncertainty.push({
+      path: absent.path,
+      kind: "test-binding-carrier-absent",
+      detail: absent.detail,
+      line: null
+    });
+  }
   const errorCount = index.diagnostics.filter((d) => d.severity === "error").length;
   const counts = {
     symbols: index.symbols.length,
@@ -215321,6 +215330,15 @@ function scanOperation(context) {
       counts
     }
   };
+}
+function lekaloCarrierlessModules(byModule, carried) {
+  const absent = [];
+  for (const [module, ids] of byModule ?? []) {
+    if (!carried.has(module)) {
+      absent.push({ path: module, detail: `lekalo:${ids.join(",")}` });
+    }
+  }
+  return absent;
 }
 function lekaloTestIdsByModule(tests) {
   const byModule = /* @__PURE__ */ new Map();

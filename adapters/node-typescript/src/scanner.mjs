@@ -1706,6 +1706,19 @@ export function scanOperation(context) {
       evidence: buildEntryEvidence(symbol, index),
     });
   }
+  // Review R-4: a claiming module with no top-level symbol has no
+  // carrier for its `t` slot, so its claims would silently never reach
+  // the observed index (a downstream binding-missing, honest but
+  // opaque). Surface the carrier absence as scan uncertainty — the same
+  // honesty rule as the clipped-claim path above.
+  for (const absent of lekaloCarrierlessModules(lekaloIdsByModule.byModule, moduleSeen)) {
+    index.anyUncertainty.push({
+      path: absent.path,
+      kind: "test-binding-carrier-absent",
+      detail: absent.detail,
+      line: null,
+    });
+  }
   const errorCount = index.diagnostics.filter((d) => d.severity === "error").length;
   const counts = {
     symbols: index.symbols.length,
@@ -1739,6 +1752,25 @@ export function scanOperation(context) {
       counts,
     },
   };
+}
+
+/**
+ * The claiming modules whose `lekalo:` ids have no carrier: a module
+ * with claims but no top-level symbol never reaches the observed index,
+ * so the absence must be surfaced, never dropped silently (review R-4).
+ *
+ * @param byModule {Map<string, string[]>} the grouped claims
+ * @param carried {Set<string>} the modules whose entries were emitted
+ * @returns {{ path: string, detail: string }[]}
+ */
+export function lekaloCarrierlessModules(byModule, carried) {
+  const absent = [];
+  for (const [module, ids] of byModule ?? []) {
+    if (!carried.has(module)) {
+      absent.push({ path: module, detail: `lekalo:${ids.join(",")}` });
+    }
+  }
+  return absent;
 }
 
 /**

@@ -302,6 +302,90 @@ test("the scan to observed-index to join chain is clean end-to-end (F-2)", () =>
   });
 });
 
+test("claims without a top-level-symbol carrier surface as uncertainty (review R-4)", async () => {
+  // A claiming module with no top-level declaration (bare test() calls
+  // only) has no carrier for the observed t slot, so its claims would
+  // silently never reach the observed index. The scan surfaces the
+  // carrier absence as uncertainty — the same honesty rule as the
+  // clipped-claim path (F-5) — instead of an opaque drop.
+  const { loadAdapter, dispose } = await import("./scanner-helpers.mjs");
+  const adapter = await loadAdapter();
+  const kernel = adapter.__lekaloKernel;
+  const scanner = adapter.__lekaloScanner;
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const os = await import("node:os");
+
+  // The pure computation: a claiming module absent from the carried set
+  // is surfaced with its exact claimed ids; a carried module never is.
+  const byModule = new Map([
+    ["src/carrierless.test.ts", ["planner.scenario.focus_happy"]],
+    ["src/carried.test.ts", ["planner.scenario.focus_error"]],
+  ]);
+  const absent = scanner.lekaloCarrierlessModules(
+    byModule,
+    new Set(["src/carried.test.ts"]),
+  );
+  assert.deepEqual(absent, [
+    { path: "src/carrierless.test.ts", detail: "lekalo:planner.scenario.focus_happy" },
+  ]);
+  assert.deepEqual(scanner.lekaloCarrierlessModules(byModule, new Set([
+    "src/carrierless.test.ts",
+    "src/carried.test.ts",
+  ])), []);
+
+  // Wire-level behavior over a real temp project: the carrierless
+  // claiming module degrades the scan outcome to partial with the
+  // uncertainty count — never a silent success.
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lekalo-r4-")));
+  const project = path.join(root, "project");
+  fs.mkdirSync(path.join(project, "src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(project, "src", "dsl.ts"),
+    "export function test(name: string, fn: () => void): void {}\n",
+  );
+  // Bare test() calls only: zero top-level declarations in this module.
+  fs.writeFileSync(
+    path.join(project, "src", "carrierless.test.ts"),
+    [
+      'import { test } from "./dsl";',
+      'test("lekalo:planner.scenario.focus_happy", () => {});',
+    ].join("\n"),
+  );
+  try {
+    const roots = [{ kind: "tree", path: "src", scope: "src/**" }];
+    const profile = kernel.validateResolvedProjectProfile({
+      id: "carrier-absent",
+      mode: "observed",
+      target: "node-typescript",
+      readRoots: roots.map(({ kind, path: p }) => ({ kind, path: p })),
+      exclusions: [],
+      provenance: {
+        origin: "declared",
+        revision: "carrier-absent-0001",
+        disposition: "public-fixture",
+      },
+    });
+    const readView = kernel.createReadView(project, roots, profile);
+    readView.permittedProjectRoot = project;
+    const outcome = scanner.scanOperation({
+      operation: "scan",
+      profile,
+      readView,
+      permittedProjectRoot: project,
+      limits: undefined,
+    });
+    assert.equal(outcome.state, "partial", JSON.stringify(outcome.diagnostics ?? null));
+    assert.match(
+      outcome.diagnostics[0].detail,
+      /uncertainty=1/,
+      JSON.stringify(outcome.diagnostics),
+    );
+  } finally {
+    dispose(root);
+  }
+});
+
 test("an unrelated first top-level symbol still owns the claim deterministically (F-2)", () => {
   return scanAndJoin(
     ({ entries, readFile, joinCheckedBindings, createHash, unrelatedFirstSymbol }) => {
