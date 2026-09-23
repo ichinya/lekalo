@@ -219044,17 +219044,30 @@ function ownershipManifest(rendered) {
   for (const [pointer, endpoint] of rendered.pointers) {
     pointers[pointer] = endpoint;
   }
-  const schemas = rendered.root.components?.schemas ?? {};
-  for (const [name, schema] of Object.entries(schemas)) {
-    const pointer = `/components/schemas/${name.replaceAll("~", "~0").replaceAll("/", "~1")}`;
-    if (pointers[pointer] === void 0) {
-      pointers[pointer] = schema["x-lekalo-symbol"] ?? GENERATOR_ID;
+  const components = rendered.root.components ?? {};
+  for (const [section, owner] of [
+    ["schemas", null],
+    ["responses", GENERATOR_ID],
+    ["securitySchemes", GENERATOR_ID]
+  ]) {
+    for (const [name, value] of Object.entries(components?.[section] ?? {})) {
+      const pointer = `/components/${section}/${name.replaceAll("~", "~0").replaceAll("/", "~1")}`;
+      if (pointers[pointer] !== void 0) continue;
+      pointers[pointer] = owner ?? (value["x-lekalo-symbol"] !== void 0 ? value["x-lekalo-symbol"] : GENERATOR_ID);
     }
   }
+  const provenance = rendered.root["x-lekalo-provenance"] ?? {};
+  const inputs = {};
+  const modelDigest = provenance.modelRef?.digest;
+  const irDigest = provenance.irRef?.digest;
+  const transportDigest = provenance.transportRef?.digest;
+  if (modelDigest) inputs.model = modelDigest;
+  if (irDigest) inputs.ir = irDigest;
+  if (transportDigest) inputs.transport = transportDigest;
   return {
     contract: OWNERSHIP_CONTRACT,
     generator: { id: GENERATOR_ID, version: GENERATOR_VERSION },
-    inputs: {},
+    inputs,
     pointers: sortKeys(pointers)
   };
 }
@@ -219063,10 +219076,15 @@ function pointerMap(rendered) {
   for (const [pointer, endpoint] of rendered.pointers) {
     map[pointer] = endpoint;
   }
-  const schemas = rendered.root.components?.schemas ?? {};
-  for (const [name, schema] of Object.entries(schemas)) {
+  const components = rendered.root.components ?? {};
+  for (const [name, schema] of Object.entries(components?.schemas ?? {})) {
     if (schema["x-lekalo-symbol"] !== void 0) {
       map[`/components/schemas/${name}`] = schema["x-lekalo-symbol"];
+    }
+  }
+  for (const section of ["responses", "securitySchemes"]) {
+    for (const name of Object.keys(components?.[section] ?? {})) {
+      map[`/components/${section}/${name}`] = GENERATOR_ID;
     }
   }
   return sortKeys(map);

@@ -970,37 +970,63 @@ export function planIdOf(writes) {
 }
 
 /** The ownership manifest of one render: every generated pointer with
- * the semantic id that owns it. */
+ * the semantic id that owns it. Mirrors the core's
+ * `OwnershipManifest::of_document`: operations by endpoint id, schemas
+ * by their symbol, shared responses and security schemes by the
+ * generator itself, and the canonical input digests recorded (r1
+ * devin F-11) — so a check over our own output never classifies our
+ * bytes as unowned manual inventory. */
 function ownershipManifest(rendered) {
   const pointers = {};
   for (const [pointer, endpoint] of rendered.pointers) {
     pointers[pointer] = endpoint;
   }
-  const schemas = rendered.root.components?.schemas ?? {};
-  for (const [name, schema] of Object.entries(schemas)) {
-    const pointer = `/components/schemas/${name.replaceAll("~", "~0").replaceAll("/", "~1")}`;
-    if (pointers[pointer] === undefined) {
-      pointers[pointer] = schema["x-lekalo-symbol"] ?? GENERATOR_ID;
+  const components = rendered.root.components ?? {};
+  for (const [section, owner] of [
+    ["schemas", null],
+    ["responses", GENERATOR_ID],
+    ["securitySchemes", GENERATOR_ID],
+  ]) {
+    for (const [name, value] of Object.entries(components?.[section] ?? {})) {
+      const pointer = `/components/${section}/${name.replaceAll("~", "~0").replaceAll("/", "~1")}`;
+      if (pointers[pointer] !== undefined) continue;
+      pointers[pointer] =
+        owner ?? (value["x-lekalo-symbol"] !== undefined ? value["x-lekalo-symbol"] : GENERATOR_ID);
     }
   }
+  const provenance = rendered.root["x-lekalo-provenance"] ?? {};
+  const inputs = {};
+  const modelDigest = provenance.modelRef?.digest;
+  const irDigest = provenance.irRef?.digest;
+  const transportDigest = provenance.transportRef?.digest;
+  if (modelDigest) inputs.model = modelDigest;
+  if (irDigest) inputs.ir = irDigest;
+  if (transportDigest) inputs.transport = transportDigest;
   return {
     contract: OWNERSHIP_CONTRACT,
     generator: { id: GENERATOR_ID, version: GENERATOR_VERSION },
-    inputs: {},
+    inputs,
     pointers: sortKeys(pointers),
   };
 }
 
-/** The pointer→semantic-id sidecar of one render. */
+/** The pointer→semantic-id sidecar of one render: every generated
+ * pointer, schemas by symbol and generator-owned components by the
+ * generator id (r1 devin F-11). */
 function pointerMap(rendered) {
   const map = {};
   for (const [pointer, endpoint] of rendered.pointers) {
     map[pointer] = endpoint;
   }
-  const schemas = rendered.root.components?.schemas ?? {};
-  for (const [name, schema] of Object.entries(schemas)) {
+  const components = rendered.root.components ?? {};
+  for (const [name, schema] of Object.entries(components?.schemas ?? {})) {
     if (schema["x-lekalo-symbol"] !== undefined) {
       map[`/components/schemas/${name}`] = schema["x-lekalo-symbol"];
+    }
+  }
+  for (const section of ["responses", "securitySchemes"]) {
+    for (const name of Object.keys(components?.[section] ?? {})) {
+      map[`/components/${section}/${name}`] = GENERATOR_ID;
     }
   }
   return sortKeys(map);

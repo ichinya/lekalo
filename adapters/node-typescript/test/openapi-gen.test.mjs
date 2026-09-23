@@ -483,3 +483,34 @@ test("info.version is the attachment revision, not a generator constant (r1 devi
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("the ownership sidecar claims responses, security schemes, and the input digests (r1 devin F-11)", () => {
+  const root = evidenceProject();
+  try {
+    const views = viewsFor(root);
+    const outcome = run({ ...views, request: {} });
+    assert.equal(outcome.state, "complete");
+    const ownership = JSON.parse(outcome.data.bodies.get("docs/openapi.ownership.json"));
+    const pointers = Object.keys(ownership.pointers);
+    assert.ok(
+      pointers.some((pointer) => pointer.startsWith("/components/responses/")),
+      "shared responses are claimed",
+    );
+    assert.ok(
+      pointers.includes("/components/responses/ErrorAuth"),
+      "the uniform ErrorAuth component is generator-owned",
+    );
+    assert.ok(
+      pointers.some((pointer) => pointer.startsWith("/components/securitySchemes/")),
+      "security schemes are claimed",
+    );
+    assert.equal(ownership.pointers["/components/securitySchemes/user_bearer"], "lekalo-core/openapi");
+    assert.equal(ownership.inputs.model, "sha256:0000000000000000000000000000000000000000000000000000000000000000");
+    assert.equal(ownership.inputs.ir, "sha256:1111111111111111111111111111111111111111111111111111111111111111");
+    const evidenceDigest =
+      "sha256:" + createHash("sha256").update(plannerEvidence, "utf8").digest("hex");
+    assert.equal(ownership.inputs.transport, evidenceDigest);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
