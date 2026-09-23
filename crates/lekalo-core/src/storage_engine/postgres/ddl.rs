@@ -391,8 +391,10 @@ pub(crate) fn create_join_table(
             .map(|column| quote(column.name()))
             .collect::<Vec<String>>()
             .join(", ");
-        let table_name = join.table();
-        lines.push(format!("CONSTRAINT \"pk_{}\" PRIMARY KEY ({pair})", quote(table_name)));
+        lines.push(format!(
+            "CONSTRAINT \"pk_{}\" PRIMARY KEY ({pair})",
+            join.table()
+        ));
     }
     format!(
         "CREATE TABLE {} ({});",
@@ -462,7 +464,10 @@ pub(crate) fn create_table(
         .map(quote)
         .collect::<Vec<String>>()
         .join(", ");
-    lines.push(format!("CONSTRAINT \"pk_{}\" PRIMARY KEY ({primary_key})", quote(table.table())));
+    lines.push(format!(
+        "CONSTRAINT \"pk_{}\" PRIMARY KEY ({primary_key})",
+        table.table()
+    ));
     // The declared CHECK constraints of this table, canonical order.
     if let Some(declared) = attachment
         .projections()
@@ -799,6 +804,10 @@ mod tests {
         assert!(joined.contains("DEFAULT 0"), "the declared literal default");
         assert!(joined.contains("CONSTRAINT \"chk_task_window\" CHECK (\"deleted_at\" IS NULL)"));
         assert!(
+            joined.contains("CONSTRAINT \"pk_task\" PRIMARY KEY (\"id\")"),
+            "the primary key is created under its deterministic name"
+        );
+        assert!(
             joined.contains(
                 "CONSTRAINT \"chk_tag_color\" CHECK (\"color\" IN ('blue', 'green', 'red'))"
             ),
@@ -968,7 +977,7 @@ mod tests {
             .collect::<Vec<&str>>()
             .join("\n");
         assert!(
-            joined.contains("CREATE TABLE \"task_roster\" (\"id\" uuid NOT NULL, \"members\" jsonb, PRIMARY KEY (\"id\"))"),
+            joined.contains("CREATE TABLE \"task_roster\" (\"id\" uuid NOT NULL, \"members\" jsonb, CONSTRAINT \"pk_task_roster\" PRIMARY KEY (\"id\"))"),
             "the json array policy renders jsonb"
         );
         assert!(!joined.contains("[]"), "no native array survives");
