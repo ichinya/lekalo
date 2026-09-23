@@ -2389,14 +2389,40 @@ fn run_adapter_repoint(
         }
         (AdapterRepoint::Rollback, None) => None,
     };
-    let Some(target) = target else {
-        return AdapterRun::Envelope(DomainResult::from(
+    let target = match target {
+        Some(target) => target,
+        None => return AdapterRun::Envelope(DomainResult::from(
             lekalo_core::lockfile::LockFailure::ComponentUnavailable {
                 kind: "adapter",
                 id: id.to_owned(),
             },
-        ));
+        )),
     };
+
+    // Issue #32 fix round 2 (devin F-2): a revoked version can never be
+    // repointed to — rollback and update both refuse before any plan
+    // exists, so a revoked pin can never be resurrected or selected.
+    // Issue #32 fix round 2 (devin F-2): a revoked version can never be
+    // repointed to — rollback and update both refuse before any plan
+    // exists, so a revoked pin can never be resurrected or selected.
+    {
+        let store = match lekalo_core::adapter_package::trust::RevocationStore::load(&root) {
+            Ok(store) => store,
+            Err(failure) => {
+                return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                    &failure,
+                ));
+            }
+        };
+        if store.is_revoked(id, &target.version) {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &lekalo_core::adapter_package::PackageFailure::Revoked {
+                    id: id.to_owned(),
+                    version: target.version.clone(),
+                },
+            ));
+        }
+    }
     let current_row = inventory.selected(id);
     let current = current_row.and_then(|row| current_manifest(&root, row));
     // The repoint plan: one repoint action; the bytes already sit in the
@@ -6033,3 +6059,5 @@ fn main() -> ExitCode {
         .join()
         .unwrap_or(ExitCode::from(1))
 }
+
+    
