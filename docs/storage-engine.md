@@ -54,7 +54,8 @@ and declares:
   declares its session variable and FORCE posture and renders
   explicit `enable_rls`/`create_policy` steps for every covered
   (tenant-keyed) table. The tenant key column alone never implies
-  enforcement.
+  enforcement. Adopting tenancy on an existing table is a documented
+  0.4.0 refusal (see the migration section below).
 - **concurrency** — `version_column` optimistic versioning with a
   wait policy; the #24 mapping answers CAS `full`,
   `etag_if_match` `partial`, `invariant.unique_concurrent` `full`.
@@ -124,7 +125,15 @@ non-empty table); a tightened existing column backfills before
 fast default fills existing rows). The `backfill` step writes only the
 column's declared default or its storage type's zero value — a type
 with no zero value refuses (`render-unsupported`), never backfilling
-NULL.
+NULL. Documented limitation of the same family: adding a `tenantKey`
+to a surviving table refuses fail-closed (`render-unsupported`,
+`backfill-literal`) — the derived NOT NULL uuid tenant column has no
+zero literal, so adopting tenancy over existing rows is unsupported in
+0.4.0. The refusal is the safe answer: a silent plan would either drop
+the column's data or skip the row-level policy. Declare the tenant key
+before first render, or adopt through a fresh table; removing a
+`tenantKey` is supported and retires the table's policy and RLS mode
+before the column drop.
 
 ## CLI
 
