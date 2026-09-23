@@ -194,6 +194,21 @@ fn the_declared_30_variant_renders_the_nullable_sibling() {
     let config = RenderConfig::new().with_version(DocumentVersion::V3_0);
     let document = render(&suite.attachment, &context, &config).expect("renders");
     assert_eq!(document.root()["openapi"], "3.0.0");
+    // The 3.0 golden lives beside the 3.1 golden and is the exact
+    // canonical bytes; regeneration is explicit and never a CI path.
+    let golden_path =
+        workspace_root().join("tests/fixtures/openapi/valid/planner.openapi.3_0.json");
+    if std::env::var("LEKALO_REGENERATE_OPENAPI_GOLDEN_30").as_deref() == Ok("1") {
+        std::fs::write(&golden_path, format!("{}\n", document.canonical_bytes()))
+            .expect("golden writable");
+        return;
+    }
+    let golden = std::fs::read_to_string(&golden_path).expect("3.0 golden readable");
+    assert_eq!(
+        document.canonical_bytes(),
+        golden.trim_end(),
+        "3.0 golden bytes"
+    );
     // The optional due date renders the 3.0 nullable sibling over the
     // allOf-composed $ref — never the 3.1 type array.
     let due = &document.root()["components"]["schemas"]["PlannerTask"]["properties"]["due"];

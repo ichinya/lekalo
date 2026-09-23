@@ -291,6 +291,59 @@ test("an absent evidence home yields zero openapi writes, not a failure", () => 
   }
 });
 
+
+test("a declared 3.0 render spells the 3.0 dialect, never 3.1-only forms (r1 F-3/cline F-1)", () => {
+  const root = mkdtempSync(join(tmpdir(), "lekalo-openapi-30-"));
+  try {
+    // The stock evidence carries no optional types, so the command
+    // input gains one (an optional planner.text note) — exactly the
+    // shape whose 3.0/3.1 spellings diverge. The policy pins 3.0
+    // through the read view.
+    const transport = JSON.parse(plannerEvidence);
+    const ir = JSON.parse(plannerIr);
+    ir.definitions
+      .find((def) => def.id === "planner.focus_task")
+      .input.push({ name: "note", required: false, type: { optional: { ref: "planner.text" } } });
+    transport.endpoints[0].params.push({
+      field: "input.note",
+      in: "query",
+      name: "note",
+      required: false,
+    });
+    mkdirSync(join(root, "lekalo", "targets"), { recursive: true });
+    writeFileSync(
+      join(root, "lekalo", "targets", "node-typescript.yaml"),
+      "openapi:\n  version: \"3.0\"\n  mode: full\n  path: docs/openapi.yaml\n",
+      "utf8",
+    );
+    const evidenceDir = join(root, ".lekalo", "cache", "transport");
+    const irDir = join(root, ".lekalo", "cache", "ir");
+    mkdirSync(evidenceDir, { recursive: true });
+    mkdirSync(irDir, { recursive: true });
+    writeFileSync(join(evidenceDir, "planner.json"), JSON.stringify(transport), "utf8");
+    writeFileSync(join(irDir, "planner.json"), JSON.stringify(ir), "utf8");
+    const views = viewsFor(root);
+    const outcome = run({ ...views, request: {} });
+    assert.equal(outcome.state, "complete", JSON.stringify(outcome.diagnostics ?? []));
+    const yaml = outcome.data.bodies.get("docs/openapi.yaml");
+    assert.ok(yaml.includes('"openapi": "3.0.0"'), "the wire member stays 3.0.0");
+    // No 3.1-dialect constructs anywhere: no const members, no type
+    // arrays carrying "null"; nullability rides the nullable sibling.
+    assert.ok(!yaml.includes('"const":'), "3.0 spells single-value enums, not const");
+    assert.ok(!/"type":\s*\[[^\]]*"null"/.test(yaml), "3.0 never widens a type array with null");
+    assert.ok(yaml.includes('"nullable": true'), "nullability rides the nullable sibling");
+    // The ok/category identity members spell single-value enums.
+    assert.ok(yaml.includes('"enum":'), "identity members spell enums at 3.0");
+    // The optional ref composes allOf over the $ref (a 3.0 $ref
+    // carries no value siblings directly).
+    const nullableAt = yaml.indexOf('"nullable": true');
+    const nullableBlock = yaml.slice(Math.max(0, nullableAt - 200), nullableAt + 200);
+    assert.ok(nullableBlock.includes('"allOf":'), "the optional ref composes allOf at 3.0");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("the write scopes cover the default policy path", () => {
   assert.deepEqual(OPENAPI_WRITE_SCOPES, ["docs/**"]);
 });

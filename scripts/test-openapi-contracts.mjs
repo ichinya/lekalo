@@ -306,6 +306,27 @@ if (pointerView.openapiDiff?.wireConsumerBlocked !== true) {
 }
 
 // ---------------------------------------------------------------------------
+// 6b. The committed 3.0 golden: the same document class at the
+//     declared-3.0 dialect — validated through the same fallback
+//     validator (it detects the version from the openapi member) and
+//     audited for 3.1-only constructs (r1 F-3/cline F-1).
+// ---------------------------------------------------------------------------
+const golden30Text = readText("tests/fixtures/openapi/valid/planner.openapi.3_0.json");
+const golden30 = JSON.parse(golden30Text);
+if (golden30.openapi !== "3.0.0") {
+  fail("golden30-version", golden30.openapi);
+}
+if (golden30Text.includes('"const"')) {
+  fail("golden30-dialect-const", "3.0 spells single-value enums, never const");
+}
+if (/"type":\[[^\]]*"null"/.test(golden30Text)) {
+  fail("golden30-dialect-type-array", "3.0 never widens a type array with null");
+}
+if (!(await validateDocument(golden30))) {
+  fail("golden30-invalid", "the 3.0 golden fails the 3.0 meta-schema");
+}
+
+// ---------------------------------------------------------------------------
 // 7. The trace-chain fixture: the artifact node pins the exact golden
 //    bytes and the generator identity.
 // ---------------------------------------------------------------------------
@@ -330,6 +351,7 @@ process.stdout.write(`${JSON.stringify({
   ajv: ajvVersion,
   metaSchema: metaSchema31.$id,
   goldenValid: true,
+  golden30Valid: true,
   yamlGoldenValid: true,
   invalidRefused: 2,
   ownershipPointers: pointerIds.length,

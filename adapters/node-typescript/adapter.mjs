@@ -218714,14 +218714,14 @@ function responsesOf(attachment, endpoint, definition, definitions, state) {
     if (isUniform) {
       responses[code] = { $ref: `#/components/responses/Error${pascal2(category)}` };
     } else {
-      responses[code] = categoryResponse(category);
+      responses[code] = categoryResponse(category, state.version);
     }
   }
   for (const [category, code] of Object.entries(defaults)) {
     if (code === 0) continue;
     if (uniform.has(`${category},${code}`)) {
       const name = `Error${pascal2(category)}`;
-      shared[name] = categoryResponse(category);
+      shared[name] = categoryResponse(category, state.version);
     }
   }
   if (Object.keys(shared).length > 0 && state.components.size >= 0) {
@@ -218811,7 +218811,7 @@ function typeOf(type, definitions, state) {
     return { items: typeOf(type.list, definitions, state), type: "array" };
   }
   if (type.optional !== void 0) {
-    return optionalOf(typeOf(type.optional, definitions, state));
+    return optionalOf(typeOf(type.optional, definitions, state), state.version);
   }
   return {};
 }
@@ -218827,11 +218827,17 @@ function refSchema(symbol, definitions, state) {
   }
   return { $ref: `#/components/schemas/${name}` };
 }
-function optionalOf(inner) {
+function optionalOf(inner, version) {
   if (inner !== null && typeof inner === "object" && inner.$ref !== void 0) {
+    if (version === "3.0") {
+      return { nullable: true, allOf: [inner] };
+    }
     return { oneOf: [inner, { type: "null" }] };
   }
   if (inner !== null && typeof inner === "object" && inner.type !== void 0) {
+    if (version === "3.0") {
+      return { ...inner, nullable: true };
+    }
     const types = Array.isArray(inner.type) ? [...inner.type] : [inner.type];
     if (!types.includes("null")) {
       types.push("null");
@@ -218876,7 +218882,8 @@ function scalarSchema(base) {
       return {};
   }
 }
-function categoryResponse(category) {
+function categoryResponse(category, version) {
+  const constant = (value) => version === "3.0" ? { enum: [value] } : { const: value };
   return {
     content: {
       "application/json": {
@@ -218886,13 +218893,13 @@ function categoryResponse(category) {
             error: {
               additionalProperties: false,
               properties: {
-                category: { const: category },
+                category: constant(category),
                 payload: { type: "object" }
               },
               required: ["category", "payload"],
               type: "object"
             },
-            ok: { const: false }
+            ok: constant(false)
           },
           required: ["error", "ok"],
           type: "object"

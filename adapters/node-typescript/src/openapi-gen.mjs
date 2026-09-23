@@ -567,7 +567,7 @@ function responsesOf(attachment, endpoint, definition, definitions, state) {
     } else {
       // Divided default: the shared component would be ambiguous, so
       // the category body renders inline — never a dangling $ref.
-      responses[code] = categoryResponse(category);
+      responses[code] = categoryResponse(category, state.version);
     }
   }
   // Build shared components only for uniform defaults
@@ -575,7 +575,7 @@ function responsesOf(attachment, endpoint, definition, definitions, state) {
     if (code === 0) continue;
     if (uniform.has(`${category},${code}`)) {
       const name = `Error${pascal(category)}`;
-      shared[name] = categoryResponse(category);
+      shared[name] = categoryResponse(category, state.version);
     }
   }
   if (Object.keys(shared).length > 0 && state.components.size >= 0) {
@@ -685,7 +685,7 @@ function typeOf(type, definitions, state) {
     return { items: typeOf(type.list, definitions, state), type: "array" };
   }
   if (type.optional !== undefined) {
-    return optionalOf(typeOf(type.optional, definitions, state));
+    return optionalOf(typeOf(type.optional, definitions, state), state.version);
   }
   return {};
 }
@@ -704,12 +704,23 @@ function refSchema(symbol, definitions, state) {
   return { $ref: `#/components/schemas/${name}` };
 }
 
-/** The 3.1 nullable composition (the shared table's Optional row). */
-function optionalOf(inner) {
+/** The nullable composition of one inner schema at the declared
+ * version (the shared table's Optional row): 3.1 composes the 2020-12
+ * forms (oneOf with the null type over refs, the widened type array
+ * over value schemas, exactly one `"null"`); 3.0 uses the `nullable`
+ * sibling — `allOf` over refs (a $ref carries no siblings in 3.0) and
+ * the `nullable: true` member over value schemas (r1 F-3/cline F-1). */
+function optionalOf(inner, version) {
   if (inner !== null && typeof inner === "object" && inner.$ref !== undefined) {
+    if (version === "3.0") {
+      return { nullable: true, allOf: [inner] };
+    }
     return { oneOf: [inner, { type: "null" }] };
   }
   if (inner !== null && typeof inner === "object" && inner.type !== undefined) {
+    if (version === "3.0") {
+      return { ...inner, nullable: true };
+    }
     const types = Array.isArray(inner.type) ? [...inner.type] : [inner.type];
     // A nested `optional<optional<T>>` widens to exactly one `"null"`:
     // the meta-schema requires unique type-array items.
@@ -761,8 +772,11 @@ function scalarSchema(base) {
   }
 }
 
-/** One shared category response body (no declared id/code). */
-function categoryResponse(category) {
+/** One shared category response body (no declared id/code), spelled
+ * per the declared version: 3.1 pins the identity members with
+ * `const`; 3.0 spells single-value `enum`s (r1 F-3/cline F-1). */
+function categoryResponse(category, version) {
+  const constant = (value) => (version === "3.0" ? { enum: [value] } : { const: value });
   return {
     content: {
       "application/json": {
@@ -772,13 +786,13 @@ function categoryResponse(category) {
             error: {
               additionalProperties: false,
               properties: {
-                category: { const: category },
+                category: constant(category),
                 payload: { type: "object" },
               },
               required: ["category", "payload"],
               type: "object",
             },
-            ok: { const: false },
+            ok: constant(false),
           },
           required: ["error", "ok"],
           type: "object",
