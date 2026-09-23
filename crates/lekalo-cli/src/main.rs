@@ -2029,6 +2029,23 @@ fn run_adapter(command: AdapterCommands) -> AdapterRun {
 /// Run `lekalo adapter discover`: enumerate one closed discovery source
 /// without running anything. The report is a deterministic JSON receipt
 /// on stdout; auto-discovery never installs, trusts, or executes.
+/// The gate that refused a candidate, in gate order (pure, unit-tested —
+/// fix round 4, cline F-NEW-4). The discover receipt renders it so the
+/// label and the `adapter.*` reason code always agree.
+fn gate_label_of(failure: &lekalo_core::adapter_package::PackageFailure) -> &'static str {
+    use lekalo_core::adapter_package::PackageFailure;
+    match failure {
+        PackageFailure::ManifestInvalid { .. } => "manifest",
+        PackageFailure::Incompatible { .. } => "compatibility",
+        PackageFailure::ChecksumMismatch { .. } => "integrity",
+        PackageFailure::SignatureUnverified { .. } => "signature",
+        PackageFailure::Revoked { .. }
+        | PackageFailure::Quarantined { .. }
+        | PackageFailure::TrustInsufficient { .. } => "trust",
+        _ => "integrity",
+    }
+}
+
 fn run_adapter_discover(source: &str, offline: bool, project: &Option<String>) -> AdapterRun {
     let parsed = match lekalo_core::adapter_package::DiscoverySource::parse(source) {
         Ok(parsed) => parsed,
@@ -2082,26 +2099,7 @@ fn run_adapter_discover(source: &str, offline: bool, project: &Option<String>) -
                 // The failed gate is named, not flattened into a generic
                 // integrity verdict (fix round 2, devin F-15): the reason
                 // code and the gate label now agree.
-                let gate = match &failure {
-                    lekalo_core::adapter_package::PackageFailure::ManifestInvalid { .. } => {
-                        "manifest"
-                    }
-                    lekalo_core::adapter_package::PackageFailure::Incompatible { .. } => {
-                        "compatibility"
-                    }
-                    lekalo_core::adapter_package::PackageFailure::ChecksumMismatch { .. } => {
-                        "integrity"
-                    }
-                    lekalo_core::adapter_package::PackageFailure::SignatureUnverified {
-                        ..
-                    } => "signature",
-                    lekalo_core::adapter_package::PackageFailure::Revoked { .. }
-                    | lekalo_core::adapter_package::PackageFailure::Quarantined { .. }
-                    | lekalo_core::adapter_package::PackageFailure::TrustInsufficient { .. } => {
-                        "trust"
-                    }
-                    _ => "integrity",
-                };
+                let gate = gate_label_of(&failure);
                 row["gates"] = serde_json::json!({
                     gate: false,
                     "reason": lekalo_core::adapter_package::diagnostic::reason_of(&failure),
@@ -6346,5 +6344,64 @@ mod quarantine_custody_tests {
             .join(".lekalo/adapters/packages/b/1.0.0-33333333")
             .exists());
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod gate_label_tests {
+    use super::gate_label_of;
+    use lekalo_core::adapter_package::PackageFailure;
+
+    /// Regression (fix round 4, cline F-NEW-4): the discover receipt's
+    /// gate label follows the resolution gate order — a refusal names the
+    /// gate that refused, never a generic integrity verdict.
+    #[test]
+    fn the_gate_label_matches_the_refusing_gate() {
+        assert_eq!(
+            gate_label_of(&PackageFailure::ManifestInvalid {
+                reason: "grammar".to_owned()
+            }),
+            "manifest"
+        );
+        assert_eq!(
+            gate_label_of(&PackageFailure::Incompatible {
+                adapter: "a".to_owned()
+            }),
+            "compatibility"
+        );
+        assert_eq!(
+            gate_label_of(&PackageFailure::ChecksumMismatch {
+                domain: "package".to_owned(),
+                identity: "a".to_owned()
+            }),
+            "integrity"
+        );
+        assert_eq!(
+            gate_label_of(&PackageFailure::SignatureUnverified {
+                scheme: "minisign".to_owned()
+            }),
+            "signature"
+        );
+        for failure in [
+            PackageFailure::Revoked {
+                id: "a".to_owned(),
+                version: "1.0.0".to_owned(),
+            },
+            PackageFailure::Quarantined {
+                id: "a".to_owned(),
+                version: "1.0.0".to_owned(),
+            },
+            PackageFailure::TrustInsufficient {
+                id: "a".to_owned(),
+                level: "community".to_owned(),
+            },
+        ] {
+            assert_eq!(gate_label_of(&failure), "trust");
+        }
+        // Unknown-failure fallback stays fail-closed on the integrity gate.
+        assert_eq!(
+            gate_label_of(&PackageFailure::InstallPlanRequired),
+            "integrity"
+        );
     }
 }

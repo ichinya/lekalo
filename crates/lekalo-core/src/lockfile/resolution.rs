@@ -1034,7 +1034,7 @@ mod installed_provenance_tests {
     }
 
     fn manifest_for(adapter: &str) -> AdapterCompatibilityManifest {
-        use crate::versioning::family::{IrContract, ProtocolContract};
+        use crate::versioning::family::IrContract;
         use crate::versioning::ContractVersion;
         AdapterCompatibilityManifest::new(
             ContractVersion::<RegistryContract>::parse_canonical(
