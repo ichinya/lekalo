@@ -105,6 +105,22 @@ export function decodeEvidence(bytes) {
         ? document.securitySchemes
         : [],
       endpoints,
+      // The provenance/revision pins ride through to the renderer: the
+      // adapter's document must bind the exact model/IR identities the
+      // evidence declares, and info.version must be the attachment
+      // revision — never a hardcoded generator constant (r1 cline F-3,
+      // devin F-6).
+      modelRef: isObject(document.modelRef) ? document.modelRef : undefined,
+      irRef: isObject(document.irRef) ? document.irRef : undefined,
+      attachmentRevision:
+        typeof document.attachmentRevision === "string"
+          ? document.attachmentRevision
+          : undefined,
+      // The exact-bytes digest of the evidence document: the
+      // transportRef pin binds the bytes that were read, byte-stable
+      // across repeats.
+      digest:
+        "sha256:" + createHash("sha256").update(bytes).digest("hex"),
     },
   };
 }

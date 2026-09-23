@@ -216725,7 +216725,19 @@ function decodeEvidence(bytes) {
       wire: document.wire,
       defaults: document.defaults,
       securitySchemes: Array.isArray(document.securitySchemes) ? document.securitySchemes : [],
-      endpoints
+      endpoints,
+      // The provenance/revision pins ride through to the renderer: the
+      // adapter's document must bind the exact model/IR identities the
+      // evidence declares, and info.version must be the attachment
+      // revision — never a hardcoded generator constant (r1 cline F-3,
+      // devin F-6).
+      modelRef: isObject5(document.modelRef) ? document.modelRef : void 0,
+      irRef: isObject5(document.irRef) ? document.irRef : void 0,
+      attachmentRevision: typeof document.attachmentRevision === "string" ? document.attachmentRevision : void 0,
+      // The exact-bytes digest of the evidence document: the
+      // transportRef pin binds the bytes that were read, byte-stable
+      // across repeats.
+      digest: "sha256:" + createHash6("sha256").update(bytes).digest("hex")
     }
   };
 }
@@ -218496,13 +218508,17 @@ function renderDocument(attachment, ir, policy) {
   }
   root["x-lekalo-provenance"] = {
     generator: { id: GENERATOR_ID, version: GENERATOR_VERSION },
-    irRef: { digest: attachment.irRef?.digest ?? "", identity: attachment.irRef?.identity ?? "" },
+    irRef: {
+      digest: attachment.irRef?.digest ?? "",
+      identity: attachment.irRef?.identity ?? ""
+    },
     modelRef: {
       digest: attachment.modelRef?.digest ?? "",
       modelVersion: attachment.modelRef?.modelVersion ?? ""
     },
     transportRef: {
-      digest: digestOf(Buffer.from(canonicalJson4(attachment), "utf8")),
+      // The exact bytes of the evidence document that were read.
+      digest: attachment.digest,
       schemaVersion: "lekalo/transport-http/v0.4.0"
     }
   };

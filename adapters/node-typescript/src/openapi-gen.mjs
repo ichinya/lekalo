@@ -330,13 +330,17 @@ function renderDocument(attachment, ir, policy) {
   }
   root["x-lekalo-provenance"] = {
     generator: { id: GENERATOR_ID, version: GENERATOR_VERSION },
-    irRef: { digest: attachment.irRef?.digest ?? "", identity: attachment.irRef?.identity ?? "" },
+    irRef: {
+      digest: attachment.irRef?.digest ?? "",
+      identity: attachment.irRef?.identity ?? "",
+    },
     modelRef: {
       digest: attachment.modelRef?.digest ?? "",
       modelVersion: attachment.modelRef?.modelVersion ?? "",
     },
     transportRef: {
-      digest: digestOf(Buffer.from(canonicalJson(attachment), "utf8")),
+      // The exact bytes of the evidence document that were read.
+      digest: attachment.digest,
       schemaVersion: "lekalo/transport-http/v0.4.0",
     },
   };

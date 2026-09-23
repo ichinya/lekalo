@@ -429,3 +429,34 @@ test("a divided errorDefault inlines its category body and never dangles a $ref 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("the provenance block binds the evidence's model/IR/transport pins (r1 cline F-3)", () => {
+  const root = evidenceProject();
+  try {
+    const views = viewsFor(root);
+    const outcome = run({ ...views, request: {} });
+    assert.equal(outcome.state, "complete");
+    const yaml = outcome.data.bodies.get("docs/openapi.yaml");
+    const provenanceStart = yaml.indexOf('"x-lekalo-provenance":');
+    assert.ok(provenanceStart > 0, "the provenance block is emitted");
+    const provenance = yaml.slice(provenanceStart);
+    // The model/IR pins ride through the production decode path — no
+    // empty digest/identity members.
+    assert.ok(provenance.includes('"modelVersion": "0.2.16"'), "model version bound");
+    assert.ok(
+      provenance.includes('"digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"'),
+      "the evidence's model digest is carried verbatim",
+    );
+    assert.ok(provenance.includes('"identity": "dev.lekalo.ir@0.2.16"'), "IR identity bound");
+    assert.ok(
+      provenance.includes('"digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"'),
+      "the evidence's IR digest is carried verbatim",
+    );
+    // The transport digest binds the exact evidence bytes.
+    const evidenceDigest =
+      "sha256:" + createHash("sha256").update(plannerEvidence, "utf8").digest("hex");
+    assert.ok(provenance.includes('"digest": "' + evidenceDigest + '"'), "transportRef pins the exact evidence bytes");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
