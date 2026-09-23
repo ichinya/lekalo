@@ -82,6 +82,13 @@ impl CheckReport {
 /// Check one maintained document tree against the current attachment.
 /// `ownership` is the document's existing ownership sidecar manifest
 /// (empty when none was shipped); pure and read-only.
+///
+/// The input must be an OpenAPI document: an object root carrying the
+/// `openapi` version member, spelling the same version as the declared
+/// render config. Anything else — an array, a bare string, a YAML
+/// fragment without the member — refuses as `openapi.input-invalid`
+/// before any classification runs; a checked mode that blesses
+/// `[1,2,3]` as conformant would undercut its own purpose (r1 F-4).
 pub fn check(
     existing: &Json,
     attachment: &TransportDocument,
@@ -89,6 +96,20 @@ pub fn check(
     config: &RenderConfig,
     ownership: &OwnershipManifest,
 ) -> Result<CheckReport, DiagnosticSet> {
+    let Some(root) = existing.as_object() else {
+        return Err(diagnostic::input_invalid("root-not-object"));
+    };
+    match root.get("openapi").and_then(Json::as_str) {
+        None => return Err(diagnostic::input_invalid("openapi-member-missing")),
+        Some(declared) if declared != config.version.wire_str() => {
+            return Err(diagnostic::input_invalid(&format!(
+                "openapi-version:{}:declared:{}",
+                diagnostic::bounded(declared),
+                config.version.wire_str(),
+            )));
+        }
+        Some(_) => {}
+    }
     let rendered = super::render::render(attachment, context, config)?;
     let fragments = Fragments::new(&rendered);
     let generated = OwnershipManifest::of_document(&rendered, Default::default());

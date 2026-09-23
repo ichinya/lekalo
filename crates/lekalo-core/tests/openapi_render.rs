@@ -105,6 +105,7 @@ fn run_suite() {
     unbound_registry_renders_open_error_responses();
     checked_mode_accepts_the_pinned_golden();
     checked_mode_reports_drift_and_unresolved_anchors();
+    checked_mode_refuses_non_openapi_input();
     fragments_round_trip_the_golden();
     the_wire_diff_fixture_pairs_map_to_pointer_views();
     equal_implies_byte_equal_renders();
@@ -321,6 +322,37 @@ fn checked_mode_reports_drift_and_unresolved_anchors() {
         .collect();
     assert!(ids.contains(&"openapi.drift"));
     assert!(ids.contains(&"openapi.binding-unresolved"));
+}
+
+fn checked_mode_refuses_non_openapi_input() {
+    // A checked mode that blesses [1,2,3] as conformant undercuts its
+    // own purpose: the input must be an object root carrying the
+    // openapi version member, spelling the declared version (r1 F-4).
+    let suite = session();
+    let context = suite.context();
+    let config = RenderConfig::new();
+    let ownership = lekalo_core::openapi::OwnershipManifest::default();
+    for (input, expected_detail) in [
+        (serde_json::json!([1, 2, 3]), "root-not-object"),
+        (serde_json::json!("just a string"), "root-not-object"),
+        (
+            serde_json::json!({ "info": { "title": "no member" }, "paths": {} }),
+            "openapi-member-missing",
+        ),
+        (
+            serde_json::json!({ "openapi": "2.0", "paths": {} }),
+            "openapi-version:2.0:declared:3.1.0",
+        ),
+    ] {
+        let set =
+            lekalo_core::openapi::check(&input, &suite.attachment, &context, &config, &ownership)
+                .expect_err("non-OpenAPI input refuses");
+        let detail = match set.as_slice()[0].data().get("detail") {
+            Some(lekalo_core::diagnostics::DataValue::Token(text)) => text.clone(),
+            other => format!("{:?}", other),
+        };
+        assert_eq!(detail, expected_detail, "the refusal names its exact guard");
+    }
 }
 
 fn fragments_round_trip_the_golden() {
