@@ -172,6 +172,8 @@ jobs:
       - run: cargo test --workspace --locked --no-fail-fast
       - name: Run the Node/TypeScript kernel suite (issue #43)
         run: node scripts/test-node-typescript-kernel.mjs
+      - name: Run the adapter manifest contract gate (issue #32)
+        run: node scripts/test-adapter-manifest-contracts.mjs
       - name: Verify the shipped adapter manifest golden (issue #32)
         run: node scripts/test-adapter-manifest-golden.mjs
       - name: Provision the vendored compiler bundle custody (issue #44)
