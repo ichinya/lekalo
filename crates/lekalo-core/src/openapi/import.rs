@@ -103,51 +103,152 @@ fn closed_frontend_parse(text: &str) -> Result<Json, DiagnosticSet> {
 }
 
 /// Rewrite the two empty flow literals (`{}` and `[]`) to their
-/// reserved placeholder tokens outside quoted scalars. Returns the
-/// rewritten text and the replacement count.
+/// reserved placeholder tokens. The scan is char-exact UTF-8, tracks
+/// quoted scalars, skips `#` comments and block-scalar bodies, and
+/// rewrites only token-position literals — a `{}` inside a comment, a
+/// block scalar, or a plain scalar's prose is left untouched, so the
+/// replacement count can never exceed what the parsed tree can
+/// restore (r1 F-5). Returns the rewritten text and the replacement
+/// count.
 fn rewrite_empty_flow(text: &str) -> (String, usize) {
-    let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
     let mut replaced = 0usize;
-    let mut index = 0usize;
     let mut in_single = false;
     let mut in_double = false;
-    while index < bytes.len() {
-        let byte = bytes[index];
-        match byte {
-            b'\'' if !in_double => {
-                in_single = !in_single;
-                out.push('\'');
-                index += 1;
+    let mut double_escaped = false;
+    // The indent threshold of the active block-scalar header line, if
+    // any: its body (and blank separators) rides verbatim.
+    let mut block_body_indent: Option<usize> = None;
+
+    for line in text.split_inclusive('\n') {
+        let indent = line.len() - line.trim_start().len();
+        let trimmed = line.trim_start();
+        let blank = trimmed.is_empty() || trimmed == "\n" || trimmed == "\r\n";
+        if let Some(threshold) = block_body_indent {
+            if blank || indent > threshold {
+                out.push_str(line);
+                continue;
             }
-            b'"' if !in_single => {
-                in_double = !in_double;
-                out.push('"');
-                index += 1;
+            block_body_indent = None;
+        }
+
+        let mut comment = false;
+        // The immediately preceding char of this line (for the `#`
+        // comment rule) and the last significant (non-blank) char (for
+        // the token-position and block-header bounds).
+        let mut immediate_prev: Option<char> = None;
+        let mut last_significant: Option<char> = None;
+        let mut rest = line;
+        while let Some(c) = rest.chars().next() {
+            rest = &rest[c.len_utf8()..];
+            if comment {
+                out.push(c);
+                continue;
             }
-            b'\\' if in_double => {
-                // The escaped character of a double-quoted scalar.
-                out.push('\\');
-                if index + 1 < bytes.len() {
-                    out.push(bytes[index + 1] as char);
+            if in_double {
+                out.push(c);
+                if double_escaped {
+                    double_escaped = false;
+                } else if c == '\\' {
+                    double_escaped = true;
+                } else if c == '"' {
+                    in_double = false;
                 }
-                index += 2;
+                immediate_prev = Some(c);
+                if c != ' ' && c != '\t' {
+                    last_significant = Some(c);
+                }
+                continue;
             }
-            b'{' if !in_single && !in_double && bytes.get(index + 1) == Some(&b'}') => {
-                out.push_str(EMPTY_OBJECT_TOKEN);
-                replaced += 1;
-                index += 2;
+            if in_single {
+                out.push(c);
+                if c == '\'' {
+                    if rest.starts_with('\'') {
+                        // The '' escape of one single quote.
+                        out.push('\'');
+                        rest = &rest[1..];
+                    } else {
+                        in_single = false;
+                    }
+                }
+                immediate_prev = Some(c);
+                if c != ' ' && c != '\t' {
+                    last_significant = Some(c);
+                }
+                continue;
             }
-            b'[' if !in_single && !in_double && bytes.get(index + 1) == Some(&b']') => {
-                out.push_str(EMPTY_ARRAY_TOKEN);
-                replaced += 1;
-                index += 2;
+            match c {
+                '"' => {
+                    in_double = true;
+                    out.push(c);
+                }
+                '\'' => {
+                    in_single = true;
+                    out.push(c);
+                }
+                '#' if immediate_prev.is_none()
+                    || immediate_prev == Some(' ')
+                    || immediate_prev == Some('\t') =>
+                {
+                    comment = true;
+                    out.push(c);
+                }
+                '|' | '>'
+                    if matches!(last_significant, None | Some(':') | Some('-'))
+                        && rest
+                            .split('\n')
+                            .next()
+                            .unwrap_or("")
+                            .trim_end_matches('\r')
+                            .chars()
+                            .all(|header| {
+                                header.is_ascii_digit() || header == '+' || header == '-'
+                            }) =>
+                {
+                    // The block-scalar header: the rest of the line is
+                    // only indent/chomping indicators, so the body —
+                    // every following line more indented than this
+                    // one — rides verbatim.
+                    out.push(c);
+                    out.push_str(rest);
+                    rest = "";
+                    block_body_indent = Some(indent);
+                }
+                '{' if rest.starts_with('}') => {
+                    if matches!(
+                        last_significant,
+                        None | Some(':') | Some(',') | Some('[') | Some('{') | Some('-')
+                    ) {
+                        out.push_str(EMPTY_OBJECT_TOKEN);
+                        replaced += 1;
+                    } else {
+                        out.push_str("{}");
+                    }
+                    rest = &rest[1..];
+                    last_significant = Some('}');
+                    immediate_prev = Some('}');
+                    continue;
+                }
+                '[' if rest.starts_with(']') => {
+                    if matches!(
+                        last_significant,
+                        None | Some(':') | Some(',') | Some('[') | Some('{') | Some('-')
+                    ) {
+                        out.push_str(EMPTY_ARRAY_TOKEN);
+                        replaced += 1;
+                    } else {
+                        out.push_str("[]");
+                    }
+                    rest = &rest[1..];
+                    last_significant = Some(']');
+                    immediate_prev = Some(']');
+                    continue;
+                }
+                _ => out.push(c),
             }
-            _ => {
-                // Multi-byte UTF-8 sequences pass through byte-safe:
-                // every non-ASCII byte lands in this arm unchanged.
-                out.push(byte as char);
-                index += 1;
+            immediate_prev = Some(c);
+            if c != ' ' && c != '\t' {
+                last_significant = Some(c);
             }
         }
     }
@@ -251,6 +352,51 @@ mod tests {
         let document = parse_document_text(text).expect("parses");
         assert_eq!(document["paths"], json!({}));
         assert_eq!(document["security"], json!([]));
+    }
+
+    #[test]
+    fn non_ascii_yaml_imports_byte_exact_through_the_empty_flow_rewrite() {
+        // Every multi-byte char rides the rewrite unchanged — the old
+        // byte-at-a-time `as char` widening mojibake'd exactly these.
+        let text = "openapi: \"3.1.0\"\ninfo:\n  title: Планировщик задач — 计划器\npaths: {}\n";
+        let document = parse_document_text(text).expect("parses");
+        assert_eq!(document["info"]["title"], "Планировщик задач — 计划器");
+        assert_eq!(document["paths"], json!({}));
+    }
+
+    #[test]
+    fn comments_and_block_scalars_survive_the_empty_flow_rewrite() {
+        // A `{}` inside a comment or a block-scalar body is prose, not
+        // a flow literal: it must neither be rewritten (the parsed tree
+        // could never restore it) nor trigger a placeholder refusal.
+        let text = concat!(
+            "openapi: \"3.1.0\"\n",
+            "# note: emit {} when empty and [] likewise\n",
+            "info:\n",
+            "  title: planner\n",
+            "  description: |\n",
+            "    The shape stays {} and the list stays [] here.\n",
+            "    Still inside: {}\n",
+            "  version: \"0.4.0\"\n",
+            "paths: {}\n",
+            "security: []\n",
+        );
+        let document = parse_document_text(text).expect("parses");
+        assert_eq!(
+            document["info"]["description"],
+            "The shape stays {} and the list stays [] here.\nStill inside: {}\n"
+        );
+        assert_eq!(document["paths"], json!({}));
+        assert_eq!(document["security"], json!([]));
+    }
+
+    #[test]
+    fn a_plain_scalar_prose_pair_stays_literal() {
+        // `{}` in plain-scalar prose is not in token position: the
+        // bounded rewrite leaves it, so no phantom collision arises.
+        let text = "openapi: \"3.1.0\"\nnote: emit {} when empty\n";
+        let document = parse_document_text(text).expect("parses");
+        assert_eq!(document["note"], "emit {} when empty");
     }
 
     #[test]
