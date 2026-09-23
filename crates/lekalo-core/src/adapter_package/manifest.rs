@@ -194,6 +194,7 @@ impl SourceKind {
 #[derive(Clone, Debug)]
 pub struct ManifestDocument {
     canonical: Json,
+    stored: Vec<u8>,
     adapter_id: PackageId,
     adapter_name: String,
     adapter_version: SemVer,
@@ -216,7 +217,9 @@ impl ManifestDocument {
     /// bound, and cross-field invariant is validated here.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, PackageFailure> {
         let value: Json = serde_json::from_slice(bytes).map_err(duplicate_or_malformed)?;
-        Self::from_value(value)
+        let mut document = Self::from_value(value)?;
+        document.stored = bytes.to_vec();
+        Ok(document)
     }
 
     /// Parse and validate one manifest from an in-memory JSON value.
@@ -255,6 +258,7 @@ impl ManifestDocument {
         let mut extensions = wire.compatibility.extensions.clone();
         extensions.sort();
         extensions.dedup();
+        let stored = super::canonical::canonical_file_bytes(&value);
         let signature = match &wire.integrity.signature {
             Some(signature) => Some(Signature {
                 scheme: SignatureScheme::parse(&signature.scheme).ok_or_else(|| {
@@ -269,6 +273,7 @@ impl ManifestDocument {
         };
         Ok(Self {
             canonical: canonical::without_member(&value, "manifestDigest"),
+            stored,
             adapter_id,
             adapter_name: wire.adapter.name,
             adapter_version,
@@ -322,6 +327,13 @@ impl ManifestDocument {
         super::canonical::canonical_bytes(&value)
     }
 
+    /// The exact stored manifest bytes (the custody anchor the install
+    /// stages into the package store).
+    pub fn stored_bytes(&self) -> &[u8] {
+        &self.stored
+    }
+
+    /// The manifest identity digest (SHA-256 over
     /// The manifest identity digest (SHA-256 over
     /// [`ManifestDocument::canonical_bytes`]).
     pub fn digest(&self) -> ManifestDigest {

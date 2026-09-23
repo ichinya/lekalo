@@ -60,6 +60,8 @@ pub struct InstallPlan {
     pub digest: String,
     /// The manifest identity digest.
     pub manifest_digest: String,
+
+    pub manifest_bytes: Vec<u8>,
     /// The assigned trust level at plan time.
     pub trust: TrustLevel,
     /// Whether the bytes enter quarantine custody (community packages).
@@ -155,11 +157,13 @@ pub fn plan(
         version: manifest.adapter_version().to_string(),
     });
     let diff = current.map(|current| super::diff::diff_manifests(current, manifest));
+    let manifest_bytes = candidate.manifest.stored_bytes().to_vec();
     let plan = InstallPlan {
         id: manifest.adapter_id().to_owned(),
         version: manifest.adapter_version().to_string(),
         digest: manifest.package_digest().as_str().to_owned(),
         manifest_digest: manifest.digest().as_str().to_owned(),
+        manifest_bytes,
         trust,
         quarantined,
         actions,
@@ -271,6 +275,16 @@ fn apply_staged(
             std::fs::write(&to, &bytes).map_err(|_| recovery("stage"))?;
         }
     }
+    // The manifest is the custody anchor: every later gate (update
+    // diffs, re-verification, lock provenance) reads it from the store.
+    // Its bytes are the canonical stored form from the resolved
+    // candidate — not a caller-supplied re-serialization.
+    std::fs::write(
+        stage_dir.join(crate::adapter_package::integrity::MANIFEST_FILE),
+        &plan.manifest_bytes,
+    )
+    .map_err(|_| recovery("stage"))?;
+
     journal.push(stage_dir.to_path_buf());
     // Promote: rename the verified stage into the immutable store. A
     // foreign occupant of the destination is a conflict, never an
@@ -459,6 +473,46 @@ mod tests {
             None,
         );
         assert_ne!(first.plan_id, different.plan_id);
+    }
+
+    #[test]
+    fn apply_stages_the_manifest_and_a_reinstall_produces_a_diff() {
+        let root = std::env::temp_dir().join(format!("lekalo-ap-manifest-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("mkdir");
+        let source = std::env::temp_dir().join(format!("lekalo-ap-mf-src-{}", std::process::id()));
+        std::fs::create_dir_all(&source).expect("src");
+        std::fs::write(source.join("a.mjs"), b"bytes").expect("entry");
+        let candidate = candidate("a", b"bytes", "path:x");
+        // The source dir must carry the manifest: it is the staged anchor.
+        std::fs::write(
+            source.join(crate::adapter_package::integrity::MANIFEST_FILE),
+            candidate.manifest.stored_bytes(),
+        )
+        .expect("manifest in source");
+        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None);
+        apply_with_source(&root, &install_plan, &install_plan.plan_id, false, &source)
+            .expect("applies");
+        // The package store now contains the manifest.
+        let stored_manifest = std::fs::read(
+            root.join(".lekalo/adapters/packages/a/1.0.0-277089d9")
+                .join(crate::adapter_package::integrity::MANIFEST_FILE),
+        )
+        .map_err(|e| format!("{e}?"))
+        .expect("manifest staged into the store");
+        assert_eq!(stored_manifest, candidate.manifest.stored_bytes());
+        // A re-install against the now-current manifest produces a diff.
+        let current = crate::adapter_package::ManifestDocument::from_bytes(&stored_manifest)
+            .expect("re-read");
+        let second = plan(
+            &candidate,
+            TrustLevel::LocalDevelopment,
+            false,
+            Some(&current),
+        );
+        assert!(second.diff.is_some(), "the diff is now real, not null");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&source);
     }
 
     #[test]
