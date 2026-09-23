@@ -200,6 +200,41 @@ export function mapScenario(input) {
 // adapter refuses malformed wires before any mapping happens).
 // ---------------------------------------------------------------------------
 
+/**
+ * The closed SemanticId grammar mirrored from the core
+ * (`scenario/id.rs::SemanticId`): two or three dot-separated lowercase
+ * segments (`[a-z][a-z0-9_]*`, ≤63 each), total ≤191 bytes, and the
+ * first segment never the reserved `lekalo`/`dev`. Enforced at the
+ * emission trust boundary (issue #47 fix F-1) — raw ids interpolate
+ * into the emitted test name and emitted path.
+ */
+export function isSemanticId(text) {
+  if (typeof text !== "string" || text.length === 0 || text.length > 191) {
+    return false;
+  }
+  const segments = text.split(".");
+  if (segments.length < 2 || segments.length > 3) {
+    return false;
+  }
+  return segments.every((segment, index) => {
+    if (segment.length === 0 || segment.length > 63) return false;
+    if (!/^[a-z]/.test(segment)) return false;
+    if (!/^[a-z0-9_]*$/.test(segment)) return false;
+    if (index === 0 && (segment === "lekalo" || segment === "dev")) return false;
+    return true;
+  });
+}
+
+/** The closed single-segment step-id grammar (`scenario/id.rs::StepId`). */
+export function isStepId(text) {
+  return (
+    typeof text === "string"
+    && text.length > 0
+    && text.length <= 64
+    && /^[a-z][a-z0-9_]*$/.test(text)
+  );
+}
+
 function checkScenarioShape(scenario) {
   if (scenario === null || typeof scenario !== "object" || Array.isArray(scenario)) {
     return "scenario-shape";
@@ -216,8 +251,8 @@ function checkScenarioShape(scenario) {
       return "scenario-missing-field";
     }
   }
-  if (typeof scenario.scenarioId !== "string" || scenario.scenarioId.length === 0
-    || scenario.scenarioId.length > 192) {
+  if (typeof scenario.scenarioId !== "string"
+    || !isSemanticId(scenario.scenarioId)) {
     return "scenario-id";
   }
   if (!Array.isArray(scenario.given) || !Array.isArray(scenario.when)
@@ -241,8 +276,7 @@ function checkScenarioShape(scenario) {
   for (const role of [scenario.given, scenario.when, scenario.then]) {
     for (const step of role) {
       if (step === null || typeof step !== "object"
-        || typeof step.stepId !== "string" || step.stepId.length === 0
-        || step.stepId.length > 128) {
+        || typeof step.stepId !== "string" || !isStepId(step.stepId)) {
         return "scenario-step-id";
       }
       if (stepIds.has(step.stepId)) {

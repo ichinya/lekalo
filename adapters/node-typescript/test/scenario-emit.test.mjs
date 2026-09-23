@@ -18,6 +18,7 @@ import { test } from "node:test";
 
 import {
   ADAPTER_ID,
+  commentSafe,
   MAP_CONTRACT,
   RESERVED_MODULES,
   RUN_RECORD_DIR,
@@ -470,4 +471,21 @@ test("module naming and identifier sanitization stay deterministic", () => {
   assert.equal(moduleOf("solo"), "solo");
   assert.equal(identifierOf("planner.scenario.a-1"), "planner_scenario_a_1");
   assert.equal(identifierOf("9lives"), "_9lives");
+});
+
+test('the summary is comment-safe: newlines cannot inject code (F-1)', () => {
+  const scenario = happyScenario();
+  scenario.summary = 'innocent\nthrow new Error("injected") // tail';
+  const files = emit(map(scenario).scenarios);
+  const testFile = files.find((entry) => entry.path.endsWith('minimal.test.ts'));
+  const commentLines = testFile.text.split('\n').filter((line) => line.includes('innocent'));
+  assert.equal(commentLines.length, 1, 'the summary stays on one comment line');
+  // Every occurrence of the hostile payload stays inside a comment line:
+  // collapsed, never emitted as live TypeScript.
+  for (const line of testFile.text.split('\n')) {
+    if (line.includes('throw new Error')) {
+      assert.match(line, /^\s*\/\//, 'injected text stays commented: ' + line);
+    }
+  }
+  assert.equal(commentSafe('a\r\nb\u0000c\n'), 'a b c');
 });

@@ -24,6 +24,8 @@ import {
   SCENARIO_IDENTITY,
   SCENARIO_TESTS_DIR,
   UNSUPPORTED_CAPABILITY,
+  isSemanticId,
+  isStepId,
   mapScenario,
 } from "../src/scenario-map.mjs";
 
@@ -377,4 +379,28 @@ test("unsupported findings carry the registered code spellings", () => {
   assert.equal(OPERATION_UNRESOLVED, "scenario.operation-unresolved");
   assert.equal(RUNNER_UNKNOWN, "scenario.runner-unknown");
   assert.equal(IR_REF_MISMATCH, "scenario.ir-ref-mismatch");
+});
+
+test('identifier grammar enforces the closed SemanticId/StepId shapes (F-1)', () => {
+  assert.equal(isSemanticId('planner.scenario.minimal'), true);
+  assert.equal(isSemanticId('planner.scenario'), true);
+  assert.equal(isSemanticId('planner.scenario.extra.seg'), false, 'max three segments');
+  assert.equal(isSemanticId('lekalo.scenario.x'), false, 'reserved first segment');
+  assert.equal(isSemanticId('dev.scenario.x'), false, 'reserved first segment');
+  assert.equal(isSemanticId('Planner.scenario.x'), false, 'uppercase refused');
+  assert.equal(isSemanticId('planner.scenario..x'), false, 'empty segment');
+  assert.equal(isSemanticId('planner'), false, 'needs two segments');
+  assert.equal(isStepId('run'), true);
+  assert.equal(isStepId('Run'), false);
+  assert.equal(isStepId('run.1'), false);
+  assert.equal(isStepId(''), false);
+
+  // A charset-invalid scenario id is a refusal at the emission boundary,
+  // even though only the length was checked before (review F-1).
+  const hostile = happyScenario();
+  hostile.scenarioId = 'planner.scenario.minimal\n.throw new Error(1)';
+  assert.equal(map(hostile).refusal, 'scenario-id');
+  const hostileStep = happyScenario();
+  hostileStep.when[0].stepId = 'run; process.exit(1)';
+  assert.equal(map(hostileStep).refusal, 'scenario-step-id');
 });
