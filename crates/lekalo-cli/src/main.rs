@@ -2371,23 +2371,26 @@ fn run_adapter_repoint(
         // silently downgrading (devin F-10).
         (AdapterRepoint::Update, None) => {
             let selected = inventory.selected(id);
-            promoted
+            let mut candidates: Vec<_> = promoted
                 .iter()
-                .rev()
-                .find(|row| {
-                    !row.selected
-                        && selected
-                            .map(|current| row.version.as_str() > current.version.as_str())
-                            .unwrap_or(true)
+                .filter(|row| !row.selected)
+                .collect();
+            // Sort by SemVer descending
+            candidates.sort_by(|a, b| {
+                let ver_a = lekalo_core::lockfile::types::SemVer::parse(&a.version).expect("valid semver");
+                let ver_b = lekalo_core::lockfile::types::SemVer::parse(&b.version).expect("valid semver");
+                ver_b.cmp(&ver_a)
+            });
+            let target = if let Some(selected) = selected {
+                let selected_ver = lekalo_core::lockfile::types::SemVer::parse(&selected.version).expect("valid semver");
+                candidates.into_iter().find(|row| {
+                    let row_ver = lekalo_core::lockfile::types::SemVer::parse(&row.version).expect("valid semver");
+                    row_ver > selected_ver
                 })
-                .or_else(|| {
-                    // Nothing selected: any newest row counts as forward.
-                    if selected.is_none() {
-                        promoted.iter().rev().find(|row| !row.selected)
-                    } else {
-                        None
-                    }
-                })
+            } else {
+                candidates.first().copied()
+            };
+            target
         }
         (AdapterRepoint::Rollback, None) => None,
     };
@@ -2880,6 +2883,11 @@ fn run_adapter_quarantine_release(id: &str, project: &Option<String>) -> Adapter
     // Issue #32 fix round 2 (devin F-4 / cline F-2): use shared custody-path helpers.
     // The quarantined bytes are already verified at install time, so re-verification
     // is not strictly required but we keep the verification comment for clarity.
+    let quarantine_dir = root.join(
+        lekalo_core::adapter_package::quarantine::quarantine_path(&row.id, &row.version, &row.digest)
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
+    );
+    let digest8: String = row.digest["sha256:".len()..].chars().take(8).collect();
     let quarantine_dir = root.join(
         lekalo_core::adapter_package::quarantine::quarantine_path(&row.id, &row.version, &row.digest)
             .replace('/', std::path::MAIN_SEPARATOR_STR),
