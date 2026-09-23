@@ -742,10 +742,84 @@ fn plan_tables(
                     None,
                 );
             }
+            // A declared index name is stable across the rename, but
+            // its content is not: a named index whose columns,
+            // uniqueness, or predicate changed drops and re-adds under
+            // its declared name, a removed one drops, and a new one
+            // adds. The rename must never silently lose a named-index
+            // content change — the round-6 regression where the
+            // renamed-table index skip swallowed exactly that diff.
+            let mut base_named: std::collections::BTreeMap<&StorageName, _> = base_table
+                .indexes()
+                .iter()
+                .filter_map(|index| index.name().map(|name| (name, index)))
+                .collect();
+            for index in table.indexes() {
+                let Some(name) = index.name() else {
+                    continue;
+                };
+                let unchanged = base_named
+                    .get(name)
+                    .is_some_and(|base_index| **base_index == *index);
+                let drop_id = if unchanged {
+                    base_named.remove(name);
+                    continue;
+                } else if base_named.contains_key(name) {
+                    let drop_id = steps.len();
+                    push_step(
+                        steps,
+                        "drop_index",
+                        format!("DROP INDEX {};", quote(name)),
+                        DataRisk::Destructive,
+                        Vec::new(),
+                        None,
+                    );
+                    base_named.remove(name);
+                    Some(drop_id + 1)
+                } else {
+                    None
+                };
+                let unique = if index.unique() { "UNIQUE " } else { "" };
+                let predicate = match index.where_() {
+                    Some(predicates) => format!(" WHERE {}", render_predicates(predicates)),
+                    None => String::new(),
+                };
+                let columns = index
+                    .columns()
+                    .iter()
+                    .map(quote)
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                push_step(
+                    steps,
+                    "add_index",
+                    format!(
+                        "CREATE {unique}INDEX {} ON {} ({}){predicate};",
+                        quote(name),
+                        quote(table.table()),
+                        columns
+                    ),
+                    DataRisk::None,
+                    drop_id.into_iter().collect::<Vec<usize>>(),
+                    None,
+                );
+            }
+            for name in base_named.into_keys() {
+                // A named index removed while its table renames still
+                // drops under its declared, still-existing name.
+                push_step(
+                    steps,
+                    "drop_index",
+                    format!("DROP INDEX {};", quote(name)),
+                    DataRisk::Destructive,
+                    Vec::new(),
+                    None,
+                );
+            }
             for index in base_table.indexes() {
                 if index.name().is_some() {
-                    // A declared name is not derived; the rename
-                    // leaves it stable.
+                    // A declared name is handled by the content diff
+                    // above; the unnamed drops follow.
                     continue;
                 }
                 // The drops derive from the base table's indexes: the
@@ -853,6 +927,8 @@ fn plan_tables(
             }
             for index in table.indexes() {
                 if index.name().is_some() {
+                    // A declared name is handled by the content diff
+                    // above; the unnamed adds follow.
                     continue;
                 }
                 let name = super::postgres::ddl::derived_index_name(table.table(), index)?;

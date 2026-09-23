@@ -1823,6 +1823,111 @@ fn a_removed_tenant_key_retires_its_policy_before_the_column() {
 }
 
 #[test]
+fn a_renamed_tables_named_index_content_change_is_rederived() {
+    // A declared index name survives the rename, but its content does
+    // not have to: a named index whose columns change on a renamed
+    // table drops and re-adds under its stable declared name — never
+    // silently lost, never re-created under a phantom name.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        for table in projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+        {
+            if table.get("table").and_then(serde_json::Value::as_str) == Some("task") {
+                table["table"] = serde_json::Value::String("todo".to_owned());
+                for index in table
+                    .get_mut("indexes")
+                    .and_then(|indexes| indexes.as_array_mut())
+                    .expect("indexes")
+                {
+                    if index.get("name").and_then(serde_json::Value::as_str)
+                        == Some("idx_task_tenant")
+                    {
+                        index["columns"] = serde_json::json!(["title"]);
+                    }
+                }
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    let drops: Vec<_> = plan
+        .steps()
+        .iter()
+        .filter(|step| {
+            step.kind() == "drop_index" && step.statement() == "DROP INDEX \"idx_task_tenant\";"
+        })
+        .collect();
+    assert_eq!(
+        drops.len(),
+        1,
+        "the changed named index drops exactly once under its declared name"
+    );
+    let adds: Vec<_> = plan
+        .steps()
+        .iter()
+        .filter(|step| {
+            step.kind() == "add_index"
+                && step.statement() == "CREATE INDEX \"idx_task_tenant\" ON \"todo\" (\"title\");"
+        })
+        .collect();
+    assert_eq!(
+        adds.len(),
+        1,
+        "the changed named index re-adds exactly once under its declared name"
+    );
+    assert_eq!(
+        adds[0].requires(),
+        &[drops[0].id()],
+        "the re-add follows its drop"
+    );
+    assert_eq!(
+        plan.steps()
+            .iter()
+            .filter(|step| step.statement().contains("idx_task_tenant"))
+            .count(),
+        2,
+        "no phantom or duplicate statements name the index"
+    );
+    for step in plan.steps() {
+        for dep in step.requires() {
+            assert!(*dep < step.id(), "no forward edges");
+        }
+    }
+}
+
+#[test]
 fn a_type_change_without_an_assignment_cast_refuses() {
     // A text-to-integer change cannot execute as a bare ALTER COLUMN
     // TYPE: the planner refuses with the registered rule instead of
