@@ -69,8 +69,12 @@ Hard rules:
   is a `classification.expired-declassification` finding — dead
   grants never lower anything, on any surface: validate, inspect,
   the exposure rule, the consent gate, and the report all share one
-  validity predicate). Self-approval rejects. The
-  `declassifyRoles` check is structural: `approvedBy` is an opaque
+  validity predicate). The fixed reference date for expiry and
+  validity evaluation is `2026-01-01T00:00:00Z`; the CLI flag
+  `--as-of` or the environment variable `LEKALO_AS_OF` can override
+  this date on validation surfaces (`classification validate`,
+  `classification inspect`, `dataflow report`). Self-approval rejects.
+  The `declassifyRoles` check is structural: `approvedBy` is an opaque
   reference with no role token, so validation verifies the from-kind
   rule declares roles; binding the approving role to the declared set
   needs the issuer story (ADR-0043 §9).

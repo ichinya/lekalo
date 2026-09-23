@@ -5716,6 +5716,11 @@ enum ClassificationCommands {
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
+        /// The reference date for expiry and validity evaluation
+        /// (`YYYY-MM-DD`); expiry is deterministic in this date, never
+        /// a clock.
+        #[arg(long, value_name = "DATE")]
+        as_of: String,
     },
     /// Inspect one classification attachment: the resolved kinds of
     /// every declared subject in canonical order.
@@ -5729,6 +5734,11 @@ enum ClassificationCommands {
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
+        /// The reference date for expiry and validity evaluation
+        /// (`YYYY-MM-DD`); expiry is deterministic in this date, never
+        /// a clock.
+        #[arg(long, value_name = "DATE")]
+        as_of: String,
     },
 }
 
@@ -6000,6 +6010,7 @@ fn run_dataflow(command: DataflowCommands) -> DomainResult {
             policy,
             project,
             endpoints,
+            as_of,
         } => {
             let (model_json, compilation) = match load_compiled_for(&project) {
                 Err(result) => return result,
@@ -6021,7 +6032,7 @@ fn run_dataflow(command: DataflowCommands) -> DomainResult {
                 &policy,
                 &resolution,
                 &exposures,
-                lekalo_core::classification::DEFAULT_AS_OF,
+                &as_of,
             ) {
                 Err(set) => DomainResult::invalid(set),
                 Ok((report, diagnostics)) => {
