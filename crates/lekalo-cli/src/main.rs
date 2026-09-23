@@ -6014,6 +6014,7 @@ fn run_dataflow(command: DataflowCommands) -> DomainResult {
                 &policy,
                 &resolution,
                 &exposures,
+                lekalo_core::classification::DEFAULT_AS_OF,
             ) {
                 Err(set) => DomainResult::invalid(set),
                 Ok((report, diagnostics)) => {

@@ -46,6 +46,7 @@ if (!binaryOk) fail("binary-missing", `run: cargo build -p lekalo-cli (${binary}
 const VALID = join(root, "tests/fixtures/classification/valid/planner");
 const DECLASSIFIED = join(root, "tests/fixtures/classification/valid/declassified-export");
 const UNKNOWN = join(root, "tests/fixtures/classification/invalid/unknown-subject");
+const EXPIRED = join(root, "tests/fixtures/classification/invalid/expired-public-grant");
 const CROSSING = join(root, "tests/fixtures/classification/invalid/tenant-crossing");
 const SINK = join(root, "tests/fixtures/classification/invalid/secret-in-sink");
 const SEALED = join(root, "tests/fixtures/classification/invalid/credential-declassified");
@@ -257,6 +258,7 @@ const policy = (fixture) => join(fixture, "lekalo/classification-policy.json");
     [UNKNOWN, "classification.unknown-subject", 1, 1],
     [SEALED, "classification.invalid-declassification", 1, 1],
     [UNCLOSED, "classification.kind-rule-missing", 1, 0],
+    [EXPIRED, "classification.expired-declassification", 1, 0],
     [VALID, null, 3, 0],
   ]) {
     const strictRun = run(["validate", "--strict", "--json"], fixture);
@@ -295,7 +297,7 @@ const SENTINEL = "LEKALO-SENTINEL-SECRET-9f2c";
     const bytes = readFileSync(path, "utf8");
     if (bytes.includes(SENTINEL)) fail("sentinel-in-fixture", path);
   }
-  for (const fixture of [VALID, DECLASSIFIED, UNKNOWN, SEALED, UNCLOSED, CROSSING, SINK, ENDPOINT]) {
+  for (const fixture of [VALID, DECLASSIFIED, UNKNOWN, SEALED, UNCLOSED, CROSSING, SINK, ENDPOINT, EXPIRED]) {
     for (const command of [
       ["classification", "validate", "--attachment", attachment(fixture), "--policy", policy(fixture)],
       ["classification", "inspect", "--attachment", attachment(fixture), "--policy", policy(fixture)],
@@ -313,7 +315,7 @@ process.stdout.write(`${JSON.stringify({
   fixtures: {
     valid: 1,
     declassified: 1,
-    invalid: 6,
+    invalid: 7,
   },
   sentinelScanned: true,
 }, null, 2)}\n`);

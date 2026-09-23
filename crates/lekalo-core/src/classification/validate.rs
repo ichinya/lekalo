@@ -19,7 +19,7 @@ use super::diagnostic;
 use super::policy::PolicyAttachment;
 use super::resolve::{Resolution, ResolvedKind};
 use super::types::DataKind;
-use super::wire::Attachment;
+use super::wire::{Attachment, Declassification};
 
 /// Why one subject does not resolve in the bound compilation.
 pub enum SubjectError {
@@ -349,6 +349,39 @@ pub fn validate_policy_and_grants_as_of(
     Ok(outcome)
 }
 
+/// The shared grant-validity predicate (review r2, devin F-1 / cline
+/// R2-1): one grant lowers a kind only when the from-kind policy row
+/// exists and declares roles, the target is a strict lowering of a
+/// declassifiable kind, the approval is not the grant's own id
+/// (self-approval), and the grant is not expired against `as_of`.
+/// Every grant consumer — the exposure rule, the consent gate, the
+/// inspect projection — shares this predicate; no consumer defines
+/// its own weaker check.
+pub fn grant_is_valid(grant: &Declassification, policy: &PolicyAttachment, as_of: &str) -> bool {
+    let Some(rule) = policy.rule(grant.from_kind()) else {
+        return false;
+    };
+    if rule.declassify_roles().is_empty() {
+        return false;
+    }
+    if !grant.from_kind().declassifiable() {
+        return false;
+    }
+    if !grant.to_kind().strict_lowering_of(grant.from_kind()) {
+        return false;
+    }
+    if grant.approved_by().as_str() == grant.id().as_str() {
+        return false;
+    }
+    if grant
+        .expires_at()
+        .is_some_and(|expires_at| expires_at.as_str() < as_of)
+    {
+        return false;
+    }
+    true
+}
+
 /// The strict-profile sensitive-sink rule over the compilation (plan
 /// §2.3): every sensitive declared-graph subject must be explicitly
 /// classified — a definition-level entry, a field-level entry, or a
@@ -555,5 +588,197 @@ mod tests {
                 .expect("empty model compiles")
                 .project
         })
+    }
+}
+
+// The r3 regression (review r3, F-1/R2-1): the shared grant-validity
+// predicate rejects every dead-grant shape and accepts a live one.
+#[cfg(test)]
+mod grant_validity_tests {
+    use super::super::policy::PolicyAttachment;
+    use super::super::wire::Attachment;
+    use super::*;
+
+    const ATTACHMENT: &str = r#"{
+      "schemaVersion": "lekalo/data-classification/v0.4.0",
+      "identity": "dev.lekalo.data-classification@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "clinic",
+      "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "irRef": {"irVersion": "0.2.16", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+      "defaults": {"profile": "strict", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"},
+      "classifications": [
+        {"subject": "core.entity.user/email", "kind": "personal"}
+      ],
+      "declassifications": [
+        {
+          "id": "grant.core.email-public@1.0.0",
+          "subject": "core.entity.user/email",
+          "fromKind": "personal",
+          "toKind": "public",
+          "approvedBy": "review-2025-09-003",
+          "justification": "Published directory listing."
+        }
+      ],
+      "openQuestions": []
+    }"#;
+
+    const POLICY: &str = r#"{
+      "schemaVersion": "lekalo/classification-policy/v0.4.0",
+      "identity": "dev.lekalo.classification-policy@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "clinic",
+      "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "irRef": {"irVersion": "0.2.16", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+      "kinds": [
+        {
+          "kind": "personal",
+          "readers": ["tenant"],
+          "writers": ["tenant"],
+          "destinations": ["internal-service"],
+          "masking": {"strategy": "tokenize", "policyRef": "privacy-policy.masking.personal"},
+          "consentRequired": false,
+          "crossTenant": "forbidden",
+          "declassifyRoles": ["data-steward"]
+        }
+      ],
+      "sinks": {
+        "logs": {"maxKind": "internal"},
+        "traces": {"maxKind": "internal"},
+        "contextCapsules": {"maxKind": "internal"},
+        "diagnostics": {"maxKind": "internal"},
+        "evidence": {"maxKind": "public"},
+        "exports": {"maxKind": "derived"}
+      },
+      "openQuestions": []
+    }"#;
+
+    fn parts() -> (Attachment, PolicyAttachment) {
+        (
+            Attachment::parse(ATTACHMENT.as_bytes()).expect("attachment"),
+            PolicyAttachment::parse(POLICY.as_bytes()).expect("policy"),
+        )
+    }
+
+    #[test]
+    fn a_live_grant_is_valid() {
+        let (attachment, policy) = parts();
+        let grant = &attachment.declassifications()[0];
+        assert!(grant_is_valid(grant, &policy, DEFAULT_AS_OF));
+    }
+
+    #[test]
+    fn an_expired_grant_is_invalid() {
+        let (attachment, policy) = parts();
+        let grant = &attachment.declassifications()[0];
+        let expired = Attachment::parse(
+            serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": "lekalo/data-classification/v0.4.0",
+                "identity": "dev.lekalo.data-classification@0.4.0",
+                "attachmentRevision": "1.1.0",
+                "projectId": "clinic",
+                "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+                "irRef": {"irVersion": "0.2.16", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+                "defaults": {"profile": "strict", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"},
+                "classifications": [{"subject": "core.entity.user/email", "kind": "personal"}],
+                "declassifications": [{
+                    "id": "grant.core.email-public@1.0.0",
+                    "subject": "core.entity.user/email",
+                    "fromKind": "personal",
+                    "toKind": "public",
+                    "approvedBy": "review-2025-09-003",
+                    "justification": "Published directory listing.",
+                    "expiresAt": "2020-01-01T00:00:00Z"
+                }],
+                "openQuestions": []
+            }))
+            .expect("serializes")
+            .as_slice(),
+        )
+        .expect("parses");
+        let expired_grant = &expired.declassifications()[0];
+        assert!(!grant_is_valid(expired_grant, &policy, DEFAULT_AS_OF));
+        // The same grant is live before its expiry.
+        assert!(grant_is_valid(grant, &policy, DEFAULT_AS_OF));
+    }
+
+    #[test]
+    fn a_grant_without_a_from_kind_policy_row_is_invalid() {
+        let (attachment, policy) = parts();
+        let grant = &attachment.declassifications()[0];
+        let kindless = PolicyAttachment::parse(
+            serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": "lekalo/classification-policy/v0.4.0",
+                "identity": "dev.lekalo.classification-policy@0.4.0",
+                "attachmentRevision": "1.1.0",
+                "projectId": "clinic",
+                "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+                "irRef": {"irVersion": "0.2.16", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+                "kinds": [{
+                    "kind": "internal",
+                    "readers": ["tenant"],
+                    "writers": ["tenant"],
+                    "destinations": ["internal-service"],
+                    "masking": {"strategy": "redact", "policyRef": "privacy-policy.masking.internal"},
+                    "consentRequired": false,
+                    "crossTenant": "reviewed",
+                    "declassifyRoles": ["data-steward"]
+                }],
+                "sinks": {
+                    "logs": {"maxKind": "internal"},
+                    "traces": {"maxKind": "internal"},
+                    "contextCapsules": {"maxKind": "internal"},
+                    "diagnostics": {"maxKind": "internal"},
+                    "evidence": {"maxKind": "public"},
+                    "exports": {"maxKind": "derived"}
+                },
+                "openQuestions": []
+            }))
+            .expect("serializes")
+            .as_slice(),
+        )
+        .expect("parses");
+        assert!(!grant_is_valid(grant, &kindless, DEFAULT_AS_OF));
+        assert!(grant_is_valid(grant, &policy, DEFAULT_AS_OF));
+    }
+
+    #[test]
+    fn a_grant_without_policy_roles_is_invalid() {
+        let (attachment, policy) = parts();
+        let grant = &attachment.declassifications()[0];
+        let roleless = PolicyAttachment::parse(
+            serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": "lekalo/classification-policy/v0.4.0",
+                "identity": "dev.lekalo.classification-policy@0.4.0",
+                "attachmentRevision": "1.1.0",
+                "projectId": "clinic",
+                "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+                "irRef": {"irVersion": "0.2.16", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+                "kinds": [{
+                    "kind": "personal",
+                    "readers": ["tenant"],
+                    "writers": ["tenant"],
+                    "destinations": ["internal-service"],
+                    "masking": {"strategy": "tokenize", "policyRef": "privacy-policy.masking.personal"},
+                    "consentRequired": false,
+                    "crossTenant": "forbidden",
+                    "declassifyRoles": []
+                }],
+                "sinks": {
+                    "logs": {"maxKind": "internal"},
+                    "traces": {"maxKind": "internal"},
+                    "contextCapsules": {"maxKind": "internal"},
+                    "diagnostics": {"maxKind": "internal"},
+                    "evidence": {"maxKind": "public"},
+                    "exports": {"maxKind": "derived"}
+                },
+                "openQuestions": []
+            }))
+            .expect("serializes")
+            .as_slice(),
+        )
+        .expect("parses");
+        assert!(!grant_is_valid(grant, &roleless, DEFAULT_AS_OF));
+        assert!(grant_is_valid(grant, &policy, DEFAULT_AS_OF));
     }
 }

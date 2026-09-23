@@ -60,6 +60,14 @@ pub struct Inputs<'a> {
     /// §5.1): empty on this branch — the exposure rule then emits
     /// nothing, and never fails closed on the absence of observed data.
     pub endpoint_exposures: &'a [EndpointExposure],
+    /// The grant-expiry evaluation date (review r3, R2-2): the fixed
+    /// deterministic default, or the operator-supplied `--as-of`.
+    pub as_of: &'a str,
+    /// The finding-level grant/policy violations from the attachment
+    /// validation (expired, self-approved, kind-rule-missing,
+    /// missing-approval, unclassified-sensitive-sink): folded into the
+    /// report so a denied surface carries the rows that produced it.
+    pub validation_findings: &'a [crate::classification::FindingRow],
 }
 
 /// One transport endpoint-actor binding handed to the analysis: the
@@ -358,8 +366,23 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
     // case) over the transport bindings handed to this run.
     findings.extend(exposure_findings(
         inputs.classification,
+        inputs.policy,
+        inputs.as_of,
         inputs.endpoint_exposures,
     ));
+
+    // The finding-level grant/policy violations from the attachment
+    // validation fold into the report: a denied surface carries the
+    // rows that produced it, and error severity denies the verdict
+    // (review r3, F-1/R2-1).
+    for row in inputs.validation_findings {
+        findings.push(Finding {
+            rule_id: row.rule.clone(),
+            severity: Severity::Error,
+            subject: row.subject.clone(),
+            detail: row.rule.rsplit('.').next().unwrap_or("invalid").to_owned(),
+        });
+    }
 
     unknowns.sort_by(|left, right| {
         left.source
@@ -423,6 +446,8 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
 /// approved declassification grant lowers the subject to public.
 pub fn exposure_findings(
     resolution: &crate::classification::Resolution,
+    policy: &crate::classification::PolicyAttachment,
+    as_of: &str,
     exposures: &[EndpointExposure],
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
@@ -441,18 +466,17 @@ pub fn exposure_findings(
         if kind.rank() <= DataKind::Public.rank() {
             continue;
         }
-        // Only a fully valid grant clears the exposure: a real strict
-        // lowering to public, never self-approved, not expired. The
-        // structural role/approval checks run in validation; here the
-        // grant must at least not be the grant's own approval.
+        // Only a fully valid grant clears the exposure: the shared
+        // validity predicate (roles present, strict lowering, never
+        // self-approved, not expired against the as-of date). A dead
+        // grant never suppresses the finding (review r3, F-1/R2-1).
         let lowered_to_public = resolution
             .grants(&exposure.result_subject)
             .iter()
             .any(|grant| {
                 grant.from_kind() == kind
                     && grant.to_kind() == DataKind::Public
-                    && grant.from_kind().declassifiable()
-                    && grant.approved_by().as_str() != grant.id().as_str()
+                    && crate::classification::grant_is_valid(grant, policy, as_of)
             });
         if lowered_to_public {
             continue;
@@ -720,9 +744,15 @@ fn gate_outcome(
             }
             _ => {}
         }
-        // Consent-bearing kinds require an approval record; grants are
-        // structural until #26 wires review verification.
-        if kind_rule.consent_required() && inputs.grants_of(subject).is_empty() {
+        // Consent-bearing kinds require a *valid* approval record: the
+        // shared grant-validity predicate (roles present, strict
+        // lowering, never self-approved, not expired). A dead grant is
+        // not an approval (review r3, F-1/R2-1).
+        if kind_rule.consent_required()
+            && !inputs.grants_of(subject).iter().any(|grant| {
+                crate::classification::grant_is_valid(grant, inputs.policy, inputs.as_of)
+            })
+        {
             return Some(GateOutcome {
                 required: true,
                 satisfied: false,
@@ -852,6 +882,7 @@ pub fn run_report(
     policy: &crate::classification::PolicyAttachment,
     resolution: &crate::classification::Resolution,
     endpoint_exposures: &[EndpointExposure],
+    as_of: &str,
 ) -> Result<(crate::dataflow::Report, crate::diagnostics::DiagnosticSet), DiagnosticSet> {
     // Custody: the attachment binds the exact compilation (project,
     // Model bytes, and IR bytes).
@@ -863,13 +894,16 @@ pub fn run_report(
     )?;
     crate::classification::validate::validate_subjects(attachment, compilation)?;
     // Grant validity: the report never rests on an invalid grant
-    // (kind-rule-missing, self-approval, expiry); violations are
-    // terminal for the report surface.
-    crate::classification::validate_policy_and_grants(
+    // (kind-rule-missing, self-approval, expiry, missing-approval,
+    // unclassified-sensitive-sink). Finding-level violations fold into
+    // the report and deny its verdict; structural refusals abort
+    // (review r3, F-1/R2-1).
+    let validation = crate::classification::validate_policy_and_grants_as_of(
         attachment,
         policy,
         resolution,
         &compilation.project,
+        as_of,
     )?;
     let graph = crate::effects::build_with_classification(&compilation.project, Some(resolution))?;
     let (model_digest, ir_digest) = compile_digests(compilation);
@@ -899,6 +933,8 @@ pub fn run_report(
         generated_by: GENERATED_BY,
         report_revision: REPORT_REVISION,
         endpoint_exposures,
+        as_of,
+        validation_findings: &validation.rows,
     })?;
     let diagnostics = analysis.diagnostics.clone();
     Ok((analysis.report, diagnostics))
@@ -936,6 +972,43 @@ mod exposure_tests {
     use super::*;
     use crate::classification::Attachment;
 
+    /// The governing policy for the exposure fixtures: the personal
+    /// kind carries declassification roles, so a structurally well-
+    /// formed grant can be evaluated by the shared validity predicate.
+    const POLICY: &str = r#"{
+      "schemaVersion": "lekalo/classification-policy/v0.4.0",
+      "identity": "dev.lekalo.classification-policy@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "clinic",
+      "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "irRef": {"irVersion": "0.2.16", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+      "kinds": [
+        {
+          "kind": "personal",
+          "readers": ["tenant"],
+          "writers": ["tenant"],
+          "destinations": ["internal-service"],
+          "masking": {"strategy": "tokenize", "policyRef": "privacy-policy.masking.personal"},
+          "consentRequired": false,
+          "crossTenant": "forbidden",
+          "declassifyRoles": ["data-steward"]
+        }
+      ],
+      "sinks": {
+        "logs": {"maxKind": "internal"},
+        "traces": {"maxKind": "internal"},
+        "contextCapsules": {"maxKind": "internal"},
+        "diagnostics": {"maxKind": "internal"},
+        "evidence": {"maxKind": "public"},
+        "exports": {"maxKind": "derived"}
+      },
+      "openQuestions": []
+    }"#;
+
+    fn policy() -> crate::classification::PolicyAttachment {
+        crate::classification::PolicyAttachment::parse(POLICY.as_bytes()).expect("policy parses")
+    }
+
     const ATTACHMENT: &str = r#"{
       "schemaVersion": "lekalo/data-classification/v0.4.0",
       "identity": "dev.lekalo.data-classification@0.4.0",
@@ -968,7 +1041,12 @@ mod exposure_tests {
     fn a_public_endpoint_exposing_a_personal_field_is_a_finding() {
         let resolution = resolution();
         let exposures = vec![exposure_of("core.entity.user/email")];
-        let findings = super::exposure_findings(&resolution, &exposures);
+        let findings = super::exposure_findings(
+            &resolution,
+            &policy(),
+            crate::classification::DEFAULT_AS_OF,
+            &exposures,
+        );
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].rule_id, "dataflow.exposed-private-field");
         assert!(findings[0].severity.is_error());
@@ -980,7 +1058,12 @@ mod exposure_tests {
         let mut authenticated = exposure_of("core.entity.user/email");
         authenticated.actor = EndpointActor::Authenticated;
         let unresolved = exposure_of("core.entity.user");
-        let findings = super::exposure_findings(&resolution, &[authenticated, unresolved]);
+        let findings = super::exposure_findings(
+            &resolution,
+            &policy(),
+            crate::classification::DEFAULT_AS_OF,
+            &[authenticated, unresolved],
+        );
         // An authenticated actor never triggers the exposure rule, but
         // a public endpoint whose result subject never resolved is the
         // unsafe-unknown state: unclassified counts as sensitive and
@@ -1021,7 +1104,12 @@ mod exposure_tests {
         .expect("parses");
         let resolution = crate::classification::Resolution::build(&attachment);
         let exposures = vec![exposure_of("core.entity.user/email")];
-        let findings = super::exposure_findings(&resolution, &exposures);
+        let findings = super::exposure_findings(
+            &resolution,
+            &policy(),
+            crate::classification::DEFAULT_AS_OF,
+            &exposures,
+        );
         assert!(findings.is_empty(), "the grant clears the exposure");
     }
 }

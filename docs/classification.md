@@ -67,7 +67,9 @@ Hard rules:
   (`aggregated`, `anonymized`, `consent-obtained`, `pseudonymized`,
   `suppressed`), and an optional expiry (a grant past `expiresAt`
   is a `classification.expired-declassification` finding — dead
-  grants never lower anything). Self-approval rejects. The
+  grants never lower anything, on any surface: validate, inspect,
+  the exposure rule, the consent gate, and the report all share one
+  validity predicate). Self-approval rejects. The
   `declassifyRoles` check is structural: `approvedBy` is an opaque
   reference with no role token, so validation verifies the from-kind
   rule declares roles; binding the approving role to the declared set
