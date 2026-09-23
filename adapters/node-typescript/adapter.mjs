@@ -218849,6 +218849,130 @@ export function boundedDetail(value) {
     .trim()
     .slice(0, 200);
 }
+
+// -------------------------------------------------------------------------
+// Canonical-form matchers (review R-2): exact ports of the core grammar
+// functions in scenario/value.rs. A stored state field that violates the
+// canonical contract must fail the generated matcher \u2014 over-accepting
+// approximations are false passes.
+// -------------------------------------------------------------------------
+
+/**
+ * Real Gregorian month lengths, leap years included (value.rs).
+ *
+ * @param year {number}
+ * @param month {number}
+ * @returns {number}
+ */
+function daysInMonth(year, month) {
+  if (month === 1 || month === 3 || month === 5 || month === 7
+    || month === 8 || month === 10 || month === 12) {
+    return 31;
+  }
+  if (month === 4 || month === 6 || month === 9 || month === 11) {
+    return 30;
+  }
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 29 : 28;
+}
+
+/**
+ * The canonical calendar date with real month and day values
+ * (value.rs canonical_date).
+ *
+ * @param text {string}
+ * @returns {boolean}
+ */
+function canonicalDate(text) {
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(text)) return false;
+  const year = Number(text.slice(0, 4));
+  const month = Number(text.slice(5, 7));
+  const day = Number(text.slice(8, 10));
+  if (!(year >= 1 && year <= 9999) || !(month >= 1 && month <= 12)) return false;
+  return day >= 1 && day <= daysInMonth(year, month);
+}
+
+/**
+ * The canonical decimal spelling (value.rs canonical_decimal): no
+ * negative zero, no leading zeros past one digit, at most one dot, and
+ * a fractional tail that never ends in zero.
+ *
+ * @param text {unknown}
+ * @returns {boolean}
+ */
+export function canonicalDecimal(text) {
+  const value = String(text);
+  if (value === "-0") return false;
+  const digits = (segment) => segment.length > 0 && /^[0-9]+$/.test(segment);
+  const negative = value.startsWith("-");
+  const rest = negative ? value.slice(1) : value;
+  const dot = rest.indexOf(".");
+  const integral = dot === -1 ? rest : rest.slice(0, dot);
+  const fractional = dot === -1 ? null : rest.slice(dot + 1);
+  if (!digits(integral)) return false;
+  if (integral.length > 1 && integral.startsWith("0")) return false;
+  if (integral === "0" && negative) return false;
+  if (fractional === null) return true;
+  return digits(fractional) && !fractional.endsWith("0");
+}
+
+/**
+ * The canonical UTC datetime (value.rs canonical_datetime): real
+ * Gregorian date, \`Z\` suffix only, civil hour/minute/second bounds, an
+ * optional fraction of one to nine digits, no offsets, no leap seconds.
+ *
+ * @param text {unknown}
+ * @returns {boolean}
+ */
+export function canonicalDatetime(text) {
+  const value = String(text);
+  if (value.length < 20 || !value.endsWith("Z")) return false;
+  if (!canonicalDate(value.slice(0, 10))) return false;
+  if (value[10] !== "T") return false;
+  const time = value.slice(11, value.length - 1);
+  const dot = time.indexOf(".");
+  const clock = dot === -1 ? time : time.slice(0, dot);
+  const fraction = dot === -1 ? null : time.slice(dot + 1);
+  const parts = clock.split(":");
+  if (parts.length !== 3) return false;
+  for (const part of parts) {
+    if (part.length !== 2 || !/^[0-9]+$/.test(part)) return false;
+  }
+  const hour = Number(parts[0]);
+  const minute = Number(parts[1]);
+  const second = Number(parts[2]);
+  if (hour > 23 || minute > 59 || second > 59) return false;
+  if (fraction === null) return true;
+  return fraction.length >= 1 && fraction.length <= 9 && /^[0-9]+$/.test(fraction);
+}
+
+/**
+ * The canonical URI (value.rs canonical_uri): 8-2048 characters, a
+ * lowercase scheme with a scheme:// separator, a non-empty remainder,
+ * none of the banned characters, no control characters, and no at-sign
+ * in the authority.
+ *
+ * @param text {unknown}
+ * @returns {boolean}
+ */
+export function canonicalUri(text) {
+  const value = String(text);
+  const characters = [...value].length;
+  if (characters < 8 || characters > 2048) return false;
+  const marker = value.indexOf("://");
+  if (marker === -1) return false;
+  const scheme = value.slice(0, marker);
+  const rest = value.slice(marker + 3);
+  if (scheme.length === 0 || !/^[a-z]/.test(scheme)) return false;
+  if (!/^[a-z0-9+.-]*$/.test(scheme.slice(1))) return false;
+  if (rest.length === 0) return false;
+  // Banned characters (value.rs) plus every Unicode control character.
+  if (/[<>"{}|\\\\^\` ]/.test(value) || /\\p{Cc}/u.test(value)) {
+    return false;
+  }
+  const authorityMatch = rest.search(/[/?#]/);
+  const authorityEnd = authorityMatch === -1 ? rest.length : authorityMatch;
+  return !rest.slice(0, authorityEnd).includes("@");
+}
 `;
 }
 function reporterText(context) {
@@ -219005,6 +219129,9 @@ import { test } from "node:test";
 import { port, resetPort } from "../port.ts";
 import {
   boundedDetail,
+  canonicalDatetime,
+  canonicalDecimal,
+  canonicalUri,
   errorFieldsMatch,
   typedEqual,
 } from "../testkit.ts";
@@ -219282,9 +219409,9 @@ function renderChecks(step, model, stepVars, clockIsos2, observed) {
       const fieldsText = emitValue(exactFields);
       const matchCheck = {
         uuid: "/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(value))",
-        datetime: "/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\\\.\\d+)?Z$/.test(String(value))",
-        uri: '/^\\S+$/.test(String(value)) && !String(value).includes(" //")',
-        decimal: "/^-?(0|[1-9][0-9]*)(\\\\.[0-9]*[1-9])?$/.test(String(value))",
+        datetime: "canonicalDatetime(String(value))",
+        uri: "canonicalUri(String(value))",
+        decimal: "canonicalDecimal(String(value))",
         "non-null": "value !== null && value !== undefined"
       };
       return [

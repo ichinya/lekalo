@@ -163,6 +163,80 @@ test("emission layout, ordering, and the byte-stability contract", () => {
   assert.match(testFile.text, /test\("lekalo:planner\.scenario\.minimal"/);
 });
 
+test("emitted matchers enforce the exact core canonical grammars (review R-2)", async () => {
+  // The emitted testkit helpers must be parity-exact with the core
+  // grammar functions (scenario/value.rs): a value the core rejects is
+  // rejected by the generated matcher, never a false pass.
+  const testkit = emit([]).find((entry) => entry.path.endsWith("testkit.ts"));
+  const js = testkit.text
+    .replace(/: (unknown|string|number|boolean|Record<[^>]*>|any)(\[\])?/g, "")
+    .replace(/\/\*\*[^*]*\*\//gs, "");
+  const helpers = await import(
+    "data:text/javascript;base64," + Buffer.from(js).toString("base64"),
+  );
+  // The core's own refusal vectors (value.rs tests) stay refusals.
+  const rejects = {
+    canonicalDecimal: ["1.50", "-0", "1e5", "01", "-0.5", "00.5", "1.2.3", "abc"],
+    canonicalDatetime: [
+      "2026-09-05T10:20:30+03:00",
+      "2026-09-05T24:00:00Z",
+      "2026-09-05T10:20:60Z",
+      "9999-99-99T99:99:99Z",
+      "2023-02-29T00:00:00Z",
+      "2026-13-01T00:00:00Z",
+      "2026-02-30T00:00:00Z",
+      "2026-09-05T10:20:30.1234567890Z",
+    ],
+    canonicalUri: [
+      "https://user:pass@dev.lekalo/",
+      "not-a-uri",
+      "foo",
+      "A://b",
+      "http://a b",
+    ],
+  };
+  for (const [name, values] of Object.entries(rejects)) {
+    for (const value of values) {
+      assert.equal(
+        helpers[name](value),
+        false,
+        `${name} rejects ${JSON.stringify(value)} like the core`,
+      );
+    }
+  }
+  // The core's accepted spellings stay accepted.
+  const accepts = {
+    canonicalDecimal: ["0", "0.5", "10.25", "-12.05"],
+    canonicalDatetime: [
+      "2026-09-05T10:20:30.5Z",
+      "2024-02-29T00:00:00Z",
+      "2024-12-31T23:59:59.123456789Z",
+    ],
+    canonicalUri: ["https://dev.lekalo/scenario", "https://a.example.com/x"],
+  };
+  for (const [name, values] of Object.entries(accepts)) {
+    for (const value of values) {
+      assert.equal(
+        helpers[name](value),
+        true,
+        `${name} accepts ${JSON.stringify(value)} like the core`,
+      );
+    }
+  }
+  // The emitted test file routes the matchers through the shared
+  // helpers: a scenario with a match:datetime entity_state field emits
+  // the canonicalDatetime call (never an inline approximation regex).
+  const withMatch = load("tests/fixtures/scenario/valid/planner-switch-focus.json");
+  withMatch.irRef.digest = irDigest;
+  const matchFile = emit([map(withMatch).scenarios[0]]).find((entry) =>
+    entry.path.endsWith("switch_focus.test.ts"));
+  assert.match(matchFile.text, /canonicalDatetime\(String\(value\)\)/);
+  assert.doesNotMatch(matchFile.text, /\\d\{4\}-\\d\{2\}-\\d\{2\}T/);
+  assert.match(testkit.text, /canonicalDatetime/);
+  assert.match(testkit.text, /canonicalUri/);
+  assert.match(testkit.text, /canonicalDecimal/);
+});
+
 test("header comment interpolates every field comment-safe (review R-1)", () => {
   // Review R-1: `scenarioVersion`, the runner id, and the binding mode
   // are string-checked adapter-side only — the adapter is the sole
