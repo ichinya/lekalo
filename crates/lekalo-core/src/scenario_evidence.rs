@@ -259,7 +259,12 @@ impl RunRecord {
             }
             let optional_token = |key: &str| -> Result<Option<String>, DiagnosticSet> {
                 match row.get(key) {
-                    None | Some(Json::Null) => Ok(None),
+                    // Review F-12: the wire schema requires step_id and
+                    // observes on every assertion row — absent is refused,
+                    // while an explicit null stays the legal scenario-level
+                    // spelling.
+                    None => Err(run_invalid("assertion-members")),
+                    Some(Json::Null) => Ok(None),
                     Some(value) => Ok(Some(bounded_token(Some(value), "assertion-step")?)),
                 }
             };
@@ -727,6 +732,30 @@ mod tests {
         mutated(&|d| {
             d["profile"] = json!("default");
         });
+    }
+
+    #[test]
+    fn assertion_rows_require_the_schema_members_present() {
+        // Review F-12: the wire schema requires step_id and observes on
+        // every assertion row; the parser refuses what the schema
+        // refuses instead of silently widening the closed shape.
+        let mut absent = valid();
+        absent["assertions"][0]
+            .as_object_mut()
+            .expect("row object")
+            .remove("step_id");
+        assert!(RunRecord::from_value(&absent).is_err());
+        let mut absent = valid();
+        absent["assertions"][0]
+            .as_object_mut()
+            .expect("row object")
+            .remove("observes");
+        assert!(RunRecord::from_value(&absent).is_err());
+        // An explicit null stays the legal scenario-level spelling.
+        let mut nullable = valid();
+        nullable["assertions"][0]["step_id"] = json!(null);
+        nullable["assertions"][0]["observes"] = json!(null);
+        assert!(RunRecord::from_value(&nullable).is_ok());
     }
 
     #[test]
