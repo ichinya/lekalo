@@ -890,7 +890,9 @@ fn plan_tables(
         // are deterministic — `pk_<table>`), and the swap is a
         // destructive rewrite of the table's identity, so it gates.
         if base_table.primary_key() != table.primary_key() {
-            let key_name = StorageName::parse(&format!("pk_{}", table.table()))
+            let old_key_name = StorageName::parse(&format!("pk_{}", base_table.table()))
+                .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "primary-key-name", None))?;
+            let new_key_name = StorageName::parse(&format!("pk_{}", table.table()))
                 .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "primary-key-name", None))?;
             let drop_id = steps.len();
             push_step(
@@ -899,7 +901,7 @@ fn plan_tables(
                 format!(
                     "ALTER TABLE {} DROP CONSTRAINT {};",
                     quote(table.table()),
-                    quote(&key_name)
+                    quote(&old_key_name)
                 ),
                 DataRisk::Destructive,
                 Vec::new(),
@@ -917,7 +919,7 @@ fn plan_tables(
                 format!(
                     "ALTER TABLE {} ADD CONSTRAINT {} PRIMARY KEY ({});",
                     quote(table.table()),
-                    quote(&key_name),
+                    quote(&new_key_name),
                     columns
                 ),
                 DataRisk::Destructive,
@@ -954,7 +956,82 @@ fn plan_tables(
                     table,
                     column,
                 )?;
-                if !column.nullable() && column.default().is_some() {
+                // Handle generated columns: identity adds GENERATED ALWAYS AS IDENTITY,
+                // sequence relies on default (nextval(...)) which is handled below.
+                if column.generated_kind() == Some(GeneratedKind::Identity) {
+                    if !column.nullable() {
+                        // ADD COLUMN ... NOT NULL GENERATED ALWAYS AS IDENTITY
+                        // is not allowed; we need to add nullable, backfill, then
+                        // alter to NOT NULL and add generation.
+                        let add_id = steps.len();
+                        push_step(
+                            steps,
+                            "add_column",
+                            format!(
+                                "ALTER TABLE {} ADD COLUMN {} {};",
+                                quote(table.table()),
+                                quote(column.name()),
+                                storage_type
+                            ),
+                            DataRisk::None,
+                            add_requires,
+                            None,
+                        );
+                        push_step(
+                            steps,
+                            "backfill",
+                            format!(
+                                "UPDATE {} SET {} = DEFAULT WHERE {} IS NULL;",
+                                quote(table.table()),
+                                quote(column.name()),
+                                quote(column.name())
+                            ),
+                            DataRisk::BackfillRequired,
+                            vec![add_id + 1],
+                            None,
+                        );
+                        push_step(
+                            steps,
+                            "set_column_null",
+                            format!(
+                                "ALTER TABLE {} ALTER COLUMN {} SET NOT NULL;",
+                                quote(table.table()),
+                                quote(column.name())
+                            ),
+                            DataRisk::BackfillRequired,
+                            vec![add_id + 2],
+                            None,
+                        );
+                        push_step(
+                            steps,
+                            "set_column_default",
+                            format!(
+                                "ALTER TABLE {} ALTER COLUMN {} SET {};",
+                                quote(table.table()),
+                                quote(column.name()),
+                                "GENERATED ALWAYS AS IDENTITY"
+                            ),
+                            DataRisk::None,
+                            vec![add_id + 3],
+                            None,
+                        );
+                    } else {
+                        // Nullable identity column: add column with generation
+                        push_step(
+                            steps,
+                            "add_column",
+                            format!(
+                                "ALTER TABLE {} ADD COLUMN {} {} GENERATED ALWAYS AS IDENTITY;",
+                                quote(table.table()),
+                                quote(column.name()),
+                                storage_type
+                            ),
+                            DataRisk::None,
+                            add_requires,
+                            None,
+                        );
+                    }
+                } else if !column.nullable() && column.default().is_some() {
                     // The declared default fills existing rows at ADD
                     // time (the fast default), so one step is
                     // executable and no backfill is owed.
@@ -967,7 +1044,7 @@ fn plan_tables(
                             quote(table.table()),
                             quote(column.name()),
                             storage_type,
-                            render_default(default, table.table())?
+                            render_default(default, table.table())?,
                         ),
                         DataRisk::None,
                         add_requires,
@@ -1313,7 +1390,7 @@ fn plan_tables(
                         "add_foreign_key",
                         fk,
                         DataRisk::None,
-                        rename_requires.clone(),
+                        Vec::new(),
                         None,
                     );
                 }
