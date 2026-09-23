@@ -538,8 +538,10 @@ struct ManifestWire {
     // enforced by the JSON Schema gate
     platforms: Option<Vec<String>>,
     integrity: IntegrityWire,
+    #[allow(dead_code)] // enforced-by-existence here; #89 reads the canonical JSON
     permissions: PermissionsWire,
     hooks: Vec<Json>,
+    #[allow(dead_code)] // enforced-by-existence here; AIFHub imports read it
     conformance: ConformanceWire,
     status: String,
     #[serde(default)]
@@ -693,6 +695,7 @@ struct ConformanceWire {
     #[allow(dead_code)]
     badge: Json,
     #[serde(rename = "suiteRegistry")]
+    #[allow(dead_code)] // validated-by-existence; projected by inventory docs
     suite_registry: String,
 }
 

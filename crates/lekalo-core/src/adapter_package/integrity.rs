@@ -122,7 +122,7 @@ fn package_root_bytes(
     let mut parts = Vec::with_capacity(manifest.files().len());
     for file in manifest.files() {
         let path = root.join(file.path().replace('/', std::path::MAIN_SEPARATOR_STR));
-        let mut bytes = std::fs::read(&path).map_err(|_| PackageFailure::ChecksumMismatch {
+        let bytes = std::fs::read(&path).map_err(|_| PackageFailure::ChecksumMismatch {
             domain: "file".to_owned(),
             identity: file.path().to_owned(),
         })?;
@@ -364,14 +364,6 @@ mod committed_exemplar_tests {
             include_bytes!("../../../../adapters/node-typescript/adapter.manifest.json");
         let document = crate::adapter_package::ManifestDocument::from_bytes(manifest_source)
             .expect("committed manifest parses");
-        for file in document.files() {
-            let bytes = include_bytes!(concat!(
-                "../../../../adapters/node-typescript/",
-                "adapter.mjs"
-            ));
-            let _ = bytes;
-            break; // the only payload file; the real copy happens below
-        }
         // Copy the committed payload into the temp package root.
         let payload = include_bytes!("../../../../adapters/node-typescript/adapter.mjs");
         std::fs::write(root.join("adapter.mjs"), payload).expect("payload");

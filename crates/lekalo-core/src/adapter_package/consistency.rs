@@ -14,7 +14,6 @@
 //! claim of which capability ids exist.
 
 use crate::adapter_package::manifest::ManifestDocument;
-use crate::adapter_package::types::PackageFailure;
 use crate::target_protocol::discovery::DiscoveredAdapter;
 
 /// Why the describe outcome contradicts the manifest.
