@@ -133,6 +133,29 @@ for (const [id, code, statuses] of expectedClassificationRules) {
   if (JSON.stringify(entry.allowed_statuses) !== JSON.stringify(statuses)) fail("classification-status-drift", id);
 }
 
+// 4b. The report schema's gate-reason enum is exactly the GateReason
+//     vocabulary the analyzer can produce (r4 F-4: the removed
+//     `low-confidence`/`inputs-incomplete` arms stay out — the enum is
+//     not a superset implying coverage that does not exist).
+const reportSchema = read("contracts/data-flow-report.schema.v0.4.0.json");
+const gateReasonEnum =
+  reportSchema.$defs?.gate?.properties?.reason?.enum;
+const expectedGateReasons = [
+  "not-required",
+  "destination-declared",
+  "approval-present",
+  "missing-destination",
+  "missing-approval",
+  "destination-forbidden",
+  "unknown-flow",
+  "sink-ceiling-exceeded",
+  "unclassified-subject",
+];
+if (!gateReasonEnum) fail("report-schema-gate-enum-missing", "gate.properties.reason.enum");
+if (JSON.stringify(gateReasonEnum) !== JSON.stringify(expectedGateReasons)) {
+  fail("report-schema-gate-enum-drift", gateReasonEnum);
+}
+
 // 5. The dataflow family is exactly the nine LEK-DFL rules; the
 //    observed-incompleteness signal is an error-severity finding whose
 //    project-wide denial rides `inputsComplete: false` (review r2,

@@ -257,10 +257,8 @@
             "missing-approval",
             "destination-forbidden",
             "unknown-flow",
-            "low-confidence",
             "sink-ceiling-exceeded",
-            "unclassified-subject",
-            "inputs-incomplete"
+            "unclassified-subject"
           ]
         }
       }
