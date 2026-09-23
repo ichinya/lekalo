@@ -1667,6 +1667,17 @@ export function scanOperation(context) {
   // contract's native-test slot). The join with scenario bindings
   // happens in the scenario verify; here we only record what was found.
   const lekaloIdsByModule = lekaloTestIdsByModule(index.tests);
+  // Dropped claims (the bounded t budget) surface as scan uncertainty —
+  // a subsequent binding-missing stays honest but is no longer opaque
+  // (review F-5).
+  for (const module of lekaloIdsByModule.truncated) {
+    index.anyUncertainty.push({
+      path: module,
+      kind: "test-binding-truncated",
+      detail: "lekalo-id-budget",
+      line: null,
+    });
+  }
   const moduleSeen = new Set();
   for (const symbol of index.symbols) {
     if (symbol.memberOf !== null) continue; // members ride their owner
@@ -1728,10 +1739,14 @@ export function scanOperation(context) {
 /**
  * The scenario-identity test titles of one scan, grouped by module:
  * bounded to 8 ids per module and 200 name characters per binding (the
- * observed `t` member's own bounds), sorted, deduplicated.
+ * observed `t` member's own bounds), sorted, deduplicated. Returns
+ * `{ byModule, truncated }` — `truncated` names every module whose id
+ * list was clipped, so the scanner surfaces dropped claims as scan
+ * uncertainty instead of silence (review F-5).
  */
 export function lekaloTestIdsByModule(tests) {
   const byModule = new Map();
+  const truncated = [];
   for (const test of tests ?? []) {
     if (typeof test?.name !== "string" || typeof test?.path !== "string") continue;
     if (!test.name.startsWith("lekalo:")) continue;
@@ -1739,7 +1754,10 @@ export function lekaloTestIdsByModule(tests) {
     if (id.length === 0 || id.length > 128) continue;
     const bucket = byModule.get(test.path) ?? [];
     if (bucket.includes(id)) continue;
-    if (bucket.length >= 8) continue;
+    if (bucket.length >= 8) {
+      if (!truncated.includes(test.path)) truncated.push(test.path);
+      continue;
+    }
     bucket.push(id);
     byModule.set(test.path, bucket);
   }
@@ -1747,9 +1765,11 @@ export function lekaloTestIdsByModule(tests) {
     ids.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
     while (ids.map((id) => id.length + 8).reduce((sum, n) => sum + n, 0) > 200) {
       ids.pop();
+      if (!truncated.includes(module)) truncated.push(module);
     }
   }
-  return byModule;
+  truncated.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  return { byModule, truncated };
 }
 
 /** The semantic id proposal of one symbol: package-scoped dotted name. */

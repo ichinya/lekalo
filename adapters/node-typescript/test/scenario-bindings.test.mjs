@@ -93,7 +93,11 @@ test("an id claimed by two tests is ambiguous, never silently resolved", () => {
   assert.equal(findings[0].detail, "claimed-by-2-tests");
 });
 
-test("one test claiming several scenario identities is ambiguous", () => {
+test("a shared native test file claiming several ids joins cleanly (F-5)", () => {
+  // One native test file may legitimately cover several scenarios; the
+  // join accepts a record whose claimed set CONTAINS the bound id
+  // (review F-5). Ambiguity remains only when several different files
+  // claim the same id.
   const scenario = { bindings: [binding("planner.scenario.focus_happy")] };
   const index = indexDocument([
     {
@@ -103,9 +107,7 @@ test("one test claiming several scenario identities is ambiguous", () => {
       fingerprint: FINGERPRINT,
     },
   ]);
-  const findings = joinCheckedBindings(scenario, index);
-  assert.equal(findings[0].code, BINDING_AMBIGUOUS);
-  assert.equal(findings[0].detail, "test-claims-several-ids");
+  assert.deepEqual(joinCheckedBindings(scenario, index), []);
 });
 
 test("a stale evidence digest is a mismatch, never a silent rewrite", () => {
@@ -151,21 +153,45 @@ test("an absent observed index is legal absence: the join says nothing", () => {
 });
 
 test("the scanner groups lekalo test titles per module with bounds", () => {
-  const grouped = lekaloTestIdsByModule([
+  const { byModule, truncated } = lekaloTestIdsByModule([
     { path: "src/tests/focus.test.ts", name: "lekalo:planner.scenario.focus_happy" },
     { path: "src/tests/focus.test.ts", name: "lekalo:planner.scenario.focus_error" },
     { path: "src/tests/focus.test.ts", name: "lekalo:planner.scenario.focus_happy" },
     { path: "src/tests/other.test.ts", name: "not-a-lekalo-title" },
     { path: "src/tests/edge.test.ts", name: "lekalo:" },
   ]);
-  assert.deepEqual(grouped.get("src/tests/focus.test.ts"), [
+  assert.deepEqual(byModule.get("src/tests/focus.test.ts"), [
     "planner.scenario.focus_error",
     "planner.scenario.focus_happy",
   ]);
-  assert.equal(grouped.has("src/tests/other.test.ts"), false);
-  assert.equal(grouped.has("src/tests/edge.test.ts"), false);
+  assert.equal(byModule.has("src/tests/other.test.ts"), false);
+  assert.equal(byModule.has("src/tests/edge.test.ts"), false);
+  assert.deepEqual(truncated, [], "nothing clips in this vector");
 });
 
 test("the observed index path pin holds", () => {
   assert.equal(OBSERVED_INDEX_PATH, ".lekalo/import/observed/index.json");
+});test('a shared native test file claiming several ids joins cleanly (F-5)', () => {
+  const scenario = { bindings: [binding('planner.scenario.focus_happy')] };
+  const index = indexDocument([
+    {
+      id: 'src/tests/both.test.ts#lekalo:planner.scenario.focus_happy,lekalo:planner.scenario.focus_error',
+      symbol: 'planner.focus_task',
+      path: 'src/tests/both.test.ts',
+      fingerprint: FINGERPRINT,
+    },
+  ]);
+  assert.deepEqual(joinCheckedBindings(scenario, index), []);
 });
+
+test('the scanner surfaces truncated id budgets as uncertainty (F-5)', () => {
+  const { byModule, truncated } = lekaloTestIdsByModule(
+    Array.from({ length: 10 }, (_, index) => ({
+      path: 'src/tests/crowded.test.ts',
+      name: `lekalo:planner.s.c${index}`,
+    })),
+  );
+  assert.equal(byModule.get('src/tests/crowded.test.ts').length, 8, 'the budget caps at 8');
+  assert.deepEqual(truncated, ['src/tests/crowded.test.ts'], 'the clip is named, not silent');
+});
+

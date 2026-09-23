@@ -215257,6 +215257,14 @@ function scanOperation(context) {
   }
   const entries = [];
   const lekaloIdsByModule = lekaloTestIdsByModule(index.tests);
+  for (const module of lekaloIdsByModule.truncated) {
+    index.anyUncertainty.push({
+      path: module,
+      kind: "test-binding-truncated",
+      detail: "lekalo-id-budget",
+      line: null
+    });
+  }
   const moduleSeen = /* @__PURE__ */ new Set();
   for (const symbol of index.symbols) {
     if (symbol.memberOf !== null) continue;
@@ -215316,6 +215324,7 @@ function scanOperation(context) {
 }
 function lekaloTestIdsByModule(tests) {
   const byModule = /* @__PURE__ */ new Map();
+  const truncated = [];
   for (const test of tests ?? []) {
     if (typeof test?.name !== "string" || typeof test?.path !== "string") continue;
     if (!test.name.startsWith("lekalo:")) continue;
@@ -215323,7 +215332,10 @@ function lekaloTestIdsByModule(tests) {
     if (id.length === 0 || id.length > 128) continue;
     const bucket = byModule.get(test.path) ?? [];
     if (bucket.includes(id)) continue;
-    if (bucket.length >= 8) continue;
+    if (bucket.length >= 8) {
+      if (!truncated.includes(test.path)) truncated.push(test.path);
+      continue;
+    }
     bucket.push(id);
     byModule.set(test.path, bucket);
   }
@@ -215331,9 +215343,11 @@ function lekaloTestIdsByModule(tests) {
     ids.sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
     while (ids.map((id) => id.length + 8).reduce((sum, n) => sum + n, 0) > 200) {
       ids.pop();
+      if (!truncated.includes(module)) truncated.push(module);
     }
   }
-  return byModule;
+  truncated.sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+  return { byModule, truncated };
 }
 function semanticProposalFor(symbol, index) {
   const pkg = index.packages.find((candidate) => symbol.module === candidate.root || symbol.module.startsWith(candidate.root + "/"));
@@ -219589,14 +219603,6 @@ function joinCheckedBindings(scenarioDocument, indexDocument) {
       continue;
     }
     const record = claiming[0];
-    if (record.ids.length > 1) {
-      findings.push({
-        code: BINDING_AMBIGUOUS,
-        symbol: testId,
-        detail: "test-claims-several-ids"
-      });
-      continue;
-    }
     if (typeof binding.evidenceDigest === "string" && binding.evidenceDigest.length > 0 && record.fingerprint !== null && binding.evidenceDigest !== record.fingerprint) {
       findings.push({
         code: BINDING_MISMATCH,

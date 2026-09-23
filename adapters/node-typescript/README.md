@@ -182,7 +182,13 @@ joined it advertises the reviewed capability id `verify.scenarios` as
   `mode: checked` bindings against the observed index (`lekalo:<id>`
   title convention) with `scenario.binding-missing` /
   `-ambiguous` / `-mismatch` findings — reported, never silently
-  rewritten.
+  rewritten. The join accepts a native test whose claimed set contains
+  the bound id, so one shared native test file may cover several
+  scenarios; ambiguity remains only when several different files claim
+  the same id. The per-file `lekalo:` id budget (8 ids, 200 name
+  characters) is enforced by the scanner, and a clipped id list
+  surfaces as scan uncertainty (`test-binding-truncated`), never as
+  silence.
 - evidence: each run writes one canonical run-record document
   (`lekalo/scenario-run/v0.4.0`) into the adjudicated ingest home
   `.lekalo/import/scenario-runs/`; `lekalo verify` ingests them into

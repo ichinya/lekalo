@@ -284,16 +284,11 @@ export function joinCheckedBindings(scenarioDocument, indexDocument) {
       continue;
     }
     const record = claiming[0];
-    if (record.ids.length > 1) {
-      // One native test claiming several scenario identities stays
-      // unresolved — the existing binding-proposal semantics.
-      findings.push({
-        code: BINDING_AMBIGUOUS,
-        symbol: testId,
-        detail: "test-claims-several-ids",
-      });
-      continue;
-    }
+    // Review F-5: one native test file may legitimately cover several
+    // scenarios (one shared fixture setup, one before/after harness), so
+    // a record whose claimed set CONTAINS the bound id joins cleanly —
+    // the constraint "one lekalo test per file" is gone. Ambiguity
+    // remains exactly when several DIFFERENT files claim the same id.
     if (typeof binding.evidenceDigest === "string"
       && binding.evidenceDigest.length > 0
       && record.fingerprint !== null
