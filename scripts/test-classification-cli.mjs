@@ -348,6 +348,48 @@ const policy = (fixture) => join(fixture, "lekalo/classification-policy.json");
   if (liveFlag.code !== 0) fail("as-of-wire-shape", liveFlag);
 }
 
+// 6g. The suppression regression (review r4, F-5): the fixture now
+// classifies `planner.focus_task` `personal`, so its expired
+// personal→public grant GENUINELY applies to the exposed subject —
+// default as-of must deny with both findings (fold-in AND
+// non-suppression), while the same surface before expiry must pass
+// (a live grant suppresses). Proves both halves the r2/r3 majors
+// rode on.
+{
+  const endpointArgs = [
+    "dataflow",
+    "report",
+    "--attachment",
+    attachment(EXPIRED),
+    "--policy",
+    policy(EXPIRED),
+    "--endpoint",
+    "planner.api_focus:public",
+    "--json",
+  ];
+  const expiredRun = run(endpointArgs, EXPIRED);
+  if (expiredRun.code !== 3) fail("suppression-expired-exit", expiredRun);
+  const expiredDoc = JSON.parse(expiredRun.stdout);
+  const findings = (expiredDoc.payload?.report?.findings ?? []).map(
+    (finding) => `${finding.ruleId}:${finding.subject}`,
+  );
+  if (!findings.includes("dataflow.exposed-private-field:planner.focus_task")) {
+    fail("suppression-expired-exposure", findings);
+  }
+  if (
+    !findings.includes(
+      "classification.expired-declassification:planner.focus_task",
+    )
+  ) {
+    fail("suppression-expired-fold", findings);
+  }
+  const liveRun = run([...endpointArgs, "--as-of", "2019-01-01T00:00:00Z"], EXPIRED);
+  if (liveRun.code !== 0) fail("suppression-live-exit", liveRun);
+  if (JSON.parse(liveRun.stdout).report.verdict !== "pass") {
+    fail("suppression-live-verdict", liveRun.stdout);
+  }
+}
+
 // 7. Non-disclosure byte-scan: the sentinel secret value never appears
 // in any committed classification fixture artifact or in any CLI output
 // over them. Classification metadata flows; values never do.

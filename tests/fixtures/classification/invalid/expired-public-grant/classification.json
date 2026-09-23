@@ -60,6 +60,10 @@
     {
       "subject": "notify.user",
       "kind": "personal"
+    },
+    {
+      "subject": "planner.focus_task",
+      "kind": "personal"
     }
   ],
   "declassifications": [

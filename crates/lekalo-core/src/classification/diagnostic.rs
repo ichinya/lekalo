@@ -54,6 +54,10 @@ pub const CUSTODY_PROJECT: &str = "classification.custody-project";
 pub const CUSTODY_MODEL: &str = "classification.custody-model";
 /// The registered rule for a stale or foreign `irRef` pin.
 pub const CUSTODY_IR: &str = "classification.custody-ir";
+/// The registered rule for a grant whose `approvedBy` review reference
+/// is missing or violates the review-reference grammar (r4 F-5: its
+/// own greppable id, not the generic `classification.unknown-kind`).
+pub const MALFORMED_REVIEW_REF: &str = "classification.malformed-review-ref";
 
 /// Why one diagnostic could not be finalized (collapsed to the invariant
 /// set by the caller).
@@ -225,6 +229,15 @@ pub fn custody_ir(detail: &str) -> DiagnosticSet {
     set(Status::Invalid, vec![diagnostic(CUSTODY_IR, detail, None)])
 }
 
+/// One grant whose `approvedBy` review reference is missing or
+/// violates the review-reference grammar (r4 F-5).
+pub fn malformed_review_ref(detail: &str) -> DiagnosticSet {
+    set(
+        Status::Invalid,
+        vec![diagnostic(MALFORMED_REVIEW_REF, detail, None)],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,6 +261,7 @@ mod tests {
             custody_project("probe"),
             custody_model("probe"),
             custody_ir("probe"),
+            malformed_review_ref("probe"),
         ] {
             assert_eq!(set.as_slice().len(), 1);
             assert!(set.as_slice()[0].id().starts_with("classification."));
@@ -287,6 +301,7 @@ mod tests {
             CUSTODY_PROJECT,
             CUSTODY_MODEL,
             CUSTODY_IR,
+            MALFORMED_REVIEW_REF,
         ] {
             let entry = registry.entry(id).unwrap_or_else(|| panic!("{id}"));
             assert!(entry.allows_status(Status::Invalid), "{id}");

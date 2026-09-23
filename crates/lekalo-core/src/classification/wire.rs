@@ -618,9 +618,9 @@ fn declassifications(json: &[Json]) -> Result<Vec<Declassification>, DiagnosticS
             object
                 .get("approvedBy")
                 .and_then(Json::as_str)
-                .ok_or_else(|| diagnostic::document_invalid("approved-by", None))?,
+                .ok_or_else(|| diagnostic::malformed_review_ref("approved-by"))?,
         )
-        .map_err(|_| diagnostic::document_invalid("approved-by", None))?;
+        .map_err(|_| diagnostic::malformed_review_ref("approved-by"))?;
         let justification = BoundedText::parse(
             object
                 .get("justification")

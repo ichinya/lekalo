@@ -631,6 +631,44 @@ mod tests {
         assert_ne!(set.as_slice()[0].id(), "classification.unknown-kind");
     }
 
+    /// The dedicated review-reference refusal id (r4 F-5): a grant
+    /// whose `approvedBy` violates the review-reference grammar (here:
+    /// the `@` a `ReviewRef` forbids) refuses as
+    /// `classification.malformed-review-ref` — never the generic
+    /// `classification.unknown-kind` (LEK-CLS-001).
+    #[test]
+    fn a_malformed_review_ref_refuses_under_its_dedicated_id() {
+        let model = format!("sha256:{}", "a".repeat(64));
+        let ir = format!("sha256:{}", "b".repeat(64));
+        let json = format!(
+            r#"{{
+      "schemaVersion": "lekalo/data-classification/v0.4.0",
+      "identity": "dev.lekalo.data-classification@0.4.0",
+      "attachmentRevision": "1.0.0",
+      "projectId": "planner",
+      "modelRef": {{"modelVersion": "0.2.16", "digest": "{model}"}},
+      "irRef": {{"irVersion": "0.2.16", "digest": "{ir}"}},
+      "defaults": {{"profile": "default", "unclassifiedFields": "internal", "unclassifiedPayloads": "confidential"}},
+      "classifications": [],
+      "declassifications": [{{
+        "id": "grant.core.email-public@1.0.0",
+        "subject": "notify.user_id",
+        "fromKind": "personal",
+        "toKind": "public",
+        "approvedBy": "review@2025-001",
+        "justification": "Aggregated analytics only."
+      }}],
+      "openQuestions": []
+    }}"#
+        );
+        let set = Attachment::parse(json.as_bytes()).expect_err("refuses");
+        assert_eq!(set.as_slice().len(), 1);
+        assert_eq!(
+            set.as_slice()[0].id(),
+            "classification.malformed-review-ref"
+        );
+    }
+
     /// An empty compilation (the grant checks run over the attachment
     /// and policy alone).
     fn empty_project() -> &'static CompiledProject {

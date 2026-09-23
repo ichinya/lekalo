@@ -730,6 +730,26 @@
       "lifecycle": "active"
     },
     {
+      "id": "classification.malformed-review-ref",
+      "code": "LEK-CLS-016",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.malformed-review-ref",
+      "default_message": "A declassification grant carries no usable approvedBy review reference.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "classification.missing-approval",
       "code": "LEK-CLS-006",
       "category": "semantic",
