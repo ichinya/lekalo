@@ -810,6 +810,142 @@ fn a_dropped_column_owns_its_check_and_index_drops() {
 }
 
 #[test]
+fn a_renamed_table_rederives_its_self_fk_once() {
+    // The RLS policy name embeds the table name: a rename drops the
+    // old pol_<oldtable>_tenant and creates pol_<table>_tenant. The
+    // rename re-derivation covers the table's foreign keys — a
+    // self-referencing FK included — so the FK pass never double-emits
+    // the same constraint.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        for table in projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+        {
+            if table.get("table").and_then(serde_json::Value::as_str) == Some("task") {
+                table["table"] = serde_json::Value::String("todo".to_owned());
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    // The self-FK is added exactly once under the fresh name.
+    let self_fk_adds = plan
+        .steps()
+        .iter()
+        .filter(|step| {
+            step.kind() == "add_foreign_key" && step.statement().contains("fk_todo_parent_task_id")
+        })
+        .count();
+    assert_eq!(
+        self_fk_adds, 1,
+        "the self-referencing FK is added exactly once"
+    );
+    // No forward requires edges anywhere in the plan.
+    for step in plan.steps() {
+        for dependency in step.requires() {
+            assert!(
+                dependency < &step.id(),
+                "step {} ({}) requires a later step {}: the graph contradicts the order",
+                step.id(),
+                step.kind(),
+                dependency
+            );
+        }
+    }
+}
+
+#[test]
+fn a_renamed_table_keeps_its_column_diff() {
+    // A rename sharing the diff with column work must not swallow the
+    // column diff: a dropped field plans its drop_column against the
+    // post-rename name, and a new sequence column gets add_column (not
+    // just create_sequence + OWNED BY a column that was never added).
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    // Rename focus_session to session and drop the minutes field.
+    let entity = candidate_value
+        .get_mut("entities")
+        .and_then(|entities| entities.as_array_mut())
+        .and_then(|entities| {
+            entities.iter_mut().find(|entity| {
+                entity.get("entityKey").and_then(serde_json::Value::as_str) == Some("focus_session")
+            })
+        })
+        .expect("focus_session entity");
+    entity["fields"]
+        .as_array_mut()
+        .expect("fields")
+        .retain(|field| field.get("field").and_then(serde_json::Value::as_str) != Some("minutes"));
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        for table in projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+        {
+            if table.get("table").and_then(serde_json::Value::as_str) == Some("focus_session") {
+                table["table"] = serde_json::Value::String("session".to_owned());
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    let drop = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "drop_column" && step.statement().contains("\"minutes\""))
+        .expect("the dropped field plans its column drop");
+    assert!(
+        drop.statement().contains("\"session\""),
+        "the column drop targets the post-rename name"
+    );
+}
+
+#[test]
 fn a_renamed_table_renames_its_sequence_and_a_dropped_column_retires_it() {
     // The sequence name derives from the table and column: a renamed
     // table renames its sequence to the fresh deterministic name, and

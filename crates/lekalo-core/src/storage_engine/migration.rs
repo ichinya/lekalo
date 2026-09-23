@@ -300,7 +300,7 @@ pub fn plan(
             );
         }
     }
-    let table_ids = plan_tables(
+    let (table_ids, renamed_tables) = plan_tables(
         &mut steps,
         &derived_base,
         &derived_candidate,
@@ -347,7 +347,13 @@ pub fn plan(
     // Foreign keys and checks after their tables. Checks skip the new
     // tables: their create_table statements already carry every
     // declared and derived constraint inline.
-    plan_foreign_keys(&mut steps, &derived_base, &derived_candidate, &table_ids)?;
+    plan_foreign_keys(
+        &mut steps,
+        &derived_base,
+        &derived_candidate,
+        &table_ids,
+        &renamed_tables,
+    )?;
     plan_checks(&mut steps, base, candidate)?;
     plan_enum_checks(&mut steps, profile, base, candidate)?;
     plan_indexes(&mut steps, &derived_base, &derived_candidate, &table_ids)?;
@@ -526,14 +532,30 @@ fn push_step(
 /// step index (0-based, pre-renumber) of each surviving table's create
 /// or existing declaration, keyed by table name, for FK/index
 /// dependency wiring.
+/// The per-table wiring the table plan hands to the dependency
+/// passes: each surviving table's create/declaration step position
+/// (for FK/index dependencies), and the entity tables whose rename
+/// already re-derived their constraints (so the FK pass skips them),
+/// keyed by entity with the pre-rename table name.
+type TablePlan = (
+    std::collections::BTreeMap<String, usize>,
+    std::collections::BTreeMap<String, StorageName>,
+);
+
 fn plan_tables(
     steps: &mut Vec<Step>,
     base: &DerivedProjection,
     candidate: &DerivedProjection,
     profile: &StorageEngineAttachment,
     candidate_attachment: &StorageProjectionAttachment,
-) -> Result<std::collections::BTreeMap<String, usize>, DiagnosticSet> {
+) -> Result<TablePlan, DiagnosticSet> {
     let mut table_ids = std::collections::BTreeMap::new();
+    // Entity tables the rename block re-derived constraints for, keyed
+    // by entity: the FK pass must skip their foreign keys (already
+    // added under the fresh names, including self-references) or it
+    // would double-emit the same constraint.
+    let mut renamed_tables: std::collections::BTreeMap<String, StorageName> =
+        std::collections::BTreeMap::new();
     // Sequences exist before the tables that use them: every new
     // generated sequence column creates its deterministic sequence —
     // the exact object its default and the ownership pass reference.
@@ -660,9 +682,16 @@ fn plan_tables(
         let Some(base_table) = base.table(table.entity()) else {
             continue;
         };
-        if base_table.table() != table.table() {
-            // A rename is drop + create in v1: the declared risk of a
-            // table rename is destructive, never guessed history.
+        // The rename marker: a surviving table under a new name. The
+        // rename steps below all target the post-rename name, and the
+        // column-level diff further down runs for renamed tables
+        // exactly as for same-name tables — a rename sharing the diff
+        // with column work (a dropped field, a new generated column)
+        // must not swallow the column diff.
+        let renamed = base_table.table() != table.table();
+        if renamed {
+            // A rename is ALTER TABLE RENAME TO: the declared risk of
+            // a table rename is destructive, never guessed history.
             push_step(
                 steps,
                 "rename_table",
@@ -676,11 +705,18 @@ fn plan_tables(
                 None,
             );
             // The derived constraint names embed the table name, so
+            // The derived constraint names embed the table name, so
             // the renamed table's foreign keys drop under their old
             // names and re-add under the fresh deterministic ones —
-            // the migrated schema never keeps a stale `fk_<oldtable>_
-            // *` a fresh render would not produce.
-            let mut rename_requires = Vec::new();
+            // the migrated schema never keeps a stale old-table FK
+            // name a fresh render would not produce. The re-adds are
+            // independent statements: the fresh names do not exist
+            // until the add creates them, and the old-name drops sort
+            // behind the rank-0 steps — so the re-adds claim no
+            // requires edge. A forward edge (add depends on a later
+            // drop id) would contradict the published dependency
+            // order; executing the adds first is also what makes them
+            // succeed.
             for foreign_key in table.foreign_keys() {
                 let old_name = StorageName::parse(&format!(
                     "fk_{}_{}",
@@ -688,7 +724,6 @@ fn plan_tables(
                     foreign_key.column()
                 ))
                 .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None))?;
-                let drop_id = steps.len();
                 push_step(
                     steps,
                     "drop_constraint",
@@ -701,7 +736,6 @@ fn plan_tables(
                     Vec::new(),
                     None,
                 );
-                rename_requires.push(drop_id + 1);
             }
             for index in table.indexes() {
                 if index.name().is_some() {
@@ -710,7 +744,6 @@ fn plan_tables(
                     continue;
                 }
                 let old_name = super::postgres::ddl::derived_index_name(base_table.table(), index)?;
-                let drop_id = steps.len();
                 push_step(
                     steps,
                     "drop_index",
@@ -719,7 +752,6 @@ fn plan_tables(
                     Vec::new(),
                     None,
                 );
-                rename_requires.push(drop_id + 1);
             }
             for foreign_key in table.foreign_keys() {
                 let referenced = primary_keys
@@ -746,7 +778,7 @@ fn plan_tables(
                         foreign_key.on_delete().key(),
                     ),
                     DataRisk::None,
-                    rename_requires.clone(),
+                    Vec::new(),
                     None,
                 );
             }
@@ -776,11 +808,19 @@ fn plan_tables(
                         columns
                     ),
                     DataRisk::None,
-                    rename_requires.clone(),
+                    Vec::new(),
                     None,
                 );
             }
-            continue;
+            // The rename re-derivation above covers this table's
+            // foreign keys entirely — including self-references, whose
+            // referenced target changed with the table's name — so the
+            // FK pass must not re-diff them and double-emit the same
+            // constraint. The base name is remembered for the pass.
+            renamed_tables.insert(
+                table.entity().as_str().to_owned(),
+                base_table.table().to_owned(),
+            );
         }
         table_ids
             .entry(table.table().as_str().to_owned())
@@ -947,10 +987,13 @@ fn plan_tables(
                 column,
             )?;
             // A changed generation kind has no deterministic v1
-            // transition (sequence→identity would need SET GENERATED
-            // plus the owned sequence's retirement, and the step
-            // vocabulary carries no sequence drop); it refuses with the
-            // registered rule instead of silently emitting nothing.
+            // transition: sequence→identity would need SET GENERATED
+            // plus retiring the owned sequence's default and ownership
+            // before any drop, and identity→sequence would need the
+            // column's existing values re-based onto a new sequence —
+            // neither is representable without inventing semantics. It
+            // refuses with the registered rule instead of silently
+            // emitting nothing.
             if base_column.generated_kind() != column.generated_kind() {
                 return Err(diagnostic::rule_invalid(
                     RENDER_UNSUPPORTED,
@@ -1155,8 +1198,6 @@ fn plan_tables(
                 // A pure rename keeps the table: the declared risk of
                 // a table rename is destructive, never guessed
                 // history.
-                // A rename is drop + create: the declared risk of a
-                // table rename is destructive, never guessed history.
                 push_step(
                     steps,
                     "rename_table",
@@ -1279,7 +1320,7 @@ fn plan_tables(
             );
         }
     }
-    Ok(table_ids)
+    Ok((table_ids, renamed_tables))
 }
 
 /// Render one join table's create plus its two join foreign keys —
@@ -1743,6 +1784,7 @@ fn plan_foreign_keys(
     base: &DerivedProjection,
     candidate: &DerivedProjection,
     table_ids: &std::collections::BTreeMap<String, usize>,
+    renamed_tables: &std::collections::BTreeMap<String, StorageName>,
 ) -> Result<(), DiagnosticSet> {
     // The primary key of every candidate table, by table name: the
     // deterministic FK target column.
@@ -1758,6 +1800,14 @@ fn plan_foreign_keys(
         .collect();
     for table in candidate.tables() {
         let base_table = base.table(table.entity());
+        // A renamed table's foreign keys were already re-derived under
+        // the fresh names by the rename block — including
+        // self-references, whose referenced target changed with the
+        // table's name. Re-diffing them here would double-emit the
+        // same constraint (add, then drop, then add again).
+        if renamed_tables.contains_key(table.entity().as_str()) {
+            continue;
+        }
         for foreign_key in table.foreign_keys() {
             let base_foreign_key = base_table.and_then(|base| {
                 base.foreign_keys()
