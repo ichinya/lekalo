@@ -148,9 +148,9 @@ pub fn run(
                 if row.quarantined {
                     entry.quarantined = true;
                 }
-                entry.auto_selectable = crate::adapter_package::TrustLevel::parse(&row.trust)
-                    .map(|level| level.auto_selectable())
-                    .unwrap_or(false);
+                let level = crate::adapter_package::TrustLevel::parse(&row.trust)
+                    .unwrap_or(crate::adapter_package::TrustLevel::Community);
+                entry.auto_selectable = matches!(level, crate::adapter_package::TrustLevel::Builtin | crate::adapter_package::TrustLevel::Verified | crate::adapter_package::TrustLevel::LocalDevelopment);
             }
         }
         if let Some(posture) = map.get(&discovered.adapter.id) {
