@@ -334,14 +334,10 @@ pub enum GateReason {
     DestinationForbidden,
     /// `unknown-flow`.
     UnknownFlow,
-    /// `low-confidence`.
-    LowConfidence,
     /// `sink-ceiling-exceeded`.
     SinkCeilingExceeded,
     /// `unclassified-subject`.
     UnclassifiedSubject,
-    /// `inputs-incomplete`.
-    InputsIncomplete,
 }
 
 impl GateReason {

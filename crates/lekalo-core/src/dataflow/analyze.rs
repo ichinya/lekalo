@@ -575,10 +575,8 @@ const fn gate_rule_of(reason: GateReason) -> Option<&'static str> {
         GateReason::MissingApproval => Some("dataflow.missing-approval"),
         GateReason::DestinationForbidden => Some("dataflow.destination-forbidden"),
         GateReason::UnknownFlow => Some("dataflow.unknown-flow"),
-        GateReason::LowConfidence => Some("dataflow.low-confidence-sensitive"),
         GateReason::SinkCeilingExceeded => Some("classification.sink-ceiling-exceeded"),
         GateReason::UnclassifiedSubject => Some("classification.unclassified-sensitive-sink"),
-        GateReason::InputsIncomplete => Some("dataflow.observed-incomplete"),
         GateReason::NotRequired | GateReason::DestinationDeclared | GateReason::ApprovalPresent => {
             None
         }
@@ -690,13 +688,6 @@ fn gate_outcome(
             required: true,
             satisfied: false,
             reason: GateReason::UnclassifiedSubject,
-        });
-    }
-    if !inputs.inputs_declared_complete() && confidence != Confidence::High {
-        return Some(GateOutcome {
-            required: true,
-            satisfied: false,
-            reason: GateReason::LowConfidence,
         });
     }
     if sink_kind.is_policy_sink() {
@@ -846,20 +837,12 @@ mod tests {
             ),
             (GateReason::UnknownFlow, Some("dataflow.unknown-flow")),
             (
-                GateReason::LowConfidence,
-                Some("dataflow.low-confidence-sensitive"),
-            ),
-            (
                 GateReason::SinkCeilingExceeded,
                 Some("classification.sink-ceiling-exceeded"),
             ),
             (
                 GateReason::UnclassifiedSubject,
                 Some("classification.unclassified-sensitive-sink"),
-            ),
-            (
-                GateReason::InputsIncomplete,
-                Some("dataflow.observed-incomplete"),
             ),
             (GateReason::NotRequired, None),
             (GateReason::DestinationDeclared, None),
