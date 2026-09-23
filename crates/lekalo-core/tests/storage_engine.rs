@@ -1525,6 +1525,92 @@ fn a_renamed_table_rederives_its_constraint_names() {
 }
 
 #[test]
+fn a_renamed_tables_changed_index_never_double_creates_or_drops_a_phantom() {
+    // A derived index whose columns change on a renamed table: the
+    // rename block drops the base-derived name (the one that exists)
+    // and re-adds the fresh name; the index pass must not re-diff the
+    // renamed table — a second CREATE of the fresh name would fail
+    // `already exists`, and a drop of the candidate-derived old name
+    // would name an index the migrated schema never had.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        for table in projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+        {
+            if table.get("table").and_then(serde_json::Value::as_str) == Some("task") {
+                table["table"] = serde_json::Value::String("todo".to_owned());
+                table["indexes"] = serde_json::json!([
+                    {"columns": ["due_date", "tenant_id"], "unique": false},
+                    {"columns": ["due_date"], "name": "idx_task_due_open", "unique": false,
+                     "where": [{"column": "deleted_at", "op": "is-null"}]},
+                    {"columns": ["tenant_id"], "name": "idx_task_tenant", "unique": false}
+                ]);
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    let fresh_creates = plan
+        .steps()
+        .iter()
+        .filter(|step| step.statement().contains("idx_todo_due_date_tenant_id"))
+        .count();
+    assert_eq!(
+        fresh_creates, 1,
+        "the fresh derived index is created exactly once"
+    );
+    assert!(
+        !plan
+            .steps()
+            .iter()
+            .any(|step| step.statement().contains("idx_task_due_date_tenant_id")),
+        "the candidate-derived old name never existed and never drops"
+    );
+    let old_drops = plan
+        .steps()
+        .iter()
+        .filter(|step| {
+            step.kind() == "drop_index"
+                && step
+                    .statement()
+                    .contains("DROP INDEX \"idx_task_due_date\"")
+        })
+        .count();
+    assert_eq!(old_drops, 1, "the base-derived old name drops exactly once");
+}
+
+#[test]
 fn a_type_change_without_an_assignment_cast_refuses() {
     // A text-to-integer change cannot execute as a bare ALTER COLUMN
     // TYPE: the planner refuses with the registered rule instead of

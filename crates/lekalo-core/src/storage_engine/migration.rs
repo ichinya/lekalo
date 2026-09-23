@@ -356,7 +356,13 @@ pub fn plan(
     )?;
     plan_checks(&mut steps, base, candidate)?;
     plan_enum_checks(&mut steps, profile, base, candidate)?;
-    plan_indexes(&mut steps, &derived_base, &derived_candidate, &table_ids)?;
+    plan_indexes(
+        &mut steps,
+        &derived_base,
+        &derived_candidate,
+        &table_ids,
+        &renamed_tables,
+    )?;
     // Drops last: the mechanical diff emits them, the ordering pass
     // moves every destructive drop behind the constructive steps.
     order_drops_last(&mut steps);
@@ -737,12 +743,16 @@ fn plan_tables(
                     None,
                 );
             }
-            for index in table.indexes() {
+            for index in base_table.indexes() {
                 if index.name().is_some() {
                     // A declared name is not derived; the rename
                     // leaves it stable.
                     continue;
                 }
+                // The drops derive from the base table's indexes: the
+                // base-derived name is the one that exists (a changed
+                // index's fresh name never did), so a phantom
+                // `idx_<oldtable>_<newcolumns>` never drops.
                 let old_name = super::postgres::ddl::derived_index_name(base_table.table(), index)?;
                 push_step(
                     steps,
@@ -2063,9 +2073,18 @@ fn plan_indexes(
     base: &DerivedProjection,
     candidate: &DerivedProjection,
     table_ids: &std::collections::BTreeMap<String, usize>,
+    renamed_tables: &std::collections::BTreeMap<String, StorageName>,
 ) -> Result<(), DiagnosticSet> {
     for table in candidate.tables() {
         let base_table = base.table(table.entity());
+        // A renamed table's derived indexes were already dropped under
+        // the old names and re-added under the fresh names by the
+        // rename block; re-diffing here would double-emit the create
+        // (and, for a changed index, drop a candidate-derived name the
+        // migrated schema never had).
+        if renamed_tables.contains_key(table.entity().as_str()) {
+            continue;
+        }
         for index in table.indexes() {
             let existed = base_table
                 .map(|base| base.indexes().contains(index))
@@ -2125,6 +2144,12 @@ fn plan_indexes(
         let candidate_table = candidate.table(table.entity());
         // A table being dropped carries its indexes with it.
         if candidate_table.is_none() {
+            continue;
+        }
+        // A renamed table's old-name drops were already emitted by the
+        // rename block, derived from the base indexes — the names that
+        // exist; re-diffing here would double-emit them.
+        if renamed_tables.contains_key(table.entity().as_str()) {
             continue;
         }
         for index in table.indexes() {
