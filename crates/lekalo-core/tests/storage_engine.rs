@@ -682,6 +682,7 @@ fn a_changed_primary_key_plans_the_drop_and_add_and_gates() {
             for table in tables.iter_mut() {
                 if table.get("table").and_then(serde_json::Value::as_str) == Some("tag") {
                     table["primaryKey"] = serde_json::json!(["label"]);
+                    println!("PATCHED TABLE at {:?}", table.get("table"));
                 }
             }
         }
@@ -918,6 +919,109 @@ fn a_renamed_table_renames_its_sequence_and_a_dropped_column_retires_it() {
     assert!(plan.steps().iter().any(|step| {
         step.kind() == "drop_column" && step.statement().contains("\"session_no\"")
     }));
+}
+
+#[test]
+fn a_join_rename_with_a_shape_change_rematerializes_under_the_new_name() {
+    // A rename that shares the diff with a shape change (the endpoint
+    // PK swap changes a join column's type) is a full rematerialization
+    // under the new name: the create carries the fresh shape, and the
+    // old-name drop is an independent statement behind it — no forward
+    // requires edge, no incompatible-FK plan.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        for join in projection
+            .get_mut("joins")
+            .and_then(|j| j.as_array_mut())
+            .expect("joins")
+        {
+            if join.get("relation").and_then(serde_json::Value::as_str)
+                == Some("planner.relation.task_tags")
+            {
+                join["table"] = serde_json::Value::String("task_tagging".to_owned());
+            }
+        }
+    }
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        for table in projection
+            .get_mut("tables")
+            .and_then(|tables| tables.as_array_mut())
+            .expect("tables")
+        {
+            if table.get("entity").and_then(serde_json::Value::as_str) == Some("tag") {
+                // The candidate re-keys the tag table to `label` - the
+                // join column
+                // type changes with it (uuid to varchar(64)).
+                table["primaryKey"] = serde_json::json!(["label"]);
+            }
+        }
+    }
+
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    // The create carries the candidate shape (the join column over the
+    // new varchar key).
+    let create = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "create_table"
+                && step.statement().contains("CREATE TABLE \"task_tagging\"")
+        })
+        .expect("the new shape is created");
+    assert!(
+        create.statement().contains("\"tag_id\" varchar(64)"),
+        "the create carries the rematerialized shape: {}",
+        create.statement()
+    );
+    // The old-name table drops as an independent statement; no forward
+    // edge and no rename_table (the old table is gone, not renamed).
+    assert!(
+        !plan
+            .steps()
+            .iter()
+            .any(|step| step.kind() == "rename_table"),
+        "a rematerializing rename never renames the old shape"
+    );
+    let drop_position = plan
+        .steps()
+        .iter()
+        .position(|step| step.kind() == "drop_table" && step.statement().contains("\"task_tag\""))
+        .expect("the old join table drops");
+    assert!(
+        drop_position > create.id() - 1,
+        "the old-name drop executes behind the create"
+    );
+    assert!(
+        create.requires().is_empty(),
+        "independent statements are not wired"
+    );
 }
 
 #[test]

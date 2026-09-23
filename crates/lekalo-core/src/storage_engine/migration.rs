@@ -1127,12 +1127,34 @@ fn plan_tables(
         }
         if let Some(existing) = base_join {
             let renamed = existing.table() != join.table();
-            let rematerialized = !renamed
-                && (existing.columns() != join.columns()
-                    || existing.unique_pair() != join.unique_pair()
-                    || existing.on_owner_delete() != join.on_owner_delete()
-                    || existing.on_target_delete() != join.on_target_delete());
-            if renamed {
+            let shape_changed = existing.columns() != join.columns()
+                || existing.unique_pair() != join.unique_pair()
+                || existing.on_owner_delete() != join.on_owner_delete()
+                || existing.on_target_delete() != join.on_target_delete();
+            if renamed && shape_changed {
+                // A rename that shares the diff with a shape change
+                // (endpoint PK change, pair uniqueness, delete actions)
+                // is a full rematerialization under the new name: the
+                // rename-keeps-the-table shortcut would discard the
+                // fresh create's column types and uniquePair primary
+                // key, leaving a schema no render produces — or an FK
+                // over incompatible types that cannot be implemented.
+                // Drop the old name and create the new shape; the two
+                // statements name different tables, so they are
+                // independent — no requires edge, and the ordering
+                // pass moves the old-name drop behind the creates.
+                push_step(
+                    steps,
+                    "drop_table",
+                    format!("DROP TABLE {};", quote(existing.table())),
+                    DataRisk::Destructive,
+                    Vec::new(),
+                    None,
+                );
+            } else if renamed {
+                // A pure rename keeps the table: the declared risk of
+                // a table rename is destructive, never guessed
+                // history.
                 // A rename is drop + create: the declared risk of a
                 // table rename is destructive, never guessed history.
                 push_step(
@@ -1195,7 +1217,7 @@ fn plan_tables(
                     );
                 }
                 continue;
-            } else if rematerialized {
+            } else if shape_changed {
                 // The table is rematerialized under the same name: the
                 // drop of the old shape must stay paired with the
                 // re-create that follows (both name the same quoted
