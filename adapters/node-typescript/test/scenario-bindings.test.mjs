@@ -171,6 +171,162 @@ test("the scanner groups lekalo test titles per module with bounds", () => {
 
 test("the observed index path pin holds", () => {
   assert.equal(OBSERVED_INDEX_PATH, ".lekalo/import/observed/index.json");
+});
+
+/**
+ * Review F-2: the only end-to-end walk of the checked-binding custody
+ * chain — a fixture test file with `lekalo:<id>` titles goes through
+ * the production `scanOperation`, the entries promote into the exact
+ * observed-index `test_bindings` shape the core's scan service writes
+ * (`id = "<path>#<t>"`, `symbol` = the first entry's semantic proposal,
+ * `fingerprint` = the file digest), and `joinCheckedBindings` answers
+ * over that document. The e2e gate never scans a project with
+ * `lekalo:`-titled tests before verifying; this vector does.
+ */
+async function scanAndJoin(scanBody, { unrelatedFirstSymbol = false } = {}) {
+  const { createHash } = await import("node:crypto");
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const os = await import("node:os");
+  const { loadAdapter, dispose } = await import("./scanner-helpers.mjs");
+  const adapter = await loadAdapter();
+  const kernel = adapter.__lekaloKernel;
+  // The wire scan entry point of the production bundle (the vendored
+  // compiler rides the built artifact, never the src deployment).
+  const { scanOperation } = adapter.__lekaloScanner;
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lekalo-s47-join-")));
+  const project = path.join(root, "project");
+  fs.mkdirSync(path.join(project, "src"), { recursive: true });
+  const testFile = [
+    'import { test } from "./dsl";',
+    ...(unrelatedFirstSymbol
+      ? ["export function sharedHelper(): number { return 1; }", ""]
+      : []),
+    // The exported const mirrors the emitter's top-level shape: the
+    // generated test files always carry one top-level export whose
+    // scanned entry is the claim carrier.
+    'export const lekalo_planner_scenario_focus = { scenario: "planner.scenario.focus_happy" };',
+    'test("lekalo:planner.scenario.focus_happy", () => {});',
+    'test("lekalo:planner.scenario.focus_error", () => {});',
+  ].join("\n");
+  fs.writeFileSync(path.join(project, "src", "focus.test.ts"), testFile);
+  // The known DSL vocabulary is statically imported describe/it/test:
+  // the fixture declares it locally exactly like the committed fixtures
+  // do, so module resolution stays complete.
+  fs.writeFileSync(
+    path.join(project, "src", "dsl.ts"),
+    "export function test(name: string, fn: () => void): void {}\n",
+  );
+  try {
+    const roots = [{ kind: "tree", path: "src", scope: "src/**" }];
+    const profile = kernel.validateResolvedProjectProfile({
+      id: "join-e2e",
+      mode: "observed",
+      target: "node-typescript",
+      readRoots: roots.map(({ kind, path: p }) => ({ kind, path: p })),
+      exclusions: [],
+      provenance: { origin: "declared", revision: "join-e2e-0001", disposition: "public-fixture" },
+    });
+    const readView = kernel.createReadView(project, roots, profile);
+    // The kernel dispatch stamps the permitted root onto the view after
+    // creation; the scan entry point requires it.
+    readView.permittedProjectRoot = project;
+    const outcome = scanOperation({
+      operation: "scan",
+      profile,
+      readView,
+      permittedProjectRoot: project,
+      limits: undefined,
+    });
+    assert.equal(outcome.state, "complete", JSON.stringify(outcome.diagnostics ?? null));
+    scanBody({
+      entries: outcome.data.entries,
+      readFile: (relative) => readView.readFile(relative),
+      joinCheckedBindings,
+      createHash,
+      unrelatedFirstSymbol,
+    });
+  } finally {
+    dispose(root);
+  }
+}
+
+test("the scan to observed-index to join chain is clean end-to-end (F-2)", () => {
+  return scanAndJoin(({ entries, readFile, joinCheckedBindings, createHash }) => {
+    // The core's promotion: every entry detail that carries the bounded
+    // `t` slot becomes one test_bindings record — the id is the verbatim
+    // `t` spelling, the symbol is that entry's semantic proposal, and
+    // the fingerprint is the real file digest.
+    const records = [];
+    for (const entry of entries) {
+      const detail = JSON.parse(entry.detail);
+      if (typeof detail.t !== "string") continue;
+      records.push({
+        id: detail.t,
+        symbol: detail.s,
+        path: entry.path,
+        fingerprint: createHash("sha256").update(readFile(entry.path)).digest("hex"),
+      });
+    }
+    assert.equal(records.length, 1, "one claiming file, one record");
+    assert.match(records[0].id, /#lekalo:planner\.scenario\.focus_(happy|error)/);
+    assert.match(records[0].fingerprint, /^[0-9a-f]{64}$/);
+
+    // The join answers over the promoted document exactly as it does in
+    // production. One binding pins the real file fingerprint (equality
+    // path), one binds without evidence (no freshness claim), and a
+    // stale digest is the typed mismatch finding.
+    const scenario = {
+      bindings: [
+        binding("planner.scenario.focus_happy"),
+        binding("planner.scenario.focus_error", { evidenceDigest: records[0].fingerprint }),
+      ],
+    };
+    const findings = joinCheckedBindings(scenario, indexDocument(records));
+    assert.deepEqual(findings, [], "both claims join cleanly");
+    const stale = joinCheckedBindings(
+      { bindings: [binding("planner.scenario.focus_error", { evidenceDigest: FINGERPRINT })] },
+      indexDocument(records),
+    );
+    assert.equal(stale.length, 1);
+    assert.equal(stale[0].code, BINDING_MISMATCH);
+
+    // The honest negative over the same chain: an id nobody claims is
+    // still a typed missing finding.
+    const missing = joinCheckedBindings(
+      { bindings: [binding("planner.scenario.mystery")] },
+      indexDocument(records),
+    );
+    assert.equal(missing.length, 1);
+    assert.equal(missing[0].code, BINDING_MISSING);
+  });
+});
+
+test("an unrelated first top-level symbol still owns the claim deterministically (F-2)", () => {
+  return scanAndJoin(
+    ({ entries, readFile, joinCheckedBindings, createHash, unrelatedFirstSymbol }) => {
+      assert.ok(unrelatedFirstSymbol);
+      const claiming = [];
+      for (const entry of entries) {
+        const detail = JSON.parse(entry.detail);
+        if (typeof detail.t === "string") claiming.push(detail);
+      }
+      assert.equal(claiming.length, 1, "the claim rides exactly one entry");
+      // The claim lands on the FIRST top-level entry of the file — here
+      // the unrelated helper — deterministically, per file, never lost:
+      // the join still resolves because attribution is per record, not
+      // per test function.
+      const records = claiming.map((detail) => ({
+        id: detail.t,
+        symbol: detail.s,
+        path: "src/focus.test.ts",
+        fingerprint: createHash("sha256").update(readFile("src/focus.test.ts")).digest("hex"),
+      }));
+      const scenario = { bindings: [binding("planner.scenario.focus_happy")] };
+      assert.deepEqual(joinCheckedBindings(scenario, indexDocument(records)), []);
+    },
+    { unrelatedFirstSymbol: true },
+  );
 });test('a shared native test file claiming several ids joins cleanly (F-5)', () => {
   const scenario = { bindings: [binding('planner.scenario.focus_happy')] };
   const index = indexDocument([

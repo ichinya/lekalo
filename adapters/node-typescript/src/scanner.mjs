@@ -1689,7 +1689,12 @@ export function scanOperation(context) {
     };
     if (!moduleSeen.has(symbol.module)) {
       moduleSeen.add(symbol.module);
-      const ids = lekaloIdsByModule.get(symbol.module);
+      // Review F-2: the wire scan operation crashed on any project with
+      // `lekalo:`-titled tests — the grouped claims were consulted as the
+      // Map itself instead of the `{ byModule, truncated }` wrapper the
+      // helper returns, so the observed `t` slot (and with it the whole
+      // checked-binding join chain) was unreachable through the wire.
+      const ids = lekaloIdsByModule.byModule.get(symbol.module);
       if (ids) {
         detail.t = `${symbol.module}#${ids.map((id) => `lekalo:${id}`).join(",")}`;
       }

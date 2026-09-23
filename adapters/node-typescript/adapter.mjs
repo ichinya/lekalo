@@ -215276,7 +215276,7 @@ function scanOperation(context) {
     };
     if (!moduleSeen.has(symbol.module)) {
       moduleSeen.add(symbol.module);
-      const ids = lekaloIdsByModule.get(symbol.module);
+      const ids = lekaloIdsByModule.byModule.get(symbol.module);
       if (ids) {
         detail.t = `${symbol.module}#${ids.map((id) => `lekalo:${id}`).join(",")}`;
       }
