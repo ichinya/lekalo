@@ -1501,8 +1501,10 @@ fn main() -> ExitCode {
     // the surface grows (issue #46 added the `openapi` subcommand).
     // One large-stack worker keeps the growth of the surface bounded by
     // memory, never by the thread default; a panic exits 101 exactly as
-    // an unwinding main would.
-    const WORKER_STACK_BYTES: usize = 256 * 1024 * 1024;
+    // an unwinding main would. The reservation is the same 32 MiB the
+    // coordinator accepted on `ichinya/M4` — the merged tree must not
+    // carry two values (r1 F-8/cline F-4).
+    const WORKER_STACK_BYTES: usize = 32 * 1024 * 1024;
     match std::thread::Builder::new()
         .stack_size(WORKER_STACK_BYTES)
         .spawn(main_worker)
