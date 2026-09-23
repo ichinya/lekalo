@@ -127,7 +127,10 @@ for (const [id, code, statuses] of expectedClassificationRules) {
 }
 
 // 5. The dataflow family is exactly the nine LEK-DFL rules; the
-//    observed-incompleteness signal is a warning under every status.
+//    observed-incompleteness signal is an error-severity finding whose
+//    project-wide denial rides `inputsComplete: false` (review r2,
+//    R2-4: producer and registry agree on error, and the rule can
+//    never appear in a valid report).
 const expectedDataflowRules = [
   ["dataflow.exposed-private-field", "LEK-DFL-001", ["invalid", "denied"]],
   ["dataflow.tenant-crossing", "LEK-DFL-002", ["invalid", "denied"]],
@@ -137,7 +140,7 @@ const expectedDataflowRules = [
   ["dataflow.missing-approval", "LEK-DFL-006", ["invalid", "denied"]],
   ["dataflow.destination-forbidden", "LEK-DFL-007", ["invalid", "denied"]],
   ["dataflow.adapter-metadata-loss", "LEK-DFL-008", ["invalid", "denied"]],
-  ["dataflow.observed-incomplete", "LEK-DFL-009", ["valid", "invalid", "denied"], "warning"],
+  ["dataflow.observed-incomplete", "LEK-DFL-009", ["invalid", "denied"]],
 ];
 for (const [id, code, statuses, severity = "error"] of expectedDataflowRules) {
   const entry = registryEntries.get(id);
