@@ -1296,6 +1296,41 @@ fn plan_tables(
         // gates. A renamed table's swap rode its rename block above.
         if !renamed && base_table.primary_key() != table.primary_key() {
             pk_swapped.insert(table.table().as_str().to_owned());
+            // Every key referencing the swapped primary key — on this
+            // table or any other, stable joins included — must drop
+            // before the old constraint (2BP02: the take-down fails
+            // while a foreign key still depends on it) and re-add after
+            // the fresh key binds, re-targeted at its column. Without
+            // this the swap plans a drop that can never apply and
+            // leaves survivors bound to a non-key column.
+            let dependents = dependent_keys(
+                base,
+                candidate,
+                candidate_attachment,
+                table.table(),
+                table.table(),
+                &renamed_tables,
+            )?;
+            let mut before_pk = Vec::new();
+            for dependent in &dependents {
+                if !dependent.exists {
+                    continue;
+                }
+                let dependent_drop_id = steps.len();
+                push_step(
+                    steps,
+                    "drop_constraint",
+                    format!(
+                        "ALTER TABLE {} DROP CONSTRAINT {};",
+                        quote(&dependent.owner),
+                        quote(&dependent.name)
+                    ),
+                    DataRisk::Destructive,
+                    Vec::new(),
+                    None,
+                );
+                before_pk.push(dependent_drop_id + 1);
+            }
             let old_key_name = StorageName::parse(&format!("pk_{}", base_table.table()))
                 .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "primary-key-name", None))?;
             let new_key_name = StorageName::parse(&format!("pk_{}", table.table()))
@@ -1310,7 +1345,7 @@ fn plan_tables(
                     quote(&old_key_name)
                 ),
                 DataRisk::Destructive,
-                Vec::new(),
+                before_pk,
                 None,
             );
             let columns = table
@@ -1319,6 +1354,7 @@ fn plan_tables(
                 .map(quote)
                 .collect::<Vec<String>>()
                 .join(", ");
+            let add_id = steps.len();
             push_step(
                 steps,
                 "add_primary_key",
@@ -1332,6 +1368,19 @@ fn plan_tables(
                 vec![drop_id + 1],
                 None,
             );
+            for dependent in &dependents {
+                let Some(add) = &dependent.add else {
+                    continue;
+                };
+                push_step(
+                    steps,
+                    "add_foreign_key",
+                    add.clone(),
+                    DataRisk::None,
+                    vec![add_id + 1],
+                    None,
+                );
+            }
         }
         for column in table.columns() {
             let Some(base_column) = base_table

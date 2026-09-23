@@ -2080,6 +2080,149 @@ fn a_renamed_tables_pk_swap_swaps_under_one_name_then_renames() {
 }
 
 #[test]
+fn a_referenced_pk_swap_takes_its_dependent_keys_down_and_back() {
+    // A referenced table's primary-key swap is executable end to end:
+    // every key referencing the swapped table — owned by other tables,
+    // by stable joins, and by the table itself — drops before the old
+    // constraint (2BP02), and re-adds after the fresh key binds,
+    // re-targeted at its column. The swap never plans a drop its
+    // dependents can block, and never leaves a key bound to a
+    // non-unique column.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        for table in projection
+            .get_mut("tables")
+            .and_then(|t| t.as_array_mut())
+            .expect("tables")
+        {
+            if table.get("table").and_then(serde_json::Value::as_str) == Some("task") {
+                table["primaryKey"] = serde_json::json!(["tenant_id"]);
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    let pk_drop = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "drop_constraint"
+                && step.statement() == "ALTER TABLE \"task\" DROP CONSTRAINT \"pk_task\";"
+        })
+        .expect("the old primary key drops");
+    let pk_add = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "add_primary_key")
+        .expect("the fresh primary key adds");
+    assert_eq!(
+        pk_add.statement(),
+        "ALTER TABLE \"task\" ADD CONSTRAINT \"pk_task\" PRIMARY KEY (\"tenant_id\");"
+    );
+    assert_eq!(pk_add.requires(), &[pk_drop.id()]);
+    // Every dependent key drops before the old constraint: the entity
+    // tables', the self-reference, and the stable join's.
+    let dependent_drops = [
+        "fk_task_detail_task_id",
+        "fk_task_external_link_task_id",
+        "fk_focus_session_focus_task_id",
+        "fk_task_parent_task_id",
+        "fk_task_tag_task_id",
+    ];
+    for constraint in dependent_drops {
+        let drop = plan
+            .steps()
+            .iter()
+            .find(|step| {
+                step.kind() == "drop_constraint"
+                    && step
+                        .statement()
+                        .contains(&format!("DROP CONSTRAINT \"{constraint}\""))
+            })
+            .unwrap_or_else(|| panic!("{constraint} drops before the old key"));
+        assert!(
+            drop.id() < pk_drop.id(),
+            "{constraint} drops before the old primary key"
+        );
+    }
+    // Each key re-adds re-targeted at the fresh key's column, wired to
+    // the pk add, and never twice.
+    for (constraint, table_name, action) in [
+        ("fk_task_detail_task_id", "task_detail", "CASCADE"),
+        (
+            "fk_task_external_link_task_id",
+            "task_external_link",
+            "CASCADE",
+        ),
+        (
+            "fk_focus_session_focus_task_id",
+            "focus_session",
+            "RESTRICT",
+        ),
+        ("fk_task_parent_task_id", "task", "SET NULL"),
+        ("fk_task_tag_task_id", "task_tag", "CASCADE"),
+    ] {
+        let adds: Vec<_> = plan
+            .steps()
+            .iter()
+            .filter(|step| {
+                step.statement()
+                    .contains(&format!("ADD CONSTRAINT \"{constraint}\""))
+            })
+            .collect();
+        assert_eq!(adds.len(), 1, "{constraint} re-adds exactly once");
+        assert!(
+            adds[0].statement().contains(&format!(
+                "REFERENCES \"task\"(\"tenant_id\") ON DELETE {action}"
+            )),
+            "{constraint} re-targets the fresh key: {}",
+            adds[0].statement()
+        );
+        assert_eq!(
+            adds[0].requires(),
+            &[pk_add.id()],
+            "{constraint} re-adds after the fresh key binds"
+        );
+        let _ = table_name;
+    }
+    for step in plan.steps() {
+        for dep in step.requires() {
+            assert!(*dep < step.id(), "no forward edges");
+        }
+    }
+    assert!(plan.gated(), "the swap stays destructive and gated");
+}
+
+#[test]
 fn a_type_change_without_an_assignment_cast_refuses() {
     // A text-to-integer change cannot execute as a bare ALTER COLUMN
     // TYPE: the planner refuses with the registered rule instead of
