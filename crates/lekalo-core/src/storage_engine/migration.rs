@@ -711,7 +711,6 @@ fn plan_tables(
                 None,
             );
             // The derived constraint names embed the table name, so
-            // The derived constraint names embed the table name, so
             // the renamed table's foreign keys drop under their old
             // names and re-add under the fresh deterministic ones —
             // the migrated schema never keeps a stale old-table FK
