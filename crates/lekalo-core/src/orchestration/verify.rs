@@ -17,8 +17,8 @@ use crate::artifacts::GenerateService;
 use crate::diagnostics::{DataObject, Diagnostic};
 use crate::ir::Compilation;
 use crate::loader::LoadSelection;
-use crate::project_fs::{EntryType, Fs};
 use crate::lockfile::types::Sha256Digest;
+use crate::project_fs::{EntryType, Fs};
 use crate::result::DomainResult;
 use crate::target_protocol::transport::TransportLimits;
 use crate::target_protocol::wire::Operation;
@@ -850,8 +850,8 @@ fn trace_component(prepared: &Prepared, logical: &str) -> Component {
 
 #[cfg(test)]
 mod tests {
-    use crate::lockfile::types::Sha256Digest;
     use super::scenarios_execution_rollup;
+    use crate::lockfile::types::Sha256Digest;
     use crate::project_fs::Fs;
     use crate::scenario_evidence::TraceContext;
     use serde_json::json;
@@ -965,6 +965,9 @@ mod tests {
 
         assert!(!rollup.present);
         assert!(rollup.trace.is_none());
-        assert_eq!((rollup.blocking, rollup.unsupported, rollup.degraded), (0, 0, 0));
+        assert_eq!(
+            (rollup.blocking, rollup.unsupported, rollup.degraded),
+            (0, 0, 0)
+        );
     }
 }

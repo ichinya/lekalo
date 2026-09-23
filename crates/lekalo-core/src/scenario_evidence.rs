@@ -470,11 +470,12 @@ pub fn trace_manifest_document(
     let mut relations: Vec<Relation> = Vec::new();
     let mut occurrence = 0u64;
     let mut seen_nodes = std::collections::BTreeSet::new();
-    let push_node = |nodes: &mut Vec<Json>, seen: &mut std::collections::BTreeSet<String>, node: Json| {
-        if seen.insert(node["nodeId"].as_str().unwrap_or_default().to_owned()) {
-            nodes.push(node);
-        }
-    };
+    let push_node =
+        |nodes: &mut Vec<Json>, seen: &mut std::collections::BTreeSet<String>, node: Json| {
+            if seen.insert(node["nodeId"].as_str().unwrap_or_default().to_owned()) {
+                nodes.push(node);
+            }
+        };
     for record in records {
         let test_node = format!("native_test:{}", record.test.0);
         let scenario_node = format!("scenario:{}", record.scenario_id);
@@ -544,8 +545,14 @@ pub fn trace_manifest_document(
         for record in records {
             let from = format!("gate:{gate}");
             for (to, to_kind) in [
-                (format!("native_test:{}", record.test.0), NodeKind::NativeTest),
-                (format!("scenario:{}", record.scenario_id), NodeKind::Scenario),
+                (
+                    format!("native_test:{}", record.test.0),
+                    NodeKind::NativeTest,
+                ),
+                (
+                    format!("scenario:{}", record.scenario_id),
+                    NodeKind::Scenario,
+                ),
             ] {
                 occurrence += 1;
                 let mut relation = Relation {
@@ -604,8 +611,7 @@ pub fn trace_manifest_document(
     // member, the canonical order, the endpoint legality, and the
     // completeness policy over the exact assembled bytes.
     let bytes = serde_json::to_vec_pretty(&document).expect("document serializes");
-    crate::trace::TraceManifest::parse(&bytes)
-        .map_err(|_| run_invalid("trace-manifest"))?;
+    crate::trace::TraceManifest::parse(&bytes).map_err(|_| run_invalid("trace-manifest"))?;
     Ok(document)
 }
 
@@ -825,7 +831,10 @@ mod tests {
             model_digest: format!("sha256:{}", "4".repeat(64)),
         };
         let document = trace_manifest_document(&[record], &context).expect("valid manifest");
-        assert_eq!(document["schemaVersion"], json!("lekalo/trace-manifest/v0.2.16"));
+        assert_eq!(
+            document["schemaVersion"],
+            json!("lekalo/trace-manifest/v0.2.16")
+        );
         assert_eq!(document["projectRef"], json!("planner"));
         assert_eq!(document["completeness"], json!("partial"));
         // The kinds the scenario evidence licenses, explicitly present.
