@@ -113,14 +113,69 @@ pub fn run(
     // version (or run a legacy 0.2.16 session, whose IR compatibility the
     // upstream preflight owns). A selection that names no adapter is the
     // registered unsupported refusal, never a guess.
+    // Issue #32 fix (cline F-8 / devin F-9): build the trust postures
+    // from the local revocation store and the store inventory so the
+    // selection filter finally sees revoked/quarantined installed
+    // packages on the real ids — not just synthesized descriptors.
+    let trust_postures: std::collections::BTreeMap<String, selection::TrustPosture> = {
+        let mut map = std::collections::BTreeMap::new();
+        if let Ok(store) = crate::adapter_package::trust::RevocationStore::load(&ctx.root) {
+            for row in store.records() {
+                let entry = map
+                    .entry(row.id.clone())
+                    .or_insert(selection::TrustPosture {
+                        revoked: false,
+                        quarantined: false,
+                        auto_selectable: false,
+                    });
+                if row.version == "*" || row.version == discovered.adapter.version {
+                    entry.revoked = true;
+                }
+            }
+        }
+        if let Ok(inventory) = crate::adapter_package::Inventory::load(&ctx.root) {
+            for row in inventory.rows() {
+                if row.id != discovered.adapter.id {
+                    continue;
+                }
+                let entry = map
+                    .entry(row.id.clone())
+                    .or_insert(selection::TrustPosture {
+                        revoked: false,
+                        quarantined: false,
+                        auto_selectable: false,
+                    });
+                if row.quarantined {
+                    entry.quarantined = true;
+                }
+                entry.auto_selectable = crate::adapter_package::TrustLevel::parse(&row.trust)
+                    .map(|level| level.auto_selectable())
+                    .unwrap_or(false);
+            }
+        }
+        if let Some(posture) = map.get(&discovered.adapter.id) {
+            if posture.revoked {
+                // A revoked installed adapter is never selectable: deny
+                // before the handshake result can be consumed further.
+                return Err(crate::adapter_package::diagnostic::domain_result(
+                    &crate::adapter_package::PackageFailure::Revoked {
+                        id: discovered.adapter.id.clone(),
+                        version: discovered.adapter.version.clone(),
+                    },
+                ));
+            }
+        }
+        map
+    };
     let required = [REQUIRED_CAPABILITY.to_owned()];
+
     let report = selection::select(
         std::slice::from_ref(&discovered),
         selection::SelectionRequest {
             required: &required,
             preferred_profile: request.profile,
             policy: selection::SelectionPolicy::default(),
-            trust: None,
+            trust: Some(&trust_postures),
         },
         crate::ir::version::VERSION,
     );

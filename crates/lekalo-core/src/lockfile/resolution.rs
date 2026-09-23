@@ -18,8 +18,9 @@
 //! an ambiguity, never a source-order choice.
 
 use super::types::{
-    ArtifactPin, CapabilityId, CatalogRef, ComponentId, Lockfile, Platform, ProviderKind,
-    ProviderRef, SemVer, Sha256Digest, SourceRef, Support, RESOLVER_VERSION,
+    ArtifactPin, CapabilityId, CatalogRef, ComponentId, LockTrust, Lockfile, Platform,
+    ProviderKind, ProviderRef, SemVer, Sha256Digest, SourceKind, SourceRef, Support,
+    RESOLVER_VERSION,
 };
 use super::{canonical, LockFailure};
 use crate::versioning::compatibility::{AdapterCompatibilityManifest, CompatibilityPreflight};
@@ -292,6 +293,16 @@ pub struct CandidateAdapter {
     source: SourceRef,
     artifacts: Vec<ArtifactPin>,
     manifest: AdapterCompatibilityManifest,
+    /// The package manifest digest, when the supply shipped one (issue
+    /// #32); locked into the additive `manifest_digest` member.
+    pub package_manifest_digest: Option<Sha256Digest>,
+    /// The trust level pinned at selection time, when known.
+    pub trust: Option<super::types::LockTrust>,
+    /// The install plan id, when the package arrived through a plan.
+    pub install_plan_id: Option<Sha256Digest>,
+    /// Whether the supply resolves through the installed store (the
+    /// `installed` source kind), not a committed project file.
+    pub installed: bool,
 }
 
 impl CandidateAdapter {
@@ -311,7 +322,33 @@ impl CandidateAdapter {
             source,
             artifacts,
             manifest,
+            package_manifest_digest: None,
+            trust: None,
+            install_plan_id: None,
+            installed: false,
         }
+    }
+
+    /// Attach the issue #32 provenance members (installed store path,
+    /// package manifest digest, pinned trust, plan id). The source kind
+    /// becomes `installed` and the source id the store-relative path.
+    pub fn with_provenance(
+        &mut self,
+        installed_path: &str,
+        package_manifest_digest: Sha256Digest,
+        trust: super::types::LockTrust,
+        install_plan_id: Option<Sha256Digest>,
+    ) -> Result<(), LockFailure> {
+        self.source = SourceRef::new(
+            SourceKind::Installed,
+            installed_path,
+            self.source.digest().clone(),
+        )?;
+        self.package_manifest_digest = Some(package_manifest_digest);
+        self.trust = Some(trust);
+        self.install_plan_id = install_plan_id;
+        self.installed = true;
+        Ok(())
     }
 
     /// The digest over the canonical manifest bytes (the locked
@@ -456,6 +493,39 @@ impl CandidateSet {
     pub fn with_adapter(mut self, adapter: CandidateAdapter) -> Self {
         self.adapters.push(adapter);
         self
+    }
+
+    /// Attach issue #32 installed provenance to the adapter candidate
+    /// matching `id` + `version`: the source kind becomes `installed`, the
+    /// source id the store-relative packages path, and the additive
+    /// manifest/trust/plan-id members are pinned for `lock --check`.
+    pub fn with_installed_provenance(
+        &mut self,
+        version: &str,
+        package_digest: &str,
+        manifest_digest: &str,
+        trust: &str,
+        install_plan_id: Option<&str>,
+    ) {
+        let Ok(trust) = super::types::LockTrust::parse(trust) else {
+            return;
+        };
+        let (Ok(digest), Ok(manifest), Ok(plan)) = (
+            Sha256Digest::parse(package_digest),
+            Sha256Digest::parse(manifest_digest),
+            install_plan_id.map(Sha256Digest::parse).transpose(),
+        ) else {
+            return;
+        };
+        let digest8: String = package_digest["sha256:".len()..].chars().take(8).collect();
+        let installed_path = format!(".lekalo/adapters/packages/*/{version}-{digest8}");
+        for adapter in self
+            .adapters
+            .iter_mut()
+            .filter(|a| a.version.as_str() == version && a.digest.as_str() == package_digest)
+        {
+            let _ = adapter.with_provenance(&installed_path, manifest.clone(), trust, plan.clone());
+        }
     }
 
     /// Add one generator candidate.
@@ -603,13 +673,32 @@ impl LockResolver {
 
         let mut adapters = Vec::with_capacity(selected_adapters.len());
         for candidate in &selected_adapters {
-            adapters.push(super::types::ResolvedAdapter::from_parts(
+            // Issue #32 provenance: an installed supply carries its store
+            // path, package manifest digest, and the pinned trust level so
+            // `lock --check` can evaluate the revocation store.
+            let provenance = candidate
+                .installed
+                .then(|| {
+                    Some(super::types::Provenance::new(
+                        candidate.source.clone(),
+                        candidate.install_plan_id.clone(),
+                    ))
+                })
+                .flatten();
+            adapters.push(super::types::ResolvedAdapter::from_parts_with_provenance(
                 candidate.id.clone(),
                 candidate.version.clone(),
                 candidate.digest.clone(),
                 candidate.source.clone(),
                 candidate.compatibility_digest(),
                 candidate.artifacts.clone(),
+                candidate.package_manifest_digest.clone(),
+                if candidate.installed {
+                    candidate.trust
+                } else {
+                    None
+                },
+                provenance,
             )?);
         }
         let generators = selected_generators

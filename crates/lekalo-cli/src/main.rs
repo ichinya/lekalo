@@ -1772,7 +1772,7 @@ fn run_lock(project: Option<String>, check: bool, program_args: Vec<String>) -> 
         }
         None => None,
     };
-    let candidates;
+    let mut candidates;
     let request = match supply.as_ref() {
         Some(supply) => {
             let root =
@@ -1790,6 +1790,24 @@ fn run_lock(project: Option<String>, check: bool, program_args: Vec<String>) -> 
                 Ok(candidates) => candidates,
                 Err(failure) => return DomainResult::from(&failure),
             };
+            // Issue #32: when the discovered adapter is the selected
+            // installed store pin, emit the installed provenance (source
+            // kind installed, package manifest digest, pinned trust) into
+            // the lock instead of a plain project pin.
+            if let Ok(inventory) = lekalo_core::adapter_package::Inventory::load(&root) {
+                if let Some(row) = inventory
+                    .selected(&discovered.adapter.id)
+                    .filter(|row| row.version == discovered.adapter.version)
+                {
+                    candidates.with_installed_provenance(
+                        &row.version,
+                        &row.digest,
+                        &row.manifest_digest,
+                        row.trust.as_str(),
+                        row.install_plan_id.as_deref(),
+                    );
+                }
+            }
             match LockService::load_request(&selection) {
                 Ok(request) => request,
                 Err(failure) => return DomainResult::from(&failure),

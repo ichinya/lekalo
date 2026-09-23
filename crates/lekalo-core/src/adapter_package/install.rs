@@ -368,6 +368,35 @@ fn apply_staged(
             .map_err(|_| recovery("repoint"))?;
     }
     inventory.store(root).map_err(|_| recovery("repoint"))?;
+    // Evidence receipt (issue #32: provenance in lockfile/evidence): the
+    // only durable record of which source delivered these bytes, under
+    // the lekalo.adapter-evidence authority kind.
+    let receipt = serde_json::json!({
+        "schemaVersion": "lekalo/adapter-install-receipt/v0.3.2",
+        "id": plan.id,
+        "version": plan.version,
+        "digest": plan.digest,
+        "manifestDigest": plan.manifest_digest,
+        "source": plan.source,
+        "trust": plan.trust.as_str(),
+        "quarantined": plan.quarantined,
+        "installPlanId": plan.plan_id,
+    });
+    let receipt_dir = root.join(
+        format!(".lekalo/adapters/evidence/installs/{}", plan.id)
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
+    );
+    if std::fs::create_dir_all(&receipt_dir).is_ok() {
+        let _ = std::fs::write(
+            receipt_dir.join(format!(
+                "{}-{}-{}.json",
+                plan.version,
+                &plan.digest["sha256:".len()..12],
+                plan.source.split(':').next_back().unwrap_or("src"),
+            )),
+            serde_json::to_vec_pretty(&receipt).unwrap_or_default(),
+        );
+    }
     Ok(())
 }
 
@@ -434,8 +463,6 @@ fn package_store_dir_relative(plan: &InstallPlan) -> String {
 fn package_relative_dir_of_plan(plan: &InstallPlan) -> String {
     package_store_dir_relative(plan)
 }
-
-
 
 /// Reverse-order rollback of the journal. An incomplete rollback is
 /// `adapter.recovery-required`, never silence.
