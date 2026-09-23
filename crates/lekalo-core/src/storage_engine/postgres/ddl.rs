@@ -391,7 +391,8 @@ pub(crate) fn create_join_table(
             .map(|column| quote(column.name()))
             .collect::<Vec<String>>()
             .join(", ");
-        lines.push(format!("PRIMARY KEY ({pair})"));
+        let table_name = join.table();
+        lines.push(format!("CONSTRAINT \"pk_{}\" PRIMARY KEY ({pair})", quote(table_name)));
     }
     format!(
         "CREATE TABLE {} ({});",
@@ -461,7 +462,7 @@ pub(crate) fn create_table(
         .map(quote)
         .collect::<Vec<String>>()
         .join(", ");
-    lines.push(format!("PRIMARY KEY ({primary_key})"));
+    lines.push(format!("CONSTRAINT \"pk_{}\" PRIMARY KEY ({primary_key})", quote(table.table())));
     // The declared CHECK constraints of this table, canonical order.
     if let Some(declared) = attachment
         .projections()
