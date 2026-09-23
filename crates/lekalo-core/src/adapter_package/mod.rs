@@ -219,7 +219,7 @@ pub mod reasons {
 
 #[cfg(test)]
 mod resolve_tests {
-    use super::discovery::DiscoveryCandidate;
+    use super::discovery::{Custody, DiscoveryCandidate};
     use super::manifest::ManifestDocument;
     use super::types::PackageFailure;
     use super::{resolve_candidate, ResolveContext};
@@ -258,6 +258,7 @@ mod resolve_tests {
             manifest: ManifestDocument::from_value(json).expect("parses"),
             package_root: None,
             synthesized: true,
+            custody: Custody::ProjectPath,
         }
     }
 

@@ -53,6 +53,39 @@ pub struct DiscoveryCandidate {
     /// Whether this candidate was synthesized (bare `-- PROGRAM` argv),
     /// which pins its trust to `local-development`.
     pub synthesized: bool,
+    /// How the bytes actually arrived — the custody record trust is
+    /// derived from (fix round 4, cline F-NEW-1). The manifest's
+    /// self-declared `source.kind` may inform diagnostics but can never
+    /// elevate trust: a release record carrying a `path` manifest is
+    /// still record custody, still community, still quarantined.
+    pub custody: Custody,
+}
+
+/// The closed custody vocabulary: the discovery path that produced a
+/// candidate. Trust assignment reads this, never the manifest's
+/// self-declaration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Custody {
+    /// Bare `-- PROGRAM` argv: the project's own launched entry.
+    Synthesized,
+    /// An explicit project/filesystem path supply.
+    ProjectPath,
+    /// Enumerated from the host `PATH` (never trusted).
+    PathExec,
+    /// Resolved from a local release/registry evidence record.
+    Record,
+}
+
+impl Custody {
+    /// The stable wire token (diagnostics and receipts).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Synthesized => "synthesized",
+            Self::ProjectPath => "project-path",
+            Self::PathExec => "path-exec",
+            Self::Record => "record",
+        }
+    }
 }
 
 /// One resolved adapter: the gate's output before describe runs.
@@ -205,6 +238,7 @@ fn discover_path(path: &Path) -> Result<Vec<DiscoveryCandidate>, PackageFailure>
             manifest,
             package_root: Some(path.to_path_buf()),
             synthesized: false,
+            custody: Custody::ProjectPath,
         }]);
     }
     if path.is_file() {
@@ -219,6 +253,7 @@ fn discover_path(path: &Path) -> Result<Vec<DiscoveryCandidate>, PackageFailure>
             manifest,
             package_root,
             synthesized: false,
+            custody: Custody::ProjectPath,
         }]);
     }
     Err(invalid())
@@ -290,6 +325,7 @@ fn executable_manifest(executable: &Path) -> Option<DiscoveryCandidate> {
                 manifest,
                 package_root: executable.parent().map(|parent| parent.to_path_buf()),
                 synthesized: false,
+                custody: Custody::PathExec,
             });
         }
     }
@@ -354,6 +390,7 @@ pub fn implicit_local_development(entry: &Path) -> Result<DiscoveryCandidate, Pa
         manifest,
         package_root: None,
         synthesized: true,
+        custody: Custody::Synthesized,
     })
 }
 

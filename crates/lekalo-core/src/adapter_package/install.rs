@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use super::discovery::DiscoveryCandidate;
+use super::discovery::{Custody, DiscoveryCandidate};
 use super::inventory::{Inventory, InventoryRow};
 use super::manifest::ManifestDocument;
 use super::trust::TrustLevel;
@@ -519,6 +519,7 @@ mod tests {
             manifest: ManifestDocument::from_value(json).expect("parses"),
             package_root: None,
             synthesized: true,
+            custody: Custody::ProjectPath,
         }
     }
 

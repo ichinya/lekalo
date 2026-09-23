@@ -2971,6 +2971,10 @@ fn run_adapter_quarantine_release(id: &str, project: &Option<String>) -> Adapter
                     manifest,
                     package_root: Some(quarantine_dir.clone()),
                     synthesized: false,
+                    // Custody is not consulted by verify_package (pure
+                    // digest-domain re-check); the value only satisfies
+                    // the closed candidate grammar.
+                    custody: lekalo_core::adapter_package::discovery::Custody::Record,
                 };
                 lekalo_core::adapter_package::verify_package(&candidate)
             });

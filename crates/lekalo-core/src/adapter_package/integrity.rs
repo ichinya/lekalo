@@ -166,6 +166,7 @@ pub(crate) fn package_digest_hex(parts: &[Vec<u8>]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::super::discovery::Custody;
     use super::*;
 
     fn digest_of(bytes: &[u8]) -> String {
@@ -269,6 +270,7 @@ mod tests {
             manifest,
             package_root: Some(root.clone()),
             synthesized: false,
+            custody: Custody::ProjectPath,
         };
         assert!(verify_package(&candidate).is_ok(), "honest package passes");
         // Flip one byte.
@@ -293,6 +295,7 @@ mod tests {
             manifest,
             package_root: Some(root.clone()),
             synthesized: false,
+            custody: Custody::ProjectPath,
         };
         let error = verify_package(&candidate).expect_err("missing file refuses");
         match error {
@@ -336,6 +339,7 @@ mod tests {
             manifest,
             package_root: None,
             synthesized: true,
+            custody: Custody::ProjectPath,
         };
         assert!(verify_package(&candidate).is_ok());
     }
@@ -343,6 +347,7 @@ mod tests {
 
 #[cfg(test)]
 mod committed_exemplar_tests {
+    use super::super::discovery::Custody;
     use super::*;
 
     /// The cross-check both reviews demanded: the Rust verifier accepts
@@ -372,6 +377,7 @@ mod committed_exemplar_tests {
             manifest: document,
             package_root: Some(root.clone()),
             synthesized: false,
+            custody: Custody::ProjectPath,
         };
         verify_package(&candidate).expect("the shipped exemplar passes verify_package");
         let _ = std::fs::remove_dir_all(&root);

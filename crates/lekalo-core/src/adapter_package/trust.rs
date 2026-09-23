@@ -19,8 +19,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use super::discovery::DiscoveryCandidate;
-use super::manifest::{ManifestDocument, ManifestStatus, SignaturePolicy, SourceKind};
+use super::discovery::{Custody, DiscoveryCandidate};
+use super::manifest::{ManifestDocument, ManifestStatus};
 use super::types::PackageFailure;
 
 /// The exact runtime home of the revocation store.
@@ -230,35 +230,18 @@ pub fn assign(candidate: &DiscoveryCandidate) -> TrustLevel {
     if manifest.status() == ManifestStatus::Revoked {
         return TrustLevel::Revoked;
     }
-    if candidate.synthesized {
-        // Bare `-- PROGRAM`: the project's own explicit entry.
-        return TrustLevel::LocalDevelopment;
-    }
-    match (manifest.source_kind(), manifest.signature_policy()) {
-        // An explicit project path stays local development regardless
-        // of the optional signature.
-        (SourceKind::Path | SourceKind::PathExec, _)
-            if manifest.source_coordinate().starts_with("path:") =>
-        {
-            // `verified` requires the required-policy signature path;
-            // the required policy with no shipped verifier already
-            // refused, so a surviving explicit path is local dev.
-            TrustLevel::LocalDevelopment
-        }
-        // Release/registry packages with a verified publisher anchor
-        // and a passing conformance badge would be verified; with no
-        // shipped verifier in v1 they stay community.
-        (SourceKind::Release | SourceKind::Registry, _) => TrustLevel::Community,
-        // PATH-found executables are community without exception.
-        (SourceKind::PathExec, _) => TrustLevel::Community,
-        // A project-root path package: explicit local source.
-        (SourceKind::Path, SignaturePolicy::Unsigned | SignaturePolicy::Optional) => {
-            TrustLevel::LocalDevelopment
-        }
-        // A required policy cannot reach assignment (the signature gate
-        // already refused); the arm exists for exhaustivity and stays
-        // conservative.
-        (SourceKind::Path, SignaturePolicy::Required) => TrustLevel::Community,
+    // Trust is derived from custody — how the bytes actually arrived
+    // (fix round 4, cline F-NEW-1) — never from the manifest's
+    // self-declared `source.kind`. A release record whose manifest
+    // claims `path` is still record custody: community, quarantined.
+    match candidate.custody {
+        // Bare `-- PROGRAM` argv and the project's own explicit path
+        // supply are the project's local development.
+        Custody::Synthesized | Custody::ProjectPath => TrustLevel::LocalDevelopment,
+        // PATH-found executables and record-resolved packages are
+        // community without exception in v1 (no shipped verifier), so
+        // they install only through quarantine custody.
+        Custody::PathExec | Custody::Record => TrustLevel::Community,
     }
 }
 
@@ -302,6 +285,25 @@ mod tests {
         coordinate: &str,
         synthesized: bool,
     ) -> DiscoveryCandidate {
+        // The custody that matches the declared kind — the honest
+        // arrival. The lying-manifest regression overrides custody
+        // explicitly (see below).
+        let custody = match source_kind {
+            "path" => Custody::ProjectPath,
+            "path-exec" => Custody::PathExec,
+            "release" | "registry" => Custody::Record,
+            _ => Custody::ProjectPath,
+        };
+        candidate_with_custody(id, source_kind, coordinate, synthesized, custody)
+    }
+
+    fn candidate_with_custody(
+        id: &str,
+        source_kind: &str,
+        coordinate: &str,
+        synthesized: bool,
+        custody: Custody,
+    ) -> DiscoveryCandidate {
         let json = serde_json::json!({
             "schemaVersion": crate::adapter_package::version::MANIFEST_SCHEMA_VERSION,
             "identity": crate::adapter_package::version::MANIFEST_IDENTITY,
@@ -333,6 +335,7 @@ mod tests {
             manifest: ManifestDocument::from_value(json).expect("parses"),
             package_root: None,
             synthesized,
+            custody,
         }
     }
 
@@ -361,6 +364,41 @@ mod tests {
         // Synthesized bare-argv descriptor → local-development.
         assert_eq!(
             assign(&candidate("e", "path", "path:x.mjs", true)),
+            TrustLevel::LocalDevelopment
+        );
+    }
+
+    /// Regression (fix round 4, cline F-NEW-1): a manifest that lies
+    /// about its `source.kind` cannot elevate its custody. A record-
+    /// resolved package declaring `path` stays record custody —
+    /// community, and community installs through quarantine.
+    #[test]
+    fn a_lying_source_kind_cannot_elevate_custody() {
+        // The bytes arrived through a release record, but the manifest
+        // claims an explicit project path.
+        let liar = candidate_with_custody(
+            "lying-adapter",
+            "path",
+            "path:adapters/node-typescript",
+            false,
+            Custody::Record,
+        );
+        assert_eq!(assign(&liar), TrustLevel::Community);
+        assert!(TrustLevel::Community.quarantined_at_install());
+
+        // The same lie about a PATH hit: still community.
+        let path_liar = candidate_with_custody(
+            "path-liar",
+            "path",
+            "path:adapters/node-typescript",
+            false,
+            Custody::PathExec,
+        );
+        assert_eq!(assign(&path_liar), TrustLevel::Community);
+
+        // And the honest spellings are unchanged.
+        assert_eq!(
+            assign(&candidate("honest", "path", "path:pkg", false)),
             TrustLevel::LocalDevelopment
         );
     }

@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::adapter_package::discovery::{discover, DiscoveryCandidate, DiscoverySource};
+use crate::adapter_package::discovery::{discover, Custody, DiscoveryCandidate, DiscoverySource};
 use crate::adapter_package::manifest::ManifestDocument;
 use crate::adapter_package::types::PackageFailure;
 
@@ -110,7 +110,18 @@ pub fn resolve_record(
     if manifest.source_digest().as_str() != entry.digest {
         return Err(unavailable());
     }
-    discover(&DiscoverySource::Path(full), project_root)
+    // Record custody: the bytes arrived through the evidence record, no
+    // matter what the manifest's self-declared source.kind claims (fix
+    // round 4, cline F-NEW-1) — trust is assigned from custody, so a
+    // record-resolved package is community/quarantined even when it
+    // claims a project path.
+    Ok(discover(&DiscoverySource::Path(full), project_root)?
+        .into_iter()
+        .map(|mut candidate| {
+            candidate.custody = Custody::Record;
+            candidate
+        })
+        .collect())
 }
 
 fn package_root() -> Result<PathBuf, PackageFailure> {
@@ -257,5 +268,86 @@ mod tests {
         assert!(matches!(error, PackageFailure::SourceUnavailable { .. }));
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&empty);
+    }
+
+    /// Regression (fix round 4, cline F-NEW-1): a release record whose
+    /// manifest lies about its `source.kind` resolves with **record**
+    /// custody — the community tier, quarantined at install — never the
+    /// local-development tier the manifest claims.
+    #[test]
+    fn a_record_manifest_lying_about_source_kind_stays_record_custody() {
+        use crate::adapter_package::discovery::Custody;
+        use crate::adapter_package::trust;
+
+        let root = std::env::temp_dir().join(format!("lekalo-records-liar-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("lekalo")).expect("lekalo dir");
+        std::fs::write(root.join("lekalo/project.yaml"), "project: records-liar\n")
+            .expect("project marker");
+        let evidence = root.join(".lekalo/adapters/evidence");
+        std::fs::create_dir_all(&evidence).expect("evidence dir");
+
+        let package = root.join("liar-package");
+        std::fs::create_dir_all(&package).expect("package dir");
+        // The lie: the manifest declares an explicit project path even
+        // though the operator resolved it from the release record.
+        let manifest = serde_json::json!({
+            "schemaVersion": crate::adapter_package::version::MANIFEST_SCHEMA_VERSION,
+            "identity": crate::adapter_package::version::MANIFEST_IDENTITY,
+            "adapter": { "id": "liar-adapter", "name": "L", "version": "1.0.0" },
+            "publisher": { "id": "p", "trustAnchor": "none" },
+            "source": { "kind": "path", "coordinate": "path:liar-package", "digest": format!("sha256:{}", "22".repeat(32)) },
+            "license": { "spdx": "MIT", "file": "LICENSE", "fileDigest": format!("sha256:{}", "11".repeat(32)) },
+            "compatibility": { "protocolVersions": [crate::target_protocol::version::VERSION], "irVersions": [crate::ir::version::VERSION], "extensions": [] },
+            "capabilities": { "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] },
+            "executable": { "runtime": { "kind": "node", "minVersion": "18.0.0" }, "entry": "a.mjs", "argvPreview": ["node", "a.mjs"], "assets": [] },
+            "platforms": ["any"],
+            "integrity": { "packageDigest": format!("sha256:{}", "33".repeat(32)), "files": [ { "path": "a.mjs", "digest": format!("sha256:{}", "44".repeat(32)), "bytes": 3 } ], "signaturePolicy": "unsigned", "signature": null },
+            "permissions": {
+                "filesystem": { "readScopes": [], "writeScopes": [] },
+                "network": { "mode": "denied", "destinations": [] },
+                "environment": { "allowlist": [] },
+                "processes": { "children": "denied" },
+                "secrets": { "handles": [] }
+            },
+            "hooks": [],
+            "conformance": { "reportDigest": format!("sha256:{}", "55".repeat(32)), "badge": { "protocol": "0.3.2", "ir": "0.2.16", "profile": "default" }, "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2" },
+            "status": "active",
+            "revocation": null
+        });
+        std::fs::write(
+            package.join("adapter.manifest.json"),
+            serde_json::to_vec_pretty(&manifest).expect("manifest serializes"),
+        )
+        .expect("manifest written");
+        std::fs::write(
+            evidence.join("releases.json"),
+            format!(
+                "{{\"schemaVersion\":\"lekalo/adapter-records/v0.3.2\",\"records\":[{{\"coordinate\":\"release:ch/liar\",\"path\":\"liar-package\",\"digest\":\"sha256:{}\"}}]}}",
+                "22".repeat(32)
+            ),
+        )
+        .expect("record written");
+
+        let candidates = resolve_record(
+            ".lekalo/adapters/evidence/releases.json",
+            "release",
+            "ch/liar",
+            Some(&root),
+        )
+        .expect("the record resolves");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(
+            candidates[0].custody,
+            Custody::Record,
+            "custody is the record, not the manifest's claimed kind"
+        );
+        assert_eq!(
+            trust::assign(&candidates[0]),
+            crate::adapter_package::TrustLevel::Community,
+            "the lying manifest cannot reach local-development"
+        );
+        assert!(crate::adapter_package::TrustLevel::Community.quarantined_at_install());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
