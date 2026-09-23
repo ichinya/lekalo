@@ -5905,12 +5905,17 @@ fn run_classification(command: ClassificationCommands) -> DomainResult {
                 Err(result) => return result,
                 Ok(pair) => pair,
             };
-            let (attachment, _policy, resolution) =
+            let (attachment, policy, resolution) =
                 match parse_classification_pair(&attachment, &policy, &compilation, &model_json) {
                     Err(result) => return result,
                     Ok(parts) => parts,
                 };
-            let (json, human) = classification_inspect_payload(&attachment, &resolution);
+            let (json, human) = classification_inspect_payload(
+                &attachment,
+                &policy,
+                &resolution,
+                lekalo_core::classification::DEFAULT_AS_OF,
+            );
             DomainResult::graph(json, human, Vec::new())
         }
     }
@@ -5950,17 +5955,19 @@ fn classification_validate_payload(
 /// Render the `classification inspect` payload.
 fn classification_inspect_payload(
     attachment: &lekalo_core::classification::Attachment,
+    policy: &lekalo_core::classification::PolicyAttachment,
     resolution: &lekalo_core::classification::Resolution,
+    as_of: &str,
 ) -> (String, String) {
     let mut json = String::from("{\"status\":\"valid\",\"subjects\":[");
     let mut human = Vec::new();
     for (index, entry) in attachment.classifications().iter().enumerate() {
-        // Grants participate in the inspect view: a valid reviewed
-        // lowering shows the lowered kind (never a silent lowering of
-        // un-granted subjects).
+        // Grants participate in the inspect view: a *valid* reviewed
+        // lowering shows the lowered kind — the same shared predicate
+        // every grant consumer uses, so an expired or otherwise dead
+        // grant never lowers the displayed kind (review r3, F-2).
         let mark = resolution.resolve_with_grants(entry.subject(), |grant| {
-            grant.from_kind().declassifiable()
-                && grant.to_kind().strict_lowering_of(grant.from_kind())
+            lekalo_core::classification::grant_is_valid(grant, policy, as_of)
         });
         let resolved = lekalo_core::classification::ResolvedKind::Classified(mark.kind);
         if index > 0 {

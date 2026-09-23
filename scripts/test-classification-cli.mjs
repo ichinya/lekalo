@@ -249,6 +249,31 @@ const policy = (fixture) => join(fixture, "lekalo/classification-policy.json");
     fail("endpoint-public-reason-codes", deniedDoc.reasonCodes);
   }
 
+  // 6d''. The inspect projection (review r3, F-2): a dead (expired)
+  // grant never lowers the displayed kind — the same shared predicate
+  // every grant consumer uses.
+  {
+    const inspect = run(
+      [
+        "classification",
+        "inspect",
+        "--attachment",
+        attachment(EXPIRED),
+        "--policy",
+        policy(EXPIRED),
+        "--json",
+      ],
+      EXPIRED,
+    );
+    if (inspect.code !== 0) fail("expired-inspect-exit", inspect);
+    const subject = JSON.parse(inspect.stdout).subjects.find(
+      (row) => row.subject === "notify.user",
+    );
+    if (!subject || subject.kind !== "personal") {
+      fail("expired-inspect-kind", subject);
+    }
+  }
+
   // 6e. The validate-pipeline review (F-2 fix): the broken attachments
   // invalidate in the strict profile; the valid fixture stays green.
   // In the default profile structured refusals stay invalid while
