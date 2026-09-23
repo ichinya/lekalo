@@ -357,12 +357,6 @@ impl CandidateAdapter {
             canonical::manifest_bytes(&self.manifest).as_slice(),
         ))
     }
-
-    /// The resolved source reference (read-only view for gate reporting
-    /// and receipt rendering).
-    pub fn source(&self) -> &SourceRef {
-        &self.source
-    }
 }
 
 /// One candidate generator.
@@ -498,12 +492,6 @@ impl CandidateSet {
     pub fn with_adapter(mut self, adapter: CandidateAdapter) -> Self {
         self.adapters.push(adapter);
         self
-    }
-
-    /// The adapter candidates, in insertion order (read-only view for
-    /// receipt rendering and gate reporting).
-    pub fn adapters(&self) -> &[CandidateAdapter] {
-        &self.adapters
     }
 
     /// Attach issue #32 installed provenance to the adapter candidate
@@ -1032,3 +1020,100 @@ macro_rules! versioned_candidate {
 }
 
 versioned_candidate!(CandidateAdapter, CandidateGenerator, CandidateProfile);
+
+#[cfg(test)]
+mod installed_provenance_tests {
+    use super::super::types::{
+        ArtifactPin, ComponentId, Platform, SemVer, Sha256Digest, SourceKind, SourceRef,
+    };
+    use super::*;
+    use crate::versioning::compatibility::AdapterCompatibilityManifest;
+
+    fn hex64(byte: u8) -> String {
+        format!("{byte:064x}")
+    }
+
+    fn manifest_for(adapter: &str) -> AdapterCompatibilityManifest {
+        use crate::versioning::family::{IrContract, ProtocolContract};
+        use crate::versioning::ContractVersion;
+        AdapterCompatibilityManifest::new(
+            ContractVersion::<RegistryContract>::parse_canonical(
+                crate::versioning::compatibility::MANIFEST_SCHEMA_VERSION,
+            )
+            .expect("manifest schema version is canonical"),
+            adapter,
+            ContractVersion::<IrContract>::parse_canonical("0.2.16").expect("ir min"),
+            ContractVersion::<IrContract>::parse_canonical("0.2.16").expect("ir max"),
+            None,
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("manifest is valid")
+    }
+
+    /// Regression (fix round 2, devin F-8; relocated in round 4, devin
+    /// N-4): installed lock-provenance is live — the store-relative
+    /// source id spells the real packages path below `.lekalo` (every
+    /// segment portable, so `path_violation` is a real check), and the
+    /// installed kind, package manifest digest, trust, and install plan
+    /// id reach the candidate instead of the write being swallowed.
+    #[test]
+    fn installed_provenance_pins_source_digest_trust_and_plan() {
+        let mut candidates = CandidateSet::empty().with_adapter(CandidateAdapter::new(
+            ComponentId::parse("adapter-installed").expect("adapter id"),
+            SemVer::parse("1.0.0").expect("adapter version"),
+            Sha256Digest::from_hex(&hex64(0x30)),
+            SourceRef::new(
+                SourceKind::Catalog,
+                "adapter-installed",
+                Sha256Digest::from_hex(&hex64(0x31)),
+            )
+            .expect("source"),
+            vec![ArtifactPin::new(
+                Platform::parse("linux-x64").expect("platform"),
+                Sha256Digest::from_hex(&hex64(0x32)),
+            )],
+            manifest_for("adapter-installed"),
+        ));
+        let plan_digest = Sha256Digest::from_hex(&hex64(0x39));
+        candidates
+            .with_installed_provenance(
+                "1.0.0",
+                &format!("sha256:{}", hex64(0x30)),
+                &format!("sha256:{}", hex64(0x33)),
+                "local-development",
+                Some(plan_digest.to_string().as_str()),
+            )
+            .expect("the provenance pins onto the matching candidate");
+        let adapter = candidates
+            .adapters
+            .iter()
+            .find(|adapter| adapter.installed)
+            .expect("the matching candidate carries the installed provenance");
+        assert_eq!(
+            adapter.source.id(),
+            "adapters/packages/adapter-installed/1.0.0-00000000",
+            "the source id is the real store-relative packages path"
+        );
+        assert_eq!(adapter.source.kind(), SourceKind::Installed);
+        assert_eq!(
+            adapter.package_manifest_digest,
+            Some(Sha256Digest::from_hex(&hex64(0x33)))
+        );
+        assert_eq!(adapter.install_plan_id, Some(plan_digest));
+        assert!(adapter.trust.is_some());
+
+        // A zero-match provenance request refuses: the caller claimed a
+        // selected installed pin that no candidate carries.
+        let mut candidates = CandidateSet::empty();
+        assert!(candidates
+            .with_installed_provenance(
+                "9.9.9",
+                &format!("sha256:{}", hex64(0x30)),
+                &format!("sha256:{}", hex64(0x33)),
+                "local-development",
+                None,
+            )
+            .is_err());
+    }
+}

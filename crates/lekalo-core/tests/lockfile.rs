@@ -905,57 +905,6 @@ fn a_symlinked_lock_is_a_policy_denial() {
     });
 }
 
-/// Regression (fix round 2, devin F-8): installed lock-provenance is
-/// live — the store-relative source id spells the real packages path
-/// (never a literal `*` segment), so `path_violation` accepts it and the
-/// installed kind, package manifest digest, trust, and install plan id
-/// reach the lock instead of the write being swallowed.
-#[test]
-fn installed_provenance_pins_source_digest_trust_and_plan() {
-    let mut candidates = CandidateSet::empty().with_adapter(adapter_candidate(
-        "adapter-installed",
-        "1.0.0",
-        0x30,
-        "linux-x64",
-    ));
-    let plan_digest = Sha256Digest::from_hex(&hex64(0x39));
-    candidates
-        .with_installed_provenance(
-            "1.0.0",
-            &format!("sha256:{}", hex64(0x30)),
-            &format!("sha256:{}", hex64(0x31)),
-            "local-development",
-            Some(plan_digest.to_string().as_str()),
-        )
-        .expect("the provenance pins onto the matching candidate");
-    let adapter = candidates
-        .adapters()
-        .iter()
-        .find(|adapter| adapter.installed)
-        .expect("the matching candidate carries the installed provenance");
-    let source = adapter.source().id();
-    assert_eq!(
-        source, "adapters/packages/adapter-installed/1.0.0-00000000",
-        "the source id is the real store-relative packages path"
-    );
-    assert_eq!(
-        adapter.source().kind(),
-        SourceKind::Installed,
-        "the lock source kind is installed"
-    );
-    assert_eq!(
-        adapter.package_manifest_digest,
-        Some(Sha256Digest::from_hex(&hex64(0x31))),
-        "the package manifest digest is pinned"
-    );
-    assert_eq!(
-        adapter.install_plan_id,
-        Some(plan_digest),
-        "the install plan id is pinned"
-    );
-    assert!(adapter.trust.is_some(), "the trust level is pinned");
-}
-
 /// Regression (fix round 2, devin F-2): a repoint can never resurrect a
 /// revoked version — `run_adapter_repoint` consults the revocation store
 /// before any plan exists. The gate lives in the CLI; here we pin the
