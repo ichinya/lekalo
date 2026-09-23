@@ -535,8 +535,12 @@ test("the ownership sidecar claims responses, security schemes, and the input di
 
 
 
-test("fragments mode merges ownership-aware and never overwrites manual content (r1 F-7/cline F-2)", () => {
-  // 1. Generate the full document once (dry run).
+test("fragments apply refuses on a manual/generated collision, naming the pointer (r2 F-2)", () => {
+  // A hand edit at a generated pointer whose sidecar claim was
+  // stripped collides with the regeneration: the core merge refuses
+  // (MergeOutcome::into_result) and so does the apply — it never
+  // reports complete over a document that silently dropped the
+  // generated operation.
   const root = evidenceProject();
   try {
     const views = viewsFor(root);
@@ -546,10 +550,7 @@ test("fragments mode merges ownership-aware and never overwrites manual content 
     const generatedOwnership = JSON.parse(
       first.data.bodies.get("docs/openapi.ownership.json"),
     );
-    // 2. Maintain by hand: edit the generated operation (the pointer
-    // is stripped from the manifest: unclaimed) and add a manual path.
     const focusPointer = "/paths/~1tasks~1{task_id}~1focus/post";
-    assert.ok(generatedOwnership.pointers[focusPointer], "the fixture operation is claimed");
     const maintainedOwnership = {
       ...generatedOwnership,
       pointers: Object.fromEntries(
@@ -558,23 +559,12 @@ test("fragments mode merges ownership-aware and never overwrites manual content 
         ),
       ),
     };
-    const manualBlock = [
-      '  "/hand-written":',
-      '    "get":',
-      '      "operationId": "handWritten"',
-      '      "responses":',
-      '        "200":',
-      '          "description": "kept"',
-    ]
-      .map((line) => `${line}\n`)
-      .join("");
-    const maintainedYaml = generatedYaml
-      .replace('"operationId": "plannerApiFocus"', '"operationId": "handEditedOperation"')
-      .replace('"paths":\n', `"paths":\n${manualBlock}`);
-    assert.ok(maintainedYaml.includes("handEditedOperation"));
-    assert.ok(maintainedYaml.includes("handWritten"));
-    // 3. A fragments-mode run over the maintained document.
-    const policyText = 'openapi:\n  version: "3.1"\n  mode: fragments\n  path: docs/openapi.yaml\n';
+    const maintainedYaml = generatedYaml.replace(
+      '"operationId": "plannerApiFocus"',
+      '"operationId": "handEditedOperation"',
+    );
+    const policyText =
+      'openapi:\n  version: "3.1"\n  mode: fragments\n  path: docs/openapi.yaml\n';
     const files = new Map([
       ["docs/openapi.yaml", Buffer.from(maintainedYaml, "utf8")],
       ["docs/openapi.ownership.json", Buffer.from(JSON.stringify(maintainedOwnership), "utf8")],
@@ -594,23 +584,12 @@ test("fragments mode merges ownership-aware and never overwrites manual content 
       writes: views.writes,
       request: {},
     });
-    assert.equal(outcome.state, "complete", JSON.stringify(outcome.diagnostics ?? []));
-    const merged = outcome.data.bodies.get("docs/openapi.yaml");
-    // The hand edit at the unclaimed pointer survived verbatim…
-    assert.ok(
-      merged.includes('"operationId": "handEditedOperation"'),
-      "the manual edit is never overwritten",
-    );
-    assert.ok(
-      !merged.includes('"operationId": "plannerApiFocus"'),
-      "the generator did not stomp the manual content",
-    );
-    // …and the wholly manual path survives too.
-    assert.ok(merged.includes("handWritten"), "the manual operation is preserved");
-    // The merge notes report what happened.
-    const notes = JSON.stringify(outcome.data.partial);
-    assert.ok(notes.includes("merge-conflict"), "the manual divergence is reported");
-    assert.ok(notes.includes("manual-preserved"), "the preserved manual path is reported");
+    assert.equal(outcome.state, "failed", JSON.stringify(outcome.diagnostics ?? []));
+    assert.equal(outcome.diagnostics[0].reason, "merge-conflict");
+    assert.equal(outcome.diagnostics[0].detail, focusPointer);
+    // Nothing was written and no pretend-complete plan is returned.
+    assert.equal(views.writes.length, 0);
+    assert.equal(outcome.data, undefined);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

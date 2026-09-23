@@ -968,6 +968,23 @@ function writePlan(context, rendered, policy) {
     }
     const existingOwnership = readOwnershipManifest(readView, policy.path);
     const merged = mergeFragments(existingTree, existingOwnership, rendered, mergeNotes);
+    // The core merge's conflict posture: a generated pointer colliding
+    // with differing unclaimed (manual) content refuses the merge
+    // (MergeOutcome::into_result), it does not complete with the
+    // manual bytes silently winning. The adapter never overwrites
+    // either way — but the apply fails in-envelope and names the
+    // pointer, instead of reporting complete over a document that
+    // lacks the generated operation (r2 F-2).
+    const conflict = mergeNotes.find((note) => note.detail === "merge-conflict");
+    if (conflict !== undefined) {
+      return {
+        state: "failed",
+        // The pointer is a wire token (RFC 6901 over the emitted
+        // document) — carried raw, exactly like the check report's
+        // conflict pointers.
+        diagnostics: [{ reason: "merge-conflict", detail: conflict.symbol }],
+      };
+    }
     documentText = toYaml(deepSort(merged));
   } else {
     // Full mode, or an unmanaged fragments target (first generation).

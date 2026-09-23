@@ -219134,6 +219134,16 @@ function writePlan(context, rendered, policy) {
     }
     const existingOwnership = readOwnershipManifest(readView, policy.path);
     const merged = mergeFragments(existingTree, existingOwnership, rendered, mergeNotes);
+    const conflict = mergeNotes.find((note) => note.detail === "merge-conflict");
+    if (conflict !== void 0) {
+      return {
+        state: "failed",
+        // The pointer is a wire token (RFC 6901 over the emitted
+        // document) — carried raw, exactly like the check report's
+        // conflict pointers.
+        diagnostics: [{ reason: "merge-conflict", detail: conflict.symbol }]
+      };
+    }
     documentText = toYaml(deepSort(merged));
   } else {
     documentText = toYaml(rendered.root);
