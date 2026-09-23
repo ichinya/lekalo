@@ -71,6 +71,7 @@ export function resolvePolicy(text) {
 export function parsePolicyYaml(text) {
   const lines = text.split(/\r?\n/);
   let section = null;
+  const seenSections = new Set();
   const seen = new Set();
   const policy = {};
   for (const raw of lines) {
@@ -93,9 +94,13 @@ export function parsePolicyYaml(text) {
       if (match[2] !== undefined) {
         return { refusal: "key-shape" };
       }
-      if (section === match[1]) {
+      // Every repeat refuses, not only the adjacent one: an
+      // openapi…zod…openapi sandwich must not silently merge (r1
+      // devin F-12).
+      if (seenSections.has(match[1])) {
         return { refusal: "duplicate-section" };
       }
+      seenSections.add(match[1]);
       section = match[1];
       continue;
     }
@@ -125,15 +130,25 @@ export function parsePolicyYaml(text) {
       continue;
     }
     if (key === "mode") {
-      if (!MODES.includes(value)) {
+      // Quoted spellings are accepted exactly like version's (the
+      // parser is value-spelling symmetric; r1 devin F-12).
+      const modeValue = unquote(value);
+      if (!MODES.includes(modeValue)) {
         return { refusal: "mode-value" };
       }
-      policy.mode = value;
+      policy.mode = modeValue;
       continue;
     }
     if (key === "path") {
       const path = unquote(value);
-      if (!/^[a-z][a-z0-9._/-]*\.yaml$/.test(path) || path.includes("..")) {
+      if (
+        !/^[a-z][a-z0-9._/-]*\.yaml$/.test(path) ||
+        path.includes("..") ||
+        // The write scopes are docs/**: a path outside them would
+        // only fail later at the scope check — refuse at parse time
+        // where the operator made the mistake (r1 devin F-12).
+        !path.startsWith("docs/")
+      ) {
         return { refusal: "path-value" };
       }
       policy.path = path;

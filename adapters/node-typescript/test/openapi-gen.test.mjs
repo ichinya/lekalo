@@ -348,6 +348,23 @@ test("the write scopes cover the default policy path", () => {
   assert.deepEqual(OPENAPI_WRITE_SCOPES, ["docs/**"]);
 });
 
+test("the policy parser is symmetric: quoted modes, sandwiched sections, docs-bounded paths (r1 devin F-12)", () => {
+  // mode accepts the quoted spelling exactly like version does.
+  const quoted = resolvePolicy('openapi:\n  mode: "fragments"\n');
+  assert.equal(quoted.refusal, undefined);
+  assert.equal(quoted.policy.mode, "fragments");
+  // A non-adjacent openapi…zod…openapi sandwich refuses instead of
+  // silently merging.
+  const sandwich = parsePolicyYaml(
+    'openapi:\n  mode: full\nzod:\n  date: date-string\nopenapi:\n  version: "3.0"\n',
+  );
+  assert.equal(sandwich.refusal, "duplicate-section");
+  // The path is bounded to the declared write scopes at parse time.
+  assert.equal(parsePolicyYaml("openapi:\n  path: api/openapi.yaml\n").refusal, "path-value");
+  const scoped = resolvePolicy('openapi:\n  path: "docs/api.yaml"\n');
+  assert.equal(scoped.refusal, undefined);
+  assert.equal(scoped.policy.path, "docs/api.yaml");
+});
 test("a declared scheme requirement carries its components.securitySchemes entry (r1 F-2)", () => {
   // transport-minimal declares a bearer scheme (user_bearer) and an
   // operation security requirement over it: the component must be
@@ -514,3 +531,4 @@ test("the ownership sidecar claims responses, security schemes, and the input di
     rmSync(root, { recursive: true, force: true });
   }
 });
+
