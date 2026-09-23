@@ -2846,14 +2846,35 @@ fn run_adapter_quarantine_purge(all: bool, project: &Option<String>) -> AdapterR
         Ok(root) => root,
         Err(result) => return AdapterRun::Envelope(result),
     };
-    let mut inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
-        Ok(inventory) => inventory,
-        Err(failure) => {
-            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
-                &failure,
-            ))
+    match quarantine_purge_all(&root) {
+        Ok(purged) => {
+            let document = serde_json::json!({
+                "status": "valid",
+                "purged": purged,
+            });
+            AdapterRun::Document {
+                document: serde_json::to_string_pretty(&document).expect("purge serializes"),
+                result: DomainResult::receipt(
+                    serde_json::to_string(&document).expect("purge serializes"),
+                    format!("quarantine purge : {} package(s)", purged),
+                ),
+            }
         }
-    };
+        Err(failure) => AdapterRun::Envelope(
+            lekalo_core::adapter_package::diagnostic::domain_result(&failure),
+        ),
+    }
+}
+
+/// The purge core over one project root (pure filesystem + inventory
+/// logic, unit-testable without spawning — fix round 4, cline F-NEW-4):
+/// removes every quarantined custody tree, cleans emptied per-id
+/// parents, and drops the matching inventory rows. Returns the count of
+/// purged packages.
+fn quarantine_purge_all(
+    root: &std::path::Path,
+) -> Result<usize, lekalo_core::adapter_package::PackageFailure> {
+    let mut inventory = lekalo_core::adapter_package::Inventory::load(root)?;
     let quarantined: Vec<_> = inventory
         .rows()
         .iter()
@@ -2881,27 +2902,21 @@ fn run_adapter_quarantine_purge(all: bool, project: &Option<String>) -> AdapterR
         );
         let _ = std::fs::remove_dir_all(&quarantine_dir);
         let _ = std::fs::remove_dir_all(&packages_dir);
+        // The per-id parent directories are custody scaffolding: once
+        // empty they are removed too (fix round 4, cline F-NEW-3), so
+        // the store carries no residue shells. remove_dir only succeeds
+        // when the directory is empty, so other versions are untouched.
+        for custody_dir in [&quarantine_dir, &packages_dir] {
+            if let Some(parent) = custody_dir.parent() {
+                let _ = std::fs::remove_dir(parent);
+            }
+        }
         inventory
             .rows_mut()
             .retain(|existing| existing.id != row.id || existing.version != row.version);
     }
-    if let Err(failure) = inventory.store(&root) {
-        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
-            &failure,
-        ));
-    }
-    let purged = quarantined.len();
-    let document = serde_json::json!({
-        "status": "valid",
-        "purged": purged,
-    });
-    AdapterRun::Document {
-        document: serde_json::to_string_pretty(&document).expect("purge serializes"),
-        result: DomainResult::receipt(
-            serde_json::to_string(&document).expect("purge serializes"),
-            format!("quarantine purge : {} package(s)", purged),
-        ),
-    }
+    inventory.store(root)?;
+    Ok(quarantined.len())
 }
 
 /// Run `lekalo adapter quarantine release`: move the quarantined bytes
@@ -3014,6 +3029,12 @@ fn run_adapter_quarantine_release(id: &str, project: &Option<String>) -> Adapter
                 stage: "release".to_owned(),
             },
         ));
+    }
+    // The emptied quarantine <id> parent is custody scaffolding; remove
+    // it when empty (fix round 4, cline F-NEW-3). remove_dir only
+    // succeeds on an empty directory, so sibling versions are safe.
+    if let Some(parent) = quarantine_dir.parent() {
+        let _ = std::fs::remove_dir(parent);
     }
     inventory.quarantine_release(id);
     if let Err(failure) = inventory.select(id, &row.version, &row.digest) {
@@ -6252,5 +6273,78 @@ mod adapter_update_tests {
         let rows = vec![row("a", "1.0.0", false)];
         let selected = row("a", "0.3", true);
         assert!(select_forward_update(&rows, Some(&selected)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod quarantine_custody_tests {
+    use super::*;
+
+    /// Regression (fix round 4, cline F-NEW-3): purge removes the
+    /// emptied per-id parent directories along with the custody
+    /// directories — no residue shells under quarantine/** or
+    /// packages/**, and sibling versions survive.
+    #[test]
+    fn purge_cleans_the_emptied_parent_directories() {
+        let root = std::env::temp_dir().join(format!("lekalo-cli-purge-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("lekalo")).expect("lekalo dir");
+        std::fs::write(root.join("lekalo/project.yaml"), "project: purge-test\n")
+            .expect("project marker");
+        // Two quarantined versions of one id, plus a promoted version of
+        // another id that must survive.
+        for dir in [
+            ".lekalo/adapters/quarantine/a/1.0.0-11111111",
+            ".lekalo/adapters/quarantine/a/2.0.0-22222222",
+            ".lekalo/adapters/packages/b/1.0.0-33333333",
+        ] {
+            std::fs::create_dir_all(root.join(dir.replace('/', std::path::MAIN_SEPARATOR_STR)))
+                .expect("custody dir");
+        }
+        std::fs::write(
+            root.join(".lekalo/adapters/quarantine/a/1.0.0-11111111/adapter.mjs"),
+            b"bytes",
+        )
+        .expect("bytes");
+        let inventory = serde_json::json!({
+            "schemaVersion": lekalo_core::adapter_package::version::INVENTORY_SCHEMA_VERSION,
+            "identity": lekalo_core::adapter_package::version::INVENTORY_IDENTITY,
+            "packages": [
+                { "id": "a", "version": "1.0.0",
+                  "digest": format!("sha256:{}", "11".repeat(32)),
+                  "manifestDigest": format!("sha256:{}", "11".repeat(32)),
+                  "trust": "community", "source": "release:ch/a",
+                  "selected": false, "quarantined": true },
+                { "id": "a", "version": "2.0.0",
+                  "digest": format!("sha256:{}", "22".repeat(32)),
+                  "manifestDigest": format!("sha256:{}", "22".repeat(32)),
+                  "trust": "community", "source": "release:ch/a",
+                  "selected": false, "quarantined": true },
+                { "id": "b", "version": "1.0.0",
+                  "digest": format!("sha256:{}", "33".repeat(32)),
+                  "manifestDigest": format!("sha256:{}", "33".repeat(32)),
+                  "trust": "local-development", "source": "path:x",
+                  "selected": true, "quarantined": false }
+            ]
+        });
+        std::fs::write(
+            root.join(".lekalo/adapters/inventory.json"),
+            serde_json::to_vec_pretty(&inventory).expect("inventory serializes"),
+        )
+        .expect("inventory written");
+
+        let purged = quarantine_purge_all(&root).expect("the fixture purges");
+        assert_eq!(purged, 2, "both quarantined rows purge");
+        // Both custody trees are gone — including the emptied a/ shell;
+        // the custody roots themselves legally remain.
+        assert!(!root.join(".lekalo/adapters/quarantine/a").exists());
+        assert!(!root
+            .join(".lekalo/adapters/quarantine/a/1.0.0-11111111")
+            .exists());
+        // The untouched promoted package survives.
+        assert!(root
+            .join(".lekalo/adapters/packages/b/1.0.0-33333333")
+            .exists());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
