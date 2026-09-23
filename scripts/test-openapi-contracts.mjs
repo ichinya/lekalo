@@ -42,11 +42,21 @@ if (ajvVersion !== "8.17.1") {
 // and the compiled official schema rides as a load-custody check.
 const requireFallback = createRequire(import.meta.url);
 let Validator;
+let validatorVersion;
 try {
   ({ Validator } = requireFallback("@seriousme/openapi-schema-validator"));
+  validatorVersion = requireFallback("@seriousme/openapi-schema-validator/package.json").version;
 } catch (error) {
   process.stderr.write(
     `${JSON.stringify({ ok: false, reason: "openapi-validator-unavailable", detail: String(error) }, null, 2)}\n`,
+  );
+  process.exit(1);
+}
+// The fallback is the authoritative document pass: an unpinned
+// install would silently change what the gate accepts (r1 cline F-7).
+if (validatorVersion !== "2.8.0") {
+  process.stderr.write(
+    `${JSON.stringify({ ok: false, reason: "openapi-validator-version", detail: validatorVersion }, null, 2)}\n`,
   );
   process.exit(1);
 }
@@ -349,6 +359,7 @@ if (exportGolden.trace?.manifestId !== trace.manifestId) {
 process.stdout.write(`${JSON.stringify({
   ok: true,
   ajv: ajvVersion,
+  openapiValidator: validatorVersion,
   metaSchema: metaSchema31.$id,
   goldenValid: true,
   golden30Valid: true,
