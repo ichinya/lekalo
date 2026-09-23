@@ -359,6 +359,15 @@ test("typed leaves outside the closed set or bounds are unsupported, not crashes
   const outcome = map(scenario);
   const entry = outcome.scenarios[0].when[0].input[0];
   assert.equal(entry.leafProblem, "leaf-value-kind");
+  // Review F-9: the input leaf problem propagates to the step's
+  // unsupported row (the idempotencyKey propagation), so emit renders
+  // the unsupported row instead of crashing on an unrenderable leaf.
+  const step = outcome.scenarios[0].when[0];
+  assert.deepEqual(step.unsupported, {
+    capability: "scenario.value",
+    reason: "leaf-value-kind",
+    detail: "task_id",
+  });
 });
 
 test("deep leaves beyond the typed depth bound are refused to leaf-depth", () => {

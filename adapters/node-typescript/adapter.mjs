@@ -218558,6 +218558,14 @@ function mapWhen(when, context, portSurface) {
       leaf,
       leafProblem: checkLeaf(leaf, 0)
     }));
+    const inputProblem = mapped.input.find((entry) => entry.leafProblem);
+    if (inputProblem) {
+      mapped.unsupported = {
+        capability: "scenario.value",
+        reason: inputProblem.leafProblem,
+        detail: boundToken2(inputProblem.field)
+      };
+    }
     if (action.actor !== void 0) mapped.ctx.actor = action.actor;
     if (action.clock !== void 0) mapped.ctx.clock = action.clock;
     if (action.idempotencyKey !== void 0) {

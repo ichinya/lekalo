@@ -621,6 +621,19 @@ function mapWhen(when, context, portSurface) {
       leaf,
       leafProblem: checkLeaf(leaf, 0),
     }));
+    // Review F-9: a `when`-input leaf outside the closed typed set is
+    // unsupported, never a crash — the same propagation the
+    // idempotencyKey leaf gets. Without it, renderWhen would call
+    // literalOf on the unrenderable leaf and abort generation with an
+    // untyped TypeError instead of an unsupported row.
+    const inputProblem = mapped.input.find((entry) => entry.leafProblem);
+    if (inputProblem) {
+      mapped.unsupported = {
+        capability: "scenario.value",
+        reason: inputProblem.leafProblem,
+        detail: boundToken(inputProblem.field),
+      };
+    }
     if (action.actor !== undefined) mapped.ctx.actor = action.actor;
     if (action.clock !== undefined) mapped.ctx.clock = action.clock;
     if (action.idempotencyKey !== undefined) {
