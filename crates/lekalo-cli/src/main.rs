@@ -2436,9 +2436,6 @@ fn run_adapter_repoint(
     // Issue #32 fix round 2 (devin F-2): a revoked version can never be
     // repointed to — rollback and update both refuse before any plan
     // exists, so a revoked pin can never be resurrected or selected.
-    // Issue #32 fix round 2 (devin F-2): a revoked version can never be
-    // repointed to — rollback and update both refuse before any plan
-    // exists, so a revoked pin can never be resurrected or selected.
     {
         let store = match lekalo_core::adapter_package::trust::RevocationStore::load(&root) {
             Ok(store) => store,
@@ -3020,7 +3017,6 @@ fn run_adapter_quarantine_release(id: &str, project: &Option<String>) -> Adapter
     }
 }
 
-/// Run `lekalo adapter test` (the issue #31 conformance battery behind
 /// Run `lekalo adapter test` (the issue #31 conformance battery behind
 /// the issue #32 resolution gate).
 fn run_adapter_test(
