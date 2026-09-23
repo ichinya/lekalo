@@ -175,7 +175,15 @@ const port = {
     });
   },
   async fixtureDigest(fixtureId) {
-    return "sha256:" + createDigest(JSON.stringify({ fixture: fixtureId ?? null, seed: idSeed }));
+    // The digest covers the fixture identity, the seeded id source, and
+    // the frozen clock: a deterministic_fixture assertion therefore
+    // transitively asserts its declared clock/idSource control refs
+    // (review F-3) — change any control and the digest moves.
+    return "sha256:" + createDigest(JSON.stringify({
+      clock: frozenClock,
+      fixture: fixtureId ?? null,
+      seed: idSeed,
+    }));
   },
   reset,
 };

@@ -218622,6 +218622,14 @@ function mapThen(then, context, portSurface) {
       return mapped;
     }
     if (kind === "idempotency") {
+      if (assertion.equivalence === "equivalent") {
+        mapped.unsupported = {
+          capability: "scenario.equivalence-equivalent",
+          reason: "equivalence-unimplemented",
+          detail: "equivalent"
+        };
+        return mapped;
+      }
       mapped.payload.replay = assertion.replay;
       mapped.payload.equivalence = assertion.equivalence;
       mapped.payload.duplicates = assertion.duplicates ?? null;
@@ -218635,6 +218643,26 @@ function mapThen(then, context, portSurface) {
         detail: surface
       };
       return mapped;
+    }
+    if (kind === "forbidden_effect" && assertion.scope === "resource") {
+      mapped.unsupported = {
+        capability: "scenario.forbidden-scope-resource",
+        reason: "scope-unimplemented",
+        detail: "resource"
+      };
+      return mapped;
+    }
+    if (kind === "entity_state") {
+      const known = ["datetime", "uuid", "uri", "decimal", "non-null"];
+      const unknown = Object.entries(assertion.fields ?? {}).filter(([, expectation]) => expectation !== null && typeof expectation === "object" && "match" in expectation && !known.includes(expectation.match)).map(([field, expectation]) => `${field}:${expectation.match}`);
+      if (unknown.length > 0) {
+        mapped.unsupported = {
+          capability: "scenario.match-kind",
+          reason: "match-kind-unimplemented",
+          detail: boundToken2(unknown.join(","))
+        };
+        return mapped;
+      }
     }
     mapped.port = surface ?? null;
     mapped.payload = { ...assertion };
@@ -219183,34 +219211,56 @@ function renderChecks(step, model, stepVars, clockIsos2, observed) {
       }
       return checks;
     }
-    case "error":
-      return [
+    case "error": {
+      const checks = [
         `assert.equal(${observed}.ok, false, "expected a typed error");`,
         `assert.equal(${observed}.error?.id, ${JSON.stringify(payload.error)}, "error-id");`,
         ...(payload.payload ?? []).filter((entry) => !entry.leafProblem).map((entry) => `assert.ok(errorFieldsMatch(${observed}.error, { ${JSON.stringify(entry.field)}: ${emitValue(literalOf(entry.leaf, stepVars))} }), "error-fields");`)
       ];
+      if (payload.contract) {
+        checks.push(
+          `assert.equal(await port.contractCheck(${JSON.stringify(payload.contract)}, ${(payload.payload ?? []).map((entry) => entry.field)}, ${observed}.error), true, "error-contract");`
+        );
+      }
+      return checks;
+    }
     case "entity_state": {
       const selector = selectorObject(payload.where, stepVars);
       const exactFields = {};
       const matchFields = [];
       for (const [field, expectation] of Object.entries(payload.fields ?? {})) {
         if (expectation !== null && typeof expectation === "object" && "match" in expectation) {
-          matchFields.push(field);
+          matchFields.push([field, expectation.match]);
           continue;
         }
         exactFields[field] = literalOf(expectation?.value ?? expectation, stepVars);
       }
       const selectorText = emitValue(selector);
       const fieldsText = emitValue(exactFields);
+      const matchCheck = {
+        uuid: "/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(value))",
+        datetime: "/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\\\.\\d+)?Z$/.test(String(value))",
+        uri: '/^\\S+$/.test(String(value)) && !String(value).includes(" //")',
+        decimal: "/^-?(0|[1-9][0-9]*)(\\\\.[0-9]*[1-9])?$/.test(String(value))",
+        "non-null": "value !== null && value !== undefined"
+      };
       return [
         `const stateRows = await port.state.query(${JSON.stringify(payload.entity)}, ${selectorText});`,
-        `assert.equal(stateRows.length, ${JSON.stringify(expectCount(payload.expect))}, "entity-count");`,
+        // EntityExpectation::Exists means at least one row — never == 1
+        // (review F-3); a count expectation is exact; missing is zero.
+        ...expectCount(payload.expect) === null ? [`assert.ok(stateRows.length >= 1, "entity-exists");`] : [`assert.equal(stateRows.length, ${JSON.stringify(expectCount(payload.expect))}, "entity-count");`],
         ...Object.keys(exactFields).length > 0 ? [
           `assert.ok(stateRows.every((row) => typedEqual(`,
           `  Object.fromEntries(${JSON.stringify(Object.keys(exactFields))}.map((key) => [key, row[key]])),`,
           `  ${fieldsText})), "entity-fields");`
         ] : [],
-        ...matchFields.map((field) => `assert.ok(stateRows.every((row) => row[${JSON.stringify(field)}] !== null), "entity-match:${field}");`)
+        ...matchFields.map(([field, matcher]) => {
+          const check = matchCheck[matcher];
+          if (!check) {
+            return `assert.fail("unrenderable match kind ${matcher}");`;
+          }
+          return `assert.ok(stateRows.every((row) => ((value) => ${check})(row[${JSON.stringify(field)}])), "entity-match:${field}:${matcher}");`;
+        })
       ];
     }
     case "emitted": {
@@ -219221,11 +219271,16 @@ function renderChecks(step, model, stepVars, clockIsos2, observed) {
         ...count === null ? [`assert.ok(emissions.length >= 1, "emitted-at-least-one");`] : [`assert.ok(emissions.length ${count.operator} ${count.value}, "emitted-count");`]
       ];
     }
-    case "forbidden_effect":
+    case "forbidden_effect": {
+      const scopeFilters = [];
+      if (payload.scope === "field") {
+        scopeFilters.push(`entry.field === ${JSON.stringify(payload.field)}`);
+      }
       return [
-        `const matching = port.effects().filter((entry) => entry.effect === ${JSON.stringify(payload.effect)}` + (payload.field ? ` && entry.field === ${JSON.stringify(payload.field)}` : ``) + `);`,
+        `const matching = port.effects().filter((entry) => entry.effect === ${JSON.stringify(payload.effect)}` + (scopeFilters.length > 0 ? ` && ${scopeFilters.join(" && ")}` : ``) + `);`,
         `assert.equal(matching.length, 0, "forbidden-effect");`
       ];
+    }
     case "authorization":
       return [
         `const decision = await port.authorize(${JSON.stringify(payload.actor?.id ?? null)}, ${JSON.stringify(payload.policy)}, ${JSON.stringify(observesOperation(model, step))});`,
@@ -219272,7 +219327,7 @@ function expectCount(expect) {
   if (expect !== null && typeof expect === "object") {
     if ("count" in expect) return expect.count;
     if (expect.presence === "missing") return 0;
-    if (expect.presence === "exists") return 1;
+    if (expect.presence === "exists") return null;
   }
   if (typeof expect === "number") return expect;
   return expect;

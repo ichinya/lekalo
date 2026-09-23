@@ -532,3 +532,92 @@ test('observes on a consumed given step resolves the given binding and runs (F-2
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('assertion semantics are enforced, never approximated (F-3)', () => {
+  // presence "exists" compiles to >= 1, not == 1 (multi-row entities).
+  const existsScenario = happyScenario();
+  existsScenario.then = [{
+    stepId: 'state',
+    observes: 'run',
+    assertion: {
+      kind: 'entity_state',
+      entity: 'planner.task',
+      where: [{ field: 'task_id', equals: { type: 'string', value: 'task-1' } }],
+      expect: { presence: 'exists' },
+      fields: {
+        focused_at: { match: 'datetime' },
+        task_id: { match: 'uuid' },
+        score: { match: 'decimal' },
+        link: { match: 'uri' },
+      },
+    },
+  }];
+  const files = emit(map(existsScenario).scenarios);
+  const testFile = files.find((entry) => entry.path.endsWith('.test.ts'));
+  assert.match(testFile.text, /stateRows\.length >= 1, "entity-exists"/);
+  assert.doesNotMatch(testFile.text, /"entity-count"/, 'exists is not == 1');
+  // Typed matchers compile to real canonical-form checks.
+  assert.match(testFile.text, /\[0-9a-f]\{8\}-\[0-9a-f]\{4\}/, 'uuid matcher');
+  assert.match(testFile.text, /entity-match:task_id:uuid/);
+  assert.match(testFile.text, /entity-match:focused_at:datetime/);
+  assert.match(testFile.text, /entity-match:score:decimal/);
+  assert.match(testFile.text, /entity-match:link:uri/);
+  assert.doesNotMatch(testFile.text, /entity-match:[a-z_]+"/, 'no matcher weakens to bare non-null');
+
+  // forbidden_effect resource scope lands in unsupported, not a weak filter.
+  const resourceScenario = happyScenario();
+  resourceScenario.then = [{
+    stepId: 'no_resource',
+    observes: 'run',
+    assertion: { kind: 'forbidden_effect', effect: 'planner.create_task', scope: 'resource' },
+  }];
+  const resourceFiles = emit(map(resourceScenario).scenarios);
+  const resourceTest = resourceFiles.find((entry) => entry.path.endsWith('.test.ts'));
+  assert.match(resourceTest.text, /outcome: "unsupported"/);
+  assert.match(resourceTest.text, /scope-unimplemented/);
+
+  // equivalence "equivalent" lands in unsupported, never strict equality.
+  const equivalentScenario = happyScenario();
+  equivalentScenario.then = [{
+    stepId: 'no_duplicates',
+    observes: 'run',
+    assertion: { kind: 'idempotency', replay: 'run', equivalence: 'equivalent', duplicates: 'none' },
+  }];
+  const equivalentOutcome = map(equivalentScenario);
+  assert.equal(equivalentOutcome.scenarios[0].then[0].unsupported.reason, 'equivalence-unimplemented');
+  const equivalentFiles = emit(equivalentOutcome.scenarios);
+  const equivalentTest = equivalentFiles.find((entry) => entry.path.endsWith('.test.ts'));
+  assert.match(equivalentTest.text, /outcome: "unsupported"/);
+
+  // An unknown match kind is unsupported at map time, never weakened.
+  const unknownMatch = happyScenario();
+  unknownMatch.then = [{
+    stepId: 'state',
+    observes: 'run',
+    assertion: {
+      kind: 'entity_state',
+      entity: 'planner.task',
+      where: [{ field: 'task_id', equals: { type: 'string', value: 'task-1' } }],
+      expect: { presence: 'exists' },
+      fields: { mystery: { match: 'regex' } },
+    },
+  }];
+  assert.equal(map(unknownMatch).scenarios[0].then[0].unsupported.capability, 'scenario.match-kind');
+
+  // error.contract emits the port contractCheck call when supported.
+  const contractScenario = happyScenario();
+  contractScenario.then = [{
+    stepId: 'typed',
+    observes: 'run',
+    assertion: {
+      kind: 'error',
+      error: 'planner.error.task_missing',
+      payload: { task_id: { value: { type: 'string', value: 'task-1' } } },
+      contract: 'planner/error-contract',
+    },
+  }];
+  const contractFiles = emit(map(contractScenario).scenarios);
+  const contractTest = contractFiles.find((entry) => entry.path.endsWith('.test.ts'));
+  assert.match(contractTest.text, /port\.contractCheck\("planner\/error-contract"/);
+  assert.match(contractTest.text, /"error-contract"/);
+});

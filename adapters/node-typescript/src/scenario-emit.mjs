@@ -644,8 +644,8 @@ function renderChecks(step, model, stepVars, clockIsos, observed) {
       }
       return checks;
     }
-    case "error":
-      return [
+    case "error": {
+      const checks = [
         `assert.equal(${observed}.ok, false, "expected a typed error");`,
         `assert.equal(${observed}.error?.id, ${JSON.stringify(payload.error)}, "error-id");`,
         ...(payload.payload ?? [])
@@ -654,22 +654,48 @@ function renderChecks(step, model, stepVars, clockIsos, observed) {
             `assert.ok(errorFieldsMatch(${observed}.error, { ${JSON.stringify(entry.field)}:`
               + ` ${emitValue(literalOf(entry.leaf, stepVars))} }), "error-fields");`),
       ];
+      if (payload.contract) {
+        // The ErrorContract half is real when the port provides the
+        // surface (the mapper marks absence unsupported) — the emitted
+        // check evaluates the error object against the declared contract
+        // with the public payload fields as the projection.
+        checks.push(
+          `assert.equal(await port.contractCheck(${JSON.stringify(payload.contract)},`
+            + ` ${(payload.payload ?? []).map((entry) => entry.field)}, ${observed}.error), true, "error-contract");`,
+        );
+      }
+      return checks;
+    }
     case "entity_state": {
       const selector = selectorObject(payload.where, stepVars);
       const exactFields = {};
       const matchFields = [];
       for (const [field, expectation] of Object.entries(payload.fields ?? {})) {
         if (expectation !== null && typeof expectation === "object" && "match" in expectation) {
-          matchFields.push(field);
+          matchFields.push([field, expectation.match]);
           continue;
         }
         exactFields[field] = literalOf(expectation?.value ?? expectation, stepVars);
       }
       const selectorText = emitValue(selector);
       const fieldsText = emitValue(exactFields);
+      // The closed matcher vocabulary compiles to real canonical-form
+      // checks (review F-3): uuid / datetime / uri / decimal carry their
+      // core grammars; non-null stays non-null. Nothing weakens silently.
+      const matchCheck = {
+        uuid: "/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(value))",
+        datetime: "/^\\\d{4}-\\\d{2}-\\\d{2}T\\\d{2}:\\\d{2}:\\\d{2}(\\\\.\\\d+)?Z$/.test(String(value))",
+        uri: "/^\\\S+$/.test(String(value)) && !String(value).includes(\" //\")",
+        decimal: "/^-?(0|[1-9][0-9]*)(\\\\.[0-9]*[1-9])?$/.test(String(value))",
+        "non-null": "value !== null && value !== undefined",
+      };
       return [
         `const stateRows = await port.state.query(${JSON.stringify(payload.entity)}, ${selectorText});`,
-        `assert.equal(stateRows.length, ${JSON.stringify(expectCount(payload.expect))}, "entity-count");`,
+        // EntityExpectation::Exists means at least one row — never == 1
+        // (review F-3); a count expectation is exact; missing is zero.
+        ...(expectCount(payload.expect) === null
+          ? [`assert.ok(stateRows.length >= 1, "entity-exists");`]
+          : [`assert.equal(stateRows.length, ${JSON.stringify(expectCount(payload.expect))}, "entity-count");`]),
         ...(Object.keys(exactFields).length > 0
           ? [
               `assert.ok(stateRows.every((row) => typedEqual(`,
@@ -677,8 +703,13 @@ function renderChecks(step, model, stepVars, clockIsos, observed) {
               `  ${fieldsText})), "entity-fields");`,
             ]
           : []),
-        ...matchFields.map((field) =>
-          `assert.ok(stateRows.every((row) => row[${JSON.stringify(field)}] !== null), "entity-match:${field}");`),
+        ...matchFields.map(([field, matcher]) => {
+          const check = matchCheck[matcher];
+          if (!check) {
+            return `assert.fail("unrenderable match kind ${matcher}");`;
+          }
+          return `assert.ok(stateRows.every((row) => ((value) => ${check})(row[${JSON.stringify(field)}])), "entity-match:${field}:${matcher}");`;
+        }),
       ];
     }
     case "emitted": {
@@ -691,12 +722,21 @@ function renderChecks(step, model, stepVars, clockIsos, observed) {
           : [`assert.ok(emissions.length ${count.operator} ${count.value}, "emitted-count");`]),
       ];
     }
-    case "forbidden_effect":
+    case "forbidden_effect": {
+      // The closed scope is enforced, not dropped (review F-3): field
+      // scope pins the exact field, entity scope forbids every ledger
+      // occurrence of the effect, and resource scope has no port ledger
+      // surface — the mapper compiles it to an explicit unsupported row.
+      const scopeFilters = [];
+      if (payload.scope === "field") {
+        scopeFilters.push(`entry.field === ${JSON.stringify(payload.field)}`);
+      }
       return [
-        `const matching = port.effects().filter((entry) => entry.effect === ${JSON.stringify(payload.effect)}` +
-          (payload.field ? ` && entry.field === ${JSON.stringify(payload.field)}` : ``) + `);`,
+        `const matching = port.effects().filter((entry) => entry.effect === ${JSON.stringify(payload.effect)}`
+          + (scopeFilters.length > 0 ? ` && ${scopeFilters.join(" && ")}` : ``) + `);`,
         `assert.equal(matching.length, 0, "forbidden-effect");`,
       ];
+    }
     case "authorization":
       return [
         `const decision = await port.authorize(${JSON.stringify(payload.actor?.id ?? null)},`
@@ -706,6 +746,9 @@ function renderChecks(step, model, stepVars, clockIsos, observed) {
     case "idempotency": {
       const original = `step_${identifierOf(payload.replay ?? "")}`;
       const originalStep = model.when.find((candidate) => candidate.stepId === payload.replay);
+      // Byte-identical results are assertable directly; the weaker
+      // semantic-equivalence relation has no evaluator in v1 and the
+      // mapper compiles it to an explicit unsupported row (review F-3).
       const checks = [
         `assert.ok(typedEqual(${observed}, ${original}), "replay-equivalence");`,
       ];
@@ -728,6 +771,11 @@ function renderChecks(step, model, stepVars, clockIsos, observed) {
       if (!fixtureStep) {
         return [`assert.fail("deterministic_fixture without a fixture precondition");`];
       }
+      // The digest covers the fixture, the seeded id source, and the
+      // frozen clock (the fixture port derives it from all three), so
+      // the equality transitively asserts the declared clock/idSource
+      // control refs — the wire's control refs are already validated to
+      // point at established given steps before anything is emitted.
       return [
         `assert.equal(await port.fixtureDigest(${JSON.stringify(fixtureStep.payload?.fixture ?? null)}),`
           + ` ${JSON.stringify(payload.digest)}, "fixture-digest");`,
@@ -747,7 +795,9 @@ function expectCount(expect) {
   if (expect !== null && typeof expect === "object") {
     if ("count" in expect) return expect.count;
     if (expect.presence === "missing") return 0;
-    if (expect.presence === "exists") return 1;
+    // EntityExpectation::Exists is AT LEAST one row (review F-3); the
+    // caller emits >= 1 for the null sentinel.
+    if (expect.presence === "exists") return null;
   }
   if (typeof expect === "number") return expect;
   return expect;

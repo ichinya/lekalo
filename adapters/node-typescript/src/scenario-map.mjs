@@ -705,6 +705,17 @@ function mapThen(then, context, portSurface) {
       return mapped;
     }
     if (kind === "idempotency") {
+      // The weaker semantic-equivalence relation has no evaluator in v1;
+      // emitting strict equality would over-constrain the replay
+      // (review F-3) — an explicit unsupported row, never a proxy.
+      if (assertion.equivalence === "equivalent") {
+        mapped.unsupported = {
+          capability: "scenario.equivalence-equivalent",
+          reason: "equivalence-unimplemented",
+          detail: "equivalent",
+        };
+        return mapped;
+      }
       mapped.payload.replay = assertion.replay;
       mapped.payload.equivalence = assertion.equivalence;
       mapped.payload.duplicates = assertion.duplicates ?? null;
@@ -718,6 +729,34 @@ function mapThen(then, context, portSurface) {
         detail: surface,
       };
       return mapped;
+    }
+    // Review F-3: semantics the emitted subset cannot express land in
+    // unsupported[], never an approximation.
+    if (kind === "forbidden_effect" && assertion.scope === "resource") {
+      // No resource ledger surface exists on the closed port contract.
+      mapped.unsupported = {
+        capability: "scenario.forbidden-scope-resource",
+        reason: "scope-unimplemented",
+        detail: "resource",
+      };
+      return mapped;
+    }
+    if (kind === "entity_state") {
+      // A matcher outside the closed vocabulary the emitter can check is
+      // unsupported, never silently weakened (review F-3).
+      const known = ["datetime", "uuid", "uri", "decimal", "non-null"];
+      const unknown = Object.entries(assertion.fields ?? {})
+        .filter(([, expectation]) => expectation !== null && typeof expectation === "object"
+          && "match" in expectation && !known.includes(expectation.match))
+        .map(([field, expectation]) => `${field}:${expectation.match}`);
+      if (unknown.length > 0) {
+        mapped.unsupported = {
+          capability: "scenario.match-kind",
+          reason: "match-kind-unimplemented",
+          detail: boundToken(unknown.join(",")),
+        };
+        return mapped;
+      }
     }
     mapped.port = surface ?? null;
     mapped.payload = { ...assertion };
