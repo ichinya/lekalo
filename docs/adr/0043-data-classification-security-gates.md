@@ -125,14 +125,15 @@ silent lowering the check exists to catch.
   classification review when the attachment is present (strict
   profile: error findings invalidate; default profile: recorded,
   never silently skipped — a present-but-broken attachment is invalid
-  in every profile).
+  in every profile). The review runs before the authorization review
+  so a broken attachment is never masked by an unrelated denial.
 - The `Sensitivity` markers on declared effect edges carry
   `dev.lekalo/data-classification@0.4.0` (the effect-graph wire's
   namespaced spelling) once any kind resolves for the edge's subject;
   the wire shape is unchanged.
-- `check-contract-versions` flags the three new 0.4.0 schemas until
-  the M4 product-version bump — the same expected, coordinated state
-  as #70/#85.
+- The three 0.4.0 schemas pass `check-contract-versions` at the M4
+  product version (the earlier pending-bump state is resolved on
+  merge).
 - The diagnostic-registry v0.4.0 successor created here is shared
   custody with #85 (its thirteen `nfr.*` rows are preserved
   byte-semantically and the additive chain is proven by

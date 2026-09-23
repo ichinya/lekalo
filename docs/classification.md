@@ -65,7 +65,13 @@ Hard rules:
 - Every lowering needs a grant: an exact id, an opaque review
   reference, a bounded justification, optional closed conditions
   (`aggregated`, `anonymized`, `consent-obtained`, `pseudonymized`,
-  `suppressed`), and an optional expiry. Self-approval rejects.
+  `suppressed`), and an optional expiry (a grant past `expiresAt`
+  is a `classification.expired-declassification` finding — dead
+  grants never lower anything). Self-approval rejects. The
+  `declassifyRoles` check is structural: `approvedBy` is an opaque
+  reference with no role token, so validation verifies the from-kind
+  rule declares roles; binding the approving role to the declared set
+  needs the issuer story (ADR-0043 §9).
 - `personal`, `credential`, `financial`, `health`, and
   `tenant-scoped` are cross-tenant-forbidden by default
   (`crossTenant: forbidden`).
@@ -131,8 +137,9 @@ Adapters declare `preserve.classification` (`full`, `partial`,
 `classification.preservation` conformance check (security class)
 passes an honest refusal and fails any support claim the projection
 wire cannot represent: an unverifiable claim is exactly the silent
-lowering the check exists to catch
-(`dataflow.adapter-metadata-loss` is the analysis-side rule).
+lowering the check exists to catch (`dataflow.adapter-metadata-loss`
+is registered as the analysis-side rule and gains its producer when
+the observed-evidence seam lands — it is not emitted today).
 
 ## Boundaries
 

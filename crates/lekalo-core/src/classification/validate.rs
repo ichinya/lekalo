@@ -303,6 +303,13 @@ pub fn validate_policy_and_grants_as_of(
             });
             continue;
         }
+        // Role custody is structural: `approvedBy` is an opaque review
+        // reference with no issuer or role token, so the check cannot
+        // relate the approver to `declassifyRoles` — it verifies the
+        // from-kind rule declares roles and that the reference is not
+        // the grant's own id (self-approval, below). A concrete issuer
+        // story (plan §9 risk 9) is required before this can bind the
+        // approving role to the declared set.
         // Expiry (LEK-CLS-007): a grant past its `expiresAt` is dead —
         // reported against the fixed validation as-of date, never
         // silently lowering anything.
