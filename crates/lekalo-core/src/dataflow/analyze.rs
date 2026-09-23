@@ -172,7 +172,7 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
             }
         };
         let tenant_relation = tenant_relation_of(inputs, &subject, kind, sink_kind);
-        let gate = gate_outcome(inputs, &subject, &kind, sink_kind, confidence, resolved);
+        let gate = gate_outcome(inputs, &subject, &kind, sink_kind, resolved);
         let gate_wire = gate.as_ref().map(|outcome| Gate {
             required: outcome.required,
             satisfied: outcome.satisfied,
@@ -299,7 +299,6 @@ pub fn analyze(inputs: &Inputs<'_>) -> Result<Analysis, DiagnosticSet> {
             &subject,
             &kind,
             sink_kind,
-            Confidence::Unknown,
             resolved,
         );
         let gate_wire = gate.as_ref().map(|outcome| Gate {
@@ -680,7 +679,6 @@ fn gate_outcome(
     subject: &SubjectPath,
     kind: &DataKind,
     sink_kind: SinkKind,
-    confidence: Confidence,
     resolved: ResolvedKind,
 ) -> Option<GateOutcome> {
     if resolved == ResolvedKind::Unclassified {
@@ -803,12 +801,6 @@ mod sink_kind_tests {
 }
 
 impl Inputs<'_> {
-    /// Whether the declared graph is the only input (observed sections
-    /// present would set this false before analysis).
-    const fn inputs_declared_complete(&self) -> bool {
-        true
-    }
-
     /// The declared declassification grants of one subject (the
     /// approval records the consent rule consults).
     fn grants_of(&self, subject: &SubjectPath) -> &[crate::classification::Declassification] {

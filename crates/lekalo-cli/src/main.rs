@@ -5718,9 +5718,10 @@ enum ClassificationCommands {
         project: Option<String>,
         /// The reference date for expiry and validity evaluation
         /// (`YYYY-MM-DD`); expiry is deterministic in this date, never
-        /// a clock.
+        /// a clock. Defaults to the fixed classification as-of date,
+        /// overridable via `LEKALO_AS_OF`.
         #[arg(long, value_name = "DATE")]
-        as_of: String,
+        as_of: Option<String>,
     },
     /// Inspect one classification attachment: the resolved kinds of
     /// every declared subject in canonical order.
@@ -5736,9 +5737,10 @@ enum ClassificationCommands {
         project: Option<String>,
         /// The reference date for expiry and validity evaluation
         /// (`YYYY-MM-DD`); expiry is deterministic in this date, never
-        /// a clock.
+        /// a clock. Defaults to the fixed classification as-of date,
+        /// overridable via `LEKALO_AS_OF`.
         #[arg(long, value_name = "DATE")]
-        as_of: String,
+        as_of: Option<String>,
     },
 }
 
@@ -5759,6 +5761,12 @@ enum DataflowCommands {
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
+        /// The reference date for expiry and validity evaluation
+        /// (`YYYY-MM-DD`); expiry is deterministic in this date, never
+        /// a clock. Defaults to the fixed classification as-of date,
+        /// overridable via `LEKALO_AS_OF`.
+        #[arg(long, value_name = "DATE")]
+        as_of: Option<String>,
         /// One transport endpoint-actor binding (issue #70 seam, plan
         /// §5.1): `SYMBOL:ACTOR` where ACTOR is `public` or
         /// `authenticated`; the binding resolves the endpoint's invoked
@@ -5879,7 +5887,11 @@ fn run_classification(command: ClassificationCommands) -> DomainResult {
             attachment,
             policy,
             project,
+            as_of,
         } => {
+            let as_of = as_of
+                .or_else(|| std::env::var("LEKALO_AS_OF").ok())
+                .unwrap_or_else(|| lekalo_core::classification::DEFAULT_AS_OF.to_owned());
             let (model_json, compilation) = match load_compiled_for(&project) {
                 Err(result) => return result,
                 Ok(pair) => pair,
@@ -5889,11 +5901,12 @@ fn run_classification(command: ClassificationCommands) -> DomainResult {
                     Err(result) => return result,
                     Ok(parts) => parts,
                 };
-            match lekalo_core::classification::validate_policy_and_grants(
+            match lekalo_core::classification::validate_policy_and_grants_as_of(
                 &attachment,
                 &policy,
                 &resolution,
                 &compilation.project,
+                &as_of,
             ) {
                 Err(set) => DomainResult::invalid(set),
                 Ok(outcome) => {
@@ -5910,7 +5923,11 @@ fn run_classification(command: ClassificationCommands) -> DomainResult {
             attachment,
             policy,
             project,
+            as_of,
         } => {
+            let as_of = as_of
+                .or_else(|| std::env::var("LEKALO_AS_OF").ok())
+                .unwrap_or_else(|| lekalo_core::classification::DEFAULT_AS_OF.to_owned());
             let (model_json, compilation) = match load_compiled_for(&project) {
                 Err(result) => return result,
                 Ok(pair) => pair,
@@ -5924,7 +5941,7 @@ fn run_classification(command: ClassificationCommands) -> DomainResult {
                 &attachment,
                 &policy,
                 &resolution,
-                lekalo_core::classification::DEFAULT_AS_OF,
+                &as_of,
             );
             DomainResult::graph(json, human, Vec::new())
         }
@@ -6009,9 +6026,12 @@ fn run_dataflow(command: DataflowCommands) -> DomainResult {
             attachment,
             policy,
             project,
-            endpoints,
             as_of,
+            endpoints,
         } => {
+            let as_of = as_of
+                .or_else(|| std::env::var("LEKALO_AS_OF").ok())
+                .unwrap_or_else(|| lekalo_core::classification::DEFAULT_AS_OF.to_owned());
             let (model_json, compilation) = match load_compiled_for(&project) {
                 Err(result) => return result,
                 Ok(pair) => pair,

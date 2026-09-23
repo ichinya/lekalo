@@ -351,10 +351,8 @@ impl GateReason {
             "missing-approval" => Self::MissingApproval,
             "destination-forbidden" => Self::DestinationForbidden,
             "unknown-flow" => Self::UnknownFlow,
-            "low-confidence" => Self::LowConfidence,
             "sink-ceiling-exceeded" => Self::SinkCeilingExceeded,
             "unclassified-subject" => Self::UnclassifiedSubject,
-            "inputs-incomplete" => Self::InputsIncomplete,
             _ => return None,
         })
     }
@@ -369,10 +367,8 @@ impl GateReason {
             Self::MissingApproval => "missing-approval",
             Self::DestinationForbidden => "destination-forbidden",
             Self::UnknownFlow => "unknown-flow",
-            Self::LowConfidence => "low-confidence",
             Self::SinkCeilingExceeded => "sink-ceiling-exceeded",
             Self::UnclassifiedSubject => "unclassified-subject",
-            Self::InputsIncomplete => "inputs-incomplete",
         }
     }
 }
