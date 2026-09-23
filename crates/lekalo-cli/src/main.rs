@@ -8,7 +8,6 @@ use lekalo_core::loader::LoadSelection;
 use lekalo_core::lockfile::plan::LockService;
 use lekalo_core::lockfile::resolution::CandidateSet;
 use lekalo_core::lockfile::{LockFailure, LockReceipt, LockRequirement, UpdateReceipt};
-use lekalo_core::orchestration::catalog;
 use lekalo_core::versioning::compatibility::CompatibilityReport;
 use lekalo_core::versioning::migration::{MigrationReceipt, MigrationService, VersioningFailure};
 use lekalo_core::versioning::{ModelTarget, TargetMalformation, VersionRegistry};
@@ -1795,19 +1794,23 @@ fn run_lock(project: Option<String>, check: bool, program_args: Vec<String>) -> 
             // Issue #32: when the discovered adapter is the selected
             // installed store pin, emit the installed provenance (source
             // kind installed, package manifest digest, pinned trust) into
-            // the lock instead of a plain project pin.
+            // the lock instead of a plain project pin. A provenance
+            // refusal refuses the lock (fix round 2, devin F-8): a pin
+            // that cannot carry its custody evidence never commits.
             if let Ok(inventory) = lekalo_core::adapter_package::Inventory::load(&root) {
                 if let Some(row) = inventory
                     .selected(&discovered.adapter.id)
                     .filter(|row| row.version == discovered.adapter.version)
                 {
-                    candidates.with_installed_provenance(
+                    if let Err(failure) = candidates.with_installed_provenance(
                         &row.version,
                         &row.digest,
                         &row.manifest_digest,
                         row.trust.as_str(),
                         row.install_plan_id.as_deref(),
-                    );
+                    ) {
+                        return DomainResult::from(&failure);
+                    }
                 }
             }
             match LockService::load_request(&selection) {
@@ -2040,10 +2043,10 @@ fn run_adapter_discover(source: &str, offline: bool, project: &Option<String>) -
         Err(result) => return AdapterRun::Envelope(result),
     };
     let context = lekalo_core::adapter_package::ResolveContext {
-        root: Some(root),
+        root: Some(root.clone()),
         offline,
     };
-    let candidates = match lekalo_core::adapter_package::discover(&parsed) {
+    let candidates = match lekalo_core::adapter_package::discover(&parsed, Some(&root)) {
         Ok(candidates) => candidates,
         Err(failure) => {
             return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
@@ -2076,8 +2079,31 @@ fn run_adapter_discover(source: &str, offline: bool, project: &Option<String>) -
                 });
             }
             Err(failure) => {
+                // The failed gate is named, not flattened into a generic
+                // integrity verdict (fix round 2, devin F-15): the reason
+                // code and the gate label now agree.
+                let gate = match &failure {
+                    lekalo_core::adapter_package::PackageFailure::ManifestInvalid { .. } => {
+                        "manifest"
+                    }
+                    lekalo_core::adapter_package::PackageFailure::Incompatible { .. } => {
+                        "compatibility"
+                    }
+                    lekalo_core::adapter_package::PackageFailure::ChecksumMismatch { .. } => {
+                        "integrity"
+                    }
+                    lekalo_core::adapter_package::PackageFailure::SignatureUnverified {
+                        ..
+                    } => "signature",
+                    lekalo_core::adapter_package::PackageFailure::Revoked { .. }
+                    | lekalo_core::adapter_package::PackageFailure::Quarantined { .. }
+                    | lekalo_core::adapter_package::PackageFailure::TrustInsufficient { .. } => {
+                        "trust"
+                    }
+                    _ => "integrity",
+                };
                 row["gates"] = serde_json::json!({
-                    "integrity": false,
+                    gate: false,
                     "reason": lekalo_core::adapter_package::diagnostic::reason_of(&failure),
                 });
             }
@@ -2371,20 +2397,21 @@ fn run_adapter_repoint(
         // silently downgrading (devin F-10).
         (AdapterRepoint::Update, None) => {
             let selected = inventory.selected(id);
-            let mut candidates: Vec<_> = promoted
-                .iter()
-                .filter(|row| !row.selected)
-                .collect();
+            let mut candidates: Vec<_> = promoted.iter().filter(|row| !row.selected).collect();
             // Sort by SemVer descending
             candidates.sort_by(|a, b| {
-                let ver_a = lekalo_core::lockfile::types::SemVer::parse(&a.version).expect("valid semver");
-                let ver_b = lekalo_core::lockfile::types::SemVer::parse(&b.version).expect("valid semver");
+                let ver_a =
+                    lekalo_core::lockfile::types::SemVer::parse(&a.version).expect("valid semver");
+                let ver_b =
+                    lekalo_core::lockfile::types::SemVer::parse(&b.version).expect("valid semver");
                 ver_b.cmp(&ver_a)
             });
             let target = if let Some(selected) = selected {
-                let selected_ver = lekalo_core::lockfile::types::SemVer::parse(&selected.version).expect("valid semver");
+                let selected_ver = lekalo_core::lockfile::types::SemVer::parse(&selected.version)
+                    .expect("valid semver");
                 candidates.into_iter().find(|row| {
-                    let row_ver = lekalo_core::lockfile::types::SemVer::parse(&row.version).expect("valid semver");
+                    let row_ver = lekalo_core::lockfile::types::SemVer::parse(&row.version)
+                        .expect("valid semver");
                     row_ver > selected_ver
                 })
             } else {
@@ -2396,12 +2423,14 @@ fn run_adapter_repoint(
     };
     let target = match target {
         Some(target) => target,
-        None => return AdapterRun::Envelope(DomainResult::from(
-            lekalo_core::lockfile::LockFailure::ComponentUnavailable {
-                kind: "adapter",
-                id: id.to_owned(),
-            },
-        )),
+        None => {
+            return AdapterRun::Envelope(DomainResult::from(
+                lekalo_core::lockfile::LockFailure::ComponentUnavailable {
+                    kind: "adapter",
+                    id: id.to_owned(),
+                },
+            ))
+        }
     };
 
     // Issue #32 fix round 2 (devin F-2): a revoked version can never be
@@ -2414,9 +2443,9 @@ fn run_adapter_repoint(
         let store = match lekalo_core::adapter_package::trust::RevocationStore::load(&root) {
             Ok(store) => store,
             Err(failure) => {
-                return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
-                    &failure,
-                ));
+                return AdapterRun::Envelope(
+                    lekalo_core::adapter_package::diagnostic::domain_result(&failure),
+                );
             }
         };
         if store.is_revoked(id, &target.version) {
@@ -2817,12 +2846,20 @@ fn run_adapter_quarantine_purge(all: bool, project: &Option<String>) -> AdapterR
         // Remove every location the bytes can occupy: the quarantine
         // custody tree and any pre-fix orphan under packages/**.
         let quarantine_dir = root.join(
-            lekalo_core::adapter_package::quarantine::quarantine_path(&row.id, &row.version, &row.digest)
-                .replace('/', std::path::MAIN_SEPARATOR_STR),
+            lekalo_core::adapter_package::quarantine::quarantine_path(
+                &row.id,
+                &row.version,
+                &row.digest,
+            )
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
         );
         let packages_dir = root.join(
-            lekalo_core::adapter_package::quarantine::package_path(&row.id, &row.version, &row.digest)
-                .replace('/', std::path::MAIN_SEPARATOR_STR),
+            lekalo_core::adapter_package::quarantine::package_path(
+                &row.id,
+                &row.version,
+                &row.digest,
+            )
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
         );
         let _ = std::fs::remove_dir_all(&quarantine_dir);
         let _ = std::fs::remove_dir_all(&packages_dir);
@@ -2880,17 +2917,16 @@ fn run_adapter_quarantine_release(id: &str, project: &Option<String>) -> Adapter
             ));
         }
     };
-    // Issue #32 fix round 2 (devin F-4 / cline F-2): use shared custody-path helpers.
-    // The quarantined bytes are already verified at install time, so re-verification
-    // is not strictly required but we keep the verification comment for clarity.
-    let quarantine_dir = root.join(
-        lekalo_core::adapter_package::quarantine::quarantine_path(&row.id, &row.version, &row.digest)
-            .replace('/', std::path::MAIN_SEPARATOR_STR),
-    );
+    // Issue #32 fix round 2 (devin F-4 / cline F-2): use the shared
+    // custody-path helpers for both sides of the promotion.
     let digest8: String = row.digest["sha256:".len()..].chars().take(8).collect();
     let quarantine_dir = root.join(
-        lekalo_core::adapter_package::quarantine::quarantine_path(&row.id, &row.version, &row.digest)
-            .replace('/', std::path::MAIN_SEPARATOR_STR),
+        lekalo_core::adapter_package::quarantine::quarantine_path(
+            &row.id,
+            &row.version,
+            &row.digest,
+        )
+        .replace('/', std::path::MAIN_SEPARATOR_STR),
     );
     let packages_dir = root.join(
         lekalo_core::adapter_package::quarantine::package_path(&row.id, &row.version, &row.digest)
@@ -2910,6 +2946,42 @@ fn run_adapter_quarantine_release(id: &str, project: &Option<String>) -> Adapter
                 path: format!("packages/{}/{}-{}", id, row.version, digest8),
             },
         ));
+    }
+    // Re-verify the quarantined bytes against the recorded digests before
+    // promoting (fix round 2, devin F-4 residual): custody never promotes
+    // bytes the integrity gate has not re-checked in quarantine.
+    {
+        let manifest_path =
+            quarantine_dir.join(lekalo_core::adapter_package::integrity::MANIFEST_FILE);
+        let quarantined_failure = |_| lekalo_core::adapter_package::PackageFailure::Quarantined {
+            id: id.to_owned(),
+            version: row.version.clone(),
+        };
+        let manifest_bytes = std::fs::read(&manifest_path)
+            .map_err(quarantined_failure)
+            .map_err(|failure| {
+                AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                    &failure,
+                ))
+            });
+        let manifest_bytes = match manifest_bytes {
+            Ok(bytes) => bytes,
+            Err(envelope) => return envelope,
+        };
+        let verified = lekalo_core::adapter_package::ManifestDocument::from_bytes(&manifest_bytes)
+            .and_then(|manifest| {
+                let candidate = lekalo_core::adapter_package::discovery::DiscoveryCandidate {
+                    manifest,
+                    package_root: Some(quarantine_dir.clone()),
+                    synthesized: false,
+                };
+                lekalo_core::adapter_package::verify_package(&candidate).map(|()| ())
+            });
+        if let Err(failure) = verified {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ));
+        }
     }
     if let Some(parent) = packages_dir.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -3000,13 +3072,16 @@ fn run_adapter_test(
 }
 
 /// The issue #32 resolution gate for one invocation-supplied adapter
-/// command: synthesize the implicit local-development descriptor from
-/// the launched entry (the executable, or its first argument when that
-/// names an existing regular file — the same interpreter-script
-/// convention as the catalog seam) and run the integrity, signature,
-/// and trust gates. A refusal returns the packaged failure; the caller
-/// renders its registered `adapter.*` rule and never spawns the
-/// adapter.
+/// command: prefer a real `adapter.manifest.json` beside the launched
+/// entry (the same manifested-preference as the catalog seam), else
+/// synthesize the implicit local-development descriptor from the entry
+/// (the executable, or its first argument when that names an existing
+/// regular file — the same interpreter-script convention as the catalog
+/// seam), and run the integrity, signature, and trust gates. The project
+/// revocation store scopes the trust gate (fix round 2, devin F-11:
+/// `adapter test` no longer evaluates an empty store). A refusal returns
+/// the packaged failure; the caller renders its registered `adapter.*`
+/// rule and never spawns the adapter.
 fn gate_adapter_command(
     program: &std::path::Path,
     args: &[String],
@@ -3019,10 +3094,29 @@ fn gate_adapter_command(
         .map(std::path::PathBuf::from)
         .filter(|path| path.is_file())
         .unwrap_or_else(|| program.to_path_buf());
-    let candidate = lekalo_core::adapter_package::implicit_local_development(&entry)?;
+    let entry_dir = entry
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
     let context = lekalo_core::adapter_package::ResolveContext {
-        root: None,
+        root: std::env::current_dir()
+            .ok()
+            .and_then(|cwd| lekalo_core::project_fs::Fs::find_root(&cwd).ok().flatten()),
         offline: true,
+    };
+    let manifested = if entry_dir.join("adapter.manifest.json").is_file() {
+        lekalo_core::adapter_package::discover(
+            &lekalo_core::adapter_package::DiscoverySource::Path(entry_dir.clone()),
+            context.root.as_ref(),
+        )?
+        .into_iter()
+        .next()
+    } else {
+        None
+    };
+    let candidate = match manifested {
+        Some(candidate) => candidate,
+        None => lekalo_core::adapter_package::implicit_local_development(&entry)?,
     };
     lekalo_core::adapter_package::resolve_candidate(candidate, &context)
 }
@@ -6070,5 +6164,3 @@ fn main() -> ExitCode {
         .join()
         .unwrap_or(ExitCode::from(1))
 }
-
-    

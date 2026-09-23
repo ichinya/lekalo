@@ -79,6 +79,14 @@ inventing a pass. No network fetch exists in v1: release and registry
 sources resolve only from explicit local records, which makes `--offline`
 exact.
 
+The digest domain excludes the self-referential `manifestDigest` member
+**recursively** (canonical bytes minus every member of that name, at any
+nesting depth), with `integrity.packageDigest` zeroed for the manifest's
+own framed contribution. Both implementations — the Rust verifier and
+the JS package generator — apply the identical rule; a nested
+`manifestDigest` inside a JSON-typed member is outside the domain on
+both sides.
+
 ### 5. Previewed-and-confirmed atomic install into a governed store
 
 Installs go through a deterministic install plan (`planId` over the

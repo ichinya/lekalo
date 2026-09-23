@@ -408,12 +408,15 @@ impl SourceRef {
                 grammar_checked(id).map_err(|_| LockFailure::SchemaInvalid)?;
             }
             SourceKind::Installed => {
-                // A store-relative id: .lekalo/adapters/packages/<id>/… —
-                // a project-relative POSIX path, never absolute (issue #32).
+                // A store-relative id: adapters/packages/<id>/<version>-<digest8>.
+                // The spelling is store-relative *below* `.lekalo/` — every
+                // segment must satisfy the portable grammar (a leading-dot
+                // `.lekalo` segment never does), so the path-safety check
+                // stays real instead of dead (fix round 2, devin F-8).
                 if crate::project_fs::path_violation(id).is_some() {
                     return Err(LockFailure::PrivateData { field: "source.id" });
                 }
-                if !id.starts_with(".lekalo/adapters/packages/") {
+                if !id.starts_with("adapters/packages/") {
                     return Err(LockFailure::PrivateData { field: "source.id" });
                 }
             }

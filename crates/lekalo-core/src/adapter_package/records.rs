@@ -58,16 +58,29 @@ fn parse_records(bytes: &[u8]) -> Result<Vec<EntryWire>, PackageFailure> {
 }
 
 /// Resolve a release/registry coordinate from the local record file and
-/// discover the recorded package directory.
+/// discover the recorded package directory. The explicit project root
+/// (the CLI's `--project`, threaded through discovery) scopes the
+/// record lookup; `None` falls back to the CWD-derived root (issue #32
+/// fix round 2, cline F-7 / devin F-10).
 pub fn resolve_record(
     record_file: &str,
     prefix: &str,
     coordinate: &str,
+    project_root: Option<&PathBuf>,
 ) -> Result<Vec<DiscoveryCandidate>, PackageFailure> {
     let unavailable = || PackageFailure::SourceUnavailable {
         source: bounded(coordinate),
     };
-    let root = package_root()?;
+    let root = match project_root {
+        Some(root) => crate::project_fs::Fs::find_root(root)
+            .map_err(|_| PackageFailure::SourceUnavailable {
+                source: "record-root".to_owned(),
+            })?
+            .ok_or_else(|| PackageFailure::SourceUnavailable {
+                source: "record-root".to_owned(),
+            }),
+        None => package_root(),
+    }?;
     let path = root.join(record_file.replace('/', std::path::MAIN_SEPARATOR_STR));
     let bytes = std::fs::read(&path).map_err(|_| unavailable())?;
     let records = parse_records(&bytes)?;
@@ -97,7 +110,7 @@ pub fn resolve_record(
     if manifest.source_digest().as_str() != entry.digest {
         return Err(unavailable());
     }
-    discover(&DiscoverySource::Path(full))
+    discover(&DiscoverySource::Path(full), project_root)
 }
 
 fn package_root() -> Result<PathBuf, PackageFailure> {
@@ -153,5 +166,96 @@ mod tests {
             br#"{"schemaVersion":"lekalo/adapter-records/v0.3.2","records":[]}"#
         )
         .is_ok());
+    }
+
+    /// Regression (fix round 2, cline F-7 / devin F-10): the explicit
+    /// project root (the CLI's `--project`) scopes the record lookup —
+    /// records resolve from the selected project's evidence tree, never
+    /// the CWD's project.
+    #[test]
+    fn resolve_record_uses_the_provided_project_root() {
+        let root = std::env::temp_dir().join(format!("lekalo-records-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let evidence = root.join(".lekalo/adapters/evidence");
+        std::fs::create_dir_all(&evidence).expect("evidence dir");
+        // The project marker find_root anchors on.
+        std::fs::create_dir_all(root.join("lekalo")).expect("lekalo dir");
+        std::fs::write(root.join("lekalo/project.yaml"), "project: records-test\n")
+            .expect("project marker");
+        // The recorded package: a directory carrying a valid manifest whose
+        // source digest equals the record's custody digest.
+        let package = root.join("pkg");
+        std::fs::create_dir_all(&package).expect("package dir");
+        let source_digest = format!("sha256:{}", "22".repeat(32));
+        let manifest = serde_json::json!({
+            "schemaVersion": crate::adapter_package::version::MANIFEST_SCHEMA_VERSION,
+            "identity": crate::adapter_package::version::MANIFEST_IDENTITY,
+            "adapter": { "id": "record-adapter", "name": "R", "version": "1.0.0" },
+            "publisher": { "id": "p", "trustAnchor": "none" },
+            "source": { "kind": "path", "coordinate": "path:pkg", "digest": source_digest },
+            "license": { "spdx": "MIT", "file": "LICENSE", "fileDigest": format!("sha256:{}", "11".repeat(32)) },
+            "compatibility": { "protocolVersions": [crate::target_protocol::version::VERSION], "irVersions": [crate::ir::version::VERSION], "extensions": [] },
+            "capabilities": { "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] },
+            "executable": { "runtime": { "kind": "node", "minVersion": "18.0.0" }, "entry": "a.mjs", "argvPreview": ["node", "a.mjs"], "assets": [] },
+            "platforms": ["any"],
+            "integrity": { "packageDigest": format!("sha256:{}", "33".repeat(32)), "files": [ { "path": "a.mjs", "digest": format!("sha256:{}", "44".repeat(32)), "bytes": 3 } ], "signaturePolicy": "unsigned", "signature": null },
+            "permissions": {
+                "filesystem": { "readScopes": [], "writeScopes": [] },
+                "network": { "mode": "denied", "destinations": [] },
+                "environment": { "allowlist": [] },
+                "processes": { "children": "denied" },
+                "secrets": { "handles": [] }
+            },
+            "hooks": [],
+            "conformance": { "reportDigest": format!("sha256:{}", "55".repeat(32)), "badge": { "protocol": "0.3.2", "ir": "0.2.16", "profile": "default" }, "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2" },
+            "status": "active",
+            "revocation": null
+        });
+        std::fs::write(
+            package.join("adapter.manifest.json"),
+            serde_json::to_vec_pretty(&manifest).expect("manifest serializes"),
+        )
+        .expect("manifest written");
+        std::fs::write(
+            evidence.join("releases.json"),
+            format!(
+                "{{\"schemaVersion\":\"lekalo/adapter-records/v0.3.2\",\"records\":[{{\"coordinate\":\"release:ch/pkg\",\"path\":\"pkg\",\"digest\":\"{source_digest}\"}}]}}"
+            ),
+        )
+        .expect("record written");
+
+        // The explicit root wins: the record resolves from it even though
+        // the test process's CWD is the workspace, not `root`.
+        let candidates = resolve_record(
+            ".lekalo/adapters/evidence/releases.json",
+            "release",
+            "ch/pkg",
+            Some(&root),
+        )
+        .expect("the recorded package resolves under the explicit root");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].manifest.adapter_id(), "record-adapter");
+        assert_eq!(candidates[0].package_root, Some(package.clone()));
+
+        // A root without the record honestly refuses: the coordinate is
+        // not resolved from somewhere else.
+        let empty =
+            std::env::temp_dir().join(format!("lekalo-records-empty-{}", std::process::id()));
+        std::fs::create_dir_all(empty.join("lekalo")).expect("empty root");
+        std::fs::write(
+            empty.join("lekalo/project.yaml"),
+            "project: records-empty\n",
+        )
+        .expect("project marker");
+        let error = resolve_record(
+            ".lekalo/adapters/evidence/releases.json",
+            "release",
+            "ch/pkg",
+            Some(&empty),
+        )
+        .expect_err("no record under the empty root");
+        assert!(matches!(error, PackageFailure::SourceUnavailable { .. }));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&empty);
     }
 }

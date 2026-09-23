@@ -357,6 +357,12 @@ impl CandidateAdapter {
             canonical::manifest_bytes(&self.manifest).as_slice(),
         ))
     }
+
+    /// The resolved source reference (read-only view for gate reporting
+    /// and receipt rendering).
+    pub fn source(&self) -> &SourceRef {
+        &self.source
+    }
 }
 
 /// One candidate generator.
@@ -494,10 +500,19 @@ impl CandidateSet {
         self
     }
 
+    /// The adapter candidates, in insertion order (read-only view for
+    /// receipt rendering and gate reporting).
+    pub fn adapters(&self) -> &[CandidateAdapter] {
+        &self.adapters
+    }
+
     /// Attach issue #32 installed provenance to the adapter candidate
     /// matching `id` + `version`: the source kind becomes `installed`, the
     /// source id the store-relative packages path, and the additive
     /// manifest/trust/plan-id members are pinned for `lock --check`.
+    /// Every malformed input and every provenance write failure refuses
+    /// (fix round 2, devin F-8) — the silent-skip spellings hid a dead
+    /// code path for the whole r1 fix range.
     pub fn with_installed_provenance(
         &mut self,
         version: &str,
@@ -505,26 +520,37 @@ impl CandidateSet {
         manifest_digest: &str,
         trust: &str,
         install_plan_id: Option<&str>,
-    ) {
-        let Ok(trust) = super::types::LockTrust::parse(trust) else {
-            return;
-        };
-        let (Ok(_digest), Ok(manifest), Ok(plan)) = (
-            Sha256Digest::parse(package_digest),
-            Sha256Digest::parse(manifest_digest),
-            install_plan_id.map(Sha256Digest::parse).transpose(),
-        ) else {
-            return;
-        };
+    ) -> Result<(), LockFailure> {
+        let trust = super::types::LockTrust::parse(trust)?;
+        let digest = Sha256Digest::parse(package_digest)?;
+        let manifest = Sha256Digest::parse(manifest_digest)?;
+        let plan = install_plan_id.map(Sha256Digest::parse).transpose()?;
         let digest8: String = package_digest["sha256:".len()..].chars().take(8).collect();
+        let mut pinned = 0_usize;
         for adapter in self
             .adapters
             .iter_mut()
             .filter(|a| a.version.as_str() == version && a.digest.as_str() == package_digest)
         {
-            let installed_path = format!(".lekalo/adapters/packages/{}/{}-{digest8}", adapter.id.as_str(), version);
-            let _ = adapter.with_provenance(&installed_path, manifest.clone(), trust, plan.clone());
+            // Store-relative spelling below `.lekalo/`: every segment is
+            // portable, so the source-id grammar check passes and the
+            // provenance write is live (fix round 2, devin F-8).
+            let installed_path = format!(
+                "adapters/packages/{}/{}-{digest8}",
+                adapter.id.as_str(),
+                version
+            );
+            adapter.with_provenance(&installed_path, manifest.clone(), trust, plan.clone())?;
+            pinned += 1;
         }
+        let _ = digest;
+        if pinned == 0 {
+            // The caller claimed a selected installed pin, but no lock
+            // candidate carries that identity: refuse instead of silently
+            // locking an unprovenanced pin.
+            return Err(LockFailure::SchemaInvalid);
+        }
+        Ok(())
     }
 
     /// Add one generator candidate.

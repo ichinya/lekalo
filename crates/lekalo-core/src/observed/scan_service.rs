@@ -85,8 +85,14 @@ pub fn run(
     }
 
     // 0. The issue #32 resolution gate: the launched entry passes the
-    // integrity/trust gates before any child process exists.
-    {
+    // integrity/trust/revocation gates before any child process exists.
+    // A real manifest beside the entry is preferred (the same manifested-
+    // preference as the catalog seam's gate_supply) and, when present, its
+    // claims are cross-checked against the describe outcome (fix round 2,
+    // devin F-11: a revoked adapter can no longer complete the describe
+    // handshake before the refusal, and manifested scans get the
+    // consistency check the orchestration surfaces already run).
+    let gate_manifest = {
         let entry = request
             .command
             .args
@@ -94,19 +100,53 @@ pub fn run(
             .map(std::path::PathBuf::from)
             .filter(|path| path.is_file())
             .unwrap_or_else(|| request.command.program.clone());
-        let candidate = crate::adapter_package::implicit_local_development(&entry)
-            .map_err(|failure| crate::adapter_package::diagnostic::domain_result(&failure))?;
+        let entry_dir = entry
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
         let context = crate::adapter_package::ResolveContext {
             root: Some(ctx.root.clone()),
             offline: true,
         };
-        crate::adapter_package::resolve_candidate(candidate, &context)
+        let manifested = if entry_dir.join("adapter.manifest.json").is_file() {
+            crate::adapter_package::discover(
+                &crate::adapter_package::DiscoverySource::Path(entry_dir.clone()),
+                Some(&ctx.root),
+            )
+            .map_err(|failure| crate::adapter_package::diagnostic::domain_result(&failure))?
+            .into_iter()
+            .next()
+        } else {
+            None
+        };
+        let candidate = match manifested {
+            Some(candidate) => candidate,
+            None => crate::adapter_package::implicit_local_development(&entry)
+                .map_err(|failure| crate::adapter_package::diagnostic::domain_result(&failure))?,
+        };
+        let resolved = crate::adapter_package::resolve_candidate(candidate, &context)
             .map_err(|failure| crate::adapter_package::diagnostic::domain_result(&failure))?;
-    }
+        let synthesized = resolved.candidate.package_root.is_none();
+        (resolved.candidate.manifest, synthesized)
+    };
 
-    // 1. Safe discovery: the describe handshake only, no project IR.
+    // 1. Safe discovery: the describe handshake only, no project IR. It
+    // runs strictly after the gates above, so a revoked or quarantined
+    // adapter never executes adapter code (fix round 2, devin F-11).
     let mut client = TargetClient::new(request.limits);
     let discovered = Discovery::run(&mut client, &request.command, &ctx.root)?;
+    let (gate_manifest, synthesized) = gate_manifest;
+    if !synthesized {
+        crate::adapter_package::consistency::check(&gate_manifest, &discovered).map_err(
+            |mismatch| {
+                crate::adapter_package::diagnostic::domain_result(
+                    &crate::adapter_package::PackageFailure::ManifestMismatch {
+                        field: mismatch.as_str().to_owned(),
+                    },
+                )
+            },
+        )?;
+    }
 
     // 2. Deterministic selection under the strict default policy: the
     // scanner must declare the scan capability `full` and the core IR
@@ -150,7 +190,12 @@ pub fn run(
                 }
                 let level = crate::adapter_package::TrustLevel::parse(&row.trust)
                     .unwrap_or(crate::adapter_package::TrustLevel::Community);
-                entry.auto_selectable = matches!(level, crate::adapter_package::TrustLevel::Builtin | crate::adapter_package::TrustLevel::Verified | crate::adapter_package::TrustLevel::LocalDevelopment);
+                entry.auto_selectable = matches!(
+                    level,
+                    crate::adapter_package::TrustLevel::Builtin
+                        | crate::adapter_package::TrustLevel::Verified
+                        | crate::adapter_package::TrustLevel::LocalDevelopment
+                );
             }
         }
         if let Some(posture) = map.get(&discovered.adapter.id) {

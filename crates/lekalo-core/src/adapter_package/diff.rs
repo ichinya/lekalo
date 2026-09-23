@@ -37,6 +37,12 @@ pub struct ManifestDiff {
     /// Write scopes added/removed by the update.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub write_scopes: Vec<(Change, String)>,
+    /// Filesystem read scopes added/removed by the update.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub filesystem_read_scopes: Vec<(Change, String)>,
+    /// Filesystem write scopes added/removed by the update.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub filesystem_write_scopes: Vec<(Change, String)>,
     /// The network mode transition, when it changed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_mode: Option<(String, String)>,
@@ -103,6 +109,19 @@ pub fn diff_manifests(before: &ManifestDocument, after: &ManifestDocument) -> Ma
     let mut diff = ManifestDiff {
         read_scopes: list_delta(before_caps, after_caps, "readScopes"),
         write_scopes: list_delta(before_caps, after_caps, "writeScopes"),
+        // permissions.filesystem.* scope deltas render as their own
+        // members (fix round 2, devin F-12): escalation already fed on
+        // them, but the reviewer could not see the actual delta.
+        filesystem_read_scopes: list_delta(
+            before_perm.get("filesystem").unwrap_or(&empty),
+            after_perm.get("filesystem").unwrap_or(&empty),
+            "readScopes",
+        ),
+        filesystem_write_scopes: list_delta(
+            before_perm.get("filesystem").unwrap_or(&empty),
+            after_perm.get("filesystem").unwrap_or(&empty),
+            "writeScopes",
+        ),
         network_mode: member_transition(before_perm, after_perm, &["network", "mode"]),
         network_destinations: list_delta(
             before_perm.get("network").unwrap_or(&empty),
@@ -305,5 +324,95 @@ fn evaluate_escalation(
     if widened_list(&["secrets", "handles"]) {
         diff.escalated = true;
         diff.escalated_member = Some("secrets".to_owned());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::manifest::ManifestDocument;
+    use super::*;
+
+    fn manifest_with(scopes: serde_json::Value, caps: serde_json::Value) -> ManifestDocument {
+        let mut json = serde_json::json!({
+            "schemaVersion": crate::adapter_package::version::MANIFEST_SCHEMA_VERSION,
+            "identity": crate::adapter_package::version::MANIFEST_IDENTITY,
+            "adapter": { "id": "diff-adapter", "name": "D", "version": "1.0.0" },
+            "publisher": { "id": "p", "trustAnchor": "none" },
+            "source": { "kind": "path", "coordinate": "path:x", "digest": format!("sha256:{}", "11".repeat(32)) },
+            "license": { "spdx": "MIT", "file": "LICENSE", "fileDigest": format!("sha256:{}", "11".repeat(32)) },
+            "compatibility": { "protocolVersions": [crate::target_protocol::version::VERSION], "irVersions": [crate::ir::version::VERSION], "extensions": [] },
+            "capabilities": { "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] },
+            "executable": { "runtime": { "kind": "node", "minVersion": "18.0.0" }, "entry": "a.mjs", "argvPreview": ["node", "a.mjs"], "assets": [] },
+            "platforms": ["any"],
+            "integrity": { "packageDigest": format!("sha256:{}", "22".repeat(32)), "files": [ { "path": "a.mjs", "digest": format!("sha256:{}", "33".repeat(32)), "bytes": 3 } ], "signaturePolicy": "unsigned", "signature": null },
+            "permissions": {
+                "filesystem": { "readScopes": [], "writeScopes": [] },
+                "network": { "mode": "denied", "destinations": [] },
+                "environment": { "allowlist": [] },
+                "processes": { "children": "denied" },
+                "secrets": { "handles": [] }
+            },
+            "hooks": [],
+            "conformance": { "reportDigest": format!("sha256:{}", "44".repeat(32)), "badge": { "protocol": "0.3.2", "ir": "0.2.16", "profile": "default" }, "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2" },
+            "status": "active",
+            "revocation": null
+        });
+        json["permissions"]["filesystem"] = scopes;
+        json["capabilities"] = caps;
+        ManifestDocument::from_value(json).expect("parses")
+    }
+
+    /// Regression (fix round 2, devin F-12): `permissions.filesystem.*`
+    /// scope deltas feed `escalated` and must also render as their own
+    /// diff members — a reviewer sees the actual scope delta, not just
+    /// the `filesystem.writeScopes` token.
+    #[test]
+    fn filesystem_scope_deltas_render_in_the_diff() {
+        let before = manifest_with(
+            serde_json::json!({ "readScopes": ["src/**"], "writeScopes": [] }),
+            serde_json::json!({ "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] }),
+        );
+        let after = manifest_with(
+            serde_json::json!({ "readScopes": ["src/**"], "writeScopes": ["out/**", "secrets/**"] }),
+            serde_json::json!({ "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] }),
+        );
+        let diff = diff_manifests(&before, &after);
+        assert_eq!(
+            diff.filesystem_write_scopes,
+            vec![
+                (Change::Added, "out/**".to_owned()),
+                (Change::Added, "secrets/**".to_owned()),
+            ]
+        );
+        assert!(diff.escalated);
+        assert_eq!(
+            diff.escalated_member.as_deref(),
+            Some("filesystem.writeScopes")
+        );
+        assert!(!diff.is_empty());
+    }
+
+    /// Regression (fix round 2, devin F-12, decision recorded): named
+    /// capability state widening renders in the diff but deliberately
+    /// does not set `escalated` — capability surfaces are enforced by
+    /// the execution-isolation issue (#89) at run time, not by the
+    /// install-time permission policy.
+    #[test]
+    fn capability_widening_renders_but_does_not_escalate() {
+        let before = manifest_with(
+            serde_json::json!({ "readScopes": [], "writeScopes": [] }),
+            serde_json::json!({ "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] }),
+        );
+        let after = manifest_with(
+            serde_json::json!({ "readScopes": [], "writeScopes": [] }),
+            serde_json::json!({ "operations": ["describe"], "targets": [], "profiles": [], "named": { "cache": "granted" }, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] }),
+        );
+        let diff = diff_manifests(&before, &after);
+        assert_eq!(diff.named_capabilities.len(), 1);
+        assert!(
+            !diff.escalated,
+            "capability widening renders, never escalates"
+        );
+        assert!(!diff.is_empty());
     }
 }

@@ -6,8 +6,6 @@
 //! removal path. The custody paths are computed here so install, purge,
 //! and release share one spelling.
 
-use std::path::PathBuf;
-
 /// The quarantine custody root.
 pub const QUARANTINE_DIR: &str = ".lekalo/adapters/quarantine";
 

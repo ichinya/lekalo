@@ -72,7 +72,9 @@ pub struct ResolveContext {
     /// `adapter test` surface), where the revocation store is empty.
     pub root: Option<std::path::PathBuf>,
     /// Refuse every source that is not already local. `path` sources are
-    /// always local; `release`/`registry` records do not exist in v1.
+    /// always local; `release`/`registry` resolve only from the local
+    /// evidence records under `.lekalo/adapters/evidence/` (no fetch in
+    /// v1 — see [`records`]).
     pub offline: bool,
 }
 
@@ -116,7 +118,10 @@ pub fn resolve(
             });
         }
     }
-    let candidates = discover(source)?;
+    // The context root scopes release/registry record lookups (issue #32
+    // fix round 2, cline F-7 / devin F-10): records resolve against the
+    // selected project, never the CWD's project.
+    let candidates = discover(source, context.root.as_ref())?;
     let candidate =
         candidates
             .first()

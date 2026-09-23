@@ -153,7 +153,10 @@ fn bounded_coordinate(text: &str) -> String {
 }
 
 /// The discovery entry point: source → candidates.
-pub fn discover(source: &DiscoverySource) -> Result<Vec<DiscoveryCandidate>, PackageFailure> {
+pub fn discover(
+    source: &DiscoverySource,
+    project_root: Option<&PathBuf>,
+) -> Result<Vec<DiscoveryCandidate>, PackageFailure> {
     let mut candidates = match source {
         DiscoverySource::Path(path) => discover_path(path)?,
         DiscoverySource::PathExec(filter) => discover_path_exec(filter.as_deref())?,
@@ -162,6 +165,7 @@ pub fn discover(source: &DiscoverySource) -> Result<Vec<DiscoveryCandidate>, Pac
                 ".lekalo/adapters/evidence/releases.json",
                 "release",
                 coordinate,
+                project_root,
             )
         }
         DiscoverySource::Registry(coordinate) => {
@@ -169,6 +173,7 @@ pub fn discover(source: &DiscoverySource) -> Result<Vec<DiscoveryCandidate>, Pac
                 ".lekalo/adapters/evidence/registry.json",
                 "registry",
                 coordinate,
+                project_root,
             )
         }
     };
@@ -487,7 +492,7 @@ mod tests {
         let manifest_bytes =
             serde_json::to_vec(&valid_manifest_json("pkg-adapter", "1.0.0")).unwrap();
         write(&package.join("adapter.manifest.json"), &manifest_bytes);
-        let candidates = discover(&DiscoverySource::Path(package.clone())).expect("discover");
+        let candidates = discover(&DiscoverySource::Path(package.clone()), None).expect("discover");
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].manifest.adapter_id(), "pkg-adapter");
         assert_eq!(
@@ -501,7 +506,7 @@ mod tests {
     #[test]
     fn path_discovery_refuses_a_missing_path() {
         let missing = std::env::temp_dir().join("lekalo-ap-disc-missing-does-not-exist");
-        let error = discover(&DiscoverySource::Path(missing)).expect_err("must refuse");
+        let error = discover(&DiscoverySource::Path(missing), None).expect_err("must refuse");
         assert!(matches!(error, PackageFailure::SourceUnavailable { .. }));
     }
 
@@ -537,7 +542,7 @@ mod tests {
         // Save and swap PATH.
         let saved = std::env::var_os("PATH");
         std::env::set_var("PATH", &dir);
-        let result = discover(&DiscoverySource::PathExec(None));
+        let result = discover(&DiscoverySource::PathExec(None), None);
         std::env::set_var("PATH", saved.unwrap_or_default());
         let candidates = result.expect("enumerate");
         assert_eq!(candidates.len(), 1);
@@ -548,10 +553,10 @@ mod tests {
 
     #[test]
     fn release_and_registry_sources_are_honest_offline() {
-        let error = discover(&DiscoverySource::Release("channel/pkg".to_owned()))
+        let error = discover(&DiscoverySource::Release("channel/pkg".to_owned()), None)
             .expect_err("no records in v1");
         assert!(matches!(error, PackageFailure::SourceUnavailable { .. }));
-        let error = discover(&DiscoverySource::Registry("hub/pkg".to_owned()))
+        let error = discover(&DiscoverySource::Registry("hub/pkg".to_owned()), None)
             .expect_err("no records in v1");
         assert!(matches!(error, PackageFailure::SourceUnavailable { .. }));
     }

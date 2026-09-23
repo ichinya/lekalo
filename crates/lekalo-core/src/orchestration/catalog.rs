@@ -149,9 +149,10 @@ fn gate_supply(
         .map(|parent| parent.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     let manifested = if entry_dir.join("adapter.manifest.json").is_file() {
-        crate::adapter_package::discover(&crate::adapter_package::DiscoverySource::Path(
-            entry_dir.clone(),
-        ))
+        crate::adapter_package::discover(
+            &crate::adapter_package::DiscoverySource::Path(entry_dir.clone()),
+            Some(&root.to_path_buf()),
+        )
         .map_err(package_failure)?
         .into_iter()
         .next()

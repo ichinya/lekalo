@@ -904,3 +904,95 @@ fn a_symlinked_lock_is_a_policy_denial() {
         assert_eq!(error.status(), "denied");
     });
 }
+
+/// Regression (fix round 2, devin F-8): installed lock-provenance is
+/// live — the store-relative source id spells the real packages path
+/// (never a literal `*` segment), so `path_violation` accepts it and the
+/// installed kind, package manifest digest, trust, and install plan id
+/// reach the lock instead of the write being swallowed.
+#[test]
+fn installed_provenance_pins_source_digest_trust_and_plan() {
+    let mut candidates = CandidateSet::empty().with_adapter(adapter_candidate(
+        "adapter-installed",
+        "1.0.0",
+        0x30,
+        "linux-x64",
+    ));
+    let plan_digest = Sha256Digest::from_hex(&hex64(0x39));
+    candidates
+        .with_installed_provenance(
+            "1.0.0",
+            &format!("sha256:{}", hex64(0x30)),
+            &format!("sha256:{}", hex64(0x31)),
+            "local-development",
+            Some(plan_digest.to_string().as_str()),
+        )
+        .expect("the provenance pins onto the matching candidate");
+    let adapter = candidates
+        .adapters()
+        .iter()
+        .find(|adapter| adapter.installed)
+        .expect("the matching candidate carries the installed provenance");
+    let source = adapter.source().id();
+    assert_eq!(
+        source, "adapters/packages/adapter-installed/1.0.0-00000000",
+        "the source id is the real store-relative packages path"
+    );
+    assert_eq!(
+        adapter.source().kind(),
+        SourceKind::Installed,
+        "the lock source kind is installed"
+    );
+    assert_eq!(
+        adapter.package_manifest_digest,
+        Some(Sha256Digest::from_hex(&hex64(0x31))),
+        "the package manifest digest is pinned"
+    );
+    assert_eq!(
+        adapter.install_plan_id,
+        Some(plan_digest),
+        "the install plan id is pinned"
+    );
+    assert!(adapter.trust.is_some(), "the trust level is pinned");
+}
+
+/// Regression (fix round 2, devin F-2): a repoint can never resurrect a
+/// revoked version — `run_adapter_repoint` consults the revocation store
+/// before any plan exists. The gate lives in the CLI; here we pin the
+/// store semantics the gate relies on: exact-version and whole-id `*`
+/// rows both refuse, an unrelated row does not.
+#[test]
+fn revocation_store_semantics_cover_exact_and_wildcard_versions() {
+    let root = std::env::temp_dir().join(format!("lekalo-lock-revoke-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("mkdir");
+    let mut store =
+        lekalo_core::adapter_package::RevocationStore::load(&root).expect("an empty store loads");
+    store
+        .append(
+            &root,
+            lekalo_core::adapter_package::trust::RevocationRecord {
+                id: "adapter-revoked".to_owned(),
+                version: "1.0.0".to_owned(),
+                reason: "compromised".to_owned(),
+            },
+        )
+        .expect("append exact");
+    store
+        .append(
+            &root,
+            lekalo_core::adapter_package::trust::RevocationRecord {
+                id: "adapter-wildcard".to_owned(),
+                version: "*".to_owned(),
+                reason: "publisher-key-compromise".to_owned(),
+            },
+        )
+        .expect("append wildcard");
+    let reloaded =
+        lekalo_core::adapter_package::RevocationStore::load(&root).expect("the store reloads");
+    assert!(reloaded.is_revoked("adapter-revoked", "1.0.0"));
+    assert!(!reloaded.is_revoked("adapter-revoked", "1.0.1"));
+    assert!(reloaded.is_revoked("adapter-wildcard", "9.9.9"));
+    assert!(!reloaded.is_revoked("adapter-unrelated", "1.0.0"));
+    let _ = std::fs::remove_dir_all(&root);
+}

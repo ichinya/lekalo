@@ -386,17 +386,17 @@ fn apply_staged(
         format!(".lekalo/adapters/evidence/installs/{}", plan.id)
             .replace('/', std::path::MAIN_SEPARATOR_STR),
     );
-    if std::fs::create_dir_all(&receipt_dir).is_ok() {
-        let _ = std::fs::write(
-            receipt_dir.join(format!(
-                "{}-{}-{}.json",
-                plan.version,
-                &plan.digest["sha256:".len()..12],
-                plan.source.split(':').next_back().unwrap_or("src"),
-            )),
-            serde_json::to_vec_pretty(&receipt).unwrap_or_default(),
-        );
-    }
+    // The receipt write is surfaced, never swallowed (fix round 2,
+    // cline F-6 / devin F-9): a failed evidence write leaves the store
+    // mutated without its custody record, which is exactly the
+    // recovery-required ambiguity.
+    let receipt_stage = || ApplyRejection::RecoveryRequired {
+        stage: "evidence".to_owned(),
+    };
+    std::fs::create_dir_all(&receipt_dir).map_err(|_| receipt_stage())?;
+    let receipt_path = receipt_dir.join("receipt.json");
+    let receipt_bytes = serde_json::to_vec_pretty(&receipt).map_err(|_| receipt_stage())?;
+    std::fs::write(receipt_path, receipt_bytes).map_err(|_| receipt_stage())?;
     Ok(())
 }
 
@@ -618,6 +618,8 @@ mod tests {
         install_plan.diff = Some(super::super::diff::ManifestDiff {
             read_scopes: Vec::new(),
             write_scopes: Vec::new(),
+            filesystem_read_scopes: Vec::new(),
+            filesystem_write_scopes: Vec::new(),
             network_mode: None,
             network_destinations: Vec::new(),
             environment: Vec::new(),
@@ -711,5 +713,100 @@ mod tests {
             .join(INSTALL_GUARD.replace('/', std::path::MAIN_SEPARATOR_STR))
             .exists());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Regression (fix round 2, cline F-6 / devin F-9): the evidence
+    /// receipt name is a fixed token inside the id-keyed evidence
+    /// directory, so a manifest-controlled `source.coordinate` can never
+    /// steer file placement under the evidence tree — and a failed
+    /// receipt write is surfaced as recovery-required, never swallowed.
+    #[test]
+    fn evidence_receipt_is_fixed_name_and_write_failures_surface() {
+        let root = std::env::temp_dir().join(format!("lekalo-ap-evidence-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("mkdir");
+        // A coordinate carrying path separators: the pre-fix spelling
+        // nested receipt files under the evidence tree (and silently
+        // wrote nothing for path: sources).
+        let candidate = candidate("receipt-adapter", b"bytes", "path:adapters/node-typescript");
+        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None);
+        let source = std::env::temp_dir().join(format!("lekalo-ap-ev-src-{}", std::process::id()));
+        std::fs::create_dir_all(&source).expect("src dir");
+        std::fs::write(source.join("a.mjs"), b"bytes").expect("entry");
+        std::fs::write(
+            source.join(crate::adapter_package::integrity::MANIFEST_FILE),
+            candidate.manifest.stored_bytes(),
+        )
+        .expect("manifest in source");
+        apply_with_source(&root, &install_plan, &install_plan.plan_id, false, &source)
+            .expect("applies");
+        // Exactly one receipt file, under the id-keyed directory with the
+        // fixed name — no coordinate-derived nesting anywhere.
+        let evidence_dir = root
+            .join(".lekalo/adapters/evidence/installs")
+            .join("receipt-adapter");
+        assert!(
+            evidence_dir.is_dir(),
+            "the id-keyed receipt directory exists"
+        );
+        let entries: Vec<_> = std::fs::read_dir(&evidence_dir)
+            .expect("read receipts")
+            .map(|entry| entry.expect("entry").path())
+            .collect();
+        assert_eq!(entries.len(), 1, "exactly one receipt");
+        assert_eq!(
+            entries[0].file_name().and_then(|name| name.to_str()),
+            Some("receipt.json"),
+            "the receipt name is the fixed token, not the source coordinate"
+        );
+        let nested: Vec<_> = std::fs::read_dir(&evidence_dir)
+            .expect("read receipts")
+            .map(|entry| entry.expect("entry").path())
+            .filter(|path| path.is_dir())
+            .collect();
+        assert!(
+            nested.is_empty(),
+            "no coordinate-driven nesting under the evidence tree: {nested:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&source);
+    }
+
+    /// Regression (fix round 2, devin F-9): a receipt write that cannot
+    /// succeed surfaces as recovery-required — the store is mutated, so
+    /// the missing custody record must never degrade into silence.
+    #[test]
+    fn a_failed_evidence_receipt_write_surfaces() {
+        let root =
+            std::env::temp_dir().join(format!("lekalo-ap-evidence-fail-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("mkdir");
+        let candidate = candidate("receipt-adapter", b"bytes", "path:x");
+        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None);
+        let source = std::env::temp_dir().join(format!("lekalo-ap-evf-src-{}", std::process::id()));
+        std::fs::create_dir_all(&source).expect("src dir");
+        std::fs::write(source.join("a.mjs"), b"bytes").expect("entry");
+        std::fs::write(
+            source.join(crate::adapter_package::integrity::MANIFEST_FILE),
+            candidate.manifest.stored_bytes(),
+        )
+        .expect("manifest in source");
+        // Occupy the receipt's path with a directory: the write fails.
+        let receipt_path = root
+            .join(".lekalo/adapters/evidence/installs")
+            .join("receipt-adapter")
+            .join("receipt.json");
+        std::fs::create_dir_all(&receipt_path).expect("occupy receipt path");
+        let rejection =
+            apply_with_source(&root, &install_plan, &install_plan.plan_id, false, &source)
+                .expect_err("the occupied receipt path must surface");
+        assert_eq!(
+            rejection,
+            ApplyRejection::RecoveryRequired {
+                stage: "evidence".to_owned()
+            }
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&source);
     }
 }

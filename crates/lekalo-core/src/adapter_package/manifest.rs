@@ -552,10 +552,10 @@ struct ManifestWire {
     compatibility: CompatibilityWire,
     capabilities: CapabilitiesWire,
     executable: ExecutableWire,
-    #[serde(default)]
-    #[allow(dead_code)] // schema-complete wire; the closed platform set is
-    // enforced by the JSON Schema gate
-    platforms: Option<Vec<String>>,
+    // Schema-required (parity fix round 2, cline F-5 / devin F-13): the
+    // closed platform list is enforced here, not only at the JSON Schema
+    // gate.
+    platforms: Vec<String>,
     integrity: IntegrityWire,
     #[allow(dead_code)] // enforced-by-existence here; #89 reads the canonical JSON
     permissions: PermissionsWire,
@@ -565,9 +565,10 @@ struct ManifestWire {
     status: String,
     #[serde(default)]
     revocation: Option<Json>,
-    #[serde(default)]
-    #[allow(dead_code)] // self-referential member, excluded from the digest
-    manifest_digest: Option<String>,
+    // The self-referential `manifestDigest` member is deliberately absent
+    // from this wire: the schema omits it, so with `deny_unknown_fields`
+    // both spellings (`manifestDigest` and snake_case) refuse identically
+    // here and at the JSON Schema gate (parity fix round 2, devin F-13).
 }
 
 #[derive(Deserialize)]
@@ -772,6 +773,19 @@ impl ManifestWire {
         {
             if version.len() > 32 || version.parse::<semver::Version>().is_err() {
                 return Err(invalid("compatibility"));
+            }
+        }
+        // The closed platform vocabulary, enforced here — not only at the
+        // JSON Schema gate (fix round 2, cline F-5 / devin F-13).
+        if self.platforms.is_empty() || self.platforms.len() > 8 {
+            return Err(invalid("platforms"));
+        }
+        for platform in &self.platforms {
+            if !matches!(
+                platform.as_str(),
+                "any" | "windows-x64" | "linux-x64" | "linux-arm64" | "darwin-x64" | "darwin-arm64"
+            ) {
+                return Err(invalid("platforms"));
             }
         }
         {
@@ -1048,5 +1062,111 @@ mod permission_validation_tests {
             serde_json::Value::String(format!("sha256:{}", "22".repeat(32)));
         let error = ManifestDocument::from_value(json).expect_err("bad children");
         assert!(matches!(error, PackageFailure::ManifestInvalid { .. }));
+    }
+}
+
+#[cfg(test)]
+mod schema_parity_tests {
+    use super::*;
+
+    fn base_manifest() -> serde_json::Value {
+        serde_json::json!({
+            "schemaVersion": crate::adapter_package::version::MANIFEST_SCHEMA_VERSION,
+            "identity": crate::adapter_package::version::MANIFEST_IDENTITY,
+            "adapter": { "id": "parity-adapter", "name": "P", "version": "1.0.0" },
+            "publisher": { "id": "p", "trustAnchor": "none" },
+            "source": { "kind": "path", "coordinate": "path:x", "digest": format!("sha256:{}", "11".repeat(32)) },
+            "license": { "spdx": "MIT", "file": "LICENSE", "fileDigest": format!("sha256:{}", "11".repeat(32)) },
+            "compatibility": { "protocolVersions": [crate::target_protocol::version::VERSION], "irVersions": [crate::ir::version::VERSION], "extensions": [] },
+            "capabilities": { "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] },
+            "executable": { "runtime": { "kind": "node", "minVersion": "18.0.0" }, "entry": "a.mjs", "argvPreview": ["node", "a.mjs"], "assets": [] },
+            "platforms": ["any"],
+            "integrity": { "packageDigest": format!("sha256:{}", "22".repeat(32)), "files": [ { "path": "a.mjs", "digest": format!("sha256:{}", "33".repeat(32)), "bytes": 3 } ], "signaturePolicy": "unsigned", "signature": null },
+            "permissions": {
+                "filesystem": { "readScopes": [], "writeScopes": [] },
+                "network": { "mode": "denied", "destinations": [] },
+                "environment": { "allowlist": [] },
+                "processes": { "children": "denied" },
+                "secrets": { "handles": [] }
+            },
+            "hooks": [],
+            "conformance": { "reportDigest": format!("sha256:{}", "44".repeat(32)), "badge": { "protocol": "0.3.2", "ir": "0.2.16", "profile": "default" }, "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2" },
+            "status": "active",
+            "revocation": null
+        })
+    }
+
+    /// Regression (fix round 2, cline F-5 / devin F-13): `platforms` is
+    /// schema-required and carries a closed vocabulary — the Rust wire
+    /// enforces both, not just the JSON Schema gate.
+    #[test]
+    fn platforms_are_required_with_the_closed_vocabulary() {
+        // Missing platforms refuses (schema lists it under `required`).
+        let mut json = base_manifest();
+        json.as_object_mut()
+            .expect("object")
+            .remove("platforms")
+            .expect("present");
+        let error = ManifestDocument::from_value(json).expect_err("missing platforms");
+        assert!(matches!(error, PackageFailure::ManifestInvalid { .. }));
+
+        // An out-of-vocabulary token refuses.
+        let mut json = base_manifest();
+        json["platforms"] = serde_json::json!(["any", "atari-2600"]);
+        let error = ManifestDocument::from_value(json).expect_err("unknown platform");
+        assert!(matches!(error, PackageFailure::ManifestInvalid { .. }));
+
+        // Every schema enum token parses.
+        for platform in [
+            "any",
+            "windows-x64",
+            "linux-x64",
+            "linux-arm64",
+            "darwin-x64",
+            "darwin-arm64",
+        ] {
+            let mut json = base_manifest();
+            json["platforms"] = serde_json::json!([platform]);
+            assert!(
+                ManifestDocument::from_value(json).is_ok(),
+                "{platform} must parse"
+            );
+        }
+    }
+
+    /// Regression (fix round 2, devin F-13): the self-referential digest
+    /// member is absent from the wire, so both spellings refuse exactly
+    /// like the JSON Schema (which omits the member). No spelling
+    /// divergence: neither `manifestDigest` nor `manifest_digest` is
+    /// silently accepted by one side and refused by the other.
+    #[test]
+    fn the_self_referential_digest_member_refuses_in_both_spellings() {
+        for member in ["manifestDigest", "manifest_digest"] {
+            let mut json = base_manifest();
+            json[member] = serde_json::json!(format!("sha256:{}", "55".repeat(32)));
+            let error = ManifestDocument::from_value(json)
+                .expect_err("the self-referential digest member is not wire");
+            assert!(
+                matches!(error, PackageFailure::ManifestInvalid { .. }),
+                "{member} must refuse"
+            );
+        }
+    }
+
+    /// Regression (fix round 2, cline F-5): the Rust package-path grammar
+    /// refuses drive-like, control-character, and empty-segment spellings
+    /// the old schema pattern tolerated; the wire is the stricter of the
+    /// two and the schema now mirrors it.
+    #[test]
+    fn package_path_grammar_refuses_host_shaped_spellings() {
+        for path in ["C:foo", "a//b", "a/", "dir/sub:/x.mjs", ".hidden"] {
+            let mut json = base_manifest();
+            json["integrity"]["files"][0]["path"] = serde_json::json!(path);
+            let error = ManifestDocument::from_value(json).expect_err(path);
+            assert!(
+                matches!(error, PackageFailure::ManifestInvalid { .. }),
+                "{path}"
+            );
+        }
     }
 }

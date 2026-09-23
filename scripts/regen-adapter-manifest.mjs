@@ -28,8 +28,24 @@ const framed = (path, bytes) => {
 
 const canonicalManifest = () => {
   const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
-  delete raw.manifestDigest;
-  if (raw.integrity) raw.integrity.packageDigest = "sha256:" + "0".repeat(64);
+  // Strip the self-referential member recursively — the same rule as the
+  // Rust verifier's canonical::without_member (fix round 2, devin F-14).
+  // A manifestDigest nested inside a Json-typed member must land outside
+  // the digest domain on both sides, or JS-authored packages would fail
+  // the Rust integrity gate.
+  const stripMember = (value) => {
+    if (Array.isArray(value)) return value.map(stripMember);
+    if (value !== null && typeof value === "object") {
+      const next = {};
+      for (const [k, v] of Object.entries(value)) {
+        if (k !== "manifestDigest") next[k] = stripMember(v);
+      }
+      return next;
+    }
+    return value;
+  };
+  const stripped = stripMember(raw);
+  if (stripped.integrity) stripped.integrity.packageDigest = "sha256:" + "0".repeat(64);
   // canonical JSON: sorted keys, compact
   const canonical = (value) => {
     if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
