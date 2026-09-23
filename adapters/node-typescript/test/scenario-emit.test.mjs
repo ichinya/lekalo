@@ -177,8 +177,25 @@ test("sidecars carry the declaration ranges of every then-step", () => {
   assert.equal(mapDocument.adapter.id, ADAPTER_ID);
   assert.equal(mapDocument.owner, "planner.scenario.idempotent_focus");
   const ids = mapDocument.declarations.map((declaration) => declaration.id);
-  assert.ok(ids.includes("scenario:planner.scenario.idempotent_focus"));
-  assert.ok(ids.includes("then:no_duplicates"));
+  // Review cline F-1: declaration ids are grammar-valid Model symbols —
+  // no kind prefixes — with the kind and step spelling in metadata.
+  assert.ok(ids.includes("planner.scenario.idempotent_focus"));
+  assert.ok(ids.includes("idempotent_focus.no_duplicates"));
+  for (const declaration of mapDocument.declarations) {
+    assert.ok(
+      declaration.id.split(".").length >= 2,
+      `grammar-valid symbol id: ${declaration.id}`,
+    );
+    assert.ok(!declaration.id.includes(":"), declaration.id);
+  }
+  const scenarioLevel = mapDocument.declarations.find(
+    (declaration) => declaration.kind === "scenario",
+  );
+  assert.equal(scenarioLevel.export, "lekalo_planner_scenario_idempotent_focus");
+  const thenLevel = mapDocument.declarations.find(
+    (declaration) => declaration.kind === "then",
+  );
+  assert.equal(thenLevel.step, "no_duplicates");
   for (const declaration of mapDocument.declarations) {
     assert.ok(declaration.start < declaration.end, "half-open ranges");
     const testFile = files.find((entry) => entry.path === sidecar.path.replace(/\.map\.json$/, ".ts"));

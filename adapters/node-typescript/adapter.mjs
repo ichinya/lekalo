@@ -219059,9 +219059,27 @@ export const ${testSymbol} = { scenario: ${JSON.stringify(model.id)} };
       owner: model.id,
       fields: { "": model.id },
       declarations: [
-        { id: `scenario:${model.id}`, export: testSymbol, start: blockStart, end: byteLength2(text) },
+        // Review cline F-1: the ownership manifest ingests every
+        // declaration id through the Model symbol grammar — kind
+        // prefixes (`scenario:`, `then:`) are not parseable semantic
+        // ids and hard-fail the orchestration apply. The ids below are
+        // grammar-valid Model symbols; the kind and the then-step
+        // spelling ride in metadata, exactly like the zod sidecars
+        // carry their metadata.
+        {
+          id: model.id,
+          kind: "scenario",
+          export: testSymbol,
+          start: blockStart,
+          end: byteLength2(text)
+        },
         ...segments.filter((segment) => segment.stepId !== null).map((segment) => ({
-          id: `then:${segment.stepId}`,
+          // The scenario leaf scoped under the step id is a valid
+          // two-segment symbol id, unique within the sidecar; the
+          // full step spelling stays in the `step` metadata.
+          id: `${model.id.split(".").pop()}.${segment.stepId}`,
+          kind: "then",
+          step: segment.stepId,
           export: testSymbol,
           start: segment.start,
           end: segment.start + byteLength2(segment.text)

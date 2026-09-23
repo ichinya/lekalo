@@ -1012,4 +1012,49 @@ mod tests {
             "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.ts",
         );
     }
+
+    /// Review cline F-1: the ownership manifest ingests every emitted
+    /// sidecar declaration id through `SemanticOwnerId::parse` (the Model
+    /// symbol grammar), and the pairing binds the sidecar to the emitted
+    /// `<id>.test.ts` artifact. The emitted declaration ids are
+    /// grammar-valid Model symbols; the kind/step spelling rides in
+    /// metadata.
+    #[test]
+    fn emitted_sidecar_declaration_ids_ingest_through_the_owner_grammar() {
+        use crate::loader::ModelVersion;
+        let version = ModelVersion::Current;
+        let scenario_id = "planner.scenario.minimal";
+        // The exact declaration-id spellings the emitter produces:
+        // the scenario id itself, and the scenario leaf scoped under
+        // each then-step id.
+        let emitted_ids = [
+            scenario_id.to_owned(),
+            "minimal.output".to_owned(),
+            "minimal.state".to_owned(),
+        ];
+        for id in &emitted_ids {
+            assert!(
+                crate::ir::grammar::is_symbol_id(version, id),
+                "grammar-valid declaration id: {id}"
+            );
+            assert!(
+                SemanticOwnerId::parse(id, version).is_some(),
+                "manifest-ingestible declaration id: {id}"
+            );
+        }
+        // The refused shapes stay refused: the old kind-prefixed ids the
+        // emitter used before the fix are exactly what the grammar
+        // rejects, so the manifest apply hard-failed on them.
+        for id in ["scenario:planner.scenario.minimal", "then:output"] {
+            assert!(SemanticOwnerId::parse(id, version).is_none());
+        }
+        // The sidecar path pairs to the emitted module and classifies
+        // as `test`, so the binding passes the map-without-artifact
+        // refusal for the emitted write set.
+        let sidecar =
+            "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.map.json";
+        let module = super::module_path_of(sidecar);
+        assert!(module.ends_with(".test.ts"));
+        assert_eq!(super::artifact_kind_for(&module), ArtifactKind::Test);
+    }
 }
