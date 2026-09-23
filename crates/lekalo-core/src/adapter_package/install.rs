@@ -29,10 +29,11 @@ use super::manifest::ManifestDocument;
 use super::trust::TrustLevel;
 use super::version::INSTALL_PLAN_SCHEMA_VERSION;
 
-/// The governed runtime homes of the adapter store.
-pub const PACKAGES_DIR: &str = ".lekalo/adapters/packages";
+/// The governed runtime homes of the adapter store. The quarantine/
+/// packages spellings are owned by [`super::quarantine`] — install
+/// computes custody paths through its shared helpers (fix round 4,
+/// cline F-NEW-2).
 pub const STAGING_DIR: &str = ".lekalo/adapters/staging";
-pub const QUARANTINE_DIR: &str = ".lekalo/adapters/quarantine";
 pub const INSTALL_GUARD: &str = ".lekalo/cache/locks/adapter-install";
 
 /// One sorted action of the install plan.
@@ -153,39 +154,28 @@ pub fn plan(
             digest: file.digest().as_str().to_owned(),
         });
     }
-    let digest8 = manifest.package_digest().as_str()["sha256:".len()..]
-        .chars()
-        .take(8)
-        .collect::<String>();
-    if quarantined {
-        actions.push(InstallAction::Quarantine {
-            path: format!(
-                "{}/{}/{}-{}",
-                QUARANTINE_DIR,
-                manifest.adapter_id(),
-                manifest.adapter_version(),
-                digest8
-            ),
-        });
-    }
-    let promote_dir = if quarantined {
-        format!(
-            "{}/{}/{}-{}",
-            QUARANTINE_DIR,
+    // One custody spelling, shared with purge and release (fix round 4,
+    // cline F-NEW-2): the quarantine/package path helpers are the single
+    // source of the <root>/<id>/<version>-<digest8> grammar.
+    let custody_dir = if quarantined {
+        super::quarantine::quarantine_path(
             manifest.adapter_id(),
-            manifest.adapter_version(),
-            digest8
+            &manifest.adapter_version().to_string(),
+            manifest.package_digest().as_str(),
         )
     } else {
-        format!(
-            "{}/{}/{}-{}",
-            PACKAGES_DIR,
+        super::quarantine::package_path(
             manifest.adapter_id(),
-            manifest.adapter_version(),
-            digest8
+            &manifest.adapter_version().to_string(),
+            manifest.package_digest().as_str(),
         )
     };
-    actions.push(InstallAction::Promote { path: promote_dir });
+    if quarantined {
+        actions.push(InstallAction::Quarantine {
+            path: custody_dir.clone(),
+        });
+    }
+    actions.push(InstallAction::Promote { path: custody_dir });
     if !quarantined {
         actions.push(InstallAction::Repoint {
             id: manifest.adapter_id().to_owned(),
@@ -329,17 +319,15 @@ fn apply_staged(
     // Quarantined custody: community bytes land under quarantine/**,
     // never in the live packages/** tree; a non-quarantined plan
     // promotes directly into the immutable store.
-    let destination = root.join(
-        if plan.quarantined {
-            quarantine_dir_relative(plan)
-        } else {
-            package_store_dir_relative(plan)
-        }
-        .replace('/', std::path::MAIN_SEPARATOR_STR),
-    );
+    let destination_relative = if plan.quarantined {
+        super::quarantine::quarantine_path(&plan.id, &plan.version, &plan.digest)
+    } else {
+        super::quarantine::package_path(&plan.id, &plan.version, &plan.digest)
+    };
+    let destination = root.join(destination_relative.replace('/', std::path::MAIN_SEPARATOR_STR));
     if destination.exists() {
         return Err(ApplyRejection::InstallConflict {
-            path: package_relative_dir_of_plan(plan),
+            path: destination_relative,
         });
     }
     if let Some(parent) = destination.parent() {
@@ -439,29 +427,6 @@ pub fn apply_from_candidate(
         .clone()
         .unwrap_or_else(std::env::temp_dir);
     apply_with_source(root, plan, confirmed_plan_id, allow_escalation, &source_dir)
-}
-
-fn quarantine_dir_relative(plan: &InstallPlan) -> String {
-    let digest8 = plan.digest["sha256:".len()..]
-        .chars()
-        .take(8)
-        .collect::<String>();
-    format!(
-        "{}/{}/{}-{}",
-        QUARANTINE_DIR, plan.id, plan.version, digest8
-    )
-}
-
-fn package_store_dir_relative(plan: &InstallPlan) -> String {
-    let digest8 = plan.digest["sha256:".len()..]
-        .chars()
-        .take(8)
-        .collect::<String>();
-    format!("{}/{}/{}-{}", PACKAGES_DIR, plan.id, plan.version, digest8)
-}
-
-fn package_relative_dir_of_plan(plan: &InstallPlan) -> String {
-    package_store_dir_relative(plan)
 }
 
 /// Reverse-order rollback of the journal. An incomplete rollback is
