@@ -194,6 +194,8 @@ jobs:
         run: node scripts/test-node-typescript-transport.mjs
       - name: Run the scenario-test compiler gate (issue #47)
         run: node scripts/test-node-scenario-tests.mjs
+      - name: Run the scenario unit suites (issue #47 review F-11)
+        run: node scripts/test-node-scenario-units.mjs
       - name: Provision exact Ajv 8.17.1 outside the checkout (issue #48)
         run: |
           set -euo pipefail
