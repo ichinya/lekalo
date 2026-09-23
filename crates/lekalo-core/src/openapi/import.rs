@@ -59,6 +59,26 @@ pub fn parse_document_text(text: &str) -> Result<Json, DiagnosticSet> {
     Ok(restored.0)
 }
 
+/// The honest refusal detail of one frontend rejection: the stable
+/// classification when the diagnostic carries one, else the bounded
+/// key / limit the loader pinned (duplicate-key and limit-exceeded
+/// carry no generic `detail` member), else the generic `syntax` tag.
+fn frontend_detail(diagnostic: Option<&crate::loader::error::Diagnostic>) -> String {
+    let Some(data) = diagnostic.and_then(|diagnostic| diagnostic.data.as_ref()) else {
+        return "syntax".to_owned();
+    };
+    if let Some(text) = data.get("detail").and_then(|value| value.as_str()) {
+        return super::diagnostic::bounded(text);
+    }
+    if let Some(key) = data.get("key").and_then(|value| value.as_str()) {
+        return super::diagnostic::bounded(&format!("duplicate-key:{}", key));
+    }
+    if let Some(limit) = data.get("limit").and_then(|value| value.as_str()) {
+        return super::diagnostic::bounded(&format!("limit:{}", limit));
+    }
+    "syntax".to_owned()
+}
+
 /// The reserved placeholder of one empty flow mapping.
 const EMPTY_OBJECT_TOKEN: &str = "lekalo-empty-map-7f3a";
 /// The reserved placeholder of one empty flow sequence.
@@ -75,22 +95,10 @@ fn closed_frontend_parse(text: &str) -> Result<Json, DiagnosticSet> {
     let index = LineIndex::new(text);
     match parse_document(text, &index) {
         Ok(Parsed::Empty) => Err(diagnostic::input_invalid("empty")),
-        Ok(Parsed::Root(node)) => {
-            let mut duplicates = Vec::new();
-            if has_duplicate_keys(&node, &mut duplicates) {
-                return Err(diagnostic::input_invalid("duplicate-key"));
-            }
-            node_to_json(&node)
-        }
-        Err(diagnostics) => {
-            let detail = diagnostics
-                .first()
-                .and_then(|diagnostic| diagnostic.data.as_ref())
-                .and_then(|data| data.get("detail"))
-                .and_then(|value| value.as_str())
-                .unwrap_or("syntax");
-            Err(diagnostic::input_invalid(detail))
-        }
+        Ok(Parsed::Root(node)) => node_to_json(&node),
+        Err(diagnostics) => Err(diagnostic::input_invalid(&frontend_detail(
+            diagnostics.first(),
+        ))),
     }
 }
 
@@ -173,33 +181,6 @@ fn restore_empty_flow(document: &Json) -> (Json, usize) {
             (Json::Object(object), count)
         }
         other => (other.clone(), 0),
-    }
-}
-
-/// Detect duplicate keys at every level (fail closed before typing).
-fn has_duplicate_keys(node: &Node, seen: &mut Vec<String>) -> bool {
-    match &node.value {
-        Value::Map(entries) => {
-            let mut keys: Vec<&str> = entries.iter().map(|entry| entry.key.as_str()).collect();
-            let before = keys.len();
-            keys.sort_unstable();
-            keys.dedup();
-            if keys.len() != before {
-                seen.push(
-                    entries
-                        .iter()
-                        .map(|entry| entry.key.clone())
-                        .next_back()
-                        .unwrap_or_default(),
-                );
-                return true;
-            }
-            entries
-                .iter()
-                .any(|entry| has_duplicate_keys(&entry.value, seen))
-        }
-        Value::Seq(items) => items.iter().any(|item| has_duplicate_keys(item, seen)),
-        Value::Scalar(_) => false,
     }
 }
 
@@ -307,6 +288,23 @@ mod tests {
     fn duplicate_keys_refuse() {
         let text = "openapi: 3.1.0\nopenapi: 3.0.0\n";
         assert!(parse_document_text(text).is_err());
+    }
+
+    #[test]
+    fn duplicate_keys_name_the_key_in_the_detail() {
+        // The loader pins the duplicate key; the refusal surfaces it
+        // instead of the generic syntax tag (r1 devin F-10).
+        let set =
+            parse_document_text("openapi: \"3.1.0\"\nopenapi: \"3.0.0\"\n").expect_err("refuses");
+        let detail = match set.as_slice()[0].data.get("detail") {
+            Some(crate::diagnostics::DataValue::Token(text)) => text.clone(),
+            other => format!("{:?}", other),
+        };
+        assert!(
+            detail.starts_with("duplicate-key:"),
+            "honest duplicate-key detail, got {}",
+            detail
+        );
     }
 
     #[test]
