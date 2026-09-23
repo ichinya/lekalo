@@ -110,6 +110,30 @@ if (canonicalJson(JSON.parse(runtimes[0])) !== runtimes[0].trim()) {
   failEarly("runtime-golden-noncanonical", "the input document deviates from canonical form");
 }
 
+// The migration-plan goldens: schema-valid against the closed step-kind
+// vocabulary and canonical. The tenant-retirement golden pins the
+// `disable_rls` member — the kind shipped in the planner before its
+// vocabulary member existed, which made every plan on that path
+// contract-invalid (round-6 finding A).
+let planGoldenCount = 0;
+const plansDir = "tests/fixtures/storage-engine/plans";
+for (const name of readdirSync(resolve(root, plansDir)).sort()) {
+  if (!name.endsWith(".json")) continue;
+  const text = read(`${plansDir}/${name}`);
+  const document = JSON.parse(text);
+  const validatePlan = validators.get("storage-migration-plan");
+  if (!validatePlan(document)) {
+    fail(`plan:${name}:schema`, validatePlan.errors);
+    continue;
+  }
+  if (canonicalJson(document) !== text.trim()) {
+    fail(`plan:${name}:canonical`, "committed bytes deviate from canonical form");
+    continue;
+  }
+  planGoldenCount += 1;
+}
+if (planGoldenCount === 0) failEarly("no-plan-goldens", "the plan golden directory is empty");
+
 // The invalid vectors: schema-level rejections with their expect
 // files. The expectation is load-bearing: every vector must declare a
 // schema rule, and the actual Ajv rejection must carry the signal the
@@ -172,6 +196,7 @@ process.stdout.write(
     evidenceGoldens: evidenceCount,
     invalidVectors: invalidCount,
     ok: true,
+    planGoldens: planGoldenCount,
     validGoldens: goldenCount,
   })}\n`,
 );
