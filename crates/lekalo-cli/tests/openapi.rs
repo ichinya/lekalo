@@ -273,6 +273,77 @@ fn check_accepts_the_generator_output_and_reports_drift() {
 }
 
 #[test]
+fn check_honors_the_declared_version_and_mode_flags() {
+    // A maintained 3.0 document checks cleanly at --version 3.0 and
+    // refuses under the 3.1 default; --mode is honored on the
+    // recomputation (r1 cline F-6).
+    let temp = scratch();
+    let dir = temp.path();
+    let attachment = prepared_attachment(dir);
+    let render = lekalo_in(
+        dir,
+        &[
+            "--json",
+            "openapi",
+            "render",
+            "--version",
+            "3.0",
+            attachment.to_str().unwrap(),
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&render), 0, "{}", stderr_text(&render));
+    let document = stdout_json(&render)["openapi"]["document"].clone();
+    let document_path = dir.join("openapi-30.json");
+    fs::write(
+        &document_path,
+        serde_json::to_vec_pretty(&document).unwrap(),
+    )
+    .unwrap();
+
+    let declared30 = lekalo_in(
+        dir,
+        &[
+            "--json",
+            "openapi",
+            "check",
+            "--version",
+            "3.0",
+            "--mode",
+            "full",
+            document_path.to_str().unwrap(),
+            "--transport",
+            attachment.to_str().unwrap(),
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&declared30), 0, "{}", stderr_text(&declared30));
+    assert_eq!(stdout_json(&declared30)["openapiCheck"]["conformant"], true);
+
+    let default31 = lekalo_in(
+        dir,
+        &[
+            "--json",
+            "openapi",
+            "check",
+            document_path.to_str().unwrap(),
+            "--transport",
+            attachment.to_str().unwrap(),
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&default31), 1);
+    assert!(
+        stderr_text(&default31).contains("openapi.input-invalid"),
+        "the version guard refuses: {}",
+        stderr_text(&default31)
+    );
+}
+
+#[test]
 fn check_refuses_a_document_anchored_to_nothing() {
     let temp = scratch();
     let dir = temp.path();

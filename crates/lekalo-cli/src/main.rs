@@ -1106,6 +1106,16 @@ enum OpenapiCommands {
         /// `<stem>.ownership.json` sibling of the document.
         #[arg(long, value_name = "FILE")]
         ownership: Option<String>,
+        /// The declared OpenAPI version of the maintained document
+        /// (3.1 default; the recomputation renders at the same
+        /// version, so a maintained 3.0 document does not drift on
+        /// its nullable spellings).
+        #[arg(long, value_enum, default_value_t = OpenapiVersion::V31)]
+        version: OpenapiVersion,
+        /// The declared document mode of the maintained document
+        /// (full default; the recomputation honors it).
+        #[arg(long, value_enum, default_value_t = OpenapiMode::Full)]
+        mode: OpenapiMode,
     },
     /// Inspect one endpoint's rendered operation: the joined Model
     /// surface plus every projected OpenAPI member.
@@ -4446,6 +4456,8 @@ fn run_openapi(command: OpenapiCommands) -> DomainResult {
             errors,
             query_model,
             ownership,
+            version,
+            mode,
         } => openapi_check(
             &path,
             &transport,
@@ -4453,6 +4465,8 @@ fn run_openapi(command: OpenapiCommands) -> DomainResult {
             errors.as_deref(),
             query_model.as_deref(),
             ownership.as_deref(),
+            version.as_str(),
+            mode.as_str(),
         ),
         OpenapiCommands::Inspect {
             path,
@@ -4567,6 +4581,8 @@ fn openapi_check(
     errors_path: Option<&str>,
     query_model_path: Option<&str>,
     ownership_path: Option<&str>,
+    version: &str,
+    mode: &str,
 ) -> DomainResult {
     let bytes = match std::fs::read(document_path) {
         Ok(bytes) => bytes,
@@ -4600,11 +4616,15 @@ fn openapi_check(
     if let Err(diagnostics) = lekalo_core::transport_http::validate(&session.attachment, &context) {
         return DomainResult::invalid(diagnostics);
     }
+    let config = match openapi_config(version, mode) {
+        Ok(config) => config,
+        Err(()) => return DomainResult::usage_error(),
+    };
     let report = match lekalo_core::openapi::check(
         &existing,
         &session.attachment,
         &context,
-        &lekalo_core::openapi::RenderConfig::new(),
+        &config,
         &ownership,
     ) {
         Ok(report) => report,
