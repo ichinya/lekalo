@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "dev.lekalo.lock@0.2.16",
+  "$id": "dev.lekalo.lock@0.3.2",
   "title": "Lekalo lock file (lekalo.lock) v1",
-  "description": "Closed wire schema for the committed, deterministic lekalo.lock. The discriminator schema_version is lekalo/lock/v0.2.16 and is independent of the product release, the Model/IR/protocol contract versions, and the resolver algorithm version. Every version is one exact canonical SemVer spelling without build metadata; every digest is sha256:<64 lowercase hex> over its declared domain only; every array is sorted by the documented key; no field carries an absolute path, URL, credential, or host data. This schema is the wire envelope; the Rust implementation in crates/lekalo-core/src/lockfile is normative for cross-field invariants.",
+  "description": "Closed wire schema for the committed, deterministic lekalo.lock. The discriminator schema_version is lekalo/lock/v0.3.2 and is independent of the product release, the Model/IR/protocol contract versions, and the resolver algorithm version. Every version is one exact canonical SemVer spelling without build metadata; every digest is sha256:<64 lowercase hex> over its declared domain only; every array is sorted by the documented key; no field carries an absolute path, URL, credential, or host data. This schema is the wire envelope; the Rust implementation in crates/lekalo-core/src/lockfile is normative for cross-field invariants.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,7 +17,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "lekalo/lock/v0.2.16"
+      "const": "lekalo/lock/v0.3.2"
     },
     "resolver": {
       "$ref": "#/$defs/resolver"
@@ -64,10 +64,14 @@
                 "type": "null"
               }
             },
-            "required": ["target_protocol"]
+            "required": [
+              "target_protocol"
+            ]
           }
         },
-        "required": ["contracts"]
+        "required": [
+          "contracts"
+        ]
       },
       "then": {
         "properties": {
@@ -112,7 +116,10 @@
     "contract_pin": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version", "digest"],
+      "required": [
+        "version",
+        "digest"
+      ],
       "properties": {
         "version": {
           "$ref": "#/$defs/version"
@@ -125,7 +132,10 @@
     "component_ref": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "version"],
+      "required": [
+        "id",
+        "version"
+      ],
       "properties": {
         "id": {
           "$ref": "#/$defs/id"
@@ -138,7 +148,11 @@
     "resolver": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version", "request_digest", "catalogs"],
+      "required": [
+        "version",
+        "request_digest",
+        "catalogs"
+      ],
       "properties": {
         "version": {
           "$ref": "#/$defs/version",
@@ -154,7 +168,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "digest"],
+            "required": [
+              "id",
+              "digest"
+            ],
             "properties": {
               "id": {
                 "$ref": "#/$defs/id"
@@ -170,7 +187,9 @@
     "core": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version"],
+      "required": [
+        "version"
+      ],
       "properties": {
         "version": {
           "$ref": "#/$defs/version",
@@ -181,7 +200,12 @@
     "contracts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["registry", "model", "ir", "target_protocol"],
+      "required": [
+        "registry",
+        "model",
+        "ir",
+        "target_protocol"
+      ],
       "properties": {
         "registry": {
           "$ref": "#/$defs/contract_pin"
@@ -228,23 +252,7 @@
           "description": "SHA-256 of the immutable platform-neutral adapter package/manifest root."
         },
         "source": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "id", "digest"],
-          "properties": {
-            "kind": {
-              "enum": ["builtin", "catalog", "project"]
-            },
-            "id": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128,
-              "description": "A non-secret stable logical coordinate; for kind project a #4-safe project-relative POSIX path. The Rust grammar is normative and refuses private/absolute shapes."
-            },
-            "digest": {
-              "$ref": "#/$defs/digest"
-            }
-          }
+          "$ref": "#/$defs/source"
         },
         "compatibility_digest": {
           "$ref": "#/$defs/digest",
@@ -257,7 +265,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["platform", "digest"],
+            "required": [
+              "platform",
+              "digest"
+            ],
             "properties": {
               "platform": {
                 "$ref": "#/$defs/platform"
@@ -267,13 +278,48 @@
               }
             }
           }
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/digest",
+          "description": "SHA-256 over the canonical adapter package manifest bytes minus its self-referential manifestDigest member (issue #32). Optional additive member; producers that resolved a manifested package emit it."
+        },
+        "trust": {
+          "description": "The exact execution-isolation trust vocabulary assigned at selection time (issue #32).",
+          "enum": [
+            "builtin",
+            "verified",
+            "local-development",
+            "community",
+            "revoked"
+          ]
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source"
+          ],
+          "properties": {
+            "source": {
+              "$ref": "#/$defs/source"
+            },
+            "install_plan_id": {
+              "$ref": "#/$defs/digest",
+              "description": "The confirmed install plan identity when the package arrived through a plan (issue #32)."
+            }
+          }
         }
       }
     },
     "generator": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "version", "digest", "adapter"],
+      "required": [
+        "id",
+        "version",
+        "digest",
+        "adapter"
+      ],
       "properties": {
         "id": {
           "$ref": "#/$defs/id"
@@ -334,7 +380,14 @@
     "capability": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["target", "profile", "id", "version", "support", "provider"],
+      "required": [
+        "target",
+        "profile",
+        "id",
+        "version",
+        "support",
+        "provider"
+      ],
       "properties": {
         "target": {
           "$ref": "#/$defs/platform"
@@ -349,15 +402,27 @@
           "$ref": "#/$defs/version"
         },
         "support": {
-          "enum": ["full", "partial", "unsupported", "unknown"]
+          "enum": [
+            "full",
+            "partial",
+            "unsupported",
+            "unknown"
+          ]
         },
         "provider": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "version"],
+          "required": [
+            "kind",
+            "id",
+            "version"
+          ],
           "properties": {
             "kind": {
-              "enum": ["adapter", "generator"]
+              "enum": [
+                "adapter",
+                "generator"
+              ]
             },
             "id": {
               "$ref": "#/$defs/id"
@@ -366,6 +431,34 @@
               "$ref": "#/$defs/version"
             }
           }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "digest"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "builtin",
+            "catalog",
+            "installed",
+            "project"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "A non-secret stable logical coordinate; for kind project a #4-safe project-relative POSIX path; for kind installed the store-relative packages path (issue #32). The Rust grammar is normative and refuses private/absolute shapes."
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
         }
       }
     }

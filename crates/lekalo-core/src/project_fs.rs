@@ -713,8 +713,28 @@ const CANONICAL_ROOT_ENTRIES: [&str; 9] = [
     "classification-policy.json",
 ];
 
-/// The closed runtime top-level entries under `.lekalo/`.
-const RUNTIME_ENTRIES: [&str; 5] = ["import", "cache", "generated", "consumer", "privacy"];
+/// The closed runtime top-level entries under `.lekalo/`. `adapters` is
+/// the governed issue #32 store (fix round 4, devin N-1): the vocabulary
+/// must know it or every project-loading command refuses once an
+/// adapter is installed.
+const RUNTIME_ENTRIES: [&str; 6] = [
+    "import",
+    "cache",
+    "generated",
+    "consumer",
+    "privacy",
+    "adapters",
+];
+
+/// The closed children of `.lekalo/adapters/` — the custody tree the
+/// adapter package model owns (docs/canonical-structure.md).
+const RUNTIME_ADAPTERS_CHILDREN: [&str; 5] = [
+    "packages",
+    "quarantine",
+    "staging",
+    "evidence",
+    "inventory.json",
+];
 
 const RUNTIME_CONSUMER_CHILDREN: [&str; 2] = ["model", "bindings"];
 const RUNTIME_PRIVACY_CHILDREN: [&str; 4] = ["exports", "redacted", "aggregates", "decisions"];
@@ -753,6 +773,28 @@ fn runtime_placement_failure(entry_type: EntryType, logical: &str) -> Option<Sca
         }
         return (segments.len() == 2 && entry_type != EntryType::Directory)
             .then(|| StructureReason::new("structure.runtime-unexpected-entry").at(logical));
+    }
+    if top == "adapters" {
+        if !RUNTIME_ADAPTERS_CHILDREN.contains(&segments[1]) {
+            return Some(StructureReason::new("structure.runtime-unexpected-entry").at(logical));
+        }
+        if segments[1] == "inventory.json" {
+            return (segments.len() != 2 || entry_type != EntryType::File)
+                .then(|| StructureReason::new("structure.runtime-unexpected-entry").at(logical));
+        }
+        if segments.len() == 2 {
+            return (entry_type != EntryType::Directory)
+                .then(|| StructureReason::new("structure.runtime-unexpected-entry").at(logical));
+        }
+        // The evidence tree is closed one level deeper: the record files
+        // (`releases.json`, `registry.json`, `revocations.json`) and the
+        // `installs/<id>/receipt.json` receipt subtree.
+        if segments[1] == "evidence" && segments.len() > 3 && segments[2] != "installs" {
+            return Some(StructureReason::new("structure.runtime-unexpected-entry").at(logical));
+        }
+        // packages/quarantine/staging subtrees are the custody trees:
+        // <id>/<version>-<digest8>/<staged files>.
+        return None;
     }
     if !RUNTIME_PRIVACY_CHILDREN.contains(&segments[1]) {
         return Some(StructureReason::new("structure.runtime-unexpected-entry").at(logical));
@@ -1131,6 +1173,64 @@ mod tests {
                 .code,
             "structure.runtime-unexpected-entry"
         );
+    }
+
+    /// Regression (fix round 4, devin N-1): the governed adapter store
+    /// is part of the runtime vocabulary — every legal custody spelling
+    /// passes, and an unknown child refuses.
+    #[test]
+    fn adapter_store_placement_is_part_of_the_runtime_vocabulary() {
+        for (entry_type, logical) in [
+            (EntryType::Directory, ".lekalo/adapters"),
+            (EntryType::Directory, ".lekalo/adapters/packages"),
+            (EntryType::Directory, ".lekalo/adapters/packages/a"),
+            (
+                EntryType::Directory,
+                ".lekalo/adapters/packages/a/1.0.0-277089d9",
+            ),
+            (
+                EntryType::File,
+                ".lekalo/adapters/packages/a/1.0.0-277089d9/adapter.mjs",
+            ),
+            (EntryType::Directory, ".lekalo/adapters/quarantine"),
+            (
+                EntryType::Directory,
+                ".lekalo/adapters/quarantine/a/1.0.0-277089d9",
+            ),
+            (EntryType::Directory, ".lekalo/adapters/staging"),
+            (EntryType::Directory, ".lekalo/adapters/evidence"),
+            (EntryType::File, ".lekalo/adapters/evidence/releases.json"),
+            (
+                EntryType::File,
+                ".lekalo/adapters/evidence/revocations.json",
+            ),
+            (EntryType::Directory, ".lekalo/adapters/evidence/installs"),
+            (EntryType::Directory, ".lekalo/adapters/evidence/installs/a"),
+            (
+                EntryType::File,
+                ".lekalo/adapters/evidence/installs/a/receipt.json",
+            ),
+            (EntryType::File, ".lekalo/adapters/inventory.json"),
+        ] {
+            assert!(
+                runtime_placement_failure(entry_type, logical).is_none(),
+                "{logical} must be a legal runtime home"
+            );
+        }
+        for (entry_type, logical) in [
+            (EntryType::File, ".lekalo/adapters"),
+            (EntryType::File, ".lekalo/adapters/other"),
+            (EntryType::Directory, ".lekalo/adapters/other"),
+            (EntryType::Directory, ".lekalo/adapters/inventory.json"),
+            (EntryType::File, ".lekalo/adapters/evidence/other/deep.json"),
+            (EntryType::File, ".lekalo/adapters/inventory.json.bak"),
+        ] {
+            assert_eq!(
+                runtime_placement_failure(entry_type, logical).unwrap().code,
+                "structure.runtime-unexpected-entry",
+                "{logical} must refuse"
+            );
+        }
     }
 }
 #[cfg(test)]

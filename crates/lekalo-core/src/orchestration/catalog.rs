@@ -81,14 +81,102 @@ impl AdapterSupply {
 }
 
 /// Discover one adapter through the safe describe handshake.
-pub(crate) fn discover(
+///
+/// Issue #32: the launched entry first passes the adapter package
+/// resolution gate — the implicit local-development descriptor is
+/// synthesized from the entry bytes and the integrity/trust gates run
+/// before any child process exists (checksum before execution,
+/// describe included).
+pub fn discover(
     client: &mut TargetClient,
     supply: &AdapterSupply,
     root: &Path,
     limits: TransportLimits,
 ) -> Result<DiscoveredAdapter, Failure> {
     let _ = limits;
-    Discovery::run(client, &supply.command, root).map_err(Failure::Target)
+    let (manifest, synthesized) = gate_supply(supply, root)?;
+    let discovered = Discovery::run(client, &supply.command, root).map_err(Failure::Target)?;
+    // The manifest-vs-describe consistency check (issue #32): describe
+    // is self-assertion; the verified manifest is the independent
+    // claim. Any disagreement refuses (adapter.manifest-mismatch).
+    // Synthesized implicit descriptors are skipped: they claim nothing
+    // (operations ["describe"], empty targets/profiles/scope) precisely
+    // so describe supplies the truth — checking them would refuse every
+    // healthy bare `-- PROGRAM` flow (fix round 2, cline F-1).
+    if consistency_applies(&manifest, synthesized) {
+        let manifest = manifest.as_ref().expect("armed implies a manifest");
+        crate::adapter_package::consistency::check(manifest, &discovered).map_err(|mismatch| {
+            Failure::AdapterPackage(crate::adapter_package::PackageFailure::ManifestMismatch {
+                field: mismatch.as_str().to_owned(),
+            })
+        })?;
+    }
+    Ok(discovered)
+}
+
+/// Whether the manifest-vs-describe consistency check applies: only a
+/// real (non-synthesized) manifest is an independent claim. The
+/// implicit descriptor claims nothing — describe supplies truth.
+fn consistency_applies(
+    manifest: &Option<crate::adapter_package::ManifestDocument>,
+    synthesized: bool,
+) -> bool {
+    manifest.is_some() && !synthesized
+}
+
+/// Run the issue #32 resolution gate over one invocation-supplied
+/// supply. The project root scopes the revocation store; the gates are
+/// offline-faithful (the implicit descriptor is fully local).
+/// offline-faithful (the implicit descriptor is fully local). Returns the
+/// verified manifest and whether it was **synthesized** (the implicit
+/// local-development descriptor claims nothing — the consistency check
+/// must not run against it, fix round 2 cline F-1).
+fn gate_supply(
+    supply: &AdapterSupply,
+    root: &Path,
+) -> Result<(Option<crate::adapter_package::ManifestDocument>, bool), Failure> {
+    let entry = supply
+        .command
+        .args
+        .first()
+        .map(PathBuf::from)
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| supply.command.program.clone());
+    // Prefer a real manifested package: the entry directory may carry
+    // adapter.manifest.json (a manifested path supply).
+    let entry_dir = entry
+        .parent()
+        .map(|parent| parent.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+    let manifested = if entry_dir.join("adapter.manifest.json").is_file() {
+        crate::adapter_package::discover(
+            &crate::adapter_package::DiscoverySource::Path(entry_dir.clone()),
+            Some(&root.to_path_buf()),
+        )
+        .map_err(package_failure)?
+        .into_iter()
+        .next()
+    } else {
+        None
+    };
+    let (candidate, synthesized) = match manifested {
+        Some(candidate) => (candidate, false),
+        None => (
+            crate::adapter_package::implicit_local_development(&entry).map_err(package_failure)?,
+            true,
+        ),
+    };
+    let context = crate::adapter_package::ResolveContext {
+        root: Some(root.to_path_buf()),
+        offline: true,
+    };
+    let resolved =
+        crate::adapter_package::resolve_candidate(candidate, &context).map_err(package_failure)?;
+    Ok((Some(resolved.candidate.manifest), synthesized))
+}
+
+fn package_failure(failure: crate::adapter_package::PackageFailure) -> Failure {
+    Failure::AdapterPackage(failure)
 }
 
 /// The locked adapter with the discovered identity, if any.
@@ -212,4 +300,118 @@ fn compatibility_manifest(
         Vec::new(),
     )
     .map_err(|_| Failure::AdapterSupplyRequired)
+}
+
+#[cfg(test)]
+mod gate_supply_tests {
+    use super::*;
+
+    fn fresh_root(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "lekalo-catalog-{}-{}-{}",
+            tag,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos(),
+        ));
+        std::fs::create_dir_all(&root).expect("mkdir");
+        root
+    }
+
+    fn supply_for(entry: &Path) -> AdapterSupply {
+        AdapterSupply {
+            command: AdapterCommand {
+                program: PathBuf::from("node"),
+                args: vec![entry.to_string_lossy().into_owned()],
+            },
+            source_id: entry.to_string_lossy().replace('\\', "/"),
+        }
+    }
+
+    /// Regression (fix round 2, cline F-1): a bare `-- PROGRAM` supply
+    /// synthesizes its descriptor — the consistency check must be
+    /// skipped, so generate/verify stay green on spawn-capable hosts.
+    #[test]
+    fn synthesized_supply_skips_the_consistency_check() {
+        let root = fresh_root("synth");
+        let src = root.join("src");
+        std::fs::create_dir_all(&src).expect("mkdir");
+        let entry = src.join("adapter.mjs");
+        std::fs::write(&entry, b"export default 1;").expect("entry");
+        let supply = supply_for(&entry);
+        let (manifest, synthesized) = gate_supply(&supply, &root).expect("gate");
+        assert!(synthesized, "no adapter.manifest.json beside the entry");
+        assert!(
+            !consistency_applies(&manifest, synthesized),
+            "synthesized descriptors are never consistency-checked",
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A manifested path supply keeps the consistency check armed.
+    #[test]
+    fn manifested_supply_keeps_the_consistency_check() {
+        let root = fresh_root("man");
+        let pkg = root.join("pkg");
+        std::fs::create_dir_all(&pkg).expect("mkdir");
+        let entry = pkg.join("a.mjs");
+        std::fs::write(&entry, b"export default 1;").expect("entry");
+        let manifest_json = serde_json::json!({
+            "schemaVersion": crate::adapter_package::version::MANIFEST_SCHEMA_VERSION,
+            "identity": crate::adapter_package::version::MANIFEST_IDENTITY,
+            "adapter": { "id": "manifested-adapter", "name": "M", "version": "1.0.0" },
+            "publisher": { "id": "p", "trustAnchor": "none" },
+            "source": { "kind": "path", "coordinate": "path:pkg", "digest": format!("sha256:{}", "11".repeat(32)) },
+            "license": { "spdx": "MIT", "file": "LICENSE", "fileDigest": format!("sha256:{}", "11".repeat(32)) },
+            "compatibility": { "protocolVersions": [crate::target_protocol::version::VERSION], "irVersions": [crate::ir::version::VERSION], "extensions": [] },
+            "capabilities": { "operations": ["describe"], "targets": [], "profiles": [], "named": {}, "constraints": {}, "readScopes": [], "writeScopes": [], "transports": ["stdin"] },
+            "executable": { "runtime": { "kind": "node", "minVersion": "18.0.0" }, "entry": "a.mjs", "argvPreview": ["node", "a.mjs"], "assets": [] },
+            "platforms": ["any"],
+            "integrity": { "packageDigest": format!("sha256:{}", "0".repeat(64)), "files": [ { "path": "a.mjs", "digest": format!("sha256:{}", crate::digest::sha256_hex(b"export default 1;")), "bytes": 17 } ], "signaturePolicy": "unsigned", "signature": null },
+            "permissions": { "filesystem": { "readScopes": [], "writeScopes": [] }, "network": { "mode": "denied", "destinations": [] }, "environment": { "allowlist": [] }, "processes": { "children": "denied" }, "secrets": { "handles": [] } },
+            "hooks": [],
+            "conformance": { "reportDigest": format!("sha256:{}", "33".repeat(32)), "badge": { "protocol": "0.3.2", "ir": "0.2.16", "profile": "default" }, "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2" },
+            "status": "active",
+            "revocation": null
+        });
+        let provisional = serde_json::to_vec_pretty(&manifest_json).unwrap();
+        std::fs::write(pkg.join("adapter.manifest.json"), &provisional).expect("manifest");
+        let parsed = crate::adapter_package::ManifestDocument::from_bytes(&provisional)
+            .expect("manifest parses");
+        let entry_part = {
+            let mut part = Vec::new();
+            part.extend_from_slice(b"a.mjs");
+            part.push(0);
+            part.extend_from_slice(&(17u64).to_be_bytes());
+            part.push(0);
+            part.extend_from_slice(b"export default 1;");
+            part
+        };
+        let manifest_part = {
+            let mut part = Vec::new();
+            part.extend_from_slice(crate::adapter_package::integrity::MANIFEST_FILE.as_bytes());
+            part.push(0);
+            part.extend_from_slice(&parsed.digest_domain_bytes().len().to_be_bytes());
+            part.push(0);
+            part.extend_from_slice(&parsed.digest_domain_bytes());
+            part
+        };
+        let package_digest =
+            crate::adapter_package::integrity::package_digest_hex(&[entry_part, manifest_part]);
+        let mut final_manifest = manifest_json;
+        final_manifest["integrity"]["packageDigest"] =
+            serde_json::Value::String(format!("sha256:{package_digest}"));
+        let manifest_bytes = serde_json::to_vec_pretty(&final_manifest).unwrap();
+        std::fs::write(pkg.join("adapter.manifest.json"), &manifest_bytes).expect("manifest");
+        let supply = supply_for(&entry);
+        let (manifest, synthesized) = gate_supply(&supply, &root).expect("gate");
+        assert!(!synthesized, "a manifested supply is a real claim");
+        assert!(
+            consistency_applies(&manifest, synthesized),
+            "check stays armed"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

@@ -10,7 +10,7 @@ const manifestPath = resolve(root, "contracts/authority-contracts.manifest.json"
 const defaultAllowedPath = resolve(root, "tests/fixtures/authority/allowed.json");
 const defaultForbiddenPath = resolve(root, "tests/fixtures/authority/forbidden.json");
 const defaultMalformedPath = resolve(root, "tests/fixtures/authority/malformed.json");
-const trustedManifestSha256 = "3411bd223d7ccdf65ee0df337860640e9ef82d3643f5da63367593aeb8a1a5a5";
+const trustedManifestSha256 = "d3a686c5b31181a301251bcb606d23f6d3a639a97bb273fe799be4a12e5f2cd8";
 const baselinePathBoundaries = [
   { pattern: "openspec/specs/**", owner: "openspec" },
   { pattern: "openspec/changes/**", owner: "openspec" },
@@ -84,15 +84,24 @@ const issue48KindIds = [
   "lekalo.native-gate-result",
   "lekalo.native-gate-output"
 ];
+// Issue #32: the reviewed adapter-package artifact kinds, appended in
+// exactly this order to the 0.3.2 successor matrix (and to the privacy
+// successor's artifactDefaults).
+const issue32KindIds = [
+  "lekalo.adapter-package",
+  "lekalo.adapter-inventory",
+  "lekalo.adapter-quarantine",
+  "lekalo.adapter-evidence"
+];
 const acceptedProfiles = new Map([
   ["0.3.2", {
     contractId: "dev.lekalo.authority-matrix",
     version: "0.3.2",
-    digest: "sha256:cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4",
-    semanticSha256: "fef84f1bdb19366325bfa29953e7c25f536d548d6090c1ca9be3530f80bfbdb9",
+    digest: "sha256:7ae6454ea20f7b61202d368411ef9bff4e70af96f1f2a408c209d84fe9722f80",
+    semanticSha256: "750ef9784895fcc4d414bb24287361b37c6a9a89f670be3f47acaf66a78a5152",
     path: "contracts/authority-matrix.v0.3.2.json",
     sidecar: "contracts/authority-matrix.v0.3.2.sha256",
-    kindIds: [...baselineKindIds, ...successorAddedKindIds, ...issue48KindIds],
+    kindIds: [...baselineKindIds, ...successorAddedKindIds, ...issue48KindIds, ...issue32KindIds],
     readersRequired: true,
     boundarySchema: "kind-bound"
   }],

@@ -79,12 +79,21 @@ pub struct DiscoveredAdapter {
     /// Declared targets and profiles, in canonical order.
     pub targets: Vec<String>,
     pub profiles: Vec<String>,
+    /// The declared operation verbs, sorted, as wire tokens (issue #32
+    /// consistency check).
+    pub operations: Vec<String>,
     /// The digest over the canonical declared capability bytes.
     pub capability_digest: String,
     /// The digest over the launched program's bytes, when readable.
     pub executable_digest: Option<String>,
     /// The named capabilities, sorted by id.
     pub capabilities: Vec<DiscoveredCapability>,
+    /// The declared read scopes, sorted (issue #32 consistency check).
+    pub read_scopes: Vec<String>,
+    /// The declared write scopes, sorted.
+    pub write_scopes: Vec<String>,
+    /// The declared transports, sorted, as wire tokens.
+    pub transports: Vec<String>,
 }
 
 impl DiscoveredAdapter {
@@ -227,9 +236,44 @@ impl Discovery {
             constraints: described.capabilities.constraints,
             targets: described.capabilities.targets,
             profiles: described.capabilities.profiles,
+            operations: {
+                let mut operations: Vec<String> = described
+                    .capabilities
+                    .operations
+                    .iter()
+                    .map(|operation| operation.as_str().to_owned())
+                    .collect();
+                operations.sort();
+                operations.dedup();
+                operations
+            },
             capability_digest: described.capability_digest,
             executable_digest: executable_digest(command),
             capabilities,
+            read_scopes: {
+                let mut scopes = described.capabilities.read_scopes;
+                scopes.sort();
+                scopes
+            },
+            write_scopes: {
+                let mut scopes = described.capabilities.write_scopes;
+                scopes.sort();
+                scopes
+            },
+            transports: {
+                let mut transports: Vec<String> = described
+                    .capabilities
+                    .transports
+                    .iter()
+                    .map(|transport| match transport {
+                        wire::Transport::Stdin => "stdin",
+                        wire::Transport::File => "file",
+                    })
+                    .map(String::from)
+                    .collect();
+                transports.sort();
+                transports
+            },
         })
     }
 }
@@ -343,6 +387,7 @@ mod tests {
             constraints: None,
             targets: vec!["node-typescript".to_owned()],
             profiles: vec!["default".to_owned()],
+            operations: vec!["describe".to_owned(), "scan".to_owned()],
             capability_digest: digest.to_owned(),
             executable_digest: None,
             capabilities: vec![DiscoveredCapability {
@@ -351,6 +396,9 @@ mod tests {
                 definition_version: "0.3.1",
                 provenance: Provenance::Declared,
             }],
+            read_scopes: Vec::new(),
+            write_scopes: Vec::new(),
+            transports: Vec::new(),
         }
     }
 

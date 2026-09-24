@@ -135,7 +135,7 @@ impl Sandbox {
             "identity": "dev.lekalo.artifact-manifest@0.2.16",
             "project_ref": "planner",
             "lock_ref": {
-                "schema_version": "lekalo/lock/v0.2.16",
+                "schema_version": "lekalo/lock/v0.3.2",
                 "digest": inputs.lock_digest,
             },
             "inputs": {

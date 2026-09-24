@@ -418,16 +418,16 @@ enum Commands {
     /// (issue #97).
     Module {
         #[command(subcommand)]
-        command: ModuleCommands,
+        command: Box<ModuleCommands>,
     },
     /// Run the target adapter conformance suite (issue #31).
     Adapter {
         #[command(subcommand)]
-        command: AdapterCommands,
+        command: Box<AdapterCommands>,
     },
     Cache {
         #[command(subcommand)]
-        command: CacheCommands,
+        command: Box<CacheCommands>,
     },
     /// Diagnose project, model, adapters, artifacts, and integrations in
     /// one read-only readiness report.
@@ -470,7 +470,7 @@ enum Commands {
     /// selects, renders, and maps exits.
     Observe {
         #[command(subcommand)]
-        command: ObserveCommands,
+        command: Box<ObserveCommands>,
     },
     /// Scan existing code through one target adapter and record the
     /// bindings (issue #42). Everything after the program path is passed
@@ -515,7 +515,7 @@ enum Commands {
     /// launches a gate command and answers with a typed refusal.
     Native {
         #[command(subcommand)]
-        command: NativeCommands,
+        command: Box<NativeCommands>,
     },
     /// Resolve NFR constraints against their measured evidence
     /// (issue #85): the gate, the derived report, and the closed
@@ -913,6 +913,135 @@ enum AdapterCommands {
         /// The adapter program and its arguments, spawned directly.
         #[arg(trailing_var_arg = true)]
         program_args: Vec<String>,
+    },
+    /// Enumerate the adapter package discovery sources without running
+    /// anything (issue #32). Auto-discovery never installs or trusts.
+    Discover {
+        /// The closed discovery source: path:<fs-path>, exec:<name>,
+        /// release:<channel>/<id>, or registry:<registry>/<package>.
+        #[arg(long, value_name = "SOURCE")]
+        source: String,
+        /// Refuse sources that are not already local (exact semantics:
+        /// release/registry records do not exist in v1).
+        #[arg(long)]
+        offline: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// List the installed adapter packages from the local store
+    /// inventory (issue #32).
+    List {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Show one installed package's manifest projection, trust, and
+    /// provenance (issue #32).
+    Info {
+        /// The adapter id.
+        id: String,
+        /// Optional exact version; defaults to the selected pin.
+        #[arg(long, value_name = "VERSION")]
+        version: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Install one adapter package from a closed source (issue #32).
+    ///
+    /// `--dry-run` renders the plan and writes nothing; `--confirm`
+    /// applies exactly that previewed plan id.
+    Install {
+        /// The closed source coordinate (path:<fs-path>, exec:<name>,
+        /// release:<channel>/<id>, registry:<registry>/<package>).
+        source: String,
+        /// Render the plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply exactly the previewed plan id.
+        #[arg(long = "confirm", value_name = "PLAN_ID")]
+        confirm: Option<String>,
+        /// Accept a permission-widening update diff (required for a
+        /// plan flagged escalated).
+        #[arg(long)]
+        allow_escalation: bool,
+        /// Refuse sources that are not already local.
+        #[arg(long)]
+        offline: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Update one installed package to another immutable version
+    /// (issue #32). The plan renders the permission/capability diff;
+    /// a widening diff refuses without `--allow-escalation`.
+    Update {
+        /// The adapter id.
+        id: String,
+        /// The target version; defaults to the newest installed one.
+        #[arg(long, value_name = "VERSION")]
+        to: Option<String>,
+        /// Render the plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply exactly the previewed plan id.
+        #[arg(long = "confirm", value_name = "PLAN_ID")]
+        confirm: Option<String>,
+        /// Accept a permission-widening diff.
+        #[arg(long)]
+        allow_escalation: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Repoint the selected pin to a previously installed immutable
+    /// version (issue #32). Bytes are never modified.
+    Rollback {
+        /// The adapter id.
+        id: String,
+        /// The exact previously installed version.
+        #[arg(long, value_name = "VERSION")]
+        to: String,
+        /// Render the plan without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply exactly the previewed plan id.
+        #[arg(long = "confirm", value_name = "PLAN_ID")]
+        confirm: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Record an explicit trust transition for an installed package (issue #32).
+    Trust {
+        /// The adapter id.
+        id: String,
+        /// The target trust level; never inferred, always explicit.
+        #[arg(long = "level", value_enum)]
+        level: AdapterTrustLevel,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Record a revocation for an adapter id/version in the local store (issue #32).
+    Revoke {
+        /// The adapter id.
+        id: String,
+        /// The revoked version, or * for the whole id.
+        #[arg(long, value_name = "VERSION", default_value = "*")]
+        version: String,
+        /// The closed reason token.
+        #[arg(long, value_name = "TOKEN")]
+        reason: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Report or purge the quarantine custody (issue #32).
+    Quarantine {
+        #[command(subcommand)]
+        command: QuarantineCommands,
     },
 }
 
@@ -1937,7 +2066,7 @@ fn runtime() -> u8 {
                 project,
                 traces,
             } => run_readiness(phase.phase(), project, traces),
-            Commands::Cache { command } => run_cache(command),
+            Commands::Cache { command } => run_cache(*command),
             Commands::Scan {
                 target,
                 profile,
@@ -1953,7 +2082,7 @@ fn runtime() -> u8 {
             ),
             Commands::Bindings { command } => run_bindings(command),
             Commands::Contract { command } => run_contract(command),
-            Commands::Native { command } => match command {
+            Commands::Native { command } => match *command {
                 NativeCommands::Run { plan } => run_native_run(&plan),
             },
             Commands::Nfr { command } => run_nfr(command),
@@ -1980,9 +2109,9 @@ fn runtime() -> u8 {
                 project,
                 dry_run,
             ),
-            Commands::Module { command } => run_module(command),
-            Commands::Observe { command } => run_observe(command),
-            Commands::Adapter { command } => match run_adapter(command) {
+            Commands::Module { command } => run_module(*command),
+            Commands::Observe { command } => run_observe(*command),
+            Commands::Adapter { command } => match run_adapter(*command) {
                 AdapterRun::Envelope(result) => result,
                 AdapterRun::Document { document, result } => {
                     // The requested report document owns stdout for
@@ -2446,16 +2575,17 @@ fn run_lock(project: Option<String>, check: bool, program_args: Vec<String>) -> 
         }
         None => None,
     };
-    let candidates;
+    let mut candidates;
     let request = match supply.as_ref() {
         Some(supply) => {
             let root =
                 lekalo_core::orchestration::project_root(&selection).expect("root resolved above");
             let mut client = lekalo_core::target_protocol::TargetClient::default();
-            let discovered = match lekalo_core::target_protocol::discovery::Discovery::run(
+            let discovered = match lekalo_core::orchestration::catalog::discover(
                 &mut client,
-                &supply.command,
+                supply,
                 &root,
+                lekalo_core::target_protocol::transport::TransportLimits::default(),
             ) {
                 Ok(discovered) => discovered,
                 Err(failure) => return DomainResult::from(&failure),
@@ -2464,6 +2594,28 @@ fn run_lock(project: Option<String>, check: bool, program_args: Vec<String>) -> 
                 Ok(candidates) => candidates,
                 Err(failure) => return DomainResult::from(&failure),
             };
+            // Issue #32: when the discovered adapter is the selected
+            // installed store pin, emit the installed provenance (source
+            // kind installed, package manifest digest, pinned trust) into
+            // the lock instead of a plain project pin. A provenance
+            // refusal refuses the lock (fix round 2, devin F-8): a pin
+            // that cannot carry its custody evidence never commits.
+            if let Ok(inventory) = lekalo_core::adapter_package::Inventory::load(&root) {
+                if let Some(row) = inventory
+                    .selected(&discovered.adapter.id)
+                    .filter(|row| row.version == discovered.adapter.version)
+                {
+                    if let Err(failure) = candidates.with_installed_provenance(
+                        &row.version,
+                        &row.digest,
+                        &row.manifest_digest,
+                        row.trust.as_str(),
+                        row.install_plan_id.as_deref(),
+                    ) {
+                        return DomainResult::from(&failure);
+                    }
+                }
+            }
             match LockService::load_request(&selection) {
                 Ok(request) => request,
                 Err(failure) => return DomainResult::from(&failure),
@@ -2586,14 +2738,1141 @@ enum AdapterRun {
 /// Run `lekalo adapter test`: the thin handoff to the issue #31
 /// conformance engine. The core owns every decision; this layer only
 /// selects the battery, renders the report, and maps exits.
+///
+/// Issue #32: the launched program first passes the adapter package
+/// resolution gate — the implicit local-development descriptor is
+/// synthesized from the entry bytes and the integrity/trust gates run
+/// before any child process exists.
 fn run_adapter(command: AdapterCommands) -> AdapterRun {
-    let AdapterCommands::Test {
-        profile,
-        report,
-        repeats,
-        timeout_ms,
-        program_args,
-    } = command;
+    match command {
+        AdapterCommands::Test {
+            profile,
+            report,
+            repeats,
+            timeout_ms,
+            program_args,
+        } => run_adapter_test(profile, report, repeats, timeout_ms, program_args),
+        AdapterCommands::Discover {
+            source,
+            offline,
+            project,
+        } => run_adapter_discover(&source, offline, &project),
+        AdapterCommands::List { project } => run_adapter_list(&project),
+        AdapterCommands::Info {
+            id,
+            version,
+            project,
+        } => run_adapter_info(&id, version.as_deref(), &project),
+        AdapterCommands::Install {
+            source,
+            dry_run,
+            confirm,
+            allow_escalation,
+            offline,
+            project,
+        } => run_adapter_install(
+            &source,
+            dry_run,
+            confirm.as_deref(),
+            allow_escalation,
+            offline,
+            &project,
+        ),
+        AdapterCommands::Update {
+            id,
+            to,
+            dry_run,
+            confirm,
+            allow_escalation,
+            project,
+        } => run_adapter_repoint(
+            AdapterRepoint::Update,
+            &id,
+            to.as_deref(),
+            dry_run,
+            confirm.as_deref(),
+            allow_escalation,
+            &project,
+        ),
+        AdapterCommands::Rollback {
+            id,
+            to,
+            dry_run,
+            confirm,
+            project,
+        } => run_adapter_repoint(
+            AdapterRepoint::Rollback,
+            &id,
+            Some(to.as_str()),
+            dry_run,
+            confirm.as_deref(),
+            false,
+            &project,
+        ),
+
+        AdapterCommands::Trust { id, level, project } => run_adapter_trust(&id, level, &project),
+        AdapterCommands::Revoke {
+            id,
+            version,
+            reason,
+            project,
+        } => run_adapter_revoke(&id, &version, &reason, &project),
+        AdapterCommands::Quarantine { command } => match command {
+            QuarantineCommands::List { project } => run_adapter_quarantine_list(&project),
+            QuarantineCommands::Purge { all, project } => {
+                run_adapter_quarantine_purge(all, &project)
+            }
+            QuarantineCommands::Release { id, project } => {
+                run_adapter_quarantine_release(&id, &project)
+            }
+        },
+    }
+}
+
+/// Run `lekalo adapter discover`: enumerate one closed discovery source
+/// without running anything. The report is a deterministic JSON receipt
+/// on stdout; auto-discovery never installs, trusts, or executes.
+/// The gate that refused a candidate, in gate order (pure, unit-tested —
+/// fix round 4, cline F-NEW-4). The discover receipt renders it so the
+/// label and the `adapter.*` reason code always agree.
+fn gate_label_of(failure: &lekalo_core::adapter_package::PackageFailure) -> &'static str {
+    use lekalo_core::adapter_package::PackageFailure;
+    match failure {
+        PackageFailure::ManifestInvalid { .. } => "manifest",
+        PackageFailure::Incompatible { .. } => "compatibility",
+        PackageFailure::ChecksumMismatch { .. } => "integrity",
+        PackageFailure::SignatureUnverified { .. } => "signature",
+        PackageFailure::Revoked { .. }
+        | PackageFailure::Quarantined { .. }
+        | PackageFailure::TrustInsufficient { .. } => "trust",
+        _ => "integrity",
+    }
+}
+
+fn run_adapter_discover(source: &str, offline: bool, project: &Option<String>) -> AdapterRun {
+    let parsed = match lekalo_core::adapter_package::DiscoverySource::parse(source) {
+        Ok(parsed) => parsed,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let context = lekalo_core::adapter_package::ResolveContext {
+        root: Some(root.clone()),
+        offline,
+    };
+    let candidates = match lekalo_core::adapter_package::discover(&parsed, Some(&root)) {
+        Ok(candidates) => candidates,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let mut rows = Vec::new();
+    for candidate in &candidates {
+        let manifest = &candidate.manifest;
+        let mut row = serde_json::json!({
+            "id": manifest.adapter_id(),
+            "version": manifest.adapter_version().to_string(),
+            "packageDigest": manifest.package_digest().as_str(),
+            "manifestDigest": manifest.digest().as_str(),
+            "sourceKind": manifest.source_kind().as_str(),
+            "synthesized": candidate.synthesized,
+            "status": manifest.status().as_str(),
+        });
+        // The assigned trust level, plus the gate verdict: failures are
+        // surfaced honestly per candidate (devin F-11), never swallowed.
+        let level = lekalo_core::adapter_package::assign_trust(candidate);
+        row["trust"] = serde_json::json!(level.as_str());
+        match lekalo_core::adapter_package::resolve_candidate(candidate.clone(), &context) {
+            Ok(resolved) => {
+                row["gates"] = serde_json::json!({
+                    "integrity": true,
+                    "signature": true,
+                    "trust": resolved.trust.as_str(),
+                });
+            }
+            Err(failure) => {
+                // The failed gate is named, not flattened into a generic
+                // integrity verdict (fix round 2, devin F-15): the reason
+                // code and the gate label now agree.
+                let gate = gate_label_of(&failure);
+                row["gates"] = serde_json::json!({
+                    gate: false,
+                    "reason": lekalo_core::adapter_package::diagnostic::reason_of(&failure),
+                });
+            }
+        }
+        rows.push(row);
+    }
+    let document = serde_json::json!({
+        "status": "valid",
+        "schemaVersion": "lekalo/adapter-discovery/v0.3.2",
+        "source": source,
+        "offline": offline,
+        "candidates": rows,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("discovery receipt serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("discovery receipt serializes"),
+            format!("discover {} : {} candidate(s)", source, rows.len()),
+        ),
+    }
+}
+
+/// Run `lekalo adapter list`: the installed inventory rows.
+fn run_adapter_list(project: &Option<String>) -> AdapterRun {
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let rows: Vec<serde_json::Value> = inventory
+        .rows()
+        .iter()
+        .map(|row| {
+            serde_json::json!({
+                "id": row.id,
+                "version": row.version,
+                "digest": row.digest,
+                "trust": row.trust,
+                "selected": row.selected,
+                "quarantined": row.quarantined,
+            })
+        })
+        .collect();
+    let document = serde_json::json!({
+        "status": "valid",
+        "schemaVersion": lekalo_core::adapter_package::version::INVENTORY_SCHEMA_VERSION,
+        "packages": rows,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("inventory serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("inventory serializes"),
+            format!("list : {} package(s)", rows.len()),
+        ),
+    }
+}
+
+/// Run `lekalo adapter info`: one package's manifest projection, trust,
+/// and provenance from the store inventory.
+fn run_adapter_info(id: &str, version: Option<&str>, project: &Option<String>) -> AdapterRun {
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let row = match version {
+        Some(version) => inventory
+            .rows()
+            .iter()
+            .find(|row| row.id == id && row.version == version && !row.quarantined),
+        None => inventory.selected(id),
+    };
+    let Some(row) = row else {
+        return AdapterRun::Envelope(DomainResult::from(
+            lekalo_core::lockfile::LockFailure::ComponentUnavailable {
+                kind: "adapter",
+                id: id.to_owned(),
+            },
+        ));
+    };
+    let document = serde_json::json!({
+        "status": "valid",
+        "schemaVersion": lekalo_core::adapter_package::version::INVENTORY_SCHEMA_VERSION,
+        "package": {
+            "id": row.id,
+            "version": row.version,
+            "digest": row.digest,
+            "manifestDigest": row.manifest_digest,
+            "trust": row.trust,
+            "source": row.source,
+            "installPlanId": row.install_plan_id,
+            "selected": row.selected,
+            "quarantined": row.quarantined,
+        },
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("info serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("info serializes"),
+            format!("info {} {} : {}", row.id, row.version, row.trust),
+        ),
+    }
+}
+
+/// Resolve the project root for the adapter package surfaces.
+fn project_root_for(project: &Option<String>) -> Result<std::path::PathBuf, DomainResult> {
+    let selection = selection_for(project);
+    lekalo_core::orchestration::project_root(&selection)
+}
+
+/// Render one install plan as the wire document (the dry-run output).
+fn render_plan(plan: &lekalo_core::adapter_package::InstallPlan) -> String {
+    let mut value = plan.to_json();
+    value["planId"] = serde_json::json!(plan.plan_id);
+    serde_json::to_string_pretty(&value).expect("plan serializes")
+}
+
+/// Run `lekalo adapter install`: plan (writes nothing) or confirm
+/// (apply exactly that plan id).
+/// Run `lekalo adapter install`: plan (writes nothing) or confirm
+/// (apply exactly that plan id).
+fn run_adapter_install(
+    source: &str,
+    dry_run: bool,
+    confirm: Option<&str>,
+    allow_escalation: bool,
+    offline: bool,
+    project: &Option<String>,
+) -> AdapterRun {
+    if !dry_run && confirm.is_none() {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::InstallPlanRequired,
+        ));
+    }
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let parsed = match lekalo_core::adapter_package::DiscoverySource::parse(source) {
+        Ok(parsed) => parsed,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let context = lekalo_core::adapter_package::ResolveContext {
+        root: Some(root.clone()),
+        offline,
+    };
+    let resolved = match lekalo_core::adapter_package::resolve(&parsed, &context) {
+        Ok(resolved) => resolved,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let current = inventory
+        .selected(resolved.adapter_id())
+        .and_then(|row| current_manifest(&root, row));
+    let quarantined = resolved.trust.quarantined_at_install();
+    let plan = lekalo_core::adapter_package::install::plan(
+        &resolved.candidate,
+        resolved.trust,
+        quarantined,
+        current.as_ref(),
+    );
+    if dry_run || confirm.is_none() {
+        return AdapterRun::Document {
+            document: render_plan(&plan),
+            result: DomainResult::receipt(
+                serde_json::to_string(&plan.to_json()).expect("plan serializes"),
+                format!(
+                    "install {} {} : plan {}",
+                    plan.id, plan.version, plan.plan_id
+                ),
+            ),
+        };
+    }
+    let confirmed = confirm.expect("checked above");
+    match lekalo_core::adapter_package::install::apply_from_candidate(
+        &root,
+        &resolved.candidate,
+        &plan,
+        confirmed,
+        allow_escalation,
+    ) {
+        Ok(()) => {
+            let document = serde_json::json!({
+                "status": "valid",
+                "schemaVersion": lekalo_core::adapter_package::version::INSTALL_PLAN_SCHEMA_VERSION,
+                "applied": plan.plan_id,
+                "id": plan.id,
+                "version": plan.version,
+                "trust": plan.trust.as_str(),
+                "quarantined": plan.quarantined,
+            });
+            AdapterRun::Document {
+                document: serde_json::to_string_pretty(&document).expect("applies serializes"),
+                result: DomainResult::receipt(
+                    serde_json::to_string(&document).expect("applies serializes"),
+                    format!(
+                        "install {} {} : applied {}",
+                        plan.id, plan.version, plan.plan_id
+                    ),
+                ),
+            }
+        }
+        Err(rejection) => AdapterRun::Envelope(install_rejection(rejection)),
+    }
+}
+
+/// The repoint family: update and rollback share the machinery. Both
+/// operate over already-installed immutable versions; update resolves
+/// the target version from the store inventory, rollback demands one.
+#[allow(clippy::too_many_arguments)]
+/// The repoint family: update and rollback share the machinery. Both
+/// operate over already-installed immutable versions; update resolves
+/// the target version from the store inventory, rollback demands one.
+#[derive(Clone, Copy)]
+enum AdapterRepoint {
+    Update,
+    Rollback,
+}
+
+#[allow(clippy::too_many_arguments)]
+/// The forward-update selector for `adapter update` without `--to`:
+/// the newest installed row with a version strictly greater than the
+/// selected pin (or the newest row when nothing is selected). Pure and
+/// unit-tested — the SemVer precedence decision and the corrupt-row
+/// refusal are the exact logic the CLI surface executes (fix round 4,
+/// devin N-3: a corrupt inventory row returns the inventory-corruption
+/// diagnostic instead of panicking a comparator).
+fn select_forward_update<'a>(
+    promoted: &'a [lekalo_core::adapter_package::InventoryRow],
+    selected: Option<&lekalo_core::adapter_package::InventoryRow>,
+) -> Result<
+    Option<&'a lekalo_core::adapter_package::InventoryRow>,
+    lekalo_core::adapter_package::PackageFailure,
+> {
+    let corrupt = || lekalo_core::adapter_package::PackageFailure::RecoveryRequired {
+        stage: "inventory".to_owned(),
+    };
+    let parse =
+        |text: &str| lekalo_core::lockfile::types::SemVer::parse(text).map_err(|_| corrupt());
+    let selected_ver = match selected {
+        Some(current) => Some(parse(&current.version)?),
+        None => None,
+    };
+    let mut versions: Vec<(&lekalo_core::adapter_package::InventoryRow, _)> = promoted
+        .iter()
+        .filter(|row| !row.selected)
+        .map(|row| parse(&row.version).map(|parsed| (row, parsed)))
+        .collect::<Result<_, _>>()?;
+    versions.sort_by(|left, right| right.1.cmp(&left.1));
+    Ok(versions
+        .into_iter()
+        .find(|(_, ver)| selected_ver.as_ref().map_or(true, |current| ver > current))
+        .map(|(row, _)| row))
+}
+
+fn run_adapter_repoint(
+    kind: AdapterRepoint,
+    id: &str,
+    to: Option<&str>,
+    dry_run: bool,
+    confirm: Option<&str>,
+    allow_escalation: bool,
+    project: &Option<String>,
+) -> AdapterRun {
+    if !dry_run && confirm.is_none() {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::InstallPlanRequired,
+        ));
+    }
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    // Resolve the target row among the installed (promoted) versions.
+    let promoted: Vec<_> = inventory
+        .rows()
+        .iter()
+        .filter(|row| row.id == id && !row.quarantined)
+        .cloned()
+        .collect();
+    let target = match (kind, to) {
+        (_, Some(version)) => promoted
+            .iter()
+            .find(|row| row.version == version)
+            .or_else(|| inventory.selected(id).filter(|row| row.version == version)),
+        // "update" without --to only ever moves forward: the newest
+        // installed row newer than the selected one. With nothing newer
+        // the command refuses (component-unavailable) rather than
+        // silently downgrading (devin F-10).
+        (AdapterRepoint::Update, None) => {
+            match select_forward_update(&promoted, inventory.selected(id)) {
+                Ok(target) => target,
+                Err(failure) => {
+                    return AdapterRun::Envelope(
+                        lekalo_core::adapter_package::diagnostic::domain_result(&failure),
+                    )
+                }
+            }
+        }
+        (AdapterRepoint::Rollback, None) => None,
+    };
+    let target = match target {
+        Some(target) => target,
+        None => {
+            return AdapterRun::Envelope(DomainResult::from(
+                lekalo_core::lockfile::LockFailure::ComponentUnavailable {
+                    kind: "adapter",
+                    id: id.to_owned(),
+                },
+            ))
+        }
+    };
+
+    // Issue #32 fix round 2 (devin F-2): a revoked version can never be
+    // repointed to — rollback and update both refuse before any plan
+    // exists, so a revoked pin can never be resurrected or selected.
+    {
+        let store = match lekalo_core::adapter_package::trust::RevocationStore::load(&root) {
+            Ok(store) => store,
+            Err(failure) => {
+                return AdapterRun::Envelope(
+                    lekalo_core::adapter_package::diagnostic::domain_result(&failure),
+                );
+            }
+        };
+        if store.is_revoked(id, &target.version) {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &lekalo_core::adapter_package::PackageFailure::Revoked {
+                    id: id.to_owned(),
+                    version: target.version.clone(),
+                },
+            ));
+        }
+    }
+    let current_row = inventory.selected(id);
+    let current = current_row.and_then(|row| current_manifest(&root, row));
+    // The repoint plan: one repoint action; the bytes already sit in the
+    // immutable store, so no stage runs. The diff compares the currently
+    // selected manifest with the target's stored manifest.
+    let diff =
+        current
+            .as_ref()
+            .zip(current_manifest(&root, target))
+            .map(|(current, target_manifest)| {
+                lekalo_core::adapter_package::diff::diff_manifests(current, &target_manifest)
+            });
+    let trust = lekalo_core::adapter_package::TrustLevel::parse(&target.trust)
+        .unwrap_or(lekalo_core::adapter_package::TrustLevel::Community);
+    let mut plan = lekalo_core::adapter_package::InstallPlan {
+        id: id.to_owned(),
+        version: target.version.clone(),
+        digest: target.digest.clone(),
+        manifest_digest: target.manifest_digest.clone(),
+        manifest_bytes: Vec::new(),
+        source: target.source.clone(),
+        trust,
+        quarantined: false,
+        actions: vec![
+            lekalo_core::adapter_package::install::InstallAction::Repoint {
+                id: id.to_owned(),
+                version: target.version.clone(),
+            },
+        ],
+        diff,
+        plan_id: String::new(),
+    };
+    plan.plan_id = plan.compute_plan_id();
+    let verb = if matches!(kind, AdapterRepoint::Update) {
+        "update"
+    } else {
+        "rollback"
+    };
+    if dry_run || confirm.is_none() {
+        return AdapterRun::Document {
+            document: render_plan(&plan),
+            result: DomainResult::receipt(
+                serde_json::to_string(&plan.to_json()).expect("plan serializes"),
+                format!(
+                    "{} {} {} : plan {}",
+                    verb, plan.id, plan.version, plan.plan_id
+                ),
+            ),
+        };
+    }
+    let confirmed = confirm.expect("checked above");
+    if plan.compute_plan_id() != confirmed {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::SourceChanged,
+        ));
+    }
+    if let Some(diff) = &plan.diff {
+        if diff.escalated && !allow_escalation {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &lekalo_core::adapter_package::PackageFailure::PermissionEscalated {
+                    adapter: id.to_owned(),
+                    member: diff
+                        .escalated_member
+                        .clone()
+                        .unwrap_or_else(|| "permissions".to_owned()),
+                },
+            ));
+        }
+    }
+    let mut next = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(next) => next,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let applied = next
+        .select(id, &target.version, &target.digest)
+        .map_err(|_| ())
+        .and_then(|()| next.store(&root).map_err(|_| ()));
+    match applied {
+        Ok(()) => {
+            let document = serde_json::json!({
+                "status": "valid",
+                "schemaVersion": lekalo_core::adapter_package::version::INSTALL_PLAN_SCHEMA_VERSION,
+                "applied": plan.plan_id,
+                "id": plan.id,
+                "version": plan.version,
+                "selected": true,
+            });
+            AdapterRun::Document {
+                document: serde_json::to_string_pretty(&document).expect("applies serializes"),
+                result: DomainResult::receipt(
+                    serde_json::to_string(&document).expect("applies serializes"),
+                    format!(
+                        "{} {} {} : applied {}",
+                        verb, plan.id, plan.version, plan.plan_id
+                    ),
+                ),
+            }
+        }
+        Err(()) => AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::RecoveryRequired {
+                stage: "repoint".to_owned(),
+            },
+        )),
+    }
+}
+
+/// Re-load one installed package's manifest from the store bytes.
+fn current_manifest(
+    root: &std::path::Path,
+    row: &lekalo_core::adapter_package::inventory::InventoryRow,
+) -> Option<lekalo_core::adapter_package::ManifestDocument> {
+    let digest8: String = row.digest["sha256:".len()..].chars().take(8).collect();
+    let dir = root.join(
+        format!(
+            ".lekalo/adapters/packages/{}/{}-{}",
+            row.id, row.version, digest8
+        )
+        .replace('/', std::path::MAIN_SEPARATOR_STR),
+    );
+    let bytes =
+        std::fs::read(dir.join(lekalo_core::adapter_package::integrity::MANIFEST_FILE)).ok()?;
+    lekalo_core::adapter_package::ManifestDocument::from_bytes(&bytes).ok()
+}
+
+/// Map an apply rejection onto its registered envelope.
+fn install_rejection(
+    rejection: lekalo_core::adapter_package::install::ApplyRejection,
+) -> DomainResult {
+    use lekalo_core::adapter_package::install::ApplyRejection;
+    use lekalo_core::adapter_package::PackageFailure;
+    match rejection {
+        ApplyRejection::SourceChanged => {
+            lekalo_core::adapter_package::diagnostic::domain_result(&PackageFailure::SourceChanged)
+        }
+        ApplyRejection::PermissionEscalated { member } => {
+            lekalo_core::adapter_package::diagnostic::domain_result(
+                &PackageFailure::PermissionEscalated {
+                    adapter: String::new(),
+                    member,
+                },
+            )
+        }
+        ApplyRejection::InstallConflict { path } => {
+            lekalo_core::adapter_package::diagnostic::domain_result(
+                &PackageFailure::InstallConflict { path },
+            )
+        }
+        ApplyRejection::RecoveryRequired { stage } => {
+            lekalo_core::adapter_package::diagnostic::domain_result(
+                &PackageFailure::RecoveryRequired { stage },
+            )
+        }
+    }
+}
+
+/// The quarantine custody subcommands (issue #32).
+
+#[derive(Debug, Subcommand)]
+
+enum QuarantineCommands {
+    /// List the quarantined packages.
+    List {
+        /// Project root selector, relative to the invocation directory.
+
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+
+    /// Release a quarantined package: re-plan it as a normal (trusted)
+    /// install into the live store under explicit confirmation.
+    Release {
+        /// The adapter id.
+        id: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+
+    /// Purge quarantined bytes (the only removal path).
+    Purge {
+        /// Purge every quarantined package.
+
+        #[arg(long)]
+        all: bool,
+
+        /// Project root selector, relative to the invocation directory.
+
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
+
+/// The closed trust-level vocabulary accepted by `adapter trust`.
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+
+enum AdapterTrustLevel {
+    /// The project's own local development trust.
+    LocalDevelopment,
+
+    /// Community trust (quarantined posture).
+    Community,
+}
+
+/// Run `lekalo adapter trust`: the explicit trust transition. The level
+/// is never inferred and never widened by any other command.
+fn run_adapter_trust(id: &str, level: AdapterTrustLevel, project: &Option<String>) -> AdapterRun {
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    // verified/builtin denote verified provenance; no shipped verifier
+    // exists, so the CLI can never grant them (devin F-8). They are only
+    // earned through a reviewed signature verifier or the distribution.
+    let level_token = match level {
+        AdapterTrustLevel::LocalDevelopment => "local-development",
+        AdapterTrustLevel::Community => "community",
+    };
+    let mut inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let mut changed = 0usize;
+    let rows: Vec<_> = inventory
+        .rows()
+        .iter()
+        .filter(|row| row.id == id)
+        .cloned()
+        .collect();
+    for mut row in rows {
+        row.trust = level_token.to_owned();
+        inventory.upsert(row);
+        changed += 1;
+    }
+    if changed == 0 {
+        return AdapterRun::Envelope(DomainResult::from(
+            lekalo_core::lockfile::LockFailure::ComponentUnavailable {
+                kind: "adapter",
+                id: id.to_owned(),
+            },
+        ));
+    }
+    if let Err(failure) = inventory.store(&root) {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &failure,
+        ));
+    }
+    let document = serde_json::json!({
+        "status": "valid",
+        "schemaVersion": lekalo_core::adapter_package::version::INVENTORY_SCHEMA_VERSION,
+        "id": id,
+        "trust": level_token,
+        "packages": changed,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("trust serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("trust serializes"),
+            format!("trust {} : {}", id, level_token),
+        ),
+    }
+}
+
+/// Run `lekalo adapter revoke`: append a revocation record to the local
+/// store. Revocation overrides every other trust signal.
+fn run_adapter_revoke(
+    id: &str,
+    version: &str,
+    reason: &str,
+    project: &Option<String>,
+) -> AdapterRun {
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let mut store = match lekalo_core::adapter_package::trust::RevocationStore::load(&root) {
+        Ok(store) => store,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    if let Err(failure) = store.append(
+        &root,
+        lekalo_core::adapter_package::trust::RevocationRecord {
+            id: id.to_owned(),
+            version: version.to_owned(),
+            reason: reason.to_owned(),
+        },
+    ) {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &failure,
+        ));
+    }
+    let document = serde_json::json!({
+        "status": "valid",
+        "id": id,
+        "version": version,
+        "reason": reason,
+        "revoked": true,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("revoke serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("revoke serializes"),
+            format!("revoke {} {} : {}", id, version, reason),
+        ),
+    }
+}
+
+/// Run `lekalo adapter quarantine list`: the quarantined inventory rows.
+fn run_adapter_quarantine_list(project: &Option<String>) -> AdapterRun {
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let rows: Vec<serde_json::Value> = inventory
+        .rows()
+        .iter()
+        .filter(|row| row.quarantined)
+        .map(|row| {
+            serde_json::json!({
+                "id": row.id,
+                "version": row.version,
+                "digest": row.digest,
+                "trust": row.trust,
+            })
+        })
+        .collect();
+    let count = rows.len();
+    let document = serde_json::json!({
+        "status": "valid",
+        "schemaVersion": lekalo_core::adapter_package::version::INVENTORY_SCHEMA_VERSION,
+        "quarantined": rows,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("quarantine serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("quarantine serializes"),
+            format!("quarantine list : {} package(s)", count),
+        ),
+    }
+}
+
+/// Run `lekalo adapter quarantine purge`: the only removal path for
+/// quarantined bytes (never an automatic deletion).
+fn run_adapter_quarantine_purge(all: bool, project: &Option<String>) -> AdapterRun {
+    if !all {
+        return AdapterRun::Envelope(DomainResult::usage_error());
+    }
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    match quarantine_purge_all(&root) {
+        Ok(purged) => {
+            let document = serde_json::json!({
+                "status": "valid",
+                "purged": purged,
+            });
+            AdapterRun::Document {
+                document: serde_json::to_string_pretty(&document).expect("purge serializes"),
+                result: DomainResult::receipt(
+                    serde_json::to_string(&document).expect("purge serializes"),
+                    format!("quarantine purge : {} package(s)", purged),
+                ),
+            }
+        }
+        Err(failure) => AdapterRun::Envelope(
+            lekalo_core::adapter_package::diagnostic::domain_result(&failure),
+        ),
+    }
+}
+
+/// The purge core over one project root (pure filesystem + inventory
+/// logic, unit-testable without spawning — fix round 4, cline F-NEW-4):
+/// removes every quarantined custody tree, cleans emptied per-id
+/// parents, and drops the matching inventory rows. Returns the count of
+/// purged packages.
+fn quarantine_purge_all(
+    root: &std::path::Path,
+) -> Result<usize, lekalo_core::adapter_package::PackageFailure> {
+    let mut inventory = lekalo_core::adapter_package::Inventory::load(root)?;
+    let quarantined: Vec<_> = inventory
+        .rows()
+        .iter()
+        .filter(|row| row.quarantined)
+        .cloned()
+        .collect();
+    for row in &quarantined {
+        // Remove every location the bytes can occupy: the quarantine
+        // custody tree and any pre-fix orphan under packages/**.
+        let quarantine_dir = root.join(
+            lekalo_core::adapter_package::quarantine::quarantine_path(
+                &row.id,
+                &row.version,
+                &row.digest,
+            )
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
+        );
+        let packages_dir = root.join(
+            lekalo_core::adapter_package::quarantine::package_path(
+                &row.id,
+                &row.version,
+                &row.digest,
+            )
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
+        );
+        let _ = std::fs::remove_dir_all(&quarantine_dir);
+        let _ = std::fs::remove_dir_all(&packages_dir);
+        // The per-id parent directories are custody scaffolding: once
+        // empty they are removed too (fix round 4, cline F-NEW-3), so
+        // the store carries no residue shells. remove_dir only succeeds
+        // when the directory is empty, so other versions are untouched.
+        for custody_dir in [&quarantine_dir, &packages_dir] {
+            if let Some(parent) = custody_dir.parent() {
+                let _ = std::fs::remove_dir(parent);
+            }
+        }
+        inventory
+            .rows_mut()
+            .retain(|existing| existing.id != row.id || existing.version != row.version);
+    }
+    inventory.store(root)?;
+    Ok(quarantined.len())
+}
+
+/// Run `lekalo adapter quarantine release`: move the quarantined bytes
+/// into the live packages/** store and select the pin. The explicit
+/// transition out of quarantine — never implicit.
+fn run_adapter_quarantine_release(id: &str, project: &Option<String>) -> AdapterRun {
+    let root = match project_root_for(project) {
+        Ok(root) => root,
+        Err(result) => return AdapterRun::Envelope(result),
+    };
+    let mut inventory = match lekalo_core::adapter_package::Inventory::load(&root) {
+        Ok(inventory) => inventory,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
+    let row = match inventory
+        .rows()
+        .iter()
+        .find(|row| row.id == id && row.quarantined)
+    {
+        Some(row) => row.clone(),
+        None => {
+            return AdapterRun::Envelope(DomainResult::from(
+                lekalo_core::lockfile::LockFailure::ComponentUnavailable {
+                    kind: "adapter",
+                    id: id.to_owned(),
+                },
+            ));
+        }
+    };
+    // Issue #32 fix round 2 (devin F-4 / cline F-2): use the shared
+    // custody-path helpers for both sides of the promotion.
+    let digest8: String = row.digest["sha256:".len()..].chars().take(8).collect();
+    let quarantine_dir = root.join(
+        lekalo_core::adapter_package::quarantine::quarantine_path(
+            &row.id,
+            &row.version,
+            &row.digest,
+        )
+        .replace('/', std::path::MAIN_SEPARATOR_STR),
+    );
+    let packages_dir = root.join(
+        lekalo_core::adapter_package::quarantine::package_path(&row.id, &row.version, &row.digest)
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
+    );
+    if !quarantine_dir.is_dir() {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::Quarantined {
+                id: id.to_owned(),
+                version: row.version.clone(),
+            },
+        ));
+    }
+    if packages_dir.exists() {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::InstallConflict {
+                path: format!("packages/{}/{}-{}", id, row.version, digest8),
+            },
+        ));
+    }
+    // Re-verify the quarantined bytes against the recorded digests before
+    // promoting (fix round 2, devin F-4 residual): custody never promotes
+    // bytes the integrity gate has not re-checked in quarantine.
+    {
+        let manifest_path =
+            quarantine_dir.join(lekalo_core::adapter_package::integrity::MANIFEST_FILE);
+        let quarantined_failure = |_| lekalo_core::adapter_package::PackageFailure::Quarantined {
+            id: id.to_owned(),
+            version: row.version.clone(),
+        };
+        let manifest_bytes = std::fs::read(&manifest_path)
+            .map_err(quarantined_failure)
+            .map_err(|failure| {
+                AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                    &failure,
+                ))
+            });
+        let manifest_bytes = match manifest_bytes {
+            Ok(bytes) => bytes,
+            Err(envelope) => return envelope,
+        };
+        let verified = lekalo_core::adapter_package::ManifestDocument::from_bytes(&manifest_bytes)
+            .and_then(|manifest| {
+                let candidate = lekalo_core::adapter_package::discovery::DiscoveryCandidate {
+                    manifest,
+                    package_root: Some(quarantine_dir.clone()),
+                    synthesized: false,
+                    // Custody is not consulted by verify_package (pure
+                    // digest-domain re-check); the value only satisfies
+                    // the closed candidate grammar.
+                    custody: lekalo_core::adapter_package::discovery::Custody::Record,
+                };
+                lekalo_core::adapter_package::verify_package(&candidate)
+            });
+        if let Err(failure) = verified {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ));
+        }
+    }
+    if let Some(parent) = packages_dir.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if std::fs::rename(&quarantine_dir, &packages_dir).is_err() {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &lekalo_core::adapter_package::PackageFailure::RecoveryRequired {
+                stage: "release".to_owned(),
+            },
+        ));
+    }
+    // The emptied quarantine <id> parent is custody scaffolding; remove
+    // it when empty (fix round 4, cline F-NEW-3). remove_dir only
+    // succeeds on an empty directory, so sibling versions are safe.
+    if let Some(parent) = quarantine_dir.parent() {
+        let _ = std::fs::remove_dir(parent);
+    }
+    inventory.quarantine_release(id);
+    if let Err(failure) = inventory.select(id, &row.version, &row.digest) {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &failure,
+        ));
+    }
+    if let Err(failure) = inventory.store(&root) {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &failure,
+        ));
+    }
+    let document = serde_json::json!({
+        "status": "valid",
+        "id": id,
+        "version": row.version,
+        "released": true,
+        "selected": true,
+    });
+    AdapterRun::Document {
+        document: serde_json::to_string_pretty(&document).expect("release serializes"),
+        result: DomainResult::receipt(
+            serde_json::to_string(&document).expect("release serializes"),
+            format!("quarantine release {} : released {}", id, row.version),
+        ),
+    }
+}
+
+/// Run `lekalo adapter test` (the issue #31 conformance battery behind
+/// the issue #32 resolution gate).
+fn run_adapter_test(
+    profile: AdapterTestProfile,
+    report: Option<AdapterTestReport>,
+    repeats: u8,
+    timeout_ms: u64,
+    program_args: Vec<String>,
+) -> AdapterRun {
     let Some((program, args)) = program_args.split_first() else {
         return AdapterRun::Envelope(DomainResult::usage_error());
     };
@@ -2604,6 +3883,14 @@ fn run_adapter(command: AdapterCommands) -> AdapterRun {
         program: std::path::PathBuf::from(program),
         args: args.to_vec(),
     };
+    // The issue #32 resolution gate: synthesize the implicit descriptor
+    // and run every gate. A gate refusal renders its registered adapter
+    // rule and never spawns the adapter.
+    if let Err(failure) = gate_adapter_command(&command.program, &command.args) {
+        return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+            &failure,
+        ));
+    }
     let options = lekalo_core::adapter_conformance::SuiteOptions {
         profile: profile.into(),
         repeats,
@@ -2625,6 +3912,56 @@ fn run_adapter(command: AdapterCommands) -> AdapterRun {
             lekalo_core::adapter_conformance::infrastructure_result(error),
         ),
     }
+}
+
+/// The issue #32 resolution gate for one invocation-supplied adapter
+/// command: prefer a real `adapter.manifest.json` beside the launched
+/// entry (the same manifested-preference as the catalog seam), else
+/// synthesize the implicit local-development descriptor from the entry
+/// (the executable, or its first argument when that names an existing
+/// regular file — the same interpreter-script convention as the catalog
+/// seam), and run the integrity, signature, and trust gates. The project
+/// revocation store scopes the trust gate (fix round 2, devin F-11:
+/// `adapter test` no longer evaluates an empty store). A refusal returns
+/// the packaged failure; the caller renders its registered `adapter.*`
+/// rule and never spawns the adapter.
+fn gate_adapter_command(
+    program: &std::path::Path,
+    args: &[String],
+) -> Result<
+    lekalo_core::adapter_package::ResolvedAdapter,
+    lekalo_core::adapter_package::PackageFailure,
+> {
+    let entry = args
+        .first()
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| program.to_path_buf());
+    let entry_dir = entry
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let context = lekalo_core::adapter_package::ResolveContext {
+        root: std::env::current_dir()
+            .ok()
+            .and_then(|cwd| lekalo_core::project_fs::Fs::find_root(&cwd).ok().flatten()),
+        offline: true,
+    };
+    let manifested = if entry_dir.join("adapter.manifest.json").is_file() {
+        lekalo_core::adapter_package::discover(
+            &lekalo_core::adapter_package::DiscoverySource::Path(entry_dir.clone()),
+            context.root.as_ref(),
+        )?
+        .into_iter()
+        .next()
+    } else {
+        None
+    };
+    let candidate = match manifested {
+        Some(candidate) => candidate,
+        None => lekalo_core::adapter_package::implicit_local_development(&entry)?,
+    };
+    lekalo_core::adapter_package::resolve_candidate(candidate, &context)
 }
 
 /// Write one document to stdout with the trailing newline protocol.
@@ -8428,5 +9765,206 @@ fn run_dataflow(command: DataflowCommands) -> DomainResult {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod adapter_update_tests {
+    use super::select_forward_update;
+    use lekalo_core::adapter_package::{InventoryRow, PackageFailure};
+
+    fn row(id: &str, version: &str, selected: bool) -> InventoryRow {
+        InventoryRow {
+            id: id.to_owned(),
+            version: version.to_owned(),
+            digest: format!("sha256:{}", "11".repeat(32)),
+            manifest_digest: format!("sha256:{}", "22".repeat(32)),
+            trust: "local-development".to_owned(),
+            source: "path:x".to_owned(),
+            install_plan_id: None,
+            selected,
+            quarantined: false,
+        }
+    }
+
+    /// Regression (fix round 2, cline F-4 / devin F-7, pinned here at
+    /// unit level per fix round 4, cline F-NEW-4): two-digit components
+    /// order by SemVer precedence, never string comparison.
+    #[test]
+    fn forward_selection_orders_two_digit_components_by_semver() {
+        // Selected 0.3.9, installed {0.3.10, 0.3.2}: the honest forward
+        // step is 0.3.10 even though "0.3.10" < "0.3.2" lexically.
+        let rows = vec![row("a", "0.3.10", false), row("a", "0.3.2", false)];
+        let selected = row("a", "0.3.9", true);
+        let target = select_forward_update(&rows, Some(&selected))
+            .expect("rows parse")
+            .expect("a forward update exists");
+        assert_eq!(target.version, "0.3.10");
+
+        // The no-downgrade guard: from 0.3.10, neither older row applies.
+        let selected = row("a", "0.3.10", true);
+        assert!(
+            select_forward_update(&rows, Some(&selected))
+                .expect("rows parse")
+                .is_none(),
+            "no older version may be selected as a forward update"
+        );
+
+        // Nothing selected: the newest row wins.
+        let target = select_forward_update(&rows, None)
+            .expect("rows parse")
+            .expect("the newest row applies");
+        assert_eq!(target.version, "0.3.10");
+    }
+
+    /// Regression (fix round 4, devin N-3): a corrupt inventory row
+    /// returns the inventory-corruption diagnostic instead of panicking
+    /// a SemVer comparator.
+    #[test]
+    fn a_corrupt_row_refuses_with_a_diagnostic() {
+        let rows = vec![row("a", "not-a-version", false)];
+        let error = select_forward_update(&rows, None).expect_err("corrupt row refuses");
+        assert_eq!(
+            error,
+            PackageFailure::RecoveryRequired {
+                stage: "inventory".to_owned()
+            }
+        );
+        // A corrupt selected pin refuses too.
+        let rows = vec![row("a", "1.0.0", false)];
+        let selected = row("a", "0.3", true);
+        assert!(select_forward_update(&rows, Some(&selected)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod quarantine_custody_tests {
+    use super::*;
+
+    /// Regression (fix round 4, cline F-NEW-3): purge removes the
+    /// emptied per-id parent directories along with the custody
+    /// directories — no residue shells under quarantine/** or
+    /// packages/**, and sibling versions survive.
+    #[test]
+    fn purge_cleans_the_emptied_parent_directories() {
+        let root = std::env::temp_dir().join(format!("lekalo-cli-purge-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("lekalo")).expect("lekalo dir");
+        std::fs::write(root.join("lekalo/project.yaml"), "project: purge-test\n")
+            .expect("project marker");
+        // Two quarantined versions of one id, plus a promoted version of
+        // another id that must survive.
+        for dir in [
+            ".lekalo/adapters/quarantine/a/1.0.0-11111111",
+            ".lekalo/adapters/quarantine/a/2.0.0-22222222",
+            ".lekalo/adapters/packages/b/1.0.0-33333333",
+        ] {
+            std::fs::create_dir_all(root.join(dir.replace('/', std::path::MAIN_SEPARATOR_STR)))
+                .expect("custody dir");
+        }
+        std::fs::write(
+            root.join(".lekalo/adapters/quarantine/a/1.0.0-11111111/adapter.mjs"),
+            b"bytes",
+        )
+        .expect("bytes");
+        let inventory = serde_json::json!({
+            "schemaVersion": lekalo_core::adapter_package::version::INVENTORY_SCHEMA_VERSION,
+            "identity": lekalo_core::adapter_package::version::INVENTORY_IDENTITY,
+            "packages": [
+                { "id": "a", "version": "1.0.0",
+                  "digest": format!("sha256:{}", "11".repeat(32)),
+                  "manifestDigest": format!("sha256:{}", "11".repeat(32)),
+                  "trust": "community", "source": "release:ch/a",
+                  "selected": false, "quarantined": true },
+                { "id": "a", "version": "2.0.0",
+                  "digest": format!("sha256:{}", "22".repeat(32)),
+                  "manifestDigest": format!("sha256:{}", "22".repeat(32)),
+                  "trust": "community", "source": "release:ch/a",
+                  "selected": false, "quarantined": true },
+                { "id": "b", "version": "1.0.0",
+                  "digest": format!("sha256:{}", "33".repeat(32)),
+                  "manifestDigest": format!("sha256:{}", "33".repeat(32)),
+                  "trust": "local-development", "source": "path:x",
+                  "selected": true, "quarantined": false }
+            ]
+        });
+        std::fs::write(
+            root.join(".lekalo/adapters/inventory.json"),
+            serde_json::to_vec_pretty(&inventory).expect("inventory serializes"),
+        )
+        .expect("inventory written");
+
+        let purged = quarantine_purge_all(&root).expect("the fixture purges");
+        assert_eq!(purged, 2, "both quarantined rows purge");
+        // Both custody trees are gone — including the emptied a/ shell;
+        // the custody roots themselves legally remain.
+        assert!(!root.join(".lekalo/adapters/quarantine/a").exists());
+        assert!(!root
+            .join(".lekalo/adapters/quarantine/a/1.0.0-11111111")
+            .exists());
+        // The untouched promoted package survives.
+        assert!(root
+            .join(".lekalo/adapters/packages/b/1.0.0-33333333")
+            .exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod gate_label_tests {
+    use super::gate_label_of;
+    use lekalo_core::adapter_package::PackageFailure;
+
+    /// Regression (fix round 4, cline F-NEW-4): the discover receipt's
+    /// gate label follows the resolution gate order — a refusal names the
+    /// gate that refused, never a generic integrity verdict.
+    #[test]
+    fn the_gate_label_matches_the_refusing_gate() {
+        assert_eq!(
+            gate_label_of(&PackageFailure::ManifestInvalid {
+                reason: "grammar".to_owned()
+            }),
+            "manifest"
+        );
+        assert_eq!(
+            gate_label_of(&PackageFailure::Incompatible {
+                adapter: "a".to_owned()
+            }),
+            "compatibility"
+        );
+        assert_eq!(
+            gate_label_of(&PackageFailure::ChecksumMismatch {
+                domain: "package".to_owned(),
+                identity: "a".to_owned()
+            }),
+            "integrity"
+        );
+        assert_eq!(
+            gate_label_of(&PackageFailure::SignatureUnverified {
+                scheme: "minisign".to_owned()
+            }),
+            "signature"
+        );
+        for failure in [
+            PackageFailure::Revoked {
+                id: "a".to_owned(),
+                version: "1.0.0".to_owned(),
+            },
+            PackageFailure::Quarantined {
+                id: "a".to_owned(),
+                version: "1.0.0".to_owned(),
+            },
+            PackageFailure::TrustInsufficient {
+                id: "a".to_owned(),
+                level: "community".to_owned(),
+            },
+        ] {
+            assert_eq!(gate_label_of(&failure), "trust");
+        }
+        // Unknown-failure fallback stays fail-closed on the integrity gate.
+        assert_eq!(
+            gate_label_of(&PackageFailure::InstallPlanRequired),
+            "integrity"
+        );
     }
 }

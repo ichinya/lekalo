@@ -154,7 +154,7 @@ fn build(raw: RawLock) -> Result<Lockfile, LockFailure> {
 
     let mut adapters = Vec::with_capacity(raw.adapters.len());
     for adapter in &raw.adapters {
-        adapters.push(ResolvedAdapter::from_parts(
+        adapters.push(ResolvedAdapter::from_parts_with_provenance(
             ComponentId::parse(&adapter.id)?,
             version_field(&adapter.version)?,
             digest_field(&adapter.digest)?,
@@ -174,6 +174,34 @@ fn build(raw: RawLock) -> Result<Lockfile, LockFailure> {
                     ))
                 })
                 .collect::<Result<Vec<_>, LockFailure>>()?,
+            adapter
+                .manifest_digest
+                .as_deref()
+                .map(digest_field)
+                .transpose()?,
+            adapter
+                .trust
+                .as_deref()
+                .map(super::types::LockTrust::parse)
+                .transpose()?,
+            adapter
+                .provenance
+                .as_ref()
+                .map(|provenance| {
+                    Ok(super::types::Provenance::new(
+                        SourceRef::new(
+                            SourceKind::parse(&provenance.source.kind)?,
+                            &provenance.source.id,
+                            digest_field(&provenance.source.digest)?,
+                        )?,
+                        provenance
+                            .install_plan_id
+                            .as_deref()
+                            .map(digest_field)
+                            .transpose()?,
+                    ))
+                })
+                .transpose()?,
         )?);
     }
 
@@ -397,6 +425,28 @@ struct RawAdapter {
     #[serde(rename = "compatibility_digest")]
     compatibility_digest: String,
     artifacts: Vec<RawArtifact>,
+    #[serde(
+        rename = "manifest_digest",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    manifest_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trust: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provenance: Option<RawProvenance>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawProvenance {
+    source: RawSource,
+    #[serde(
+        rename = "install_plan_id",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    install_plan_id: Option<String>,
 }
 
 #[derive(Deserialize)]

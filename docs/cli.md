@@ -247,7 +247,7 @@ selects, renders, and maps exits on the accepted envelope.
 - `lekalo storage profile --engine postgres [--version V]` — the
   owner-published version matrix, or one version's capability
   answers. An unpublished major answers `unsupported-version`.
-- `lekalo storage validate PATH` — normalize one engine profile and
+- `lekalo storage validate-engine PATH` — normalize one engine profile and
   print its canonical bytes.
 - `lekalo storage ddl PROFILE --projection PATH` — the deterministic
   DDL document; the profile's `projectionRef` digest must bind the
@@ -271,6 +271,39 @@ selects, renders, and maps exits on the accepted envelope.
 
 See [docs/storage-engine.md](storage-engine.md) and
 [ADR-0042](adr/0042-postgres-storage-engine.md).
+
+###  package surfaces (issue #32)
+
+Every adapter execution first passes the package resolution gate:
+manifest decode, exact-set protocol/IR compatibility, per-file checksum
+verification (before any child process exists, describe included), the
+honest signature policy, and the trust/revocation gate. A bare
+`-- PROGRAM` argv synthesizes an unsigned local-development descriptor,
+so the gate is total without breaking any shipped flow.
+
+```sh
+lekalo adapter manifest validate FILE [--project DIR]
+lekalo adapter discover --source path:DIR|exec:NAME|release:C/I|registry:R/P [--offline]
+lekalo adapter list [--project DIR]
+lekalo adapter info ID [--version V] [--project DIR]
+lekalo adapter install SOURCE (--dry-run | --confirm sha256:PLAN_ID) [--offline] [--allow-escalation]
+lekalo adapter update ID [--to VERSION] (--dry-run | --confirm sha256:PLAN_ID) [--allow-escalation]
+lekalo adapter rollback ID --to VERSION (--dry-run | --confirm sha256:PLAN_ID)
+lekalo adapter trust ID --level verified|community|...   # explicit, never inferred
+lekalo adapter revoke ID --version V --reason TOKEN      # or --version *
+lekalo adapter quarantine list|purge [--all]
+```
+
+`install`/`update`/`rollback` without `--confirm` must be `--dry-run`:
+the plan (identity, trust, every staged file, the permission/capability
+diff against the selected version, the `planId`) is rendered and
+nothing is written. `--confirm` applies exactly that previewed plan id;
+a drifted id answers `adapter.source-changed`. A permission-widening
+diff refuses without `--allow-escalation`. Revoked adapters are never
+selectable; quarantined packages never execute. The normative
+contracts are [adapter-manifest.md](adapter-manifest.md),
+[adapter-install.md](adapter-install.md), and
+[ADR-0042](adr/0042-adapter-package-trust.md).
 
 ## Exit and stream contract
 

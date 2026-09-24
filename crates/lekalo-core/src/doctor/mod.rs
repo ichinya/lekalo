@@ -13,7 +13,7 @@
 //! with the cache bypassed, nothing spawns adapters, nothing repairs,
 //! installs, or updates. `--fix` only renders the closed safe-fix recipes
 //! as a preview. The result is one versioned document
-//! (`lekalo/doctor/v0.2.16`); the envelope stays `valid` whenever the
+//! (`lekalo/doctor/v0.3.2`); the envelope stays `valid` whenever the
 //! report was produced — findings live in the report, the stable exit
 //! policy is documented in `docs/doctor.md`. Underlying provider, loader,
 //! lock, and adapter refusals are preserved as registry rule ids; no

@@ -70,6 +70,66 @@ pub struct ScanReceipt {
 /// through the observed context; protocol failures map onto their
 /// registered `target.*` rules; the merged result uses the accepted
 /// #39 merge rules unchanged.
+/// The pure posture decision behind scan selection (extracted for
+/// non-spawn unit coverage, fix round 4, cline F-NEW-4): exact-version
+/// and `*` revocation rows mark the id revoked; inventory rows of the
+/// discovered id mark quarantine and decide auto-selectability
+/// (builtin/verified, plus local-development in its owning project —
+/// round 2 cline F-3). Store and inventory failures degrade to empty
+/// inputs upstream, so this function is total.
+fn build_trust_postures(
+    store: &crate::adapter_package::trust::RevocationStore,
+    inventory_rows: Vec<crate::adapter_package::InventoryRow>,
+    adapter_id: &str,
+    adapter_version: &str,
+) -> std::collections::BTreeMap<String, selection::TrustPosture> {
+    let mut map = std::collections::BTreeMap::new();
+    for row in store.records() {
+        let entry = map
+            .entry(row.id.clone())
+            .or_insert(selection::TrustPosture {
+                revoked: false,
+                quarantined: false,
+                auto_selectable: false,
+            });
+        if row.version == "*" || row.version == adapter_version {
+            entry.revoked = true;
+        }
+    }
+    for row in inventory_rows {
+        if row.id != adapter_id {
+            continue;
+        }
+        // The posture aggregates every installed version of the id:
+        // quarantine marks when any copy sits in custody, and the id is
+        // auto-selectable when any installed copy is (round 2, cline
+        // F-3). Last-write-wins would let an older quarantined row
+        // silently shadow a selectable pin.
+        let entry = map
+            .entry(row.id.clone())
+            .or_insert(selection::TrustPosture {
+                revoked: false,
+                quarantined: false,
+                auto_selectable: false,
+            });
+        if row.quarantined {
+            entry.quarantined = true;
+        }
+        let level = crate::adapter_package::TrustLevel::parse(&row.trust)
+            .unwrap_or(crate::adapter_package::TrustLevel::Community);
+        if matches!(
+            level,
+            crate::adapter_package::TrustLevel::Builtin
+                | crate::adapter_package::TrustLevel::Verified
+                | crate::adapter_package::TrustLevel::LocalDevelopment
+        ) && !row.quarantined
+        {
+            entry.auto_selectable = true;
+        }
+    }
+    map
+}
+
 pub fn run(
     ctx: &super::ObservedContext,
     request: &ScanRequest<'_>,
@@ -84,22 +144,108 @@ pub fn run(
         return Err(DomainResult::usage_error());
     }
 
-    // 1. Safe discovery: the describe handshake only, no project IR.
+    // 0. The issue #32 resolution gate: the launched entry passes the
+    // integrity/trust/revocation gates before any child process exists.
+    // A real manifest beside the entry is preferred (the same manifested-
+    // preference as the catalog seam's gate_supply) and, when present, its
+    // claims are cross-checked against the describe outcome (fix round 2,
+    // devin F-11: a revoked adapter can no longer complete the describe
+    // handshake before the refusal, and manifested scans get the
+    // consistency check the orchestration surfaces already run).
+    let gate_manifest = {
+        let entry = request
+            .command
+            .args
+            .first()
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_file())
+            .unwrap_or_else(|| request.command.program.clone());
+        let entry_dir = entry
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let context = crate::adapter_package::ResolveContext {
+            root: Some(ctx.root.clone()),
+            offline: true,
+        };
+        let manifested = if entry_dir.join("adapter.manifest.json").is_file() {
+            crate::adapter_package::discover(
+                &crate::adapter_package::DiscoverySource::Path(entry_dir.clone()),
+                Some(&ctx.root),
+            )
+            .map_err(|failure| crate::adapter_package::diagnostic::domain_result(&failure))?
+            .into_iter()
+            .next()
+        } else {
+            None
+        };
+        let candidate = match manifested {
+            Some(candidate) => candidate,
+            None => crate::adapter_package::implicit_local_development(&entry)
+                .map_err(|failure| crate::adapter_package::diagnostic::domain_result(&failure))?,
+        };
+        let resolved = crate::adapter_package::resolve_candidate(candidate, &context)
+            .map_err(|failure| crate::adapter_package::diagnostic::domain_result(&failure))?;
+        let synthesized = resolved.candidate.package_root.is_none();
+        (resolved.candidate.manifest, synthesized)
+    };
+
+    // 1. Safe discovery: the describe handshake only, no project IR. It
+    // runs strictly after the gates above, so a revoked or quarantined
+    // adapter never executes adapter code (fix round 2, devin F-11).
     let mut client = TargetClient::new(request.limits);
     let discovered = Discovery::run(&mut client, &request.command, &ctx.root)?;
+    let (gate_manifest, synthesized) = gate_manifest;
+    if !synthesized {
+        crate::adapter_package::consistency::check(&gate_manifest, &discovered).map_err(
+            |mismatch| {
+                crate::adapter_package::diagnostic::domain_result(
+                    &crate::adapter_package::PackageFailure::ManifestMismatch {
+                        field: mismatch.as_str().to_owned(),
+                    },
+                )
+            },
+        )?;
+    }
 
     // 2. Deterministic selection under the strict default policy: the
     // scanner must declare the scan capability `full` and the core IR
     // version (or run a legacy 0.2.16 session, whose IR compatibility the
     // upstream preflight owns). A selection that names no adapter is the
     // registered unsupported refusal, never a guess.
+    // Issue #32 fix (cline F-8 / devin F-9): build the trust postures
+    // from the local revocation store and the store inventory so the
+    // selection filter finally sees revoked/quarantined installed
+    // packages on the real ids — not just synthesized descriptors.
+    let trust_postures = build_trust_postures(
+        &crate::adapter_package::trust::RevocationStore::load(&ctx.root).unwrap_or_default(),
+        crate::adapter_package::Inventory::load(&ctx.root)
+            .map(|inventory| inventory.rows().to_vec())
+            .unwrap_or_default(),
+        &discovered.adapter.id,
+        &discovered.adapter.version,
+    );
+    if let Some(posture) = trust_postures.get(&discovered.adapter.id) {
+        if posture.revoked {
+            // A revoked installed adapter is never selectable: deny
+            // before the handshake result can be consumed further.
+            return Err(crate::adapter_package::diagnostic::domain_result(
+                &crate::adapter_package::PackageFailure::Revoked {
+                    id: discovered.adapter.id.clone(),
+                    version: discovered.adapter.version.clone(),
+                },
+            ));
+        }
+    }
     let required = [REQUIRED_CAPABILITY.to_owned()];
+
     let report = selection::select(
         std::slice::from_ref(&discovered),
         selection::SelectionRequest {
             required: &required,
             preferred_profile: request.profile,
             policy: selection::SelectionPolicy::default(),
+            trust: Some(&trust_postures),
         },
         crate::ir::version::VERSION,
     );
@@ -517,4 +663,110 @@ fn build_document(
         document.insert("testBindings".to_owned(), Json::Array(test_bindings));
     }
     Ok(Json::Object(document))
+}
+
+#[cfg(test)]
+mod posture_tests {
+    use super::*;
+    use crate::adapter_package::trust::RevocationStore;
+
+    fn row(
+        id: &str,
+        version: &str,
+        trust: &str,
+        quarantined: bool,
+    ) -> crate::adapter_package::InventoryRow {
+        crate::adapter_package::InventoryRow {
+            id: id.to_owned(),
+            version: version.to_owned(),
+            digest: format!("sha256:{}", "11".repeat(32)),
+            manifest_digest: format!("sha256:{}", "22".repeat(32)),
+            trust: trust.to_owned(),
+            source: "path:x".to_owned(),
+            install_plan_id: None,
+            selected: true,
+            quarantined,
+        }
+    }
+
+    fn store(records: &[(&str, &str)]) -> RevocationStore {
+        let entries: Vec<String> = records
+            .iter()
+            .map(|(id, version)| {
+                format!("{{\"id\":\"{id}\",\"version\":\"{version}\",\"reason\":\"test\"}}")
+            })
+            .collect();
+        let bytes = format!(
+            "{{\"schemaVersion\":\"lekalo/adapter-revocations/v0.3.2\",\"records\":[{}]}}",
+            entries.join(",")
+        );
+        RevocationStore::from_bytes(bytes.as_bytes()).expect("store parses")
+    }
+
+    /// Regression (fix round 2 cline F-3 / devin F-6, pinned at unit
+    /// level per fix round 4 cline F-NEW-4): the posture decision — an
+    /// installed local-development row is selectable in its owning
+    /// project, quarantined rows are marked, revocations (exact and `*`)
+    /// mark revoked, and unrelated ids never appear.
+    #[test]
+    fn posture_selection_follows_trust_and_custody() {
+        let rows = vec![
+            row("scan-adapter", "1.0.0", "local-development", false),
+            row("scan-adapter", "0.9.0", "community", true),
+            row("other-adapter", "1.0.0", "local-development", false),
+        ];
+        let postures =
+            build_trust_postures(&RevocationStore::default(), rows, "scan-adapter", "1.0.0");
+        let posture = postures.get("scan-adapter").expect("posture built");
+        // The posture aggregates both installed versions: the selectable
+        // 1.0.0 pin keeps the id selectable, while the quarantined 0.9.0
+        // copy still marks custody (the selection layer excludes it).
+        assert!(
+            posture.auto_selectable,
+            "local-development is selectable in its owning project"
+        );
+        assert!(posture.quarantined, "the quarantined copy is marked");
+        assert!(!posture.revoked);
+        // Unrelated ids do not enter the map.
+        assert!(!postures.contains_key("other-adapter"));
+    }
+
+    #[test]
+    fn quarantined_and_revoked_rows_mark_the_posture() {
+        let rows = vec![
+            row("q", "1.0.0", "local-development", true),
+            row("r", "1.0.0", "local-development", false),
+        ];
+        let store = store(&[("r", "1.0.0"), ("w", "*")]);
+        let postures = build_trust_postures(&store, rows, "q", "1.0.0");
+        let quarantined = postures.get("q").expect("q posture");
+        assert!(quarantined.quarantined);
+        assert!(!quarantined.revoked);
+
+        let postures = build_trust_postures(
+            &store,
+            vec![row("r", "1.0.0", "local-development", false)],
+            "r",
+            "1.0.0",
+        );
+        let revoked = postures.get("r").expect("r posture");
+        assert!(revoked.revoked, "an exact-version revocation marks revoked");
+        assert!(
+            revoked.auto_selectable,
+            "revocation is decided independently of selectability"
+        );
+
+        // A whole-id `*` row marks any version revoked.
+        let postures = build_trust_postures(&store, Vec::new(), "w", "9.9.9");
+        assert!(postures.get("w").expect("w posture").revoked);
+    }
+
+    /// An empty store and empty inventory degrade to an empty posture
+    /// map: nothing is marked, nothing is selectable.
+    #[test]
+    fn an_empty_store_yields_no_postures() {
+        let postures =
+            build_trust_postures(&RevocationStore::default(), Vec::new(), "any", "1.0.0");
+        assert!(postures.is_empty());
+    }
 }

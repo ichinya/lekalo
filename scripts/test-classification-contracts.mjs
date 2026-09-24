@@ -94,13 +94,19 @@ for (const [id, before] of predEntries) {
   if (!after) fail("predecessor-rule-dropped", id);
   if (projected(before) !== projected(after)) fail("predecessor-rule-drift", id);
 }
-if (registry.entries.length !== predEntries.size + 13 + 21 + 3 + 1 + 9 + 5 + 14) {
+if (
+  registry.entries.length !==
+  predEntries.size + 13 + 21 + 3 + 1 + 9 + 5 + 14 + 8 + 14 + 15
+) {
   // The trailing increments: +3 is the r3 F-5 custody increment
   // (dedicated ids for the project/model/IR pin refusals,
   // LEK-CLS-013..015); +1 is the r4 F-5 malformed-review-ref id
   // (LEK-CLS-016). Post-merge siblings share the registry: +9 is the
   // transport family (#70), +5 the storage family (#117), +14 the
-  // storage-engine family (#69).
+  // storage-engine family (#69), +8 the openapi family (#46), +14
+  // the scenario family (#47), +15 the adapter-package family (#32,
+  // ported from the predecessor registry where the branch had
+  // registered them before v0.4.0 existed).
   fail("entry-count", registry.entries.length);
 }
 

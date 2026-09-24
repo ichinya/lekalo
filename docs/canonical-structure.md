@@ -47,6 +47,12 @@ the checker.
     consumer/
       model/
       bindings/
+    adapters/
+      packages/
+      staging/
+      quarantine/
+      evidence/
+      inventory.json
     privacy/
       exports/
       redacted/

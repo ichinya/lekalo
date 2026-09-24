@@ -63,6 +63,17 @@ the bounded preserved registry rule ids of any underlying refusal, and
 closed informational notes where applicable. Adding to any of these
 vocabularies is a doctor contract version change.
 
+### `adapters.trust` (issue #32)
+
+The optional trust check reads the local revocation store
+(`.lekalo/adapters/evidence/revocations.json`) and the store inventory
+(`.lekalo/adapters/inventory.json`). It reports `clean`;
+`revocations-recorded` (degraded — recorded revocations exist without an
+affected pin); or `quarantined-package` / `revoked-pin` (blocked,
+carrying `adapter.revoked`). No lock leaves it `unknown`. A manifest
+whose own status is revoked is publisher evidence; the enforcing signal
+is the local store.
+
 ## Verdict and exit policy
 
 The verdict is derived: `blocked` when a required check is blocked or
