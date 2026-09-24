@@ -148,8 +148,8 @@ const consentPath = await write("consent.json", {
 }
 
 // ---------------------------------------------------------------------------
-// Export: the residual-leak refusal (an allowed class whose payload
-// still leaks) never silently ships.
+// Export: residual leaks never silently ship. A hygiene-class leak
+// (a URL) ships pseudonymized; a secret-class leak refuses.
 // ---------------------------------------------------------------------------
 
 {
@@ -164,11 +164,28 @@ const consentPath = await write("consent.json", {
     "--destination", "publish",
     "--project", "project",
   ]);
-  const refusal = parseOrThrow(run);
-  assert.equal(run.status, 3, "the leak refusal exits 3");
+  const summary = parseOrThrow(run);
+  assert.equal(run.status, 0, "the hygiene-class leak ships pseudonymized");
+  assert.ok(summary.payload.includes("<redacted:url>"), summary.payload);
+  assert.ok(!summary.payload.includes("https://"), summary.payload);
+  cases += 1;
+
+  const secretPath = await write("secret-leak.json", {
+    artifactKind: "fixture",
+    payload: `token ghp_${"abcdefghijklmnopqrstuvwxyz0123456789"}abcd`,
+    class: ["public"],
+    synthetic: true,
+  });
+  const secretRun = runLekaloInTemp([
+    "privacy", "export", relative(secretPath),
+    "--destination", "publish",
+    "--project", "project",
+  ]);
+  const refusal = parseOrThrow(secretRun);
+  assert.equal(secretRun.status, 3, "the leak refusal exits 3");
   assert.equal(refusal.status, "refused-leaks");
-  assert.ok(refusal.reasonCodes.includes("leak.url"), JSON.stringify(refusal.reasonCodes));
-  assert.ok(!JSON.stringify(refusal).includes("private.example"), "no leak value in the report");
+  assert.ok(refusal.reasonCodes.includes("leak.secret-token"), JSON.stringify(refusal.reasonCodes));
+  assert.ok(!JSON.stringify(refusal).includes("ghp_"), "no leak value in the report");
   cases += 1;
 }
 
@@ -268,8 +285,8 @@ const consentPath = await write("consent.json", {
 // The reserved privacy homes carry exactly the pipeline outputs.
 const exported = await readdir(join(project, ".lekalo/privacy/exports"));
 const recorded = await readdir(join(project, ".lekalo/privacy/decisions/export"));
-assert.deepEqual(exported.sort(), ["fixture.json", "summary.json"]);
-assert.deepEqual(recorded.sort(), ["fixture.json", "summary.json"]);
+assert.deepEqual(exported.sort(), ["fixture.json", "leaky.json", "summary.json"]);
+assert.deepEqual(recorded.sort(), ["fixture.json", "leaky.json", "summary.json"]);
 
 await rm(temp, { recursive: true, force: true });
 console.log(JSON.stringify({ ok: true, cases, binary: "target/[debug|release]/lekalo" }));

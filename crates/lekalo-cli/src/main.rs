@@ -2143,7 +2143,12 @@ fn runtime() -> u8 {
                         consent.as_deref(),
                         &project,
                     ),
-                    PrivacyCommands::Redact { payload, .. } => run_privacy_redact(&payload),
+                    PrivacyCommands::Redact {
+                        payload,
+                        repository,
+                        terms,
+                        ..
+                    } => run_privacy_redact(&payload, repository.as_deref(), &terms),
                 };
             }
             Commands::Adapter { command } => match run_adapter(*command) {
@@ -9460,6 +9465,13 @@ enum PrivacyCommands {
         /// read-only by definition.
         #[arg(long)]
         dry_run: bool,
+        /// The declared repository identity to scan for.
+        #[arg(long, value_name = "NAME")]
+        repository: Option<String>,
+        /// A declared protected term (person name) to scan for;
+        /// repeatable.
+        #[arg(long = "term", value_name = "NAME")]
+        terms: Vec<String>,
     },
 }
 
@@ -9929,7 +9941,7 @@ fn run_privacy_export(
 }
 
 /// `lekalo privacy redact`: the read-only redaction diff contract.
-fn run_privacy_redact(payload_path: &str) -> u8 {
+fn run_privacy_redact(payload_path: &str, repository: Option<&str>, terms: &[String]) -> u8 {
     let text = match std::fs::read_to_string(payload_path) {
         Err(_) => {
             let _ = write_stderr(&cli_invalid_json("privacy.payload-unreadable"));
@@ -9939,8 +9951,18 @@ fn run_privacy_redact(payload_path: &str) -> u8 {
     };
     use lekalo_core::privacy::vocab::TransformId;
     let transforms = [TransformId::RedactSecrets, TransformId::RedactPii];
+    let owned_terms: Vec<String> = terms.to_vec();
+    let subject = lekalo_core::privacy::redact::RedactionSubject {
+        repository: repository.map(|name| {
+            (
+                name,
+                lekalo_core::privacy::vocab::RepositoryRole::ConsumerRepository,
+            )
+        }),
+        protected_terms: &owned_terms,
+    };
     let (redacted, findings, residuals, applied) =
-        lekalo_core::privacy::export::redact_preview(&text, &transforms, &[]);
+        lekalo_core::privacy::export::redact_preview(&text, &transforms, &[], subject);
     let report = serde_json::json!({
         "status": "ready",
         "appliedTransforms": applied.iter().map(|transform| transform.as_str()).collect::<Vec<_>>(),

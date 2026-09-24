@@ -162,6 +162,8 @@ jobs:
         run: node scripts/test-privacy-evaluator-parity.mjs
       - name: Run the privacy runtime CLI gate (issue #119)
         run: node scripts/test-privacy-runtime-cli.mjs
+      - name: Run the privacy leak-corpus gate (issue #119)
+        run: node scripts/test-privacy-leak-corpus.mjs
       - name: Run the classification CLI e2e gate (issue #87)
         run: node scripts/test-classification-cli.mjs
       - name: Load the CI-only AppArmor launcher prerequisite

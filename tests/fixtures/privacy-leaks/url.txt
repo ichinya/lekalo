@@ -1,0 +1,1 @@
+mirror at https://private.example/acme/widgets

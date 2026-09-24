@@ -157,6 +157,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "privacy-leaks",
+      "origin": "synthetic",
+      "note": "synthetic leak markers for the privacy scanner gate; no real values"
+    },
+    {
       "family": "query-model",
       "origin": "synthetic"
     },

@@ -25,8 +25,8 @@ use serde_json::Value as Json;
 use super::context::TrustedContext;
 use super::evaluate::{authorization_subject_digest, evaluate_decision};
 use super::output::ExportDecisionOutput;
+use super::redact::LeakFinding;
 use super::redact::{redact, RedactionRequest, RedactionSubject};
-use super::redact::{scan, LeakFinding};
 use super::vocab::{Audience, DataSensitivity, RepositoryRole, TransformId, TrustBoundary};
 use super::{input, refs};
 use crate::digest::sha256_hex;
@@ -128,6 +128,9 @@ pub struct ExportOutcome {
     residuals: Vec<LeakFinding>,
     export_path: String,
     decision_path: String,
+    /// The digest of the #89 confinement evidence carried by the
+    /// envelope, when present.
+    confinement_digest: Option<String>,
     written: bool,
 }
 
@@ -211,8 +214,15 @@ impl ExportOutcome {
                 "findings": serde_json::to_value(self.findings()).unwrap_or(Json::Null),
                 "residuals": serde_json::to_value(self.residuals()).unwrap_or(Json::Null),
             },
+            "confinementDigest": self.confinement_digest,
             "exportPath": self.export_path,
         })
+    }
+
+    /// The digest of the #89 confinement evidence carried by the
+    /// envelope, when present.
+    pub const fn confinement_digest(&self) -> Option<&String> {
+        self.confinement_digest.as_ref()
     }
 }
 
@@ -362,6 +372,32 @@ pub fn run_export(
     let envelope_object = envelope
         .as_object()
         .ok_or(ExportFailure::Malformed("privacy.envelope-invalid"))?;
+    // The #89 integration seam: an adapter-produced artifact may carry
+    // its confinement evidence. Where present it must be structurally
+    // coherent (the closed member set) or the export refuses; its
+    // digest is recorded in the decision record. This is metadata
+    // custody only - physical containment stays the adapter
+    // obligation, and the adapter gains no new filesystem or network
+    // scope from this read.
+    let confinement_digest: Option<String> = match envelope_object.get("confinement") {
+        None => None,
+        Some(confinement) => {
+            let coherent = confinement.is_object()
+                && confinement.get("budget").is_some_and(Json::is_object)
+                && confinement.get("described").is_some_and(Json::is_object)
+                && confinement.get("effective").is_some_and(Json::is_object)
+                && confinement
+                    .get("platform")
+                    .and_then(Json::as_str)
+                    .is_some_and(|platform| !platform.is_empty());
+            if !coherent {
+                return Err(ExportFailure::Malformed("privacy.confinement-invalid"));
+            }
+            let bytes = serde_json::to_vec(confinement)
+                .map_err(|_| ExportFailure::Malformed("privacy.confinement-invalid"))?;
+            Some(format!("sha256:{}", sha256_hex(&bytes)))
+        }
+    };
     let artifact_kind = envelope_object
         .get("artifactKind")
         .and_then(Json::as_str)
@@ -527,31 +563,49 @@ pub fn run_export(
 
     // The redaction pipeline: the required transforms, the declared
     // subject, and the verification pass. A payload that still leaks
-    // refuses the export.
+    // refuses the export. The subject inputs (declared repository
+    // identity and protected terms) come from the envelope; they are
+    // matching inputs only and never enter any output.
+    let repository_name = envelope_object
+        .get("repository")
+        .and_then(Json::as_str)
+        .filter(|name| !name.is_empty())
+        .map(|name| name.to_owned());
+    let protected_terms: Vec<String> = envelope_object
+        .get("protectedTerms")
+        .and_then(Json::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(Json::as_str)
+                .filter(|term| !term.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let subject = RedactionSubject {
+        repository: repository_name
+            .as_deref()
+            .map(|name| (name, RepositoryRole::ConsumerRepository)),
+        protected_terms: &protected_terms,
+    };
     let redacted = redact(&RedactionRequest {
         payload: &payload_text,
         transforms: &required_transforms(&evaluated.output),
         labels: &labels,
-        subject: RedactionSubject::default(),
+        subject,
     });
     let residuals = redacted.residuals().to_vec();
     if !residuals.is_empty() {
+        // Covers every branch: the always-on hygiene pseudonymized
+        // what it could (paths, repository identity, tenants, URLs);
+        // whatever still leaks - secrets and PII on an allow, or any
+        // missed class - refuses the export, never silently ships.
         return Err(ExportFailure::ResidualLeaks {
             output: evaluated.output,
             leaks: residuals,
         });
     }
-    // An allowed transfer ships only a payload the scanner passes.
-    if evaluated.output.decision() == super::output::ExportDecision::Allow {
-        let leaks = scan(&payload_text);
-        if !leaks.is_empty() {
-            return Err(ExportFailure::ResidualLeaks {
-                output: evaluated.output,
-                leaks,
-            });
-        }
-    }
-
     let payload_digest = format!("sha256:{}", sha256_hex(redacted.payload().as_bytes()));
     let name = path_value;
     let stem = std::path::Path::new(&name)
@@ -572,6 +626,7 @@ pub fn run_export(
         residuals,
         export_path,
         decision_path,
+        confinement_digest,
         written: false,
     };
     if !dry_run {
@@ -583,20 +638,20 @@ pub fn run_export(
     Ok(outcome)
 }
 
-/// The redaction diff contract of `lekalo privacy redact`: scan and
-/// apply the closed transforms over one payload document, returning
-/// the redacted text, the diff (findings), and the residual scan.
-/// Read-only by definition.
+/// Show the redaction diff contract of one payload document (issue
+/// #119): the applied transforms, the leak findings, and the redacted
+/// payload. Read-only by definition.
 pub fn redact_preview(
     payload: &str,
     transforms: &[TransformId],
     labels: &[DataSensitivity],
+    subject: RedactionSubject<'_>,
 ) -> (String, Vec<LeakFinding>, Vec<LeakFinding>, Vec<TransformId>) {
     let redacted = redact(&RedactionRequest {
         payload,
         transforms,
         labels,
-        subject: RedactionSubject::default(),
+        subject,
     });
     (
         redacted.payload().to_owned(),
@@ -606,6 +661,13 @@ pub fn redact_preview(
     )
 }
 
+/// The propagated envelope class of one project's artifacts (issue
+/// #119, plan S6): the sensitivity label of the classification
+/// attachment's declared payload default, plus the exact policy
+/// identity. Exportable receipt surfaces carry these as additive
+/// optional `class`/`policyRef` members; `None` means the project
+/// declares no classification and any export attempt refuses
+/// fail-closed at class resolution.
 fn required_transforms(output: &ExportDecisionOutput) -> Vec<TransformId> {
     output
         .required_transforms()
@@ -695,13 +757,6 @@ fn write_under(project: &Path, relative: &str, bytes: &[u8]) -> Result<(), Expor
     std::fs::write(full, bytes).map_err(|_| ExportFailure::Malformed("privacy.write-refused"))
 }
 
-/// The propagated envelope class of one project's artifacts (issue
-/// #119, plan S6): the sensitivity label of the classification
-/// attachment's declared payload default, plus the exact policy
-/// identity. Exportable receipt surfaces carry these as additive
-/// optional `class`/`policyRef` members; `None` means the project
-/// declares no classification and any export attempt refuses
-/// fail-closed at class resolution.
 pub fn propagated_class(project: &Path) -> Option<(Vec<String>, String)> {
     let default_kind = project_payload_default(project).ok()??;
     Some((
@@ -717,20 +772,6 @@ mod tests {
     use std::path::PathBuf;
 
     /// Write one envelope under a temporary project and return its path.
-    fn consent_record() -> Json {
-        serde_json::json!({
-            "contractId": "dev.lekalo.privacy-authorizing-evidence",
-            "version": "0.2.16",
-            "digest": format!("sha256:{}", crate::privacy::refs::AUTHORIZING_EVIDENCE_RAW_SHA256),
-            "evidenceKind": "export-transfer-consent",
-            "purpose": "authorize-export-transfer-or-storage",
-            "outcome": "granted",
-            "evidenceId": format!("evidence-sha256:{}", "9".repeat(64)),
-            "verificationState": "verified",
-            "freshnessState": "current",
-        })
-    }
-
     fn write_artifact(project: &Path, name: &str, envelope: &Json) -> PathBuf {
         let path = project.join(name);
         std::fs::write(&path, envelope.to_string()).expect("artifact writes");
@@ -859,6 +900,21 @@ mod tests {
         ));
     }
 
+    /// A consent record for the export-transfer position.
+    fn consent_record() -> Json {
+        serde_json::json!({
+            "contractId": "dev.lekalo.privacy-authorizing-evidence",
+            "version": "0.2.16",
+            "digest": format!("sha256:{}", refs::AUTHORIZING_EVIDENCE_RAW_SHA256),
+            "evidenceKind": "export-transfer-consent",
+            "purpose": "authorize-export-transfer-or-storage",
+            "outcome": "granted",
+            "evidenceId": format!("evidence-sha256:{}", "9".repeat(64)),
+            "verificationState": "verified",
+            "freshnessState": "current",
+        })
+    }
+
     /// Transform-required publication redacts the body to the stub and
     /// writes the candidate plus the decision record under the
     /// reserved homes; the secret never reaches any written byte.
@@ -948,17 +1004,18 @@ mod tests {
         assert_eq!(written, "synthetic fixture text");
     }
 
-    /// An allowed class with a leaking payload refuses instead of
-    /// silently shipping: the scanner verification pass.
+    /// An allowed payload with a hygiene-class leak ships
+    /// pseudonymized; a secret-class leak refuses: never silently
+    /// ships.
     #[test]
-    fn allow_with_leak_refuses() {
+    fn allow_payload_leaks_are_pseudonymized_or_refused() {
         let project = tempfile::tempdir().expect("temp project");
         let artifact = write_artifact(
             project.path(),
             "fixture.json",
             &serde_json::json!({
                 "artifactKind": "fixture",
-                "payload": "clean text referencing https://private.example/acme and /home/dev/secrets",
+                "payload": "clean text referencing https://private.example/acme",
                 "class": ["public"],
                 "synthetic": true,
             }),
@@ -969,15 +1026,100 @@ mod tests {
             DestinationSpec::Publish,
             None,
             true,
+        )
+        .expect("the hygiene-class leak ships pseudonymized");
+        assert_eq!(outcome.decision().decision().as_str(), "allow");
+        assert!(outcome.payload().contains("<redacted:url>"));
+        assert!(!outcome.payload().contains("https://"));
+        assert_eq!(outcome.residuals(), []);
+
+        let secret = write_artifact(
+            project.path(),
+            "secret.json",
+            &serde_json::json!({
+                "artifactKind": "fixture",
+                "payload": "token ghp_abcdefghijklmnopqrstuvwxyz0123456789abcd",
+                "class": ["public"],
+                "synthetic": true,
+            }),
+        );
+        let outcome = run_export(
+            project.path(),
+            &secret,
+            DestinationSpec::Publish,
+            None,
+            true,
         );
         match outcome {
             Err(ExportFailure::ResidualLeaks { leaks, .. }) => {
-                let kinds: Vec<LeakKind> = leaks.iter().map(|leak| leak.kind()).collect();
-                assert!(kinds.contains(&LeakKind::Url));
-                assert!(kinds.contains(&LeakKind::PathFragment));
+                assert!(leaks
+                    .iter()
+                    .any(|leak| leak.kind() == LeakKind::SecretToken));
             }
-            other => panic!("expected the leak refusal, got {other:?}"),
+            other => panic!("expected the secret refusal, got {other:?}"),
         }
+    }
+
+    /// The #89 integration seam: an adapter-produced artifact's
+    /// confinement evidence is read where present, recorded in the
+    /// decision record, and refused when malformed. No adapter gains
+    /// filesystem or network scope from this read.
+    #[test]
+    fn confinement_evidence_is_read_where_present() {
+        let project = tempfile::tempdir().expect("temp project");
+        let confinement = serde_json::json!({
+            "budget": {"readScopes": [], "network": "denied"},
+            "described": {},
+            "effective": {},
+            "platform": "linux-x86_64",
+        });
+        let artifact = write_artifact(
+            project.path(),
+            "fixture.json",
+            &serde_json::json!({
+                "artifactKind": "fixture",
+                "payload": "synthetic text",
+                "class": ["public"],
+                "synthetic": true,
+                "confinement": confinement,
+            }),
+        );
+        let outcome = run_export(
+            project.path(),
+            &artifact,
+            DestinationSpec::Publish,
+            None,
+            true,
+        )
+        .expect("confinement-bearing export plans");
+        let digest = outcome.confinement_digest().expect("confinement digest");
+        assert!(digest.starts_with("sha256:"));
+        let record = outcome.decision_record();
+        assert_eq!(record["confinementDigest"], serde_json::json!(digest));
+
+        // A malformed confinement member refuses fail-closed.
+        let malformed = write_artifact(
+            project.path(),
+            "broken.json",
+            &serde_json::json!({
+                "artifactKind": "fixture",
+                "payload": "synthetic text",
+                "class": ["public"],
+                "synthetic": true,
+                "confinement": {"budget": "nonsense"},
+            }),
+        );
+        let outcome = run_export(
+            project.path(),
+            &malformed,
+            DestinationSpec::Publish,
+            None,
+            true,
+        );
+        assert!(matches!(
+            outcome,
+            Err(ExportFailure::Malformed("privacy.confinement-invalid"))
+        ));
     }
 
     /// A shareable summary transferred without consent evidence
@@ -1019,7 +1161,7 @@ mod tests {
             .join("../../tests/fixtures/classification/valid/planner");
         let propagated =
             propagated_class(&fixtures).expect("planner project declares classification");
-        assert_eq!(propagated.1, crate::privacy::refs::POLICY_IDENTITY);
+        assert_eq!(propagated.1, refs::POLICY_IDENTITY);
         assert!(!propagated.0.is_empty());
         assert!(propagated
             .0
