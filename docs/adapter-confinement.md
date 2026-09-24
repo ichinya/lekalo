@@ -31,9 +31,12 @@ gates, before any child process exists:
 
 Fail-closed rule: an unenforceable declared permission is a refusal or
 an honest `unenforced`/`degraded` evidence verdict — never a silent
-allowance. Secret values and granted environment values never enter
-canonical bytes, diagnostics, evidence, or logs; only variable names
-and handle ids do.
+allowance. Scope fitting mirrors the plan-coverage grammar: a
+recursive cap (`a/**`) covers the contents below its base, never the
+bare base itself — a described exact scope `a` under a cap `a/**`
+refuses as escalation. Secret values and granted environment values
+never enter canonical bytes, diagnostics, evidence, or logs; only
+variable names and handle ids do.
 
 ### Implicit (synthesized) adapters
 

@@ -128,6 +128,10 @@ impl ScopeCaps {
 
 /// Whether one declared scope reaches only paths another scope covers
 /// (used to compare a described scope against the manifest ceiling).
+/// Mirrors the plan-coverage grammar ([`scopes::scope_covers`]): a
+/// recursive cap covers the contents below its base, never the bare
+/// base itself — an exact described scope `a` under a cap `a/**`
+/// refuses (issue #89 fix round 2, C-F6).
 fn scope_within(scope: &str, cap: &str) -> bool {
     if scope == cap {
         return true;
@@ -137,10 +141,10 @@ fn scope_within(scope: &str, cap: &str) -> bool {
     let scope_base = scope.strip_suffix("/**").unwrap_or(scope);
     let cap_base = cap.strip_suffix("/**").unwrap_or(cap);
     if cap_recursive {
-        // `a/**` covers `a/b`, `a/b/c`, and `a/b/**`.
-        scope_base.starts_with(cap_base)
-            && (scope_base.len() == cap_base.len()
-                || scope_base.as_bytes().get(cap_base.len()) == Some(&b'/'))
+        // `a/**` covers `a/b`, `a/b/c`, and `a/b/**` — and an equal
+        // recursive scope was handled above — but never the bare base
+        // `a` itself: the cap covers contents, not the base.
+        scope_base.starts_with(cap_base) && scope_base.as_bytes().get(cap_base.len()) == Some(&b'/')
     } else {
         // An exact cap covers only the exact scope.
         !scope_recursive && scope_base == cap_base
@@ -440,6 +444,12 @@ mod tests {
         assert!(strict
             .check_scopes(&["src/main.ts".to_owned()], &[])
             .is_ok());
+        // A bare base under a recursive cap refuses: `src/**` covers the
+        // contents of `src`, never `src` itself (issue #89, C-F6).
+        assert_eq!(
+            budget.check_scopes(&["src".to_owned()], &[]),
+            Err(PermissionEscalation::ReadScopes)
+        );
     }
 
     #[test]
@@ -463,5 +473,24 @@ mod tests {
         assert!(scope_within("src/main.ts", "src/main.ts"));
         assert!(!scope_within("src/**", "src/main.ts"));
         assert!(!scope_within("src/other.ts", "src/main.ts"));
+    }
+
+    /// A recursive cap covers the contents below its base, never the
+    /// bare base itself — mirroring the plan-coverage rule
+    /// (`scopes::scope_covers`), issue #89 fix round 2, C-F6.
+    #[test]
+    fn a_recursive_cap_does_not_cover_its_bare_base() {
+        assert!(!scope_within("src", "src/**"));
+        assert!(!scope_within("src", "src/a/**"));
+        // Equal scopes still admit each other, recursive or exact.
+        assert!(scope_within("src/**", "src/**"));
+        assert!(scope_within("src", "src"));
+        // Contents below the base keep passing.
+        assert!(scope_within("src/b", "src/**"));
+        assert!(scope_within("src/b/c", "src/**"));
+        assert!(scope_within("src/b/**", "src/**"));
+        // Deep recursive caps cover strictly below their base too.
+        assert!(!scope_within("src/a", "src/a/b/**"));
+        assert!(scope_within("src/a/b/c", "src/a/b/**"));
     }
 }
