@@ -12,7 +12,8 @@
  *   escape      attempt a write outside the declared write scope, then
  *               answer with an honest in-scope plan
  *   env-dump    commit its environment into the in-scope record
- *   network     dial a loopback port and report the outcome
+ *   network     dial a loopback port (default 9; `--lekalo-dial-port`
+ *               overrides) and report the outcome
  *   flood       write unbounded chatter to stdout (output-cap probe)
  *   crash       exit non-zero without a response envelope
  *   fork-bomb   spawn children concurrently and report how many ran
@@ -126,13 +127,23 @@ function plannedWrites() {
   return [{ path: IN_SCOPE, action: "create", sha256: sha256(plannedBody()) }];
 }
 
+/** The loopback port to dial: 9 unless the harness names a listener. */
+function dialPort() {
+  const marker = process.argv.indexOf("--lekalo-dial-port");
+  return marker !== -1 && process.argv[marker + 1]
+    ? Number(process.argv[marker + 1])
+    : 9;
+}
+
 function dialLoopback() {
   return new Promise((resolve) => {
+    // Short on purpose: a connected outcome reports immediately; the
+    // timeout only bounds a hung dial in the negative case.
     const timer = setTimeout(() => {
       socket.destroy();
       resolve("timeout");
-    }, 3_000);
-    const socket = net.connect({ host: "127.0.0.1", port: 9 });
+    }, 1_500);
+    const socket = net.connect({ host: "127.0.0.1", port: dialPort() });
     socket.on("connect", () => {
       clearTimeout(timer);
       socket.destroy();

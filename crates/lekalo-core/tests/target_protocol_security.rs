@@ -69,13 +69,20 @@ fn fixture_path() -> String {
 
 /// The fixture command vector with one hostile mode.
 fn fixture_command(fault: &str) -> AdapterCommand {
+    fixture_command_with(fault, &[])
+}
+
+fn fixture_command_with(fault: &str, extra_args: &[String]) -> AdapterCommand {
     AdapterCommand {
         program: "node".into(),
         args: vec![
             fixture_path(),
             "--lekalo-security-fault".into(),
             fault.into(),
-        ],
+        ]
+        .into_iter()
+        .chain(extra_args.iter().cloned())
+        .collect(),
     }
 }
 
@@ -87,11 +94,21 @@ fn stage_inputs(project: &Path) {
 }
 
 /// One full session: budget armed, describe, dry-run plan, apply.
-/// Returns the apply outcome.
+/// Returns the apply outcome. `extra_args` extends the fixture argv
+/// (the network test passes its loopback listener port this way).
 fn run_session(
     tag: &str,
     fault: &str,
     budget: SessionBudget,
+) -> (lekalo_core::target_protocol::CallOutcome, Sandbox) {
+    run_session_with(tag, fault, budget, &[])
+}
+
+fn run_session_with(
+    tag: &str,
+    fault: &str,
+    budget: SessionBudget,
+    extra_args: &[String],
 ) -> (lekalo_core::target_protocol::CallOutcome, Sandbox) {
     let sandbox = Sandbox::new(tag);
     stage_inputs(&sandbox.project());
@@ -100,7 +117,7 @@ fn run_session(
         ..Default::default()
     });
     client.set_budget(budget);
-    let command = fixture_command(fault);
+    let command = fixture_command_with(fault, extra_args);
     Discovery::run(&mut client, &command, &sandbox.project()).expect("describe");
     let fs = Fs::open(&sandbox.project()).expect("project fs");
     let planned = client
@@ -274,10 +291,26 @@ fn environment_disclosure_is_bounded_to_the_budget() {
     assert!(evidence.contains("LEKALO_SECRET_PROBE"));
 }
 
-/// S6 #3: the loopback dial is unreachable on every platform.
+/// S6 #3: the loopback dial is unreachable inside the sandbox while the
+/// identical dial from this unsandboxed harness process connects. A real
+/// listener removes the vacuous outcome: a refused dial against a closed
+/// port proves nothing, a refused dial against a live listener does
+/// (issue #89 fix round 2, C-F1).
 #[test]
 fn the_network_dial_is_unreachable() {
-    let (outcome, _sandbox) = run_session("network", "network", SessionBudget::strict_implicit());
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("loopback listener");
+    let port = listener.local_addr().expect("socket address").port();
+    let target = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    // The control: without the sandbox this exact dial connects.
+    std::net::TcpStream::connect_timeout(&target, std::time::Duration::from_secs(5))
+        .expect("the unsandboxed control dial must connect to the live listener");
+    // The fixture dials the same live listener inside the sandbox.
+    let (outcome, _sandbox) = run_session_with(
+        "network",
+        "network",
+        SessionBudget::strict_implicit(),
+        &["--lekalo-dial-port".to_owned(), port.to_string()],
+    );
     let detail = fault_detail(&outcome);
     assert!(
         detail == "dial=refused" || detail == "dial=timeout",
