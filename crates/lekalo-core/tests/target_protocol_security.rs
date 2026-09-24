@@ -393,12 +393,6 @@ fn a_fork_bomb_stays_bounded() {
         .and_then(|part| part.strip_prefix("spawned="))
         .and_then(|value| value.parse().ok())
         .expect("spawn count");
-    let attempts: u64 = parts
-        .iter()
-        .find(|part| part.starts_with("attempts="))
-        .and_then(|part| part.strip_prefix("attempts="))
-        .and_then(|value| value.parse().ok())
-        .expect("attempt count");
     let enforcement = outcome.confinement.budget.children.enforcement;
     if cfg!(windows) {
         assert_eq!(spawned, 0, "the job admits exactly one process");
