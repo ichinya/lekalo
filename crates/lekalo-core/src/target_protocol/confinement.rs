@@ -19,7 +19,10 @@ pub(super) const SANDBOX_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// The bounded process/task count applied when the budget denies
 /// children on Linux. `RLIMIT_NPROC` counts tasks (threads included),
 /// so the bound must admit a runtime's own thread pool while still
-/// capping fork bombs; it is an honest bound, not a fork primitive.
+/// capping fork bombs. It is applied only where it bounds the sandbox
+/// namespace itself (kernel ≥ 5.14, see
+/// [`PER_USERNS_NPROC_KERNEL`]); it is an honest bound, not a fork
+/// primitive.
 pub(super) const SANDBOX_TASK_BOUND: u64 = 64;
 
 /// The per-session sandbox policy the budget projects onto the OS
@@ -104,7 +107,8 @@ impl ConfinementReport {
             if cfg!(windows) {
                 Enforcement::Enforced
             } else if cfg!(target_os = "linux") && prlimit_available() {
-                Enforcement::Degraded // bounded, not a fork primitive
+                // Bounded, and only where the bound is namespace-local.
+                Enforcement::Degraded
             } else {
                 Enforcement::Unenforced
             }
@@ -134,7 +138,8 @@ impl ConfinementReport {
     }
 
     /// The effective process bound for the evidence (Windows job cap 1
-    /// when denied; the Linux task bound when the wrapper exists).
+    /// when denied; the Linux task bound where the wrapper exists and
+    /// the kernel bounds the namespace, `None` otherwise).
     pub(super) fn process_limit(&self) -> Option<u64> {
         if !self.children_denied {
             return None;
@@ -156,12 +161,52 @@ impl ConfinementReport {
 }
 
 /// Whether the Linux `prlimit` wrapper is available for the bounded
-/// children policy.
+/// children policy — and the kernel charges `RLIMIT_NPROC` per user
+/// namespace, so a fixed `--nproc` bound tracks the sandbox namespace
+/// rather than the whole-uid host task count. Otherwise the wrapper is
+/// skipped and the report honestly says `denied-unenforced`
+/// (issue #89 fix round 2, C-F2).
 #[cfg(target_os = "linux")]
 fn prlimit_available() -> bool {
     ["/usr/bin/prlimit", "/bin/prlimit"]
         .iter()
         .any(|path| Path::new(path).is_file())
+        && kernel_bounds_nproc_per_userns()
+}
+
+/// The kernel release where the ucounts rework (5.14,
+/// torvalds/linux@21d1c5e386bc) made `RLIMIT_NPROC` a per-uid-per-
+/// user-namespace charge: a fresh `--unshare-all` namespace starts its
+/// task count at zero, so a fixed `--nproc` bound bounds the namespace
+/// deterministically. Older kernels count tasks per real uid across the
+/// whole host, where a fixed bound denies the runtime's own threads on
+/// any busy machine — fail-closed, but wrong.
+#[cfg(target_os = "linux")]
+const PER_USERNS_NPROC_KERNEL: (u64, u64) = (5, 14);
+
+/// Parse the leading `major.minor` of a kernel release string
+/// (`6.5.0-18-generic` → `(6, 5)`); `None` when unparseable.
+#[cfg(target_os = "linux")]
+fn parse_kernel_release(release: &str) -> Option<(u64, u64)> {
+    let mut parts = release.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
+}
+
+/// Whether the host kernel charges `RLIMIT_NPROC` per user namespace
+/// (release ≥ [`PER_USERNS_NPROC_KERNEL`]), resolved once per process.
+/// An unreadable or unparseable release fails closed: the bound is
+/// skipped and reported `denied-unenforced`.
+#[cfg(target_os = "linux")]
+fn kernel_bounds_nproc_per_userns() -> bool {
+    static PER_USERNS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PER_USERNS.get_or_init(|| {
+        std::fs::read_to_string("/proc/sys/kernel/osrelease")
+            .ok()
+            .and_then(|release| parse_kernel_release(release.trim()))
+            .is_some_and(|release| release >= PER_USERNS_NPROC_KERNEL)
+    })
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -562,9 +607,10 @@ impl Sandbox {
             args,
         };
         // Issue #89: a denied children policy cannot be enforced inside
-        // bwrap (no fork primitive), but the prlimit wrapper bounds the
-        // task count inside the namespace where it exists. The report
-        // records the bound (or its absence) honestly either way.
+        // bwrap (no fork primitive), but where the prlimit wrapper exists
+        // and the kernel charges RLIMIT_NPROC per user namespace (≥5.14)
+        // the wrapper bounds the task count inside the namespace. The
+        // report records the bound (or its honest absence) either way.
         if self.policy.children_denied && prlimit_available() {
             wrapper = transport::AdapterCommand {
                 program: "/usr/bin/prlimit".into(),
@@ -782,6 +828,24 @@ mod tests {
             b"owned input"
         );
         assert!(!root.path().join("other").exists());
+    }
+
+    // The kernel-release parser runs the per-userns gate; its floor and
+    // spellings are pinned here (linux-only: the gate reads /proc).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn kernel_release_parsing_drives_the_per_userns_floor() {
+        assert_eq!(parse_kernel_release("6.5.0-18-generic"), Some((6, 5)));
+        assert_eq!(parse_kernel_release("5.14.0-1022-azure"), Some((5, 14)));
+        assert_eq!(parse_kernel_release("5.15"), Some((5, 15)));
+        assert_eq!(parse_kernel_release("4.19.0"), Some((4, 19)));
+        assert_eq!(parse_kernel_release(""), None);
+        assert_eq!(parse_kernel_release("x.y"), None);
+        // The floor itself passes; anything below it does not.
+        assert!((5, 14) >= PER_USERNS_NPROC_KERNEL);
+        assert!((5, 13) < PER_USERNS_NPROC_KERNEL);
+        assert!((6, 0) >= PER_USERNS_NPROC_KERNEL);
+        assert!((4, 20) < PER_USERNS_NPROC_KERNEL);
     }
 
     #[test]

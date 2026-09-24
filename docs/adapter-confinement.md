@@ -69,7 +69,7 @@ evidence remain the manifest ceiling, and `described` exceeds them.
 | Filesystem scopes | private staged view; LPAC read-only grants outside write roots | private staged view; ro-binds + `--remount-ro /`; write roots bound | private staged view; write only into declared roots |
 | Network | denied (LPAC, no network capability) | denied (`--unshare-all`) | denied (deny-default profile) |
 | Network allowlist | `degraded-denied` — no namespace-level destination filter exists | `degraded-denied` | `degraded-denied` |
-| Children denied | `denied-enforced`: job `ACTIVE_PROCESS` limit = 1 | `denied-bounded`: `prlimit --nproc=64` wrapper (when present), else `denied-unenforced` | `denied-unenforced` (no primitive) |
+| Children denied | `denied-enforced`: job `ACTIVE_PROCESS` limit = 1 | `denied-bounded` (kernel ≥ 5.14, per-userns task bound): `prlimit --nproc=64` wrapper when the wrapper exists and the release bounds `RLIMIT_NPROC` per user namespace, else `denied-unenforced` | `denied-unenforced` (no primitive) |
 | Children declared | `permitted` (children stay in the job) | `permitted` (children stay in the namespace) | `permitted` (children stay in the profile) |
 | Memory bound | `enforced`: job process-memory limit (2 GiB constant) | `unenforced` (`RLIMIT_RSS` is a historical no-op) | `unenforced` (no primitive) |
 
