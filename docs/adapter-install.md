@@ -26,6 +26,11 @@ Package bytes are immutable once promoted. The `selected` pin in
 `inventory.json` is the only mutable field; update and rollback are pin
 repoints, never in-place edits.
 
+The declared `permissions` block is the runtime enforcement ceiling an
+adapter session may never exceed; the budget semantics, the per-platform
+enforcement matrix, and the confinement evidence are specified in
+[adapter-confinement.md](adapter-confinement.md).
+
 ## Trust levels
 
 `builtin`, `verified`, `local-development`, `community`, `revoked` —
