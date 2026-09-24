@@ -37,6 +37,7 @@
 //! install, and install is never trust: auto-discovery neither installs
 //! nor promotes anything.
 
+pub mod budget;
 pub mod canonical;
 pub mod consistency;
 pub mod diagnostic;
