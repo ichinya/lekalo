@@ -615,7 +615,16 @@ fn run_profile(
     environment.push(0);
     let job = handle(unsafe { CreateJobObjectW(null(), null()) })?;
     let mut job_limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
-    job_limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    job_limits.BasicLimitInformation.LimitFlags =
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+    // Issue #89 resource bound: a fixed constant, never host-derived.
+    job_limits.ProcessMemoryLimit = sandbox.report.memory_limit().unwrap_or(0) as usize;
+    if sandbox.policy.children_denied {
+        // Issue #89 children denial: the job holds exactly one process,
+        // so any child creation inside the sandbox fails closed.
+        job_limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+        job_limits.BasicLimitInformation.ActiveProcessLimit = 1;
+    }
     if unsafe {
         SetInformationJobObject(
             job.as_raw_handle(),

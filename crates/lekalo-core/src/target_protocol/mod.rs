@@ -325,7 +325,8 @@ impl TargetClient {
         );
         envelope.request_id = wire::request_id(&envelope);
         let serialized = serialize(&envelope)?;
-        let sandbox = confinement::Sandbox::new(cwd, &[], &[], false)?;
+        let sandbox =
+            confinement::Sandbox::new(cwd, &[], &[], false, confinement::SandboxPolicy::strict())?;
         // Safe discovery discloses nothing but the request bytes: the
         // handshake runs with empty scopes and an empty environment
         // regardless of the session budget (issue #89).
@@ -525,8 +526,13 @@ impl TargetClient {
         let serialized = serialize(&envelope)?;
         let use_file = !capabilities.transports.contains(&wire::Transport::Stdin);
 
-        let sandbox =
-            confinement::Sandbox::new(&root, &effective.read, &effective.write, applying)?;
+        let sandbox = confinement::Sandbox::new(
+            &root,
+            &effective.read,
+            &effective.write,
+            applying,
+            confinement::SandboxPolicy::from_budget(&self.budget),
+        )?;
         let stage_fs = Fs::open(&sandbox.project).map_err(|_| TargetFailure::TransportFailed {
             detail: "sandbox-view",
         })?;

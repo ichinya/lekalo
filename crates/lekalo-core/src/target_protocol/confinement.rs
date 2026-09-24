@@ -4,6 +4,7 @@
 
 use super::{plan, scopes, transport, wire, TargetFailure};
 use crate::project_fs::Fs;
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -11,11 +12,174 @@ use std::sync::atomic::AtomicBool;
 #[path = "confinement_windows.rs"]
 mod windows;
 
+/// The sandbox's hard memory bound where the platform enforces one
+/// (Windows job object). A resource constant, never host-derived.
+pub(super) const SANDBOX_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+/// The bounded process/task count applied when the budget denies
+/// children on Linux. `RLIMIT_NPROC` counts tasks (threads included),
+/// so the bound must admit a runtime's own thread pool while still
+/// capping fork bombs; it is an honest bound, not a fork primitive.
+pub(super) const SANDBOX_TASK_BOUND: u64 = 64;
+
+/// The per-session sandbox policy the budget projects onto the OS
+/// primitives (issue #89).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct SandboxPolicy {
+    /// `processes.children: denied` — children are refused where the
+    /// platform has a primitive and bounded/honestly reported where it
+    /// does not. Children that do spawn stay inside the sandbox either
+    /// way.
+    pub children_denied: bool,
+    /// `network.mode: allowlist` — no supported platform offers a
+    /// namespace-level destination filter, so the sandbox keeps its
+    /// denial and the report degrades honestly (issue #89).
+    pub network_allowlist: bool,
+}
+
+impl SandboxPolicy {
+    /// The strictest policy: children denied, network denied (read-only
+    /// probes and the describe handshake).
+    pub fn strict() -> Self {
+        Self {
+            children_denied: true,
+            network_allowlist: false,
+        }
+    }
+
+    /// Project the session budget onto the sandbox policy.
+    pub fn from_budget(budget: &crate::adapter_package::budget::SessionBudget) -> Self {
+        use crate::adapter_package::budget::{ChildPolicy, NetworkBudget};
+        Self {
+            children_denied: budget.children() == ChildPolicy::Denied,
+            network_allowlist: matches!(budget.network(), NetworkBudget::Allowlist(_)),
+        }
+    }
+}
+
+/// The honest enforcement verdict of one confinement dimension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum Enforcement {
+    /// An OS primitive enforces the declared policy on this platform.
+    Enforced,
+    /// The declared policy cannot be enforced as spelled; the sandbox
+    /// degrades to denial/bounding and says so. Never a silent
+    /// allowance.
+    Degraded,
+    /// The platform has no primitive; the gap is recorded, and the
+    /// namespace/job containment still applies.
+    Unenforced,
+}
+
+impl Enforcement {
+    /// The stable evidence token.
+    #[allow(dead_code)] // consumed by the confinement evidence (plan S4)
+    pub(super) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Enforced => "enforced",
+            Self::Degraded => "degraded",
+            Self::Unenforced => "unenforced",
+        }
+    }
+}
+
+/// The honest per-dimension confinement record of one sandbox: what
+/// the platform enforced, degraded, or could not enforce. Network
+/// denial is `enforced` on every supported platform; an allowlist
+/// mode degrades to denial (`Degraded`) because no supported platform
+/// offers a namespace-level destination filter (issue #89).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ConfinementReport {
+    pub network: Enforcement,
+    pub children: Enforcement,
+    pub resources: Enforcement,
+    pub children_denied: bool,
+}
+
+impl ConfinementReport {
+    /// Compute the honest record for the host platform from the sandbox
+    /// policy.
+    pub(super) fn compute(policy: SandboxPolicy) -> Self {
+        let children = if policy.children_denied {
+            if cfg!(windows) {
+                Enforcement::Enforced
+            } else if cfg!(target_os = "linux") && prlimit_available() {
+                Enforcement::Degraded // bounded, not a fork primitive
+            } else {
+                Enforcement::Unenforced
+            }
+        } else {
+            // `declared` is the policy the sandbox already implements:
+            // children stay inside the namespace/job.
+            Enforcement::Enforced
+        };
+        let resources = if cfg!(windows) {
+            Enforcement::Enforced
+        } else {
+            // Linux RLIMIT_RSS is a historical no-op and macOS exposes
+            // no sandbox primitive: recording anything stronger would
+            // be a dishonest claim.
+            Enforcement::Unenforced
+        };
+        Self {
+            network: if policy.network_allowlist {
+                Enforcement::Degraded
+            } else {
+                Enforcement::Enforced
+            },
+            children,
+            resources,
+            children_denied: policy.children_denied,
+        }
+    }
+
+    /// The effective process bound for the evidence (Windows job cap 1
+    /// when denied; the Linux task bound when the wrapper exists).
+    #[allow(dead_code)] // consumed by the confinement evidence (plan S4)
+    pub(super) fn process_limit(&self) -> Option<u64> {
+        if !self.children_denied {
+            return None;
+        }
+        if cfg!(windows) {
+            Some(1)
+        } else if cfg!(target_os = "linux") && prlimit_available() {
+            Some(SANDBOX_TASK_BOUND)
+        } else {
+            None
+        }
+    }
+
+    /// The effective memory bound for the evidence (Windows only).
+    pub(super) fn memory_limit(&self) -> Option<u64> {
+        (cfg!(windows) && self.resources == Enforcement::Enforced)
+            .then_some(SANDBOX_MEMORY_LIMIT_BYTES)
+    }
+}
+
+/// Whether the Linux `prlimit` wrapper is available for the bounded
+/// children policy.
+#[cfg(target_os = "linux")]
+fn prlimit_available() -> bool {
+    ["/usr/bin/prlimit", "/bin/prlimit"]
+        .iter()
+        .any(|path| Path::new(path).is_file())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn prlimit_available() -> bool {
+    false
+}
+
 pub(super) struct Sandbox {
     owned: tempfile::TempDir,
     pub project: PathBuf,
     runtime: PathBuf,
     write_roots: Vec<PathBuf>,
+    /// The sandbox policy projected from the session budget.
+    pub(super) policy: SandboxPolicy,
+    /// The honest per-dimension enforcement record.
+    pub(super) report: ConfinementReport,
 }
 
 fn refusal(detail: &'static str) -> TargetFailure {
@@ -119,6 +283,7 @@ impl Sandbox {
         reads: &[String],
         writes: &[String],
         apply: bool,
+        policy: SandboxPolicy,
     ) -> Result<Self, TargetFailure> {
         let root = std::fs::canonicalize(root).map_err(|_| refusal("project-root"))?;
         #[cfg(windows)]
@@ -218,6 +383,8 @@ impl Sandbox {
             project,
             runtime,
             write_roots,
+            report: ConfinementReport::compute(policy),
+            policy,
         })
     }
 
@@ -371,10 +538,27 @@ impl Sandbox {
             command.program.to_string_lossy().into_owned(),
         ]);
         args.extend(command.args.clone());
-        let wrapper = transport::AdapterCommand {
+        let mut wrapper = transport::AdapterCommand {
             program: "/usr/bin/bwrap".into(),
             args,
         };
+        // Issue #89: a denied children policy cannot be enforced inside
+        // bwrap (no fork primitive), but the prlimit wrapper bounds the
+        // task count inside the namespace where it exists. The report
+        // records the bound (or its absence) honestly either way.
+        if self.policy.children_denied && prlimit_available() {
+            wrapper = transport::AdapterCommand {
+                program: "/usr/bin/prlimit".into(),
+                args: [
+                    format!("--nproc={SANDBOX_TASK_BOUND}"),
+                    "--".into(),
+                    wrapper.program.to_string_lossy().into_owned(),
+                ]
+                .into_iter()
+                .chain(wrapper.args)
+                .collect(),
+            };
+        }
         transport::run_private(&wrapper, request, limits, &self.project, cancel, env)
     }
 
@@ -491,7 +675,7 @@ mod tests {
     #[test]
     fn unix_confined_runtime_qualification() {
         let root = tempfile::tempdir().unwrap();
-        let sandbox = Sandbox::new(root.path(), &[], &[], false).unwrap();
+        let sandbox = Sandbox::new(root.path(), &[], &[], false, SandboxPolicy::strict()).unwrap();
         let command = transport::AdapterCommand {
             program: "node".into(),
             args: vec![
@@ -505,7 +689,9 @@ mod tests {
             max_stderr_bytes: 8_192,
             ..Default::default()
         };
-        let result = sandbox.run(&command, b"", &limits, false, None).unwrap();
+        let result = sandbox
+            .run(&command, b"", &limits, false, None, &[])
+            .unwrap();
         assert_eq!(
             result.exit_code,
             0,
@@ -516,7 +702,7 @@ mod tests {
 
         // Loading a copied module and reading the request exercise runtime
         // paths that the inline startup control above does not touch.
-        let sandbox = Sandbox::new(root.path(), &[], &[], false).unwrap();
+        let sandbox = Sandbox::new(root.path(), &[], &[], false, SandboxPolicy::strict()).unwrap();
         let command = transport::AdapterCommand {
             program: "node".into(),
             args: vec![Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -532,7 +718,7 @@ mod tests {
             ..limits
         };
         let result = sandbox
-            .run(&command, request, &limits, false, None)
+            .run(&command, request, &limits, false, None, &[])
             .unwrap();
         assert_eq!(
             result.exit_code,
@@ -547,7 +733,7 @@ mod tests {
         // preserve the real project. Empty mount ancestors are not outputs.
         std::fs::create_dir_all(root.path().join(".lekalo/ir")).unwrap();
         std::fs::write(root.path().join(".lekalo/ir/input.json"), b"owned input").unwrap();
-        let sandbox = Sandbox::new(root.path(), &[], &[], false).unwrap();
+        let sandbox = Sandbox::new(root.path(), &[], &[], false, SandboxPolicy::strict()).unwrap();
         let command = transport::AdapterCommand {
             program: "node".into(),
             args: vec![
@@ -562,7 +748,7 @@ mod tests {
             ],
         };
         let result = sandbox
-            .run(&command, request, &limits, false, None)
+            .run(&command, request, &limits, false, None, &[])
             .unwrap();
         assert_eq!(
             result.exit_code,
