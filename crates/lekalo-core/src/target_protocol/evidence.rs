@@ -23,6 +23,12 @@ pub struct ConfinementEvidence {
     pub described: ScopeEvidence,
     /// The scopes the budget check admitted for the exchange.
     pub effective: ScopeEvidence,
+    /// The write-plan versus actual-staged-changes audit, present only
+    /// for operations that declare writes (issue #89): the passing case
+    /// is an empty `outsideScopes` list; any path outside the effective
+    /// write scopes is refused before publication.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub writes: Option<WriteAuditEvidence>,
     /// The normalized platform token (`<os>-<arch>`), never a host
     /// path or hostname.
     pub platform: &'static str,
@@ -96,6 +102,21 @@ pub struct ScopeEvidence {
     pub write_scopes: Vec<String>,
 }
 
+/// The write-plan versus actual audit of one write-carrying exchange.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct WriteAuditEvidence {
+    /// The number of declared write entries in the verified plan.
+    pub declared: usize,
+    /// The logical paths actually changed in the staged sandbox view,
+    /// in canonical (sorted) order.
+    pub changed: Vec<String>,
+    /// Changed paths outside the effective write scopes. Always empty
+    /// on a completed exchange: any such path refuses the run before
+    /// publication.
+    #[serde(rename = "outsideScopes")]
+    pub outside_scopes: Vec<String>,
+}
+
 impl ConfinementEvidence {
     /// Build the evidence from the session budget, the described and
     /// effective scopes of this exchange, and the sandbox's honest
@@ -107,6 +128,7 @@ impl ConfinementEvidence {
         described_write: &[String],
         effective_read: &[String],
         effective_write: &[String],
+        writes: Option<WriteAuditEvidence>,
         report: ConfinementReport,
     ) -> Self {
         let network_mode = match budget.network() {
@@ -154,7 +176,26 @@ impl ConfinementEvidence {
             },
             described: scope_evidence(described_read, described_write),
             effective: scope_evidence(effective_read, effective_write),
+            writes,
             platform: platform_token(),
+        }
+    }
+}
+
+impl WriteAuditEvidence {
+    /// Build the audit from the declared plan size, the changed staged
+    /// paths, and the paths outside the effective write scopes. Lists
+    /// are sorted into canonical order; the passing case is an empty
+    /// `outsideScopes`.
+    pub fn new(declared: usize, changed: Vec<String>, outside_scopes: Vec<String>) -> Self {
+        let mut changed = changed;
+        changed.sort();
+        let mut outside_scopes = outside_scopes;
+        outside_scopes.sort();
+        Self {
+            declared,
+            changed,
+            outside_scopes,
         }
     }
 }
@@ -202,6 +243,7 @@ mod tests {
             &[],
             &["a/**".to_owned(), "b/**".to_owned()],
             &[],
+            None,
             report,
         );
         assert_eq!(
@@ -223,7 +265,7 @@ mod tests {
         let budget = SessionBudget::strict_implicit();
         let policy = super::super::confinement::SandboxPolicy::from_budget(&budget);
         let report = ConfinementReport::compute(policy);
-        let evidence = ConfinementEvidence::build(&budget, &[], &[], &[], &[], report);
+        let evidence = ConfinementEvidence::build(&budget, &[], &[], &[], &[], None, report);
         let bytes = serde_json::to_string(&evidence).expect("serializes");
         assert!(bytes.contains("\"readScopes\""), "camelCase wire: {bytes}");
         assert!(!bytes.contains('\\'), "no escapes, no host paths: {bytes}");

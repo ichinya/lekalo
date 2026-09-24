@@ -174,6 +174,10 @@ pub(super) struct Sandbox {
     pub project: PathBuf,
     runtime: PathBuf,
     write_roots: Vec<PathBuf>,
+    /// The effective write scopes this sandbox was built for; the
+    /// publication guard validates every published entry against them
+    /// (issue #89: a staged file outside the scopes cannot publish).
+    write_scopes: Vec<String>,
     /// The sandbox policy projected from the session budget.
     pub(super) policy: SandboxPolicy,
     /// The honest per-dimension enforcement record.
@@ -192,6 +196,17 @@ impl Sandbox {
         before: &plan::Snapshot,
     ) -> Result<(), TargetFailure> {
         use std::io::Write;
+        // Issue #89 publication guard: only paths inside the effective
+        // write scopes this sandbox was built for can ever publish. A
+        // staged file outside them refuses before any real-project I/O.
+        for entry in writes {
+            if !plan::covered_by(&entry.path, &self.write_scopes) {
+                return Err(TargetFailure::SecurityRefusal {
+                    check: "writes-outside-scopes",
+                    detail: "publication-guard",
+                });
+            }
+        }
         plan::validate_preconditions(writes, before)?;
         let staged = Fs::open(&self.project).map_err(|_| refusal("sandbox-view"))?;
         let real = Fs::open(root).map_err(|_| refusal("project-root"))?;
@@ -381,6 +396,7 @@ impl Sandbox {
             project,
             runtime,
             write_roots,
+            write_scopes: writes.to_vec(),
             report: ConfinementReport::compute(policy),
             policy,
         })
@@ -781,5 +797,70 @@ mod tests {
         };
         let result = client.describe(&command, root.path());
         assert!(result.is_ok(), "{result:?}");
+    }
+
+    // Issue #89 (plan S5): read-only modes never receive write authority
+    // — `apply` false builds no write roots at all.
+    #[test]
+    fn read_only_sandboxes_have_no_write_roots() {
+        let root = tempfile::tempdir().unwrap();
+        let sandbox = Sandbox::new(
+            root.path(),
+            &["a/**".into()],
+            &["b/**".into()],
+            false,
+            SandboxPolicy::strict(),
+        )
+        .unwrap();
+        assert!(sandbox.write_roots.is_empty(), "no write roots");
+        let sandbox = Sandbox::new(
+            root.path(),
+            &["a/**".into()],
+            &["b/**".into()],
+            true,
+            SandboxPolicy::strict(),
+        )
+        .unwrap();
+        assert!(!sandbox.write_roots.is_empty(), "apply builds write roots");
+        assert_eq!(sandbox.write_scopes, ["b/**"], "effective scopes stored");
+    }
+
+    // Issue #89 (plan S5): a staged file outside the effective write
+    // scopes cannot publish — the publication guard refuses before any
+    // real-project I/O.
+    #[cfg(unix)]
+    #[test]
+    fn a_staged_file_outside_the_write_scopes_cannot_publish() {
+        let root = tempfile::tempdir().unwrap();
+        let sandbox = Sandbox::new(
+            root.path(),
+            &[".lekalo/ir/**".into()],
+            &["out/**".into()],
+            true,
+            SandboxPolicy::strict(),
+        )
+        .unwrap();
+        // Simulate an impossible-in-confinement out-of-scope staged
+        // write (an adapter breaching its sandbox view).
+        let staged = sandbox.project.join("elsewhere");
+        std::fs::create_dir_all(&staged).unwrap();
+        std::fs::write(staged.join("escape.txt"), b"breach").unwrap();
+        let entries = [wire::WriteEntry {
+            path: "elsewhere/escape.txt".into(),
+            action: wire::WriteAction::Create,
+            sha256: Some(format!("sha256:{}", plan::sha256_hex(b"breach"))),
+        }];
+        let before = plan::Snapshot::new();
+        let error = sandbox
+            .publish(root.path(), &entries, &before)
+            .expect_err("publication guard");
+        assert!(
+            matches!(error, TargetFailure::SecurityRefusal { .. }),
+            "security refusal, got {error:?}"
+        );
+        assert!(
+            !root.path().join("elsewhere").exists(),
+            "the real project is untouched"
+        );
     }
 }

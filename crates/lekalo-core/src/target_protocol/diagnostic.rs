@@ -56,6 +56,7 @@ pub fn rule_for(failure: &TargetFailure) -> (&'static str, Status) {
         TargetFailure::PermissionEscalated { .. } => {
             ("adapter.permission-escalated", Status::Denied)
         }
+        TargetFailure::SecurityRefusal { .. } => ("adapter.security-failure", Status::Denied),
     }
 }
 
@@ -135,6 +136,11 @@ impl From<&TargetFailure> for DomainResult {
                 // The exceeded capability member, spelled on the closed
                 // capabilities surface (never scope or path contents).
                 data.insert("member".to_owned(), token_value(member));
+            }
+            TargetFailure::SecurityRefusal { check, detail } => {
+                data.insert("check".to_owned(), token_value(check));
+                data.insert("class".to_owned(), token_value("security"));
+                data.insert("detail".to_owned(), token_value(detail));
             }
         }
         let diagnostic = one(id, data);

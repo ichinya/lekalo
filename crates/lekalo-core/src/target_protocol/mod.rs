@@ -171,6 +171,15 @@ pub enum TargetFailure {
         /// The adapter identity the session is bound to.
         adapter: String,
     },
+    /// A confinement guarantee was violated or could not be honored
+    /// (issue #89): fail-closed refusal mapped onto the registered
+    /// `adapter.security-failure` rule.
+    SecurityRefusal {
+        /// The violated check (bounded token, e.g. `writes-outside-scopes`).
+        check: &'static str,
+        /// The bounded reason token (e.g. `publication-guard`).
+        detail: &'static str,
+    },
 }
 
 impl TargetFailure {
@@ -559,16 +568,26 @@ impl TargetClient {
         let writes = response.writes.clone().unwrap_or_default();
 
         let mut outcome_plan_id = None;
+        let mut write_audit = None;
+        let declared_writes = writes.len();
         if request.operation.declares_writes() {
             let after = plan::snapshot_all(&stage_fs).map_err(snapshot_rejection)?;
+            // Issue #89 write-plan versus actual audit: every staged
+            // change is compared against the effective write scopes;
+            // the passing case is an empty `outsideScopes` list.
+            let changed = plan::changed_paths(&stage_before, &after);
+            let outside_scopes: Vec<String> = changed
+                .iter()
+                .filter(|path| !plan::covered_by(path, &effective.write))
+                .cloned()
+                .collect();
             let is_planning = request.operation == Operation::PlanClean
                 || (request.operation == Operation::Generate && request.dry_run == Some(true));
             if is_planning {
-                if let Some(path) = plan::changed_paths(&stage_before, &after)
-                    .into_iter()
-                    .next()
-                {
-                    return Err(TargetFailure::DryRunMutation { path: Some(path) });
+                if let Some(path) = changed.first() {
+                    return Err(TargetFailure::DryRunMutation {
+                        path: Some(path.clone()),
+                    });
                 }
                 plan::validate_preconditions(&writes, &before)?;
                 if request.operation == Operation::PlanClean
@@ -609,6 +628,15 @@ impl TargetClient {
                     return Err(TargetFailure::plan_mismatch(None, "plan-drift"));
                 }
                 plan::verify_applied(&stage_fs, &writes, &stage_before, &after)?;
+                // Issue #89: a staged change outside the effective write
+                // scopes is a confinement violation — refuse before any
+                // publication, never silently drop it.
+                if !outside_scopes.is_empty() {
+                    return Err(TargetFailure::SecurityRefusal {
+                        check: "writes-outside-scopes",
+                        detail: "publication-guard",
+                    });
+                }
                 // Validate every response and staged byte before publishing.
                 // Re-check real inputs/output pre-state after the child exits.
                 if snapshot_scopes(&fs, &effective.read)? != inputs
@@ -622,6 +650,11 @@ impl TargetClient {
                 sandbox.publish(&root, &writes, &before)?;
                 outcome_plan_id = Some(binding.plan_id);
             }
+            write_audit = Some(evidence::WriteAuditEvidence::new(
+                declared_writes,
+                changed,
+                outside_scopes,
+            ));
         }
         Ok(CallOutcome {
             response,
@@ -632,6 +665,7 @@ impl TargetClient {
                 &capabilities.write_scopes,
                 &effective.read,
                 &effective.write,
+                write_audit,
                 sandbox.report(),
             ),
         })
