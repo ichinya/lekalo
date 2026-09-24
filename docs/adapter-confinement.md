@@ -83,6 +83,14 @@ on deadline/cancel/exit with whole-tree custody, request files at mode
 0600, `--preserve-symlinks` for node, and publication with per-file
 atomic persist plus rollback.
 
+The Windows memory bound is a fixed constant
+(`SANDBOX_MEMORY_LIMIT_BYTES`, 2 GiB) applied to the job object of
+every confined run — describe and scan included, not just generate. It
+is not budget-derived or configurable, so a memory-heavy adapter on a
+large project can fail against that documented ceiling even on a
+read-only operation; the evidence reports it as
+`resources.memoryLimit` with `resources.enforcement: enforced`.
+
 ## Write-plan vs actual audit
 
 For every operation that declares writes, core compares the declared
