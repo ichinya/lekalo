@@ -305,6 +305,7 @@ pub fn plan(
         &derived_base,
         &derived_candidate,
         profile,
+        base,
         candidate,
     )?;
     // Sequence ownership after the tables exist: the executable order
@@ -561,12 +562,16 @@ struct DependentKey {
 /// matter which side of the swap its rename block would run on: its
 /// rename block re-derives its keys around the unswapped key, and no
 /// sound emission order spans both re-derivations. A key removed from
-/// the candidate plans as a drop with no re-add; a dropped owner table
-/// carries its keys with the `DROP TABLE`.
+/// the candidate plans as a drop with no re-add. A dropped owner or
+/// dropped join keeps the "the DROP TABLE owns its keys" rule only
+/// where the DROP TABLE actually runs first — the ordering pass moves
+/// an unpaired `drop_table` behind the swap — so its live referencing
+/// key drops here, before the old primary key, and nothing re-adds it.
 #[allow(clippy::type_complexity)]
 fn dependent_keys(
     base: &DerivedProjection,
     candidate: &DerivedProjection,
+    base_attachment: &StorageProjectionAttachment,
     candidate_attachment: &StorageProjectionAttachment,
     base_table_name: &StorageName,
     candidate_table_name: &StorageName,
@@ -683,6 +688,46 @@ fn dependent_keys(
             });
         }
     }
+    // A dropped join table rides the same rule as a dropped owner: the
+    // join loop emits its DROP TABLE after the table work (and the
+    // ordering pass moves an unpaired drop_table behind the swap), so
+    // its live referencing keys come down here, before the old primary
+    // key — the take-down otherwise fails 2BP01 against the doomed
+    // join. Drop only: the table carries the rest with it.
+    for base_join in base.joins() {
+        if candidate
+            .joins()
+            .iter()
+            .any(|join| join.relation() == base_join.relation())
+        {
+            continue;
+        }
+        for index in [0usize, 1usize] {
+            let owner_side = index == 0;
+            let Some((ref_table, _ref_pk)) = super::postgres::ddl::referenced_join_target(
+                base_attachment,
+                candidate,
+                base_join,
+                owner_side,
+            ) else {
+                continue;
+            };
+            if ref_table != *candidate_table_name {
+                continue;
+            }
+            let column = &base_join.columns()[index];
+            let name = StorageName::parse(&format!("fk_{}_{}", base_join.table(), column.name()))
+                .map_err(|_| {
+                diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
+            })?;
+            dependents.push(DependentKey {
+                name,
+                owner: base_join.table().clone(),
+                exists: true,
+                add: None,
+            });
+        }
+    }
     // Keys the candidate removed: the drop rides this flow (before the
     // old primary key), never the FK pass behind it.
     for owner in base.tables() {
@@ -690,8 +735,24 @@ fn dependent_keys(
             if foreign_key.references_table() != base_table_name {
                 continue;
             }
+            let name =
+                StorageName::parse(&format!("fk_{}_{}", owner.table(), foreign_key.column()))
+                    .map_err(|_| {
+                        diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
+                    })?;
             let Some(candidate_table) = candidate.table(owner.entity()) else {
-                // The owner is dropped; the DROP TABLE owns its keys.
+                // The owner is dropped — but the DROP TABLE runs last
+                // (the ordering pass moves an unpaired drop_table
+                // behind the swap), so its live referencing key must
+                // come down here, before the old primary key, or the
+                // take-down fails 2BP01 against the doomed table. Drop
+                // only: the DROP TABLE carries the rest.
+                dependents.push(DependentKey {
+                    name,
+                    owner: owner.table().clone(),
+                    exists: true,
+                    add: None,
+                });
                 continue;
             };
             if candidate_table
@@ -715,11 +776,6 @@ fn dependent_keys(
                     None,
                 ));
             }
-            let name =
-                StorageName::parse(&format!("fk_{}_{}", owner.table(), foreign_key.column()))
-                    .map_err(|_| {
-                        diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
-                    })?;
             dependents.push(DependentKey {
                 name,
                 owner: owner.table().clone(),
@@ -750,6 +806,7 @@ fn plan_tables(
     base: &DerivedProjection,
     candidate: &DerivedProjection,
     profile: &StorageEngineAttachment,
+    base_attachment: &StorageProjectionAttachment,
     candidate_attachment: &StorageProjectionAttachment,
 ) -> Result<TablePlan, DiagnosticSet> {
     let mut table_ids = std::collections::BTreeMap::new();
@@ -1077,6 +1134,7 @@ fn plan_tables(
                 let mut dependents = dependent_keys(
                     base,
                     candidate,
+                    base_attachment,
                     candidate_attachment,
                     base_table.table(),
                     table.table(),
@@ -1357,6 +1415,7 @@ fn plan_tables(
             let dependents = dependent_keys(
                 base,
                 candidate,
+                base_attachment,
                 candidate_attachment,
                 table.table(),
                 table.table(),

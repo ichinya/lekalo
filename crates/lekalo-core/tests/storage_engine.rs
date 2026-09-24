@@ -2424,6 +2424,146 @@ fn a_removed_referencing_key_on_a_renamed_owner_refuses_the_swap() {
 }
 
 #[test]
+fn a_dropped_owner_loses_its_live_key_before_the_pk_drop() {
+    // A dropped dependent owner is not exempt from the swap flow. The
+    // ordering pass moves an unpaired DROP TABLE behind the swap, so
+    // "the DROP TABLE owns its keys" holds only if the key is already
+    // gone: the doomed table's live referencing key drops explicitly
+    // before the old primary key (2BP01 otherwise), nothing re-adds
+    // it, and the DROP TABLE follows the swap.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        for table in projection
+            .get_mut("tables")
+            .and_then(|tables| tables.as_array_mut())
+            .expect("tables")
+        {
+            if table.get("table").and_then(serde_json::Value::as_str) == Some("task") {
+                table["primaryKey"] = serde_json::json!(["tenant_id"]);
+            }
+        }
+    }
+    candidate_value
+        .get_mut("entities")
+        .and_then(|entities| entities.as_array_mut())
+        .expect("entities")
+        .retain(|entity| {
+            entity.get("entityKey").and_then(serde_json::Value::as_str)
+                != Some("task_external_link")
+        });
+    candidate_value
+        .get_mut("relations")
+        .and_then(|relations| relations.as_array_mut())
+        .expect("relations")
+        .retain(|relation| {
+            !matches!(
+                relation
+                    .get("relationId")
+                    .and_then(serde_json::Value::as_str),
+                Some("planner.relation.task_external_links")
+                    | Some("planner.relation.link_provider")
+            )
+        });
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        projection
+            .get_mut("tables")
+            .and_then(|tables| tables.as_array_mut())
+            .expect("tables")
+            .retain(|table| {
+                table.get("entity").and_then(serde_json::Value::as_str)
+                    != Some("task_external_link")
+            });
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    let pk_drop = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "drop_constraint"
+                && step.statement() == "ALTER TABLE \"task\" DROP CONSTRAINT \"pk_task\";"
+        })
+        .expect("the old primary key drops");
+    let key_drop = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "drop_constraint"
+                && step
+                    .statement()
+                    .contains("DROP CONSTRAINT \"fk_task_external_link_task_id\"")
+        })
+        .expect("the doomed table's live key drops explicitly");
+    assert!(
+        key_drop.id() < pk_drop.id(),
+        "the live key comes down before the old primary key"
+    );
+    assert!(
+        pk_drop.requires().contains(&key_drop.id()),
+        "the pk drop waits for the doomed table's key"
+    );
+    assert!(
+        !plan.steps().iter().any(|step| {
+            step.kind() == "add_foreign_key"
+                && step
+                    .statement()
+                    .contains("ADD CONSTRAINT \"fk_task_external_link_task_id\"")
+        }),
+        "a doomed table's key is never re-added"
+    );
+    let drop_table = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "drop_table" && step.statement() == "DROP TABLE \"task_external_link\";"
+        })
+        .expect("the doomed table still drops");
+    assert!(
+        drop_table.id() > pk_drop.id(),
+        "the DROP TABLE follows the swap"
+    );
+    for step in plan.steps() {
+        for dep in step.requires() {
+            assert!(*dep < step.id(), "no forward edges");
+        }
+    }
+    assert!(plan.gated(), "the swap stays destructive and gated");
+}
+
+#[test]
 fn a_type_change_without_an_assignment_cast_refuses() {
     // A text-to-integer change cannot execute as a bare ALTER COLUMN
     // TYPE: the planner refuses with the registered rule instead of
