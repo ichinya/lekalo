@@ -2303,6 +2303,126 @@ fn a_pure_rename_rederives_its_primary_key_name() {
     }
 }
 
+/// One candidate attachment whose postgres-projected `task` table is
+/// renamed to `task_table` and swaps its primary key to the tenant
+/// column, while `task_detail` renames to `detail_table`; with
+/// `drop_detail_fk` the owner's referencing relation is removed too.
+/// The candidate-name sort order of `task_table` versus `detail_table`
+/// decides whether the owner's rename block would plan before or after
+/// the swapped table's — a distinction the refusal net must not make.
+fn candidate_with_task_pk_swap_and_detail_rename(
+    task_table: &str,
+    detail_table: &str,
+    drop_detail_fk: bool,
+) -> StorageProjectionAttachment {
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        for table in projection
+            .get_mut("tables")
+            .and_then(|tables| tables.as_array_mut())
+            .expect("tables")
+        {
+            match table.get("table").and_then(serde_json::Value::as_str) {
+                Some("task") => {
+                    table["table"] = serde_json::Value::String(task_table.to_owned());
+                    table["primaryKey"] = serde_json::json!(["tenant_id"]);
+                }
+                Some("task_detail") => {
+                    table["table"] = serde_json::Value::String(detail_table.to_owned());
+                }
+                _ => {}
+            }
+        }
+    }
+    if drop_detail_fk {
+        candidate_value
+            .get_mut("relations")
+            .and_then(|relations| relations.as_array_mut())
+            .expect("relations")
+            .retain(|relation| {
+                relation
+                    .get("relationId")
+                    .and_then(serde_json::Value::as_str)
+                    != Some("planner.relation.task_detail_record")
+            });
+    }
+    StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate")
+}
+
+#[test]
+fn a_renamed_owner_refuses_the_swap_regardless_of_processing_order() {
+    // The dependent-key refusal net must be total: the rename map is
+    // precomputed before any table is planned, so a renamed owner
+    // refuses the referenced-table swap identically whether its rename
+    // block would run before or after the swapped table's. Before the
+    // fix the map filled up in candidate-name order, so the identical
+    // input refused under one sorting (`detail` < `todo`) and planned a
+    // corrupt order under the other (`aaa` < `zzz`: a drop against a
+    // not-yet-renamed table, then a double constraint add).
+    for (task_table, detail_table) in [("todo", "detail"), ("aaa", "zzz")] {
+        let candidate =
+            candidate_with_task_pk_swap_and_detail_rename(task_table, detail_table, false);
+        let error = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect_err("a renamed dependent owner refuses the swap in both orderings");
+        assert_eq!(
+            error.reason_ids().first().copied(),
+            Some("storage-engine.render-unsupported")
+        );
+        let rendered = serde_json::to_string(&error).expect("json");
+        assert!(
+            rendered.contains("referenced-key-swap-rename"),
+            "the refusal is the renamed-dependent net: {rendered}"
+        );
+    }
+}
+
+#[test]
+fn a_removed_referencing_key_on_a_renamed_owner_refuses_the_swap() {
+    // The mirror of the surviving-key case: a base foreign key the
+    // candidate removes rides the swap flow as a drop with no re-add —
+    // and on a renamed owner that drop would name the pre-rename table,
+    // correct only while the owner's rename block happens to sort
+    // after the swap. The total rename map refuses both orderings
+    // instead of refusing one and double-dropping the other.
+    for (task_table, detail_table) in [("todo", "detail"), ("aaa", "zzz")] {
+        let candidate =
+            candidate_with_task_pk_swap_and_detail_rename(task_table, detail_table, true);
+        let error = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect_err("a removed referencing key on a renamed owner refuses");
+        assert_eq!(
+            error.reason_ids().first().copied(),
+            Some("storage-engine.render-unsupported")
+        );
+        let rendered = serde_json::to_string(&error).expect("json");
+        assert!(
+            rendered.contains("referenced-key-swap-rename"),
+            "the refusal is the renamed-dependent net: {rendered}"
+        );
+    }
+}
+
 #[test]
 fn a_type_change_without_an_assignment_cast_refuses() {
     // A text-to-integer change cannot execute as a bare ALTER COLUMN

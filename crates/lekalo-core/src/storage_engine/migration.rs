@@ -553,14 +553,16 @@ struct DependentKey {
 }
 
 /// The foreign keys referencing `table`'s primary key across the whole
-/// projection — entity tables and stable materialized joins alike,/// keyed to the candidate names the swap flow emits under. A renamed
-/// owner that already re-derived its keys refuses: its rename block
-/// re-added them around the unswapped key, and no sound emission
-/// order spans both re-derivations. A renamed owner not yet processed
-/// is skipped — its rename block re-derives the key after this swap,
-/// against the fresh key. A key removed from the candidate plans as a
-/// drop with no re-add; a dropped owner table carries its keys with
-/// the `DROP TABLE`.
+/// projection — entity tables and stable materialized joins alike,
+/// keyed to the candidate names the swap flow emits under. The rename
+/// map is total before any dependent-key decision (it is precomputed
+/// from the candidate tables in a first pass, never populated by the
+/// loop that consults it), so a renamed owner refuses identically no
+/// matter which side of the swap its rename block would run on: its
+/// rename block re-derives its keys around the unswapped key, and no
+/// sound emission order spans both re-derivations. A key removed from
+/// the candidate plans as a drop with no re-add; a dropped owner table
+/// carries its keys with the `DROP TABLE`.
 #[allow(clippy::type_complexity)]
 fn dependent_keys(
     base: &DerivedProjection,
@@ -688,11 +690,6 @@ fn dependent_keys(
             if foreign_key.references_table() != base_table_name {
                 continue;
             }
-            if renamed_tables.contains_key(owner.entity().as_str()) {
-                // A renamed owner dropped its old-name keys in its own
-                // rename block.
-                continue;
-            }
             let Some(candidate_table) = candidate.table(owner.entity()) else {
                 // The owner is dropped; the DROP TABLE owns its keys.
                 continue;
@@ -703,6 +700,20 @@ fn dependent_keys(
                 .any(|candidate_key| candidate_key.column() == foreign_key.column())
             {
                 continue;
+            }
+            if renamed_tables.contains_key(owner.entity().as_str()) {
+                // A removed referencing key on a renamed owner refuses
+                // exactly as a surviving one does. The map is total, so
+                // the net cannot depend on which table the loop visited
+                // first: letting the key ride this flow drops it under
+                // the pre-rename name — correct only while the owner's
+                // own rename block happens to run later, never when it
+                // ran already — and no sound order spans both flows.
+                return Err(diagnostic::rule_invalid(
+                    RENDER_UNSUPPORTED,
+                    "referenced-key-swap-rename",
+                    None,
+                ));
             }
             let name =
                 StorageName::parse(&format!("fk_{}_{}", owner.table(), foreign_key.column()))
@@ -742,12 +753,30 @@ fn plan_tables(
     candidate_attachment: &StorageProjectionAttachment,
 ) -> Result<TablePlan, DiagnosticSet> {
     let mut table_ids = std::collections::BTreeMap::new();
-    // Entity tables the rename block re-derived constraints for, keyed
-    // by entity: the FK pass must skip their foreign keys (already
-    // added under the fresh names, including self-references) or it
-    // would double-emit the same constraint.
-    let mut renamed_tables: std::collections::BTreeMap<String, StorageName> =
-        std::collections::BTreeMap::new();
+    // Entity tables that rename in this plan, keyed by entity with the
+    // pre-rename table name: the FK and index passes skip their keys
+    // (the rename block re-derived them under the fresh names), and
+    // the swap flow's dependent-key net reads it. The map is computed
+    // in full in this first pass, before any table is planned — a
+    // dependent-key decision must never depend on which renamed table
+    // the planning loop has already visited (the candidate tables
+    // iterate in byte-sorted candidate-name order, so an incrementally
+    // populated map would refuse or corrupt identical inputs by
+    // alphabetical accident).
+    let renamed_tables: std::collections::BTreeMap<String, StorageName> = candidate
+        .tables()
+        .iter()
+        .filter_map(|table| {
+            let base_table = base.table(table.entity())?;
+            if base_table.table() == table.table() {
+                return None;
+            }
+            Some((
+                table.entity().as_str().to_owned(),
+                base_table.table().to_owned(),
+            ))
+        })
+        .collect();
     // Tables whose primary key this plan swaps, under every name the
     // plan knows them by (base and candidate): the FK pass skips their
     // referencing keys, which the swap flows drop and re-add around
@@ -1307,15 +1336,6 @@ fn plan_tables(
                     None,
                 );
             }
-            // The rename re-derivation above covers this table's
-            // foreign keys entirely — including self-references, whose
-            // referenced target changed with the table's name — so the
-            // FK pass must not re-diff them and double-emit the same
-            // constraint. The base name is remembered for the pass.
-            renamed_tables.insert(
-                table.entity().as_str().to_owned(),
-                base_table.table().to_owned(),
-            );
         }
         table_ids
             .entry(table.table().as_str().to_owned())
