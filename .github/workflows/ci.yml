@@ -94,6 +94,7 @@ jobs:
           node scripts/test-privacy-review-regressions.mjs
           node scripts/test-privacy-authorizing-evidence.mjs
           node scripts/test-privacy-authorization-subject.mjs
+          node scripts/test-fixture-provenance.mjs
           node scripts/check-structure.mjs
           node scripts/test-structure-contracts.mjs
           node scripts/check-model.mjs
@@ -157,6 +158,10 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
+      - name: Run the privacy evaluator parity gate (issue #119)
+        run: node scripts/test-privacy-evaluator-parity.mjs
+      - name: Run the privacy runtime CLI gate (issue #119)
+        run: node scripts/test-privacy-runtime-cli.mjs
       - name: Run the classification CLI e2e gate (issue #87)
         run: node scripts/test-classification-cli.mjs
       - name: Load the CI-only AppArmor launcher prerequisite
