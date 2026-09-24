@@ -232,11 +232,29 @@ fn an_escape_write_never_lands_outside_the_scopes() {
     assert_eq!(audit.outside_scopes, Vec::<String>::new());
 }
 
+/// Removes this test's process-global variables on scope exit — also
+/// on a failed assertion, so a panic cannot leak them into sibling
+/// tests (issue #89 fix round 2, C-F15).
+struct EnvGuard;
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        std::env::remove_var("LEKALO_HOST_ONLY_VAR");
+        std::env::remove_var("LEKALO_GRANTED_VAR");
+        std::env::remove_var("LEKALO_SECRET_PROBE");
+    }
+}
+
 /// S6 #2: the child sees exactly the granted variables — a host-only
 /// variable never crosses and a secret handle resolves to its
 /// controlled name.
+///
+/// Parallel-safe without a serial harness mode (the stock test harness
+/// offers none): the three names are unique to this test — no other
+/// test grants or reads them — and the guard removes them on scope
+/// exit, so siblings never inherit them.
 #[test]
 fn environment_disclosure_is_bounded_to_the_budget() {
+    let _env = EnvGuard;
     std::env::set_var("LEKALO_HOST_ONLY_VAR", "host-only-value");
     std::env::set_var("LEKALO_GRANTED_VAR", "granted-value");
     std::env::set_var("LEKALO_SECRET_PROBE", "probe-value");

@@ -117,7 +117,8 @@ Every completed exchange carries a deterministic `confinement` member.
 It is persisted on the observed scan receipt only: the
 generate/verify/clean receipts do not embed it (deferring that member
 keeps the receipt contract additive), so the durable per-run audit
-record exists for scans. The receipt embeds it verbatim:
+record exists for scans. The observed scan receipt embeds it
+verbatim:
 
 ```json
 {
