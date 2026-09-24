@@ -306,6 +306,14 @@ enum Commands {
         #[command(subcommand)]
         command: DataflowCommands,
     },
+    /// The privacy family (issue #119): the deterministic, custody-
+    /// verified export-decision evaluator over the frozen #120 policy.
+    /// The core owns every decision; this binary only reads the
+    /// decision file, renders, and maps exits.
+    Privacy {
+        #[command(subcommand)]
+        command: PrivacyCommands,
+    },
     /// Check generated-artifact ownership and drift, or plan and apply a
     /// confirmed clean of orphaned generated files.
     Generate {
@@ -2119,6 +2127,11 @@ fn runtime() -> u8 {
             ),
             Commands::Module { command } => run_module(*command),
             Commands::Observe { command } => run_observe(*command),
+            Commands::Privacy { command } => {
+                return match command {
+                    PrivacyCommands::Evaluate { decision } => run_privacy_evaluate(&decision),
+                };
+            }
             Commands::Adapter { command } => match run_adapter(*command) {
                 AdapterRun::Envelope(result) => result,
                 AdapterRun::Document { document, result } => {
@@ -9382,6 +9395,22 @@ enum ClassificationCommands {
     },
 }
 
+/// The `privacy` subcommands (issue #119).
+#[derive(Debug, Subcommand)]
+enum PrivacyCommands {
+    /// Evaluate one export-decision input (exact JSON bytes) against
+    /// the custody-verified frozen #120 policy. Prints the closed
+    /// `ExportDecisionOutput` and exits 0 (allow), 3 (deny or
+    /// transform-required), or 1 (malformed input or custody
+    /// failure). Startup, parse, and custody failures print the
+    /// separate closed CLI error object on stderr.
+    Evaluate {
+        /// The decision input document path.
+        #[arg(long, value_name = "FILE")]
+        decision: String,
+    },
+}
+
 /// The `dataflow` subcommands (issue #87).
 #[derive(Debug, Subcommand)]
 enum DataflowCommands {
@@ -9708,6 +9737,63 @@ fn classification_inspect_payload(
 /// Run one `dataflow` subcommand (issue #87): derive the read-only
 /// report. The core owns every decision; this binary reads the two
 /// documents, renders, and maps exits.
+/// The privacy evaluator protocol (issue #119, plan S3): the exact
+/// exit contract of the reference evaluator - 0 allow, 3 deny or
+/// transform-required, 1 malformed input or custody failure - with
+/// the closed `ExportDecisionOutput` on stdout and the closed
+/// `{status:"invalid",reasonCodes:[...]}` startup object on stderr.
+/// Never a secret, value, or payload crosses this surface: the input
+/// is metadata-only and the output is the closed decision shape.
+fn run_privacy_evaluate(path: &str) -> u8 {
+    let context = match lekalo_core::privacy::TrustedContext::embedded() {
+        Err(error) => {
+            let _ = write_stderr(&cli_invalid_json(error.code()));
+            return OUTPUT_FAILURE;
+        }
+        Ok(context) => context,
+    };
+    let bytes = match std::fs::read(path) {
+        Err(_) => {
+            let _ = write_stderr(&cli_invalid_json(
+                "custody.required-file-missing",
+            ));
+            return OUTPUT_FAILURE;
+        }
+        Ok(bytes) => bytes,
+    };
+    let input: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Err(error) => {
+            let _ = write_stderr(&cli_invalid_json(&format!(
+                "custody.decision.json: {error}"
+            )));
+            return OUTPUT_FAILURE;
+        }
+        Ok(input) => input,
+    };
+    let evaluated = lekalo_core::privacy::evaluate::evaluate_decision(&input, context);
+    let rendered = serde_json::to_string_pretty(&evaluated.output).unwrap_or_default();
+    let write_ok = write_stdout(&rendered);
+    let exit = if evaluated.malformed {
+        OUTPUT_FAILURE
+    } else {
+        evaluated.output.exit_code()
+    };
+    if write_ok {
+        exit
+    } else {
+        OUTPUT_FAILURE
+    }
+}
+
+/// The closed CLI startup-error object (never an `ExportDecisionOutput`).
+fn cli_invalid_json(reason: &str) -> String {
+    serde_json::to_string_pretty(&serde_json::json!({
+        "status": "invalid",
+        "reasonCodes": [reason],
+    }))
+    .unwrap_or_default()
+}
+
 fn run_dataflow(command: DataflowCommands) -> DomainResult {
     match command {
         DataflowCommands::Report {

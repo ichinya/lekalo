@@ -225,6 +225,16 @@ impl ExportDecisionOutput {
     pub const fn source_transfer_allowed(&self) -> bool {
         self.source_transfer_allowed
     }
+
+    /// The reference CLI exit contract: 0 for allow, 3 for deny and
+    /// transform-required (the malformed exit-1 protocol is selected
+    /// by the evaluation flag, not by the output).
+    pub const fn exit_code(&self) -> u8 {
+        match self.decision {
+            ExportDecision::Allow => 0,
+            ExportDecision::Deny | ExportDecision::TransformRequired => 3,
+        }
+    }
 }
 
 impl serde::Serialize for ExportDecision {
