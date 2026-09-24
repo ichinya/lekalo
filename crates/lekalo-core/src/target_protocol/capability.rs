@@ -14,7 +14,9 @@ use serde::Serialize;
 /// The identity of the embedded capability definition registry
 /// (`dev.lekalo.target-capabilities@0.4.0`). The 0.4.0 generation
 /// adds `generate.transport-http` and `verify.transport-http`
-/// (issue #70).
+/// (issue #70), `generate.storage-ddl` and `scan.storage-schema`
+/// (issue #69), and `scan.schema`/`verify.schema-projection`
+/// (issue #117).
 pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.4.0";
 
 /// One versioned capability definition.
@@ -39,6 +41,12 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         definition_version: "0.3.1",
         domain: "generate",
         semantics: "Emits an OpenAPI document from the compiled project IR. `full` covers every declared operation and type; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "generate.storage-ddl",
+        definition_version: "0.4.0",
+        domain: "generate",
+        semantics: "Emits-or-applies the core-rendered deterministic storage DDL and migration plan documents under the `generate` operation. `full` applies every core-proposed, digest-addressed document the adapter accepted (the plan's planId stays the apply authority); `partial` covers a declared subset; `unsupported` never applies; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
         id: "generate.transport-http",
@@ -69,6 +77,12 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         definition_version: "0.4.0",
         domain: "scan",
         semantics: "Produces one storage-introspection evidence document over one explicitly configured test schema through read-only information-schema queries (issue #117). `full` covers every declared table, column, index, and foreign key plus the exact engine identity echo; `partial` covers a declared subset; `unsupported` never introspects; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "scan.storage-schema",
+        definition_version: "0.4.0",
+        domain: "scan",
+        semantics: "Observes the declared schema scopes through the `scan` operation and produces one checked-mode storage-observation evidence document. `full` reads every declared scope read-only; `partial` reads a declared subset; `unsupported` never observes; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
         id: "scan.symbols",
@@ -119,11 +133,13 @@ mod tests {
             ids,
             vec![
                 "generate.openapi",
+                "generate.storage-ddl",
                 "generate.transport-http",
                 "generate.ui",
                 "generate.zod",
                 "plan.native-gates",
                 "scan.schema",
+                "scan.storage-schema",
                 "scan.symbols",
                 "verify.schema-projection",
                 "verify.scenarios",

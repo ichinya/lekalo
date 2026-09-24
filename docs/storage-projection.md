@@ -192,6 +192,27 @@ class. Because layers are separate, a domain rename is provably not a
 table rename: the rebind produces the domain path and, with an
 unchanged entity key, no storage path at all.
 
+## The 0.4.0 members
+
+The additive 0.4.0 generation (issue #69) carries the facts every
+namespace and the engine layer need: the closed `default`
+vocabulary (typed literal, `now`, `uuid_generate`, owned
+`sequence` — no free expressions), the `enum` and `array`
+domain types (bounded sorted member list; exactly one non-nested
+scalar element with an optional cardinality bound), the
+`index.where` partial-predicate conjunction, and named table CHECK
+constraints over the same closed column-predicate grammar. The diff
+classifies the new paths honestly: a default change is a policy
+change carrying the backfill risk, an enum member removal is breaking
+and destructive, and predicate or CHECK changes are storage policy
+changes. The published derivation renders enums through a bounded
+varchar (postgres `varchar(64)`, Laravel `string(64)`), arrays
+natively on PostgreSQL and as JSON in Laravel, refuses the Laravel
+namespace's partial-index and CHECK surface explicitly
+(`mapping-unsupported`), and carries the declared default onto the
+derived column. The PostgreSQL profile (#69) consumes these members;
+see [docs/storage-engine.md](storage-engine.md).
+
 ## Boundaries
 
 No runtime storage, adapter generation, SQL emission, transaction

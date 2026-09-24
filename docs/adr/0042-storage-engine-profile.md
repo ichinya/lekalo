@@ -9,8 +9,8 @@ both `lekalo` packages in `Cargo.lock` via `cargo update -w`). The two
 new contract families are independent attachments by design: the
 storage engine profile (`lekalo/storage-engine-profile/v0.4.0`, identity
 `dev.lekalo.storage-engine-profile@0.4.0`) and the storage
-introspection evidence (`lekalo/storage-introspection/v0.4.0`, identity
-`dev.lekalo.storage-introspection@0.4.0`). The storage-projection
+introspection evidence (`lekalo/storage-observation/v0.4.0`, identity
+`dev.lekalo.storage-observation@0.4.0`). The storage-projection
 family re-versions to 0.4.0 in the same step (its wire grammar grows
 the `mysql`/`mariadb` namespaces, the index kind/prefix/descending
 members, and the explicit charset/collation members). The diagnostic

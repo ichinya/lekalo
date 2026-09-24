@@ -16,6 +16,7 @@
 //! the typed error set, never a guessed classification. Paths are
 //! deterministic and byte-sorted.
 
+use super::entity::DomainType;
 use super::projection::{DataRisk, Index, IndexKind, Projection, Table};
 use super::{diagnostic, StorageProjectionAttachment};
 use crate::diagnostics::DiagnosticSet;
@@ -299,7 +300,19 @@ fn compare_fields(
             } else {
                 DiffClass::Breaking
             };
-            push(paths, path.clone(), DiffLayer::Domain, class, None);
+            // An enum member removal rewrites or drops stored values:
+            // it is breaking and carries the destructive data risk
+            // explicitly, never silently.
+            let enum_narrowed = matches!(
+                (field.field_type(), other.field_type()),
+                (DomainType::Enum { .. }, DomainType::Enum { .. })
+            ) && !field.field_type().widens(other.field_type());
+            let risk = if enum_narrowed {
+                Some(DataRisk::Destructive)
+            } else {
+                None
+            };
+            push(paths, path.clone(), DiffLayer::Domain, class, risk);
         }
         if field.required() != other.required() {
             push(
@@ -308,6 +321,18 @@ fn compare_fields(
                 DiffLayer::Domain,
                 DiffClass::Breaking,
                 None,
+            );
+        }
+        if field.default() != other.default() {
+            // A default change is an explicit owner decision that
+            // moves the backfill obligation, so it carries the risk
+            // visibly.
+            push(
+                paths,
+                format!("{prefix}/fields/{name}/default"),
+                DiffLayer::Domain,
+                DiffClass::PolicyChange,
+                Some(DataRisk::BackfillRequired),
             );
         }
         compare_visibility(paths, &path, field.visibility(), other.visibility());
@@ -742,10 +767,11 @@ fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<
             continue;
         }
         // A uniqueness narrowing drops a declared uniqueness guarantee;
-        // that is breaking. Kind, prefix lengths, and descending flags
-        // rewrite the physical key or its ordering: storage-layer
-        // policy with a rewrite obligation (kind/prefix), or a pure
-        // re-index for the order flags alone.
+        // that is breaking. Kind, prefix lengths, a partial predicate,
+        // and descending flags rewrite the physical key, its coverage,
+        // or its ordering: storage-layer policy with a rewrite
+        // obligation (kind/prefix/where), or a pure re-index for the
+        // order flags alone.
         if index.unique() && !other.unique() {
             push(
                 paths,
@@ -754,7 +780,10 @@ fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<
                 DiffClass::Breaking,
                 Some(DataRisk::Destructive),
             );
-        } else if index.kind() != other.kind() || index.prefix_lengths() != other.prefix_lengths() {
+        } else if index.kind() != other.kind()
+            || index.prefix_lengths() != other.prefix_lengths()
+            || index.where_() != other.where_()
+        {
             push(
                 paths,
                 format!("{prefix}/indexes/{}", index_path_key(index)),
@@ -773,11 +802,11 @@ fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<
         }
     }
     if base.indexes() != candidate.indexes() {
-        // A removed index that carried a guarantee — uniqueness, or a
-        // non-default physical kind — is the same semantic loss as its
-        // member-level flip: classified breaking + destructive at its
-        // own path, never hidden inside the aggregate policy path
-        // (round-4 review F-4).
+        // A removed index that carried a guarantee — uniqueness, a
+        // non-default physical kind, or a partial predicate — is the
+        // same semantic loss as its member-level flip: classified
+        // breaking + destructive at its own path, never hidden inside
+        // the aggregate policy path (round-4 review F-4).
         for removed in base.indexes() {
             let still_present = candidate
                 .indexes()
@@ -786,7 +815,8 @@ fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<
             if still_present {
                 continue;
             }
-            if removed.unique() || removed.kind() != IndexKind::Btree {
+            if removed.unique() || removed.kind() != IndexKind::Btree || removed.where_().is_some()
+            {
                 push(
                     paths,
                     format!("{prefix}/indexes/{}", index_path_key(removed)),
@@ -801,7 +831,13 @@ fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<
                 .indexes()
                 .iter()
                 .all(|candidate| base.indexes().contains(candidate));
-        let class = if pure_addition {
+        let class = if pure_addition
+            && base.indexes().iter().all(|index| index.where_().is_none())
+            && candidate
+                .indexes()
+                .iter()
+                .all(|index| index.where_().is_none())
+        {
             DiffClass::NonBreaking
         } else {
             DiffClass::PolicyChange
@@ -811,6 +847,17 @@ fn compare_table(base: &Table, candidate: &Table, prefix: &str, paths: &mut Vec<
             format!("{prefix}/indexes"),
             DiffLayer::Storage,
             class,
+            None,
+        );
+    }
+    // CHECK constraints: one aggregate path; changes are storage
+    // policy decisions over declared columns.
+    if base.checks() != candidate.checks() {
+        push(
+            paths,
+            format!("{prefix}/checks"),
+            DiffLayer::Storage,
+            DiffClass::PolicyChange,
             None,
         );
     }

@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/storage-migration-plan.schema.v0.4.0.json",
+  "title": "Lekalo Storage Migration Plan",
+  "description": "Closed independent contract for the immutable deterministic storage migration plan (issue #69). Core derives the plan from the semantic diff of two same-project storage-projection attachments under one engine profile: every step carries its ordinal, its deterministic always-quoted SQL statement, its closed data risk (none, backfill_required, destructive - the storage-projection DataRisk spelling), its declared dependencies, and its explain hook point. A plan containing destructive steps is gated: its status stays blocked, with the exact planId required, until a caller names the digest - the same custody pattern as update --apply and generate --clean --confirm. Core proposes and never executes; apply is adapter-owned under the declared capabilities, and the plan document never carries credentials, hosts, URLs, users, timestamps, or provider output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "engine",
+    "engineVersion",
+    "projectId",
+    "baseDigest",
+    "candidateDigest",
+    "diffDigest",
+    "planId",
+    "gated",
+    "status",
+    "steps"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/storage-migration-plan/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.storage-migration-plan@0.4.0"
+    },
+    "engine": {
+      "const": "postgres"
+    },
+    "engineVersion": {
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "baseDigest": {
+      "description": "The canonical digest of the base storage-projection attachment.",
+      "$ref": "#/$defs/sha256"
+    },
+    "candidateDigest": {
+      "description": "The canonical digest of the candidate storage-projection attachment.",
+      "$ref": "#/$defs/sha256"
+    },
+    "diffDigest": {
+      "description": "The digest binding this plan to the exact semantic diff it was derived from.",
+      "$ref": "#/$defs/sha256"
+    },
+    "planId": {
+      "description": "The canonical digest of this plan itself: the exact name a caller must state to confirm a gated plan.",
+      "$ref": "#/$defs/sha256"
+    },
+    "introspectionDigest": {
+      "description": "Optional digest of the checked-mode introspection evidence the plan was conditioned on; a drifted observed schema makes a bound plan stale evidence, never a silent apply.",
+      "$ref": "#/$defs/sha256"
+    },
+    "gated": {
+      "description": "True when at least one step is destructive.",
+      "type": "boolean"
+    },
+    "status": {
+      "description": "The plan custody status: ready when nothing destructive exists, blocked while a gated plan awaits its exact planId, confirmed once the caller named it.",
+      "enum": [
+        "ready",
+        "blocked",
+        "confirmed"
+      ]
+    },
+    "steps": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "risk": {
+      "description": "The closed data risk of one step, spelled exactly as the storage-projection DataRisk.",
+      "enum": [
+        "none",
+        "backfill_required",
+        "destructive"
+      ]
+    },
+    "explainHook": {
+      "enum": [
+        "none",
+        "before",
+        "after"
+      ]
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "statement",
+        "risk"
+      ],
+      "properties": {
+        "id": {
+          "description": "The 1-based ordinal of this step in the dependency order.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "kind": {
+          "description": "The closed step-kind vocabulary of v1.",
+          "enum": [
+            "create_table",
+            "drop_table",
+            "rename_table",
+            "add_column",
+            "drop_column",
+            "alter_column_type",
+            "set_column_null",
+            "set_column_default",
+            "add_primary_key",
+            "rename_constraint",
+            "drop_constraint",
+            "add_unique",
+            "add_foreign_key",
+            "add_check",
+            "drop_check",
+            "add_index",
+            "drop_index",
+            "create_enum_type",
+            "alter_enum_type",
+            "enable_rls",
+            "disable_rls",
+            "create_policy",
+            "drop_policy",
+            "create_sequence",
+            "alter_sequence",
+            "rename_sequence",
+            "drop_sequence",
+            "create_extension",
+            "backfill"
+          ]
+        },
+        "statement": {
+          "description": "The deterministic SQL text of this step; identifiers are always quoted.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^[A-Z][A-Z ]*.*;$"
+        },
+        "risk": {
+          "$ref": "#/$defs/risk"
+        },
+        "requires": {
+          "description": "The step ids this step depends on, in ascending order.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "explain": {
+          "description": "The declared explain hook point; absent means none.",
+          "$ref": "#/$defs/explainHook"
+        }
+      }
+    }
+  }
+}

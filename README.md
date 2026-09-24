@@ -635,6 +635,30 @@ emission, no adapter. See
 [ADR-0025](docs/adr/0025-storage-projection.md), and the hermetic
 fixtures under `tests/fixtures/storage-projection/`.
 
+## PostgreSQL storage engine profile
+
+Issue #69 adds the engine layer over the #65 projection: one closed
+engine profile (`dev.lekalo.storage-engine@0.4.0`) pinning the exact
+PostgreSQL version (majors 15–18; an outside pin refuses, never
+clamps), the policy-gated type table (JSON/enum/array/time/pagination,
+always-quoted identifiers), tenancy with explicit RLS, optimistic
+versioning, the checked-mode introspection declaration and test
+lifecycle with production access const-forbidden, and the extension
+allow-list. The deterministic DDL renderer emits every statement with
+quoted identifiers, deterministic names, and visible data risk; the
+migration planner gates destructive plans behind the exact `planId`
+digest; the adapter-produced checked-mode evidence drives the drift
+comparison, which reports missing, extra, divergent, and unsupported
+findings as data; and the honest #24 capability snapshot checks
+planner isolation, locking, and optimistic-versioning guarantees on
+PostgreSQL. The Node.js, PHP, and Go runtimes consume one canonical
+engine input document, byte-identical by construction. Pure
+declaration, validation, and rendering: core never connects, never
+executes, never sees credentials. See
+[docs/storage-engine.md](docs/storage-engine.md),
+[ADR-0042](docs/adr/0042-postgres-storage-engine.md), and the
+fixtures under `tests/fixtures/storage-engine/`.
+
 ## Typed expressions for conditions and assignments
 
 Issue #66 makes planner preconditions, filters, and field

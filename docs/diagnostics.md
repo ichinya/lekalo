@@ -7,6 +7,21 @@ closed wire item (`lekalo/diagnostic/v0.2.16`), one embedded rule registry
 (`dev.lekalo.diagnostic-registry@0.2.16`, registry version `0.2.16` — issue #12 added the `semantic.*`/`validate.*` families and issue #13 added the `graph.*` family, each as a wire-shape-preserving minor increment; issue #14's effect graph reuses the `graph.*` infrastructure rules with bounded tokens and keeps its comparison states as result data; issue #15 added the `inspect.*` family for the single-symbol inspect projection as the same kind of minor increment; issue #16 adds the `impact.*` family plus the one `denied` rule its strict bounded denial requires as the same kind of wire-shape-preserving additive minor increment; issue #18 adds the `diff.*` family for the semantic diff as the same kind of wire-shape-preserving additive minor increment; issue #2…
 Rust API, deterministic normalization, and the human and JSON projections
 through the shared `DomainResult` envelope. Issue #42 adds the three `bindings.*` rules (`LEK-BND-001..003`: `bindings.proposal-unknown`, `bindings.ambiguous`, `bindings.plan-mismatch`) — the closed refusals of the issue #42 binding workflow: an unknown proposal id, an ambiguous proposal confirmed without naming one candidate of its set, and a batch applied against drifted state — publishing 1.20.0 additively over the accepted frozen 1.19.0 (issue #40's `contracted.*` family, itself published additively over the accepted frozen 1.18.0). Issue #28 adds the single `target.ir-unsupported` rule — the capability-discovery refusal that keeps an adapter which never declared the core IR contract version from receiving project IR — as the same kind of wire-shape-preserving additive minor increment. Issue #29 adds the six `target-profile.*` rules (`LEK-TPF-001..006`) — the closed refusals of the composable target profile contract: document shape, unknown component, invalid inheritance reference, incompatible combination, unsatisfied capability requirement, and unacknowledged inheritance weakening — as the same kind of additive minor increment. Issue #38 (integrated first as registry 1.13.0) adds the five `init.adopt-*` rules (`LEK-INIT-001..005`) for the `init --adopt` boundary; this integrated line publishes 1.14.0 additively over the accepted frozen 1.13.0. Issue #31 adds the four `adapter.*` rules (`LEK-ADP-002..005`) — the closed conformance-suite failure classes `check-failed` (invalid), `adapter.process-failure` (unavailable), `protocol-failure` (unsupported), and `security-failure` (denied) — and publishes 1.15.0 additively over the accepted frozen 1.14.0. Issue #39 adds the eleven `observed.*` rules (`LEK-OBS-001..011`) — the closed refusals and findings of the observed mode: scan normalization and bounds, unknown modules and symbols, the confirmation rule, the staleness gate, the observed-graph incompleteness report, and the promotion refusal and plan-pinning rules — publishing 1.16.0 additively over the accepted frozen 1.15.0. The contracts are published as the frozen instances listed below.
+Issue #69 adds the fourteen `storage-engine.*` rules (`LEK-SEN-001..014`:
+`storage-engine.input-invalid`, `.profile-invalid`, `.version-unsupported`,
+`.mapping-invalid`, `.render-unsupported`, `.introspection-invalid`,
+`.drift-invalid`, `.migration-invalid`, `.migration-gated`,
+`.capability-missing`, `.lifecycle-invalid`, `.extension-unsupported`
+(the warning-severity reporting rule for an extension outside the profile
+allow-list), `.conformance-failed`, and `.export-limit`) — the closed
+refusals and findings of the PostgreSQL storage engine family:
+wire normalization, profile coherence, the version-matrix floor, DDL
+rendering, checked-mode introspection evidence, drift, the gated
+migration plan, capability mapping, and the conformance battery. The
+registry takes its reviewed successor instance 0.4.0 with the wire
+shape frozen; the embedded validation profiles' registry pin advances
+with no content change, and the frozen 0.3.2 generation stays
+accepted.
 Issue #97 adds the four `init.bootstrap-*` rules (`LEK-INIT-006..009`:
 `init.bootstrap-conflict`, `init.bootstrap-id-required`,
 `init.bootstrap-write-failed`, `init.bootstrap-recovery-required`) — the

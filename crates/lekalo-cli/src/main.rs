@@ -261,20 +261,22 @@ enum Commands {
         #[command(subcommand)]
         command: QueryModelCommands,
     },
+    /// The storage family: the engine matrix, profile validation, the
+    /// deterministic DDL rendering, migration planning, drift, and
+    /// capability mapping (issue #69), plus the storage-projection
+    /// validate/project/diff/introspect-check/plan handoff (issue
+    /// #117). The core owns every decision; this binary only reads
+    /// documents, selects, renders, and maps exits.
+    Storage {
+        #[command(subcommand)]
+        command: StorageCommands,
+    },
     /// Validate, evaluate, render, or compare typed-expression
     /// attachments (issue #66). The core owns every decision; this
     /// binary only selects, renders, and maps exits.
     Expressions {
         #[command(subcommand)]
         command: ExpressionsCommands,
-    },
-    /// Validate, project, or compare storage-projection attachments,
-    /// or compare a declared projection against introspection
-    /// evidence (issue #117). The core owns every decision; this
-    /// binary only reads documents, selects, renders, and maps exits.
-    Storage {
-        #[command(subcommand)]
-        command: StorageCommands,
     },
     /// Validate, project, or compare storage-engine-profile
     /// capability evidence (issue #117).
@@ -1116,61 +1118,144 @@ enum QueryModelCommands {
     },
 }
 
-/// The `expressions` subcommands (issue #66): the thin
-/// validate/eval/render/diff handoff over the core family.
-#[derive(Debug, Subcommand)]
-enum ExpressionsCommands {
-    /// Validate one attachment: exhaustive static typing, canonical
-    /// bytes, and the required capability set.
-    Validate {
-        /// Path to the expressions attachment JSON document.
-        path: String,
-        /// Path to a built-in capability snapshot; a required token
-        /// missing from the snapshot blocks managed mode.
-        #[arg(long, value_name = "FILE")]
-        builtin_support: Option<String>,
-    },
-    /// Evaluate the shared vectors of one attachment against the
-    /// deterministic reference evaluator with the injected clock.
-    Eval {
-        /// Path to the expressions attachment JSON document.
-        path: String,
-        /// Path to the evaluation-vector document.
-        #[arg(long, value_name = "FILE")]
-        vectors: String,
-        /// Path to a built-in capability snapshot (managed mode).
-        #[arg(long, value_name = "FILE")]
-        builtin_support: Option<String>,
-    },
-    /// Render one complete cross-target program (node, php, or go)
-    /// that computes the shared vectors.
-    Render {
-        /// Path to the expressions attachment JSON document.
-        path: String,
-        /// The closed target vocabulary.
-        #[arg(long, value_enum)]
-        target: ExpressionTarget,
-        /// Path to a built-in capability snapshot (managed mode).
-        #[arg(long, value_name = "FILE")]
-        builtin_support: Option<String>,
-    },
-    /// Compare two same-family attachments and classify every
-    /// changed path; the verdict stays data, never an exit code.
-    Diff {
-        /// Path to the base attachment JSON document.
-        base: String,
-        /// Path to the candidate attachment JSON document.
-        candidate: String,
-    },
+/// The closed storage-engine vocabulary of the CLI.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum StorageEngineArg {
+    /// The PostgreSQL engine.
+    Postgres,
 }
 
-/// The `storage` subcommands (issue #117): the thin
-/// validate/project/diff/introspect-check handoff over the core
-/// storage-projection family.
+/// The closed capability-mapping profiles of the CLI.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum StorageCapabilityProfileArg {
+    /// Block on unsupported, unknown, and unapproved partial.
+    Strict,
+    /// Degrade explicitly; never pass on unsupported or unknown.
+    Permissive,
+}
+
+/// The `storage` subcommands (issues #69 and #117): the thin handoff
+/// over the storage-engine and storage-projection core families. The
+/// core owns every decision; this binary only selects, renders, and
+/// maps exits.
 #[derive(Debug, Subcommand)]
 enum StorageCommands {
-    /// Validate one attachment against the selected project and emit
-    /// the derived-projection summary of every declared namespace.
+    /// Print the owner-published engine version matrix, or one
+    /// version's capability answers.
+    Profile {
+        /// The closed engine vocabulary.
+        #[arg(long, value_enum)]
+        engine: StorageEngineArg,
+        /// The exact engine version pin (major.minor.patch); absent
+        /// prints every published major row.
+        #[arg(long, value_name = "V")]
+        version: Option<String>,
+    },
+    /// Validate one storage-engine attachment and emit its canonical
+    /// bytes.
+    ValidateEngine {
+        /// Path to the storage-engine attachment JSON document.
+        path: String,
+    },
+    /// Derive the deterministic migration plan from two same-project
+    /// storage-projection attachments under one engine profile. A
+    /// destructive plan is gated: it prints blocked unless the exact
+    /// planId is named with --confirm (the native-gate custody
+    /// pattern).
+    MigratePlan {
+        /// Path to the base storage-projection attachment.
+        base: String,
+        /// Path to the candidate storage-projection attachment.
+        candidate: String,
+        /// Path to the storage-engine profile attachment.
+        #[arg(long, value_name = "PATH")]
+        profile: String,
+        /// Apply custody: the exact planId (sha256 digest) of the
+        /// gated plan. A wrong digest refuses.
+        #[arg(long, value_name = "PLAN_ID")]
+        confirm: Option<String>,
+    },
+    /// Run the storage-component conformance battery over the
+    /// committed fixture set: the profile and its bound projection,
+    /// the optional checked-mode evidence pair, the engine input
+    /// document, and the runtime goldens. A skip is never a pass.
+    Conformance {
+        /// Path to the storage-engine profile attachment.
+        #[arg(long, value_name = "PATH")]
+        profile: String,
+        /// Path to the bound storage-projection attachment.
+        #[arg(long, value_name = "PATH")]
+        projection: String,
+        /// Path to the zero-drift introspection evidence.
+        #[arg(long, value_name = "PATH")]
+        scan: Option<String>,
+        /// Path to the drifted introspection evidence.
+        #[arg(long, value_name = "PATH")]
+        drifted: Option<String>,
+        /// Path to the engine input document (the runtime goldens
+        /// must equal it byte for byte).
+        #[arg(long, value_name = "PATH")]
+        input: Option<String>,
+        /// Paths to the runtime goldens (repeatable).
+        #[arg(long = "runtime", value_name = "PATH")]
+        runtimes: Vec<String>,
+    },
+    /// Print the single runtime-neutral engine input document every
+    /// runtime consumer (Node.js, Laravel, Go, Rust) receives.
+    Input {
+        /// Path to the storage-engine attachment JSON document.
+        profile: String,
+        /// Path to the bound storage-projection attachment JSON
+        /// document.
+        #[arg(long, value_name = "PATH")]
+        projection: String,
+    },
+    /// Render the deterministic DDL document of one profile over its
+    /// bound storage-projection attachment.
+    Ddl {
+        /// Path to the storage-engine attachment JSON document.
+        profile: String,
+        /// Path to the bound storage-projection attachment JSON
+        /// document; its canonical digest must equal the profile's
+        /// projectionRef.
+        #[arg(long, value_name = "PATH")]
+        projection: String,
+    },
+    /// Compare one checked-mode storage-observation evidence document
+    /// against its bound storage-projection attachment and report the
+    /// typed drift findings.
+    Drift {
+        /// Path to the storage-observation evidence JSON document.
+        scan: String,
+        /// Path to the bound storage-projection attachment JSON
+        /// document.
+        #[arg(long, value_name = "ATTACHMENT")]
+        projection: String,
+        /// Path to the storage-engine profile attachment JSON document
+        /// whose projectionRef binds both sides.
+        #[arg(long, value_name = "PATH")]
+        profile: String,
+    },
+    /// Project the engine capability snapshot, optionally mapped
+    /// against one transaction-concurrency attachment's requirements.
+    Capabilities {
+        /// Path to the storage-engine attachment JSON document.
+        path: String,
+        /// Path to the bound storage-projection attachment JSON
+        /// document.
+        #[arg(long, value_name = "PATH")]
+        projection: String,
+        /// The closed mapping profile; the default is strict.
+        #[arg(long, value_enum, default_value_t = StorageCapabilityProfileArg::Strict)]
+        profile: StorageCapabilityProfileArg,
+        /// Optional path to a transaction-concurrency attachment whose
+        /// capability requirements are mapped against the snapshot.
+        #[arg(long, value_name = "PATH")]
+        requirements: Option<String>,
+    },
+    /// Validate one storage-projection attachment against the
+    /// selected project and emit the derived-projection summary of
+    /// every declared namespace.
     Validate {
         /// Path to the storage-projection attachment JSON document.
         path: String,
@@ -1222,6 +1307,54 @@ enum StorageCommands {
         /// The exact plan identity to acknowledge.
         #[arg(long, value_name = "PLAN_ID")]
         confirm: Option<String>,
+    },
+}
+
+/// The `expressions` subcommands (issue #66): the thin
+/// validate/eval/render/diff handoff over the core family.
+#[derive(Debug, Subcommand)]
+enum ExpressionsCommands {
+    /// Validate one attachment: exhaustive static typing, canonical
+    /// bytes, and the required capability set.
+    Validate {
+        /// Path to the expressions attachment JSON document.
+        path: String,
+        /// Path to a built-in capability snapshot; a required token
+        /// missing from the snapshot blocks managed mode.
+        #[arg(long, value_name = "FILE")]
+        builtin_support: Option<String>,
+    },
+    /// Evaluate the shared vectors of one attachment against the
+    /// deterministic reference evaluator with the injected clock.
+    Eval {
+        /// Path to the expressions attachment JSON document.
+        path: String,
+        /// Path to the evaluation-vector document.
+        #[arg(long, value_name = "FILE")]
+        vectors: String,
+        /// Path to a built-in capability snapshot (managed mode).
+        #[arg(long, value_name = "FILE")]
+        builtin_support: Option<String>,
+    },
+    /// Render one complete cross-target program (node, php, or go)
+    /// that computes the shared vectors.
+    Render {
+        /// Path to the expressions attachment JSON document.
+        path: String,
+        /// The closed target vocabulary.
+        #[arg(long, value_enum)]
+        target: ExpressionTarget,
+        /// Path to a built-in capability snapshot (managed mode).
+        #[arg(long, value_name = "FILE")]
+        builtin_support: Option<String>,
+    },
+    /// Compare two same-family attachments and classify every
+    /// changed path; the verdict stays data, never an exit code.
+    Diff {
+        /// Path to the base attachment JSON document.
+        base: String,
+        /// Path to the candidate attachment JSON document.
+        candidate: String,
     },
 }
 
@@ -4437,6 +4570,524 @@ fn run_query_model(command: QueryModelCommands) -> DomainResult {
     }
 }
 
+fn run_storage(command: StorageCommands) -> DomainResult {
+    match command {
+        StorageCommands::Profile { engine, version } => storage_profile(engine, version),
+        StorageCommands::ValidateEngine { path } => storage_engine_validate(&path),
+        StorageCommands::Ddl {
+            profile,
+            projection,
+        } => storage_ddl(&profile, &projection),
+        StorageCommands::MigratePlan {
+            base,
+            candidate,
+            profile,
+            confirm,
+        } => storage_migrate_plan(&base, &candidate, &profile, confirm.as_deref()),
+        StorageCommands::Conformance {
+            profile,
+            projection,
+            scan,
+            drifted,
+            input,
+            runtimes,
+        } => storage_conformance(
+            &profile,
+            &projection,
+            scan.as_deref(),
+            drifted.as_deref(),
+            input.as_deref(),
+            &runtimes,
+        ),
+        StorageCommands::Input {
+            profile,
+            projection,
+        } => storage_input(&profile, &projection),
+        StorageCommands::Capabilities {
+            path,
+            projection,
+            profile,
+            requirements,
+        } => storage_capabilities(&path, &projection, profile, requirements.as_deref()),
+        StorageCommands::Drift {
+            scan,
+            projection,
+            profile,
+        } => storage_drift(&scan, &projection, &profile),
+        StorageCommands::Validate { path, project: _ } => storage_validate(&path),
+        StorageCommands::Project { path, namespace } => storage_project(&path, namespace),
+        StorageCommands::Diff { base, candidate } => storage_diff(&base, &candidate),
+        StorageCommands::Plan {
+            base,
+            candidate,
+            confirm,
+        } => storage_plan(&base, &candidate, confirm.as_deref()),
+        StorageCommands::IntrospectCheck {
+            projection,
+            evidence,
+            namespace,
+        } => storage_introspect_check(&projection, &evidence, namespace),
+    }
+}
+
+/// `lekalo storage drift`: the declared-versus-observed comparison.
+/// The verdict stays data; exits stay envelope-owned.
+fn storage_drift(scan_path: &str, projection_path: &str, profile_path: &str) -> DomainResult {
+    let profile = match read_storage_profile(profile_path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let projection_document = match read_attachment_document(projection_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let projection = match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(
+        &projection_document,
+    ) {
+        Ok(projection) => projection,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let scan_document = match read_attachment_document(scan_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let evidence =
+        match lekalo_core::storage_engine::IntrospectionEvidence::from_value(&scan_document) {
+            Ok(evidence) => evidence,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let report = match lekalo_core::storage_engine::compare_drift(&profile, &projection, &evidence)
+    {
+        Ok(report) => report,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let bytes = match report.canonical_bytes() {
+        Ok(bytes) => bytes,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let human = if report.ok() {
+        "storage drift: the observed schema matches the declaration".to_owned()
+    } else {
+        format!(
+            "storage drift: {} finding(s); the verdict stays data",
+            report.findings().len()
+        )
+    };
+    DomainResult::graph(bytes, human, Vec::new())
+}
+
+/// `lekalo storage profile`: the owner-published matrix projection.
+fn storage_profile(engine: StorageEngineArg, version: Option<String>) -> DomainResult {
+    match engine {
+        StorageEngineArg::Postgres => {
+            use lekalo_core::storage_engine::postgres::version_matrix;
+            let capabilities = |major: u32| {
+                version_matrix::CAPABILITY_IDS
+                    .iter()
+                    .filter_map(|id| {
+                        version_matrix::answer(major, id).map(|support| {
+                            format!("{{\"id\":\"{id}\",\"support\":\"{}\"}}", support.key())
+                        })
+                    })
+                    .collect::<Vec<String>>()
+                    .join(",")
+            };
+            match version {
+                Some(pin) => {
+                    let parsed = match lekalo_core::storage_engine::VersionPin::parse(&pin) {
+                        Ok(parsed) => parsed,
+                        Err(_) => {
+                            return DomainResult::invalid(lekalo_core::storage_engine::io_failure(
+                                "engine-version",
+                            ))
+                        }
+                    };
+                    if version_matrix::row_for(parsed.major()).is_none() {
+                        return DomainResult::unsupported_version(
+                            lekalo_core::storage_engine::unsupported_failure("major-unpublished"),
+                        );
+                    }
+                    let json = format!(
+                        "{{\"status\":\"valid\",\"engine\":\"postgres\",\"engineVersion\":\"{pin}\",\"capabilities\":[{}]}}",
+                        capabilities(parsed.major())
+                    );
+                    DomainResult::graph(
+                        json,
+                        format!("postgres {pin}: published capability matrix row"),
+                        Vec::new(),
+                    )
+                }
+                None => {
+                    let rows: Vec<String> = version_matrix::ROWS
+                        .iter()
+                        .map(|row| {
+                            format!(
+                                "{{\"major\":{},\"capabilities\":[{}]}}",
+                                row.major,
+                                capabilities(row.major)
+                            )
+                        })
+                        .collect();
+                    let json = format!(
+                        "{{\"status\":\"valid\",\"engine\":\"postgres\",\"rows\":[{}]}}",
+                        rows.join(",")
+                    );
+                    DomainResult::graph(
+                        json,
+                        "postgres: every published capability matrix row".to_owned(),
+                        Vec::new(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/// `lekalo storage validate-engine`: normalize one storage-engine
+/// attachment and print its canonical bytes.
+fn storage_engine_validate(path: &str) -> DomainResult {
+    let document = match read_attachment_document(path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let attachment =
+        match lekalo_core::storage_engine::StorageEngineAttachment::from_value(&document) {
+            Ok(attachment) => attachment,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let bytes = match attachment.canonical_bytes() {
+        Ok(bytes) => bytes,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    DomainResult::graph(
+        bytes,
+        format!(
+            "storage engine {}: {} profile",
+            attachment.engine().key(),
+            attachment.engine_version().as_str()
+        ),
+        Vec::new(),
+    )
+}
+
+/// `lekalo storage ddl`: the deterministic DDL document.
+fn storage_ddl(profile_path: &str, projection_path: &str) -> DomainResult {
+    let profile = match read_storage_profile(profile_path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let document = match read_attachment_document(projection_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let projection =
+        match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(&document) {
+            Ok(projection) => projection,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let rendered = match lekalo_core::storage_engine::postgres::ddl::render(&profile, &projection) {
+        Ok(rendered) => rendered,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let bytes = match rendered.canonical_bytes() {
+        Ok(bytes) => bytes,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    DomainResult::graph(
+        bytes,
+        format!(
+            "postgres DDL for {}: {} statements",
+            profile.engine_version().as_str(),
+            rendered.statements().len()
+        ),
+        Vec::new(),
+    )
+}
+
+/// `lekalo storage capabilities`: the engine snapshot, optionally
+/// mapped against declared requirements.
+fn storage_capabilities(
+    path: &str,
+    projection_path: &str,
+    profile: StorageCapabilityProfileArg,
+    requirements: Option<&str>,
+) -> DomainResult {
+    let engine_profile = match read_storage_profile(path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let document = match read_attachment_document(projection_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let projection =
+        match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(&document) {
+            Ok(projection) => projection,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let snapshot =
+        lekalo_core::storage_engine::postgres::snapshot::build(&engine_profile, &projection);
+    let answers: Vec<String> = snapshot
+        .answers()
+        .iter()
+        .map(|(capability, support)| {
+            format!(
+                "{{\"capability\":\"{capability}\",\"support\":\"{}\"}}",
+                support.key()
+            )
+        })
+        .collect();
+    let (mapped, verdicts_json) = match requirements {
+        Some(path) => {
+            let document = match read_attachment_document(path) {
+                Ok(document) => document,
+                Err(result) => return result,
+            };
+            let attachment = match lekalo_core::transaction_concurrency::
+                TransactionConcurrencyAttachment::from_value(&document)
+            {
+                Ok(attachment) => attachment,
+                Err(diagnostics) => return DomainResult::invalid(diagnostics),
+            };
+            let profile = match profile {
+                StorageCapabilityProfileArg::Strict => {
+                    lekalo_core::transaction_concurrency::CapabilityProfile::Strict
+                }
+                StorageCapabilityProfileArg::Permissive => {
+                    lekalo_core::transaction_concurrency::CapabilityProfile::Permissive
+                }
+            };
+            let decision = lekalo_core::transaction_concurrency::map_capabilities(
+                attachment.capability_requirements(),
+                &snapshot,
+                profile,
+            );
+            let verdicts: Vec<String> = decision
+                .verdicts()
+                .iter()
+                .map(|verdict| {
+                    format!(
+                        "{{\"requirement\":\"{}\",\"capability\":\"{}\",\"support\":\"{}\",\"blocked\":{}}}",
+                        verdict.requirement_id(),
+                        verdict.capability(),
+                        verdict.support().key(),
+                        verdict.blocked()
+                    )
+                })
+                .collect();
+            (
+                format!(
+                    ",\"blocked\":{},\"profile\":\"{}\"",
+                    decision.blocked(),
+                    profile.key()
+                ),
+                format!(",\"verdicts\":[{}]", verdicts.join(",")),
+            )
+        }
+        None => (String::new(), String::new()),
+    };
+    let human = format!(
+        "engine capabilities: {} answers{}",
+        answers.len(),
+        if requirements.is_some() {
+            " mapped against the declared requirements"
+        } else {
+            ""
+        }
+    );
+    let json = format!(
+        "{{\"status\":\"valid\",\"engine\":\"{}\",\"engineVersion\":\"{}\",\"capabilities\":[{}]{verdicts_json}{mapped}}}",
+        engine_profile.engine().key(),
+        engine_profile.engine_version().as_str(),
+        answers.join(",")
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo storage migrate-plan`: the gated plan document. A blocked
+/// plan is a typed denial whose diagnostic carries the exact `planId`
+/// digest the caller must name through `--confirm`; a confirmed or
+/// ready plan prints its bytes.
+fn storage_migrate_plan(
+    base_path: &str,
+    candidate_path: &str,
+    profile_path: &str,
+    confirm: Option<&str>,
+) -> DomainResult {
+    let profile = match read_storage_profile(profile_path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let base_document = match read_attachment_document(base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let base = match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(
+        &base_document,
+    ) {
+        Ok(base) => base,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let candidate_document = match read_attachment_document(candidate_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let candidate = match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(
+        &candidate_document,
+    ) {
+        Ok(candidate) => candidate,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let plan =
+        match lekalo_core::storage_engine::plan_migration(&profile, &base, &candidate, confirm) {
+            Ok(plan) => plan,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    if plan.status() == lekalo_core::storage_engine::PlanStatus::Blocked {
+        return DomainResult::denied(lekalo_core::storage_engine::gated_plan_failure(
+            "destructive-steps",
+            plan.plan_id(),
+        ));
+    }
+    let bytes = match plan.canonical_bytes() {
+        Ok(bytes) => bytes,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let human = format!(
+        "migration plan {}: {} step(s), status {}",
+        plan.plan_id().chars().skip(7).take(12).collect::<String>(),
+        plan.steps().len(),
+        plan.status().key()
+    );
+    DomainResult::graph(bytes, human, Vec::new())
+}
+
+/// `lekalo storage input`: the one runtime-neutral document.
+fn storage_input(profile_path: &str, projection_path: &str) -> DomainResult {
+    let profile = match read_storage_profile(profile_path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let document = match read_attachment_document(projection_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let projection =
+        match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(&document) {
+            Ok(projection) => projection,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let input = match lekalo_core::storage_engine::input_document(&profile, &projection) {
+        Ok(input) => input,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    DomainResult::graph(
+        input,
+        format!(
+            "engine input for {}: one canonical document",
+            profile.engine_version().as_str()
+        ),
+        Vec::new(),
+    )
+}
+
+/// `lekalo storage conformance`: the closed battery, fixed order.
+fn storage_conformance(
+    profile_path: &str,
+    projection_path: &str,
+    scan: Option<&str>,
+    drifted: Option<&str>,
+    input: Option<&str>,
+    runtimes: &[String],
+) -> DomainResult {
+    let profile = match read_storage_profile(profile_path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let projection_document = match read_attachment_document(projection_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let projection = match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(
+        &projection_document,
+    ) {
+        Ok(projection) => projection,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    fn read_evidence(
+        path: &str,
+    ) -> Result<lekalo_core::storage_engine::IntrospectionEvidence, DomainResult> {
+        let document = read_attachment_document(path)?;
+        lekalo_core::storage_engine::IntrospectionEvidence::from_value(&document)
+            .map_err(DomainResult::invalid)
+    }
+    let evidence = match scan {
+        Some(path) => match read_evidence(path) {
+            Ok(evidence) => Some(evidence),
+            Err(result) => return result,
+        },
+        None => None,
+    };
+    let drifted = match drifted {
+        Some(path) => match read_evidence(path) {
+            Ok(evidence) => Some(evidence),
+            Err(result) => return result,
+        },
+        None => None,
+    };
+    let read_text = |path: &str| {
+        std::fs::read_to_string(path).map_err(|_| {
+            DomainResult::invalid(lekalo_core::storage_engine::io_failure("file-unreadable"))
+        })
+    };
+    let input_text = match input {
+        Some(path) => match read_text(path) {
+            Ok(text) => Some(text),
+            Err(result) => return result,
+        },
+        None => None,
+    };
+    let mut goldens: Vec<String> = Vec::with_capacity(runtimes.len());
+    for path in runtimes {
+        match read_text(path) {
+            Ok(text) => goldens.push(text),
+            Err(result) => return result,
+        }
+    }
+    let golden_refs: Vec<&str> = goldens.iter().map(|text| text.as_str()).collect();
+    let inputs = lekalo_core::storage_engine::conformance::BatteryInputs {
+        profile: &profile,
+        projection: &projection,
+        evidence: evidence.as_ref(),
+        drifted: drifted.as_ref(),
+        input: input_text.as_deref(),
+        runtime_goldens: &golden_refs,
+    };
+    let battery = lekalo_core::storage_engine::conformance::run(&inputs);
+    let bytes = match battery.canonical_bytes() {
+        Ok(bytes) => bytes,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    if !battery.ok() {
+        return DomainResult::denied(lekalo_core::storage_engine::conformance_failure(
+            "battery-failed",
+        ));
+    }
+    let human = format!(
+        "storage conformance: {} checks, battery green",
+        battery.checks().len()
+    );
+    DomainResult::graph(bytes, human, Vec::new())
+}
+/// Read one storage-engine attachment from disk.
+fn read_storage_profile(
+    path: &str,
+) -> Result<lekalo_core::storage_engine::StorageEngineAttachment, DomainResult> {
+    let document = read_attachment_document(path)?;
+    lekalo_core::storage_engine::StorageEngineAttachment::from_value(&document)
+        .map_err(DomainResult::invalid)
+}
+
 /// Read one attachment document from disk with a classified read-only
 /// failure.
 fn read_attachment_document(path: &str) -> Result<serde_json::Value, DomainResult> {
@@ -4568,29 +5219,6 @@ fn query_model_diff(base_path: &str, candidate_path: &str) -> DomainResult {
         policy_change,
     );
     DomainResult::graph(json, human, Vec::new())
-}
-
-/// The `lekalo storage` subcommands: a thin handoff to the core
-/// storage-projection family (issue #117). The documents are read at
-/// the given paths and every decision — wire validation, semantic
-/// self-check, derivation, comparison, and the drift check — lives in
-/// the core. Nothing is ever written; no database is ever contacted.
-fn run_storage(command: StorageCommands) -> DomainResult {
-    match command {
-        StorageCommands::Validate { path, project: _ } => storage_validate(&path),
-        StorageCommands::Project { path, namespace } => storage_project(&path, namespace),
-        StorageCommands::Diff { base, candidate } => storage_diff(&base, &candidate),
-        StorageCommands::Plan {
-            base,
-            candidate,
-            confirm,
-        } => storage_plan(&base, &candidate, confirm.as_deref()),
-        StorageCommands::IntrospectCheck {
-            projection,
-            evidence,
-            namespace,
-        } => storage_introspect_check(&projection, &evidence, namespace),
-    }
 }
 
 /// Read one attachment document from disk with a classified read-only

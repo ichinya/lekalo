@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/storage-observation.schema.v0.4.0.json",
+  "title": "Lekalo Storage Introspection Evidence",
+  "description": "Closed independent evidence contract carrying the adapter-produced checked-mode observation of one PostgreSQL schema (issue #69). The adapter declares scan.storage-schema and produces one document per exchange through the scan operation's typed evidence member: the server-reported engine version, the read-only catalog projection of the declared scopes (tables, columns, constraints, indexes), the installed extensions, and the explicit unsupported records for every observed type or extension outside the closed vocabulary. Checked mode is the only representable mode and read-only the only posture; the connection is one opaque name token resolved outside this contract, so credentials, hosts, URLs, users, timestamps, and runtime values are unrepresentable by construction. The evidence binds the exact storage-projection attachment digest it was checked against. Core normalizes and compares; it never connects.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "evidenceRevision",
+    "projectId",
+    "engine",
+    "engineVersion",
+    "mode",
+    "readOnly",
+    "scopes",
+    "connection",
+    "projectionRef",
+    "tables"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/storage-observation/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.storage-observation@0.4.0"
+    },
+    "evidenceRevision": {
+      "description": "The exact revision of this evidence document.",
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "engine": {
+      "description": "The observed engine; v1 observes PostgreSQL only.",
+      "const": "postgres"
+    },
+    "engineVersion": {
+      "description": "The exact server-reported engine version.",
+      "$ref": "#/$defs/semver"
+    },
+    "mode": {
+      "description": "The only accepted introspection mode: checked. Unchecked schema observation is unrepresentable by construction.",
+      "const": "checked"
+    },
+    "readOnly": {
+      "description": "The only accepted posture: the observation never writes.",
+      "const": true
+    },
+    "scopes": {
+      "description": "The observed schema scopes; every observed table names one of them.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/scopeName"
+      }
+    },
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/connectionName"
+        }
+      }
+    },
+    "projectionRef": {
+      "description": "The canonical digest of the storage-projection attachment this evidence was checked against; a drift comparison across bindings refuses.",
+      "$ref": "#/$defs/sha256"
+    },
+    "tables": {
+      "description": "The observed tables of the declared scopes, byte-sorted by name in canonical form.",
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/observedTable"
+      }
+    },
+    "extensions": {
+      "description": "The installed extensions of the observed server.",
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/observedExtension"
+      }
+    },
+    "unsupported": {
+      "description": "Every observed fact outside the closed vocabulary, reported explicitly and never silently coerced.",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/unsupportedRecord"
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "scopeName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "connectionName": {
+      "description": "One opaque connection name token; credentials, hosts, URLs, and parameters are unrepresentable by grammar.",
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "observedType": {
+      "description": "The closed observed-type vocabulary of the checked PostgreSQL reader.",
+      "enum": [
+        "boolean",
+        "smallint",
+        "integer",
+        "bigint",
+        "real",
+        "double precision",
+        "numeric",
+        "text",
+        "varchar",
+        "uuid",
+        "date",
+        "timestamp",
+        "timestamptz",
+        "bytea",
+        "json",
+        "jsonb"
+      ]
+    },
+    "observedTable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "scope",
+        "columns"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/storageName"
+        },
+        "scope": {
+          "description": "The observed scope this table was read from; one of the declared scopes.",
+          "$ref": "#/$defs/scopeName"
+        },
+        "columns": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/observedColumn"
+          }
+        },
+        "indexes": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/observedIndex"
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/observedConstraint"
+          }
+        }
+      }
+    },
+    "storageName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "observedColumn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "nullable"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/storageName"
+        },
+        "type": {
+          "description": "The observed type: a closed vocabulary token, the parameterized rendering of a bounded string, decimal, or enum, a native array rendering, or an unsupported spelling carried verbatim when the unsupported records name it.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/observedType"
+            },
+            {
+              "description": "The parameterized varchar rendering with its declared length.",
+              "type": "string",
+              "pattern": "^varchar\\([0-9]{1,4}\\)$",
+              "maxLength": 16
+            },
+            {
+              "description": "The parameterized numeric rendering with its declared precision and scale.",
+              "type": "string",
+              "pattern": "^numeric\\([0-9]{1,2},[0-9]{1,2}\\)$",
+              "maxLength": 16
+            },
+            {
+              "description": "The native array rendering over one closed element type.",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_ ()]*\\[\\]$",
+              "maxLength": 67
+            },
+            {
+              "description": "An unsupported type spelling; a closed or parameterized token never takes this branch.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 63,
+              "pattern": "^[a-z][a-z0-9_ ()]*$",
+              "not": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/observedType"
+                  },
+                  {
+                    "pattern": "^varchar\\([0-9]{1,4}\\)$"
+                  },
+                  {
+                    "pattern": "^numeric\\([0-9]{1,2},[0-9]{1,2}\\)$"
+                  },
+                  {
+                    "pattern": "^[a-z][a-z0-9_ ()]*\\[\\]$"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "default": {
+          "description": "The bounded observed default spelling.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_()' ,:]*$"
+        },
+        "identity": {
+          "description": "True when the column is generated always as identity.",
+          "type": "boolean"
+        }
+      }
+    },
+    "observedIndex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "columns",
+        "unique"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/storageName"
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/storageName"
+          }
+        },
+        "unique": {
+          "type": "boolean"
+        },
+        "partial": {
+          "description": "True when the index carries a predicate.",
+          "type": "boolean"
+        }
+      }
+    },
+    "observedConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "columns"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "primary",
+            "unique",
+            "foreign",
+            "check"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/storageName"
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/storageName"
+          }
+        },
+        "target": {
+          "description": "The referenced table of a foreign constraint.",
+          "$ref": "#/$defs/storageName"
+        }
+      }
+    },
+    "observedExtension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/storageName"
+        }
+      }
+    },
+    "unsupportedRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "name"
+      ],
+      "properties": {
+        "kind": {
+          "description": "The closed unsupported-record kinds.",
+          "enum": [
+            "type",
+            "extension"
+          ]
+        },
+        "name": {
+          "description": "The bounded unsupported type or extension name.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "table": {
+          "$ref": "#/$defs/storageName"
+        },
+        "column": {
+          "$ref": "#/$defs/storageName"
+        }
+      }
+    }
+  }
+}

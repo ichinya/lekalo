@@ -21,6 +21,22 @@ pub const IDENTITY: &str = "dev.lekalo.storage-projection@0.4.0";
 /// The exact wire discriminator of the storage-projection contract.
 pub const SCHEMA_VERSION: &str = "lekalo/storage-projection/v0.4.0";
 
+/// The maximum number of members one enum domain type may declare.
+pub const MAX_ENUM_MEMBERS: usize = 64;
+
+/// The maximum number of bytes one enum member may carry.
+pub const MAX_ENUM_MEMBER_BYTES: usize = 64;
+
+/// The maximum inclusive array cardinality bound.
+pub const MAX_ARRAY_ITEMS: i64 = 1_000_000;
+
+/// The maximum number of predicates one partial-index conjunction or
+/// CHECK constraint may carry.
+pub const MAX_PREDICATES: usize = 8;
+
+/// The maximum number of CHECK constraints one table may declare.
+pub const MAX_CHECKS: usize = 8;
+
 /// The maximum number of domain entities one attachment may carry.
 pub const MAX_ENTITIES: usize = 512;
 

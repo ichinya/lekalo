@@ -118,7 +118,7 @@
       ]
     },
     "domainType": {
-      "description": "One closed domain value type: the target-neutral leaf vocabulary of the declared field. Parameters are present exactly when the name requires them.",
+      "description": "One closed domain value type: the target-neutral leaf vocabulary of the declared field. Parameters are present exactly when the name requires them; enum carries a closed bounded member list and array carries exactly one non-nested scalar element type.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -212,6 +212,75 @@
               "scale": false
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "name": {
+                "const": "enum"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "then": {
+            "required": [
+              "members"
+            ],
+            "properties": {
+              "length": false,
+              "precision": false,
+              "scale": false,
+              "element": false,
+              "maxItems": false,
+              "members": {
+                "description": "The closed bounded member list (1..64 lowercase tokens, each at most 64 bytes); the typed normalizer sorts and deduplicates it.",
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "name": {
+                "const": "array"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "then": {
+            "required": [
+              "element"
+            ],
+            "properties": {
+              "length": false,
+              "precision": false,
+              "scale": false,
+              "members": false,
+              "element": {
+                "description": "Exactly one non-nested scalar element type; enum and array elements are unrepresentable.",
+                "$ref": "#/$defs/scalarType"
+              },
+              "maxItems": {
+                "description": "The optional inclusive cardinality bound (1..1000000).",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              }
+            }
+          }
         }
       ],
       "properties": {
@@ -226,7 +295,9 @@
             "date",
             "timestamp",
             "binary",
-            "json"
+            "json",
+            "enum",
+            "array"
           ]
         },
         "length": {
@@ -246,6 +317,28 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 38
+        },
+        "members": {
+          "description": "The closed bounded member list of the enum type.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$"
+          }
+        },
+        "element": {
+          "description": "The single non-nested scalar element type of the array.",
+          "$ref": "#/$defs/scalarType"
+        },
+        "maxItems": {
+          "description": "The optional inclusive cardinality bound of the array (1..1000000).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
         }
       }
     },
@@ -282,7 +375,6 @@
       "properties": {
         "modelVersion": {
           "enum": [
-            "0.2.16",
             "0.2.16"
           ]
         },
@@ -392,8 +484,12 @@
         },
         "visibility": {
           "$ref": "#/$defs/visibility"
+        },
+        "default": {
+          "$ref": "#/$defs/fieldDefault"
         }
-      }
+      },
+      "description": "undefined The optional closed default declares the column default; no free expressions exist."
     },
     "relation": {
       "type": "object",
@@ -633,6 +729,14 @@
         "collation": {
           "description": "The declared table collation (MySQL namespaces). Declared, never implicit: the engine default is never accepted silently.",
           "$ref": "#/$defs/safeToken"
+},
+        "checks": {
+          "description": "The optional closed CHECK constraints of this table: named bounded predicates over declared columns.",
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/checkConstraint"
+          }
         }
       }
     },
@@ -744,6 +848,10 @@
           "items": {
             "type": "boolean"
           }
+},
+        "where": {
+          "description": "The optional closed partial-index predicate: a conjunction of at most 8 column predicates over declared columns.",
+          "$ref": "#/$defs/predicateConjunction"
         }
       }
     },
@@ -845,6 +953,219 @@
       "minLength": 1,
       "maxLength": 64,
       "pattern": "^[a-z][a-z0-9_]*$"
+},
+    "scalarType": {
+      "description": "One non-nested scalar domain type: the closed leaf vocabulary without enum or array.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "enum": [
+                "boolean",
+                "integer",
+                "text",
+                "uuid",
+                "date",
+                "timestamp",
+                "binary",
+                "json"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "length"
+          ],
+          "properties": {
+            "name": {
+              "const": "string"
+            },
+            "length": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4096
+            },
+            "precision": false,
+            "scale": false
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "precision",
+            "scale"
+          ],
+          "properties": {
+            "name": {
+              "const": "decimal"
+            },
+            "length": false,
+            "precision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 38
+            },
+            "scale": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 38
+            }
+          }
+        }
+      ]
+    },
+    "fieldDefault": {
+      "description": "The closed column-default vocabulary: one typed literal matching the field's domain type, the engine's current timestamp, the engine's UUID generator (requires the declared extension), or one owned sequence. No free expressions: a function-call surface would violate the domain layer's no-SQL rule.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "literal"
+            },
+            "value": {
+              "description": "The typed literal; the typed normalizer checks it against the field's domain type.",
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "maxLength": 256
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "now"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "uuid_generate"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "ref"
+          ],
+          "properties": {
+            "kind": {
+              "const": "sequence"
+            },
+            "ref": {
+              "description": "The generated sequence column this default draws from, resolved against the mapping table.",
+              "$ref": "#/$defs/storageName"
+            }
+          }
+        }
+      ]
+    },
+    "columnPredicate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "column",
+        "op"
+      ],
+      "properties": {
+        "column": {
+          "$ref": "#/$defs/storageName"
+        },
+        "op": {
+          "description": "The closed predicate operator.",
+          "enum": [
+            "is-null",
+            "is-not-null",
+            "eq",
+            "ne"
+          ]
+        },
+        "value": {
+          "description": "The typed comparison literal; required for eq and ne, forbidden for is-null and is-not-null.",
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "maxLength": 256
+            }
+          ]
+        }
+      }
+    },
+    "predicateConjunction": {
+      "description": "A bounded conjunction of column predicates (the implicit AND); at most 8.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/columnPredicate"
+      }
+    },
+    "checkConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "where"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/storageName"
+        },
+        "where": {
+          "$ref": "#/$defs/predicateConjunction"
+        }
+      }
     }
   }
 }

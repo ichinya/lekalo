@@ -47,6 +47,33 @@ const DIFF_COLLATION: &[u8] =
 /// a subject echo assert it.
 const INVALID: &[(&str, &[u8], &[u8])] = &[
     (
+        "default-sequence-unresolved",
+        include_bytes!(
+            "../../../tests/fixtures/storage-projection/invalid/default-sequence-unresolved.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/storage-projection/invalid/default-sequence-unresolved.expect.json"
+        ),
+    ),
+    (
+        "default-type-mismatch",
+        include_bytes!(
+            "../../../tests/fixtures/storage-projection/invalid/default-type-mismatch.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/storage-projection/invalid/default-type-mismatch.expect.json"
+        ),
+    ),
+    (
+        "enum-member-empty",
+        include_bytes!(
+            "../../../tests/fixtures/storage-projection/invalid/enum-member-empty.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/storage-projection/invalid/enum-member-empty.expect.json"
+        ),
+    ),
+    (
         "aggregate-both",
         include_bytes!("../../../tests/fixtures/storage-projection/invalid/aggregate-both.json"),
         include_bytes!(
@@ -379,6 +406,24 @@ const INVALID: &[(&str, &[u8], &[u8])] = &[
         ),
     ),
     (
+        "unknown-check-column",
+        include_bytes!(
+            "../../../tests/fixtures/storage-projection/invalid/unknown-check-column.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/storage-projection/invalid/unknown-check-column.expect.json"
+        ),
+    ),
+    (
+        "unknown-index-predicate-column",
+        include_bytes!(
+            "../../../tests/fixtures/storage-projection/invalid/unknown-index-predicate-column.json"
+        ),
+        include_bytes!(
+            "../../../tests/fixtures/storage-projection/invalid/unknown-index-predicate-column.expect.json"
+        ),
+    ),
+    (
         "unknown-top-field",
         include_bytes!(
             "../../../tests/fixtures/storage-projection/invalid/unknown-top-field.json"
@@ -417,7 +462,7 @@ fn golden_normalizes_and_canonicalizes_byte_identically() {
     let attachment = parse(VALID);
     assert_eq!(attachment.project_id().as_str(), "planner");
     assert_eq!(attachment.attachment_revision().as_str(), "0.4.0");
-    assert_eq!(attachment.entities().len(), 7);
+    assert_eq!(attachment.entities().len(), 8);
     assert_eq!(attachment.relations().len(), 7);
     assert_eq!(attachment.projections().len(), 4);
     // The seven closed relation kinds are all exercised by the golden.
@@ -804,7 +849,7 @@ fn same_domain_model_derives_both_namespaces() {
     let mariadb = project(&attachment, Namespace::Mariadb).expect("derives");
     // Every local entity is mapped exactly once in every rendering.
     for derived in [&postgres, &laravel, &mysql, &mariadb] {
-        assert_eq!(derived.tables().len(), 6, "every local entity is mapped");
+        assert_eq!(derived.tables().len(), 7, "every local entity is mapped");
         assert_eq!(derived.joins().len(), 1, "the join table is materialized");
     }
     // The type tables differ per namespace for the same domain type.
@@ -839,12 +884,72 @@ fn same_domain_model_derives_both_namespaces() {
         .expect("derived foreign key");
     assert_eq!(foreign_key.references_table().as_str(), "task");
     assert_eq!(foreign_key.on_delete(), OnDelete::Cascade);
+    // The 0.4.0 type arms render per namespace: enum members through a
+    // bounded varchar, arrays natively on PostgreSQL and as JSON in
+    // the Laravel namespace.
+    let tag = postgres
+        .table(&EntityKey::parse("tag").expect("key"))
+        .expect("tag table");
+    let color = tag
+        .columns()
+        .iter()
+        .find(|column| column.name().as_str() == "color")
+        .expect("enum column");
+    assert_eq!(color.storage_type(), "varchar(64)");
+    let roster = postgres
+        .table(&EntityKey::parse("task_roster").expect("key"))
+        .expect("task_roster table");
+    let members = roster
+        .columns()
+        .iter()
+        .find(|column| column.name().as_str() == "members")
+        .expect("array column");
+    assert_eq!(members.storage_type(), "varchar(64)[]");
+    let laravel_roster = laravel
+        .table(&EntityKey::parse("task_roster").expect("key"))
+        .expect("task_roster table");
+    let laravel_members = laravel_roster
+        .columns()
+        .iter()
+        .find(|column| column.name().as_str() == "members")
+        .expect("array column");
+    assert_eq!(laravel_members.storage_type(), "json");
     // Determinism: deriving twice is byte-identical.
     let again = project(&attachment, Namespace::Postgres).expect("derives");
     assert_eq!(
         canonical::derived_bytes(&postgres).expect("bytes"),
         canonical::derived_bytes(&again).expect("bytes")
     );
+}
+
+#[test]
+fn laravel_namespace_refuses_partial_predicates_and_checks() {
+    // The valid golden declares checks only on the postgres table; a
+    // mutated laravel declaration refuses with mapping-unsupported.
+    let mut value: serde_json::Value = serde_json::from_slice(VALID).expect("golden");
+    let laravel = value["projections"]
+        .as_array_mut()
+        .expect("array")
+        .iter_mut()
+        .find(|projection| projection["namespace"] == "laravel")
+        .expect("laravel projection");
+    laravel["tables"]
+        .as_array_mut()
+        .expect("array")
+        .iter_mut()
+        .find(|table| table["entity"] == "task")
+        .expect("task table")["checks"] = serde_json::json!([
+        {"name": "chk_task_window", "where": [{"column": "deleted_at", "op": "is-null"}]}
+    ]);
+    let mutated = StorageProjectionAttachment::from_value(&value).expect("parses");
+    let error = project(&mutated, Namespace::Laravel).expect_err("refused");
+    assert_eq!(
+        error.reason_ids().first().copied(),
+        Some("storage.mapping-invalid")
+    );
+    let rendered = serde_json::to_string(&error).expect("diagnostic json");
+    assert!(rendered.contains("mapping-unsupported"));
+    assert!(rendered.contains("task"));
 }
 
 #[test]

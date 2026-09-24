@@ -73,6 +73,14 @@ impl CapabilitySnapshot {
         self
     }
 
+    /// Every declared answer, canonical (byte-sorted) order.
+    pub fn answers(&self) -> Vec<(&str, SnapshotSupport)> {
+        self.support
+            .iter()
+            .map(|(capability, support)| (capability.as_str(), *support))
+            .collect()
+    }
+
     /// The declared support of one capability wire spelling.
     pub fn support_of(&self, capability: &str) -> SnapshotSupport {
         self.support

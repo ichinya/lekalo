@@ -82,6 +82,9 @@ const evidence = () => ({
     }),
     observedTable("tag", {
       columns: [
+        column("color", "varchar(64)", true, {
+          collation: "utf8mb4_0900_ai_ci",
+        }),
         column("id", "binary(16)", false),
         column("label", "varchar(64)", false, {
           collation: "utf8mb4_0900_ai_ci",
@@ -96,6 +99,7 @@ const evidence = () => ({
         column("deleted_at", "datetime(6)", true),
         column("due_date", "date", true),
         column("id", "binary(16)", false),
+        column("minutes", "bigint", true),
         column("note", "text", true),
         column("parent_task_id", "binary(16)", true),
         column("row_etag", "varbinary", false),

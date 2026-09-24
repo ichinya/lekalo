@@ -5490,6 +5490,315 @@
       "lifecycle": "active"
     },
     {
+      "id": "storage-engine.capability-missing",
+      "code": "LEK-SEN-010",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported",
+        "invalid"
+      ],
+      "message_id": "storage-engine.capability-missing",
+      "default_message": "The resolved engine profile does not declare the required capability.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.conformance-failed",
+      "code": "LEK-SEN-013",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "storage-engine.conformance-failed",
+      "default_message": "A storage-engine component conformance check failed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.drift-invalid",
+      "code": "LEK-SEN-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage-engine.drift-invalid",
+      "default_message": "The stored drift comparison cannot be produced from the given evidence.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.export-limit",
+      "code": "LEK-SEN-014",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage-engine.export-limit",
+      "default_message": "The canonical storage-engine payload exceeds the export bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.extension-unsupported",
+      "code": "LEK-SEN-012",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "storage-engine.extension-unsupported",
+      "default_message": "The observed schema uses an extension outside the profile allow-list.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.input-invalid",
+      "code": "LEK-SEN-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage-engine.input-invalid",
+      "default_message": "The storage-engine document is malformed or exceeds a hard bound.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.introspection-invalid",
+      "code": "LEK-SEN-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage-engine.introspection-invalid",
+      "default_message": "The adapter-produced storage introspection evidence violates its closed contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.lifecycle-invalid",
+      "code": "LEK-SEN-011",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage-engine.lifecycle-invalid",
+      "default_message": "The declared test-database lifecycle violates its closed policy.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.mapping-invalid",
+      "code": "LEK-SEN-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage-engine.mapping-invalid",
+      "default_message": "A domain declaration cannot be mapped onto the declared engine profile.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.migration-gated",
+      "code": "LEK-SEN-009",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "storage-engine.migration-gated",
+      "default_message": "A destructive migration step is blocked until the exact plan id is named.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "planId",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.migration-invalid",
+      "code": "LEK-SEN-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage-engine.migration-invalid",
+      "default_message": "The migration plan violates its closed contract or dependency order.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.profile-invalid",
+      "code": "LEK-SEN-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "storage-engine.profile-invalid",
+      "default_message": "The declared engine profile is semantically incoherent.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.render-unsupported",
+      "code": "LEK-SEN-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported",
+        "invalid"
+      ],
+      "message_id": "storage-engine.render-unsupported",
+      "default_message": "The declared projection fact has no deterministic rendering in this engine profile.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "storage-engine.version-unsupported",
+      "code": "LEK-SEN-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported",
+        "invalid"
+      ],
+      "message_id": "storage-engine.version-unsupported",
+      "default_message": "The pinned engine version is outside the owner-published support matrix.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "storage.diff-invalid",
       "code": "LEK-STO-006",
       "category": "semantic",

@@ -320,7 +320,7 @@ fn one_sided_and_zero_padded_parameters_agree() {
         .expect("tables")
         .iter_mut()
         .find(|table| table["name"] == "tag")
-        .expect("tag table")["columns"][1]["type"] =
+        .expect("tag table")["columns"][2]["type"] =
         serde_json::Value::String("varchar".to_owned());
     let abbreviated = StorageIntrospection::from_value(&value).expect("parses");
     let report = introspect_check(&attachment, Namespace::Mysql, &abbreviated).expect("comparable");
@@ -335,7 +335,7 @@ fn one_sided_and_zero_padded_parameters_agree() {
         .expect("tables")
         .iter_mut()
         .find(|table| table["name"] == "tag")
-        .expect("tag table")["columns"][1]["type"] =
+        .expect("tag table")["columns"][2]["type"] =
         serde_json::Value::String("varchar(064)".to_owned());
     let padded = StorageIntrospection::from_value(&value).expect("parses");
     let report = introspect_check(&attachment, Namespace::Mysql, &padded).expect("comparable");
@@ -350,7 +350,7 @@ fn one_sided_and_zero_padded_parameters_agree() {
         .expect("tables")
         .iter_mut()
         .find(|table| table["name"] == "tag")
-        .expect("tag table")["columns"][1]["type"] =
+        .expect("tag table")["columns"][2]["type"] =
         serde_json::Value::String("varchar(128)".to_owned());
     let widened = StorageIntrospection::from_value(&value).expect("parses");
     let report = introspect_check(&attachment, Namespace::Mysql, &widened).expect("comparable");
@@ -376,7 +376,7 @@ fn collation_flip_is_collation_drift() {
         .find(|table| table["name"] == "tag")
         .expect("tag table");
     tag["collation"] = serde_json::Value::String("utf8mb4_bin".to_owned());
-    tag["columns"][1]["collation"] = serde_json::Value::String("utf8mb4_bin".to_owned());
+    tag["columns"][2]["collation"] = serde_json::Value::String("utf8mb4_bin".to_owned());
     let flipped = StorageIntrospection::from_value(&value).expect("parses");
     let report = introspect_check(&attachment, Namespace::Mysql, &flipped).expect("comparable");
     assert!(report.drifts.iter().any(|drift| {

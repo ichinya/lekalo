@@ -371,7 +371,10 @@ fn fields(array: &[Json]) -> Result<Vec<DomainField>, DiagnosticSet> {
             .as_object()
             .ok_or_else(|| diagnostic::input_invalid("field-shape"))?;
         for key in field.keys() {
-            if !matches!(key.as_str(), "field" | "type" | "required" | "visibility") {
+            if !matches!(
+                key.as_str(),
+                "field" | "type" | "required" | "visibility" | "default"
+            ) {
                 return Err(diagnostic::input_invalid("unknown-field"));
             }
         }
@@ -381,7 +384,10 @@ fn fields(array: &[Json]) -> Result<Vec<DomainField>, DiagnosticSet> {
             .and_then(Json::as_object)
             .ok_or_else(|| diagnostic::input_invalid("type-shape"))?;
         for key in field_type.keys() {
-            if !matches!(key.as_str(), "name" | "length" | "precision" | "scale") {
+            if !matches!(
+                key.as_str(),
+                "name" | "length" | "precision" | "scale" | "members" | "element" | "maxItems"
+            ) {
                 return Err(diagnostic::input_invalid("unknown-field"));
             }
         }
@@ -426,6 +432,61 @@ fn fields(array: &[Json]) -> Result<Vec<DomainField>, DiagnosticSet> {
                 }
                 DomainType::Decimal { precision, scale }
             }
+            "enum" => {
+                let members = field_type
+                    .get("members")
+                    .and_then(Json::as_array)
+                    .ok_or_else(|| diagnostic::input_invalid("type-params"))?;
+                if members.is_empty() || members.len() > version::MAX_ENUM_MEMBERS {
+                    return Err(diagnostic::input_invalid("type-params"));
+                }
+                let mut parsed = Vec::with_capacity(members.len());
+                for member in members {
+                    let text = member
+                        .as_str()
+                        .ok_or_else(|| diagnostic::input_invalid("type-params"))?;
+                    if text.is_empty() || text.len() > version::MAX_ENUM_MEMBER_BYTES {
+                        return Err(diagnostic::input_invalid("type-params"));
+                    }
+                    if !text
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+                        || !text.starts_with(|b: char| b.is_ascii_lowercase())
+                    {
+                        return Err(diagnostic::input_invalid("type-params"));
+                    }
+                    parsed.push(text.to_owned());
+                }
+                parsed.sort();
+                parsed.dedup();
+                DomainType::Enum { members: parsed }
+            }
+            "array" => {
+                let element = field_type
+                    .get("element")
+                    .and_then(Json::as_object)
+                    .ok_or_else(|| diagnostic::input_invalid("type-params"))?;
+                let element_type = parse_scalar_element(element)?;
+                if !element_type.is_scalar() {
+                    return Err(diagnostic::input_invalid("type-params"));
+                }
+                let max_items = match field_type.get("maxItems") {
+                    Some(Json::Null) | None => None,
+                    Some(value) => {
+                        let bound = value
+                            .as_i64()
+                            .ok_or_else(|| diagnostic::input_invalid("type-params"))?;
+                        if !(1..=version::MAX_ARRAY_ITEMS).contains(&bound) {
+                            return Err(diagnostic::input_invalid("type-params"));
+                        }
+                        Some(bound)
+                    }
+                };
+                DomainType::Array {
+                    element: Box::new(element_type),
+                    max_items,
+                }
+            }
             _ => return Err(diagnostic::input_invalid("type-name")),
         };
         if type_name != "string" && length.is_some() {
@@ -434,6 +495,10 @@ fn fields(array: &[Json]) -> Result<Vec<DomainField>, DiagnosticSet> {
         if type_name != "decimal" && (precision.is_some() || scale.is_some()) {
             return Err(diagnostic::input_invalid("type-params"));
         }
+        let default = match field.get("default") {
+            Some(Json::Null) | None => None,
+            Some(value) => Some(field_default(value)?),
+        };
         let required = match field.get("required") {
             Some(Json::Null) | None => false,
             Some(value) => value
@@ -452,6 +517,7 @@ fn fields(array: &[Json]) -> Result<Vec<DomainField>, DiagnosticSet> {
             field_type: domain_type,
             required,
             visibility,
+            default,
         });
     }
     parsed.sort_by(|left, right| left.field.cmp(&right.field));
@@ -737,6 +803,7 @@ fn tables(array: &[Json]) -> Result<Vec<Table>, DiagnosticSet> {
                     | "indexes"
                     | "charset"
                     | "collation"
+                    | "checks"
             ) {
                 return Err(diagnostic::input_invalid("unknown-field"));
             }
@@ -850,6 +917,10 @@ fn tables(array: &[Json]) -> Result<Vec<Table>, DiagnosticSet> {
                 Some(collation.to_owned())
             }
         };
+        let checks = match optional_bounded_array(table, "checks", version::MAX_CHECKS)? {
+            Some(entries) => checks(entries)?,
+            None => Vec::new(),
+        };
         parsed.push(Table {
             entity,
             table: name,
@@ -862,6 +933,7 @@ fn tables(array: &[Json]) -> Result<Vec<Table>, DiagnosticSet> {
             indexes,
             charset,
             collation,
+            checks,
         });
     }
     parsed.sort_by(|left, right| left.entity.cmp(&right.entity));
@@ -960,7 +1032,7 @@ fn indexes(array: &[Json]) -> Result<Vec<Index>, DiagnosticSet> {
         for key in index.keys() {
             if !matches!(
                 key.as_str(),
-                "name" | "columns" | "unique" | "kind" | "prefixLengths" | "descending"
+                "name" | "columns" | "unique" | "kind" | "prefixLengths" | "descending" | "where"
             ) {
                 return Err(diagnostic::input_invalid("unknown-field"));
             }
@@ -1044,6 +1116,10 @@ fn indexes(array: &[Json]) -> Result<Vec<Index>, DiagnosticSet> {
                 Some(parsed)
             }
         };
+        let where_ = match index.get("where") {
+            Some(Json::Null) | None => None,
+            Some(value) => Some(predicate_conjunction(value)?),
+        };
         parsed.push(Index {
             name,
             columns,
@@ -1051,6 +1127,7 @@ fn indexes(array: &[Json]) -> Result<Vec<Index>, DiagnosticSet> {
             kind,
             prefix_lengths,
             descending,
+            where_,
         });
     }
     parsed.sort_by(|left, right| {
@@ -1058,6 +1135,210 @@ fn indexes(array: &[Json]) -> Result<Vec<Index>, DiagnosticSet> {
             .cmp(&right.name)
             .then_with(|| left.columns.cmp(&right.columns))
     });
+    Ok(parsed)
+}
+
+/// Parse one non-nested scalar element type of an array domain type.
+fn parse_scalar_element(element: &WireMap) -> Result<DomainType, DiagnosticSet> {
+    for key in element.keys() {
+        if !matches!(key.as_str(), "name" | "length" | "precision" | "scale") {
+            return Err(diagnostic::input_invalid("unknown-field"));
+        }
+    }
+    let name = element
+        .get("name")
+        .and_then(Json::as_str)
+        .ok_or_else(|| diagnostic::input_invalid("type-name"))?;
+    let param = |key: &str| match element.get(key) {
+        Some(Json::Null) | None => Ok(None),
+        Some(value) => value
+            .as_i64()
+            .map(Some)
+            .ok_or_else(|| diagnostic::input_invalid("type-params")),
+    };
+    let length = param("length")?;
+    let precision = param("precision")?;
+    let scale = param("scale")?;
+    let parsed = match name {
+        "boolean" => DomainType::Boolean,
+        "integer" => DomainType::Integer,
+        "text" => DomainType::Text,
+        "uuid" => DomainType::Uuid,
+        "date" => DomainType::Date,
+        "timestamp" => DomainType::Timestamp,
+        "binary" => DomainType::Binary,
+        "json" => DomainType::Json,
+        "string" => {
+            let length = length.ok_or_else(|| diagnostic::input_invalid("type-params"))?;
+            if !(1..=version::MAX_STRING_LENGTH).contains(&length) {
+                return Err(diagnostic::input_invalid("type-params"));
+            }
+            DomainType::String { length }
+        }
+        "decimal" => {
+            let precision = precision.ok_or_else(|| diagnostic::input_invalid("type-params"))?;
+            let scale = scale.ok_or_else(|| diagnostic::input_invalid("type-params"))?;
+            if !(1..=version::MAX_DECIMAL_PRECISION).contains(&precision)
+                || !(0..=precision).contains(&scale)
+            {
+                return Err(diagnostic::input_invalid("type-params"));
+            }
+            DomainType::Decimal { precision, scale }
+        }
+        _ => return Err(diagnostic::input_invalid("type-name")),
+    };
+    if name != "string" && length.is_some() {
+        return Err(diagnostic::input_invalid("type-params"));
+    }
+    if name != "decimal" && (precision.is_some() || scale.is_some()) {
+        return Err(diagnostic::input_invalid("type-params"));
+    }
+    Ok(parsed)
+}
+
+/// Parse one typed literal value (field defaults and predicates).
+fn literal_value(value: &Json) -> Result<super::entity::Literal, DiagnosticSet> {
+    let parsed = match value {
+        Json::Bool(flag) => super::entity::Literal::Boolean(*flag),
+        Json::Number(number) => {
+            let text = number.to_string();
+            if text.contains('.') || text.contains('e') || text.contains('E') {
+                super::entity::Literal::Decimal(text)
+            } else {
+                super::entity::Literal::Integer(
+                    number
+                        .as_i64()
+                        .ok_or_else(|| diagnostic::input_invalid("literal-shape"))?,
+                )
+            }
+        }
+        Json::String(text) => {
+            if text.is_empty() || text.len() > 256 {
+                return Err(diagnostic::input_invalid("literal-shape"));
+            }
+            super::entity::Literal::Text(text.clone())
+        }
+        _ => return Err(diagnostic::input_invalid("literal-shape")),
+    };
+    Ok(parsed)
+}
+
+/// Parse one closed field default.
+fn field_default(value: &Json) -> Result<super::entity::FieldDefault, DiagnosticSet> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| diagnostic::input_invalid("default-shape"))?;
+    for key in object.keys() {
+        if !matches!(key.as_str(), "kind" | "value" | "ref") {
+            return Err(diagnostic::input_invalid("unknown-field"));
+        }
+    }
+    let kind = object
+        .get("kind")
+        .and_then(Json::as_str)
+        .ok_or_else(|| diagnostic::input_invalid("default-kind"))?;
+    match kind {
+        "literal" => {
+            let literal = object
+                .get("value")
+                .ok_or_else(|| diagnostic::input_invalid("default-shape"))?;
+            Ok(super::entity::FieldDefault::Literal(literal_value(
+                literal,
+            )?))
+        }
+        "now" => Ok(super::entity::FieldDefault::Now),
+        "uuid_generate" => Ok(super::entity::FieldDefault::UuidGenerate),
+        "sequence" => {
+            let column = StorageName::parse(
+                object
+                    .get("ref")
+                    .and_then(Json::as_str)
+                    .ok_or_else(|| diagnostic::input_invalid("default-shape"))?,
+            )
+            .map_err(|_| diagnostic::input_invalid("default-shape"))?;
+            Ok(super::entity::FieldDefault::Sequence { column })
+        }
+        _ => Err(diagnostic::input_invalid("default-kind")),
+    }
+}
+
+/// Parse one bounded predicate conjunction.
+fn predicate_conjunction(
+    value: &Json,
+) -> Result<Vec<super::projection::ColumnPredicate>, DiagnosticSet> {
+    let array = value
+        .as_array()
+        .ok_or_else(|| diagnostic::input_invalid("predicate-shape"))?;
+    if array.is_empty() || array.len() > version::MAX_PREDICATES {
+        return Err(diagnostic::input_invalid("bound-exceeded"));
+    }
+    let mut parsed = Vec::with_capacity(array.len());
+    for entry in array {
+        let predicate = entry
+            .as_object()
+            .ok_or_else(|| diagnostic::input_invalid("predicate-shape"))?;
+        for key in predicate.keys() {
+            if !matches!(key.as_str(), "column" | "op" | "value") {
+                return Err(diagnostic::input_invalid("unknown-field"));
+            }
+        }
+        let column = StorageName::parse(
+            predicate
+                .get("column")
+                .and_then(Json::as_str)
+                .ok_or_else(|| diagnostic::input_invalid("predicate-shape"))?,
+        )
+        .map_err(|_| diagnostic::input_invalid("predicate-shape"))?;
+        let op = super::projection::PredicateOp::parse(
+            predicate
+                .get("op")
+                .and_then(Json::as_str)
+                .ok_or_else(|| diagnostic::input_invalid("predicate-op"))?,
+        )
+        .map_err(|_| diagnostic::input_invalid("predicate-op"))?;
+        let literal = match predicate.get("value") {
+            Some(Json::Null) | None => None,
+            Some(value) => Some(literal_value(value)?),
+        };
+        if op.carries_value() != literal.is_some() {
+            return Err(diagnostic::input_invalid("predicate-value"));
+        }
+        parsed.push(super::projection::ColumnPredicate {
+            column,
+            op,
+            value: literal,
+        });
+    }
+    Ok(parsed)
+}
+
+/// Parse one declared CHECK constraint list; canonical order is name.
+fn checks(array: &[Json]) -> Result<Vec<super::projection::CheckConstraint>, DiagnosticSet> {
+    let mut parsed = Vec::with_capacity(array.len());
+    for entry in array {
+        let check = entry
+            .as_object()
+            .ok_or_else(|| diagnostic::input_invalid("check-shape"))?;
+        for key in check.keys() {
+            if !matches!(key.as_str(), "name" | "where") {
+                return Err(diagnostic::input_invalid("unknown-field"));
+            }
+        }
+        let name = id_member(check, "name", "check-shape", StorageName::parse)?;
+        let where_ = predicate_conjunction(
+            check
+                .get("where")
+                .ok_or_else(|| diagnostic::input_invalid("check-shape"))?,
+        )?;
+        parsed.push(super::projection::CheckConstraint { name, where_ });
+    }
+    parsed.sort_by(|left, right| left.name.cmp(&right.name));
+    if parsed
+        .windows(2)
+        .any(|window| window[0].name == window[1].name)
+    {
+        return Err(diagnostic::input_invalid("duplicate-check"));
+    }
     Ok(parsed)
 }
 

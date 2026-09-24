@@ -406,6 +406,38 @@ test("internal outcomes are closed and normalized", () => {
     (error) => error.code === "outcome-invalid");
 });
 
+test("the postgres-storage extension descriptor validates against the kernel vocabulary", async () => {
+  // The issue #69 spike: its one declared capability must be in the
+  // kernel's closed vocabulary and validate as a descriptor; the
+  // describe handshake then advertises it only with a bound profile.
+  const { createPostgresStorageExtension, STORAGE_DDL_CAPABILITY } = await import(
+    "../src/postgres-storage-extension.mjs"
+  );
+  const apply = async () => ({ applied: 1, planId: "sha256:" + "a".repeat(64) });
+  const descriptor = createPostgresStorageExtension(apply);
+  const validated = validateExtensionDescriptor(descriptor);
+  assert.equal(validated.id, "postgres-storage");
+  assert.deepEqual(validated.operations, ["generate"]);
+  assert.equal(validated.namedCapabilities[STORAGE_DDL_CAPABILITY], "full");
+  // The describe handshake advertises the capability only when a
+  // validated profile is bound.
+  const advertised = describeCapabilities(projectProfile(), [validated]);
+  assert.equal(advertised.capabilities[STORAGE_DDL_CAPABILITY], "full");
+  assert.ok(advertised.operations.includes("generate"));
+  // The invoke gate: no plan id is a typed denial; a plan id completes
+  // with the digest echoed.
+  const denied = await descriptor.invoke({ data: {} });
+  assert.equal(denied.state, "unsupported");
+  assert.equal(denied.diagnostics[0].code, "LEK-SEN-009");
+  const complete = await descriptor.invoke({ native_request: { plan_id: "sha256:" + "b".repeat(64) } });
+  assert.equal(complete.state, "complete");
+  assert.equal(complete.data.planId, "sha256:" + "b".repeat(64));
+  // The declaration alone never wires itself: creating the descriptor
+  // does not register it with the production kernel.
+  const bare = describeCapabilities();
+  assert.equal(bare.capabilities[STORAGE_DDL_CAPABILITY], undefined);
+});
+
 // ---------------------------------------------------------------------------
 // Dispatch: unsupported operations and injected fakes.
 // ---------------------------------------------------------------------------

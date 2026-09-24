@@ -13,9 +13,9 @@
 //! set with no partial result. Pure and read-only.
 
 use super::diagnostic::{self, DOMAIN_INVALID, PROJECTION_INVALID, RELATION_INVALID};
-use super::entity::DomainEntity;
+use super::entity::{DomainEntity, DomainType};
 use super::id::{EntityKey, StorageName};
-use super::projection::{Namespace, Projection};
+use super::projection::{GeneratedKind, Namespace, Projection};
 use super::relation::{DeleteBehavior, Relation, RelationKind};
 use super::StorageProjectionAttachment;
 use crate::diagnostics::DiagnosticSet;
@@ -26,6 +26,7 @@ pub(crate) fn semantic_self_check(
     attachment: &StorageProjectionAttachment,
 ) -> Result<(), DiagnosticSet> {
     check_entities(attachment)?;
+    check_field_defaults(attachment)?;
     check_relations(attachment)?;
     check_projections(attachment)?;
     Ok(())
@@ -58,6 +59,46 @@ fn check_entities(attachment: &StorageProjectionAttachment) -> Result<(), Diagno
                 return Err(diagnostic::rule_invalid(
                     DOMAIN_INVALID,
                     "aggregate-owner-not-root",
+                    Some(subject),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Field-default rules: the typed literal must match the field's
+/// domain type, `now` belongs to instants only, `uuid_generate` to
+/// UUIDs only, and an enum text literal must be one of the declared
+/// members.
+fn check_field_defaults(attachment: &StorageProjectionAttachment) -> Result<(), DiagnosticSet> {
+    use super::entity::{FieldDefault, Literal};
+    for entity in attachment.entities() {
+        for field in entity.fields() {
+            let Some(default) = field.default() else {
+                continue;
+            };
+            let subject = field.name().as_str();
+            let matches = match (default, field.field_type()) {
+                (FieldDefault::Literal(Literal::Boolean(_)), DomainType::Boolean)
+                | (FieldDefault::Literal(Literal::Integer(_)), DomainType::Integer)
+                | (FieldDefault::Literal(Literal::Decimal(_)), DomainType::Decimal { .. }) => true,
+                (FieldDefault::Literal(Literal::Text(text)), DomainType::String { .. })
+                | (FieldDefault::Literal(Literal::Text(text)), DomainType::Text) => {
+                    !text.is_empty()
+                }
+                (FieldDefault::Literal(Literal::Text(text)), DomainType::Enum { members }) => {
+                    members.contains(text)
+                }
+                (FieldDefault::Now, DomainType::Timestamp) => true,
+                (FieldDefault::UuidGenerate, DomainType::Uuid) => true,
+                (FieldDefault::Sequence { .. }, _) => true,
+                _ => false,
+            };
+            if !matches {
+                return Err(diagnostic::rule_invalid(
+                    DOMAIN_INVALID,
+                    "default-type-mismatch",
                     Some(subject),
                 ));
             }
@@ -405,6 +446,40 @@ fn check_tables(
                 }
             }
             check_index(index, table, projection, entity, attachment)?;
+            if let Some(predicates) = index.where_() {
+                for predicate in predicates {
+                    if !merged.contains(&predicate.column().as_str()) {
+                        return Err(projection_invalid_subject(
+                            "unknown-index-predicate-column",
+                            subject,
+                        ));
+                    }
+                }
+            }
+        }
+        for check in table.checks() {
+            for predicate in check.predicates() {
+                if !merged.contains(&predicate.column().as_str()) {
+                    return Err(projection_invalid_subject("unknown-check-column", subject));
+                }
+            }
+        }
+        // A sequence default must name a declared generated sequence
+        // column of this table; the resolved rendering stays
+        // deterministic and owned.
+        for field in entity.fields() {
+            let Some(super::entity::FieldDefault::Sequence { column }) = field.default() else {
+                continue;
+            };
+            let resolved = table.generated_columns().iter().any(|generated| {
+                generated.name() == column && generated.kind() == GeneratedKind::Sequence
+            });
+            if !resolved {
+                return Err(projection_invalid_subject(
+                    "default-sequence-unresolved",
+                    subject,
+                ));
+            }
         }
     }
     Ok(())
@@ -461,10 +536,7 @@ fn check_index(
                 entity,
                 column,
                 &mut BTreeSet::new(),
-            )
-            .map_err(|_| {
-                projection_invalid_subject("cyclic-key-resolution", table.entity().as_str())
-            })?
+            )?
             .map(|render| super::projection::StorageType::is_textual(render_family(&render)));
             if textual != Some(true) {
                 return Err(projection_invalid_subject(
@@ -490,10 +562,7 @@ fn check_index(
                 entity,
                 column,
                 &mut BTreeSet::new(),
-            )
-            .map_err(|_| {
-                projection_invalid_subject("cyclic-key-resolution", table.entity().as_str())
-            })?
+            )?
             else {
                 continue;
             };
@@ -585,24 +654,24 @@ fn index_column_type(
     entity: &DomainEntity,
     column: &StorageName,
     visited: &mut BTreeSet<(EntityKey, StorageName)>,
-) -> Result<Option<String>, ()> {
+) -> Result<Option<String>, DiagnosticSet> {
     // The grammar legally admits pk→fk cycles (a primary key may name
     // a foreign-key column), so the recursion carries a visited set
     // of `(entity, column)` pairs: a revisited pair proves a cyclic
-    // resolution chain, reported as the typed `Err` arm — a refusal,
+    // resolution chain, reported as the typed refusal — a refusal,
     // never a stack overflow (round-3 review F-1). `Ok(None)` is the
     // honest unresolvable case (no declared or derivable family).
     let identity = (entity.entity_key().clone(), column.clone());
     if !visited.insert(identity) {
-        return Err(());
+        return Err(projection_invalid_subject(
+            "cyclic-key-resolution",
+            table.entity().as_str(),
+        ));
     }
     let namespace = projection.namespace();
     for field in entity.fields() {
         if field.name().as_str() == column.as_str() {
-            return Ok(Some(super::derivation::render_type(
-                namespace,
-                field.field_type(),
-            )));
+            return super::derivation::render_type(namespace, field.field_type()).map(Some);
         }
     }
     for technical in table.technical_columns() {
