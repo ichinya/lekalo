@@ -12,6 +12,7 @@
 
 use std::path::Path;
 
+use crate::adapter_package::budget::ExpansionPolicy;
 use crate::artifacts::check::{inputs_revision, Prepared};
 use crate::artifacts::types::{
     AdapterRef, ArtifactEntry, ArtifactKey, ArtifactKind, ArtifactManifest, ArtifactPath,
@@ -31,7 +32,7 @@ use crate::target_protocol::transport::TransportLimits;
 use crate::target_protocol::wire::{Operation, WriteAction, WriteEntry};
 use crate::target_protocol::{CallRequest, TargetClient, TargetFailure};
 
-use super::catalog::{binding_failure, discover, locked_adapter, AdapterSupply};
+use super::catalog::{binding_failure, discover_with_policy, locked_adapter, AdapterSupply};
 use super::receipt::{
     AdapterReceipt, GenerateReceipt, InputsReceipt, IrEvidenceReceipt, ScopeReceipt, TargetCounts,
     TargetReceipt, TargetState, Verdict, WriteReceipt, IDENTITY, SCHEMA_VERSION,
@@ -53,6 +54,11 @@ pub struct GenerateRequest<'a> {
     pub locked: bool,
     pub supply: Option<AdapterSupply>,
     pub timeout_ms: u64,
+    /// Issue #89: when set, the adapter's described scopes may exceed
+    /// its manifest ceiling for this run (`--allow-permission-expansion`).
+    /// The widening is refused by default and stays visible in the
+    /// confinement evidence when permitted.
+    pub allow_permission_expansion: bool,
 }
 
 /// One target's terminal outcome.
@@ -158,7 +164,12 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     }
 
     let mut client = TargetClient::new(limits);
-    let discovered = discover(&mut client, supply, prepared.root(), limits)?;
+    let policy = if request.allow_permission_expansion {
+        ExpansionPolicy::AllowEscalated
+    } else {
+        ExpansionPolicy::Refuse
+    };
+    let discovered = discover_with_policy(&mut client, supply, prepared.root(), limits, policy)?;
     let Some(locked) = locked_adapter(prepared.lock(), &discovered) else {
         return Err(DomainResult::from(&Failure::AdapterNotLocked {
             adapter: discovered.adapter.id.clone(),

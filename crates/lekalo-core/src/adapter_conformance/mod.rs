@@ -1854,6 +1854,11 @@ fn classify(failure: &TargetFailure) -> (CheckClass, &'static str) {
         TargetFailure::RequestInvalid { detail } => (CheckClass::Feature, detail),
         TargetFailure::HandshakeRequired { .. } => (CheckClass::Feature, "handshake-required"),
         TargetFailure::CapabilityUnsupported { detail } => (CheckClass::Feature, detail),
+        TargetFailure::PermissionEscalated { .. } => (CheckClass::Security, "permission-escalated"),
+        TargetFailure::SecurityRefusal { check, detail } => {
+            let _ = check;
+            (CheckClass::Security, detail)
+        }
         TargetFailure::ProtocolUnpublished | TargetFailure::RegistryInvalid => {
             (CheckClass::Process, "registry")
         }

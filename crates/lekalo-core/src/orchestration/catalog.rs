@@ -15,6 +15,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::adapter_package::budget::{ExpansionPolicy, SessionBudget};
 use crate::lockfile::resolution::{CandidateAdapter, CandidateSet};
 use crate::lockfile::types::{
     ArtifactPin, ComponentId, Platform, SemVer, Sha256Digest, SourceKind, SourceRef,
@@ -93,8 +94,32 @@ pub fn discover(
     root: &Path,
     limits: TransportLimits,
 ) -> Result<DiscoveredAdapter, Failure> {
+    discover_with_policy(client, supply, root, limits, ExpansionPolicy::Refuse)
+}
+
+/// [`discover`] with an explicit escalation policy (issue #89): the
+/// caller may permit described scopes wider than the manifest ceiling
+/// only through this explicit policy spelling; the widening stays
+/// visible in the session's confinement evidence.
+pub fn discover_with_policy(
+    client: &mut TargetClient,
+    supply: &AdapterSupply,
+    root: &Path,
+    limits: TransportLimits,
+    policy: ExpansionPolicy,
+) -> Result<DiscoveredAdapter, Failure> {
     let _ = limits;
     let (manifest, synthesized) = gate_supply(supply, root)?;
+    // A synthesized/implicit descriptor claims nothing: it gets the
+    // strict default budget, not its synthesized manifest's empty
+    // permission block (which would cap describe to nothing).
+    let budget = SessionBudget::budget_for(if synthesized { None } else { manifest.as_ref() })
+        .map_err(Failure::AdapterPackage)?;
+    client.set_budget(if policy == ExpansionPolicy::AllowEscalated {
+        budget.with_expansion_allowed()
+    } else {
+        budget
+    });
     let discovered = Discovery::run(client, &supply.command, root).map_err(Failure::Target)?;
     // The manifest-vs-describe consistency check (issue #32): describe
     // is self-assertion; the verified manifest is the independent

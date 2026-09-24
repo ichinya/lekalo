@@ -86,6 +86,17 @@ Exit classes stay status-owned (0 valid, 1 invalid/usage); receipts are
 pretty two-space JSON with fixed key order, and the canonical index bytes
 are compact with sorted records.
 
+## Confinement evidence (issue #89)
+
+Every scan exchange runs under the adapter's manifest-derived
+confinement budget, and the JSON scan receipt embeds a deterministic
+`confinement` member: the granted budget (scope caps, environment
+variable names, network/children/resources posture), the described and
+effective scopes, and the honest per-dimension enforcement record —
+names and tokens only, sorted, no timestamps, no host paths. The
+normative shape, the enforcement vocabulary, and the escalation policy
+are specified in [adapter-confinement.md](adapter-confinement.md).
+
 ## Connection without touching source files
 
 `observe` reads the project through the accepted structure and loader seams

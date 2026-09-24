@@ -382,16 +382,22 @@ fn exact_file_scope_parent_access_never_publishes_undeclared_changes() {
                 request(Operation::Generate, Some(false), Some(&id))
             };
             let error = call(&mut c, &cmd, &p, req).unwrap_err();
-            // Linux must execute the staged sibling mutation, then reject it
-            // through whole-stage verification. Other backends may deny it
-            // earlier with their narrower existing-file grants.
-            if cfg!(target_os = "linux") {
+            // The staged sibling mutation lands wherever the sandbox had
+            // to grant the output's parent (Linux always, for unlink;
+            // Windows/macOS when the output does not yet exist), so the
+            // out-of-scope staged change is observed as the security
+            // classification `writes-outside-scopes` (issue #89 fix
+            // round 2, C-F3). Where the backend denies the sibling write
+            // outright (an existing exact-file grant), the fixture fails
+            // in the sandbox and the run classifies as a crash.
+            let sibling_landed = cfg!(target_os = "linux") || !existing;
+            if sibling_landed {
                 assert!(
                     matches!(
                         error,
-                        TargetFailure::PlanMismatch {
-                            detail: "undeclared",
-                            ..
+                        TargetFailure::SecurityRefusal {
+                            check: "writes-outside-scopes",
+                            detail: "publication-guard",
                         }
                     ),
                     "{path} {mode} {existing}: {error:?}"

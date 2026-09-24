@@ -66,7 +66,7 @@ lekalo generate --check [--locked] [--project DIR]
 lekalo generate --clean --dry-run [--project DIR]
 lekalo generate --clean --confirm sha256:PLAN_ID [--project DIR]
 lekalo generate [--target TARGET]... [--module MODULE] [--dry-run] [--locked]
-                -- PROGRAM [ARGS...] [--project DIR]
+              [--allow-permission-expansion] -- PROGRAM [ARGS...] [--project DIR]
 lekalo verify [--target TARGET]... [--module MODULE] [--changed] [--locked]
               [--trace PATH] [-- PROGRAM [ARGS...]] [--project DIR]
 lekalo inspect SYMBOL [--include SECTIONS] [--project DIR]
@@ -628,6 +628,14 @@ read-only and never spawns adapters. A clean or report-only check exits
 0; generated drift, staleness, or absence and any orphan exit 1 on
 stderr; integrity and path-policy refusals exit 3; a future manifest
 discriminator exits 5.
+
+Issue #89: the adapter runs under a confinement budget derived from its
+manifest `permissions` block. Described scopes beyond the ceiling are
+refused with `adapter.permission-escalated` (denied) unless the run
+passes `--allow-permission-expansion`, and every exchange records a
+deterministic confinement evidence member. The normative semantics and
+the enforcement matrix are documented in
+[docs/adapter-confinement.md](adapter-confinement.md).
 
 ```sh
 lekalo generate --check

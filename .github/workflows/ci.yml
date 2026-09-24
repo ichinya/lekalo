@@ -179,6 +179,9 @@ jobs:
         if: runner.os != 'Windows'
         timeout-minutes: 3
         run: cargo test -p lekalo-core --test target_transport_unix --locked -- --test-threads=1
+      - name: Run the adapter containment suite (issue #89)
+        timeout-minutes: 5
+        run: cargo test -p lekalo-core --test target_protocol_security --locked
       - run: cargo test --workspace --locked --no-fail-fast
       - name: Run the Node/TypeScript kernel suite (issue #43)
         run: node scripts/test-node-typescript-kernel.mjs
