@@ -26,8 +26,10 @@
 pub mod canonical;
 pub mod context;
 pub mod evaluate;
+pub mod export;
 pub mod input;
 pub mod output;
+pub mod redact;
 pub mod refs;
 pub mod types;
 pub mod vocab;

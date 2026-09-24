@@ -2130,6 +2130,20 @@ fn runtime() -> u8 {
             Commands::Privacy { command } => {
                 return match command {
                     PrivacyCommands::Evaluate { decision } => run_privacy_evaluate(&decision),
+                    PrivacyCommands::Export {
+                        artifact,
+                        destination,
+                        dry_run,
+                        consent,
+                        project,
+                    } => run_privacy_export(
+                        &artifact,
+                        &destination,
+                        dry_run,
+                        consent.as_deref(),
+                        &project,
+                    ),
+                    PrivacyCommands::Redact { payload, .. } => run_privacy_redact(&payload),
                 };
             }
             Commands::Adapter { command } => match run_adapter(*command) {
@@ -9409,6 +9423,44 @@ enum PrivacyCommands {
         #[arg(long, value_name = "FILE")]
         decision: String,
     },
+    /// Export one artifact document under the fail-closed privacy
+    /// pipeline (issue #119): class resolution, decision evaluation,
+    /// the closed redaction transforms, the leak-scanner verification
+    /// pass, and the writes under `.lekalo/privacy/`. `--dry-run`
+    /// prints the exact candidate payload and the redaction diff and
+    /// writes nothing.
+    Export {
+        /// The artifact envelope document path.
+        artifact: String,
+        /// The closed destination spec: `workspace`,
+        /// `repository-store`, `transfer-tenant`, `transfer-external`,
+        /// `transfer-cross-tenant`, or `publish`.
+        #[arg(long, value_name = "SPEC")]
+        destination: String,
+        /// Plan the export and print the candidate payload plus the
+        /// redaction diff; writes nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// The authorizing export-transfer consent evidence document
+        /// (bound to the exact subject digest by the runtime).
+        #[arg(long, value_name = "FILE")]
+        consent: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Show the redaction diff contract of one payload document
+    /// (issue #119): the closed transforms, the leak findings, and
+    /// the redacted payload on stdout. Read-only: writes nothing.
+    Redact {
+        /// The payload document path.
+        #[arg(long, value_name = "FILE")]
+        payload: String,
+        /// Accepted for symmetry with `export`; redaction is
+        /// read-only by definition.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// The `dataflow` subcommands (issue #87).
@@ -9754,9 +9806,7 @@ fn run_privacy_evaluate(path: &str) -> u8 {
     };
     let bytes = match std::fs::read(path) {
         Err(_) => {
-            let _ = write_stderr(&cli_invalid_json(
-                "custody.required-file-missing",
-            ));
+            let _ = write_stderr(&cli_invalid_json("custody.required-file-missing"));
             return OUTPUT_FAILURE;
         }
         Ok(bytes) => bytes,
@@ -9792,6 +9842,114 @@ fn cli_invalid_json(reason: &str) -> String {
         "reasonCodes": [reason],
     }))
     .unwrap_or_default()
+}
+
+/// `lekalo privacy export`: the fail-closed export pipeline. The exit
+/// contract mirrors the evaluator: 0 ready, 3 denied or leak-refused,
+/// 1 malformed. The summary is metadata-only; the candidate payload
+/// appears only under the explicit `payload` member.
+fn run_privacy_export(
+    artifact: &str,
+    destination: &str,
+    dry_run: bool,
+    consent: Option<&str>,
+    project: &Option<String>,
+) -> u8 {
+    let project_dir = match project_root_for(project) {
+        Err(result) => return emit(result, false),
+        Ok(dir) => dir,
+    };
+    let Some(spec) = lekalo_core::privacy::export::DestinationSpec::parse(destination) else {
+        let _ = write_stderr(&cli_invalid_json("privacy.destination-unknown"));
+        return OUTPUT_FAILURE;
+    };
+    let consent_json = match consent {
+        Some(path) => match std::fs::read_to_string(path) {
+            Err(_) => {
+                let _ = write_stderr(&cli_invalid_json("privacy.consent-unreadable"));
+                return OUTPUT_FAILURE;
+            }
+            Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
+                Err(_) => {
+                    let _ = write_stderr(&cli_invalid_json("privacy.consent-invalid"));
+                    return OUTPUT_FAILURE;
+                }
+                Ok(record) => Some(record),
+            },
+        },
+        None => None,
+    };
+    let artifact_path = std::path::Path::new(artifact);
+    match lekalo_core::privacy::export::run_export(
+        &project_dir,
+        artifact_path,
+        spec,
+        consent_json.as_ref(),
+        dry_run,
+    ) {
+        Ok(outcome) => {
+            let summary = serde_json::json!({
+                "status": "ready",
+                "decision": serde_json::to_value(outcome.decision()).unwrap_or_default(),
+                "artifactKind": outcome.artifact_kind(),
+                "artifactRef": outcome.artifact_ref(),
+                "destination": outcome.destination().as_str(),
+                "payload": outcome.payload(),
+                "payloadDigest": outcome.payload_digest(),
+                "appliedTransforms": outcome.applied_transforms().iter().map(|t| t.as_str()).collect::<Vec<_>>(),
+                "findings": outcome.findings(),
+                "residuals": outcome.residuals(),
+                "exportPath": outcome.export_path(),
+                "decisionPath": outcome.decision_path(),
+                "written": outcome.written(),
+                "dryRun": dry_run,
+            });
+            let _ = write_stdout(&serde_json::to_string_pretty(&summary).unwrap_or_default());
+            0
+        }
+        Err(lekalo_core::privacy::export::ExportFailure::Denied(output)) => {
+            let _ = write_stdout(&serde_json::to_string_pretty(&output).unwrap_or_default());
+            3
+        }
+        Err(lekalo_core::privacy::export::ExportFailure::ResidualLeaks { output, leaks }) => {
+            let refusal = serde_json::json!({
+                "status": "refused-leaks",
+                "decision": serde_json::to_value(&output).unwrap_or_default(),
+                "reasonCodes": leaks.iter().map(|leak| format!("leak.{}", leak.kind().as_str())).collect::<Vec<String>>(),
+                "residualLeaks": leaks,
+            });
+            let _ = write_stdout(&serde_json::to_string_pretty(&refusal).unwrap_or_default());
+            3
+        }
+        Err(lekalo_core::privacy::export::ExportFailure::Malformed(code)) => {
+            let _ = write_stderr(&cli_invalid_json(code));
+            OUTPUT_FAILURE
+        }
+    }
+}
+
+/// `lekalo privacy redact`: the read-only redaction diff contract.
+fn run_privacy_redact(payload_path: &str) -> u8 {
+    let text = match std::fs::read_to_string(payload_path) {
+        Err(_) => {
+            let _ = write_stderr(&cli_invalid_json("privacy.payload-unreadable"));
+            return OUTPUT_FAILURE;
+        }
+        Ok(text) => text,
+    };
+    use lekalo_core::privacy::vocab::TransformId;
+    let transforms = [TransformId::RedactSecrets, TransformId::RedactPii];
+    let (redacted, findings, residuals, applied) =
+        lekalo_core::privacy::export::redact_preview(&text, &transforms, &[]);
+    let report = serde_json::json!({
+        "status": "ready",
+        "appliedTransforms": applied.iter().map(|transform| transform.as_str()).collect::<Vec<_>>(),
+        "diff": findings,
+        "residuals": residuals,
+        "redacted": redacted,
+    });
+    let _ = write_stdout(&serde_json::to_string_pretty(&report).unwrap_or_default());
+    0
 }
 
 fn run_dataflow(command: DataflowCommands) -> DomainResult {

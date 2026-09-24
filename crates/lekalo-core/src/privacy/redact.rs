@@ -572,8 +572,9 @@ fn match_credential_assignment(payload: &str, index: usize) -> Option<Match> {
     for key in KEYS {
         if rest.len() >= key.len() && rest[..key.len()].eq_ignore_ascii_case(key) {
             let boundary = rest.as_bytes().get(key.len());
-            let delimited = boundary
-                .map_or(true, |byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')));
+            let delimited = boundary.map_or(true, |byte| {
+                !(byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            });
             if delimited {
                 key_len = Some(key.len());
                 break;
