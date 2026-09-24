@@ -5752,6 +5752,330 @@
       "allowed_fix_ids": [],
       "lifecycle": "active"
     },
+   {
+      "id": "scenario.assertion-failed",
+      "code": "LEK-SCN-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.assertion-failed",
+      "default_message": "A scenario assertion failed during native execution.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scenario",
+          "type": "token"
+        },
+        {
+          "name": "step",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "scenario.binding-ambiguous",
+      "code": "LEK-SCN-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.binding-ambiguous",
+      "default_message": "A scenario test identity is claimed by several native tests, or one native test claims several scenario identities.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scenario",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "scenario.binding-mismatch",
+      "code": "LEK-SCN-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.binding-mismatch",
+      "default_message": "A checked scenario binding disagrees with the bound native test symbol or fingerprint.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scenario",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "scenario.binding-missing",
+      "code": "LEK-SCN-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.binding-missing",
+      "default_message": "A checked scenario binding names a native test that no scanned test declares.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scenario",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "scenario.drift",
+      "code": "LEK-SCN-013",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.drift",
+      "default_message": "A generated scenario test file is drifted, missing, or unreadable against the compiled scenario IR.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "path",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "scenario.infrastructure",
+      "code": "LEK-SCN-005",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "scenario.infrastructure",
+      "default_message": "Scenario execution failed on infrastructure, not on an assertion.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scenario",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "scenario.ir-ref-mismatch",
+      "code": "LEK-SCN-012",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.ir-ref-mismatch",
+      "default_message": "A scenario irRef digest disagrees with the compiled IR evidence it names.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scenario",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+     {
+      "id": "scenario.operation-unresolved",
+      "code": "LEK-SCN-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.operation-unresolved",
+      "default_message": "A scenario action names an operation that resolves to neither a declared command nor query.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scenario",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "scenario.port-missing",
+      "code": "LEK-SCN-007",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "scenario.port-missing",
+      "default_message": "The project declares no test port for scenario tests to bind to.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "scenario.port-shape",
+      "code": "LEK-SCN-008",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.port-shape",
+      "default_message": "The project test port document or its runtime module violates the closed port contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "scenario.run-record-invalid",
+      "code": "LEK-SCN-009",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.run-record-invalid",
+      "default_message": "A scenario run record failed evidence ingest validation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "scenario.runner-unknown",
+      "code": "LEK-SCN-010",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.runner-unknown",
+      "default_message": "A scenario binding names a test runner the target adapter does not define.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scenario",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "scenario.stale-evidence",
+      "code": "LEK-SCN-014",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "scenario.stale-evidence",
+      "default_message": "A scenario run record was produced under a previous compiled-IR revision, so its evidence is stale against the current inputs.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scenario",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "scenario.unsupported-capability",
+      "code": "LEK-SCN-011",
+      "category": "infrastructure",
+      "default_severity": "info",
+      "allowed_statuses": [
+        "unsupported"
+      ],
+      "message_id": "scenario.unsupported-capability",
+      "default_message": "A scenario feature was compiled to an explicit unsupported outcome, never a pass.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scenario",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
     {
       "id": "semantic.command-effect-kind-mismatch",
       "code": "LEK-SEM-001",

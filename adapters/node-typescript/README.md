@@ -142,6 +142,80 @@ rename, bounded counts and bytes); dry runs get a plan-only view and
 write nothing. Minimum zod for consumers of the generated code is
 3.22; the pinned dev dependency exists for this suite only.
 
+## The scenario-test compiler (issue #47)
+
+Compilation of Scenario IR documents (`dev.lekalo.scenario-ir@0.2.16`)
+into deterministic, runner-parameterized TypeScript test files. The
+wire has exactly one `generate` operation, so the compiler joins the
+generation composite (with the Zod and transport generators) and the
+composite routes on the IR document identity at `ir_path`; while
+joined it advertises the reviewed capability id `verify.scenarios` as
+`full` (the extension-free describe keeps the kernel default
+`unsupported`).
+
+- inputs: the scenario document at `ir_path`, the compiled project IR
+  evidence at the canonical cache home (`.lekalo/cache/ir/<project>.json`,
+  digest cross-checked against the scenario's `irRef`), and the project
+  test-port declaration `lekalo/test-port.json` (closed contract:
+  runtime module path plus the closed export surface; absent surfaces
+  compile to explicit `scenario.unsupported-capability` outcomes,
+  never guesses).
+- outputs: under `src/generated/node-typescript/scenario-tests/**` —
+  the runner-neutral `testkit.ts`, the run-record writer `reporter.mjs`,
+  the port binding shim `port.ts`, one
+  `<module>/<scenario-id>.test.ts` per scenario (test name
+  `lekalo:<scenarioId>`, preserving scenario identity in runner
+  output), and one canonical `.map.json` sidecar per test with
+  per-then-block byte ranges.
+- honesty: every assertion block records exactly one outcome row
+  (`pass | fail | unsupported | infrastructure`); a test with any
+  unsupported row and no failure ends in `t.skip(...)` — the runner
+  reports skipped, never pass; assertion failures record `fail`, port
+  throws record `infrastructure`. Concurrency race scenarios (metadata
+  `testing.concurrency`) emit rows and a skip without executing — a
+  serial run never satisfies a race fixture.
+- custody: byte-stable emission (fixed headers with the `sha256:`
+  input digest, sorted imports, LF, canonical sidecars); generation is
+  vetoed by any compile-time finding (`scenario.operation-unresolved`,
+  `scenario.ir-ref-mismatch`, `scenario.port-missing`); `verify`
+  recomputes bytes and reports `scenario.drift`, then joins native
+  `mode: checked` bindings against the observed index (`lekalo:<id>`
+  title convention) with `scenario.binding-missing` /
+  `-ambiguous` / `-mismatch` findings — reported, never silently
+  rewritten. The join accepts a native test whose claimed set contains
+  the bound id, so one shared native test file may cover several
+  scenarios; ambiguity remains only when several different files claim
+  the same id. The per-file `lekalo:` id budget (8 ids, 200 name
+  characters) is enforced by the scanner, and a clipped id list
+  surfaces as scan uncertainty (`test-binding-truncated`), never as
+  silence.
+- evidence: each run writes one canonical run-record document
+  (`lekalo/scenario-run/v0.4.0`) into the adjudicated ingest home
+  `.lekalo/import/scenario-runs/`; `lekalo verify` ingests them into
+  the `scenarios.execution` component (fail on assertion or
+  infrastructure failure, degraded on unsupported rows, the declared
+  absence when nothing ran) and the records license `verifies` /
+  `evidences` trace edges (`scenario_evidence::trace_relations`).
+
+The runner is profile-declared, not hardcoded: the adapter's runner
+registry currently defines `node:test` (capabilities mirroring the
+`node-native` testing component; no deterministic concurrency, so race
+cases stay unsupported). The confined adapter never executes the port
+module — the port surface is proven by execution in the project
+harness (`scripts/test-node-scenario-tests.mjs`).
+
+### Orchestration dispatch of scenario documents is deferred
+
+The core orchestration does not yet enumerate `lekalo/scenarios/*.json`:
+`generate`/`verify` still send only the compiled project IR evidence as
+`ir_path`, so the document-identity routing above never receives a
+scenario document from the CLI. Compiling a scenario today is a direct
+adapter exchange (the e2e gate's pattern); `scenario.drift` and the
+checked-binding join run only inside that exchange. Closing the gap
+needs the receipt surface for per-scenario-document exchanges (the
+`GenerateReceipt` wire is closed), so it is recorded as an explicit
+follow-up, not an already-shipped behavior.
+
 ## Operation table
 
 | Operation | Posture | Owner of the real behavior |

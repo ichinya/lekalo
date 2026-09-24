@@ -427,7 +427,19 @@ const DEFINITIONS: &[ComponentDefinition] = &[
         definition_version: COMPONENTS_DEFINITION_VERSION,
         provides: &[
             ProvidedCapability {
+                id: "testing.clock",
+                support: Support::Full,
+            },
+            ProvidedCapability {
                 id: "testing.coverage",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "testing.event-capture",
+                support: Support::Partial,
+            },
+            ProvidedCapability {
+                id: "testing.fixtures",
                 support: Support::Full,
             },
             ProvidedCapability {
@@ -662,6 +674,32 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn node_native_declares_the_node_scenario_runner_capabilities() {
+        // Issue #47: the `node-native` testing component is the runner
+        // capability source for the scenario-test compiler. The serial
+        // `node:test` harness never provides a deterministic concurrency
+        // scheduler, so `testing.concurrency` is deliberately absent —
+        // absence is the unsupported state, never an optimistic upgrade.
+        let node_native = definition(Axis::Testing, "node-native").expect("node-native");
+        let provided: Vec<(&str, Support)> = node_native
+            .provides
+            .iter()
+            .map(|capability| (capability.id, capability.support))
+            .collect();
+        assert_eq!(
+            provided,
+            vec![
+                ("testing.clock", Support::Full),
+                ("testing.coverage", Support::Full),
+                ("testing.event-capture", Support::Partial),
+                ("testing.fixtures", Support::Full),
+                ("testing.parallel", Support::Full),
+            ]
+        );
+        assert!(!provided.iter().any(|(id, _)| *id == "testing.concurrency"));
     }
 
     #[test]

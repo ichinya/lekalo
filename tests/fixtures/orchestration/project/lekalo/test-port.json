@@ -1,0 +1,18 @@
+{
+  "schema_version": "lekalo/test-port/v0.4.0",
+  "identity": "dev.lekalo.test-port@0.4.0",
+  "port": {
+    "path": "src/testing/port.mjs",
+    "exports": {
+      "invoke": true,
+      "state": true,
+      "actor": true,
+      "clock": true,
+      "ids": true,
+      "emissions": true,
+      "effects": true,
+      "authorize": true,
+      "reset": true
+    }
+  }
+}

@@ -160,6 +160,7 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
         described.capabilities.write_scopes,
         vec![
             "docs/**".to_owned(),
+            "src/generated/node-typescript/scenario-tests/**".to_owned(),
             "src/generated/node-typescript/zod/**".to_owned(),
             "src/routes/**".to_owned()
         ]

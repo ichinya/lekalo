@@ -812,6 +812,16 @@ fn artifact_kind_for(path: &str) -> ArtifactKind {
     if path.ends_with(".ts") && path.split('/').any(|segment| segment == "zod") {
         return ArtifactKind::Schema;
     }
+    // Issue #47: the generated scenario-test compiler owns the
+    // scenario-tests home — test files and the shared testkit are `test`
+    // artifacts (review F-6: the emitted spellings are `<id>.test.ts`
+    // and `testkit.ts`); the port shim and reporter stay support
+    // `source`.
+    if path.split('/').any(|segment| segment == "scenario-tests")
+        && (path.ends_with(".test.ts") || path.ends_with("/testkit.ts"))
+    {
+        return ArtifactKind::Test;
+    }
     ArtifactKind::Source
 }
 
@@ -965,5 +975,106 @@ mod tests {
             super::super::receipt::ComponentState::Unsupported.as_str(),
             "unsupported"
         );
+    }
+
+    /// Issue #47 (plan S6, aligned by review F-6): the ownership manifest
+    /// classifies the EMITTED scenario-test spellings — test files and
+    /// the shared testkit are test artifacts, .test.map.json sidecars are
+    /// data, the port.ts shim and reporter stay support source, and the
+    /// zod home keeps schema.
+    #[test]
+    fn artifact_kinds_classify_by_path_convention() {
+        use super::artifact_kind_for;
+        assert_eq!(
+            artifact_kind_for(
+                "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.ts"
+            ),
+            ArtifactKind::Test
+        );
+        // The emitted shared testkit is a test artifact (review F-6: the
+        // classifier pins the EMITTED spelling testkit.ts).
+        assert_eq!(
+            artifact_kind_for("src/generated/node-typescript/scenario-tests/testkit.ts"),
+            ArtifactKind::Test
+        );
+        assert_eq!(
+            artifact_kind_for(
+                "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.map.json"
+            ),
+            ArtifactKind::Data
+        );
+        // The port shim and the reporter are support code, never tests.
+        assert_eq!(
+            artifact_kind_for("src/generated/node-typescript/scenario-tests/port.ts"),
+            ArtifactKind::Source
+        );
+        assert_eq!(
+            artifact_kind_for("src/generated/node-typescript/scenario-tests/reporter.mjs"),
+            ArtifactKind::Source
+        );
+        // A test-looking file outside the scenario-tests home stays source.
+        assert_eq!(
+            artifact_kind_for("src/generated/other/minimal.test.ts"),
+            ArtifactKind::Source
+        );
+
+        // The zod home keeps its issue #45 classification.
+        assert_eq!(
+            artifact_kind_for(".lekalo/generated/node-typescript/zod/planner.ts"),
+            ArtifactKind::Schema
+        );
+        // Review F-6: the emitted sidecar spelling `.test.map.json` pairs
+        // through module_path_of to the emitted `.test.ts` artifact.
+        assert_eq!(
+            super::module_path_of(
+                "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.map.json",
+            ),
+            "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.ts",
+        );
+    }
+
+    /// Review cline F-1: the ownership manifest ingests every emitted
+    /// sidecar declaration id through `SemanticOwnerId::parse` (the Model
+    /// symbol grammar), and the pairing binds the sidecar to the emitted
+    /// `<id>.test.ts` artifact. The emitted declaration ids are
+    /// grammar-valid Model symbols; the kind/step spelling rides in
+    /// metadata.
+    #[test]
+    fn emitted_sidecar_declaration_ids_ingest_through_the_owner_grammar() {
+        use crate::loader::ModelVersion;
+        let version = ModelVersion::Current;
+        let scenario_id = "planner.scenario.minimal";
+        // The exact declaration-id spellings the emitter produces:
+        // the scenario id itself, and the scenario leaf scoped under
+        // each then-step id.
+        let emitted_ids = [
+            scenario_id.to_owned(),
+            "minimal.output".to_owned(),
+            "minimal.state".to_owned(),
+        ];
+        for id in &emitted_ids {
+            assert!(
+                crate::ir::grammar::is_symbol_id(version, id),
+                "grammar-valid declaration id: {id}"
+            );
+            assert!(
+                SemanticOwnerId::parse(id, version).is_some(),
+                "manifest-ingestible declaration id: {id}"
+            );
+        }
+        // The refused shapes stay refused: the old kind-prefixed ids the
+        // emitter used before the fix are exactly what the grammar
+        // rejects, so the manifest apply hard-failed on them.
+        for id in ["scenario:planner.scenario.minimal", "then:output"] {
+            assert!(SemanticOwnerId::parse(id, version).is_none());
+        }
+        // The sidecar path pairs to the emitted module and classifies
+        // as `test`, so the binding passes the map-without-artifact
+        // refusal for the emitted write set.
+        let sidecar =
+            "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.map.json";
+        let module = super::module_path_of(sidecar);
+        assert!(module.ends_with(".test.ts"));
+        assert_eq!(super::artifact_kind_for(&module), ArtifactKind::Test);
     }
 }

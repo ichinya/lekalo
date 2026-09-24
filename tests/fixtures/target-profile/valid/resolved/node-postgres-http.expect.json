@@ -1,4 +1,38 @@
 {
+  "id": "node-postgres-http",
+  "version": "0.2.16",
+  "components": [
+    {
+      "axis": "analysis",
+      "id": "typescript-native",
+      "definition_version": "0.2.16"
+    },
+    {
+      "axis": "deployment",
+      "id": "container",
+      "definition_version": "0.2.16"
+    },
+    {
+      "axis": "runtime",
+      "id": "node-typescript",
+      "definition_version": "0.2.16"
+    },
+    {
+      "axis": "storage",
+      "id": "postgres-sql",
+      "definition_version": "0.2.16"
+    },
+    {
+      "axis": "testing",
+      "id": "node-native",
+      "definition_version": "0.2.16"
+    },
+    {
+      "axis": "transport",
+      "id": "http-json",
+      "definition_version": "0.2.16"
+    }
+  ],
   "capabilities": [
     {
       "id": "analysis.types",
@@ -65,7 +99,19 @@
       "support": "full"
     },
     {
+      "id": "testing.clock",
+      "support": "full"
+    },
+    {
       "id": "testing.coverage",
+      "support": "full"
+    },
+    {
+      "id": "testing.event-capture",
+      "support": "partial"
+    },
+    {
+      "id": "testing.fixtures",
       "support": "full"
     },
     {
@@ -89,41 +135,8 @@
       "support": "partial"
     }
   ],
-  "components": [
-    {
-      "axis": "analysis",
-      "definition_version": "0.2.16",
-      "id": "typescript-native"
-    },
-    {
-      "axis": "deployment",
-      "definition_version": "0.2.16",
-      "id": "container"
-    },
-    {
-      "axis": "runtime",
-      "definition_version": "0.2.16",
-      "id": "node-typescript"
-    },
-    {
-      "axis": "storage",
-      "definition_version": "0.2.16",
-      "id": "postgres-sql"
-    },
-    {
-      "axis": "testing",
-      "definition_version": "0.2.16",
-      "id": "node-native"
-    },
-    {
-      "axis": "transport",
-      "definition_version": "0.2.16",
-      "id": "http-json"
-    }
-  ],
-  "digest": "sha256:879ed630a2d008d513e3ef65c51d2dfad9769c2fa8a9761ea7b2f6a7af70b56e",
-  "id": "node-postgres-http",
-  "overrides_applied": [],
+  "digest": "sha256:aaa568174b6c74fcfc80f93916fd58c8cb722dedee503b2a589097e018fb8866",
+  "source_digest": "sha256:c1801eabea9b7fb409df06baeb09571801d9d5005b2ec2910756b4bba92d9f55",
   "provenance": [
     {
       "axis": "analysis",
@@ -150,6 +163,5 @@
       "origin": "declared"
     }
   ],
-  "source_digest": "sha256:c1801eabea9b7fb409df06baeb09571801d9d5005b2ec2910756b4bba92d9f55",
-  "version": "0.2.16"
+  "overrides_applied": []
 }
