@@ -3049,7 +3049,7 @@ function resolvePolicy(text) {
 }
 function parsePolicyYaml(text) {
   const lines = text.split(/\r?\n/);
-  let inZod = false;
+  let section = null;
   const seen = /* @__PURE__ */ new Set();
   const policy = {};
   for (let index = 0; index < lines.length; index += 1) {
@@ -3066,17 +3066,20 @@ function parsePolicyYaml(text) {
       if (!match) {
         return { refusal: "top-level-key" };
       }
-      if (match[1] !== "zod") {
+      if (match[1] !== "zod" && match[1] !== "openapi") {
         return { refusal: "unknown-section" };
       }
-      if (inZod) {
+      if (section === match[1]) {
         return { refusal: "duplicate-section" };
       }
-      inZod = true;
+      section = match[1];
       continue;
     }
-    if (!inZod) {
+    if (section === null) {
       return { refusal: "orphan-key" };
+    }
+    if (section === "openapi") {
+      continue;
     }
     const keyMatch = stripped.match(/^ {2}([a-z][a-z0-9_-]*):\s*(\S.*)?$/);
     if (!keyMatch || stripped.startsWith("    ")) {

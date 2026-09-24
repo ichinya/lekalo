@@ -36,7 +36,9 @@ use super::receipt::{
     AdapterReceipt, GenerateReceipt, InputsReceipt, IrEvidenceReceipt, ScopeReceipt, TargetCounts,
     TargetReceipt, TargetState, Verdict, WriteReceipt, IDENTITY, SCHEMA_VERSION,
 };
-use super::version::{DEFAULT_TIMEOUT_MS, IR_EVIDENCE_DIR, MAX_TARGETS, TRANSPORT_EVIDENCE_DIR};
+use super::version::{
+    DEFAULT_TIMEOUT_MS, IR_EVIDENCE_DIR, MAX_TARGETS, OPENAPI_EVIDENCE_DIR, TRANSPORT_EVIDENCE_DIR,
+};
 use super::Failure;
 
 /// The request of one generate invocation.
@@ -133,6 +135,24 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
                 .canonical_bytes()
                 .map_err(DomainResult::invalid)?;
             write_evidence(prepared.root(), &transport_path, transport_bytes.as_bytes())?;
+            // OpenAPI evidence (#46): the canonical projection of the
+            // validated transport home lands beside the other evidence
+            // homes — the only OpenAPI input an adapter may read. The
+            // embedded #62 registry is bound so the identity variants
+            // render; the declared defaults (3.1, full) apply.
+            let registry =
+                crate::error_contract::ErrorRegistry::embedded().map_err(DomainResult::invalid)?;
+            let context = crate::transport_http::ValidationContext::new(&compilation.project)
+                .with_errors(registry);
+            let rendered =
+                crate::openapi::render(&attachment, &context, &crate::openapi::RenderConfig::new())
+                    .map_err(DomainResult::invalid)?;
+            let openapi_path = format!("{OPENAPI_EVIDENCE_DIR}/{project_id}.json");
+            write_evidence(
+                prepared.root(),
+                &openapi_path,
+                rendered.canonical_bytes().as_bytes(),
+            )?;
         }
         Ok(None) => {}
     }

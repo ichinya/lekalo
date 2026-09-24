@@ -28,6 +28,7 @@ pub mod lockfile;
 pub mod native_gate;
 pub mod nfr;
 pub mod observed;
+pub mod openapi;
 pub mod orchestration;
 pub mod project_fs;
 pub mod query_model;

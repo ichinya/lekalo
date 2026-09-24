@@ -36,6 +36,11 @@ import {
   TRANSPORT_CAPABILITY,
   OPENAPI_CAPABILITY,
 } from "./transport-extension.mjs";
+import {
+  OPENAPI_WRITE_SCOPES,
+  openapiGenerateOperation,
+  openapiVerifyOperation,
+} from "./openapi-gen.mjs";
 
 /** The resolved transport descriptor (never registered separately). */
 const transport = transportExtensionDescriptor();
@@ -44,11 +49,13 @@ const transport = transportExtensionDescriptor();
 const COMPOSITE_VERSION = "0.4.0";
 
 /**
- * Whether the bound profile's read roots cover the transport evidence
- * homes — the same coverage predicate the kernel applies to descriptor
- * `readRoots`, evaluated per invocation inside the composite.
+ * Whether the bound profile's read roots cover the evidence homes one
+ * generator reads — the same coverage predicate the kernel applies to
+ * descriptor `readRoots`, evaluated per invocation inside the
+ * composite. The transport and OpenAPI generators read the same two
+ * evidence homes (transport plus compiled IR).
  */
-function transportApplicable(profile) {
+function evidenceApplicable(profile) {
   if (!profile) {
     return false;
   }
@@ -66,13 +73,12 @@ function byPath(left, right) {
 }
 
 /**
- * Union two generation outcomes into one. Any non-complete half fails
- * the union with the concatenated bounded diagnostics; two complete
- * halves merge into sorted disjoint writes, concatenated findings, and
- * the union of evidence members.
+ * Union any number of generation outcomes into one. Any non-complete
+ * part fails the union with the concatenated bounded diagnostics; the
+ * complete parts merge into sorted disjoint writes, concatenated
+ * findings, and the union of evidence members.
  */
-function unionOutcomes(zodOutcome, transportOutcome) {
-  const outcomes = [zodOutcome, transportOutcome];
+function unionOutcomes(outcomes) {
   if (outcomes.some((outcome) => outcome.state !== "complete")) {
     return {
       state: "failed",
@@ -89,7 +95,7 @@ function unionOutcomes(zodOutcome, transportOutcome) {
   const data = { writes, findings };
   if (writes.length > 0 && findings.length === 0) {
     // The dry-run plan identity covers the union — the apply echo then
-    // binds both halves, and the core derives the same token over the
+    // binds every half, and the core derives the same token over the
     // received writes.
     data.plan_id = planIdOf(writes);
   }
@@ -106,13 +112,35 @@ function unionOutcomes(zodOutcome, transportOutcome) {
 /** The dispatch entry: verify delegates; generate unions. */
 function compositeOperation(context) {
   if (context.operation === "verify") {
-    return zodDescriptor.invoke(context);
+    // The verify union: the Zod verifier plus the OpenAPI verifier
+    // when the evidence homes are readable. Findings concatenate.
+    const openapi = evidenceApplicable(context.profile)
+      ? openapiVerifyOperation(context)
+      : { state: "complete", data: { writes: [], findings: [] } };
+    const zod = zodDescriptor.invoke(context);
+    if (zod.state !== "complete" || openapi.state !== "complete") {
+      return {
+        state: "failed",
+        diagnostics: [zod, openapi]
+          .filter((outcome) => outcome.state !== "complete")
+          .flatMap((outcome) => outcome.diagnostics ?? [])
+          .slice(0, 16),
+      };
+    }
+    return {
+      state: "complete",
+      data: { writes: [], findings: [...zod.data?.findings ?? [], ...openapi.data?.findings ?? []] },
+    };
   }
   const zodOutcome = zodDescriptor.invoke(context);
-  const transportOutcome = transportApplicable(context.profile)
+  const applicable = evidenceApplicable(context.profile);
+  const transportOutcome = applicable
     ? transport.invoke(context)
     : { state: "complete", data: { writes: [] } };
-  return unionOutcomes(zodOutcome, transportOutcome);
+  const openapiOutcome = applicable
+    ? openapiGenerateOperation(context)
+    : { state: "complete", data: { writes: [] } };
+  return unionOutcomes([zodOutcome, transportOutcome, openapiOutcome]);
 }
 
 /** The descriptor the bundle entry registers for generation. */
@@ -123,9 +151,9 @@ export const descriptor = {
   namedCapabilities: {
     "generate.zod": "full",
     [TRANSPORT_CAPABILITY]: "partial",
-    [OPENAPI_CAPABILITY]: "unsupported",
+    [OPENAPI_CAPABILITY]: "partial",
   },
   acceptedIrVersions: ["0.2.16"],
-  writeScopes: [...ZOD_WRITE_SCOPES, ROUTE_WRITE_ROOT],
+  writeScopes: [...ZOD_WRITE_SCOPES, ROUTE_WRITE_ROOT, ...OPENAPI_WRITE_SCOPES],
   invoke: (context) => compositeOperation(context),
 };

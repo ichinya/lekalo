@@ -52,6 +52,12 @@ lekalo storage-profile validate PATH
 lekalo storage-profile capabilities PATH
 lekalo storage-profile portability BASE TARGET [--postgres-divergences]
 lekalo storage-profile diff BASE CANDIDATE
+lekalo openapi render PATH [--project DIR] [--errors FILE] [--query-model FILE]
+             [--version 3.1|3.0] [--mode full|fragments]
+lekalo openapi check PATH --transport ATTACHMENT [--project DIR] [--errors FILE]
+             [--query-model FILE] [--ownership FILE]
+lekalo openapi inspect PATH --endpoint SYMBOL [--project DIR] [--errors FILE] [--query-model FILE]
+lekalo openapi diff BASE CANDIDATE [--project DIR] [--version 3.1|3.0]
 lekalo graph show SYMBOL [--project DIR]
 lekalo graph callers SYMBOL [--transitive] [--project DIR]
 lekalo graph path FROM TO [--project DIR]
@@ -890,3 +896,44 @@ lekalo storage-profile diff BASE CANDIDATE
 Exit-code discipline matches `query-model diff`: success and typed
 refusals stay on the accepted 0/1/3/4/5 envelope, and every verdict is
 data in the JSON envelope, never a guessed repair.
+
+## OpenAPI (issue #46)
+
+The `openapi` commands project the #70 transport attachment into a
+deterministic, validator-clean OpenAPI document; every decision lives
+in `lekalo_core::openapi` (see [docs/openapi.md](openapi.md)).
+
+`render` prints the canonical document bytes, their digest, and the
+projection findings as warnings:
+
+```json
+{"status":"valid","openapi":{"projectId":"planner","openapiVersion":"3.1.0",
+"mode":"full","canonicalDigest":"sha256:…","endpoints":6,"document":{…}}}
+```
+
+`check` is the checked mode: it binds a maintained document
+(`x-lekalo-endpoint` first, `operationId` second), recomputes the
+fragments, and reports per-pointer drift, manual collisions, and the
+unbound-manual inventory. A conformant document returns
+`{"status":"valid","openapiCheck":{"conformant":true,…}}`; drift
+travels as `openapi.drift`, unresolved anchors as
+`openapi.binding-unresolved`, and collisions as
+`openapi.merge-conflict`.
+
+`diff` renders the pointer-level view of the transport wire
+compatibility classes over two same-family attachments:
+
+```json
+{"status":"valid","openapiDiff":{"equal":false,"breaking":1,"nonBreaking":0,
+"policyChange":0,"wireConsumerBlocked":true,
+"paths":[{"path":"endpoints/…/params","class":"breaking",
+"pointers":["/paths/…/parameters"]}]}}
+```
+
+`inspect` returns one endpoint's rendered operation with its JSON
+pointer. The generation composite of the node-typescript adapter claims
+`generate.openapi` (partial) on `generate`, writes the document plus
+the `ownership`/`map` sidecars under the policy path (default
+`docs/openapi.yaml`), and verifies them on `verify`; `lekalo generate`
+writes the canonical render evidence under
+`.lekalo/cache/openapi/<project>.json`.

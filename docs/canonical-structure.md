@@ -37,6 +37,9 @@ the checker.
     import/
     cache/
       cache.sqlite
+      ir/<project>.json
+      transport/<project>.json
+      openapi/<project>.json
     generated/
       ir/
       manifests/

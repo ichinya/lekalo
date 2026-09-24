@@ -74,7 +74,7 @@ const canonicalJson = (value) => {
  * defaults, endpoints with operation ids, error maps, security, and
  * capabilities). Anything else refuses.
  */
-function decodeEvidence(bytes) {
+export function decodeEvidence(bytes) {
   let document;
   try {
     document = JSON.parse(bytes.toString("utf8"));
@@ -105,6 +105,22 @@ function decodeEvidence(bytes) {
         ? document.securitySchemes
         : [],
       endpoints,
+      // The provenance/revision pins ride through to the renderer: the
+      // adapter's document must bind the exact model/IR identities the
+      // evidence declares, and info.version must be the attachment
+      // revision — never a hardcoded generator constant (r1 cline F-3,
+      // devin F-6).
+      modelRef: isObject(document.modelRef) ? document.modelRef : undefined,
+      irRef: isObject(document.irRef) ? document.irRef : undefined,
+      attachmentRevision:
+        typeof document.attachmentRevision === "string"
+          ? document.attachmentRevision
+          : undefined,
+      // The exact-bytes digest of the evidence document: the
+      // transportRef pin binds the bytes that were read, byte-stable
+      // across repeats.
+      digest:
+        "sha256:" + createHash("sha256").update(bytes).digest("hex"),
     },
   };
 }
@@ -114,7 +130,7 @@ function decodeEvidence(bytes) {
  * join source for the Model endpoint symbols (`method`, `path`,
  * `invokes`). Anything else refuses.
  */
-function decodeIrEvidence(bytes) {
+export function decodeIrEvidence(bytes) {
   let document;
   try {
     document = JSON.parse(bytes.toString("utf8"));
@@ -306,7 +322,7 @@ export function planRouteLayer(evidence, projectId, joins) {
  * (`<project>.json`), and a file-shaped read root under the evidence
  * home names it explicitly. Anything else is absent — never guessed.
  */
-function evidencePathFor(request, readView, home) {
+export function evidencePathFor(request, readView, home) {
   const candidates = [];
   const irName = request.ir_path?.split("/").pop();
   if (irName?.endsWith(".json")) {

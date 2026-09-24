@@ -1,0 +1,1 @@
+{"status":"valid","openapiDiff":{"equal":false,"breaking":1,"nonBreaking":0,"policyChange":0,"wireConsumerBlocked":true,"paths":[{"class":"breaking","path":"endpoints/planner.endpoint_list_tasks/params","pointers":["/paths/~1tasks/get/parameters"]}]}}

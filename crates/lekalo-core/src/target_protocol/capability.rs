@@ -73,6 +73,12 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         semantics: "Plans native build/test gates over a detected Node workspace through the read-only `plan-native` operation. `full` produces the immutable plan over every confirmed gate; `partial` covers a declared subset; `unsupported` never plans; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
+        id: "preserve.classification",
+        definition_version: "0.4.0",
+        domain: "preserve",
+        semantics: "Preserves classification metadata through every projection the adapter emits (issue #87): every emitted field that maps to a classified subject carries its kind token, and an unrepresentable projection is refused as `unsupported`, never emitted bare. `full` preserves classification on every emitted field; `partial` preserves it on a declared subset; `unsupported` never emits classified fields; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
         id: "scan.schema",
         definition_version: "0.4.0",
         domain: "scan",
@@ -107,12 +113,6 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         definition_version: "0.4.0",
         domain: "verify",
         semantics: "Verifies black-box endpoint scenarios through the `verify` operation against the transport-http evidence. `full` executes every declared scenario coverage reference; `partial` covers a declared subset; `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
-    },
-    CapabilityDefinition {
-        id: "preserve.classification",
-        definition_version: "0.4.0",
-        domain: "preserve",
-        semantics: "Preserves classification metadata through every projection the adapter emits (issue #87): every emitted field that maps to a classified subject carries its kind token, and an unrepresentable projection is refused as `unsupported`, never emitted bare. `full` preserves classification on every emitted field; `partial` preserves it on a declared subset; `unsupported` never emits classified fields; `unknown` is a declared state the core does not treat as available.",
     },
 ];
 

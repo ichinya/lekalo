@@ -24,10 +24,10 @@ jobs:
           node-version: ${{ matrix.node-version }}
           package-manager-cache: false
       - uses: dtolnay/rust-toolchain@stable
-      - name: Provision exact Ajv 8.17.1 outside the checkout
+      - name: Provision exact Ajv 8.17.1 and the OpenAPI validator outside the checkout
         run: |
           set -euo pipefail
-          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1 @seriousme/openapi-schema-validator@2.8.0
           test "$(node -p "require('$RUNNER_TEMP/lekalo-ajv-8.17.1/node_modules/ajv/package.json').version")" = "8.17.1"
       - name: Run pinned Ajv schema release gate
         env:
@@ -73,6 +73,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-implementation-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-orchestration-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-transport-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-openapi-contracts.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites
@@ -199,6 +200,8 @@ jobs:
         run: node scripts/test-node-native-gates.mjs
       - name: Run the transport generator gate (issue #70)
         run: node scripts/test-node-typescript-transport.mjs
+      - name: Run the OpenAPI generator gate (issue #46)
+        run: node scripts/test-node-openapi.mjs
       - name: Provision exact Ajv 8.17.1 outside the checkout (issue #48)
         run: |
           set -euo pipefail

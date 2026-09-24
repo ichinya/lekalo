@@ -255,6 +255,14 @@ enum Commands {
         #[command(subcommand)]
         command: TransportCommands,
     },
+    /// Render, check, or inspect the OpenAPI projection of one
+    /// transport attachment (issue #46). The core owns every decision;
+    /// this binary only reads the documents, selects, renders, and
+    /// maps exits.
+    Openapi {
+        #[command(subcommand)]
+        command: OpenapiCommands,
+    },
     /// Validate one declarative query-model attachment against the
     /// project, or compare two attachments of the same family.
     QueryModel {
@@ -1084,6 +1092,141 @@ enum TransportCommands {
     },
 }
 
+/// The `openapi` subcommands (issue #46): the thin render/check/
+/// inspect handoff over the core OpenAPI projection. Every decision —
+/// the projection, the fragment merge, the bind/drift check, and the
+/// bounds — lives in the core; this binary reads the documents,
+/// selects, renders, and maps exits.
+#[derive(Debug, Subcommand)]
+enum OpenapiCommands {
+    /// Render the OpenAPI document of one validated attachment: the
+    /// canonical bytes, their digest, and the projection findings.
+    Render {
+        /// Path to the transport attachment JSON document.
+        path: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Path to the bound #62 error registry.
+        #[arg(long, value_name = "FILE")]
+        errors: Option<String>,
+        /// Path to the bound #64 query-model attachment.
+        #[arg(long, value_name = "FILE")]
+        query_model: Option<String>,
+        /// The declared OpenAPI version (3.1 default; 3.0 declared
+        /// alternative).
+        #[arg(long, value_enum, default_value_t = OpenapiVersion::V31)]
+        version: OpenapiVersion,
+        /// The declared document mode (full default).
+        #[arg(long, value_enum, default_value_t = OpenapiMode::Full)]
+        mode: OpenapiMode,
+    },
+    /// Check a maintained OpenAPI document against the current
+    /// attachment: bind every operation, recompute the fragments, and
+    /// report per-pointer drift plus the unbound-manual inventory.
+    Check {
+        /// Path to the maintained OpenAPI document (YAML or JSON).
+        path: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Path to the transport attachment the document binds to.
+        #[arg(long, value_name = "FILE")]
+        transport: String,
+        /// Path to the bound #62 error registry.
+        #[arg(long, value_name = "FILE")]
+        errors: Option<String>,
+        /// Path to the bound #64 query-model attachment.
+        #[arg(long, value_name = "FILE")]
+        query_model: Option<String>,
+        /// Path to the ownership sidecar manifest; the default is the
+        /// `<stem>.ownership.json` sibling of the document.
+        #[arg(long, value_name = "FILE")]
+        ownership: Option<String>,
+        /// The declared OpenAPI version of the maintained document
+        /// (3.1 default; the recomputation renders at the same
+        /// version, so a maintained 3.0 document does not drift on
+        /// its nullable spellings).
+        #[arg(long, value_enum, default_value_t = OpenapiVersion::V31)]
+        version: OpenapiVersion,
+        /// The declared document mode of the maintained document
+        /// (full default; the recomputation honors it).
+        #[arg(long, value_enum, default_value_t = OpenapiMode::Full)]
+        mode: OpenapiMode,
+    },
+    /// Inspect one endpoint's rendered operation: the joined Model
+    /// surface plus every projected OpenAPI member.
+    Inspect {
+        /// Path to the transport attachment JSON document.
+        path: String,
+        /// The endpoint symbol to inspect.
+        #[arg(long, value_name = "SYMBOL")]
+        endpoint: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// Path to the bound #62 error registry.
+        #[arg(long, value_name = "FILE")]
+        errors: Option<String>,
+        /// Path to the bound #64 query-model attachment.
+        #[arg(long, value_name = "FILE")]
+        query_model: Option<String>,
+    },
+    /// Compare two same-family attachments and report the pointer-level
+    /// view of the transport compatibility classes; the verdict stays
+    /// data, never an exit code.
+    Diff {
+        /// Path to the base attachment JSON document.
+        base: String,
+        /// Path to the candidate attachment JSON document.
+        candidate: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// The declared OpenAPI version for pointer resolution.
+        #[arg(long, value_enum, default_value_t = OpenapiVersion::V31)]
+        version: OpenapiVersion,
+    },
+}
+
+/// The declared OpenAPI version token.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum OpenapiVersion {
+    /// OpenAPI 3.1 (the default).
+    #[value(name = "3.1")]
+    V31,
+    /// OpenAPI 3.0 (the declared alternative).
+    #[value(name = "3.0")]
+    V30,
+}
+
+impl OpenapiVersion {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::V31 => "3.1",
+            Self::V30 => "3.0",
+        }
+    }
+}
+
+/// The declared document mode token.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum OpenapiMode {
+    /// One generator-owned document.
+    Full,
+    /// Per-pointer fragments merged through the ownership manifest.
+    Fragments,
+}
+
+impl OpenapiMode {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Fragments => "fragments",
+        }
+    }
+}
+
 /// The closed projection namespace vocabulary.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum TransportNamespace {
@@ -1735,6 +1878,7 @@ fn runtime() -> u8 {
             Commands::Transport { command } => run_transport(command),
             Commands::Storage { command } => run_storage(command),
             Commands::StorageProfile { command } => run_storage_profile(command),
+            Commands::Openapi { command } => run_openapi(command),
             Commands::Expressions { command } => run_expressions(command),
             Commands::Graph { command } => run_graph(command, cli.no_cache),
             Commands::Effects { command } => run_effects(command, cli.no_cache),
@@ -2092,6 +2236,18 @@ fn run_validate(
                     if let Err(diagnostics) =
                         lekalo_core::transport_http::validate(&attachment, &context)
                     {
+                        return DomainResult::invalid(diagnostics);
+                    }
+                    // OpenAPI projection preflight (#46): the home must
+                    // render at the declared defaults; a refusal (a
+                    // bound, a version-unsupported construct) fails the
+                    // run. The full-document gate stays with `lekalo
+                    // openapi render`.
+                    if let Err(diagnostics) = lekalo_core::openapi::render(
+                        &attachment,
+                        &context,
+                        &lekalo_core::openapi::RenderConfig::new(),
+                    ) {
                         return DomainResult::invalid(diagnostics);
                     }
                 }
@@ -4654,6 +4810,354 @@ fn transport_inspect(path: &str, endpoint: &str, project: &Option<String>) -> Do
         binding.effective_operation_id().as_str(),
     );
     DomainResult::graph(json, human, Vec::new())
+}
+
+/// Run one `lekalo openapi` operation. The core owns every decision;
+/// this binary reads the documents, selects, renders, and maps exits.
+fn run_openapi(command: OpenapiCommands) -> DomainResult {
+    match command {
+        OpenapiCommands::Render {
+            path,
+            project,
+            errors,
+            query_model,
+            version,
+            mode,
+        } => {
+            if matches!(mode, OpenapiMode::Fragments) {
+                // Fragments emission is ownership-aware: it merges into
+                // the maintained document on the adapter apply path,
+                // which owns the filesystem views. The stateless render
+                // has nothing to merge into — it refuses instead of
+                // printing a pretend-full document (r1 F-7/cline F-2).
+                return DomainResult::usage_error();
+            }
+            openapi_render(
+                &path,
+                &project,
+                errors.as_deref(),
+                query_model.as_deref(),
+                version.as_str(),
+                mode.as_str(),
+            )
+        }
+        OpenapiCommands::Check {
+            path,
+            project,
+            transport,
+            errors,
+            query_model,
+            ownership,
+            version,
+            mode,
+        } => openapi_check(
+            &path,
+            &transport,
+            &project,
+            errors.as_deref(),
+            query_model.as_deref(),
+            ownership.as_deref(),
+            version.as_str(),
+            mode.as_str(),
+        ),
+        OpenapiCommands::Inspect {
+            path,
+            endpoint,
+            project,
+            errors,
+            query_model,
+        } => openapi_inspect(
+            &path,
+            &endpoint,
+            &project,
+            errors.as_deref(),
+            query_model.as_deref(),
+        ),
+        OpenapiCommands::Diff {
+            base,
+            candidate,
+            project,
+            version,
+        } => openapi_diff(&base, &candidate, &project, version.as_str()),
+    }
+}
+
+/// The declared render configuration of one CLI invocation; an
+/// unknown token is a clap-level usage failure.
+fn openapi_config(version: &str, mode: &str) -> Result<lekalo_core::openapi::RenderConfig, ()> {
+    let version = lekalo_core::openapi::DocumentVersion::parse(version).ok_or(())?;
+    let mode = lekalo_core::openapi::DocumentMode::parse(mode).ok_or(())?;
+    Ok(lekalo_core::openapi::RenderConfig::new()
+        .with_version(version)
+        .with_mode(mode))
+}
+
+/// Read one ownership sidecar manifest, or the default when absent.
+fn read_ownership(
+    path: Option<&str>,
+) -> Result<lekalo_core::openapi::OwnershipManifest, DomainResult> {
+    let resolved = match path {
+        Some(path) => std::path::PathBuf::from(path),
+        None => return Ok(lekalo_core::openapi::OwnershipManifest::default()),
+    };
+    let bytes = match std::fs::read(&resolved) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(lekalo_core::openapi::OwnershipManifest::default());
+        }
+        Err(_) => {
+            return Err(DomainResult::invalid(lekalo_core::openapi::io_failure(
+                "ownership-unreadable",
+            )))
+        }
+    };
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|_| DomainResult::invalid(lekalo_core::openapi::io_failure("ownership-json")))?;
+    lekalo_core::openapi::OwnershipManifest::from_value(&value).map_err(DomainResult::invalid)
+}
+
+/// `lekalo openapi render`: the canonical document of one validated
+/// attachment, byte-stable, with the projection findings as warnings.
+fn openapi_render(
+    path: &str,
+    project: &Option<String>,
+    errors_path: Option<&str>,
+    query_model_path: Option<&str>,
+    version: &str,
+    mode: &str,
+) -> DomainResult {
+    let config = match openapi_config(version, mode) {
+        Ok(config) => config,
+        Err(()) => return DomainResult::usage_error(),
+    };
+    let session = match transport_session(path, project, errors_path, query_model_path) {
+        Ok(session) => session,
+        Err(result) => return result,
+    };
+    let context = session.context();
+    if let Err(diagnostics) = lekalo_core::transport_http::validate(&session.attachment, &context) {
+        return DomainResult::invalid(diagnostics);
+    }
+    let document = match lekalo_core::openapi::render(&session.attachment, &context, &config) {
+        Ok(document) => document,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let findings = lekalo_core::openapi::projection_partial(document.findings());
+    let json = format!(
+        "{{\"status\":\"valid\",\"openapi\":{{\"projectId\":\"{}\",\"openapiVersion\":\"{}\",\"mode\":\"{}\",\"canonicalDigest\":\"{}\",\"endpoints\":{},\"document\":{}}}}}",
+        session.attachment.project_id().as_str(),
+        config.version.wire_str(),
+        config.mode.as_str(),
+        document.digest(),
+        session.attachment.endpoints().len(),
+        document.root(),
+    );
+    let human = format!(
+        "openapi {}: {} operations, digest {}",
+        config.version.wire_str(),
+        document.operation_pointers().len(),
+        document.digest(),
+    );
+    DomainResult::graph(json, human, findings.as_slice().to_vec())
+}
+
+/// `lekalo openapi check`: bind the maintained document, recompute the
+/// fragments, and report the per-pointer verdict; drift, conflicts,
+/// and unresolved anchors are the invalid set, the unbound-manual
+/// inventory rides informationally.
+#[allow(clippy::too_many_arguments)]
+fn openapi_check(
+    document_path: &str,
+    transport_path: &str,
+    project: &Option<String>,
+    errors_path: Option<&str>,
+    query_model_path: Option<&str>,
+    ownership_path: Option<&str>,
+    version: &str,
+    mode: &str,
+) -> DomainResult {
+    let bytes = match std::fs::read(document_path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                io::ErrorKind::NotFound => "file-missing",
+                _ => "file-unreadable",
+            };
+            return DomainResult::invalid(lekalo_core::openapi::io_failure(detail));
+        }
+    };
+    let text = match String::from_utf8(bytes) {
+        Ok(text) => text,
+        Err(_) => {
+            return DomainResult::invalid(lekalo_core::openapi::io_failure("document-encoding"))
+        }
+    };
+    let existing = match lekalo_core::openapi::parse_document_text(&text) {
+        Ok(document) => document,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let ownership = match read_ownership(ownership_path) {
+        Ok(ownership) => ownership,
+        Err(result) => return result,
+    };
+    let session = match transport_session(transport_path, project, errors_path, query_model_path) {
+        Ok(session) => session,
+        Err(result) => return result,
+    };
+    let context = session.context();
+    if let Err(diagnostics) = lekalo_core::transport_http::validate(&session.attachment, &context) {
+        return DomainResult::invalid(diagnostics);
+    }
+    let config = match openapi_config(version, mode) {
+        Ok(config) => config,
+        Err(()) => return DomainResult::usage_error(),
+    };
+    let report = match lekalo_core::openapi::check(
+        &existing,
+        &session.attachment,
+        &context,
+        &config,
+        &ownership,
+    ) {
+        Ok(report) => report,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    if !report.is_conformant() {
+        return DomainResult::invalid(report.diagnostics());
+    }
+    let json = format!(
+        "{{\"status\":\"valid\",\"openapiCheck\":{{\"conformant\":true,\"boundClean\":{},\"drifts\":[],\"conflicts\":[],\"unresolved\":[],\"manual\":{}}}}}",
+        report.bound_clean,
+        serde_json::to_string(&report.manual).unwrap_or_else(|_| "[]".to_owned()),
+    );
+    let human = format!(
+        "openapi check: conformant, {} bound, {} manual",
+        report.bound_clean,
+        report.manual.len(),
+    );
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo openapi inspect`: one endpoint's rendered operation.
+fn openapi_inspect(
+    path: &str,
+    endpoint: &str,
+    project: &Option<String>,
+    errors_path: Option<&str>,
+    query_model_path: Option<&str>,
+) -> DomainResult {
+    let session = match transport_session(path, project, errors_path, query_model_path) {
+        Ok(session) => session,
+        Err(result) => return result,
+    };
+    let context = session.context();
+    if let Err(diagnostics) = lekalo_core::transport_http::validate(&session.attachment, &context) {
+        return DomainResult::invalid(diagnostics);
+    }
+    let document = match lekalo_core::openapi::render(
+        &session.attachment,
+        &context,
+        &lekalo_core::openapi::RenderConfig::new(),
+    ) {
+        Ok(document) => document,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let pointer = match document
+        .operation_pointers()
+        .iter()
+        .find(|(_, candidate)| candidate == endpoint)
+        .map(|(pointer, _)| pointer.clone())
+    {
+        Some(pointer) => pointer,
+        None => {
+            return DomainResult::invalid(lekalo_core::openapi::rule_set(
+                "openapi.binding-unresolved",
+                "endpoint-missing",
+                Some(endpoint),
+            ))
+        }
+    };
+    // Resolve the pointer inside the rendered document.
+    let mut node = document.root().clone();
+    for token in pointer
+        .split('/')
+        .skip(1)
+        .map(|token| token.replace("~1", "/").replace("~0", "~"))
+    {
+        node = node.get(&token).cloned().unwrap_or(serde_json::Value::Null);
+    }
+    let json = format!(
+        "{{\"status\":\"valid\",\"endpoint\":{{\"endpoint\":\"{}\",\"pointer\":\"{}\",\"operation\":{}}}}}",
+        endpoint,
+        pointer,
+        node,
+    );
+    let human = format!("openapi endpoint {}: {}", endpoint, pointer);
+    DomainResult::graph(json, human, Vec::new())
+}
+
+/// `lekalo openapi diff`: the pointer-level view of the transport
+/// compatibility classes over two same-family attachments; the
+/// verdict stays data and the strict wire-consumer blocking signal
+/// rides along.
+fn openapi_diff(
+    base_path: &str,
+    candidate_path: &str,
+    project: &Option<String>,
+    version: &str,
+) -> DomainResult {
+    let version = match lekalo_core::openapi::DocumentVersion::parse(version) {
+        Some(version) => version,
+        None => return DomainResult::usage_error(),
+    };
+    // Both sides share the one compiled project: compare refuses mixed
+    // pins, so a single session's context serves the mapping.
+    let base_document = match read_transport_document(base_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let base = match lekalo_core::transport_http::TransportDocument::from_value(&base_document) {
+        Ok(attachment) => attachment,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let candidate_document = match read_transport_document(candidate_path) {
+        Ok(document) => document,
+        Err(result) => return result,
+    };
+    let candidate =
+        match lekalo_core::transport_http::TransportDocument::from_value(&candidate_document) {
+            Ok(attachment) => attachment,
+            Err(diagnostics) => return DomainResult::invalid(diagnostics),
+        };
+    let selection = selection_for(project);
+    let model = match lekalo_core::loader::normalize_model(&selection) {
+        Ok(model) => model,
+        Err(result) => return result,
+    };
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Ok(compilation) => compilation,
+        Err(failure) => return failure.into_result(),
+    };
+
+    let result = match lekalo_core::openapi::compare_documents(
+        &base,
+        &candidate,
+        &compilation.project,
+        version,
+    ) {
+        Ok(result) => result,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let json = format!(
+        "{{\"status\":\"valid\",\"openapiDiff\":{}}}",
+        lekalo_core::openapi::diff_json(&result),
+    );
+    let human = format!(
+        "openapi diff: {} changed paths (wire-consumer blocked: {})",
+        result.paths().len(),
+        result.wire_consumer_blocked(),
+    );
+    DomainResult::diff(json, human, Vec::new())
 }
 
 /// Run one `lekalo query-model` operation. The core owns every
