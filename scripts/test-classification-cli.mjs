@@ -333,7 +333,7 @@ const policy = (fixture) => join(fixture, "lekalo/classification-policy.json");
       ["classification", "inspect", ...asOfArgs, "--as-of", bad],
     ]) {
       const outcome = run(command, EXPIRED);
-      if (outcome.code === 0) fail("as-of-fails-open", { bad, command, ...outcome });
+      if (outcome.code !== 1) fail("as-of-not-usage", { bad, command, ...outcome });
     }
   }
   const envProbe = (env, command) => {
@@ -346,9 +346,8 @@ const policy = (fixture) => join(fixture, "lekalo/classification-policy.json");
       else process.env.LEKALO_AS_OF = previous;
     }
   };
-  if (envProbe("garbage", ["classification", "validate", ...asOfArgs]).code === 0) {
-    fail("as-of-env-fails-open", "LEKALO_AS_OF=garbage");
-  }
+  const envBad = envProbe("garbage", ["classification", "validate", ...asOfArgs]);
+  if (envBad.code !== 1) fail("as-of-env-not-usage", { ...envBad, env: "LEKALO_AS_OF=garbage" });
   const normalized = envProbe("2019-01-01", ["classification", "validate", ...asOfArgs]);
   if (normalized.code !== 0) fail("as-of-bare-date-normalization", normalized);
   const liveFlag = run(
