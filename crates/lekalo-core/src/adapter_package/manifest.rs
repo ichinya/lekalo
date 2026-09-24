@@ -993,7 +993,7 @@ mod committed_exemplar_tests {
         assert_eq!(document.adapter_version().as_str(), "0.3.2");
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:8bb2a397509c4b36f25a8e91fb829fc1b7c761eb9490f3ebe11f72568648731e"
+            "sha256:0b5084f9e8c2280fe6a138d6ba572813226ddbd48d6de7fa4c342fb2c18a18be"
         );
     }
 }

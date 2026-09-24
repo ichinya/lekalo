@@ -32,27 +32,31 @@
   },
   "capabilities": {
     "operations": [
-      "describe",
-      "scan",
-      "bind",
-      "validate",
-      "generate",
-      "verify",
-      "clean",
-      "plan-clean"
+      "generate.openapi",
+      "generate.ui",
+      "generate.zod",
+      "plan.native-gates",
+      "scan.symbols",
+      "verify.scenarios"
     ],
     "targets": [
       "node-typescript"
     ],
     "profiles": [
-      "default"
+      "standalone"
     ],
     "named": {
-      "scan.symbols": "full"
+      "generate.openapi": "unsupported",
+      "generate.ui": "unsupported",
+      "generate.zod": "unsupported",
+      "plan.native-gates": "full",
+      "scan.symbols": "full",
+      "verify.scenarios": "unsupported"
     },
     "constraints": {},
     "readScopes": [
-      ".lekalo/ir/**"
+      ".lekalo/ir/**",
+      "src/**"
     ],
     "writeScopes": [
       ".lekalo/generated/node-typescript/**"
@@ -78,7 +82,7 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:8bb2a397509c4b36f25a8e91fb829fc1b7c761eb9490f3ebe11f72568648731e",
+    "packageDigest": "sha256:0b5084f9e8c2280fe6a138d6ba572813226ddbd48d6de7fa4c342fb2c18a18be",
     "files": [
       {
         "path": "adapter.mjs",
