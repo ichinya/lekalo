@@ -404,12 +404,18 @@ fn a_fork_bomb_stays_bounded() {
         assert_eq!(spawned, 0, "the job admits exactly one process");
         assert_eq!(enforcement, "denied-enforced");
     } else {
-        // The namespace contains the bomb either way; where the task
-        // bound exists, children are refused before it is reached.
+        // The namespace contains the bomb either way. Where the bound
+        // exists it is a hard cap: no more than SANDBOX_TASK_BOUND (64,
+        // the crates/lekalo-core/src/target_protocol/confinement.rs
+        // constant) live tasks ever spawn — not merely fewer than the
+        // attempts. Where the host predates the per-userns RLIMIT_NPROC
+        // bound (kernel < 5.14) or prlimit is absent, the evidence
+        // honestly says denied-unenforced and this stays a containment
+        // smoke check: the deadline kill still bounds the bomb.
         if enforcement == "denied-bounded" {
             assert!(
-                spawned < attempts,
-                "the task bound refuses spawns before the budget: {detail}"
+                spawned <= 64,
+                "the task bound is a hard cap of 64 live tasks: {detail}"
             );
         }
     }
