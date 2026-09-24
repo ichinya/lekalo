@@ -70,6 +70,15 @@ pub struct ScanReceipt {
     /// honest per-dimension enforcement record.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confinement: Option<crate::target_protocol::evidence::ConfinementEvidence>,
+    /// The propagated sensitivity class of the scanned content (issue
+    /// #119): the closed #120 labels the project's classification
+    /// attachment declares. Absent when the project declares no
+    /// classification; an export attempt then refuses fail-closed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class: Option<Vec<String>>,
+    /// The exact privacy policy identity governing the class.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "policyRef")]
+    pub policy_ref: Option<String>,
 }
 
 /// Run one scan end to end. Loader and structure failures surface
@@ -325,6 +334,7 @@ pub fn run(
         .map_err(DomainResult::invalid)?
         .map(|index| index.test_bindings.len())
         .unwrap_or(0);
+    let propagated = crate::privacy::export::propagated_class(&ctx.root);
     Ok(ScanReceipt {
         status: "valid",
         operation: "scan",
@@ -345,6 +355,8 @@ pub fn run(
         moved: receipt.moved,
         staled: receipt.staled,
         confinement: Some(outcome.confinement),
+        class: propagated.as_ref().map(|(labels, _)| labels.clone()),
+        policy_ref: propagated.map(|(_, policy)| policy),
     })
 }
 
@@ -681,6 +693,59 @@ fn build_document(
         document.insert("testBindings".to_owned(), Json::Array(test_bindings));
     }
     Ok(Json::Object(document))
+}
+
+#[cfg(test)]
+mod envelope_tests {
+    use super::*;
+
+    fn receipt(class: Option<Vec<&str>>) -> ScanReceipt {
+        ScanReceipt {
+            status: "valid",
+            operation: "scan",
+            mode: super::super::version::MODE,
+            project: "p".to_owned(),
+            target: None,
+            profile: None,
+            adapter: "a".to_owned(),
+            revision: "r".to_owned(),
+            symbols: 0,
+            endpoints: 0,
+            schemas: 0,
+            test_bindings: 0,
+            explicit: 0,
+            confirmed: 0,
+            inferred: 0,
+            stale: 0,
+            moved: Vec::new(),
+            staled: Vec::new(),
+            confinement: None,
+            class: class
+                .as_ref()
+                .map(|labels| labels.iter().map(|label| (*label).to_owned()).collect()),
+            policy_ref: class
+                .is_some()
+                .then(|| crate::privacy::refs::POLICY_IDENTITY.to_owned()),
+        }
+    }
+
+    /// The #119 envelope members are additive: without them the wire is
+    /// byte-identical to the historical receipt shape, and with them
+    /// they serialize under the exact `class`/`policyRef` spellings.
+    #[test]
+    fn envelope_members_are_additive() {
+        let plain = serde_json::to_value(receipt(None)).expect("plain receipt serializes");
+        assert!(!plain.as_object().unwrap().contains_key("class"));
+        assert!(!plain.as_object().unwrap().contains_key("policyRef"));
+
+        let propagated = serde_json::to_value(receipt(Some(vec!["internal"])))
+            .expect("propagated receipt serializes");
+        assert_eq!(propagated["class"], serde_json::json!(["internal"]));
+        assert_eq!(
+            propagated["policyRef"],
+            crate::privacy::refs::POLICY_IDENTITY
+        );
+    }
 }
 
 #[cfg(test)]

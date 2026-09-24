@@ -695,6 +695,21 @@ fn write_under(project: &Path, relative: &str, bytes: &[u8]) -> Result<(), Expor
     std::fs::write(full, bytes).map_err(|_| ExportFailure::Malformed("privacy.write-refused"))
 }
 
+/// The propagated envelope class of one project's artifacts (issue
+/// #119, plan S6): the sensitivity label of the classification
+/// attachment's declared payload default, plus the exact policy
+/// identity. Exportable receipt surfaces carry these as additive
+/// optional `class`/`policyRef` members; `None` means the project
+/// declares no classification and any export attempt refuses
+/// fail-closed at class resolution.
+pub fn propagated_class(project: &Path) -> Option<(Vec<String>, String)> {
+    let default_kind = project_payload_default(project).ok()??;
+    Some((
+        vec![sensitivity_of_kind(default_kind).as_str().to_owned()],
+        refs::POLICY_IDENTITY.to_owned(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::redact::LeakKind;
@@ -992,6 +1007,31 @@ mod tests {
             }
             other => panic!("expected the consent deny, got {other:?}"),
         }
+    }
+
+    /// The propagated class of a project: a valid classification
+    /// attachment yields the payload-default label plus the exact
+    /// policy identity; a missing or invalid attachment yields `None`
+    /// so an export attempt refuses fail-closed.
+    #[test]
+    fn propagated_class_follows_the_classification_attachment() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/classification/valid/planner");
+        let propagated =
+            propagated_class(&fixtures).expect("planner project declares classification");
+        assert_eq!(propagated.1, crate::privacy::refs::POLICY_IDENTITY);
+        assert!(!propagated.0.is_empty());
+        assert!(propagated
+            .0
+            .iter()
+            .all(|label| DataSensitivity::parse(label).is_some()));
+
+        let empty = tempfile::tempdir().expect("temp project");
+        assert_eq!(propagated_class(empty.path()), None);
+
+        let invalid = tempfile::tempdir().expect("temp project");
+        std::fs::write(invalid.path().join("classification.json"), b"{ not json").unwrap();
+        assert_eq!(propagated_class(invalid.path()), None);
     }
 
     /// Deterministic outcomes: identical runs produce identical

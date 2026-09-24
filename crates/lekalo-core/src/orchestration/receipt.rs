@@ -222,6 +222,16 @@ pub struct GenerateReceipt {
     pub counts: TargetCounts,
     /// The closed verdict.
     pub verdict: Verdict,
+    /// The propagated sensitivity class of the generated content
+    /// (issue #119): the closed #120 labels the project's
+    /// classification attachment declares. Absent when the project
+    /// declares no classification; an export attempt then refuses
+    /// fail-closed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class: Option<Vec<String>>,
+    /// The exact privacy policy identity governing the class.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "policyRef")]
+    pub policy_ref: Option<String>,
 }
 
 /// One executed verify component.

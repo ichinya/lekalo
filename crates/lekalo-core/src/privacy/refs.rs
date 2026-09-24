@@ -76,6 +76,10 @@ pub const AUTHORITY_VERSION: &str = "0.3.2";
 /// subject-profile, classification, and schema satellites.
 pub const DECISION_FAMILY_VERSION: &str = "0.2.16";
 
+/// The exact policy identity spelling carried by the exportable
+/// receipt envelopes (issue #119, plan S6).
+pub const POLICY_IDENTITY: &str = "dev.lekalo.privacy-export-policy@0.3.2";
+
 /// The complete frozen reference set of the accepted #120 family,
 /// with every member carried as exact owned bytes.
 #[derive(Clone, Debug, PartialEq, Eq)]
