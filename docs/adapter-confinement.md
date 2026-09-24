@@ -120,8 +120,8 @@ record exists for scans. The receipt embeds it verbatim:
     "env": ["LEKALO_GRANTED_VAR", "LEKALO_SECRET_PROBE"],
     "envDropped": [],
     "network": { "mode": "denied", "enforcement": "enforced" },
-    "children": { "policy": "denied", "enforcement": "denied-enforced" },
-    "resources": { "memoryLimit": 2147483648, "processLimit": 1, "enforcement": "enforced" }
+    "children": { "policy": "denied", "enforcement": "denied-enforced", "processLimit": 1 },
+    "resources": { "memoryLimit": 2147483648, "enforcement": "enforced" }
   },
   "described": { "readScopes": ["src/**"], "writeScopes": ["gen/**"] },
   "effective": { "readScopes": ["src/**"], "writeScopes": ["gen/**"] },

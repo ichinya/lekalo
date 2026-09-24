@@ -88,6 +88,13 @@ pub struct ChildrenEvidence {
     /// fork primitive), `denied-unenforced` (no primitive exists — the
     /// namespace containment still applies), or `permitted`.
     pub enforcement: &'static str,
+    /// The enforced process bound of the children policy (the Windows
+    /// job cap or the Linux task bound), when one applies; `null` is an
+    /// honest gap, never a guess. It rides the children dimension: the
+    /// bound caps children, not a general resources budget (issue #89,
+    /// C-F13).
+    #[serde(rename = "processLimit")]
+    pub process_limit: Option<u64>,
 }
 
 /// The resource bounds of the session and their honest enforcement.
@@ -97,10 +104,6 @@ pub struct ResourcesEvidence {
     /// one; `null` is an honest gap, never a guess.
     #[serde(rename = "memoryLimit")]
     pub memory_limit: Option<u64>,
-    /// The enforced process bound (the Windows job cap or the Linux
-    /// task bound), when one applies; `null` otherwise.
-    #[serde(rename = "processLimit")]
-    pub process_limit: Option<u64>,
     /// `enforced` or `unenforced`.
     pub enforcement: &'static str,
 }
@@ -188,10 +191,10 @@ impl ConfinementEvidence {
                 children: ChildrenEvidence {
                     policy: child_policy,
                     enforcement: children_enforcement,
+                    process_limit: report.process_limit(),
                 },
                 resources: ResourcesEvidence {
                     memory_limit: report.memory_limit(),
-                    process_limit: report.process_limit(),
                     enforcement: report.resources.as_str(),
                 },
             },
