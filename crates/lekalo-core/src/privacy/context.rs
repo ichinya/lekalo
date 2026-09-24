@@ -120,7 +120,7 @@ fn sidecar_matches(bytes: &[u8], expected_digest: &str, filename: &str) -> bool 
 
 /// Whether `actual` is an object with exactly `expected`'s key set and
 /// identical member values (the reference `sameObject`).
-fn same_object(actual: &Json, expected: &Json) -> bool {
+pub(crate) fn same_object(actual: &Json, expected: &Json) -> bool {
     match (actual.as_object(), expected.as_object()) {
         (Some(actual), Some(expected)) => {
             actual.len() == expected.len()

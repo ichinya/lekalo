@@ -25,6 +25,7 @@
 
 pub mod canonical;
 pub mod context;
+pub mod evaluate;
 pub mod input;
 pub mod output;
 pub mod refs;
@@ -33,6 +34,7 @@ pub mod vocab;
 
 pub use canonical::{canonical, compare_unicode_code_points};
 pub use context::{CustodyError, TrustedContext};
+pub use evaluate::{evaluate_decision, DecisionEvaluation};
 pub use input::{
     AggregationDecision, AppliedTransform, ConflictResolution, Constraint,
     DeclassificationDecision, DerivedArtifact, Destination, Endpoint, ExportDecisionInput,

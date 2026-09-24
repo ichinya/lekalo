@@ -26,6 +26,15 @@ pub struct PolicyRef {
 }
 
 impl PolicyRef {
+    /// Assemble from validated members.
+    pub fn new(policy_id: String, version: String, digest: String) -> Self {
+        Self {
+            policy_id,
+            version,
+            digest,
+        }
+    }
+
     /// The exact frozen policy reference.
     pub fn frozen() -> Self {
         Self {
@@ -131,6 +140,15 @@ pub struct SubjectProfileRef {
 }
 
 impl SubjectProfileRef {
+    /// Assemble from validated members.
+    pub fn new(profile_id: String, version: String, digest: String) -> Self {
+        Self {
+            profile_id,
+            version,
+            digest,
+        }
+    }
+
     /// The exact frozen subject-profile reference.
     pub fn frozen() -> Self {
         Self {
@@ -165,6 +183,14 @@ pub struct DecisionContractRef {
 }
 
 impl DecisionContractRef {
+    /// Assemble from validated members.
+    pub fn new(contract_id: String, version: String) -> Self {
+        Self {
+            contract_id,
+            version,
+        }
+    }
+
     /// The exact frozen decision contract reference.
     pub fn frozen() -> Self {
         Self {
