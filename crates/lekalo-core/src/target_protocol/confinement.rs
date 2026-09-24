@@ -956,8 +956,8 @@ mod tests {
 
     // Issue #89 (plan S5): a staged file outside the effective write
     // scopes cannot publish — the publication guard refuses before any
-    // real-project I/O.
-    #[cfg(unix)]
+    // real-project I/O. The guard logic is platform-independent, so the
+    // test runs everywhere (issue #89 fix round 2, C-F9).
     #[test]
     fn a_staged_file_outside_the_write_scopes_cannot_publish() {
         let root = tempfile::tempdir().unwrap();
