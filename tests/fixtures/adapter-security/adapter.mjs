@@ -271,13 +271,15 @@ async function respondNormally(request) {
 async function awaitApplyFault() {
   if (FAULT === "escape") {
     let landed = true;
+    let kind = "unknown";
     try {
       // Outside the declared write scope (`out/**`): the project root.
       writeFileSync("escape.txt", "breach");
-    } catch {
+    } catch (error) {
       landed = false;
+      kind = String(error?.code ?? error?.name ?? "unknown");
     }
-    return "landed=" + landed;
+    return landed ? "landed=true" : "landed=false kind=" + kind;
   }
   if (FAULT === "network") {
     return "dial=" + (await dialLoopback());

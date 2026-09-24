@@ -200,7 +200,11 @@ fn fault_detail(outcome: &lekalo_core::target_protocol::CallOutcome) -> String {
         .unwrap_or_default()
 }
 
-/// S6 #1: the escape attempt never lands on the real tree.
+/// S6 #1: the escape attempt never lands on the real tree, the refusal
+/// is a permission/write denial (not an unrelated error such as a
+/// missing directory), and the same session's in-scope write lands —
+/// the explicit control proving the sandbox was otherwise functional
+/// (issue #89 fix round 2, C-F8).
 #[test]
 fn an_escape_write_never_lands_outside_the_scopes() {
     let (outcome, sandbox) = run_session("escape", "escape", SessionBudget::strict_implicit());
@@ -208,10 +212,19 @@ fn an_escape_write_never_lands_outside_the_scopes() {
         !sandbox.project().join("escape.txt").exists(),
         "the real project never receives the escape write"
     );
-    assert_eq!(
-        fault_detail(&outcome),
-        "landed=false",
-        "the sandbox denied the escape"
+    let detail = fault_detail(&outcome);
+    let kind = detail
+        .strip_prefix("landed=false kind=")
+        .unwrap_or_else(|| panic!("the sandbox denied the escape: {detail}"));
+    assert!(
+        matches!(kind, "EACCES" | "EPERM" | "EROFS"),
+        "the refusal is a permission/write denial, not an unrelated error: {detail}"
+    );
+    // The in-scope control: the same session published its declared
+    // write, so the refusal above is confinement, not a dead sandbox.
+    assert!(
+        sandbox.project().join("out/probe.json").exists(),
+        "the in-scope control write landed"
     );
     // The write audit shows only the declared, in-scope change.
     let audit = outcome.confinement.writes.as_ref().expect("write audit");
