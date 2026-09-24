@@ -627,16 +627,20 @@ impl TargetClient {
                 if !plan::plans_equal(&binding.entries, &writes) {
                     return Err(TargetFailure::plan_mismatch(None, "plan-drift"));
                 }
-                plan::verify_applied(&stage_fs, &writes, &stage_before, &after)?;
                 // Issue #89: a staged change outside the effective write
                 // scopes is a confinement violation — refuse before any
-                // publication, never silently drop it.
+                // publication, never silently drop it. The security
+                // classification fires before plan verification (fix
+                // round 2, C-F3) so an out-of-scope staged change is
+                // observed as `adapter.security-failure`; undeclared
+                // changes still refuse as plan-mismatch below.
                 if !outside_scopes.is_empty() {
                     return Err(TargetFailure::SecurityRefusal {
                         check: "writes-outside-scopes",
                         detail: "publication-guard",
                     });
                 }
+                plan::verify_applied(&stage_fs, &writes, &stage_before, &after)?;
                 // Validate every response and staged byte before publishing.
                 // Re-check real inputs/output pre-state after the child exits.
                 if snapshot_scopes(&fs, &effective.read)? != inputs
