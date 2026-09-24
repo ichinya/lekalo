@@ -46,6 +46,12 @@ pub struct BudgetEvidence {
     /// nothing independently).
     #[serde(rename = "writeScopes")]
     pub write_scopes: Vec<String>,
+    /// Where the ceilings come from: `manifest` (the verified package
+    /// manifest) or `described` (the budget claims nothing
+    /// independently; the adapter's own describe bounds apply). Empty
+    /// cap lists mean the latter unless this token says `manifest`.
+    #[serde(rename = "scopeCeiling")]
+    pub scope_ceiling: &'static str,
     /// The granted environment variable names (sorted). Values are
     /// never carried: they exist only inside the child environment
     /// block for the duration of one exchange.
@@ -159,6 +165,7 @@ impl ConfinementEvidence {
             budget: BudgetEvidence {
                 read_scopes: read_caps,
                 write_scopes: write_caps,
+                scope_ceiling: budget.scope_ceiling(),
                 env,
                 network: NetworkEvidence {
                     mode: network_mode,
@@ -258,6 +265,22 @@ mod tests {
         assert_eq!(evidence.platform, platform_token());
         // The strict implicit budget caps nothing independently.
         assert!(evidence.budget.read_scopes.is_empty());
+        assert_eq!(evidence.budget.scope_ceiling, "described");
+        let manifested = SessionBudget::from_declared(
+            &crate::adapter_package::permissions::DeclaredPermissions {
+                read_scopes: vec!["src/**".to_owned()],
+                write_scopes: vec!["gen/**".to_owned()],
+                network_mode: "denied".to_owned(),
+                network_destinations: Vec::new(),
+                environment_allowlist: Vec::new(),
+                child_processes: "denied".to_owned(),
+                secret_handles: Vec::new(),
+            },
+        );
+        let policy = super::super::confinement::SandboxPolicy::from_budget(&manifested);
+        let report = ConfinementReport::compute(policy);
+        let evidence = ConfinementEvidence::build(&manifested, &[], &[], &[], &[], None, report);
+        assert_eq!(evidence.budget.scope_ceiling, "manifest");
     }
 
     #[test]
@@ -268,6 +291,10 @@ mod tests {
         let evidence = ConfinementEvidence::build(&budget, &[], &[], &[], &[], None, report);
         let bytes = serde_json::to_string(&evidence).expect("serializes");
         assert!(bytes.contains("\"readScopes\""), "camelCase wire: {bytes}");
+        assert!(
+            bytes.contains("\"scopeCeiling\":\"described\""),
+            "the ceiling token rides the budget evidence: {bytes}"
+        );
         assert!(!bytes.contains('\\'), "no escapes, no host paths: {bytes}");
     }
 }

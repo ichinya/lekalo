@@ -279,6 +279,19 @@ impl SessionBudget {
         self.write_scope_caps.caps()
     }
 
+    /// Where the scope ceilings come from: `manifest` names the verified
+    /// package manifest as the ceiling; `described` means the budget
+    /// claims nothing independently (the strict implicit default) and
+    /// the adapter's own describe bounds apply. The evidence publishes
+    /// the token so an auditor reads empty cap lists correctly
+    /// (issue #89 fix round 2, C-F4).
+    pub fn scope_ceiling(&self) -> &'static str {
+        match self.read_scope_caps {
+            ScopeCaps::Declared(_) => "manifest",
+            ScopeCaps::Described => "described",
+        }
+    }
+
     /// The granted environment variable names and their value sources,
     /// in canonical (sorted) name order. Values are never carried.
     pub fn environment(&self) -> &BTreeMap<String, EnvSource> {

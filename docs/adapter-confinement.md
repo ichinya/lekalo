@@ -110,6 +110,7 @@ Every completed exchange carries a deterministic `confinement` member
   "budget": {
     "readScopes": ["src/**"],
     "writeScopes": ["gen/**"],
+    "scopeCeiling": "manifest",
     "env": ["LEKALO_GRANTED_VAR", "LEKALO_SECRET_PROBE"],
     "network": { "mode": "denied", "enforcement": "enforced" },
     "children": { "policy": "denied", "enforcement": "denied-enforced" },
@@ -127,9 +128,16 @@ only for operations that declare writes. The document carries names
 and tokens only — never environment values, secret material, or
 absolute host paths — and there are no timestamps.
 
+`budget.scopeCeiling` names the ceiling source: `manifest` when the
+cap lists are the verified package manifest's ceilings, `described`
+when the budget claims nothing independently (the strict implicit
+default) and the adapter's own describe bounds apply — so empty cap
+lists are read correctly instead of looking like an empty grant.
+
 The enforcement vocabulary is closed:
 
 - `network.enforcement`: `enforced` | `degraded-denied`
+- `budget.scopeCeiling`: `manifest` | `described`
 - `children.enforcement`: `denied-enforced` | `denied-bounded` |
   `denied-unenforced` | `permitted`
 - `resources.enforcement`: `enforced` | `unenforced`
