@@ -26,6 +26,7 @@ mod confinement;
 mod conformance;
 pub mod diagnostic;
 pub mod discovery;
+pub mod evidence;
 pub mod plan;
 pub mod scopes;
 pub mod selection;
@@ -101,6 +102,10 @@ pub struct CallOutcome {
     pub response: ResponseEnvelope,
     /// The plan identifier the exchange bound (planning and apply).
     pub plan_id: Option<String>,
+    /// The deterministic confinement evidence of the exchange (issue
+    /// #89): granted budget, described scopes, effective scopes, and
+    /// the honest per-dimension enforcement record.
+    pub confinement: evidence::ConfinementEvidence,
 }
 
 /// The closed failure taxonomy of the target protocol client.
@@ -621,6 +626,14 @@ impl TargetClient {
         Ok(CallOutcome {
             response,
             plan_id: outcome_plan_id,
+            confinement: evidence::ConfinementEvidence::build(
+                &self.budget,
+                &capabilities.read_scopes,
+                &capabilities.write_scopes,
+                &effective.read,
+                &effective.write,
+                sandbox.report(),
+            ),
         })
     }
 

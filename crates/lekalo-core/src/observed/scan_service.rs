@@ -65,6 +65,11 @@ pub struct ScanReceipt {
     pub stale: usize,
     pub moved: Vec<String>,
     pub staled: Vec<String>,
+    /// The deterministic confinement evidence of the scan exchange
+    /// (issue #89): granted budget, described/effective scopes, and the
+    /// honest per-dimension enforcement record.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confinement: Option<crate::target_protocol::evidence::ConfinementEvidence>,
 }
 
 /// Run one scan end to end. Loader and structure failures surface
@@ -339,6 +344,7 @@ pub fn run(
         stale: receipt.stale,
         moved: receipt.moved,
         staled: receipt.staled,
+        confinement: Some(outcome.confinement),
     })
 }
 

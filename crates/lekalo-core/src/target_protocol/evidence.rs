@@ -1,0 +1,231 @@
+//! The deterministic confinement evidence of one adapter exchange
+//! (issue #89).
+//!
+//! Every run records what the budget granted, what the adapter
+//! described, what the budget check admitted, and what the platform
+//! honestly enforced per dimension. The document carries names and
+//! tokens only — never environment values, secret material, or
+//! absolute host paths. Field order is the wire order; arrays are
+//! sorted; there are no timestamps.
+
+use serde::Serialize;
+
+use super::confinement::ConfinementReport;
+use crate::adapter_package::budget::{ChildPolicy, NetworkBudget, SessionBudget};
+
+/// The confinement evidence member of one completed exchange.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ConfinementEvidence {
+    /// The budget the session granted (manifest ceiling or the strict
+    /// implicit default).
+    pub budget: BudgetEvidence,
+    /// The scopes the adapter described in this session.
+    pub described: ScopeEvidence,
+    /// The scopes the budget check admitted for the exchange.
+    pub effective: ScopeEvidence,
+    /// The normalized platform token (`<os>-<arch>`), never a host
+    /// path or hostname.
+    pub platform: &'static str,
+}
+
+/// The budget projection: granted scopes, environment names, and the
+/// per-dimension network/children/resources posture.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct BudgetEvidence {
+    /// The read-scope ceiling (sorted; empty when the budget claims
+    /// nothing independently — the implicit default).
+    #[serde(rename = "readScopes")]
+    pub read_scopes: Vec<String>,
+    /// The write-scope ceiling (sorted; empty when the budget claims
+    /// nothing independently).
+    #[serde(rename = "writeScopes")]
+    pub write_scopes: Vec<String>,
+    /// The granted environment variable names (sorted). Values are
+    /// never carried: they exist only inside the child environment
+    /// block for the duration of one exchange.
+    pub env: Vec<String>,
+    pub network: NetworkEvidence,
+    pub children: ChildrenEvidence,
+    pub resources: ResourcesEvidence,
+}
+
+/// The network posture of the session and its honest enforcement.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct NetworkEvidence {
+    /// `denied` or `allowlist` as declared.
+    pub mode: &'static str,
+    /// `enforced` (namespace-level denial) or `degraded-denied` (an
+    /// allowlist was declared but no supported platform offers a
+    /// namespace-level destination filter, so the run stays denied).
+    pub enforcement: &'static str,
+}
+
+/// The children policy of the session and its honest enforcement.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ChildrenEvidence {
+    /// `denied` or `declared` as declared.
+    pub policy: &'static str,
+    /// `denied-enforced` (a platform primitive holds the denial),
+    /// `denied-bounded` (a platform bound caps the task count, not a
+    /// fork primitive), `denied-unenforced` (no primitive exists — the
+    /// namespace containment still applies), or `permitted`.
+    pub enforcement: &'static str,
+}
+
+/// The resource bounds of the session and their honest enforcement.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ResourcesEvidence {
+    /// The enforced memory bound in bytes, when the platform enforces
+    /// one; `null` is an honest gap, never a guess.
+    #[serde(rename = "memoryLimit")]
+    pub memory_limit: Option<u64>,
+    /// The enforced process bound (the Windows job cap or the Linux
+    /// task bound), when one applies; `null` otherwise.
+    #[serde(rename = "processLimit")]
+    pub process_limit: Option<u64>,
+    /// `enforced` or `unenforced`.
+    pub enforcement: &'static str,
+}
+
+/// One scope projection (sorted, canonical order).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ScopeEvidence {
+    #[serde(rename = "readScopes")]
+    pub read_scopes: Vec<String>,
+    #[serde(rename = "writeScopes")]
+    pub write_scopes: Vec<String>,
+}
+
+impl ConfinementEvidence {
+    /// Build the evidence from the session budget, the described and
+    /// effective scopes of this exchange, and the sandbox's honest
+    /// enforcement record. In-crate: the run path builds this after the
+    /// exchange; the document itself serializes into receipts.
+    pub(super) fn build(
+        budget: &SessionBudget,
+        described_read: &[String],
+        described_write: &[String],
+        effective_read: &[String],
+        effective_write: &[String],
+        report: ConfinementReport,
+    ) -> Self {
+        let network_mode = match budget.network() {
+            NetworkBudget::Denied => "denied",
+            NetworkBudget::Allowlist(_) => "allowlist",
+        };
+        let network_enforcement = match report.network {
+            super::confinement::Enforcement::Degraded => "degraded-denied",
+            _ => "enforced",
+        };
+        let child_policy = match budget.children() {
+            ChildPolicy::Denied => "denied",
+            ChildPolicy::Declared => "declared",
+        };
+        let children_enforcement = match (report.children_denied, report.children) {
+            (false, _) => "permitted",
+            (true, super::confinement::Enforcement::Enforced) => "denied-enforced",
+            (true, super::confinement::Enforcement::Degraded) => "denied-bounded",
+            (true, super::confinement::Enforcement::Unenforced) => "denied-unenforced",
+        };
+        let mut env: Vec<String> = budget.environment().keys().cloned().collect();
+        env.sort();
+        let mut read_caps = budget.read_caps();
+        read_caps.sort();
+        let mut write_caps = budget.write_caps();
+        write_caps.sort();
+        Self {
+            budget: BudgetEvidence {
+                read_scopes: read_caps,
+                write_scopes: write_caps,
+                env,
+                network: NetworkEvidence {
+                    mode: network_mode,
+                    enforcement: network_enforcement,
+                },
+                children: ChildrenEvidence {
+                    policy: child_policy,
+                    enforcement: children_enforcement,
+                },
+                resources: ResourcesEvidence {
+                    memory_limit: report.memory_limit(),
+                    process_limit: report.process_limit(),
+                    enforcement: report.resources.as_str(),
+                },
+            },
+            described: scope_evidence(described_read, described_write),
+            effective: scope_evidence(effective_read, effective_write),
+            platform: platform_token(),
+        }
+    }
+}
+
+/// Sorted scope projection.
+fn scope_evidence(read: &[String], write: &[String]) -> ScopeEvidence {
+    let mut read: Vec<String> = read.to_vec();
+    read.sort();
+    let mut write: Vec<String> = write.to_vec();
+    write.sort();
+    ScopeEvidence {
+        read_scopes: read,
+        write_scopes: write,
+    }
+}
+
+/// The normalized `<os>-<arch>` token of the host platform. Fixed
+/// spellings keep the evidence byte-stable across machines of one
+/// platform.
+fn platform_token() -> &'static str {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", "x86_64") => "windows-x86_64",
+        ("windows", "aarch64") => "windows-aarch64",
+        ("macos", "x86_64") => "macos-x86_64",
+        ("macos", "aarch64") => "macos-aarch64",
+        ("linux", "x86_64") => "linux-x86_64",
+        ("linux", "aarch64") => "linux-aarch64",
+        _ => "other-unknown",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::adapter_package::budget::SessionBudget;
+
+    #[test]
+    fn the_evidence_carries_names_and_tokens_only() {
+        let budget = SessionBudget::strict_implicit();
+        let policy = super::super::confinement::SandboxPolicy::from_budget(&budget);
+        let report = ConfinementReport::compute(policy);
+        let evidence = ConfinementEvidence::build(
+            &budget,
+            &["b/**".to_owned(), "a/**".to_owned()],
+            &[],
+            &["a/**".to_owned(), "b/**".to_owned()],
+            &[],
+            report,
+        );
+        assert_eq!(
+            evidence.described.read_scopes,
+            ["a/**", "b/**"],
+            "sorted canonical order"
+        );
+        assert!(evidence.budget.env.is_empty());
+        assert_eq!(evidence.budget.network.mode, "denied");
+        assert_eq!(evidence.budget.network.enforcement, "enforced");
+        assert_eq!(evidence.budget.children.policy, "denied");
+        assert_eq!(evidence.platform, platform_token());
+        // The strict implicit budget caps nothing independently.
+        assert!(evidence.budget.read_scopes.is_empty());
+    }
+
+    #[test]
+    fn serialization_is_deterministic_camel_case() {
+        let budget = SessionBudget::strict_implicit();
+        let policy = super::super::confinement::SandboxPolicy::from_budget(&budget);
+        let report = ConfinementReport::compute(policy);
+        let evidence = ConfinementEvidence::build(&budget, &[], &[], &[], &[], report);
+        let bytes = serde_json::to_string(&evidence).expect("serializes");
+        assert!(bytes.contains("\"readScopes\""), "camelCase wire: {bytes}");
+        assert!(!bytes.contains('\\'), "no escapes, no host paths: {bytes}");
+    }
+}

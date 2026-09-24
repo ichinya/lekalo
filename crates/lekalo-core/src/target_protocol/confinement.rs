@@ -74,7 +74,6 @@ pub(super) enum Enforcement {
 
 impl Enforcement {
     /// The stable evidence token.
-    #[allow(dead_code)] // consumed by the confinement evidence (plan S4)
     pub(super) const fn as_str(self) -> &'static str {
         match self {
             Self::Enforced => "enforced",
@@ -136,7 +135,6 @@ impl ConfinementReport {
 
     /// The effective process bound for the evidence (Windows job cap 1
     /// when denied; the Linux task bound when the wrapper exists).
-    #[allow(dead_code)] // consumed by the confinement evidence (plan S4)
     pub(super) fn process_limit(&self) -> Option<u64> {
         if !self.children_denied {
             return None;
@@ -386,6 +384,11 @@ impl Sandbox {
             report: ConfinementReport::compute(policy),
             policy,
         })
+    }
+
+    /// The honest per-dimension enforcement record of this sandbox.
+    pub(super) fn report(&self) -> ConfinementReport {
+        self.report
     }
 
     fn command(
