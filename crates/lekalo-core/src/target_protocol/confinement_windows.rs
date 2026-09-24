@@ -482,12 +482,13 @@ pub(super) fn run(
     limits: &transport::TransportLimits,
     sandbox: &Sandbox,
     cancel: Option<&AtomicBool>,
+    env: &[(String, String)],
 ) -> Result<transport::TransportSuccess, Failure> {
     if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
         return Err(Failure::Cancelled);
     }
     let mut profile = Profile::new(sandbox)?;
-    let result = run_profile(command, request, limits, sandbox, cancel, &profile);
+    let result = run_profile(command, request, limits, sandbox, cancel, &profile, env);
     profile.close()?;
     result
 }
@@ -499,6 +500,7 @@ fn run_profile(
     sandbox: &Sandbox,
     cancel: Option<&AtomicBool>,
     profile: &Profile,
+    env: &[(String, String)],
 ) -> Result<transport::TransportSuccess, Failure> {
     grant(sandbox.owned.path(), profile.sid, false)?;
     // LPAC has low integrity; lower only this owned staged copy so write
@@ -590,6 +592,8 @@ fn run_profile(
     let mut command_line = wide(arguments.join(" "));
     let cwd = wide(&sandbox.project);
     // No inherited user/provider environment, DLL search paths or Node options.
+    // Issue #89: exactly the budget-granted pairs extend the private block;
+    // values exist only inside the child environment, never in evidence.
     let system = std::env::var_os("SystemRoot").ok_or(Failure::Spawn)?;
     let private = sandbox.owned.path().to_string_lossy();
     let mut environment: Vec<u16> = Vec::new();
@@ -603,6 +607,9 @@ fn run_profile(
         ("USERPROFILE", private.as_ref()),
         ("windir", system.to_str().ok_or(Failure::Spawn)?),
     ] {
+        environment.extend(wide(format!("{key}={value}")));
+    }
+    for (key, value) in env {
         environment.extend(wide(format!("{key}={value}")));
     }
     environment.push(0);

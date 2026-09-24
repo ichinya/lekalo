@@ -276,6 +276,7 @@ impl Sandbox {
         limits: &transport::TransportLimits,
         file_transport: bool,
         cancel: Option<&AtomicBool>,
+        env: &[(String, String)],
     ) -> Result<transport::TransportSuccess, TargetFailure> {
         let _custody = self.owned.path();
         if request.len() > limits.max_request_bytes {
@@ -301,11 +302,11 @@ impl Sandbox {
             ]);
         }
         #[cfg(windows)]
-        let result = windows::run(&command, request, limits, self, cancel);
+        let result = windows::run(&command, request, limits, self, cancel, env);
         #[cfg(target_os = "linux")]
-        let result = self.run_linux(&command, request, limits, cancel);
+        let result = self.run_linux(&command, request, limits, cancel, env);
         #[cfg(target_os = "macos")]
-        let result = self.run_macos(&command, request, limits, cancel);
+        let result = self.run_macos(&command, request, limits, cancel, env);
         #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         let result = Err(transport::TransportFailure::Spawn);
         result.map_err(super::transport_failure)
@@ -318,6 +319,7 @@ impl Sandbox {
         request: &[u8],
         limits: &transport::TransportLimits,
         cancel: Option<&AtomicBool>,
+        env: &[(String, String)],
     ) -> Result<transport::TransportSuccess, transport::TransportFailure> {
         let mut args: Vec<String> = [
             "--die-with-parent",
@@ -331,6 +333,13 @@ impl Sandbox {
         ]
         .map(str::to_owned)
         .to_vec();
+        // Issue #89: the environment is fully cleared, then exactly the
+        // budget-granted variables are re-set inside the namespace. The
+        // pairs come from the caller's resolved budget (host values read
+        // at spawn); they enter the child environment block only.
+        for (name, value) in env {
+            args.extend(["--setenv".into(), name.clone(), value.clone()]);
+        }
         for root in ["/usr", "/bin", "/lib", "/lib64"] {
             if Path::new(root).exists() {
                 args.extend(["--ro-bind".into(), root.into(), root.into()]);
@@ -366,7 +375,7 @@ impl Sandbox {
             program: "/usr/bin/bwrap".into(),
             args,
         };
-        transport::run_private(&wrapper, request, limits, &self.project, cancel)
+        transport::run_private(&wrapper, request, limits, &self.project, cancel, env)
     }
 
     #[cfg(target_os = "macos")]
@@ -376,9 +385,19 @@ impl Sandbox {
         request: &[u8],
         limits: &transport::TransportLimits,
         cancel: Option<&AtomicBool>,
+        env: &[(String, String)],
     ) -> Result<transport::TransportSuccess, transport::TransportFailure> {
-        let wrapper = self.macos_command(command);
-        transport::run_private(&wrapper, request, limits, &self.project, cancel)
+        // sandbox-exec inherits the spawning environment; the private
+        // runner scrubs it (env -i semantics) and re-grants exactly the
+        // budget pairs at spawn, keeping host values out of argv.
+        transport::run_private(
+            &self.macos_command(command),
+            request,
+            limits,
+            &self.project,
+            cancel,
+            env,
+        )
     }
 
     #[cfg(target_os = "macos")]

@@ -338,6 +338,12 @@ enum Commands {
         /// Scope the generation attribution to one module.
         #[arg(long, value_name = "MODULE")]
         module: Option<String>,
+        /// Issue #89 escalation policy: permit the adapter's described
+        /// scopes to exceed its manifest ceiling for this run. Off by
+        /// default; the widening stays visible in the confinement
+        /// evidence.
+        #[arg(long)]
+        allow_permission_expansion: bool,
         /// The adapter program and its arguments, spawned directly;
         /// the vector follows `--` and its entry bytes must equal the
         /// locked pins exactly.
@@ -2022,6 +2028,7 @@ fn runtime() -> u8 {
                 confirm,
                 target,
                 module,
+                allow_permission_expansion,
                 program_args,
                 timeout_ms,
             } => run_generate(
@@ -2033,6 +2040,7 @@ fn runtime() -> u8 {
                 confirm,
                 target,
                 module,
+                allow_permission_expansion,
                 program_args,
                 timeout_ms,
             ),
@@ -8150,6 +8158,7 @@ fn run_generate(
     confirm: Option<String>,
     targets: Vec<String>,
     module: Option<String>,
+    allow_permission_expansion: bool,
     program_args: Vec<String>,
     timeout_ms: u64,
 ) -> DomainResult {
@@ -8247,6 +8256,7 @@ fn run_generate(
         locked,
         supply: Some(supply),
         timeout_ms,
+        allow_permission_expansion,
     })
 }
 

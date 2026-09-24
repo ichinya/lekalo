@@ -35,6 +35,7 @@ pub mod wire;
 
 use std::sync::atomic::AtomicBool;
 
+use crate::adapter_package::budget::SessionBudget;
 use crate::project_fs::Fs;
 use transport::AdapterCommand;
 use wire::{Operation, RequestEnvelope, ResponseEnvelope, ResponseInvalidity, ResponseStatus};
@@ -156,6 +157,15 @@ pub enum TargetFailure {
     OutputLimit { stream: transport::Stream },
     /// The caller cancelled the exchange.
     Cancelled,
+    /// The adapter's described scopes exceed its manifest-enforced
+    /// confinement budget (issue #89): refused before any sandbox.
+    PermissionEscalated {
+        /// The exceeded capability member (`capabilities.readScopes` or
+        /// `capabilities.writeScopes`).
+        member: &'static str,
+        /// The adapter identity the session is bound to.
+        adapter: String,
+    },
 }
 
 impl TargetFailure {
@@ -203,6 +213,10 @@ pub struct TargetClient {
     limits: transport::TransportLimits,
     described: Option<(AdapterCommand, DescribeOutcome)>,
     binding: Option<PlanBinding>,
+    /// The execution confinement budget (issue #89). The default is the
+    /// strict implicit budget; `scan_service`/`catalog` set it from the
+    /// resolved manifest after the trust/consistency gates.
+    budget: SessionBudget,
 }
 
 impl Default for TargetClient {
@@ -218,7 +232,20 @@ impl TargetClient {
             limits,
             described: None,
             binding: None,
+            budget: SessionBudget::strict_implicit(),
         }
+    }
+
+    /// Set the session's confinement budget (issue #89). Called after
+    /// the package gates have resolved the verified manifest; the
+    /// budget is the enforcement ceiling of every later exchange.
+    pub fn set_budget(&mut self, budget: SessionBudget) {
+        self.budget = budget;
+    }
+
+    /// The session's confinement budget.
+    pub fn budget(&self) -> &SessionBudget {
+        &self.budget
     }
 
     /// The cached handshake outcome, if any.
@@ -299,7 +326,10 @@ impl TargetClient {
         envelope.request_id = wire::request_id(&envelope);
         let serialized = serialize(&envelope)?;
         let sandbox = confinement::Sandbox::new(cwd, &[], &[], false)?;
-        let exchange = sandbox.run(command, &serialized, &self.limits, false, cancel);
+        // Safe discovery discloses nothing but the request bytes: the
+        // handshake runs with empty scopes and an empty environment
+        // regardless of the session budget (issue #89).
+        let exchange = sandbox.run(command, &serialized, &self.limits, false, cancel, &[]);
         let response = self.interpret(exchange, &envelope)?;
         let invalid = |detail| Err(TargetFailure::ResponseInvalid { detail });
         if response.writes.is_some() {
@@ -376,6 +406,18 @@ impl TargetClient {
             });
         }
         let capabilities = described.capabilities.clone();
+        // Issue #89: the manifest-enforced budget is the ceiling. The
+        // described scopes pass through the budget check before any
+        // sandbox exists; exceeding scopes refuse as
+        // `adapter.permission-escalated` (denied) unless the session
+        // carries an explicit escalation policy.
+        let effective = self
+            .budget
+            .check_scopes(&capabilities.read_scopes, &capabilities.write_scopes)
+            .map_err(|escalation| TargetFailure::PermissionEscalated {
+                member: escalation.member(),
+                adapter: capabilities.adapter.id.clone(),
+            })?;
         // Refuse undeclared IR support before disclosing project IR.
         if request.operation.requires_ir()
             && !capabilities
@@ -394,7 +436,7 @@ impl TargetClient {
                 detail: "profile-resolution",
             });
         }
-        self.validate_call_request(&request, &capabilities)?;
+        self.validate_call_request(&request, &capabilities, &effective.read)?;
         if applying && pending.is_none() {
             return Err(TargetFailure::RequestInvalid { detail: "plan-id" });
         }
@@ -406,7 +448,9 @@ impl TargetClient {
         let fs = Fs::open(&root).map_err(|_| TargetFailure::RequestInvalid {
             detail: "project-root",
         })?;
-        let inputs = snapshot_scopes(&fs, &capabilities.read_scopes)?;
+        // The budget-checked (effective) scopes — not the raw describe
+        // claim — drive every snapshot and the sandbox view (issue #89).
+        let inputs = snapshot_scopes(&fs, &effective.read)?;
         if request
             .ir_path
             .is_some_and(|path| !inputs.get(path).is_some_and(|value| value != "directory"))
@@ -424,7 +468,7 @@ impl TargetClient {
             &inputs,
             &described.capability_digest,
         )));
-        let before = snapshot_scopes(&fs, &capabilities.write_scopes)?;
+        let before = snapshot_scopes(&fs, &effective.write)?;
         if applying {
             let binding = pending
                 .as_ref()
@@ -481,17 +525,24 @@ impl TargetClient {
         let serialized = serialize(&envelope)?;
         let use_file = !capabilities.transports.contains(&wire::Transport::Stdin);
 
-        let sandbox = confinement::Sandbox::new(
-            &root,
-            &capabilities.read_scopes,
-            &capabilities.write_scopes,
-            applying,
-        )?;
+        let sandbox =
+            confinement::Sandbox::new(&root, &effective.read, &effective.write, applying)?;
         let stage_fs = Fs::open(&sandbox.project).map_err(|_| TargetFailure::TransportFailed {
             detail: "sandbox-view",
         })?;
         let stage_before = plan::snapshot_all(&stage_fs).map_err(snapshot_rejection)?;
-        let exchange = sandbox.run(command, &serialized, &self.limits, use_file, cancel);
+        // The granted environment pairs resolve at spawn time from the
+        // session budget; values enter only the child environment block
+        // and are never logged, persisted, or echoed (issue #89).
+        let granted_env = self.budget.resolve_environment();
+        let exchange = sandbox.run(
+            command,
+            &serialized,
+            &self.limits,
+            use_file,
+            cancel,
+            &granted_env,
+        );
         let response = self.interpret(exchange, &envelope)?;
         self.validate_response_payload(&request, &response, &capabilities)?;
         let writes = response.writes.clone().unwrap_or_default();
@@ -549,8 +600,8 @@ impl TargetClient {
                 plan::verify_applied(&stage_fs, &writes, &stage_before, &after)?;
                 // Validate every response and staged byte before publishing.
                 // Re-check real inputs/output pre-state after the child exits.
-                if snapshot_scopes(&fs, &capabilities.read_scopes)? != inputs
-                    || snapshot_scopes(&fs, &capabilities.write_scopes)? != before
+                if snapshot_scopes(&fs, &effective.read)? != inputs
+                    || snapshot_scopes(&fs, &effective.write)? != before
                 {
                     return Err(TargetFailure::plan_mismatch(None, "before-drift"));
                 }
@@ -659,6 +710,7 @@ impl TargetClient {
         &self,
         request: &CallRequest<'_>,
         capabilities: &wire::Capabilities,
+        effective_read: &[String],
     ) -> Result<(), TargetFailure> {
         let invalid = |detail| Err(TargetFailure::RequestInvalid { detail });
         if request.operation == Operation::Describe {
@@ -739,7 +791,7 @@ impl TargetClient {
             if !scopes::is_logical_path(ir_path) {
                 return invalid("grammar");
             }
-            if !plan::covered_by(ir_path, &capabilities.read_scopes) {
+            if !plan::covered_by(ir_path, effective_read) {
                 return Err(TargetFailure::scope_violation(
                     Some(ir_path.to_owned()),
                     "ir-uncovered",

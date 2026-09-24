@@ -20,6 +20,7 @@
 use serde::Serialize;
 use serde_json::Value as Json;
 
+use crate::adapter_package::budget::SessionBudget;
 use crate::diagnostics::DiagnosticSet;
 use crate::result::{DomainResult, Status};
 use crate::target_protocol::transport::AdapterCommand;
@@ -193,9 +194,20 @@ pub fn run(
     // 1. Safe discovery: the describe handshake only, no project IR. It
     // runs strictly after the gates above, so a revoked or quarantined
     // adapter never executes adapter code (fix round 2, devin F-11).
-    let mut client = TargetClient::new(request.limits);
-    let discovered = Discovery::run(&mut client, &request.command, &ctx.root)?;
+    // Issue #89: the resolved manifest also arms the session's
+    // confinement budget before any child process exists; a
+    // synthesized implicit descriptor arms the strict default.
     let (gate_manifest, synthesized) = gate_manifest;
+    let mut client = TargetClient::new(request.limits);
+    client.set_budget(
+        SessionBudget::budget_for(if synthesized {
+            None
+        } else {
+            Some(&gate_manifest)
+        })
+        .map_err(|failure| crate::adapter_package::diagnostic::domain_result(&failure))?,
+    );
+    let discovered = Discovery::run(&mut client, &request.command, &ctx.root)?;
     if !synthesized {
         crate::adapter_package::consistency::check(&gate_manifest, &discovered).map_err(
             |mismatch| {

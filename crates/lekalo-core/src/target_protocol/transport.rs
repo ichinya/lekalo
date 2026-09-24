@@ -132,8 +132,18 @@ pub fn run(
     cwd: &Path,
     file_transport: bool,
     cancel: Option<&AtomicBool>,
+    env: &[(String, String)],
 ) -> Result<TransportSuccess, TransportFailure> {
-    run_impl(command, request, limits, cwd, file_transport, cancel, false)
+    run_impl(
+        command,
+        request,
+        limits,
+        cwd,
+        file_transport,
+        cancel,
+        false,
+        env,
+    )
 }
 
 #[cfg(unix)]
@@ -143,8 +153,9 @@ pub(super) fn run_private(
     limits: &TransportLimits,
     cwd: &Path,
     cancel: Option<&AtomicBool>,
+    env: &[(String, String)],
 ) -> Result<TransportSuccess, TransportFailure> {
-    run_impl(command, request, limits, cwd, false, cancel, true)
+    run_impl(command, request, limits, cwd, false, cancel, true, env)
 }
 
 fn run_impl(
@@ -155,7 +166,9 @@ fn run_impl(
     file_transport: bool,
     cancel: Option<&AtomicBool>,
     clear_env: bool,
+    env: &[(String, String)],
 ) -> Result<TransportSuccess, TransportFailure> {
+    #![allow(clippy::too_many_arguments)]
     if request.len() > limits.max_request_bytes {
         return Err(TransportFailure::RequestWrite);
     }
@@ -173,6 +186,11 @@ fn run_impl(
     let mut process = std::process::Command::new(&command.program);
     if clear_env {
         process.env_clear();
+    }
+    // Issue #89: exactly the budget-granted pairs ride the private
+    // environment block (values never enter argv, logs, or evidence).
+    for (name, value) in env {
+        process.env(name, value);
     }
     process
         .args(&command.args)
@@ -456,7 +474,8 @@ mod tests {
                 &TransportLimits::default(),
                 root.path(),
                 true,
-                None
+                None,
+                &[]
             ),
             Err(TransportFailure::Spawn)
         );
@@ -488,8 +507,16 @@ mod tests {
             program: PathBuf::from("lekalo-definitely-not-an-executable"),
             args: Vec::new(),
         };
-        let error =
-            run(&command, b"12345", &limits, Path::new("."), false, None).expect_err("refused");
+        let error = run(
+            &command,
+            b"12345",
+            &limits,
+            Path::new("."),
+            false,
+            None,
+            &[],
+        )
+        .expect_err("refused");
         assert_eq!(error, TransportFailure::RequestWrite);
     }
 
@@ -501,7 +528,7 @@ mod tests {
             args: Vec::new(),
         };
         let error =
-            run(&command, b"{}", &limits, Path::new("."), false, None).expect_err("refused");
+            run(&command, b"{}", &limits, Path::new("."), false, None, &[]).expect_err("refused");
         assert_eq!(error, TransportFailure::Spawn);
     }
 }
