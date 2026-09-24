@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "lekalo/classification-policy/v0.4.0",
+  "identity": "dev.lekalo.classification-policy@0.4.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "0.2.16",
+    "digest": "sha256:7707ddf7e9b435a58c1a4d9fd6df7d8bbf09856519958e30762eec5c3c6c96de"
+  },
+  "irRef": {
+    "irVersion": "0.2.16",
+    "digest": "sha256:2ed11578a45ee61635c51cc4ad5ff758db3bc2a23a867f0c70547c75188df8f7"
+  },
+  "kinds": [
+    {
+      "kind": "personal",
+      "readers": [
+        "tenant"
+      ],
+      "writers": [
+        "tenant"
+      ],
+      "destinations": [
+        "internal-service"
+      ],
+      "masking": {
+        "strategy": "tokenize",
+        "policyRef": "privacy-policy.masking.personal"
+      },
+      "encryptionRefs": [
+        "dev.lekalo.nfr.encryption-at-rest@0.4.0"
+      ],
+      "consentRequired": true,
+      "crossTenant": "forbidden",
+      "declassifyRoles": [
+        "data-steward"
+      ]
+    },
+    {
+      "kind": "internal",
+      "readers": [
+        "tenant"
+      ],
+      "writers": [
+        "tenant"
+      ],
+      "destinations": [
+        "internal-service",
+        "message-bus"
+      ],
+      "masking": {
+        "strategy": "redact",
+        "policyRef": "privacy-policy.masking.internal"
+      },
+      "encryptionRefs": [
+        "dev.lekalo.nfr.encryption-at-rest@0.4.0"
+      ],
+      "consentRequired": false,
+      "crossTenant": "reviewed",
+      "declassifyRoles": [
+        "data-steward"
+      ]
+    },
+    {
+      "kind": "tenant-scoped",
+      "readers": [
+        "tenant"
+      ],
+      "writers": [
+        "tenant"
+      ],
+      "destinations": [
+        "internal-service"
+      ],
+      "masking": {
+        "strategy": "tokenize",
+        "policyRef": "privacy-policy.masking.tenant-scoped"
+      },
+      "encryptionRefs": [
+        "dev.lekalo.nfr.encryption-at-rest@0.4.0"
+      ],
+      "consentRequired": false,
+      "crossTenant": "forbidden",
+      "declassifyRoles": [
+        "data-steward"
+      ]
+    }
+  ],
+  "sinks": {
+    "logs": {
+      "maxKind": "internal"
+    },
+    "traces": {
+      "maxKind": "internal"
+    },
+    "contextCapsules": {
+      "maxKind": "internal"
+    },
+    "diagnostics": {
+      "maxKind": "internal"
+    },
+    "evidence": {
+      "maxKind": "public"
+    },
+    "exports": {
+      "maxKind": "derived"
+    }
+  },
+  "openQuestions": []
+}

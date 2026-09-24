@@ -29,12 +29,14 @@ pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.4.0";
 /// reserved by its parallel owner and is not part of this line) ->
 /// 0.2.16 (issue #66, the reserved `expression.*` family
 /// LEK-EXPR-001..009) -> 0.3.2 (issue #48, the reserved `native-gate.*`
-/// family LEK-NGT-001..014) -> 0.4.0 (issues #85, #70, #45, #117, and
-/// #69: the `nfr.*` family LEK-NFR-001..013, the reserved `transport.*`
-/// family LEK-TRN-001..009, the additive `storage.profile-*` family
-/// LEK-SEP-001..005, and the `storage.migration-*` planning family,
-/// all at the reserved 0.4.0 product generation; issue #45 ships no
-/// new diagnostic families).
+/// family LEK-NGT-001..014) -> 0.4.0 (issues #85, #70, #45, #117, #69,
+/// and #87: the `nfr.*` family LEK-NFR-001..013, the reserved
+/// `transport.*` family LEK-TRN-001..009, the additive
+/// `storage.profile-*` family LEK-SEP-001..005, the
+/// `storage.migration-*` planning family, and the `classification.*`
+/// family LEK-CLS-001..012 with the `dataflow.*` family
+/// LEK-DFL-001..009, all at the reserved 0.4.0 product generation;
+/// issue #45 ships no new diagnostic families).
 pub const REGISTRY_VERSION: &str = "0.4.0";
 
 /// The closed diagnostic schema version.

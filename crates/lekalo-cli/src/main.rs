@@ -284,6 +284,20 @@ enum Commands {
         #[command(subcommand)]
         command: StorageProfileCommands,
     },
+    /// Validate or inspect one data-classification attachment against
+    /// the project (issue #87): custody, subject resolution, grants,
+    /// and the governing policy.
+    Classification {
+        #[command(subcommand)]
+        command: ClassificationCommands,
+    },
+    /// Derive or inspect the data-flow report over the classified
+    /// project (issue #87): flows, tenant relations, gate decisions,
+    /// and the first-class unknown list.
+    Dataflow {
+        #[command(subcommand)]
+        command: DataflowCommands,
+    },
     /// Check generated-artifact ownership and drift, or plan and apply a
     /// confirmed clean of orphaned generated files.
     Generate {
@@ -1649,19 +1663,27 @@ struct MigrateArgs {
     rollback: Option<String>,
 }
 
+/// The process entry: the closed command tree's derive surface is
+/// large, so the runtime runs on an explicitly bounded thread instead
+/// of the platform-default main-thread stack (1 MiB on Windows), which
+/// debug builds of the parser can exceed. Join semantics preserve both
+/// the exit code and a crash's unwind (exit 101).
 fn main() -> ExitCode {
     // The combined subcommand surface overflows the default main-thread
     // stack in debug builds during clap's recursive tree walk; run the
-    // CLI on a worker thread with an explicit stack reservation.
-    std::thread::Builder::new()
-        .stack_size(32 * 1024 * 1024)
-        .spawn(cli_main)
-        .expect("the cli worker thread spawns")
-        .join()
-        .expect("the cli worker thread joins")
+    // CLI on a worker thread with an explicit stack reservation, and
+    // preserve a crash's unwind through the join.
+    let runtime = std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(runtime)
+        .expect("runtime thread");
+    match runtime.join() {
+        Ok(code) => ExitCode::from(code),
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
 }
 
-fn cli_main() -> ExitCode {
+fn runtime() -> u8 {
     let json_requested = std::env::args_os()
         .skip(1)
         .take_while(|argument| argument != OsStr::new("--"))
@@ -1791,6 +1813,8 @@ fn cli_main() -> ExitCode {
                 NativeCommands::Run { plan } => run_native_run(&plan),
             },
             Commands::Nfr { command } => run_nfr(command),
+            Commands::Classification { command } => run_classification(command),
+            Commands::Dataflow { command } => run_dataflow(command),
             Commands::Init {
                 adopt,
                 target,
@@ -1825,22 +1849,14 @@ fn cli_main() -> ExitCode {
                     if result.writes_stderr() {
                         let _ = write_stderr(&result.to_json_string());
                     }
-                    return if write_ok {
-                        ExitCode::from(exit)
-                    } else {
-                        ExitCode::from(OUTPUT_FAILURE)
-                    };
+                    return if write_ok { exit } else { OUTPUT_FAILURE };
                 }
             },
         },
         Err(error) => match error.kind() {
             ErrorKind::DisplayHelp => {
                 let ok = error.print().is_ok();
-                return if ok {
-                    ExitCode::SUCCESS
-                } else {
-                    ExitCode::from(OUTPUT_FAILURE)
-                };
+                return if ok { 0 } else { OUTPUT_FAILURE };
             }
             ErrorKind::DisplayVersion => DomainResult::version(VERSION),
             _ => DomainResult::usage_error(),
@@ -1852,8 +1868,9 @@ fn cli_main() -> ExitCode {
 /// Emit one domain result on its protocol stream: failures of the invalid
 /// and unsupported-version classes render on stderr, everything else on
 /// stdout. Human and JSON are projections of the same object.
-fn emit(result: DomainResult, json: bool) -> ExitCode {
+fn emit(result: DomainResult, json: bool) -> u8 {
     let exit_code = result.exit_code();
+    #[allow(clippy::let_and_return)]
     let rendered = if json {
         result.to_json_string()
     } else {
@@ -1873,9 +1890,9 @@ fn emit(result: DomainResult, json: bool) -> ExitCode {
             .and_then(|()| handle.flush())
     };
     if write_result.is_ok() {
-        ExitCode::from(exit_code)
+        exit_code
     } else {
-        ExitCode::from(OUTPUT_FAILURE)
+        OUTPUT_FAILURE
     }
 }
 
@@ -2028,6 +2045,21 @@ fn run_validate(
     match outcome {
         Err(set) => DomainResult::invalid(set),
         Ok(report) => {
+            // Classification review (#87): when the attachment is
+            // present, its custody/subject/grant/sink review runs
+            // automatically, before every other surface so a
+            // present-but-broken attachment is never masked. The strict
+            // profile invalidates on any error finding; the default
+            // profile records the findings in the report diagnostics.
+            let (review, recorded) = classification_validate_review(
+                &compilation,
+                &lekalo_core::loader::canonical_model_bytes(&model),
+                &selection,
+                strict,
+            );
+            if let Some(result) = review {
+                return result;
+            }
             // Authorization review (#25): reference integrity is
             // invalid in every profile; the strict profile blocks
             // uncovered protected effects, stale model pins, and
@@ -2066,10 +2098,78 @@ fn run_validate(
                 Ok(None) => {}
             }
             let (json, human) = render_validate_success(&model, &report);
-            let diagnostics = report.diagnostics().as_slice().to_vec();
+            let mut diagnostics = report.diagnostics().as_slice().to_vec();
+            diagnostics.extend(recorded);
             DomainResult::validation(json, human, diagnostics)
         }
     }
+}
+
+/// The classification review inside `lekalo validate` (issue #87): the
+/// declared attachment (discovered at the canonical home under the
+/// project root) plus its governing policy run the full custody,
+/// subject-resolution, policy/grant, and strict sensitive-sink review.
+/// Returns the terminal review result, if any, plus the recorded
+/// findings (default profile keeps the run valid with the findings
+/// visible in the diagnostics; the strict profile invalidates on any
+/// error-severity finding). The first tuple member is `None` when no
+/// attachment is declared.
+fn classification_validate_review(
+    compilation: &lekalo_core::ir::Compilation,
+    model_json: &str,
+    selection: &LoadSelection,
+    strict: bool,
+) -> (
+    Option<DomainResult>,
+    Vec<lekalo_core::diagnostics::Diagnostic>,
+) {
+    let root = match lekalo_core::doctor::project_root(selection) {
+        Err(_) => return (None, Vec::new()),
+        Ok(root) => root,
+    };
+    let (attachment, policy) = match lekalo_core::classification::discover(&root) {
+        Ok(Some(pair)) => pair,
+        Ok(None) => return (None, Vec::new()),
+        Err(set) => return (Some(DomainResult::invalid(set)), Vec::new()),
+    };
+    // Custody and subject resolution: structured violations are
+    // terminal invalid sets in every profile.
+    if let Err(set) = lekalo_core::classification::validate_custody(
+        &attachment,
+        &policy,
+        &compilation.project,
+        model_json,
+    ) {
+        return (Some(DomainResult::invalid(set)), Vec::new());
+    }
+    let resolution = match lekalo_core::classification::validate_subjects(&attachment, compilation)
+    {
+        Err(set) => return (Some(DomainResult::invalid(set)), Vec::new()),
+        Ok(resolution) => resolution,
+    };
+    let outcome = match lekalo_core::classification::validate_policy_and_grants(
+        &attachment,
+        &policy,
+        &resolution,
+        &compilation.project,
+    ) {
+        Err(set) => return (Some(DomainResult::invalid(set)), Vec::new()),
+        Ok(outcome) => outcome,
+    };
+    if strict && outcome.invalid {
+        return (
+            Some(DomainResult::invalid(
+                lekalo_core::classification::findings_set(&outcome),
+            )),
+            Vec::new(),
+        );
+    }
+    // Recorded, never silently skipped: the findings ride the success
+    // diagnostics as warning-class rows.
+    let recorded = lekalo_core::classification::findings_set(&outcome)
+        .as_slice()
+        .to_vec();
+    (None, recorded)
 }
 
 /// Run `lekalo inspect`: load and compile the project, build the graph
@@ -7383,5 +7483,446 @@ fn run_contract_support(
             ),
         ),
         Err(set) => DomainResult::invalid(set),
+    }
+}
+/// The `classification` subcommands (issue #87).
+#[derive(Debug, Subcommand)]
+enum ClassificationCommands {
+    /// Validate one classification attachment and its governing policy
+    /// against the project: custody pins, subject resolution, grant
+    /// coherence, and (under the strict profile) the sensitive-sink rule
+    /// over the declared graph. The documents are read from the given
+    /// project-relative paths; the core owns every decision.
+    Validate {
+        /// The classification attachment document path.
+        #[arg(long, value_name = "PATH")]
+        attachment: String,
+        /// The classification-policy document path.
+        #[arg(long, value_name = "PATH")]
+        policy: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// The reference date for expiry and validity evaluation
+        /// (`YYYY-MM-DD`); expiry is deterministic in this date, never
+        /// a clock. Defaults to the fixed classification as-of date,
+        /// overridable via `LEKALO_AS_OF`.
+        #[arg(long, value_name = "DATE")]
+        as_of: Option<String>,
+    },
+    /// Inspect one classification attachment: the resolved kinds of
+    /// every declared subject in canonical order.
+    Inspect {
+        /// The classification attachment document path.
+        #[arg(long, value_name = "PATH")]
+        attachment: String,
+        /// The classification-policy document path.
+        #[arg(long, value_name = "PATH")]
+        policy: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// The reference date for expiry and validity evaluation
+        /// (`YYYY-MM-DD`); expiry is deterministic in this date, never
+        /// a clock. Defaults to the fixed classification as-of date,
+        /// overridable via `LEKALO_AS_OF`.
+        #[arg(long, value_name = "DATE")]
+        as_of: Option<String>,
+    },
+}
+
+/// The `dataflow` subcommands (issue #87).
+#[derive(Debug, Subcommand)]
+enum DataflowCommands {
+    /// Derive the data-flow report over the classified project: flows,
+    /// findings, unknowns, and the aggregated gate verdict, pinned to
+    /// the exact input digests. Read-only; the report is never written
+    /// by this command.
+    Report {
+        /// The classification attachment document path.
+        #[arg(long, value_name = "PATH")]
+        attachment: String,
+        /// The classification-policy document path.
+        #[arg(long, value_name = "PATH")]
+        policy: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// The reference date for expiry and validity evaluation
+        /// (`YYYY-MM-DD`); expiry is deterministic in this date, never
+        /// a clock. Defaults to the fixed classification as-of date,
+        /// overridable via `LEKALO_AS_OF`.
+        #[arg(long, value_name = "DATE")]
+        as_of: Option<String>,
+        /// One transport endpoint-actor binding (issue #70 seam, plan
+        /// §5.1): `SYMBOL:ACTOR` where ACTOR is `public` or
+        /// `authenticated`; the binding resolves the endpoint's invoked
+        /// operation result. Repeatable.
+        #[arg(long = "endpoint", value_name = "SYMBOL:ACTOR")]
+        endpoints: Vec<String>,
+    },
+}
+
+/// Parse one `--endpoint SYMBOL:ACTOR` binding into a typed exposure
+/// (issue #70 seam): the endpoint symbol must resolve to a declared
+/// endpoint definition and its actor must be the closed vocabulary.
+fn parse_endpoint_exposures(
+    endpoints: &[String],
+    compilation: &lekalo_core::ir::Compilation,
+) -> Result<Vec<lekalo_core::dataflow::EndpointExposure>, DomainResult> {
+    let mut exposures = Vec::new();
+    for endpoint in endpoints {
+        let Some((symbol, actor)) = endpoint.rsplit_once(':') else {
+            return Err(DomainResult::usage_error());
+        };
+        let actor = match actor {
+            "public" => lekalo_core::dataflow::EndpointActor::Public,
+            "authenticated" => lekalo_core::dataflow::EndpointActor::Authenticated,
+            _ => return Err(DomainResult::usage_error()),
+        };
+        let Some(lekalo_core::ir::Definition::Endpoint(definition)) = compilation
+            .project
+            .definitions
+            .iter()
+            .find(|definition| definition.id().as_str() == symbol)
+        else {
+            return Err(DomainResult::invalid(
+                lekalo_core::classification::diagnostic::unknown_subject(
+                    "endpoint-unknown",
+                    symbol,
+                ),
+            ));
+        };
+        exposures.push(lekalo_core::dataflow::EndpointExposure {
+            endpoint: symbol.to_owned(),
+            actor,
+            result_subject: lekalo_core::classification::SubjectPath::parse(
+                definition.invokes.as_str(),
+            )
+            .map_err(|_| DomainResult::usage_error())?,
+        });
+    }
+    Ok(exposures)
+}
+
+/// Validate the classification as-of input at the CLI boundary (r4
+/// F-1): expiry is a lexicographic compare against the wire's
+/// fixed-width UTC shape, so raw unchecked text fails open (`--as-of
+/// '!'` makes an expired grant live). Accepted spellings: the wire
+/// shape `YYYY-MM-DDTHH:MM:SSZ` (validated date and time), or a bare
+/// `YYYY-MM-DD` normalized to midnight UTC. Anything else refuses
+/// before any evaluation — malformed input denies, never passes.
+fn normalize_as_of(raw: &str) -> Option<String> {
+    // ASCII only (r5 F-1): the fixed-width checks below slice at byte
+    // offsets, and a multi-byte char spanning a slice boundary would
+    // panic instead of refusing. Non-ASCII input is never a valid
+    // spelling — refuse it before any slicing happens.
+    if !raw.is_ascii() {
+        return None;
+    }
+    let bytes = raw.as_bytes();
+    if bytes.len() == 20 && bytes[10] == b'T' && bytes[19] == b'Z' {
+        lekalo_core::nfr::IsoDate::parse(&raw[..10]).ok()?;
+        let (hour, minute, second) = (&raw[11..13], &raw[14..16], &raw[17..19]);
+        if &raw[13..14] != ":" || &raw[16..17] != ":" {
+            return None;
+        }
+        let digits = [hour, minute, second]
+            .iter()
+            .all(|part| part.len() == 2 && part.bytes().all(|byte| byte.is_ascii_digit()));
+        if !digits {
+            return None;
+        }
+        let (hour, minute, second) = (
+            hour.parse::<u8>().ok()?,
+            minute.parse::<u8>().ok()?,
+            second.parse::<u8>().ok()?,
+        );
+        (hour < 24 && minute < 60 && second < 60).then(|| raw.to_owned())
+    } else if bytes.len() == 10 {
+        let date = lekalo_core::nfr::IsoDate::parse(raw).ok()?;
+        Some(format!("{}T00:00:00Z", date.as_str()))
+    } else {
+        None
+    }
+}
+
+/// Resolve the effective as-of date for one classification surface:
+/// the `--as-of` flag, else `LEKALO_AS_OF`, else the fixed
+/// deterministic default. Malformed input is a usage refusal.
+fn resolve_as_of(flag: Option<String>) -> Result<String, DomainResult> {
+    match flag.or_else(|| std::env::var("LEKALO_AS_OF").ok()) {
+        None => Ok(lekalo_core::classification::DEFAULT_AS_OF.to_owned()),
+        Some(text) => normalize_as_of(&text).ok_or_else(DomainResult::usage_error),
+    }
+}
+
+/// Read one attachment document; IO failure is a typed invalid set.
+fn read_document(path: &str) -> Result<Vec<u8>, DomainResult> {
+    std::fs::read(path)
+        .map_err(|_| DomainResult::invalid(lekalo_core::classification::io_failure_set()))
+}
+
+/// Load the compiled project for the classification/dataflow surfaces:
+/// the shared loader seam with the same cache semantics as validate.
+fn load_compiled_for(
+    project: &Option<String>,
+) -> Result<(String, lekalo_core::ir::Compilation), DomainResult> {
+    let selection = LoadSelection {
+        project: project
+            .clone()
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    #[allow(clippy::question_mark)] // DomainResult is not an error type
+    let (model, compilation) = match lekalo_core::cache::load_compiled(&selection, false) {
+        Err(result) => return Err(result),
+        Ok(pair) => pair,
+    };
+    let model_json = lekalo_core::loader::canonical_model_bytes(&model);
+    Ok((model_json, compilation))
+}
+
+/// Parse the classification attachment and its governing policy, and
+/// resolve both against the pinned compilation. Custody mismatches
+/// (project, modelRef, irRef) are typed invalid sets from the core.
+fn parse_classification_pair(
+    attachment_path: &str,
+    policy_path: &str,
+    compilation: &lekalo_core::ir::Compilation,
+    model_json: &str,
+) -> Result<
+    (
+        lekalo_core::classification::Attachment,
+        lekalo_core::classification::PolicyAttachment,
+        lekalo_core::classification::Resolution,
+    ),
+    DomainResult,
+> {
+    let attachment_bytes = read_document(attachment_path)?;
+    let policy_bytes = read_document(policy_path)?;
+    let attachment = lekalo_core::classification::Attachment::parse(&attachment_bytes)
+        .map_err(DomainResult::invalid)?;
+    let policy = lekalo_core::classification::PolicyAttachment::parse(&policy_bytes)
+        .map_err(DomainResult::invalid)?;
+    if let Err(set) = lekalo_core::classification::validate_custody(
+        &attachment,
+        &policy,
+        &compilation.project,
+        model_json,
+    ) {
+        return Err(DomainResult::invalid(set));
+    }
+    let resolution = lekalo_core::classification::validate_subjects(&attachment, compilation)
+        .map_err(DomainResult::invalid)?;
+    Ok((attachment, policy, resolution))
+}
+
+/// Run one `classification` subcommand (issue #87): validate or
+/// inspect. The core owns every decision; this binary reads the two
+/// documents, renders, and maps exits.
+fn run_classification(command: ClassificationCommands) -> DomainResult {
+    match command {
+        ClassificationCommands::Validate {
+            attachment,
+            policy,
+            project,
+            as_of,
+        } => {
+            let as_of = match resolve_as_of(as_of) {
+                Err(result) => return result,
+                Ok(resolved) => resolved,
+            };
+            let (model_json, compilation) = match load_compiled_for(&project) {
+                Err(result) => return result,
+                Ok(pair) => pair,
+            };
+            let (attachment, policy, resolution) =
+                match parse_classification_pair(&attachment, &policy, &compilation, &model_json) {
+                    Err(result) => return result,
+                    Ok(parts) => parts,
+                };
+            match lekalo_core::classification::validate_policy_and_grants_as_of(
+                &attachment,
+                &policy,
+                &resolution,
+                &compilation.project,
+                &as_of,
+            ) {
+                Err(set) => DomainResult::invalid(set),
+                Ok(outcome) => {
+                    let (json, human) = classification_validate_payload(&attachment, &outcome);
+                    if outcome.invalid {
+                        DomainResult::invalid(lekalo_core::classification::findings_set(&outcome))
+                    } else {
+                        DomainResult::graph(json, human, Vec::new())
+                    }
+                }
+            }
+        }
+        ClassificationCommands::Inspect {
+            attachment,
+            policy,
+            project,
+            as_of,
+        } => {
+            let as_of = match resolve_as_of(as_of) {
+                Err(result) => return result,
+                Ok(resolved) => resolved,
+            };
+            let (model_json, compilation) = match load_compiled_for(&project) {
+                Err(result) => return result,
+                Ok(pair) => pair,
+            };
+            let (attachment, policy, resolution) =
+                match parse_classification_pair(&attachment, &policy, &compilation, &model_json) {
+                    Err(result) => return result,
+                    Ok(parts) => parts,
+                };
+            let (json, human) =
+                classification_inspect_payload(&attachment, &policy, &resolution, &as_of);
+            DomainResult::graph(json, human, Vec::new())
+        }
+    }
+}
+
+/// Render the `classification validate` payload.
+fn classification_validate_payload(
+    attachment: &lekalo_core::classification::Attachment,
+    outcome: &lekalo_core::classification::ValidationOutcome,
+) -> (String, String) {
+    let mut json = String::from("{\"status\":");
+    json.push_str(if outcome.invalid {
+        "\"invalid\","
+    } else {
+        "\"valid\","
+    });
+    json.push_str("\"identity\":");
+    json.push_str(&serde_json::to_string(lekalo_core::classification::IDENTITY).expect("identity"));
+    json.push_str(",\"subjects\":");
+    json.push_str(&attachment.classifications().len().to_string());
+    json.push_str(&outcome.wire_findings());
+    json.push('}');
+    let human = if outcome.invalid {
+        format!(
+            "classification invalid: {} finding(s)",
+            outcome.finding_count()
+        )
+    } else {
+        format!(
+            "classification valid: {} subject(s), 0 findings",
+            attachment.classifications().len()
+        )
+    };
+    (json, human)
+}
+
+/// Render the `classification inspect` payload.
+fn classification_inspect_payload(
+    attachment: &lekalo_core::classification::Attachment,
+    policy: &lekalo_core::classification::PolicyAttachment,
+    resolution: &lekalo_core::classification::Resolution,
+    as_of: &str,
+) -> (String, String) {
+    let mut json = String::from("{\"status\":\"valid\",\"subjects\":[");
+    let mut human = Vec::new();
+    for (index, entry) in attachment.classifications().iter().enumerate() {
+        // Grants participate in the inspect view: a *valid* reviewed
+        // lowering shows the lowered kind — the same shared predicate
+        // every grant consumer uses, so an expired or otherwise dead
+        // grant never lowers the displayed kind (review r3, F-2).
+        let mark = resolution.resolve_with_grants(entry.subject(), |grant| {
+            lekalo_core::classification::grant_is_valid(grant, policy, as_of)
+        });
+        let resolved = lekalo_core::classification::ResolvedKind::Classified(mark.kind);
+        if index > 0 {
+            json.push(',');
+        }
+        let kind = resolved
+            .kind()
+            .map(|kind| kind.as_str().to_owned())
+            .unwrap_or_else(|| "unclassified".to_owned());
+        json.push_str(
+            &serde_json::to_string(&serde_json::json!({
+                "subject": entry.subject().as_str(),
+                "kind": kind,
+            }))
+            .expect("subject row"),
+        );
+        human.push(format!("{} : {}", entry.subject().as_str(), kind));
+    }
+    json.push_str("]}");
+    (json, human.join("\n"))
+}
+
+/// Run one `dataflow` subcommand (issue #87): derive the read-only
+/// report. The core owns every decision; this binary reads the two
+/// documents, renders, and maps exits.
+fn run_dataflow(command: DataflowCommands) -> DomainResult {
+    match command {
+        DataflowCommands::Report {
+            attachment,
+            policy,
+            project,
+            as_of,
+            endpoints,
+        } => {
+            let as_of = match resolve_as_of(as_of) {
+                Err(result) => return result,
+                Ok(resolved) => resolved,
+            };
+            let (model_json, compilation) = match load_compiled_for(&project) {
+                Err(result) => return result,
+                Ok(pair) => pair,
+            };
+            let (attachment, policy, resolution) =
+                match parse_classification_pair(&attachment, &policy, &compilation, &model_json) {
+                    Err(result) => return result,
+                    Ok(parts) => parts,
+                };
+            let exposures = match parse_endpoint_exposures(&endpoints, &compilation) {
+                Err(result) => return result,
+                Ok(exposures) => exposures,
+            };
+            match lekalo_core::dataflow::run_report(
+                &compilation,
+                &model_json,
+                &attachment,
+                &policy,
+                &resolution,
+                &exposures,
+                &as_of,
+            ) {
+                Err(set) => DomainResult::invalid(set),
+                Ok((report, diagnostics)) => {
+                    let bytes = match lekalo_core::dataflow::report_canonical_bytes(&report) {
+                        Err(set) => return DomainResult::invalid(set),
+                        Ok(bytes) => bytes,
+                    };
+                    let denied = report.verdict().as_str() == "denied";
+                    // The embedded envelope states the real verdict: a
+                    // denial never prints "valid" at the top level.
+                    let json = format!(
+                        "{{\"status\":\"{}\",\"report\":{bytes}}}",
+                        report.verdict().as_str()
+                    );
+                    let human = format!(
+                        "dataflow {}: {} flow(s), {} finding(s), {} unknown(s)",
+                        report.verdict().as_str(),
+                        report.flows().len(),
+                        report.findings().len(),
+                        report.unknowns().len()
+                    );
+                    if denied {
+                        // Denied, but never evidence-free: the denied
+                        // envelope carries the report JSON alongside the
+                        // mirrored findings so the user sees the rows
+                        // that produced the verdict (F-11).
+                        DomainResult::denied_json(json, human, diagnostics)
+                    } else {
+                        DomainResult::graph(json, human, Vec::new())
+                    }
+                }
+            }
+        }
     }
 }

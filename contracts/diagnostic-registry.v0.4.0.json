@@ -549,6 +549,373 @@
       "lifecycle": "active"
     },
     {
+      "id": "classification.conflicting-kind",
+      "code": "LEK-CLS-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.conflicting-kind",
+      "default_message": "Two classification entries for one subject declare different kinds without a declassification grant.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.custody-ir",
+      "code": "LEK-CLS-015",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.custody-ir",
+      "default_message": "The classification irRef pin does not match the exact canonical IR bytes of the pinned compilation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.custody-model",
+      "code": "LEK-CLS-014",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.custody-model",
+      "default_message": "The classification modelRef pin does not match the exact canonical Model bytes of the loaded compilation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.custody-project",
+      "code": "LEK-CLS-013",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.custody-project",
+      "default_message": "The classification pair does not bind the project identity of the pinned compilation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.duplicate-subject",
+      "code": "LEK-CLS-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.duplicate-subject",
+      "default_message": "Two classification entries or one declassification grant address the same subject contradictorily.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.expired-declassification",
+      "code": "LEK-CLS-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "classification.expired-declassification",
+      "default_message": "A declassification grant expired against the evaluation date; the flow re-evaluates as a violation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.invalid-declassification",
+      "code": "LEK-CLS-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.invalid-declassification",
+      "default_message": "A declassification grant lowers a kind that cannot lower, targets the same kind, or names a subject that does not resolve.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.kind-rule-missing",
+      "code": "LEK-CLS-010",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.kind-rule-missing",
+      "default_message": "A resolved kind has no rule row in the classification policy; policy coverage must be total.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.malformed-review-ref",
+      "code": "LEK-CLS-016",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.malformed-review-ref",
+      "default_message": "A declassification grant carries no usable approvedBy review reference.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.missing-approval",
+      "code": "LEK-CLS-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.missing-approval",
+      "default_message": "A declassification grant has no opaque review reference, or the review reference is outside every declassify role of the from kind.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.policy-missing",
+      "code": "LEK-CLS-009",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.policy-missing",
+      "default_message": "A classification attachment is present without the classification policy that governs its kinds.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.self-approved",
+      "code": "LEK-CLS-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.self-approved",
+      "default_message": "A declassification grant references its own declaration as the approving review.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.sink-ceiling-exceeded",
+      "code": "LEK-CLS-011",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "classification.sink-ceiling-exceeded",
+      "default_message": "A subject of one kind is reachable by a sink whose declared ceiling is below that kind.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.unclassified-sensitive-sink",
+      "code": "LEK-CLS-012",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "classification.unclassified-sensitive-sink",
+      "default_message": "Under the strict profile a sensitive sink consumes a subject that never resolved to any classification.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.unknown-kind",
+      "code": "LEK-CLS-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.unknown-kind",
+      "default_message": "The classification entry names a kind outside the closed vocabulary.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "classification.unknown-subject",
+      "code": "LEK-CLS-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "classification.unknown-subject",
+      "default_message": "The classification subject does not resolve in the bound IR or names an unaddressable member.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "cli.usage",
       "code": "LEK-CLI-001",
       "category": "infrastructure",
@@ -915,6 +1282,227 @@
       "default_message": "The requested capability is not implemented yet.",
       "location_requirement": "none",
       "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "dataflow.adapter-metadata-loss",
+      "code": "LEK-DFL-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "dataflow.adapter-metadata-loss",
+      "default_message": "A target adapter projection dropped required classification metadata for an emitted field.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "dataflow.destination-forbidden",
+      "code": "LEK-DFL-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "dataflow.destination-forbidden",
+      "default_message": "The sink destination is outside the closed destination set of the resolved kind.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "dataflow.exposed-private-field",
+      "code": "LEK-DFL-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "dataflow.exposed-private-field",
+      "default_message": "A public endpoint response exposes a field classified above public without an approved declassification to public.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "dataflow.low-confidence-sensitive",
+      "code": "LEK-DFL-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "dataflow.low-confidence-sensitive",
+      "default_message": "A sensitive flow rests on observed, partial, or declared-only evidence and cannot prove its gate.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "dataflow.missing-approval",
+      "code": "LEK-DFL-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "dataflow.missing-approval",
+      "default_message": "A gated sink requires consent or approval for the resolved kind and no security-gate reference is present.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "dataflow.missing-destination",
+      "code": "LEK-DFL-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "dataflow.missing-destination",
+      "default_message": "An external-call or publication sink has no declared destination for the resolved kind.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "dataflow.observed-incomplete",
+      "code": "LEK-DFL-009",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "dataflow.observed-incomplete",
+      "default_message": "The observed graph is incomplete, so dependent flows stay unknown and their gates unsatisfied.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "dataflow.tenant-crossing",
+      "code": "LEK-DFL-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "dataflow.tenant-crossing",
+      "default_message": "A flow crosses a tenant boundary without a reviewed grant or with cross-tenant forbidden for its kind.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "dataflow.unknown-flow",
+      "code": "LEK-DFL-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "dataflow.unknown-flow",
+      "default_message": "A flow path contains an unresolvable hop, so the flow can never satisfy any gate.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
       "allowed_fix_ids": [],
       "lifecycle": "active"
     },

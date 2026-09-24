@@ -69,6 +69,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-target-profile-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-requirements-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-nfr-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-classification-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-implementation-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-orchestration-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-transport-contracts.mjs
@@ -155,6 +156,8 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
+      - name: Run the classification CLI e2e gate (issue #87)
+        run: node scripts/test-classification-cli.mjs
       - name: Load the CI-only AppArmor launcher prerequisite
         if: runner.os == 'Linux'
         id: apparmor

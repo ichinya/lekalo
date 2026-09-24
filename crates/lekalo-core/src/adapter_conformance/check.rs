@@ -98,6 +98,11 @@ pub enum CheckId {
     /// The collation fixture's `_ci` unique collision surfaces in the
     /// derived evidence and never silently passes (issue #117).
     StorageCollationUniqueness,
+    /// Classification metadata survives every emitted projection (issue
+    /// #87): a declared support state must mean the wire carries the
+    /// kind tokens, and an honest unsupported refusal never counts as
+    /// a silent lowering.
+    ClassificationPreservation,
 }
 
 impl CheckId {
@@ -132,6 +137,7 @@ impl CheckId {
             Self::StorageIntrospectionChecked => "storage.introspection-checked",
             Self::StorageMigrationGate => "storage.migration-gate",
             Self::StorageCollationUniqueness => "storage.collation-uniqueness",
+            Self::ClassificationPreservation => "classification.preservation",
         }
     }
 
@@ -166,16 +172,18 @@ impl CheckId {
             | Self::StorageMigrationGate
             | Self::StorageCollationUniqueness => "lekalo.adapter.storage",
             Self::StorageIntrospectionChecked => "lekalo.adapter.storage-security",
+            Self::ClassificationPreservation => "lekalo.adapter.classification",
         }
     }
 
     /// The failure class a failed outcome of this check carries.
     pub const fn class(self) -> CheckClass {
         match self {
-            Self::ConfinementCanonical | Self::ConfinementPlanScopes | Self::RedactionEvidence => {
-                CheckClass::Security
-            }
-            Self::StorageIntrospectionChecked => CheckClass::Security,
+            Self::ConfinementCanonical
+            | Self::ConfinementPlanScopes
+            | Self::RedactionEvidence
+            | Self::StorageIntrospectionChecked
+            | Self::ClassificationPreservation => CheckClass::Security,
             Self::DescribeHandshake
             | Self::DescribeNegotiation
             | Self::CapabilityDeclaration
@@ -294,7 +302,7 @@ impl CheckOutcome {
 }
 
 /// The full catalog in its fixed order.
-pub const CATALOG: [CheckId; 28] = [
+pub const CATALOG: [CheckId; 29] = [
     CheckId::DescribeHandshake,
     CheckId::DescribeNegotiation,
     CheckId::CapabilityDeclaration,
@@ -323,6 +331,7 @@ pub const CATALOG: [CheckId; 28] = [
     CheckId::StorageIntrospectionChecked,
     CheckId::StorageMigrationGate,
     CheckId::StorageCollationUniqueness,
+    CheckId::ClassificationPreservation,
 ];
 
 /// The aggregate verdict of one run, derived from the check outcomes.

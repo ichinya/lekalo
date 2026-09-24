@@ -96,6 +96,7 @@ fn fresh_fixture_is_ready_with_the_full_panel() {
             "bindings.freshness",
             "cache.health",
             "capabilities.profiles",
+            "classification.attachment",
             "fs.confinement",
             "integrations.hlv",
             "lock.freshness",

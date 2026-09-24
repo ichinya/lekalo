@@ -1018,6 +1018,56 @@ pub(crate) struct PanelContext<'a> {
     pub phase: Option<Phase>,
 }
 
+/// `classification.attachment`: the declared classification attachment
+/// and its governing policy parse and pass the wire gates (issue #87).
+/// A project that declares none is `ok` — classification is opt-in —
+/// while a present-but-broken pair is blocking: declared security
+/// metadata that fails closed is never skippable.
+pub(crate) fn classification_attachment(root: &Path) -> Check {
+    let attachment_path = root.join(crate::classification::ATTACHMENT_PATH);
+    if attachment_path.try_exists().unwrap_or(false) {
+        match crate::classification::discover(root) {
+            Ok(Some((_attachment, _policy))) => Check {
+                id: "classification.attachment",
+                state: CheckState::Ok,
+                required: false,
+                reason: Some("valid"),
+                next_action: None,
+                diagnostics: Vec::new(),
+                notes: Vec::new(),
+            },
+            Ok(None) => Check {
+                id: "classification.attachment",
+                state: CheckState::Degraded,
+                required: false,
+                reason: Some("policy-absent"),
+                next_action: None,
+                diagnostics: Vec::new(),
+                notes: Vec::new(),
+            },
+            Err(_) => Check {
+                id: "classification.attachment",
+                state: CheckState::Blocked,
+                required: false,
+                reason: Some("invalid"),
+                next_action: None,
+                diagnostics: ids_from_codes(&["classification.unknown-kind"]),
+                notes: Vec::new(),
+            },
+        }
+    } else {
+        Check {
+            id: "classification.attachment",
+            state: CheckState::Ok,
+            required: false,
+            reason: Some("not-declared"),
+            next_action: None,
+            diagnostics: Vec::new(),
+            notes: Vec::new(),
+        }
+    }
+}
+
 /// The closed check panel of one report kind; readiness marks the
 /// phase-required checks. Every check runs read-only.
 pub(crate) fn panel(ctx: &PanelContext) -> Vec<Check> {
@@ -1118,12 +1168,15 @@ pub(crate) fn panel(ctx: &PanelContext) -> Vec<Check> {
     gates.required = required("tools.gates");
     let mut integrations = integrations(traces);
     integrations.required = required("integrations.hlv");
+    let mut classification = classification_attachment(root_path);
+    classification.required = required("classification.attachment");
     vec![
         adapters,
         artifacts,
         bindings,
         cache,
         capabilities,
+        classification,
         confinement,
         integrations,
         lock,

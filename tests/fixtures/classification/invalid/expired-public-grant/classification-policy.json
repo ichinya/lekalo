@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "lekalo/classification-policy/v0.4.0",
+  "identity": "dev.lekalo.classification-policy@0.4.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:c3f4899b06d7277178f1f022cb9dd121765217b2cd1532ddd6277417fffaa0a5"},
+  "irRef": {"irVersion": "0.2.16", "digest": "sha256:5401d9af129a0e6072c503f24dfa16d254069bae1efb2a7b71e56e488a41405e"},
+  "kinds": [
+    {
+      "kind": "personal",
+      "readers": ["tenant"],
+      "writers": ["tenant"],
+      "destinations": ["internal-service"],
+      "masking": {"strategy": "tokenize", "policyRef": "privacy-policy.masking.personal"},
+      "encryptionRefs": ["dev.lekalo.nfr.encryption-at-rest@0.4.0"],
+      "consentRequired": true,
+      "crossTenant": "forbidden",
+      "declassifyRoles": ["data-steward"]
+    },
+    {
+      "kind": "internal",
+      "readers": ["tenant"],
+      "writers": ["tenant"],
+      "destinations": ["internal-service", "message-bus"],
+      "masking": {"strategy": "redact", "policyRef": "privacy-policy.masking.internal"},
+      "encryptionRefs": ["dev.lekalo.nfr.encryption-at-rest@0.4.0"],
+      "consentRequired": false,
+      "crossTenant": "reviewed",
+      "declassifyRoles": ["data-steward"]
+    }
+  ],
+  "sinks": {
+    "logs": {"maxKind": "internal"},
+    "traces": {"maxKind": "internal"},
+    "contextCapsules": {"maxKind": "internal"},
+    "diagnostics": {"maxKind": "internal"},
+    "evidence": {"maxKind": "public"},
+    "exports": {"maxKind": "derived"}
+  },
+  "openQuestions": []
+}

@@ -278,6 +278,7 @@ impl Runner {
         self.finish_confinement();
         self.redaction_phase();
         self.storage_phase();
+        self.classification_phase();
     }
 
     /// The issue #117 storage checks. The core never contacts a
@@ -1558,6 +1559,38 @@ impl Runner {
             )
         } else {
             CheckOutcome::pass(CheckId::RedactionEvidence)
+        });
+    }
+
+    /// Classification metadata survives every emitted projection
+    /// (issue #87). The fail-closed rule: an adapter that does not
+    /// declare the capability passes through its honest refusal — the
+    /// wire cannot represent kind tokens, and unsupported is never a
+    /// silent lowering — while a declared full/partial support state is
+    /// refused until the projection wire can carry the tokens: a claim
+    /// the current evidence cannot verify is exactly the silent
+    /// lowering the check exists to catch.
+    fn classification_phase(&mut self) {
+        let declared = self
+            .capabilities
+            .as_ref()
+            .and_then(|caps| caps.capabilities.get("preserve.classification"))
+            .map(|state| state.as_str().to_owned());
+        self.record(match declared.as_deref() {
+            None | Some("unsupported") | Some("unknown") => CheckOutcome {
+                detail: Some("honest-unsupported"),
+                ..CheckOutcome::pass(CheckId::ClassificationPreservation)
+            },
+            Some("full") | Some("partial") => CheckOutcome::fail(
+                CheckId::ClassificationPreservation,
+                CheckId::ClassificationPreservation.class(),
+                "wire-cannot-represent",
+            ),
+            Some(_) => CheckOutcome::fail(
+                CheckId::ClassificationPreservation,
+                CheckId::ClassificationPreservation.class(),
+                "state-invalid",
+            ),
         });
     }
 

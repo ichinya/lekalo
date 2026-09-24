@@ -54,6 +54,9 @@ dev.lekalo.privacy-export-policy@0.2.16@sha256:430ba543098c91f70d0c4e37c32ac8e41
 - [Privacy and export policy](docs/privacy.md)
 - [ADR-0002: exact-custody privacy decision contract](docs/adr/0002-privacy-export-policy.md)
 - Accepted policy: `contracts/privacy-policy.v0.2.16.json` with its manifest and sidecars
+- [Data classification and the data-flow report (issue #87)](docs/classification.md)
+- [ADR-0043: data classification, secret/PII boundaries, and sensitive-effect gates](docs/adr/0043-data-classification-security-gates.md)
+- Classification attachments: `contracts/data-classification.schema.v0.4.0.json`, `contracts/classification-policy.schema.v0.4.0.json`, and the derived `contracts/data-flow-report.schema.v0.4.0.json`
 
 Validate one export decision or run the full protocol suites:
 
@@ -67,6 +70,19 @@ Exit protocol: `0` allow, `3` well-formed deny or transform-required, `1`
 malformed or custody failure. The checker trusts only the hard-pinned
 accepted manifest bytes; a recomputed digest never authorizes changed
 semantics.
+
+Validate the data-classification attachments and derive the data-flow
+report (issue #87):
+
+```sh
+node scripts/test-classification-contracts.mjs
+node scripts/test-classification-cli.mjs   # requires: cargo build -p lekalo-cli
+```
+
+The two declared attachments bind to the exact
+`projectId`/`modelRef`/`irRef` custody triple; the derived data-flow
+report pins their canonical digests. Unknown is never safe and
+`credential` never declassifies downward.
 
 ## Canonical project structure
 
@@ -234,7 +250,9 @@ issue #62 adds the `error.*` family, and issue #26 adds the
 `publication.*`, `contract.*`, and `case.*` families, and issue #63 adds
 the `invariant.*` family, issue #27 adds the `target.*` family, and issue #36
 adds the `requirements.*` family, and issue #65 adds the `storage.*` family,
-each as a wire-shape-preserving minor increment).
+each as a wire-shape-preserving minor increment; issue #87 joins the
+shared 0.4.0 successor with the `classification.*` (LEK-CLS-001..012)
+and `dataflow.*` (LEK-DFL-001..009) families).
 
 ## Generated-artifact ownership and drift detection
 

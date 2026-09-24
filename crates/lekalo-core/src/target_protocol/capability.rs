@@ -15,8 +15,8 @@ use serde::Serialize;
 /// (`dev.lekalo.target-capabilities@0.4.0`). The 0.4.0 generation
 /// adds `generate.transport-http` and `verify.transport-http`
 /// (issue #70), `generate.storage-ddl` and `scan.storage-schema`
-/// (issue #69), and `scan.schema`/`verify.schema-projection`
-/// (issue #117).
+/// (issue #69), `scan.schema`/`verify.schema-projection`
+/// (issue #117), and `preserve.classification` (issue #87).
 pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.4.0";
 
 /// One versioned capability definition.
@@ -108,6 +108,12 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         domain: "verify",
         semantics: "Verifies black-box endpoint scenarios through the `verify` operation against the transport-http evidence. `full` executes every declared scenario coverage reference; `partial` covers a declared subset; `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
     },
+    CapabilityDefinition {
+        id: "preserve.classification",
+        definition_version: "0.4.0",
+        domain: "preserve",
+        semantics: "Preserves classification metadata through every projection the adapter emits (issue #87): every emitted field that maps to a classified subject carries its kind token, and an unrepresentable projection is refused as `unsupported`, never emitted bare. `full` preserves classification on every emitted field; `partial` preserves it on a declared subset; `unsupported` never emits classified fields; `unknown` is a declared state the core does not treat as available.",
+    },
 ];
 
 /// The exact definition of one capability id, or `None` when the id is
@@ -138,6 +144,7 @@ mod tests {
                 "generate.ui",
                 "generate.zod",
                 "plan.native-gates",
+                "preserve.classification",
                 "scan.schema",
                 "scan.storage-schema",
                 "scan.symbols",
