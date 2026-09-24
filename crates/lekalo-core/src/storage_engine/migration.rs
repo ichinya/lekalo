@@ -540,6 +540,25 @@ fn push_step(
 /// step index (0-based, pre-renumber) of each surviving table's create
 /// or existing declaration, keyed by table name, for FK/index
 /// dependency wiring.
+/// Whether one candidate join keeps its base counterpart's table,
+/// columns (names and storage types), pair uniqueness, and delete
+/// actions — the one rematerialization decision both the swap flow's
+/// stable-join test and the join loop's remat branch consult, so the
+/// two flows can never both claim a join's keys. Comparing full
+/// column objects (not just names) is the point: an endpoint pk TYPE
+/// change leaves the join column names untouched while changing their
+/// storage types, which rematerializes the join.
+fn join_shape_unchanged(
+    base_join: &crate::storage_projection::derivation::DerivedJoin,
+    join: &crate::storage_projection::derivation::DerivedJoin,
+) -> bool {
+    base_join.table() == join.table()
+        && base_join.columns() == join.columns()
+        && base_join.unique_pair() == join.unique_pair()
+        && base_join.on_owner_delete() == join.on_owner_delete()
+        && base_join.on_target_delete() == join.on_target_delete()
+}
+
 /// One foreign key that references a primary key this plan swaps: the
 /// old constraint (when it already exists) must drop before the old
 /// primary key does — the key take-down fails with `2BP02` while any
@@ -628,26 +647,28 @@ fn dependent_keys(
             });
         }
     }
-    // Stable join tables: a join whose shape did not change keeps its
-    // keys in place while the referenced table's key swaps under them.
-    // A new, renamed, or rematerialized join re-renders its keys in
-    // its own flow, after every entity swap, against the fresh key.
+    // Stable join tables: a join the join loop will leave untouched
+    // (same table, same columns — names AND storage types — same pair
+    // uniqueness and delete actions; the one shared `join_shape_unchanged`
+    // decision) keeps its keys in place while the referenced table's key
+    // swaps under them. A join the join loop will rename, rematerialize,
+    // or that is new is skipped here: its keys re-derive in the join
+    // loop, after every entity swap, against the fresh key and the
+    // post-remat shape — re-adding them from this flow would run on the
+    // pre-remat table with a type-mismatched REFERENCES and collide
+    // with the remat's own re-adds. The base-join loop below takes the
+    // old keys of every non-unchanged join down instead.
     for join in candidate.joins() {
-        let stable = base.joins().iter().find(|base_join| {
-            base_join.table() == join.table()
-                && base_join.relation() == join.relation()
-                && base_join.unique_pair() == join.unique_pair()
-                && base_join.on_owner_delete() == join.on_owner_delete()
-                && base_join.on_target_delete() == join.on_target_delete()
-                && base_join
-                    .columns()
-                    .iter()
-                    .map(|column| column.name())
-                    .eq(join.columns().iter().map(|column| column.name()))
-        });
-        let Some(base_join) = stable else {
+        let Some(base_join) = base
+            .joins()
+            .iter()
+            .find(|base_join| base_join.relation() == join.relation())
+        else {
             continue;
         };
+        if !join_shape_unchanged(base_join, join) {
+            continue;
+        }
         for (index, action) in [
             (0usize, join.on_owner_delete()),
             (1usize, join.on_target_delete()),
@@ -688,18 +709,24 @@ fn dependent_keys(
             });
         }
     }
-    // A dropped join table rides the same rule as a dropped owner: the
-    // join loop emits its DROP TABLE after the table work (and the
-    // ordering pass moves an unpaired drop_table behind the swap), so
-    // its live referencing keys come down here, before the old primary
-    // key — the take-down otherwise fails 2BP01 against the doomed
-    // join. Drop only: the table carries the rest with it.
+    // Every base join the join loop will not leave untouched — dropped,
+    // renamed, or rematerialized — takes its OLD referencing keys down
+    // here, before the old primary key: the join loop's work (a rename,
+    // a drop/create rematerialization, or the DROP TABLE of a dropped
+    // join) all runs after the table work, and the take-down otherwise
+    // fails 2BP01 against the join's live foreign key. Drop only: the
+    // join loop re-derives these keys itself (fresh names after a
+    // rename, fresh columns after a remat), so nothing re-adds them
+    // here — and never against the pre-remat shape. A dropped join's
+    // sides resolve against the base attachment, the only one that
+    // still declares the relation.
     for base_join in base.joins() {
-        if candidate
+        let counterpart_unchanged = candidate
             .joins()
             .iter()
-            .any(|join| join.relation() == base_join.relation())
-        {
+            .find(|join| join.relation() == base_join.relation())
+            .is_some_and(|join| join_shape_unchanged(base_join, join));
+        if counterpart_unchanged {
             continue;
         }
         for index in [0usize, 1usize] {
@@ -1866,13 +1893,9 @@ fn plan_tables(
             .joins()
             .iter()
             .find(|base| base.relation() == join.relation());
-        let unchanged = base_join.is_some_and(|base| {
-            base.table() == join.table()
-                && base.columns() == join.columns()
-                && base.unique_pair() == join.unique_pair()
-                && base.on_owner_delete() == join.on_owner_delete()
-                && base.on_target_delete() == join.on_target_delete()
-        });
+        let unchanged = base_join
+            .as_ref()
+            .is_some_and(|base| join_shape_unchanged(base, join));
         if unchanged {
             table_ids
                 .entry(join.table().as_str().to_owned())
@@ -1939,6 +1962,19 @@ fn plan_tables(
                             .map_err(|_| {
                             diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
                         })?;
+                    // A referenced-key swap on an endpoint already took
+                    // this key down (under the pre-rename table name,
+                    // before the old primary key) — the shared
+                    // dependent-key net owns it here, and dropping the
+                    // same constraint again would fail 42704.
+                    if steps.iter().any(|step| {
+                        step.kind == "drop_constraint"
+                            && step
+                                .statement
+                                .contains(&format!("DROP CONSTRAINT \"{}\"", old_name))
+                    }) {
+                        continue;
+                    }
                     push_step(
                         steps,
                         "drop_constraint",

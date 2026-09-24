@@ -2564,6 +2564,156 @@ fn a_dropped_owner_loses_its_live_key_before_the_pk_drop() {
 }
 
 #[test]
+fn a_rematerialized_join_owns_its_keys_from_the_swap_flow() {
+    // An endpoint pk TYPE change (names untouched) leaves a join
+    // stable by name but changes its shape, so the join loop
+    // rematerializes it. The swap flow must not also claim the join:
+    // an early add would run on the pre-remat table with a
+    // type-mismatched REFERENCES (42804) and collide with the remat's
+    // own re-adds (42710). One shared remat decision gives the old keys
+    // to the swap flow (drops only, before the old primary keys) and
+    // the fresh keys to the join loop, on the post-remat table.
+    let mut candidate_value: serde_json::Value =
+        serde_json::from_slice(MIGRATION_BASE).expect("candidate json");
+    for projection in candidate_value
+        .get_mut("projections")
+        .and_then(|projections| projections.as_array_mut())
+        .expect("projections")
+    {
+        if projection
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("postgres")
+        {
+            continue;
+        }
+        for table in projection
+            .get_mut("tables")
+            .and_then(|tables| tables.as_array_mut())
+            .expect("tables")
+        {
+            match table.get("table").and_then(serde_json::Value::as_str) {
+                Some("task") => {
+                    table["primaryKey"] = serde_json::json!(["tenant_id"]);
+                }
+                Some("tag") => {
+                    table["primaryKey"] = serde_json::json!(["label"]);
+                }
+                _ => {}
+            }
+        }
+    }
+    let candidate =
+        StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+    let plan_id = {
+        let blocked = lekalo_core::storage_engine::plan_migration(
+            &profile(),
+            &migration_attachment(MIGRATION_BASE),
+            &candidate,
+            None,
+        )
+        .expect("plans");
+        blocked.plan_id().to_owned()
+    };
+    let plan = lekalo_core::storage_engine::plan_migration(
+        &profile(),
+        &migration_attachment(MIGRATION_BASE),
+        &candidate,
+        Some(&plan_id),
+    )
+    .expect("confirmed");
+    // The join rematerializes: the fresh table renders tag_id with the
+    // endpoint's new key type.
+    let create = plan
+        .steps()
+        .iter()
+        .find(|step| {
+            step.kind() == "create_table"
+                && step.statement().starts_with("CREATE TABLE \"task_tag\"")
+        })
+        .expect("the join rematerializes under its deterministic name");
+    assert!(
+        create.statement().contains("\"tag_id\" varchar(64)"),
+        "the remat carries the endpoint's fresh key type: {}",
+        create.statement()
+    );
+    // Each join key adds exactly once, on the post-remat table, with
+    // matching types and the fresh key columns.
+    for (constraint, references) in [
+        ("fk_task_tag_task_id", "REFERENCES \"task\"(\"tenant_id\")"),
+        ("fk_task_tag_tag_id", "REFERENCES \"tag\"(\"label\")"),
+    ] {
+        let adds: Vec<_> = plan
+            .steps()
+            .iter()
+            .filter(|step| {
+                step.kind() == "add_foreign_key"
+                    && step
+                        .statement()
+                        .contains(&format!("ADD CONSTRAINT \"{constraint}\""))
+            })
+            .collect();
+        assert_eq!(adds.len(), 1, "{constraint} adds exactly once");
+        assert!(
+            adds[0].id() > create.id(),
+            "{constraint} adds on the post-remat table, never before it"
+        );
+        assert!(
+            adds[0].statement().contains(references),
+            "{constraint} re-targets the fresh key: {}",
+            adds[0].statement()
+        );
+    }
+    // The old keys still come down before the old primary keys they
+    // would block (2BP01), each dropping exactly once.
+    for (constraint, pk_statement) in [
+        (
+            "fk_task_tag_task_id",
+            "ALTER TABLE \"task\" DROP CONSTRAINT \"pk_task\";",
+        ),
+        (
+            "fk_task_tag_tag_id",
+            "ALTER TABLE \"tag\" DROP CONSTRAINT \"pk_tag\";",
+        ),
+    ] {
+        let drops: Vec<_> = plan
+            .steps()
+            .iter()
+            .filter(|step| {
+                step.kind() == "drop_constraint"
+                    && step
+                        .statement()
+                        .contains(&format!("DROP CONSTRAINT \"{constraint}\""))
+            })
+            .collect();
+        assert_eq!(drops.len(), 1, "{constraint} drops exactly once");
+        let pk_drop = plan
+            .steps()
+            .iter()
+            .find(|step| step.kind() == "drop_constraint" && step.statement() == pk_statement)
+            .expect("the endpoint's old key drops");
+        assert!(
+            drops[0].id() < pk_drop.id(),
+            "{constraint} drops before the old primary key"
+        );
+    }
+    // The remat drop/create pair stays wired: the create requires the
+    // drop of the old shape.
+    let drop = plan
+        .steps()
+        .iter()
+        .find(|step| step.kind() == "drop_table" && step.statement() == "DROP TABLE \"task_tag\";")
+        .expect("the old join shape drops");
+    assert_eq!(create.requires(), &[drop.id()]);
+    for step in plan.steps() {
+        for dep in step.requires() {
+            assert!(*dep < step.id(), "no forward edges");
+        }
+    }
+    assert!(plan.gated(), "the swap stays destructive and gated");
+}
+
+#[test]
 fn a_type_change_without_an_assignment_cast_refuses() {
     // A text-to-integer change cannot execute as a bare ALTER COLUMN
     // TYPE: the planner refuses with the registered rule instead of
