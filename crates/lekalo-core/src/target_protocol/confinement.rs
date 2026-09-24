@@ -168,10 +168,25 @@ impl ConfinementReport {
 /// (issue #89 fix round 2, C-F2).
 #[cfg(target_os = "linux")]
 fn prlimit_available() -> bool {
-    ["/usr/bin/prlimit", "/bin/prlimit"]
-        .iter()
-        .any(|path| Path::new(path).is_file())
-        && kernel_bounds_nproc_per_userns()
+    prlimit_path().is_some() && kernel_bounds_nproc_per_userns()
+}
+
+/// The prlimit wrapper location, resolved once to the first existing
+/// path. The availability check and the spawned wrapper share this one
+/// resolution, so a report of `denied-bounded` always corresponds to a
+/// wrapper that was actually spawnable (issue #89 fix round 2, C-F7).
+#[cfg(target_os = "linux")]
+fn prlimit_path() -> Option<PathBuf> {
+    static RESOLVED: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    RESOLVED
+        .get_or_init(|| {
+            ["/usr/bin/prlimit", "/bin/prlimit"]
+                .iter()
+                .map(Path::new)
+                .find(|path| path.is_file())
+                .map(Path::to_path_buf)
+        })
+        .clone()
 }
 
 /// The kernel release where the ucounts rework (5.14,
@@ -635,22 +650,26 @@ impl Sandbox {
             args,
         };
         // Issue #89: a denied children policy cannot be enforced inside
-        // bwrap (no fork primitive), but where the prlimit wrapper exists
-        // and the kernel charges RLIMIT_NPROC per user namespace (≥5.14)
-        // the wrapper bounds the task count inside the namespace. The
-        // report records the bound (or its honest absence) either way.
-        if self.policy.children_denied && prlimit_available() {
-            wrapper = transport::AdapterCommand {
-                program: "/usr/bin/prlimit".into(),
-                args: [
-                    format!("--nproc={SANDBOX_TASK_BOUND}"),
-                    "--".into(),
-                    wrapper.program.to_string_lossy().into_owned(),
-                ]
-                .into_iter()
-                .chain(wrapper.args)
-                .collect(),
-            };
+        // bwrap (no fork primitive), but where the resolved prlimit
+        // wrapper exists and the kernel charges RLIMIT_NPROC per user
+        // namespace (≥5.14) the wrapper bounds the task count inside
+        // the namespace — the same resolved path the availability check
+        // consulted. The report records the bound (or its honest
+        // absence) either way.
+        if self.policy.children_denied {
+            if let Some(prlimit) = prlimit_path() {
+                wrapper = transport::AdapterCommand {
+                    program: prlimit.to_string_lossy().into_owned(),
+                    args: [
+                        format!("--nproc={SANDBOX_TASK_BOUND}"),
+                        "--".into(),
+                        wrapper.program.to_string_lossy().into_owned(),
+                    ]
+                    .into_iter()
+                    .chain(wrapper.args)
+                    .collect(),
+                };
+            }
         }
         transport::run_private(&wrapper, request, limits, &self.project, cancel, env)
     }
