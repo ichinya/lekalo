@@ -610,6 +610,13 @@ fn run_profile(
         environment.extend(wide(format!("{key}={value}")));
     }
     for (key, value) in env {
+        // Issue #89 (fix round 2, C-F5): a granted name colliding with
+        // the fixed private block is dropped — the private staging value
+        // wins, never the host-sourced grant. The evidence records the
+        // drop in `budget.envDropped`.
+        if super::env_grant_dropped(key) {
+            continue;
+        }
         environment.extend(wide(format!("{key}={value}")));
     }
     environment.push(0);

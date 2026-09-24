@@ -214,6 +214,34 @@ fn prlimit_available() -> bool {
     false
 }
 
+/// The fixed private environment names of the Windows LPAC block
+/// (pointing at the per-exchange staging paths). They are provided
+/// unconditionally so the runtime can locate system directories
+/// without inheriting the host environment.
+pub(super) const WINDOWS_PRIVATE_ENV_NAMES: [&str; 8] = [
+    "APPDATA",
+    "LOCALAPPDATA",
+    "SystemDrive",
+    "SystemRoot",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "windir",
+];
+
+/// Whether a granted environment name collides (case-insensitively)
+/// with the fixed private block of this platform and is therefore
+/// dropped at spawn: the private value must never be overridden by a
+/// host-sourced grant. The spawn path and the evidence consult this
+/// one predicate, so a dropped name can never reach the child and is
+/// always visible in `budget.envDropped` (issue #89 fix round 2, C-F5).
+pub(super) fn env_grant_dropped(name: &str) -> bool {
+    cfg!(windows)
+        && WINDOWS_PRIVATE_ENV_NAMES
+            .iter()
+            .any(|fixed| fixed.eq_ignore_ascii_case(name))
+}
+
 pub(super) struct Sandbox {
     owned: tempfile::TempDir,
     pub project: PathBuf,
@@ -846,6 +874,24 @@ mod tests {
         assert!((5, 13) < PER_USERNS_NPROC_KERNEL);
         assert!((6, 0) >= PER_USERNS_NPROC_KERNEL);
         assert!((4, 20) < PER_USERNS_NPROC_KERNEL);
+    }
+
+    #[test]
+    fn env_grants_colliding_with_the_private_block_are_dropped() {
+        // The matching itself is case-insensitive over the fixed names.
+        assert!(super::WINDOWS_PRIVATE_ENV_NAMES
+            .iter()
+            .any(|fixed| fixed.eq_ignore_ascii_case("temp")));
+        assert!(super::WINDOWS_PRIVATE_ENV_NAMES
+            .iter()
+            .any(|fixed| fixed.eq_ignore_ascii_case("WINDIR")));
+        assert!(!super::WINDOWS_PRIVATE_ENV_NAMES
+            .iter()
+            .any(|fixed| fixed.eq_ignore_ascii_case("PATH")));
+        // On Windows the grant is dropped; elsewhere there is no
+        // private block and nothing is dropped.
+        assert_eq!(env_grant_dropped("TEMP"), cfg!(windows));
+        assert!(!env_grant_dropped("LEKALO_GRANTED_VAR"));
     }
 
     #[test]

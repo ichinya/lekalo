@@ -23,7 +23,7 @@ gates, before any child process exists:
 | --- | --- | --- |
 | Read scopes | `permissions.filesystem.readScopes` | Ceiling: every described read scope must fit inside. |
 | Write scopes | `permissions.filesystem.writeScopes` | Ceiling: every described write scope must fit inside; only fitting scopes are mounted writable. |
-| Environment | `permissions.environment.allowlist` | Exactly the named variables are granted; values are read from the host environment at spawn time and never stored. |
+| Environment | `permissions.environment.allowlist` | Exactly the named variables are granted; values are read from the host environment at spawn time and never stored. A granted name colliding (case-insensitively) with the platform's fixed private environment block (Windows LPAC) is dropped and recorded in `budget.envDropped`. |
 | Secrets | `permissions.secrets.handles` | Each handle id resolves to the controlled name `LEKALO_SECRET_<HANDLE>`; the host value under that name is injected at spawn time only. |
 | Network | `permissions.network.mode` | `denied` is enforced on every supported platform. `allowlist` **degrades to denial** (see the matrix) — it is recorded honestly, never widened. |
 | Children | `permissions.processes.children` | `denied` is enforced or bounded where the platform has a primitive, and recorded as a gap where it does not. `declared` keeps the existing confinement (children stay inside the sandbox). |
@@ -112,6 +112,7 @@ Every completed exchange carries a deterministic `confinement` member
     "writeScopes": ["gen/**"],
     "scopeCeiling": "manifest",
     "env": ["LEKALO_GRANTED_VAR", "LEKALO_SECRET_PROBE"],
+    "envDropped": [],
     "network": { "mode": "denied", "enforcement": "enforced" },
     "children": { "policy": "denied", "enforcement": "denied-enforced" },
     "resources": { "memoryLimit": 2147483648, "processLimit": 1, "enforcement": "enforced" }
@@ -133,6 +134,10 @@ cap lists are the verified package manifest's ceilings, `described`
 when the budget claims nothing independently (the strict implicit
 default) and the adapter's own describe bounds apply — so empty cap
 lists are read correctly instead of looking like an empty grant.
+`budget.envDropped` lists granted environment names that were dropped
+at spawn because they collide (case-insensitively) with the platform's
+fixed private environment block (Windows LPAC); the private value
+wins, never the host-sourced grant.
 
 The enforcement vocabulary is closed:
 

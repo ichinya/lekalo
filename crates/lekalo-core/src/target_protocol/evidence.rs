@@ -56,6 +56,12 @@ pub struct BudgetEvidence {
     /// never carried: they exist only inside the child environment
     /// block for the duration of one exchange.
     pub env: Vec<String>,
+    /// The granted environment names dropped at spawn because they
+    /// collide (case-insensitively) with the platform's fixed private
+    /// environment block (Windows LPAC); sorted. The private value
+    /// wins, never the host-sourced grant (issue #89, C-F5).
+    #[serde(rename = "envDropped")]
+    pub env_dropped: Vec<String>,
     pub network: NetworkEvidence,
     pub children: ChildrenEvidence,
     pub resources: ResourcesEvidence,
@@ -157,6 +163,13 @@ impl ConfinementEvidence {
         };
         let mut env: Vec<String> = budget.environment().keys().cloned().collect();
         env.sort();
+        let mut env_dropped: Vec<String> = budget
+            .environment()
+            .keys()
+            .filter(|name| super::confinement::env_grant_dropped(name))
+            .cloned()
+            .collect();
+        env_dropped.sort();
         let mut read_caps = budget.read_caps();
         read_caps.sort();
         let mut write_caps = budget.write_caps();
@@ -167,6 +180,7 @@ impl ConfinementEvidence {
                 write_scopes: write_caps,
                 scope_ceiling: budget.scope_ceiling(),
                 env,
+                env_dropped,
                 network: NetworkEvidence {
                     mode: network_mode,
                     enforcement: network_enforcement,
@@ -259,6 +273,7 @@ mod tests {
             "sorted canonical order"
         );
         assert!(evidence.budget.env.is_empty());
+        assert_eq!(evidence.budget.env_dropped, Vec::<String>::new());
         assert_eq!(evidence.budget.network.mode, "denied");
         assert_eq!(evidence.budget.network.enforcement, "enforced");
         assert_eq!(evidence.budget.children.policy, "denied");
