@@ -72,7 +72,7 @@ the pinned vocabulary. The engine implements:
 
 | Transform | Behavior |
 |---|---|
-| `redact-content` | The payload body is dropped to a deterministic digest+class stub (`{"class":[…],"contentDigest":"sha256:…","kind":"redacted-content"}`) |
+| `redact-content` | The payload body is dropped to a deterministic kind+class stub (`{"class":[…],"kind":"redacted-content"}`); the stub carries no content fingerprint — a hash over a low-entropy body would be trivially reversible, which the contract forbids |
 | `redact-secrets` | Secret tokens and credential assignments become `<redacted:secret>` |
 | `redact-pii` | Emails, declared person names, and phone-like runs become `<redacted:pii>` |
 | `replace-repository-identity` | The declared repository name becomes `<repo:{role}:{n}>`, never the real name |

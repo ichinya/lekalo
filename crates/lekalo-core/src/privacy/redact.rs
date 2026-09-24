@@ -355,16 +355,18 @@ pub fn redact(request: &RedactionRequest<'_>) -> RedactionOutcome {
     }
 }
 
-/// The deterministic digest+class stub that replaces a dropped body.
+/// The deterministic kind+class stub that replaces a dropped body. The
+/// stub carries no digest of the withheld payload: a content hash over a
+/// low-entropy body would be an offline-verifiable fingerprint, which the
+/// issue #119 contract forbids for small domains. The candidate's own
+/// digest is recorded in the local decision record instead.
 fn content_stub(request: &RedactionRequest<'_>) -> String {
     let mut labels: Vec<&str> = request.labels.iter().map(|label| label.as_str()).collect();
     labels.sort_unstable();
     labels.dedup();
-    let digest = format!("sha256:{}", sha256_hex(request.payload.as_bytes()));
     serde_json::json!({
         "kind": "redacted-content",
         "class": labels,
-        "contentDigest": digest,
     })
     .to_string()
 }
@@ -1048,8 +1050,8 @@ mod tests {
     }
 
     /// `redact-content` drops the body to the exact deterministic
-    /// digest+class stub; the stub carries no payload fragment and no
-    /// residual leak.
+    /// kind+class stub; the stub carries no payload fragment, no
+    /// content fingerprint, and no residual leak.
     #[test]
     fn content_transform_drops_the_body_to_a_stub() {
         let payload = "totally secret body with token ghp_abcdefghijklmnopqrstuvwxyz0123456789abcd";
@@ -1064,10 +1066,9 @@ mod tests {
         let stub = serde_json::from_str::<serde_json::Value>(outcome.payload()).expect("stub JSON");
         assert_eq!(stub["kind"], "redacted-content");
         assert_eq!(stub["class"], serde_json::json!(["internal"]));
-        let digest = stub["contentDigest"].as_str().unwrap();
-        assert_eq!(
-            digest,
-            format!("sha256:{}", crate::digest::sha256_hex(payload.as_bytes()))
+        assert!(
+            stub.get("contentDigest").is_none(),
+            "the stub carries no fingerprint of the withheld payload"
         );
         assert_eq!(outcome.residuals(), []);
         // The outcome digest is the digest of the redacted bytes.
