@@ -507,11 +507,18 @@ impl Sandbox {
         cancel: Option<&AtomicBool>,
         env: &[(String, String)],
     ) -> Result<transport::TransportSuccess, transport::TransportFailure> {
+        // Issue #89 (fix round 1, devin F-1): no `--clearenv`/`--setenv`
+        // — `--setenv` would put granted values (secrets included) into
+        // the bwrap argv, readable via /proc/<pid>/cmdline for the whole
+        // run. `run_private` env_clears the spawned process and injects
+        // exactly the grant pairs via envp, so bwrap's own environment
+        // is the grant set and the namespaced child inherits it
+        // identically without any argv exposure. envp is the only
+        // environment channel on this platform.
         let mut args: Vec<String> = [
             "--die-with-parent",
             "--unshare-all",
             "--new-session",
-            "--clearenv",
             "--proc",
             "/proc",
             "--dev",
@@ -519,13 +526,6 @@ impl Sandbox {
         ]
         .map(str::to_owned)
         .to_vec();
-        // Issue #89: the environment is fully cleared, then exactly the
-        // budget-granted variables are re-set inside the namespace. The
-        // pairs come from the caller's resolved budget (host values read
-        // at spawn); they enter the child environment block only.
-        for (name, value) in env {
-            args.extend(["--setenv".into(), name.clone(), value.clone()]);
-        }
         for root in ["/usr", "/bin", "/lib", "/lib64"] {
             if Path::new(root).exists() {
                 args.extend(["--ro-bind".into(), root.into(), root.into()]);
