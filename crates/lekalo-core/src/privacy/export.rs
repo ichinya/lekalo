@@ -462,31 +462,24 @@ fn synthesize(
     let artifact_ref = format!("artifact-sha256:{artifact_digest}");
     let classification_digest = classification_custody_digest(project, &artifact_digest)?;
 
-    // The destination repository token: a declared-coherence opaque
-    // digest over the resolved project root; the physical binding
-    // remains the #89 adapter obligation.
-    let repository_token = format!(
-        "repo-sha256:{}",
-        sha256_hex(
-            std::fs::canonicalize(project)
-                .unwrap_or_else(|_| project.to_path_buf())
-                .to_string_lossy()
-                .as_bytes()
-        )
-    );
-    let consumer_token = format!(
-        "repo-sha256:{}",
-        sha256_hex(
-            format!(
-                "{}:consumer",
-                std::fs::canonicalize(project)
-                    .unwrap_or_else(|_| project.to_path_buf())
-                    .to_string_lossy()
-            )
-            .as_bytes()
-        )
-    );
-    let resolved = destination.resolve(&repository_token, &consumer_token);
+    // The destination repository tokens (fix round 2, C-F3): a
+    // declared-coherence opaque digest over
+    // "lekalo.repository-identity\n" plus the custody basis - the
+    // classification attachment bytes when present, else the artifact
+    // envelope bytes - scoped per endpoint role. Never a host path:
+    // the token is deterministic across clones and proves custody
+    // coherence, not host identity; the physical binding and
+    // freshness checks remain the #89 adapter obligation.
+    let classification_path = project.join("classification.json");
+    let identity_basis: Vec<u8> = if classification_path.exists() {
+        std::fs::read(&classification_path)
+            .map_err(|_| ExportFailure::Malformed("privacy.classification-invalid"))?
+    } else {
+        artifact_bytes.clone()
+    };
+    let destination_token = repository_identity_token("", &identity_basis);
+    let consumer_token = repository_identity_token("consumer", &identity_basis);
+    let resolved = destination.resolve(&destination_token, &consumer_token);
 
     // Provenance: repository-backed destinations are coherent only
     // from the consumer repository; workspace destinations carry the
@@ -782,6 +775,19 @@ fn payload_text(value: &Json) -> String {
         Json::String(text) => text.clone(),
         other => serde_json::to_string(other).unwrap_or_default(),
     }
+}
+
+/// The declared-coherence repository token (fix round 2, C-F3): the
+/// opaque `repo-sha256:` digest of `"lekalo.repository-identity\n"`
+/// plus the custody basis, scoped per endpoint role so distinct
+/// endpoints keep distinct tokens. Never derived from a host path.
+fn repository_identity_token(role_scope: &str, basis: &[u8]) -> String {
+    let mut material = b"lekalo.repository-identity\n".to_vec();
+    material.extend_from_slice(basis);
+    if !role_scope.is_empty() {
+        material.extend_from_slice(format!("\n{role_scope}").as_bytes());
+    }
+    format!("repo-sha256:{}", sha256_hex(&material))
 }
 
 /// Whether a `synthetic: true` envelope claim is corroborated (fix
@@ -1235,6 +1241,42 @@ mod tests {
     /// An uncorroborated `synthetic: true` claim drops to the
     /// non-synthetic origin, so the evaluator's public-fixture
     /// evidence requirements apply (fail closed).
+    /// Repository tokens are machine-independent (fix round 2, C-F3):
+    /// identical custody bytes at different host paths synthesize the
+    /// identical subject - the token is never a host-path fingerprint.
+    #[test]
+    fn repo_tokens_are_machine_independent() {
+        let make_project = |dir: &std::path::Path| {
+            std::fs::create_dir_all(dir.join(".lekalo")).expect("project dir");
+            let attachment = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/classification/valid/planner/classification.json");
+            std::fs::copy(&attachment, dir.join("classification.json")).expect("attachment");
+            let artifact = dir.join("summary.json");
+            std::fs::write(
+                &artifact,
+                serde_json::json!({
+                    "artifactKind": "generated.summary",
+                    "payload": "summary text",
+                    "class": ["public"],
+                })
+                .to_string(),
+            )
+            .expect("artifact");
+            artifact
+        };
+        let one = tempfile::tempdir().expect("temp project one");
+        let two = tempfile::tempdir().expect("temp project two");
+        let artifact_one = make_project(one.path());
+        let artifact_two = make_project(two.path());
+        let (digest_one, _) =
+            subject_of(one.path(), &artifact_one, DestinationSpec::TransferTenant)
+                .expect("subject one");
+        let (digest_two, _) =
+            subject_of(two.path(), &artifact_two, DestinationSpec::TransferTenant)
+                .expect("subject two");
+        assert_eq!(digest_one, digest_two);
+    }
+
     #[test]
     fn uncorroborated_synthetic_drops_to_non_synthetic() {
         let project = tempfile::tempdir().expect("temp project");

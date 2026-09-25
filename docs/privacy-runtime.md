@@ -66,10 +66,14 @@ The destination is selected by the closed `--destination` spec:
 `transfer-external`, `transfer-cross-tenant`, `publish`. Each maps
 onto the exact operation/destination/audience vocabulary with
 coherent repository-backed sources for transfers and stores. The
-repository refs are declared-coherence opaque tokens
-(`repo-sha256:…`) minted by the runtime; the physical binding,
-freshness, and containment checks remain the #89 adapter obligation
-and are not claimed here.
+repository refs are declared-coherence opaque tokens: the SHA-256 of
+`"lekalo.repository-identity\n"` plus the custody basis — the
+classification attachment bytes when present, else the artifact
+envelope bytes — scoped per endpoint role. The token is deterministic
+across clones and proves custody coherence, never host identity or
+host layout (fix round 2, C-F3); the physical binding, freshness, and
+containment checks remain the #89 adapter obligation and are not
+claimed here.
 
 Optional authorizing evidence is supplied with `--consent FILE` (the
 export-transfer-consent position). The record goes into the decision
