@@ -171,3 +171,15 @@ grants adapters no new filesystem or network scope.
   pseudonymized.
 - `scripts/test-fixture-provenance.mjs` — every fixture family is
   declared synthetic or evidence-backed.
+
+## Receipt envelope propagation (fix round 2, C-F5)
+
+The exportable receipt surfaces (scan receipt, generate receipt)
+carry the additive optional `class`/`policyRef` members. The
+propagated `class` is the declared project **floor** — the #120 label
+of the classification attachment's unclassified-payload default —
+not a per-artifact resolution. An invalid attachment propagates no
+claim; absence means "no trustworthy claim", and an export attempt
+re-derives the class at enforcement time (unioning the floor into any
+envelope claim) and refuses fail-closed when nothing trustworthy is
+declared.

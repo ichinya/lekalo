@@ -538,11 +538,6 @@ fn synthesize(
         None,
     );
 
-    // The optional caller-declared consent evidence is bound to the
-    // exact subject digest after the input exists (below); every
-    // other member must already be declared correctly or the
-    // evaluator denies.
-
     let decision_input = input::ExportDecisionInput::with_frozen_refs(
         artifact_kind.to_owned(),
         artifact_ref.clone(),
@@ -735,13 +730,7 @@ pub fn redact_preview(
     )
 }
 
-/// The propagated envelope class of one project's artifacts (issue
-/// #119, plan S6): the sensitivity label of the classification
-/// attachment's declared payload default, plus the exact policy
-/// identity. Exportable receipt surfaces carry these as additive
-/// optional `class`/`policyRef` members; `None` means the project
-/// declares no classification and any export attempt refuses
-/// fail-closed at class resolution.
+/// The transforms the evaluator required, as closed transform ids.
 fn required_transforms(output: &ExportDecisionOutput) -> Vec<TransformId> {
     output
         .required_transforms()
@@ -895,6 +884,16 @@ fn write_under(project: &Path, relative: &str, bytes: &[u8]) -> Result<(), Expor
     std::fs::write(full, bytes).map_err(|_| ExportFailure::Malformed("privacy.write-refused"))
 }
 
+/// The propagated envelope class of one project's artifacts (issue
+/// #119, plan S6; semantics per fix round 2, C-F5): the declared
+/// project **floor** — the classification attachment's
+/// unclassified-payload default label — plus the exact policy
+/// identity. This is the declared floor, not a per-artifact
+/// resolution; consumers re-derive at enforcement time (the export
+/// pipeline unions the floor into the claimed class). An invalid
+/// attachment propagates no claim; absence means "no trustworthy
+/// claim", and an export attempt refuses fail-closed at class
+/// resolution.
 pub fn propagated_class(project: &Path) -> Option<(Vec<String>, String)> {
     let default_kind = project_payload_default(project).ok()??;
     Some((

@@ -70,10 +70,12 @@ pub struct ScanReceipt {
     /// honest per-dimension enforcement record.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confinement: Option<crate::target_protocol::evidence::ConfinementEvidence>,
-    /// The propagated sensitivity class of the scanned content (issue
-    /// #119): the closed #120 labels the project's classification
-    /// attachment declares. Absent when the project declares no
-    /// classification; an export attempt then refuses fail-closed.
+    /// The declared project class floor (issue #119; semantics per
+    /// fix round 2, C-F5): the #120 label of the classification
+    /// attachment's unclassified-payload default - the declared floor,
+    /// not a per-artifact resolution. Absent means "no trustworthy
+    /// claim" (missing or invalid attachment); an export attempt then
+    /// re-derives and refuses fail-closed at class resolution.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class: Option<Vec<String>>,
     /// The exact privacy policy identity governing the class.
