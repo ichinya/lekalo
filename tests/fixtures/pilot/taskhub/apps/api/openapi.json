@@ -51,13 +51,13 @@
         }
       }
     },
-    "/tasks/{taskId}/transition": {
+    "/tasks/{task_id}/transition": {
       "post": {
         "operationId": "transitionTask",
         "summary": "Move one task to the next lifecycle state",
         "parameters": [
           {
-            "name": "taskId",
+            "name": "task_id",
             "in": "path",
             "required": true,
             "schema": { "type": "string" }
@@ -98,22 +98,22 @@
       "Task": {
         "type": "object",
         "properties": {
-          "taskId": { "type": "string" },
+          "task_id": { "type": "string" },
           "title": { "type": "string" },
           "state": {
             "type": "string",
             "enum": ["backlog", "focused", "done"]
           }
         },
-        "required": ["taskId", "title", "state"]
+        "required": ["task_id", "title", "state"]
       },
       "NewTaskInput": {
         "type": "object",
         "properties": {
-          "taskId": { "type": "string" },
+          "task_id": { "type": "string" },
           "title": { "type": "string" }
         },
-        "required": ["taskId", "title"]
+        "required": ["task_id", "title"]
       }
     }
   }

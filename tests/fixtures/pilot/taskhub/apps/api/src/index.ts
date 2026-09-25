@@ -45,7 +45,7 @@ export interface ApiResponse {
 const declared: Route[] = [
   { method: "GET", path: "/tasks", name: "tasks.list" },
   { method: "POST", path: "/tasks", name: "tasks.create" },
-  { method: "POST", path: "/tasks/{taskId}/transition", name: "tasks.transition" },
+  { method: "POST", path: "/tasks/{task_id}/transition", name: "tasks.transition" },
 ];
 
 /** The declared route table, queryable as pure data. */
