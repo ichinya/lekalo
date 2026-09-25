@@ -396,15 +396,7 @@ fn synthesize(
     let confinement_digest: Option<String> = match envelope_object.get("confinement") {
         None => None,
         Some(confinement) => {
-            let coherent = confinement.is_object()
-                && confinement.get("budget").is_some_and(Json::is_object)
-                && confinement.get("described").is_some_and(Json::is_object)
-                && confinement.get("effective").is_some_and(Json::is_object)
-                && confinement
-                    .get("platform")
-                    .and_then(Json::as_str)
-                    .is_some_and(|platform| !platform.is_empty());
-            if !coherent {
+            if !confinement_is_coherent(confinement) {
                 return Err(ExportFailure::Malformed("privacy.confinement-invalid"));
             }
             let bytes = serde_json::to_vec(confinement)
@@ -777,6 +769,64 @@ fn repository_identity_token(role_scope: &str, basis: &[u8]) -> String {
         material.extend_from_slice(format!("\n{role_scope}").as_bytes());
     }
     format!("repo-sha256:{}", sha256_hex(&material))
+}
+
+/// The #89 confinement-evidence coherence check (fix round 2, C-F6):
+/// the exact top-level member set `{budget, described, effective,
+/// platform}` plus the optional `writes` member - unknown members
+/// reject - and `budget` must carry its closed member set with the
+/// per-member shapes of the #89 serialized document.
+fn confinement_is_coherent(confinement: &Json) -> bool {
+    let is_object = |value: Option<&Json>| value.is_some_and(Json::is_object);
+    let is_string = |value: Option<&Json>| {
+        value
+            .and_then(Json::as_str)
+            .is_some_and(|text| !text.is_empty())
+    };
+    let is_array = |value: Option<&Json>| value.is_some_and(Json::is_array);
+    if !confinement.is_object() {
+        return false;
+    }
+    let members = confinement.as_object().unwrap();
+    let allowed = ["budget", "described", "effective", "platform", "writes"];
+    if members.len() > allowed.len()
+        || !members.keys().all(|key| allowed.contains(&key.as_str()))
+        || !is_object(members.get("budget"))
+        || !is_object(members.get("described"))
+        || !is_object(members.get("effective"))
+        || !is_string(members.get("platform"))
+    {
+        return false;
+    }
+    if let Some(writes) = members.get("writes") {
+        if !is_object(Some(writes)) {
+            return false;
+        }
+    }
+    let budget = members.get("budget").unwrap();
+    let budget_members = budget.as_object().unwrap();
+    let budget_allowed = [
+        "readScopes",
+        "writeScopes",
+        "scopeCeiling",
+        "env",
+        "envDropped",
+        "network",
+        "children",
+        "resources",
+    ];
+    budget_members.len() == budget_allowed.len()
+        && budget_members
+            .keys()
+            .all(|key| budget_allowed.contains(&key.as_str()))
+        && is_array(budget_members.get("readScopes"))
+        && is_array(budget_members.get("writeScopes"))
+        && is_string(budget_members.get("scopeCeiling"))
+        && is_array(budget_members.get("env"))
+        && is_array(budget_members.get("envDropped"))
+        && is_object(budget_members.get("network"))
+        && is_object(budget_members.get("children"))
+        && is_object(budget_members.get("resources"))
 }
 
 /// Whether a `synthetic: true` envelope claim is corroborated (fix
@@ -1372,7 +1422,16 @@ mod tests {
     fn confinement_evidence_is_read_where_present() {
         let project = tempfile::tempdir().expect("temp project");
         let confinement = serde_json::json!({
-            "budget": {"readScopes": [], "network": "denied"},
+            "budget": {
+                "readScopes": [],
+                "writeScopes": [],
+                "scopeCeiling": "described",
+                "env": [],
+                "envDropped": [],
+                "network": {"mode": "denied", "enforcement": "enforced"},
+                "children": {"policy": "denied"},
+                "resources": {},
+            },
             "described": {},
             "effective": {},
             "platform": "linux-x86_64",
@@ -1418,6 +1477,33 @@ mod tests {
         let outcome = run_export(
             project.path(),
             &malformed,
+            DestinationSpec::Publish,
+            None,
+            true,
+        );
+        assert!(matches!(
+            outcome,
+            Err(ExportFailure::Malformed("privacy.confinement-invalid"))
+        ));
+
+        // An unknown top-level member rejects (fix round 2, C-F6).
+        let mut unknown_member = confinement.clone();
+        unknown_member["surprise"] = serde_json::json!(true);
+        let unknown = write_synthetic_artifact(
+            project.path(),
+            "fixtures",
+            "unknown-member.json",
+            &serde_json::json!({
+                "artifactKind": "fixture",
+                "payload": "synthetic text",
+                "class": ["public"],
+                "synthetic": true,
+                "confinement": unknown_member,
+            }),
+        );
+        let outcome = run_export(
+            project.path(),
+            &unknown,
             DestinationSpec::Publish,
             None,
             true,
