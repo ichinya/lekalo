@@ -1,0 +1,11 @@
+{
+  "name": "@taskhub/integrations",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "node --test"
+  }
+}

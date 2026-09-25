@@ -153,6 +153,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "pilot",
+      "origin": "synthetic",
+      "note": "issue #49 observed-mode pilot: the taskhub consumer fixture, its pinned scan document, and its native gate plan are exclusively synthetic"
+    },
+    {
       "family": "privacy",
       "origin": "synthetic"
     },
