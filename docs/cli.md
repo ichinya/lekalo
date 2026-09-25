@@ -978,3 +978,28 @@ the `ownership`/`map` sidecars under the policy path (default
 `docs/openapi.yaml`), and verifies them on `verify`; `lekalo generate`
 writes the canonical render evidence under
 `.lekalo/cache/openapi/<project>.json`.
+
+## Privacy (issue #119)
+
+Issue #119 adds the privacy family: the deterministic, custody-verified
+export-decision evaluator, the fail-closed export pipeline, and the
+read-only redaction diff contract. The core owns every decision; the
+binary only reads documents, renders, and maps exits. The enforcement
+model, the transform vocabulary, and the fail-closed matrix live in
+[privacy-runtime.md](privacy-runtime.md); the frozen policy contracts
+live in [privacy.md](privacy.md):
+
+```sh
+lekalo privacy evaluate --decision decision.json
+lekalo privacy export artifact.json --destination publish [--dry-run] [--consent consent.json] [--project DIR]
+lekalo privacy redact --payload payload.txt [--repository NAME] [--term NAME] [--dry-run]
+```
+
+`lekalo privacy evaluate` prints the closed `ExportDecisionOutput` and
+exits 0 (allow), 3 (deny or transform-required), or 1 (malformed input
+or custody failure). `lekalo privacy export` runs the fail-closed
+pipeline - class resolution, evaluation, the closed transforms, and
+the leak-scanner verification pass - writing only under
+`.lekalo/privacy/`; `--dry-run` prints the exact candidate payload and
+the redaction diff and writes nothing. `lekalo privacy redact` prints
+the redaction diff contract and never writes.

@@ -8,6 +8,11 @@ product release remains `0.0.2`. The `0.0.1`/`0.0.2` pair frozen inside the
 accepted manifest is an acceptance-time snapshot, not living product state;
 the living release is governed by the versioning policy artifact.
 
+The runtime enforcement layer that consumes these contracts - the typed
+in-core evaluator, the redaction engine, the leak scanner, the export
+pipeline, and the `lekalo privacy` CLI - is documented in
+[privacy-runtime.md](privacy-runtime.md) (issue #119).
+
 The normative files are:
 
 - `contracts/privacy-policy.v0.2.16.json`: accepted policy `0.2.16`;

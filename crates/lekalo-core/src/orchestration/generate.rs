@@ -239,6 +239,7 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
         // registered diagnostic in the aggregate envelope.
         return Err(aggregate_envelopes(failures));
     }
+    let propagated = crate::privacy::export::propagated_class(prepared.root());
     let receipt = GenerateReceipt {
         schema_version: SCHEMA_VERSION,
         operation: "generate",
@@ -256,6 +257,8 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
         targets,
         counts,
         verdict: Verdict::Ready,
+        class: propagated.as_ref().map(|(labels, _)| labels.clone()),
+        policy_ref: propagated.map(|(_, policy)| policy),
     };
     Ok(receipt)
 }
