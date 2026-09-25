@@ -861,6 +861,22 @@ enum ObserveCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
+    /// Record the deterministic baseline metrics document over the
+    /// current observed index (issue #49): the index digest, the
+    /// binding-state counts, the scan identity, and — when a plan
+    /// document is supplied — the validated identity of the confirmed
+    /// native gate plan (the production surface never launches it).
+    /// Deterministic: an identical index and plan identity write
+    /// byte-identical documents.
+    Baseline {
+        /// The native gate plan document (JSON), relative to the
+        /// invocation directory; `-` reads the plan from stdin.
+        #[arg(long, value_name = "FILE")]
+        native_plan: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
 }
 /// The closed readiness-phase vocabulary for the CLI surface; `done` is
 /// an accepted alias of `release`.
@@ -8629,6 +8645,73 @@ fn run_observe(command: ObserveCommands) -> DomainResult {
             confirm,
             project,
         } => run_observe_promote(symbol, module, dry_run, confirm.as_deref(), &project),
+        ObserveCommands::Baseline {
+            native_plan,
+            project,
+        } => run_observe_baseline(native_plan.as_deref(), &project),
+    }
+}
+
+/// Read the baseline's optional native plan document; the path is an
+/// invocation-relative input document (or `-` for stdin), never a
+/// project file. The bytes are validated through the #48 production
+/// run seam — which never launches a command — so only a decodable
+/// plan whose confirmed command surface carries the typed refusal
+/// decision enters the baseline.
+fn native_plan_identity(
+    path: Option<&str>,
+) -> Result<Option<lekalo_core::observed::BaselineNativePlan>, DomainResult> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let bytes = if path == "-" {
+        let mut buffer = Vec::new();
+        use std::io::Read;
+        if std::io::stdin().lock().read_to_end(&mut buffer).is_err() {
+            return Err(DomainResult::usage_error());
+        }
+        buffer
+    } else {
+        match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(_) => return Err(DomainResult::usage_error()),
+        }
+    };
+    match lekalo_core::native_gate::production_run(&bytes) {
+        Ok(run) => Ok(Some(lekalo_core::observed::BaselineNativePlan {
+            plan_digest: run.plan_digest,
+            outcome: run.outcome,
+            reason_codes: run.reason_codes,
+        })),
+        Err(failure) => Err(DomainResult::from(&failure)),
+    }
+}
+
+fn run_observe_baseline(native_plan: Option<&str>, project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let plan = match native_plan_identity(native_plan) {
+        Ok(plan) => plan,
+        Err(result) => return result,
+    };
+    let context = match lekalo_core::observed::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::observed::record(&context, plan) {
+        Ok(receipt) => DomainResult::receipt(
+            serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
+            format!(
+                "observe baseline recorded: {} symbols ({} explicit, {} confirmed, {} inferred, {} stale, {} promoted); index {}",
+                receipt.counts.symbols,
+                receipt.counts.explicit,
+                receipt.counts.confirmed,
+                receipt.counts.inferred,
+                receipt.counts.stale,
+                receipt.counts.promoted,
+                receipt.index_digest.get(..19).unwrap_or(""),
+            ),
+        ),
+        Err(set) => DomainResult::invalid(set),
     }
 }
 
