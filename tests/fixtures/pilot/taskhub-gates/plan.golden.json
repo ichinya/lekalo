@@ -1,0 +1,384 @@
+{
+  "schema_version": "lekalo/native-gate-plan/v0.3.2",
+  "kind": "native-plan",
+  "plan_digest": "sha256:b40005ae2e283fbcb595ddc51b70e06f63b4d540288ef4cd4989caa6f075318e",
+  "adapter": {
+    "id": "lekalo-target-node-typescript",
+    "version": "0.3.2",
+    "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "planner_version": "0.3.2",
+  "canonicalization_version": "0.3.2",
+  "repository_role": "consumer-repository",
+  "trust": {
+    "mode": "public-fixture",
+    "fixture_ref": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "provenance_ref": "sha256:a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+  },
+  "authority_ref": {
+    "contractId": "dev.lekalo.authority-matrix",
+    "version": "0.3.2",
+    "digest": "sha256:cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4"
+  },
+  "policy_ref": {
+    "policyId": "dev.lekalo.privacy-export-policy",
+    "version": "0.3.2",
+    "digest": "sha256:5643547b96e1ca9f422e91e699c8d04e676e6eb820b4ef21a88860c74133c3b9"
+  },
+  "classification_ref": {
+    "contractId": "dev.lekalo.privacy-classification-decision",
+    "version": "0.2.16",
+    "digest": "sha256:78de535f02b6a8065579b43798ed650849aca0b7edf1aa08b2e0219fc744dde6"
+  },
+  "execution_policy_ref": {
+    "id": "fixture-native-policy",
+    "version": "0.3.2",
+    "digest": "sha256:ba1eb9bf6e1df8a4bf76e66873c547468b6d4c886628911861c36255826340e2"
+  },
+  "profile_ref": {
+    "id": "standalone",
+    "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "input_manifest_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "scan_ref": {
+    "id": "scan",
+    "version": "0.3.2",
+    "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "observed_ref": {
+    "id": "observed",
+    "version": "0.3.2",
+    "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "tool_catalog_digest": "sha256:e57d1f28ecce5e52ff2961e85d8bd3d41084214615091fc964e96fd51457cf6e",
+  "capability_snapshot_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+  "workspace": {
+    "manager": "pnpm-workspace",
+    "declared_version": "unknown",
+    "compatibility_path": "supported",
+    "root": ".",
+    "manifest_digest": "sha256:0972fcb0fb505f3a21fd9f0bb01b7740f596bae413ce132e578bb5de13f0e3c1",
+    "lock_digest_state": "absent",
+    "packages": [
+      {
+        "id": ".=@taskhub/taskhub",
+        "name": "@taskhub/taskhub",
+        "root": ".",
+        "manifest_digest": "sha256:038eec478fb1a78e87069af2f76d6940cc29e3af6af938e04139f25c85eb4d50"
+      },
+      {
+        "id": "apps/api=@taskhub/api",
+        "name": "@taskhub/api",
+        "root": "apps/api",
+        "manifest_digest": "sha256:43fa0fbb3ddd8c0a80c061709c22c06ac74693287fc261af9c0c5c0fccdc6d4c"
+      },
+      {
+        "id": "packages/events=@taskhub/events",
+        "name": "@taskhub/events",
+        "root": "packages/events",
+        "manifest_digest": "sha256:8d0827935278cb99d43902ea2a75cd3af04835bf8e489abc88563fa3cceab478"
+      },
+      {
+        "id": "packages/integrations=@taskhub/integrations",
+        "name": "@taskhub/integrations",
+        "root": "packages/integrations",
+        "manifest_digest": "sha256:873f6cd8f6d1d4dc3a85f86a7eeafde20ac28deb947095a761f8a0c9262b4901"
+      },
+      {
+        "id": "packages/sync=@taskhub/sync",
+        "name": "@taskhub/sync",
+        "root": "packages/sync",
+        "manifest_digest": "sha256:1495bb788e3a922ab7ff93fad4dbefed8673a782e34bd38d7e64d9417cd65318"
+      },
+      {
+        "id": "packages/tasks=@taskhub/tasks",
+        "name": "@taskhub/tasks",
+        "root": "packages/tasks",
+        "manifest_digest": "sha256:aeb72d1e12cee86303d9ea1879995b6c15254629a379902e4c72953c27a2c379"
+      }
+    ],
+    "edges": [
+      {
+        "from": "apps/api=@taskhub/api",
+        "to": "packages/events=@taskhub/events",
+        "kind": "dependency",
+        "scope": "dependencies",
+        "specifier": "workspace:^",
+        "provenance": "workspace-specifier"
+      },
+      {
+        "from": "apps/api=@taskhub/api",
+        "to": "packages/tasks=@taskhub/tasks",
+        "kind": "dependency",
+        "scope": "dependencies",
+        "specifier": "workspace:^",
+        "provenance": "workspace-specifier"
+      },
+      {
+        "from": "packages/sync=@taskhub/sync",
+        "to": "packages/events=@taskhub/events",
+        "kind": "dependency",
+        "scope": "dependencies",
+        "specifier": "workspace:^",
+        "provenance": "workspace-specifier"
+      },
+      {
+        "from": "packages/sync=@taskhub/sync",
+        "to": "packages/integrations=@taskhub/integrations",
+        "kind": "dependency",
+        "scope": "dependencies",
+        "specifier": "workspace:^",
+        "provenance": "workspace-specifier"
+      },
+      {
+        "from": "packages/sync=@taskhub/sync",
+        "to": "packages/tasks=@taskhub/tasks",
+        "kind": "dependency",
+        "scope": "dependencies",
+        "specifier": "workspace:^",
+        "provenance": "workspace-specifier"
+      }
+    ],
+    "completeness": "complete",
+    "uncertainties": []
+  },
+  "changes": {
+    "files": [
+      {
+        "path": "packages/tasks/src/index.ts",
+        "change": "modified",
+        "after_digest": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6"
+      }
+    ],
+    "symbols": []
+  },
+  "affected": [
+    {
+      "package_id": "apps/api=@taskhub/api",
+      "reasons": [
+        {
+          "kind": "dependent-closure",
+          "source_ref": "packages/tasks=@taskhub/tasks",
+          "edge_path": [
+            "packages/tasks=@taskhub/tasks"
+          ]
+        }
+      ]
+    },
+    {
+      "package_id": "packages/events=@taskhub/events",
+      "reasons": [
+        {
+          "kind": "build-prerequisite",
+          "source_ref": "packages/sync=@taskhub/sync",
+          "edge_path": [
+            "packages/events=@taskhub/events",
+            "packages/sync=@taskhub/sync"
+          ]
+        }
+      ]
+    },
+    {
+      "package_id": "packages/integrations=@taskhub/integrations",
+      "reasons": [
+        {
+          "kind": "build-prerequisite",
+          "source_ref": "packages/sync=@taskhub/sync",
+          "edge_path": [
+            "packages/integrations=@taskhub/integrations",
+            "packages/sync=@taskhub/sync"
+          ]
+        }
+      ]
+    },
+    {
+      "package_id": "packages/sync=@taskhub/sync",
+      "reasons": [
+        {
+          "kind": "dependent-closure",
+          "source_ref": "packages/tasks=@taskhub/tasks",
+          "edge_path": [
+            "packages/tasks=@taskhub/tasks"
+          ]
+        }
+      ]
+    },
+    {
+      "package_id": "packages/tasks=@taskhub/tasks",
+      "reasons": [
+        {
+          "kind": "changed-package",
+          "source_ref": "packages/tasks=@taskhub/tasks",
+          "edge_path": []
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "package_id": ".=@taskhub/taskhub",
+      "reason": "no-reason"
+    },
+    {
+      "package_id": "packages/events=@taskhub/events",
+      "reason": "no-confirmation"
+    },
+    {
+      "package_id": "packages/integrations=@taskhub/integrations",
+      "reason": "no-confirmation"
+    }
+  ],
+  "selection_mode": "targeted",
+  "commands": [
+    {
+      "id": "gate-apps_api__taskhub_api-typecheck",
+      "package_id": "apps/api=@taskhub/api",
+      "gate": "typecheck",
+      "script_name": "gate:typecheck",
+      "script_digest": "sha256:7b7d5c6042f2913345dfa260286398b9f8e09129bcff81327cfdda3602977fb5",
+      "confirmation_ref": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "cwd": "apps/api",
+      "tool_ref": "fixture-node",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "typecheck"
+      ],
+      "env": [],
+      "depends_on": [
+        "packages/events=@taskhub/events",
+        "packages/tasks=@taskhub/tasks"
+      ],
+      "affected_reason_refs": [
+        "apps/api=@taskhub/api#dependent-closure"
+      ],
+      "read_manifest_ref": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "allowed_writes": {
+        "mode": "stage-only"
+      },
+      "limits": {
+        "timeout_ms_per_command": 10000,
+        "timeout_ms_per_run": 60000,
+        "max_stdout_bytes": 65536,
+        "max_stderr_bytes": 65536,
+        "max_output_bytes_per_run": 1048576
+      },
+      "tsconfig_ref": "apps/api/tsconfig.json"
+    },
+    {
+      "id": "gate-packages_sync__taskhub_sync-test",
+      "package_id": "packages/sync=@taskhub/sync",
+      "gate": "test",
+      "script_name": "gate:test",
+      "script_digest": "sha256:cfad049df69aeb73066311f382c7f1a25167b13d1bbf17ec05408b03330d773d",
+      "confirmation_ref": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "cwd": "packages/sync",
+      "tool_ref": "fixture-node",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "test"
+      ],
+      "env": [],
+      "depends_on": [
+        "packages/events=@taskhub/events",
+        "packages/integrations=@taskhub/integrations",
+        "packages/tasks=@taskhub/tasks"
+      ],
+      "affected_reason_refs": [
+        "packages/sync=@taskhub/sync#dependent-closure"
+      ],
+      "read_manifest_ref": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "allowed_writes": {
+        "mode": "stage-only"
+      },
+      "limits": {
+        "timeout_ms_per_command": 10000,
+        "timeout_ms_per_run": 60000,
+        "max_stdout_bytes": 65536,
+        "max_stderr_bytes": 65536,
+        "max_output_bytes_per_run": 1048576
+      },
+      "tsconfig_ref": "packages/sync/tsconfig.json"
+    },
+    {
+      "id": "gate-packages_tasks__taskhub_tasks-build",
+      "package_id": "packages/tasks=@taskhub/tasks",
+      "gate": "build",
+      "script_name": "gate:build",
+      "script_digest": "sha256:c6d1d6834c6e4a42781ffb6e5f41fad8a9f9ce38d97d2582015b78c011fb6ad7",
+      "confirmation_ref": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "cwd": "packages/tasks",
+      "tool_ref": "fixture-node",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "build"
+      ],
+      "env": [],
+      "depends_on": [],
+      "affected_reason_refs": [
+        "packages/tasks=@taskhub/tasks#changed-package"
+      ],
+      "read_manifest_ref": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "allowed_writes": {
+        "mode": "stage-only"
+      },
+      "limits": {
+        "timeout_ms_per_command": 10000,
+        "timeout_ms_per_run": 60000,
+        "max_stdout_bytes": 65536,
+        "max_stderr_bytes": 65536,
+        "max_output_bytes_per_run": 1048576
+      },
+      "tsconfig_ref": "packages/tasks/tsconfig.json"
+    }
+  ],
+  "env": {
+    "allowed_names": [
+      "FIXTURE_MODE"
+    ],
+    "bindings": []
+  },
+  "tools": [
+    {
+      "id": "fixture-node",
+      "name": "node",
+      "version": "unknown",
+      "artifact_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "entry_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "platform": "windows",
+      "provenance": "fixture-catalog"
+    }
+  ],
+  "required_capabilities": [
+    "plan.native-gates"
+  ],
+  "capabilities": [
+    {
+      "id": "plan.native-gates",
+      "definition_version": "0.3.2",
+      "state": "full",
+      "source": "declared"
+    }
+  ],
+  "run_eligibility": {
+    "state": "plan-only",
+    "reason_codes": [
+      "fixture-runner-not-in-production"
+    ]
+  },
+  "limits": {
+    "timeout_ms_per_command": 10000,
+    "timeout_ms_per_run": 60000,
+    "max_stdout_bytes": 65536,
+    "max_stderr_bytes": 65536,
+    "max_output_bytes_per_run": 1048576
+  },
+  "write_policy": {
+    "mode": "stage-only"
+  }
+}
