@@ -121,10 +121,17 @@ hashes.
 
 ## Leak scanner and the fail-closed matrix
 
-The scanner detects eight closed classes: secret tokens, URLs,
-absolute path fragments, emails, phone-like runs, declared person
-names, tenant ids, and declared repository names. It runs inside
-every transform and as the verification pass over the final payload.
+The scanner detects eight closed classes: secret tokens (including
+JWTs), URI-scheme URLs (any `[a-z][a-z0-9+.-]*://` scheme), absolute
+and drive-relative path fragments, emails, phone-like digit runs
+(separated groups and bare 9–16-digit runs), declared person names,
+tenant ids, and declared repository names. It runs inside every
+transform and as the verification pass over the final payload.
+
+Honest scope: "never silently ships" means never ships a payload that
+still matches the **closed class vocabulary**. Content outside that
+vocabulary is the export decision's job (classification + disposition
++ evidence), not the scanner's; prose cannot broaden the class set.
 
 | State | Outcome |
 |---|---|

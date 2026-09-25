@@ -459,6 +459,40 @@ fn is_token_char(byte: u8) -> bool {
 /// The closed secret-token vocabulary: PEM private-key headers, AWS
 /// access keys, GitHub/Slack/OpenAI-style tokens, Bearer
 /// authorizations, and credential assignments (`key: "value"`).
+/// JSON Web Tokens (fix round 2, C-F4): `eyJ`-prefixed base64url
+/// segments joined by dots — JWTs are credentials, so they belong to
+/// the secret class. The run must carry at least one dot and reach a
+/// conservative minimum length.
+fn match_jwts(payload: &str) -> Vec<Match> {
+    let mut matches = Vec::new();
+    let bytes = payload.as_bytes();
+    let mut index = 0usize;
+    while index + 16 <= bytes.len() {
+        if !payload[index..].starts_with("eyJ") {
+            index += 1;
+            continue;
+        }
+        let end = bytes[index..]
+            .iter()
+            .position(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')))
+            .map(|position| index + position)
+            .unwrap_or(bytes.len());
+        let candidate = &payload[index..end];
+        if end - index >= 16 && candidate.contains('.') {
+            matches.push(Match {
+                start: index,
+                end,
+                kind: LeakKind::SecretToken,
+                value: candidate.to_owned(),
+            });
+            index = end;
+        } else {
+            index += 3;
+        }
+    }
+    matches
+}
+
 fn match_secret_tokens(payload: &str) -> Vec<Match> {
     let mut matches = Vec::new();
     for marker in [
@@ -470,6 +504,7 @@ fn match_secret_tokens(payload: &str) -> Vec<Match> {
     ] {
         matches.extend(match_literal(payload, marker, LeakKind::SecretToken));
     }
+    matches.extend(match_jwts(payload));
 
     let bytes = payload.as_bytes();
     let mut index = 0usize;
@@ -627,22 +662,37 @@ fn match_credential_assignment(payload: &str, index: usize) -> Option<Match> {
 }
 
 /// http(s) URLs up to the first delimiter.
+/// URI-scheme URLs (fix round 2, C-F4): any
+/// `[a-z][a-z0-9+.-]*://` scheme — http(s), `file://`, `ftp://`,
+/// `ssh://`, and every other scheme spelling — up to the first
+/// delimiter.
 fn match_urls(payload: &str) -> Vec<Match> {
     let mut matches = Vec::new();
     let lower = payload.to_lowercase();
     let mut cursor = 0usize;
     while cursor < lower.len() {
-        let http = lower[cursor..].find("http://");
-        let https = lower[cursor..].find("https://");
-        let start = match (http, https) {
-            (Some(a), Some(b)) => cursor + a.min(b),
-            (Some(a), None) => cursor + a,
-            (None, Some(b)) => cursor + b,
-            (None, None) => break,
+        let Some(separator) = lower[cursor..].find("://") else {
+            break;
         };
-        let scheme_end = start
-            + usize::from(lower[start..].starts_with("https://")) * 8
-            + usize::from(!lower[start..].starts_with("https://")) * 7;
+        let separator_start = cursor + separator;
+        // Walk back over the scheme characters to the scheme start.
+        let mut start = separator_start;
+        while start > cursor {
+            let previous = lower.as_bytes()[start - 1];
+            if previous.is_ascii_lowercase()
+                || previous.is_ascii_digit()
+                || previous == b'+'
+                || previous == b'.'
+                || previous == b'-'
+            {
+                start -= 1;
+            } else {
+                break;
+            }
+        }
+        let scheme_length = separator_start - start;
+        let well_formed = scheme_length >= 2 && lower.as_bytes()[start].is_ascii_lowercase();
+        let scheme_end = separator_start + 3;
         let mut end = scheme_end;
         for (offset, character) in payload[scheme_end..].char_indices() {
             if character.is_whitespace()
@@ -655,7 +705,7 @@ fn match_urls(payload: &str) -> Vec<Match> {
             }
             end = scheme_end + offset + character.len_utf8();
         }
-        if end > scheme_end {
+        if well_formed && end > scheme_end {
             matches.push(Match {
                 start,
                 end,
@@ -664,7 +714,7 @@ fn match_urls(payload: &str) -> Vec<Match> {
             });
             cursor = end;
         } else {
-            cursor = scheme_end;
+            cursor = separator_start + 3;
         }
     }
     matches
@@ -687,13 +737,19 @@ fn match_path_fragments(payload: &str) -> Vec<Match> {
     let mut index = 0usize;
     while index < bytes.len() {
         let rest = &payload[index..];
+        let drive_relative = rest.len() >= 3
+            && rest.as_bytes()[0].is_ascii_alphabetic()
+            && rest.as_bytes()[1] == b':'
+            && rest.as_bytes()[2].is_ascii_alphabetic()
+            && (index == 0 || !bytes[index - 1].is_ascii_alphanumeric());
         let anchored = rest.starts_with("~/")
             || (rest.len() >= 3
                 && rest.as_bytes()[0].is_ascii_alphabetic()
                 && rest.as_bytes()[1] == b':'
                 && matches!(rest.as_bytes()[2], b'\\' | b'/'))
             || (rest.starts_with("\\\\") && rest.len() >= 3 && rest.as_bytes()[2] != b'\\')
-            || rest.starts_with('/');
+            || rest.starts_with('/')
+            || drive_relative;
         if anchored {
             let mut end = index;
             for (offset, character) in rest.char_indices() {
@@ -706,7 +762,9 @@ fn match_path_fragments(payload: &str) -> Vec<Match> {
             let has_body = candidate.chars().skip(1).any(|character| {
                 character.is_alphanumeric() || matches!(character, '_' | '~' | '.')
             });
-            let has_separator = candidate.contains('/') || candidate.contains('\\');
+            // Drive-relative spellings carry no separator by shape.
+            let has_separator =
+                drive_relative || candidate.contains('/') || candidate.contains('\\');
             if has_body && has_separator {
                 matches.push(Match {
                     start: index,
@@ -818,7 +876,19 @@ fn match_phones(payload: &str) -> Vec<Match> {
             }
             end += 1;
         }
-        if (7..=15).contains(&digits) && groups >= 2 && separators >= 1 {
+        // Trim trailing separator characters: the run ends at its
+        // last digit, so the boundary checks see the true neighbors.
+        while end > run_start && !bytes[end - 1].is_ascii_digit() {
+            end -= 1;
+        }
+        let separated = (7..=15).contains(&digits) && groups >= 2 && separators >= 1;
+        // Bare digit runs (fix round 2, C-F4): 9-16 consecutive
+        // digits not inside a longer alnum run (covers 10-digit
+        // phone-like identifiers with no separators).
+        let bounded = (run_start == 0 || !bytes[run_start - 1].is_ascii_alphanumeric())
+            && (end >= bytes.len() || !bytes[end].is_ascii_alphanumeric());
+        let bare = (9..=16).contains(&digits) && groups == 1 && bounded;
+        if separated || bare {
             matches.push(Match {
                 start: run_start,
                 end,
@@ -1108,6 +1178,63 @@ mod tests {
                 "{leaked} leaked into the report"
             );
         }
+    }
+
+    /// The fix-round-2 scanner additions (C-F4): JWTs, generic URI
+    /// schemes, bare digit runs, and drive-relative Windows paths are
+    /// detected in the closed classes; word-adjacent and version-like
+    /// digit runs are not.
+    #[test]
+    fn scanner_covers_jwt_uri_bare_digits_and_drive_relative() {
+        let jwt = "auth eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0In0.sig abc";
+        let jwt_kinds = kinds(&scan_with(jwt, RedactionSubject::default()));
+        assert!(
+            jwt_kinds.contains(&LeakKind::SecretToken),
+            "jwt: {jwt_kinds:?}"
+        );
+
+        let schemes = "file:///etc/passwd then ftp://host.example/x and ssh://git@example.test/y";
+        let url_findings = scan_with(schemes, RedactionSubject::default());
+        assert_eq!(
+            url_findings
+                .iter()
+                .filter(|finding| finding.kind() == LeakKind::Url)
+                .map(|finding| finding.occurrences())
+                .sum::<usize>(),
+            3,
+            "{schemes}"
+        );
+
+        let bare = kinds(&scan_with(
+            "reference 5551234567 in the ledger",
+            RedactionSubject::default(),
+        ));
+        assert!(bare.contains(&LeakKind::Phone), "bare digits: {bare:?}");
+        let version_like = kinds(&scan_with(
+            "version 1.2.333 build",
+            RedactionSubject::default(),
+        ));
+        assert!(
+            !version_like.contains(&LeakKind::Phone),
+            "version-like: {version_like:?}"
+        );
+        let word_adjacent = kinds(&scan_with(
+            "id abc5551234567def stays",
+            RedactionSubject::default(),
+        ));
+        assert!(
+            !word_adjacent.contains(&LeakKind::Phone),
+            "word-adjacent: {word_adjacent:?}"
+        );
+
+        let drive = kinds(&scan_with(
+            "staged at C:Usersdevstaging overnight",
+            RedactionSubject::default(),
+        ));
+        assert!(
+            drive.contains(&LeakKind::PathFragment),
+            "drive-relative: {drive:?}"
+        );
     }
 
     /// The transform selection is exact: requesting secrets only
