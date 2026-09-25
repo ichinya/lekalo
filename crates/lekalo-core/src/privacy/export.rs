@@ -364,6 +364,7 @@ struct Synthesis {
     labels: Vec<DataSensitivity>,
     artifact_kind: String,
     artifact_ref: String,
+    artifact_digest: String,
     file_name: String,
     repository_name: Option<String>,
     protected_terms: Vec<String>,
@@ -571,6 +572,7 @@ fn synthesize(
         labels,
         artifact_kind: artifact_kind.to_owned(),
         artifact_ref,
+        artifact_digest: artifact_digest.clone(),
         file_name: path_value.clone(),
         confinement_digest,
         repository_name,
@@ -653,7 +655,12 @@ pub fn run_export(
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_else(|| name.clone());
     let export_path = format!(".lekalo/privacy/exports/{name}");
-    let decision_path = format!(".lekalo/privacy/decisions/export/{stem}.json");
+    // The decision-record name carries the first 12 hex chars of the
+    // artifact digest (fix round 2, C-F8): injective across same-stem
+    // artifacts, and Windows device-name stems (con, nul, ...) get the
+    // digest suffix.
+    let digest_prefix = &synthesis.artifact_digest[..12.min(synthesis.artifact_digest.len())];
+    let decision_path = format!(".lekalo/privacy/decisions/export/{stem}-{digest_prefix}.json");
     let mut outcome = ExportOutcome {
         decision: evaluated.output,
         artifact_kind: synthesis.artifact_kind,
@@ -1197,16 +1204,15 @@ mod tests {
         )
         .expect("transform-required publish applies");
         assert!(applied.written());
+        let digest_prefix = &applied.artifact_ref()["artifact-sha256:".len()..][..12];
         let written =
             std::fs::read_to_string(project.path().join(".lekalo/privacy/exports/summary.json"))
                 .expect("export written");
         assert!(!written.contains("AKIA"));
         assert!(written.contains("redacted-content"));
-        let record = std::fs::read_to_string(
-            project
-                .path()
-                .join(".lekalo/privacy/decisions/export/summary.json"),
-        )
+        let record = std::fs::read_to_string(project.path().join(format!(
+            ".lekalo/privacy/decisions/export/summary-{digest_prefix}.json"
+        )))
         .expect("decision record written");
         assert!(!record.contains("AKIA"));
         assert!(record.contains("transform-required"));
@@ -1418,6 +1424,59 @@ mod tests {
     /// confinement evidence is read where present, recorded in the
     /// decision record, and refused when malformed. No adapter gains
     /// filesystem or network scope from this read.
+    /// Decision-record names are injective (fix round 2, C-F8): two
+    /// same-stem artifacts with different bytes produce two distinct
+    /// records, each carrying its own artifact digest suffix.
+    #[test]
+    fn decision_records_are_injective_across_same_stem_artifacts() {
+        let project = tempfile::tempdir().expect("temp project");
+        let artifact_one = write_artifact(
+            project.path(),
+            "summary.json",
+            &serde_json::json!({
+                "artifactKind": "generated.summary",
+                "payload": "first summary containing AKIAABCDEFGHIJKLMNOP",
+                "class": ["public"],
+            }),
+        );
+        let artifact_two = write_artifact(
+            project.path(),
+            "summary",
+            &serde_json::json!({
+                "artifactKind": "generated.summary",
+                "payload": "second summary containing AKIAABCDEFGHIJKLMNOP",
+                "class": ["public"],
+            }),
+        );
+        let consent_one = authored_consent(project.path(), &artifact_one, DestinationSpec::Publish);
+        let _ = run_export(
+            project.path(),
+            &artifact_one,
+            DestinationSpec::Publish,
+            Some(&consent_one),
+            false,
+        )
+        .expect("first export");
+        let consent_two = authored_consent(project.path(), &artifact_two, DestinationSpec::Publish);
+        let _ = run_export(
+            project.path(),
+            &artifact_two,
+            DestinationSpec::Publish,
+            Some(&consent_two),
+            false,
+        )
+        .expect("second export");
+        let records = std::fs::read_dir(project.path().join(".lekalo/privacy/decisions/export"))
+            .expect("records dir")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("records readable");
+        assert_eq!(records.len(), 2, "both records must exist");
+        assert!(records.iter().all(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            name.starts_with("summary-") && name.ends_with(".json")
+        }));
+    }
+
     #[test]
     fn confinement_evidence_is_read_where_present() {
         let project = tempfile::tempdir().expect("temp project");

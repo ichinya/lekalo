@@ -137,6 +137,7 @@ vocabulary is the export decision's job (classification + disposition
 |---|---|
 | `deny` from the evaluator | Exit 3 with the exact reason codes; nothing written |
 | `transform-required` | The closed transforms apply; the scanner verifies the candidate; clean candidates are written under `.lekalo/privacy/exports/` with the decision record under `.lekalo/privacy/decisions/export/` |
+| Decision-record naming | `{stem}-{digest12}.json` — the first 12 hex chars of the artifact digest make records injective across same-stem artifacts and safe on Windows device-name stems (fix round 2, C-F8) |
 | Residual leak over the candidate | The export refuses (exit 3, `leak.<class>` codes) — never silently ships |
 | Malformed envelope / unknown class / invalid attachment | Refusal before evaluation (exit 3 for policy refusals, exit 1 with the closed `{status:"invalid",reasonCodes:[…]}` object for malformed input) |
 | Unknown artifact kind | The evaluator denies `artifact-kind.unknown` |

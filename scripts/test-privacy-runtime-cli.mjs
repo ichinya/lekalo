@@ -21,6 +21,7 @@ const project = join(temp, "project");
 await mkdirDir(join(project, ".lekalo"), { recursive: true });
 
 const SECRET = "AKIAABCDEFGHIJKLMNOP";
+const writtenExports = [];
 let cases = 0;
 
 async function write(name, document) {
@@ -196,8 +197,10 @@ const consentPath = await write("consent.json", {
 
   const exportBytes = await readFile(join(project, ".lekalo/privacy/exports/summary.json"), "utf8");
   assert.ok(!exportBytes.includes("AKIA"), "the written export carries no secret");
+  const digestPrefix = summary.artifactRef.replace("artifact-sha256:", "").slice(0, 12);
+  writtenExports.push({ stem: "summary", digestPrefix });
   const recordBytes = await readFile(
-    join(project, ".lekalo/privacy/decisions/export/summary.json"),
+    join(project, ".lekalo/privacy/decisions/export", `summary-${digestPrefix}.json`),
     "utf8",
   );
   assert.ok(!recordBytes.includes("AKIA"), "the decision record carries no secret");
@@ -247,6 +250,10 @@ const consentPath = await write("consent.json", {
   assert.equal(run.status, 0, "the hygiene-class leak ships pseudonymized");
   assert.ok(summary.payload.includes("<redacted:url>"), summary.payload);
   assert.ok(!summary.payload.includes("https://"), summary.payload);
+  writtenExports.push({
+    stem: "leaky",
+    digestPrefix: summary.artifactRef.replace("artifact-sha256:", "").slice(0, 12),
+  });
   cases += 1;
 
   const secretPath = await writeSynthetic("secret-leak.json", {
@@ -289,6 +296,10 @@ const consentPath = await write("consent.json", {
   assert.equal(summary.decision.decision, "allow");
   assert.equal(summary.payload, "synthetic fixture text");
   assert.equal(summary.written, true);
+  writtenExports.push({
+    stem: "fixture",
+    digestPrefix: summary.artifactRef.replace("artifact-sha256:", "").slice(0, 12),
+  });
   cases += 1;
 }
 
@@ -365,7 +376,10 @@ const consentPath = await write("consent.json", {
 const exported = await readdir(join(project, ".lekalo/privacy/exports"));
 const recorded = await readdir(join(project, ".lekalo/privacy/decisions/export"));
 assert.deepEqual(exported.sort(), ["fixture.json", "leaky.json", "summary.json"]);
-assert.deepEqual(recorded.sort(), ["fixture.json", "leaky.json", "summary.json"]);
+const expectedRecords = writtenExports.map(
+  ({ stem, digestPrefix }) => `${stem}-${digestPrefix}.json`,
+);
+assert.deepEqual(recorded.sort(), expectedRecords.sort());
 
 await rm(temp, { recursive: true, force: true });
 console.log(JSON.stringify({ ok: true, cases, binary: "target/[debug|release]/lekalo" }));
