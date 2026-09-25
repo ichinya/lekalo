@@ -33,17 +33,29 @@ booleans), `repository` (a declared repository identity name for the
 scanner subject), `protectedTerms` (declared person names), and
 `confinement` (the #89 evidence document, see below).
 
-The class resolves in this order:
+The class resolves as follows (fix round 2, C-F2):
 
-1. the envelope `class` member (unknown labels refuse);
-2. the payload default of the project classification attachment
-   (`classification.json`, parsed under the #87 contract, with the
-   governing policy validated when present); the #87 kind is mapped
-   onto the #120 label on the restrictive side (`credential` →
+1. the envelope `class` member is parsed (unknown labels refuse);
+2. when the project classification attachment parses
+   (`classification.json`, under the #87 contract, with the governing
+   policy validated when present), its unclassified-payload default is
+   mapped onto the #120 label on the restrictive side (`credential` →
    `credential-secret`, `personal` → `personal-pii`, `health` →
-   `health-special-category`, `derived` → `internal`, and so on);
-3. neither — the export refuses with `privacy.class-missing` before
-   any evaluation runs.
+   `health-special-category`, `derived` → `internal`, and so on) and
+   **unioned into the effective set** — a claim below the declared
+   floor widens and never silently lowers (the #87 propagation
+   doctrine);
+3. no claim and no attachment — the export refuses with
+   `privacy.class-missing` before any evaluation runs.
+
+`synthetic: true` on the envelope is honored only when corroborated:
+the artifact must sit inside a project-local
+`tests/fixtures/<family>/` directory whose entry in the project's
+`tests/fixtures/fixture-provenance.json` declares
+`origin: "synthetic"`. Uncorroborated claims drop to the
+non-synthetic origin, so the evaluator's public-fixture evidence
+requirements apply. `derived` stays claimed (claiming derived adds
+requirements in the evaluator — self-limiting).
 
 Fail-closed: a missing or unknown class refuses before evaluation;
 an invalid classification attachment refuses; an incomplete envelope

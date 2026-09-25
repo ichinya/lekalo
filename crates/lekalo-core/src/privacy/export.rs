@@ -422,9 +422,13 @@ fn synthesize(
         .ok_or(ExportFailure::Malformed("privacy.payload-missing"))?;
     let payload_text = payload_text(payload_value);
 
-    // The class: envelope declaration first, then the classification
-    // attachment defaults; neither means refuse (fail closed), and an
-    // unknown label refuses.
+    // The class: the envelope claim plus the declared floor (fix
+    // round 2, C-F2). When the project classification attachment
+    // parses, its unclassified-payload default maps to a #120 label
+    // that is unioned into the effective set - a claim below the
+    // declared floor widens (never silently lowers, the #87
+    // propagation doctrine). An unknown label refuses; no claim and
+    // no attachment refuses (`privacy.class-missing`).
     let mut labels: Vec<DataSensitivity> = Vec::new();
     if let Some(declared) = envelope_object.get("class") {
         let declared = declared
@@ -440,10 +444,14 @@ fn synthesize(
                 labels.push(label);
             }
         }
-    } else if let Some(default_kind) = project_payload_default(project)? {
-        let label = sensitivity_of_kind(default_kind);
-        labels.push(label);
-    } else {
+    }
+    if let Some(default_kind) = project_payload_default(project)? {
+        let floor = sensitivity_of_kind(default_kind);
+        if !labels.contains(&floor) {
+            labels.push(floor);
+        }
+    }
+    if labels.is_empty() {
         return Err(ExportFailure::Denied(ExportDecisionOutput::deny(
             "privacy.class-missing",
         )));
@@ -482,11 +490,19 @@ fn synthesize(
 
     // Provenance: repository-backed destinations are coherent only
     // from the consumer repository; workspace destinations carry the
-    // envelope's declared origin booleans.
-    let synthetic = envelope_object
+    // envelope's declared origin booleans. A `synthetic: true` claim
+    // is honored only when corroborated (fix round 2, C-F2): the
+    // artifact must sit under a project-local `tests/fixtures/<family>/`
+    // whose fixture-provenance manifest declares the family
+    // `origin: "synthetic"`. Uncorroborated claims drop to the
+    // non-synthetic origin so the evaluator's public-fixture evidence
+    // requirements apply. `derived` stays claimed (claiming derived
+    // adds requirements - self-limiting).
+    let synthetic_claimed = envelope_object
         .get("synthetic")
         .and_then(Json::as_bool)
         .unwrap_or(false);
+    let synthetic = synthetic_claimed && synthetic_corroborated(project, artifact_path);
     let derived = envelope_object
         .get("derived")
         .and_then(Json::as_bool)
@@ -768,6 +784,57 @@ fn payload_text(value: &Json) -> String {
     }
 }
 
+/// Whether a `synthetic: true` envelope claim is corroborated (fix
+/// round 2, C-F2): the artifact must sit inside a project-local
+/// `tests/fixtures/<family>/` directory whose entry in the project's
+/// `tests/fixtures/fixture-provenance.json` declares
+/// `origin: "synthetic"`. Any doubt is uncorroborated.
+fn synthetic_corroborated(project: &Path, artifact_path: &Path) -> bool {
+    let (Ok(project_root), Ok(artifact)) = (
+        std::fs::canonicalize(project),
+        std::fs::canonicalize(artifact_path),
+    ) else {
+        return false;
+    };
+    let Ok(relative) = artifact.strip_prefix(&project_root) else {
+        return false;
+    };
+    let mut segments = relative.iter();
+    let is_expected = |segment: Option<&std::ffi::OsStr>, expected: &str| {
+        segment.is_some_and(|segment| segment == expected)
+    };
+    if !is_expected(segments.next(), "tests") || !is_expected(segments.next(), "fixtures") {
+        return false;
+    }
+    let Some(family) = segments.next() else {
+        return false;
+    };
+    if segments.next().is_none() {
+        // The artifact must sit inside the family directory.
+        return false;
+    }
+    let family = family.to_string_lossy().into_owned();
+    let manifest_path = project_root
+        .join("tests")
+        .join("fixtures")
+        .join("fixture-provenance.json");
+    let Ok(bytes) = std::fs::read(&manifest_path) else {
+        return false;
+    };
+    let Ok(manifest) = serde_json::from_slice::<Json>(&bytes) else {
+        return false;
+    };
+    manifest
+        .get("families")
+        .and_then(Json::as_array)
+        .is_some_and(|families| {
+            families.iter().any(|entry| {
+                entry.get("family").and_then(Json::as_str) == Some(family.as_str())
+                    && entry.get("origin").and_then(Json::as_str) == Some("synthetic")
+            })
+        })
+}
+
 /// The declared payload default of the project's classification
 /// attachment, when one is present. A present but invalid attachment
 /// refuses; an absent one is not an error.
@@ -839,6 +906,42 @@ mod tests {
     /// Write one envelope under a temporary project and return its path.
     fn write_artifact(project: &Path, name: &str, envelope: &Json) -> PathBuf {
         let path = project.join(name);
+        std::fs::write(&path, envelope.to_string()).expect("artifact writes");
+        path
+    }
+
+    /// Declare one synthetic fixture family in the temp project (the
+    /// project-local provenance manifest) and return its directory
+    /// (fix round 2, C-F2: `synthetic: true` is honored only when
+    /// corroborated by this manifest + placement).
+    fn synthetic_family(project: &Path, family: &str) -> PathBuf {
+        let dir = project.join("tests").join("fixtures").join(family);
+        std::fs::create_dir_all(&dir).expect("family dir");
+        let manifest = serde_json::json!({
+            "manifestId": "dev.lekalo.fixture-provenance",
+            "version": "0.1.0",
+            "families": [{ "family": family, "origin": "synthetic" }],
+        });
+        std::fs::write(
+            project
+                .join("tests")
+                .join("fixtures")
+                .join("fixture-provenance.json"),
+            manifest.to_string(),
+        )
+        .expect("manifest writes");
+        dir
+    }
+
+    /// Write one envelope into a corroborated synthetic family.
+    fn write_synthetic_artifact(
+        project: &Path,
+        family: &str,
+        name: &str,
+        envelope: &Json,
+    ) -> PathBuf {
+        let dir = synthetic_family(project, family);
+        let path = dir.join(name);
         std::fs::write(&path, envelope.to_string()).expect("artifact writes");
         path
     }
@@ -1059,8 +1162,9 @@ mod tests {
     #[test]
     fn allow_synthetic_fixture_publishes() {
         let project = tempfile::tempdir().expect("temp project");
-        let artifact = write_artifact(
+        let artifact = write_synthetic_artifact(
             project.path(),
+            "fixtures",
             "fixture.json",
             &serde_json::json!({
                 "artifactKind": "fixture",
@@ -1089,11 +1193,87 @@ mod tests {
     /// An allowed payload with a hygiene-class leak ships
     /// pseudonymized; a secret-class leak refuses: never silently
     /// ships.
+    /// The class floor (fix round 2, C-F2): a claim below the
+    /// classification attachment's unclassified-payload default
+    /// widens to the floor - `public` plus a `confidential` floor
+    /// publishes nothing (confidential denies publish).
+    #[test]
+    fn class_floor_unions_the_attachment_default() {
+        let project = tempfile::tempdir().expect("temp project");
+        let attachment = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/classification/valid/planner/classification.json");
+        std::fs::copy(&attachment, project.path().join("classification.json"))
+            .expect("attachment copies");
+        let artifact = write_artifact(
+            project.path(),
+            "summary.json",
+            &serde_json::json!({
+                "artifactKind": "generated.summary",
+                "payload": "summary text",
+                "class": ["public"],
+            }),
+        );
+        let outcome = run_export(
+            project.path(),
+            &artifact,
+            DestinationSpec::Publish,
+            Some(&authored_consent(
+                project.path(),
+                &artifact,
+                DestinationSpec::Publish,
+            )),
+            true,
+        );
+        match outcome {
+            Err(ExportFailure::Denied(output)) => {
+                assert_eq!(output.reason_codes(), ["sensitivity.confidential.denied"]);
+            }
+            other => panic!("expected the floor to widen the claim, got {other:?}"),
+        }
+    }
+
+    /// An uncorroborated `synthetic: true` claim drops to the
+    /// non-synthetic origin, so the evaluator's public-fixture
+    /// evidence requirements apply (fail closed).
+    #[test]
+    fn uncorroborated_synthetic_drops_to_non_synthetic() {
+        let project = tempfile::tempdir().expect("temp project");
+        // Placed at the project root: no tests/fixtures/<family>/ home
+        // and no project-local provenance manifest.
+        let artifact = write_artifact(
+            project.path(),
+            "fixture.json",
+            &serde_json::json!({
+                "artifactKind": "fixture",
+                "payload": "synthetic fixture text",
+                "class": ["public"],
+                "synthetic": true,
+            }),
+        );
+        let outcome = run_export(
+            project.path(),
+            &artifact,
+            DestinationSpec::Publish,
+            None,
+            true,
+        );
+        match outcome {
+            Err(ExportFailure::Denied(output)) => {
+                assert_eq!(
+                    output.reason_codes(),
+                    ["fixture.permission-license-consent-required"]
+                );
+            }
+            other => panic!("expected the corroboration deny, got {other:?}"),
+        }
+    }
+
     #[test]
     fn allow_payload_leaks_are_pseudonymized_or_refused() {
         let project = tempfile::tempdir().expect("temp project");
-        let artifact = write_artifact(
+        let artifact = write_synthetic_artifact(
             project.path(),
+            "fixtures",
             "fixture.json",
             &serde_json::json!({
                 "artifactKind": "fixture",
@@ -1115,8 +1295,9 @@ mod tests {
         assert!(!outcome.payload().contains("https://"));
         assert_eq!(outcome.residuals(), []);
 
-        let secret = write_artifact(
+        let secret = write_synthetic_artifact(
             project.path(),
+            "fixtures",
             "secret.json",
             &serde_json::json!({
                 "artifactKind": "fixture",
@@ -1155,8 +1336,9 @@ mod tests {
             "effective": {},
             "platform": "linux-x86_64",
         });
-        let artifact = write_artifact(
+        let artifact = write_synthetic_artifact(
             project.path(),
+            "fixtures",
             "fixture.json",
             &serde_json::json!({
                 "artifactKind": "fixture",
@@ -1180,8 +1362,9 @@ mod tests {
         assert_eq!(record["confinementDigest"], serde_json::json!(digest));
 
         // A malformed confinement member refuses fail-closed.
-        let malformed = write_artifact(
+        let malformed = write_synthetic_artifact(
             project.path(),
+            "fixtures",
             "broken.json",
             &serde_json::json!({
                 "artifactKind": "fixture",

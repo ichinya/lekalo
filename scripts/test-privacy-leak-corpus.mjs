@@ -35,6 +35,19 @@ assert.equal(corpus.origin, "synthetic", "the corpus is synthetic");
 assert.ok(Array.isArray(corpus.samples) && corpus.samples.length > 0, "samples");
 
 let cases = 0;
+// The project-local synthetic fixture family (fix round 2, C-F2):
+// corpus envelopes claim `synthetic: true`, which is honored only
+// under a declared family.
+const FAMILY = "leak-corpus";
+await mkdir(join(project, "tests", "fixtures", FAMILY), { recursive: true });
+await writeFile(
+  join(project, "tests", "fixtures", "fixture-provenance.json"),
+  JSON.stringify({
+    manifestId: "dev.lekalo.fixture-provenance",
+    version: "0.1.0",
+    families: [{ family: FAMILY, origin: "synthetic" }],
+  }),
+);
 for (const sample of corpus.samples) {
   const payloadPath = fileURLToPath(new URL(".." + "/tests/fixtures/privacy-leaks/" + sample.file, import.meta.url));
   const text = await readFile(payloadPath, "utf8");
@@ -55,7 +68,13 @@ for (const sample of corpus.samples) {
   }
 
   // 2. The export attempt refuses with the exact leak codes.
-  const artifactPath = join(project, sample.file.replace(/\.txt$/, ".json"));
+  const artifactPath = join(
+    project,
+    "tests",
+    "fixtures",
+    FAMILY,
+    sample.file.replace(/\.txt$/, ".json"),
+  );
   await writeFile(
     artifactPath,
     JSON.stringify({

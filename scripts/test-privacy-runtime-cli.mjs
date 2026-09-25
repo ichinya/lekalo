@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { mkdir as mkdirDir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative as pathRelative } from "node:path";
+import { dirname, join, relative as pathRelative } from "node:path";
 import { buildLekaloBinary, runLekalo } from "./privacy-runtime-helpers.mjs";
 
 const binary = buildLekaloBinary();
@@ -25,8 +25,27 @@ let cases = 0;
 
 async function write(name, document) {
   const path = join(project, name);
+  await mkdirDir(dirname(path), { recursive: true });
   await writeFile(path, typeof document === "string" ? document : JSON.stringify(document));
   return path;
+}
+
+// The project-local synthetic fixture family (fix round 2, C-F2): a
+// `synthetic: true` envelope claim is honored only when the artifact
+// sits under this declared family.
+const FAMILY = "runtime-fixtures";
+await mkdirDir(join(project, "tests", "fixtures", FAMILY), { recursive: true });
+await writeFile(
+  join(project, "tests", "fixtures", "fixture-provenance.json"),
+  JSON.stringify({
+    manifestId: "dev.lekalo.fixture-provenance",
+    version: "0.1.0",
+    families: [{ family: FAMILY, origin: "synthetic" }],
+  }),
+);
+
+async function writeSynthetic(name, document) {
+  return write(join("tests", "fixtures", FAMILY, name), document);
 }
 
 function parseOrThrow(run) {
@@ -213,7 +232,7 @@ const consentPath = await write("consent.json", {
 // ---------------------------------------------------------------------------
 
 {
-  const leakyPath = await write("leaky.json", {
+  const leakyPath = await writeSynthetic("leaky.json", {
     artifactKind: "fixture",
     payload: "see https://private.example/acme",
     class: ["public"],
@@ -230,7 +249,7 @@ const consentPath = await write("consent.json", {
   assert.ok(!summary.payload.includes("https://"), summary.payload);
   cases += 1;
 
-  const secretPath = await write("secret-leak.json", {
+  const secretPath = await writeSynthetic("secret-leak.json", {
     artifactKind: "fixture",
     payload: `token ghp_${"abcdefghijklmnopqrstuvwxyz0123456789"}abcd`,
     class: ["public"],
@@ -254,7 +273,7 @@ const consentPath = await write("consent.json", {
 // ---------------------------------------------------------------------------
 
 {
-  const fixturePath = await write("fixture.json", {
+  const fixturePath = await writeSynthetic("fixture.json", {
     artifactKind: "fixture",
     payload: "synthetic fixture text",
     class: ["public"],
