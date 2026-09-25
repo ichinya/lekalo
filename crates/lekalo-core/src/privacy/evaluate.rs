@@ -1632,6 +1632,15 @@ pub fn evaluate_decision(input: &Json, context: &TrustedContext) -> DecisionEval
         }
     }
 
+    // The rule-row lookups below mirror the reference evaluator's
+    // `find` semantics: a vocabulary member without a rule row would
+    // make the JS throw (exit 1) while this port denies
+    // `disposition.*.operation-denied` / `destination.profile-mismatch`
+    // (exit 3). The asymmetry is unreachable under the pinned policy
+    // (5/5 operation profiles, 6/6 destination profiles, 6/6
+    // disposition rules, 9/9 sensitivity rules, all custody-pinned) -
+    // a policy change would break custody digests first. Documented
+    // in review-119-cline.md F7; no action (fix round 2, C-F7).
     let operation_entry = context
         .operation_profiles()
         .map(Vec::as_slice)
