@@ -73,6 +73,20 @@ const summaryPath = await write("summary.json", {
   payload: `summary containing ${SECRET} inside`,
   class: ["public"],
 });
+
+// The consent fixture is authored through the `lekalo privacy subject`
+// verb (fix round 2, C-F1): the binding comes from the canonical
+// subject projection of the synthesized input; the runtime never mints
+// or repairs it.
+const subjectRun = runLekaloInTemp([
+  "privacy", "subject",
+  "--artifact", relative(summaryPath),
+  "--destination", "publish",
+  "--project", "project",
+]);
+const subject = parseOrThrow(subjectRun);
+assert.equal(subjectRun.status, 0, `subject exits 0: ${subjectRun.stderr}`);
+assert.match(subject.subjectDigest, /^subject-sha256:[0-9a-f]{64}$/);
 const consentPath = await write("consent.json", {
   contractId: "dev.lekalo.privacy-authorizing-evidence",
   version: "0.2.16",
@@ -83,7 +97,53 @@ const consentPath = await write("consent.json", {
   evidenceId: `evidence-sha256:${"9".repeat(64)}`,
   verificationState: "verified",
   freshnessState: "current",
+  binding: {
+    subjectProfileRef: subject.subjectProfileRef,
+    subjectDigest: subject.subjectDigest,
+  },
 });
+
+// A binding-free consent fails input-shape validation (exit 1); a
+// mismatched binding denies `evidence.binding-mismatch` (exit 3). The
+// runtime never repairs either.
+{
+  const bindingFree = await write("consent-binding-free.json", {
+    ...JSON.parse(await readFile(consentPath, "utf8")),
+  });
+  const record = JSON.parse(await readFile(bindingFree, "utf8"));
+  delete record.binding;
+  await writeFile(bindingFree, JSON.stringify(record));
+  const run = runLekaloInTemp([
+    "privacy", "export", relative(summaryPath),
+    "--destination", "publish",
+    "--consent", relative(bindingFree),
+    "--dry-run",
+    "--project", "project",
+  ]);
+  assert.equal(run.status, 1, `binding-free consent exits 1: ${run.stdout}`);
+  assert.ok(run.stderr.includes("privacy.input-malformed"), run.stderr);
+  cases += 1;
+
+  const mismatchedPath = await write("consent-mismatched.json", {
+    ...record,
+    binding: {
+      subjectProfileRef: subject.subjectProfileRef,
+      subjectDigest: `subject-sha256:${"f".repeat(64)}`,
+    },
+  });
+  const mismatchRun = runLekaloInTemp([
+    "privacy", "export", relative(summaryPath),
+    "--destination", "publish",
+    "--consent", relative(mismatchedPath),
+    "--dry-run",
+    "--project", "project",
+  ]);
+  const denied = parseOrThrow(mismatchRun);
+  assert.equal(mismatchRun.status, 3, "the binding mismatch denies");
+  assert.equal(denied.decision, "deny");
+  assert.equal(denied.reasonCodes[0], "evidence.binding-mismatch");
+  cases += 1;
+}
 
 {
   const run = runLekaloInTemp([

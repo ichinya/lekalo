@@ -356,15 +356,29 @@ pub fn sensitivity_of_kind(kind: crate::classification::types::DataKind) -> Data
 /// `.lekalo/privacy/`: the candidate payload under `exports/` and the
 /// decision record under `decisions/export/`.
 #[allow(clippy::result_large_err)]
-pub fn run_export(
+/// The synthesized decision input plus the payload-side context the
+/// export pipeline continues from.
+struct Synthesis {
+    wire: Json,
+    payload_text: String,
+    labels: Vec<DataSensitivity>,
+    artifact_kind: String,
+    artifact_ref: String,
+    file_name: String,
+    repository_name: Option<String>,
+    protected_terms: Vec<String>,
+    confinement_digest: Option<String>,
+}
+
+/// Synthesize the exact wire decision input for one artifact and
+/// destination: everything from the envelope read up to evaluation.
+#[allow(clippy::result_large_err)]
+fn synthesize(
+    context: &TrustedContext,
     project: &Path,
     artifact_path: &Path,
     destination: DestinationSpec,
-    consent: Option<&Json>,
-    dry_run: bool,
-) -> Result<ExportOutcome, ExportFailure> {
-    let context = TrustedContext::embedded()
-        .map_err(|_| ExportFailure::Malformed("privacy.custody-failure"))?;
+) -> Result<Synthesis, ExportFailure> {
     let artifact_bytes = std::fs::read(artifact_path)
         .map_err(|_| ExportFailure::Malformed("privacy.artifact-unreadable"))?;
     let envelope: Json = serde_json::from_slice(&artifact_bytes)
@@ -536,36 +550,8 @@ pub fn run_export(
         Vec::new(),
         None,
     );
-    let mut wire = serde_json::to_value(&decision_input)
+    let wire = serde_json::to_value(&decision_input)
         .map_err(|_| ExportFailure::Malformed("privacy.envelope-invalid"))?;
-
-    // Bind the consent evidence to the exact subject digest after the
-    // input exists, then splice it into the wire input.
-    if let Some(record) = consent {
-        let subject_digest =
-            authorization_subject_digest(&wire, context.authorization_subject_profile());
-        let mut bound = record.clone();
-        if bound.get("binding").is_none() {
-            bound["binding"] = serde_json::json!({});
-        }
-        bound["binding"]["subjectProfileRef"] = profile_ref_value();
-        bound["binding"]["subjectDigest"] = Json::String(subject_digest);
-        wire["provenance"]["exportTransferConsentRef"] = bound;
-    }
-
-    let evaluated = evaluate_decision(&wire, context);
-    if evaluated.output.decision() == super::output::ExportDecision::Deny {
-        return match evaluated.malformed {
-            true => Err(ExportFailure::Malformed("privacy.input-malformed")),
-            false => Err(ExportFailure::Denied(evaluated.output)),
-        };
-    }
-
-    // The redaction pipeline: the required transforms, the declared
-    // subject, and the verification pass. A payload that still leaks
-    // refuses the export. The subject inputs (declared repository
-    // identity and protected terms) come from the envelope; they are
-    // matching inputs only and never enter any output.
     let repository_name = envelope_object
         .get("repository")
         .and_then(Json::as_str)
@@ -583,16 +569,74 @@ pub fn run_export(
                 .collect()
         })
         .unwrap_or_default();
+    Ok(Synthesis {
+        wire,
+        payload_text,
+        labels,
+        artifact_kind: artifact_kind.to_owned(),
+        artifact_ref,
+        file_name: path_value.clone(),
+        confinement_digest,
+        repository_name,
+        protected_terms,
+    })
+}
+
+/// Run the export pipeline over one artifact document. `dry_run`
+/// computes the full plan and writes nothing. Writes go only under
+/// `.lekalo/privacy/`: the candidate payload under `exports/` and the
+/// decision record under `decisions/export/`.
+#[allow(clippy::result_large_err)]
+pub fn run_export(
+    project: &Path,
+    artifact_path: &Path,
+    destination: DestinationSpec,
+    consent: Option<&Json>,
+    dry_run: bool,
+) -> Result<ExportOutcome, ExportFailure> {
+    let context = TrustedContext::embedded()
+        .map_err(|_| ExportFailure::Malformed("privacy.custody-failure"))?;
+    let synthesis = synthesize(context, project, artifact_path, destination)?;
+    // The caller-supplied consent record goes into the wire verbatim
+    // (fix round 2, C-F1): the runtime never mints, adds, or corrects
+    // any evidence member, and never computes a binding on the
+    // caller's behalf. `binding` is a required evidence member: an
+    // absent binding fails input-shape validation (exit 1); a declared
+    // binding that mismatches the computed subject digest denies
+    // `evidence.binding-mismatch` (exit 3). The evaluator owns the
+    // check. Declared evidence proves shape, coherence, and subject
+    // binding only; issuance and authenticity custody is the
+    // evidence-store obligation (#121). Author evidence with
+    // `lekalo privacy subject`.
+    let mut wire = synthesis.wire;
+    if let Some(record) = consent {
+        wire["provenance"]["exportTransferConsentRef"] = record.clone();
+    }
+
+    let evaluated = evaluate_decision(&wire, context);
+    if evaluated.output.decision() == super::output::ExportDecision::Deny {
+        return match evaluated.malformed {
+            true => Err(ExportFailure::Malformed("privacy.input-malformed")),
+            false => Err(ExportFailure::Denied(evaluated.output)),
+        };
+    }
+
+    // The redaction pipeline: the required transforms, the declared
+    // subject, and the verification pass. A payload that still leaks
+    // refuses the export. The subject inputs (declared repository
+    // identity and protected terms) come from the envelope; they are
+    // matching inputs only and never enter any output.
     let subject = RedactionSubject {
-        repository: repository_name
+        repository: synthesis
+            .repository_name
             .as_deref()
             .map(|name| (name, RepositoryRole::ConsumerRepository)),
-        protected_terms: &protected_terms,
+        protected_terms: &synthesis.protected_terms,
     };
     let redacted = redact(&RedactionRequest {
-        payload: &payload_text,
+        payload: &synthesis.payload_text,
         transforms: &required_transforms(&evaluated.output),
-        labels: &labels,
+        labels: &synthesis.labels,
         subject,
     });
     let residuals = redacted.residuals().to_vec();
@@ -607,7 +651,7 @@ pub fn run_export(
         });
     }
     let payload_digest = format!("sha256:{}", sha256_hex(redacted.payload().as_bytes()));
-    let name = path_value;
+    let name = synthesis.file_name;
     let stem = std::path::Path::new(&name)
         .file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
@@ -616,8 +660,8 @@ pub fn run_export(
     let decision_path = format!(".lekalo/privacy/decisions/export/{stem}.json");
     let mut outcome = ExportOutcome {
         decision: evaluated.output,
-        artifact_kind: artifact_kind.to_owned(),
-        artifact_ref,
+        artifact_kind: synthesis.artifact_kind,
+        artifact_ref: synthesis.artifact_ref,
         destination,
         payload: redacted.payload().to_owned(),
         payload_digest,
@@ -626,7 +670,7 @@ pub fn run_export(
         residuals,
         export_path,
         decision_path,
-        confinement_digest,
+        confinement_digest: synthesis.confinement_digest,
         written: false,
     };
     if !dry_run {
@@ -636,6 +680,27 @@ pub fn run_export(
         outcome.written = true;
     }
     Ok(outcome)
+}
+
+/// The canonical subject projection identity of the synthesized
+/// decision input (fix round 2, C-F1): the `{subjectDigest,
+/// subjectProfileRef}` pair an operator needs to author authorizing
+/// evidence for the same artifact+destination. Metadata-only; the
+/// evidence positions are excluded from the projection, so authoring
+/// never needs a fixpoint. The synthesis refusals apply verbatim
+/// (malformed envelope, class missing/unknown, invalid attachment).
+#[allow(clippy::result_large_err)]
+pub fn subject_of(
+    project: &Path,
+    artifact_path: &Path,
+    destination: DestinationSpec,
+) -> Result<(String, Json), ExportFailure> {
+    let context = TrustedContext::embedded()
+        .map_err(|_| ExportFailure::Malformed("privacy.custody-failure"))?;
+    let synthesis = synthesize(context, project, artifact_path, destination)?;
+    let digest =
+        authorization_subject_digest(&synthesis.wire, context.authorization_subject_profile());
+    Ok((digest, profile_ref_value()))
 }
 
 /// Show the redaction diff contract of one payload document (issue
@@ -900,8 +965,13 @@ mod tests {
         ));
     }
 
-    /// A consent record for the export-transfer position.
-    fn consent_record() -> Json {
+    /// A consent record for the export-transfer position, authored
+    /// against the synthesized subject exactly like the CLI verb
+    /// prescribes (fix round 2, C-F1): the binding is declared by the
+    /// author, never minted by the runtime.
+    fn authored_consent(project: &Path, artifact: &Path, destination: DestinationSpec) -> Json {
+        let (subject_digest, subject_profile_ref) =
+            subject_of(project, artifact, destination).expect("subject of the synthesized input");
         serde_json::json!({
             "contractId": "dev.lekalo.privacy-authorizing-evidence",
             "version": "0.2.16",
@@ -912,6 +982,10 @@ mod tests {
             "evidenceId": format!("evidence-sha256:{}", "9".repeat(64)),
             "verificationState": "verified",
             "freshnessState": "current",
+            "binding": {
+                "subjectProfileRef": subject_profile_ref,
+                "subjectDigest": subject_digest,
+            },
         })
     }
 
@@ -934,7 +1008,11 @@ mod tests {
             project.path(),
             &artifact,
             DestinationSpec::Publish,
-            Some(&consent_record()),
+            Some(&authored_consent(
+                project.path(),
+                &artifact,
+                DestinationSpec::Publish,
+            )),
             true,
         )
         .expect("transform-required publish plans");
@@ -952,7 +1030,11 @@ mod tests {
             project.path(),
             &artifact,
             DestinationSpec::Publish,
-            Some(&consent_record()),
+            Some(&authored_consent(
+                project.path(),
+                &artifact,
+                DestinationSpec::Publish,
+            )),
             false,
         )
         .expect("transform-required publish applies");
@@ -1122,6 +1204,68 @@ mod tests {
         ));
     }
 
+    /// Consent evidence is verified, never minted (fix round 2,
+    /// C-F1): a record without a binding fails input-shape validation;
+    /// a declared binding that mismatches the subject denies with the
+    /// exact evaluator code. The runtime never repairs either.
+    #[test]
+    fn consent_is_verified_never_minted() {
+        let project = tempfile::tempdir().expect("temp project");
+        let artifact = write_artifact(
+            project.path(),
+            "summary.json",
+            &serde_json::json!({
+                "artifactKind": "generated.summary",
+                "payload": "summary text",
+                "class": ["public"],
+            }),
+        );
+        let destination = DestinationSpec::TransferTenant;
+
+        // Binding-free record: input-shape validation, not a mint.
+        let mut binding_free = authored_consent(project.path(), &artifact, destination);
+        binding_free.as_object_mut().unwrap().remove("binding");
+        let outcome = run_export(
+            project.path(),
+            &artifact,
+            destination,
+            Some(&binding_free),
+            true,
+        );
+        assert!(matches!(
+            outcome,
+            Err(ExportFailure::Malformed("privacy.input-malformed"))
+        ));
+
+        // Mismatched binding: the evaluator's binding check denies.
+        let mut mismatched = authored_consent(project.path(), &artifact, destination);
+        mismatched["binding"]["subjectDigest"] =
+            serde_json::json!(format!("subject-sha256:{}", "f".repeat(64)));
+        let outcome = run_export(
+            project.path(),
+            &artifact,
+            destination,
+            Some(&mismatched),
+            true,
+        );
+        match outcome {
+            Err(ExportFailure::Denied(output)) => {
+                assert_eq!(output.reason_codes(), ["evidence.binding-mismatch"]);
+            }
+            other => panic!("expected the binding deny, got {other:?}"),
+        }
+
+        // The authored record passes.
+        let outcome = run_export(
+            project.path(),
+            &artifact,
+            destination,
+            Some(&authored_consent(project.path(), &artifact, destination)),
+            true,
+        );
+        assert!(outcome.is_ok());
+    }
+
     /// A shareable summary transferred without consent evidence
     /// denies with the exact consent reason.
     #[test]
@@ -1194,7 +1338,11 @@ mod tests {
             project.path(),
             &artifact,
             DestinationSpec::Publish,
-            Some(&consent_record()),
+            Some(&authored_consent(
+                project.path(),
+                &artifact,
+                DestinationSpec::Publish,
+            )),
             true,
         )
         .expect("first run");
@@ -1202,7 +1350,11 @@ mod tests {
             project.path(),
             &artifact,
             DestinationSpec::Publish,
-            Some(&consent_record()),
+            Some(&authored_consent(
+                project.path(),
+                &artifact,
+                DestinationSpec::Publish,
+            )),
             true,
         )
         .expect("second run");

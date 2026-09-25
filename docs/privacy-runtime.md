@@ -60,10 +60,28 @@ freshness, and containment checks remain the #89 adapter obligation
 and are not claimed here.
 
 Optional authorizing evidence is supplied with `--consent FILE` (the
-export-transfer-consent position). The runtime binds the record to
-the exact current subject digest; every other member must already be
-declared correctly or the evaluator denies (identity reuse,
-unverified, stale, expired, outcome mismatch, binding mismatch).
+export-transfer-consent position). The record goes into the decision
+input **verbatim** — the runtime never mints, adds, or corrects any
+evidence member, and never computes a binding on the caller's behalf
+(fix round 2, C-F1). `binding` is a required evidence member: an
+absent binding fails input-shape validation (exit 1); a declared
+binding that mismatches the computed subject digest denies
+`evidence.binding-mismatch` (exit 3). The evaluator owns the check
+(identity reuse, unverified, stale, expired, outcome mismatch,
+binding mismatch). Declared evidence proves shape, coherence, and
+subject binding only; issuance and authenticity custody is the
+evidence-store obligation (#121).
+
+Author evidence against the canonical subject with the `lekalo
+privacy subject` verb:
+
+```sh
+lekalo privacy subject --artifact artifact.json --destination transfer-tenant [--project DIR]
+```
+
+It prints `{subjectDigest, subjectProfileRef}` of the synthesized
+decision input — metadata-only; the evidence positions are excluded
+from the subject projection, so authoring never needs a fixpoint.
 
 ## Transform vocabulary
 

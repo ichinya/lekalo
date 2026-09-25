@@ -2143,6 +2143,11 @@ fn runtime() -> u8 {
                         consent.as_deref(),
                         &project,
                     ),
+                    PrivacyCommands::Subject {
+                        artifact,
+                        destination,
+                        project,
+                    } => run_privacy_subject(&artifact, &destination, &project),
                     PrivacyCommands::Redact {
                         payload,
                         repository,
@@ -9454,6 +9459,24 @@ enum PrivacyCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
+    /// Print the canonical `{subjectDigest, subjectProfileRef}` of
+    /// the synthesized decision input for one artifact + destination
+    /// (issue #119, fix round 2, C-F1): the pair an operator needs to
+    /// author authorizing evidence. Metadata-only; the evidence
+    /// positions are excluded from the projection, so authoring never
+    /// needs a fixpoint. Exit contract like `export`'s pre-evaluation
+    /// failures.
+    Subject {
+        /// The artifact envelope document path.
+        #[arg(long, value_name = "FILE")]
+        artifact: String,
+        /// The closed destination spec (see `export`).
+        #[arg(long, value_name = "SPEC")]
+        destination: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
     /// Show the redaction diff contract of one payload document
     /// (issue #119): the closed transforms, the leak findings, and
     /// the redacted payload on stdout. Read-only: writes nothing.
@@ -9931,6 +9954,48 @@ fn run_privacy_export(
                 "residualLeaks": leaks,
             });
             let _ = write_stdout(&serde_json::to_string_pretty(&refusal).unwrap_or_default());
+            3
+        }
+        Err(lekalo_core::privacy::export::ExportFailure::Malformed(code)) => {
+            let _ = write_stderr(&cli_invalid_json(code));
+            OUTPUT_FAILURE
+        }
+    }
+}
+
+/// `lekalo privacy subject`: the canonical subject projection identity
+/// of the synthesized decision input, for authorizing-evidence
+/// authoring (fix round 2, C-F1). Metadata-only; exit contract like
+/// `export`'s pre-evaluation failures.
+fn run_privacy_subject(artifact: &str, destination: &str, project: &Option<String>) -> u8 {
+    let project_dir = match project_root_for(project) {
+        Err(result) => return emit(result, false),
+        Ok(dir) => dir,
+    };
+    let Some(spec) = lekalo_core::privacy::export::DestinationSpec::parse(destination) else {
+        let _ = write_stderr(&cli_invalid_json("privacy.destination-unknown"));
+        return OUTPUT_FAILURE;
+    };
+    match lekalo_core::privacy::export::subject_of(
+        &project_dir,
+        std::path::Path::new(artifact),
+        spec,
+    ) {
+        Ok((subject_digest, subject_profile_ref)) => {
+            let report = serde_json::json!({
+                "status": "ready",
+                "subjectDigest": subject_digest,
+                "subjectProfileRef": subject_profile_ref,
+            });
+            let _ = write_stdout(&serde_json::to_string_pretty(&report).unwrap_or_default());
+            0
+        }
+        Err(lekalo_core::privacy::export::ExportFailure::Denied(output)) => {
+            let _ = write_stdout(&serde_json::to_string_pretty(&output).unwrap_or_default());
+            3
+        }
+        Err(lekalo_core::privacy::export::ExportFailure::ResidualLeaks { output, .. }) => {
+            let _ = write_stdout(&serde_json::to_string_pretty(&output).unwrap_or_default());
             3
         }
         Err(lekalo_core::privacy::export::ExportFailure::Malformed(code)) => {
