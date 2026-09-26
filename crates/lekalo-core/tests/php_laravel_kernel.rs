@@ -105,13 +105,12 @@ fn the_php_kernel_describes_itself_through_the_production_client() {
         .describe(&command, &sandbox.dir)
         .expect("the PHP kernel handshake must succeed");
     assert_eq!(described.negotiated_version, "0.3.2");
-    assert_eq!(described.capabilities.adapter.id, "lekalo-target-php-laravel");
+    assert_eq!(
+        described.capabilities.adapter.id,
+        "lekalo-target-php-laravel"
+    );
     assert_eq!(described.capabilities.adapter.version, "0.1.0");
-    assert!(described
-        .capabilities
-        .adapter
-        .digest
-        .starts_with("sha256:"));
+    assert!(described.capabilities.adapter.digest.starts_with("sha256:"));
     assert_eq!(
         described.capabilities.protocol_versions,
         vec!["0.3.2".to_owned()]
@@ -123,8 +122,14 @@ fn the_php_kernel_describes_itself_through_the_production_client() {
     // The full v1 surface is declared: the strict conformance battery
     // requires exactly that (issue #31), and the adapter passes it.
     assert_eq!(described.capabilities.operations.len(), 9);
-    assert_eq!(described.capabilities.ir_versions, vec!["0.2.16".to_owned()]);
-    assert_eq!(described.capabilities.targets, vec!["php-laravel".to_owned()]);
+    assert_eq!(
+        described.capabilities.ir_versions,
+        vec!["0.2.16".to_owned()]
+    );
+    assert_eq!(
+        described.capabilities.targets,
+        vec!["php-laravel".to_owned()]
+    );
 }
 
 #[test]
@@ -178,9 +183,10 @@ fn the_php_generation_seam_plans_applies_and_verifies() {
     let planned = dry.response.writes.clone().expect("dry run plans writes");
     assert_eq!(planned.len(), 1);
     assert_eq!(planned[0].action, WriteAction::Create);
-    assert!(planned[0].sha256.as_deref().is_some_and(
-        lekalo_core::target_protocol::wire::is_sha256_digest,
-    ));
+    assert!(planned[0]
+        .sha256
+        .as_deref()
+        .is_some_and(lekalo_core::target_protocol::wire::is_sha256_digest,));
     let plan_id = dry.plan_id.expect("planning binds a plan id");
 
     // The apply publishes exactly the planned bytes.
@@ -202,9 +208,19 @@ fn the_php_generation_seam_plans_applies_and_verifies() {
             None,
         )
         .expect("apply must succeed");
-    let applied = apply.response.writes.clone().expect("apply declares writes");
+    let applied = apply
+        .response
+        .writes
+        .clone()
+        .expect("apply declares writes");
     assert_eq!(planned, applied);
-    let file = sandbox.dir.join(".lekalo").join("generated").join("php-laravel").join("php-laravel").join("kernel.php");
+    let file = sandbox
+        .dir
+        .join(".lekalo")
+        .join("generated")
+        .join("php-laravel")
+        .join("php-laravel")
+        .join("kernel.php");
     let bytes = std::fs::read(&file).expect("applied artifact exists");
     assert_eq!(
         format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)),
@@ -284,7 +300,10 @@ fn the_php_kernel_refuses_undeclared_input_without_a_fake_envelope() {
     );
     match outcome {
         Err(TargetFailure::OperationFailed { class, .. }) => {
-            assert_eq!(class, lekalo_core::target_protocol::wire::ErrorClass::Unsupported);
+            assert_eq!(
+                class,
+                lekalo_core::target_protocol::wire::ErrorClass::Unsupported
+            );
         }
         other => panic!("plan-native must refuse unsupported in-envelope, got {other:?}"),
     }
@@ -320,27 +339,50 @@ fn a_cancelled_php_exchange_is_classified_and_recoverable() {
     assert!(matches!(cancelled, Ok(_) | Err(TargetFailure::Cancelled)));
     // A fresh handshake must recover and bind the same identity.
     let described = client.describe(&command, &sandbox.dir).unwrap();
-    assert_eq!(described.capabilities.adapter.id, "lekalo-target-php-laravel");
+    assert_eq!(
+        described.capabilities.adapter.id,
+        "lekalo-target-php-laravel"
+    );
 }
 
+// A debug helper kept disabled: building the exact client envelope for
+// plan-native by hand. Not compiled as a test.
+#[allow(dead_code)]
 #[test]
+#[ignore = "debug helper"]
 fn debug_dump_plan_native_request() {
     use lekalo_core::target_protocol::wire;
-    let limits = lekalo_core::target_protocol::wire::Limits { timeout_ms: Some(30000), max_output_bytes: Some(8388608) };
+    let limits = lekalo_core::target_protocol::wire::Limits {
+        timeout_ms: Some(30000),
+        max_output_bytes: Some(8388608),
+    };
     let mut envelope = lekalo_core::target_protocol::wire::RequestEnvelope {
         protocol: "lekalo.target/v1".into(),
         protocol_version: "0.3.2".into(),
         operation: Operation::PlanNative,
         request_id: "req-x".into(),
         project_root: ".".into(),
-        ir_path: None, target: None, profile: None, profile_digest: None,
-        profile_capabilities: None, dry_run: None, limits: Some(limits),
+        ir_path: None,
+        target: None,
+        profile: None,
+        profile_digest: None,
+        profile_capabilities: None,
+        dry_run: None,
+        limits: Some(limits),
         plan_id: None,
         native_request: Some(wire::NativeRequest {
             changes: Default::default(),
-            scan_ref: wire::NativeContentRef { digest: format!("sha256:{}", "1".repeat(64)), revision: None, adapter: None },
+            scan_ref: wire::NativeContentRef {
+                digest: format!("sha256:{}", "1".repeat(64)),
+                revision: None,
+                adapter: None,
+            },
             observed_ref: None,
-            execution_policy_ref: wire::NativeContentRef { digest: format!("sha256:{}", "2".repeat(64)), revision: None, adapter: None },
+            execution_policy_ref: wire::NativeContentRef {
+                digest: format!("sha256:{}", "2".repeat(64)),
+                revision: None,
+                adapter: None,
+            },
             input_manifest_digest: format!("sha256:{}", "3".repeat(64)),
             tool_catalog_digest: format!("sha256:{}", "4".repeat(64)),
             capability_snapshot_digest: format!("sha256:{}", "5".repeat(64)),

@@ -237,7 +237,7 @@ fn portability_golden_names_php_target_limitations_against_node() {
     let names = |axis: &str| {
         deltas
             .iter()
-            .filter(|(entry_axis, _, _)| entry_axis == &axis)
+            .filter(|(entry_axis, _, _)| *entry_axis == axis)
             .map(|(_, id, delta)| format!("{id}: {delta}"))
             .collect::<Vec<_>>()
     };
@@ -278,7 +278,10 @@ fn portability_golden_names_php_target_limitations_against_node() {
     assert!(!testing.is_empty(), "the testing axis changes are visible");
 
     // Determinism: two runs produce byte-identical canonical bytes.
-    let again = portability(&resolve_fixture("valid/node.json"), &resolve_fixture("valid/laravel.json"));
+    let again = portability(
+        &resolve_fixture("valid/node.json"),
+        &resolve_fixture("valid/laravel.json"),
+    );
     assert_eq!(
         serde_json::to_string(&report).expect("serializes"),
         serde_json::to_string(&again).expect("serializes")
