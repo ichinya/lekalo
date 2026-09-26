@@ -1,0 +1,117 @@
+{
+  "schema_version": "lekalo/native-gate-policy/v0.3.2",
+  "kind": "native-gate-policy",
+  "policy_digest": "sha256:ba1eb9bf6e1df8a4bf76e66873c547468b6d4c886628911861c36255826340e2",
+  "identity": {
+    "id": "fixture-native-policy",
+    "version": "0.3.2"
+  },
+  "repository_role": "consumer-repository",
+  "trust": {
+    "mode": "public-fixture",
+    "fixture_ref": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "provenance_ref": "sha256:a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+  },
+  "authority_ref": {
+    "contractId": "dev.lekalo.authority-matrix",
+    "version": "0.3.2",
+    "digest": "sha256:cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4"
+  },
+  "policy_ref": {
+    "policyId": "dev.lekalo.privacy-export-policy",
+    "version": "0.3.2",
+    "digest": "sha256:5643547b96e1ca9f422e91e699c8d04e676e6eb820b4ef21a88860c74133c3b9"
+  },
+  "classification_ref": {
+    "contractId": "dev.lekalo.privacy-classification-decision",
+    "version": "0.2.16",
+    "digest": "sha256:78de535f02b6a8065579b43798ed650849aca0b7edf1aa08b2e0219fc744dde6"
+  },
+  "allowed_gate_kinds": [
+    "build",
+    "typecheck",
+    "lint",
+    "test"
+  ],
+  "confirmations": [
+    {
+      "package_id": "packages/tasks=@taskhub/tasks",
+      "gate": "build",
+      "script_name": "gate:build",
+      "manifest_digest": "sha256:aeb72d1e12cee86303d9ea1879995b6c15254629a379902e4c72953c27a2c379",
+      "script_digest": "sha256:c6d1d6834c6e4a42781ffb6e5f41fad8a9f9ce38d97d2582015b78c011fb6ad7",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "build"
+      ],
+      "tool_ref": {
+        "id": "fixture-node",
+        "artifact_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "entry_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "version": "unknown"
+      },
+      "rule_version": "0.3.2",
+      "rule_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "package_id": "packages/sync=@taskhub/sync",
+      "gate": "test",
+      "script_name": "gate:test",
+      "manifest_digest": "sha256:1495bb788e3a922ab7ff93fad4dbefed8673a782e34bd38d7e64d9417cd65318",
+      "script_digest": "sha256:cfad049df69aeb73066311f382c7f1a25167b13d1bbf17ec05408b03330d773d",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "test"
+      ],
+      "tool_ref": {
+        "id": "fixture-node",
+        "artifact_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "entry_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "version": "unknown"
+      },
+      "rule_version": "0.3.2",
+      "rule_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "package_id": "apps/api=@taskhub/api",
+      "gate": "typecheck",
+      "script_name": "gate:typecheck",
+      "manifest_digest": "sha256:43fa0fbb3ddd8c0a80c061709c22c06ac74693287fc261af9c0c5c0fccdc6d4c",
+      "script_digest": "sha256:7b7d5c6042f2913345dfa260286398b9f8e09129bcff81327cfdda3602977fb5",
+      "argv": [
+        "node",
+        "gates/verify.mjs",
+        "--mode",
+        "typecheck"
+      ],
+      "tool_ref": {
+        "id": "fixture-node",
+        "artifact_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "entry_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "version": "unknown"
+      },
+      "rule_version": "0.3.2",
+      "rule_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  ],
+  "env_recipe": {
+    "allowed_names": [
+      "FIXTURE_MODE"
+    ],
+    "bindings": []
+  },
+  "limits": {
+    "timeout_ms_per_command": 10000,
+    "timeout_ms_per_run": 60000,
+    "max_stdout_bytes": 65536,
+    "max_stderr_bytes": 65536,
+    "max_output_bytes_per_run": 1048576
+  },
+  "write_policy": {
+    "mode": "stage-only"
+  }
+}
