@@ -414,6 +414,40 @@ fn the_taskhub_pilot_runs_end_to_end_without_touching_the_consumer() {
         "integration links missing: {integration_links:?}"
     );
 
+    // Criterion: inferred relations are marked with confidence. Every
+    // recorded dependent row carries the closed-word confidence member,
+    // and a symbol the flow deliberately leaves inferred (the sync
+    // worker's deliver step) keeps its adapter-proposed marking on the
+    // card - provenance origin `observed`, the scan's mapping
+    // confidence, never a fabricated number or a silent default.
+    let confidence_words = ["exact", "high", "medium", "low", "unknown"];
+    for impact in [task_impact, contract_impact] {
+        for row in impact["dependents"].as_array().expect("dependents") {
+            let confidence = row["confidence"].as_str().unwrap_or_else(|| {
+                panic!("dependent {} carries no confidence marking", row["from"])
+            });
+            assert!(
+                confidence_words.contains(&confidence),
+                "confidence {confidence} is outside the closed vocabulary"
+            );
+        }
+    }
+    let inferred_card = sandbox.stage(
+        &mut transcript,
+        &[
+            "--json",
+            "observe",
+            "inspect",
+            "taskhub_sync.sync_event",
+            "--project",
+            "proj",
+        ],
+    );
+    assert_eq!(inferred_card["binding"], "inferred");
+    assert_eq!(inferred_card["completeness"], "incomplete");
+    assert_eq!(inferred_card["provenance"]["origin"], "observed");
+    assert_eq!(inferred_card["provenance"]["confidence"], "medium");
+
     // The staleness gate stays green over the freshly recorded facts.
     let check = sandbox.stage(
         &mut transcript,
