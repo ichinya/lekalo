@@ -160,7 +160,7 @@ impl RunRecord {
             .get("ir_digest")
             .and_then(Json::as_str)
             .ok_or_else(|| run_invalid("ir-digest"))?;
-        if !crate::lockfile::types::Sha256Digest::parse(ir_digest).is_ok() {
+        if crate::lockfile::types::Sha256Digest::parse(ir_digest).is_err() {
             return Err(run_invalid("ir-digest"));
         }
         for member in ["operations", "symbols"] {
@@ -213,7 +213,7 @@ impl RunRecord {
             .get("fingerprint")
             .and_then(Json::as_str)
             .ok_or_else(|| run_invalid("test-fingerprint"))?;
-        if !crate::lockfile::types::Sha256Digest::parse(test_fingerprint).is_ok() {
+        if crate::lockfile::types::Sha256Digest::parse(test_fingerprint).is_err() {
             return Err(run_invalid("test-fingerprint"));
         }
         let binding_mode = bounded_token(object.get("binding_mode"), "binding-mode")?;

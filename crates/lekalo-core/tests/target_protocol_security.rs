@@ -24,6 +24,14 @@ const FIXTURE: &str = "tests/fixtures/adapter-security/adapter.mjs";
 
 static NEXT_ROOT: AtomicU32 = AtomicU32::new(0);
 
+/// Suite gate: the staging-cleanup assertions count live
+/// `lekalo-target-sandbox-*` dirs in the shared temp dir, which only
+/// reports the run under test when no sibling holds one. Every test
+/// takes the gate for its whole duration so the count is exact under
+/// any harness parallelism (the CI step also runs this binary with
+/// `--test-threads=1`).
+static SANDBOX_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// A disposable project the fixture may (attempt to) touch.
 struct Sandbox {
     root: PathBuf,
@@ -179,8 +187,10 @@ fn live_sandboxes() -> usize {
 
 /// Wait until the sandbox staging directory count returns to the
 /// baseline (other suites may hold their own sandboxes meanwhile).
+/// Windows file-handle teardown lags the process exit, so the window
+/// is generous for loaded CI runners.
 fn staging_clean_again(baseline: usize) -> bool {
-    for _ in 0..200 {
+    for _ in 0..400 {
         if live_sandboxes() <= baseline {
             return true;
         }
@@ -207,6 +217,9 @@ fn fault_detail(outcome: &lekalo_core::target_protocol::CallOutcome) -> String {
 /// (issue #89 fix round 2, C-F8).
 #[test]
 fn an_escape_write_never_lands_outside_the_scopes() {
+    let _gate = SANDBOX_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let (outcome, sandbox) = run_session("escape", "escape", SessionBudget::strict_implicit());
     assert!(
         !sandbox.project().join("escape.txt").exists(),
@@ -254,6 +267,9 @@ impl Drop for EnvGuard {
 /// exit, so siblings never inherit them.
 #[test]
 fn environment_disclosure_is_bounded_to_the_budget() {
+    let _gate = SANDBOX_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let _env = EnvGuard;
     std::env::set_var("LEKALO_HOST_ONLY_VAR", "host-only-value");
     std::env::set_var("LEKALO_GRANTED_VAR", "granted-value");
@@ -329,6 +345,9 @@ fn environment_disclosure_is_bounded_to_the_budget() {
 /// (issue #89 fix round 2, C-F1).
 #[test]
 fn the_network_dial_is_unreachable() {
+    let _gate = SANDBOX_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("loopback listener");
     let port = listener.local_addr().expect("socket address").port();
     let target = std::net::SocketAddr::from(([127, 0, 0, 1], port));
@@ -352,6 +371,9 @@ fn the_network_dial_is_unreachable() {
 /// S6 #4: an unbounded stdout stream hits the output cap.
 #[test]
 fn a_stdout_flood_hits_the_output_cap() {
+    let _gate = SANDBOX_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let baseline = live_sandboxes();
     let sandbox = Sandbox::new("flood");
     stage_inputs(&sandbox.project());
@@ -377,6 +399,9 @@ fn a_stdout_flood_hits_the_output_cap() {
 /// S6 #5: a hard crash classifies as a crash and cleans the sandbox.
 #[test]
 fn a_crash_classifies_and_cleans_the_sandbox() {
+    let _gate = SANDBOX_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let baseline = live_sandboxes();
     let sandbox = Sandbox::new("crash");
     stage_inputs(&sandbox.project());
@@ -401,6 +426,9 @@ fn a_crash_classifies_and_cleans_the_sandbox() {
 #[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn a_fork_bomb_stays_bounded() {
+    let _gate = SANDBOX_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let (outcome, _sandbox) =
         run_session("forkbomb", "fork-bomb", SessionBudget::strict_implicit());
     let detail = fault_detail(&outcome);
@@ -437,6 +465,9 @@ fn a_fork_bomb_stays_bounded() {
 /// publication.
 #[test]
 fn traversal_writes_refuse_before_publication() {
+    let _gate = SANDBOX_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let sandbox = Sandbox::new("traversal");
     stage_inputs(&sandbox.project());
     let mut client = TargetClient::default();
@@ -489,6 +520,9 @@ fn framed_package_digest(parts: &[Vec<u8>]) -> String {
 /// member.
 #[test]
 fn scope_exceeds_the_manifest_permission_ceiling() {
+    let _gate = SANDBOX_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let unique = NEXT_ROOT.fetch_add(1, Ordering::SeqCst);
     let root = std::env::temp_dir().join(format!(
         "lekalo-manifest-escalation-{}-{unique}",

@@ -104,6 +104,7 @@ function plannedBody() {
     // platform-private minimum (pointing at the per-exchange staging
     // paths) is excluded deterministically on both sides.
     const platformMinimum = new Set([
+      // Windows LPAC private block.
       "APPDATA",
       "LOCALAPPDATA",
       "SystemDrive",
@@ -112,6 +113,21 @@ function plannedBody() {
       "TMP",
       "USERPROFILE",
       "windir",
+      // POSIX transients: every exchange runs under a fresh per-call
+      // sandbox dir, which node surfaces as PWD (and shells as OLDPWD/
+      // SHLVL/_); TMPDIR/HOME/USER may follow the staged view on some
+      // runners. They are ambient platform state, not grants.
+      "_",
+      "HOME",
+      "HOSTNAME",
+      "LOGNAME",
+      "OLDPWD",
+      "PATH",
+      "PWD",
+      "SHELL",
+      "SHLVL",
+      "TMPDIR",
+      "USER",
     ]);
     const env = {};
     for (const [key, value] of Object.entries(process.env)) {
@@ -159,13 +175,17 @@ function dialLoopback() {
 function forkBomb() {
   return new Promise((resolve) => {
     // Concurrent, so a task bound actually refuses spawns instead of
-    // politely serializing them.
+    // politely serializing them. Children hold one task slot briefly
+    // (sleep) — a respawning interpreter child would hang in its own
+    // thread-pool init once the bound saturates, never settling.
     const attempts = 200;
+    const childProgram = process.platform === "win32" ? process.execPath : "/bin/sleep";
+    const childArgs = process.platform === "win32" ? ["-e", "process.exit(0)"] : ["2"];
     let settled = 0;
     let spawned = 0;
     for (let i = 0; i < attempts; i += 1) {
       try {
-        const child = spawn(process.execPath, ["-e", "process.exit(0)"], {
+        const child = spawn(childProgram, childArgs, {
           stdio: "ignore",
         });
         child.on("error", () => done());

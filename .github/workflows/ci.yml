@@ -188,7 +188,10 @@ jobs:
         run: cargo test -p lekalo-core --test target_transport_unix --locked -- --test-threads=1
       - name: Run the adapter containment suite (issue #89)
         timeout-minutes: 5
-        run: cargo test -p lekalo-core --test target_protocol_security --locked
+        # Serialized: the staging-cleanup assertions count live
+        # lekalo-target-sandbox-* dirs in the shared temp dir, which only
+        # reports our own run when no sibling test holds one.
+        run: cargo test -p lekalo-core --test target_protocol_security --locked -- --test-threads=1
       - run: cargo test --workspace --locked --no-fail-fast
       - name: Run the Node/TypeScript kernel suite (issue #43)
         run: node scripts/test-node-typescript-kernel.mjs

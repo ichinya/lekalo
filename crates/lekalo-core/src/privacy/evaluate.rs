@@ -1163,7 +1163,7 @@ fn context_coherence(input: &Json) -> Option<String> {
     {
         return Some("provenance.origin-boolean-conflict".to_owned());
     }
-    if origin == "derived" && !(derived && !synthetic) {
+    if origin == "derived" && (!derived || synthetic) {
         return Some("provenance.origin-boolean-conflict".to_owned());
     }
     if origin != "synthetic" && origin != "derived" && !ordinary_origin {
@@ -1355,7 +1355,7 @@ fn validate_derived(input: &Json, context: &TrustedContext) -> Option<String> {
         .get("exportDisposition")
         .and_then(Json::as_str)
         .unwrap_or_default();
-    if provenance_derived != !derived.is_null() {
+    if provenance_derived == derived.is_null() {
         return Some("derived.provenance-flag-mismatch".to_owned());
     }
     if derived.is_null() {

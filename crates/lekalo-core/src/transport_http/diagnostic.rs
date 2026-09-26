@@ -169,6 +169,6 @@ mod tests {
             );
             assert!(entry.allows_status(crate::result::Status::Invalid));
         }
-        assert!(!registry.entry("transport.not-a-rule").is_some());
+        assert!(registry.entry("transport.not-a-rule").is_none());
     }
 }

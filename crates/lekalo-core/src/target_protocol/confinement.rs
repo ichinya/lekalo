@@ -276,6 +276,25 @@ fn refusal(detail: &'static str) -> TargetFailure {
     TargetFailure::TransportFailed { detail }
 }
 
+impl Drop for Sandbox {
+    fn drop(&mut self) {
+        // On Windows the confined child's directory handles can outlive
+        // its exit status by a few hundred ms; a single remove_dir_all
+        // would then fail and leak the staging dir. Retry briefly —
+        // the TempDir field still performs the final removal after this.
+        #[cfg(windows)]
+        {
+            let path = self.owned.path().to_path_buf();
+            for _ in 0..40 {
+                if !path.exists() || std::fs::remove_dir_all(&path).is_ok() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+    }
+}
+
 impl Sandbox {
     pub fn publish(
         &self,
@@ -642,35 +661,33 @@ impl Sandbox {
             "--chdir".into(),
             self.project.to_string_lossy().into_owned(),
             "--".into(),
-            command.program.to_string_lossy().into_owned(),
         ]);
+        // Issue #89: a denied children policy cannot be enforced inside
+        // bwrap (no fork primitive), but where the resolved prlimit
+        // binary exists and the kernel charges RLIMIT_NPROC per user
+        // namespace (≥5.14) it bounds the confined tree — applied to the
+        // payload INSIDE the namespace, not around bwrap. Outside the
+        // namespace the rlimit check compares against the task's current
+        // (init) userns count — the whole-uid task total — so a busy
+        // host trips the bound before bwrap's setup fork even runs.
+        // Inside the fresh userns the count covers only this tree, so
+        // the bound tracks the sandbox deterministically. The report
+        // records the bound (or its honest absence) either way.
+        if self.policy.children_denied {
+            if let Some(prlimit) = prlimit_path() {
+                args.extend([
+                    prlimit.to_string_lossy().into_owned(),
+                    format!("--nproc={SANDBOX_TASK_BOUND}"),
+                    "--".into(),
+                ]);
+            }
+        }
+        args.push(command.program.to_string_lossy().into_owned());
         args.extend(command.args.clone());
-        let mut wrapper = transport::AdapterCommand {
+        let wrapper = transport::AdapterCommand {
             program: "/usr/bin/bwrap".into(),
             args,
         };
-        // Issue #89: a denied children policy cannot be enforced inside
-        // bwrap (no fork primitive), but where the resolved prlimit
-        // wrapper exists and the kernel charges RLIMIT_NPROC per user
-        // namespace (≥5.14) the wrapper bounds the task count inside
-        // the namespace — the same resolved path the availability check
-        // consulted. The report records the bound (or its honest
-        // absence) either way.
-        if self.policy.children_denied {
-            if let Some(prlimit) = prlimit_path() {
-                wrapper = transport::AdapterCommand {
-                    program: prlimit,
-                    args: [
-                        format!("--nproc={SANDBOX_TASK_BOUND}"),
-                        "--".into(),
-                        wrapper.program.to_string_lossy().into_owned(),
-                    ]
-                    .into_iter()
-                    .chain(wrapper.args)
-                    .collect(),
-                };
-            }
-        }
         transport::run_private(&wrapper, request, limits, &self.project, cancel, env)
     }
 

@@ -192,7 +192,7 @@ mod tests {
                 entry.code()
             );
         }
-        assert!(!registry.entry("openapi.not-a-rule").is_some());
+        assert!(registry.entry("openapi.not-a-rule").is_none());
     }
 
     #[test]
