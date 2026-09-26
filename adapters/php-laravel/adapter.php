@@ -189,7 +189,7 @@ function decode_json_document(string $bytes): array
     }
     reject_duplicate_keys($bytes);
     $value = json_decode($bytes, true, 64, JSON_THROW_ON_ERROR);
-    if (!is_array($value)) {
+    if (!is_json_object($value)) {
         throw new RequestRefusal('shape');
     }
     return $value;
@@ -659,7 +659,7 @@ function validate_request_object(array $document): array
     $operation = $document['operation'];
     if (array_key_exists('limits', $document)) {
         $limits = $document['limits'];
-        if (!is_array($limits) || array_is_list($limits)) {
+        if (!is_array($limits) || !is_json_object($limits)) {
             throw new RequestRefusal('shape');
         }
         $limitKeys = array_keys($limits);
@@ -748,7 +748,7 @@ function validate_profile_capabilities(mixed $capabilities): void
     }
     $previous = '';
     foreach ($capabilities as $capability) {
-        if (!is_array($capability) || array_is_list($capability)
+        if (!is_json_object($capability)
             || array_keys($capability) !== ['id', 'support']) {
             throw new RequestRefusal('profile-capabilities');
         }
@@ -768,6 +768,17 @@ function validate_profile_capabilities(mixed $capabilities): void
  * changed inputs plus digest-addressed custody references — never a
  * command or an absolute URL.
  */
+/**
+ * Whether one decoded array can only be a JSON object: a non-empty list
+ * is definitely a JSON array, but an empty PHP array is ambiguous — JSON
+ * `{}` and `[]` both decode to `[]`, so an empty array is accepted as
+ * the (member-less) object shape.
+ */
+function is_json_object(mixed $value): bool
+{
+    return is_array($value) && (!array_is_list($value) || $value === []);
+}
+
 function validate_native_request(mixed $native): void
 {
     static $keys = [
@@ -775,7 +786,7 @@ function validate_native_request(mixed $native): void
         'input_manifest_digest', 'tool_catalog_digest',
         'capability_snapshot_digest',
     ];
-    if (!is_array($native) || array_is_list($native)) {
+    if (!is_json_object($native)) {
         throw new RequestRefusal('native-request');
     }
     foreach (array_keys($native) as $key) {
@@ -790,7 +801,7 @@ function validate_native_request(mixed $native): void
         }
     }
     $changes = $native['changes'];
-    if (!is_array($changes) || array_is_list($changes)) {
+    if (!is_json_object($changes)) {
         throw new RequestRefusal('native-request');
     }
     $files = $changes['files'] ?? [];
@@ -798,7 +809,7 @@ function validate_native_request(mixed $native): void
         throw new RequestRefusal('native-request');
     }
     foreach ($files as $file) {
-        if (!is_array($file) || array_is_list($file)) {
+        if (!is_json_object($file)) {
             throw new RequestRefusal('native-request');
         }
         foreach (array_keys($file) as $key) {
@@ -837,7 +848,7 @@ function validate_native_request(mixed $native): void
 
 function validate_native_content_ref(mixed $reference): void
 {
-    if (!is_array($reference) || array_is_list($reference)
+    if (!is_json_object($reference)
         || !is_sha256_digest($reference['digest'] ?? null)) {
         throw new RequestRefusal('native-request');
     }
