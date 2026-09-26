@@ -179,7 +179,7 @@ fn the_php_generation_seam_plans_applies_and_verifies() {
     assert_eq!(planned.len(), 1);
     assert_eq!(planned[0].action, WriteAction::Create);
     assert!(planned[0].sha256.as_deref().is_some_and(
-        |digest| lekalo_core::target_protocol::wire::is_sha256_digest(digest),
+        lekalo_core::target_protocol::wire::is_sha256_digest,
     ));
     let plan_id = dry.plan_id.expect("planning binds a plan id");
 
