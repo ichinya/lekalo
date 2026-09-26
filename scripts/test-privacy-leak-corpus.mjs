@@ -15,7 +15,7 @@
 // fails the gate. Every corpus value is a synthetic marker.
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative as pathRelative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +23,9 @@ import { buildLekaloBinary, runLekalo } from "./privacy-runtime-helpers.mjs";
 
 const rootDir = new URL("../", import.meta.url);
 const binary = buildLekaloBinary();
-const temp = await mkdtemp(join(tmpdir(), "lekalo-privacy-leak-corpus-"));
+// The CLI's startup alias check rejects non-canonical cwd spellings
+// (8.3 short names on Windows runners, /var->/private/var on macOS).
+const temp = await realpath(await mkdtemp(join(tmpdir(), "lekalo-privacy-leak-corpus-")));
 const project = join(temp, "project");
 await mkdir(join(project, ".lekalo"), { recursive: true });
 

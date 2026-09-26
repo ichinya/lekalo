@@ -10,13 +10,16 @@
 // byte or report.
 
 import assert from "node:assert/strict";
-import { mkdir as mkdirDir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir as mkdirDir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative as pathRelative } from "node:path";
 import { buildLekaloBinary, runLekalo } from "./privacy-runtime-helpers.mjs";
 
 const binary = buildLekaloBinary();
-const temp = await mkdtemp(join(tmpdir(), "lekalo-privacy-runtime-"));
+// The CLI's startup alias check rejects non-canonical cwd spellings:
+// CI runners hand out 8.3 (Windows) and /var->/private/var (macOS)
+// temp dirs, so the gate runs against the realpath form.
+const temp = await realpath(await mkdtemp(join(tmpdir(), "lekalo-privacy-runtime-")));
 const project = join(temp, "project");
 await mkdirDir(join(project, ".lekalo"), { recursive: true });
 

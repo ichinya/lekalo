@@ -12,7 +12,7 @@ import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 let Ajv2020;
@@ -44,7 +44,10 @@ const requireFallback = createRequire(import.meta.url);
 let Validator;
 let validatorVersion;
 try {
-  ({ Validator } = requireFallback("@seriousme/openapi-schema-validator"));
+  // The validator publishes ESM only: require() throws ERR_REQUIRE_ESM
+  // on Node <22, so resolve through NODE_PATH and load via import().
+  const entry = requireFallback.resolve("@seriousme/openapi-schema-validator");
+  ({ Validator } = await import(pathToFileURL(entry).href));
   validatorVersion = requireFallback("@seriousme/openapi-schema-validator/package.json").version;
 } catch (error) {
   process.stderr.write(
