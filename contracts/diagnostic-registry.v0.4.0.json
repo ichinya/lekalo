@@ -1241,6 +1241,194 @@
       "lifecycle": "active"
     },
     {
+      "id": "client.consumer-invalid",
+      "code": "LEK-SDK-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "client.consumer-invalid",
+      "default_message": "A declared client consumer binding is unresolvable, duplicated, or unregistered.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "client.contract-invalid",
+      "code": "LEK-SDK-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "client.contract-invalid",
+      "default_message": "The client-SDK projection contradicts its own closed contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "client.drift",
+      "code": "LEK-SDK-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "client.drift",
+      "default_message": "A maintained or generated client no longer matches its bound contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "client.input-invalid",
+      "code": "LEK-SDK-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "client.input-invalid",
+      "default_message": "The client-SDK projection document violates its closed wire contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "client.limit-exceeded",
+      "code": "LEK-SDK-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "client.limit-exceeded",
+      "default_message": "The client-SDK projection crosses one of its closed bounds.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "client.mapping-unsupported",
+      "code": "LEK-SDK-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "client.mapping-unsupported",
+      "default_message": "The declared wire surface uses a feature the target language mapping cannot express.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "client.retry-unsafe",
+      "code": "LEK-SDK-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "client.retry-unsafe",
+      "default_message": "An automatic retry is not authorized by the declared error contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "client.symbol-unresolved",
+      "code": "LEK-SDK-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "client.symbol-unresolved",
+      "default_message": "A client operation, type, or error reference does not resolve in the bound contracts.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "concurrency.capability-missing",
       "code": "LEK-TC-009",
       "category": "compatibility",

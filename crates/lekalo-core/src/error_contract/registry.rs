@@ -230,6 +230,12 @@ impl ErrorRegistry {
             .map(|index| &self.errors[index])
     }
 
+    /// Looks up one declared error by its exact semantic-id text
+    /// (issue #72: the SDK projection joins on the wire's `SemanticId`).
+    pub fn error_by_str(&self, id: &str) -> Option<&ErrorContract> {
+        self.errors.iter().find(|error| error.id().as_str() == id)
+    }
+
     /// Looks up one operation binding.
     pub fn binding(&self, operation: &ErrorId) -> Option<&OperationErrorContract> {
         self.bindings
