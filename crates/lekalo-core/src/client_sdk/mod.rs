@@ -30,6 +30,7 @@ pub mod id;
 pub mod impact;
 pub mod project;
 pub mod retry;
+pub mod source;
 pub mod types;
 pub mod version;
 

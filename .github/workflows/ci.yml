@@ -52,6 +52,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-transaction-concurrency-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-authorization-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-error-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-client-sdk-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-extended-effects-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-invariant-transition-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-reference-evaluation-contracts.mjs
@@ -246,6 +247,15 @@ jobs:
         run: node scripts/test-node-typescript-transport.mjs
       - name: Run the OpenAPI generator gate (issue #46)
         run: node scripts/test-node-openapi.mjs
+      - name: Run the client-SDK generator gate (issue #72)
+        run: node scripts/test-node-client-sdk.mjs
+      - name: Run the client-SDK runtime gate (issue #72)
+        env:
+          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/lekalo-client-sdk-vue" --ignore-scripts --no-audit --no-fund --no-save typescript@5.9.3 @vue/compiler-sfc@3.4.38
+          NODE_PATH="$NODE_PATH:$RUNNER_TEMP/lekalo-client-sdk-vue/node_modules" node scripts/test-client-sdk-runtime.mjs
       - name: Run the scenario-test compiler gate (issue #47)
         run: node scripts/test-node-scenario-tests.mjs
       - name: Run the scenario unit suites (issue #47 review F-11)

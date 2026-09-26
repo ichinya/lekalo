@@ -21,6 +21,13 @@ pub const TRANSPORT_EVIDENCE_DIR: &str = ".lekalo/cache/transport";
 /// repo-conventional document owns that copy).
 pub const OPENAPI_EVIDENCE_DIR: &str = ".lekalo/cache/openapi";
 
+/// The runtime home of the canonical client-SDK projection evidence
+/// one generate run writes (issue #72): the typed client contract
+/// every language backend renders from, derived from the validated
+/// transport home plus the bound #62/#64 contexts — derived runtime
+/// cache, never source, never the only copy.
+pub const CLIENT_SDK_EVIDENCE_DIR: &str = ".lekalo/cache/client-sdk";
+
 /// The default adapter-operation deadline, in milliseconds. The value
 /// matches the accepted protocol default; callers may lower it.
 pub const DEFAULT_TIMEOUT_MS: u64 = 600_000;

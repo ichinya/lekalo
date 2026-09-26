@@ -38,7 +38,7 @@ use super::receipt::{
     TargetReceipt, TargetState, Verdict, WriteReceipt, IDENTITY, SCHEMA_VERSION,
 };
 use super::version::{
-    DEFAULT_TIMEOUT_MS, IR_EVIDENCE_DIR, MAX_TARGETS, OPENAPI_EVIDENCE_DIR, TRANSPORT_EVIDENCE_DIR,
+    DEFAULT_TIMEOUT_MS, CLIENT_SDK_EVIDENCE_DIR, IR_EVIDENCE_DIR, MAX_TARGETS, OPENAPI_EVIDENCE_DIR, TRANSPORT_EVIDENCE_DIR,
 };
 use super::Failure;
 
@@ -159,6 +159,36 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
                 &openapi_path,
                 rendered.canonical_bytes().as_bytes(),
             )?;
+            // Client-SDK evidence (#72): the typed client contract the
+            // language backends render from, derived from the same
+            // validated join (transport + IR + the embedded #62
+            // registry + the bound #64 query-model home). The SDK
+            // projection requires the full context; when the project
+            // declares no query-model home the evidence derivation is
+            // skipped honestly — the transport home stays the gate.
+            let sdk_derived = (|| -> Option<Result<String, DomainResult>> {
+                let capabilities = crate::transport_http::CapabilityMap::http_json();
+                let query_model =
+                    crate::client_sdk::source::read_query_model(prepared.root())
+                        .ok()??;
+                let context = crate::transport_http::ValidationContext::new(&compilation.project)
+                    .with_errors(registry)
+                    .with_query_model(&query_model)
+                    .with_capabilities(&capabilities);
+                Some(
+                    crate::client_sdk::project(
+                        &attachment,
+                        &context,
+                        &crate::client_sdk::ClientConfig::generated(),
+                    )
+                    .and_then(|sdk| sdk.canonical_bytes())
+                    .map_err(DomainResult::invalid),
+                )
+            })();
+            if let Some(derived) = sdk_derived {
+                let sdk_path = format!("{CLIENT_SDK_EVIDENCE_DIR}/{project_id}.json");
+                write_evidence(prepared.root(), &sdk_path, derived?.as_bytes())?;
+            }
         }
         Ok(None) => {}
     }
