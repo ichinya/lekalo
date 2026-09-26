@@ -63,6 +63,7 @@ if(mode==='permission') {
         root.path(),
         mode == "permission",
         Some(&cancel),
+        &[],
     );
     cancel_thread.join().unwrap();
     assert!(

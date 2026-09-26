@@ -659,7 +659,7 @@ impl Sandbox {
         if self.policy.children_denied {
             if let Some(prlimit) = prlimit_path() {
                 wrapper = transport::AdapterCommand {
-                    program: prlimit.to_string_lossy().into_owned(),
+                    program: prlimit,
                     args: [
                         format!("--nproc={SANDBOX_TASK_BOUND}"),
                         "--".into(),
