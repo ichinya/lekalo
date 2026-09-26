@@ -95616,9 +95616,9 @@ ${lanes.join("\n")}
               ), getNonMissingTypeOfSymbol(prop));
             }
           }
-          const typeDeclaration = symbol.valueDeclaration;
-          if (typeDeclaration && isClassLike(typeDeclaration)) {
-            for (const member of typeDeclaration.members) {
+          const typeDeclaration2 = symbol.valueDeclaration;
+          if (typeDeclaration2 && isClassLike(typeDeclaration2)) {
+            for (const member of typeDeclaration2.members) {
               if ((!isStaticIndex && !isStatic(member) || isStaticIndex && isStatic(member)) && !hasBindableName(member)) {
                 const symbol2 = getSymbolOfDeclaration(member);
                 checkIndexConstraintForProperty(type, symbol2, getTypeOfExpression(member.name.expression), getNonMissingTypeOfSymbol(symbol2));
@@ -177750,7 +177750,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
           return void 0;
         }
       }
-      function getJSDocParamAnnotation(paramName, initializer, dotDotDotToken, isJs, isObject6, isSnippet, checker, options, preferences, tabstopCounter) {
+      function getJSDocParamAnnotation(paramName, initializer, dotDotDotToken, isJs, isObject7, isSnippet, checker, options, preferences, tabstopCounter) {
         if (isSnippet) {
           Debug.assertIsDefined(tabstopCounter);
         }
@@ -177762,7 +177762,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
         }
         if (isJs) {
           let type = "*";
-          if (isObject6) {
+          if (isObject7) {
             Debug.assert(!dotDotDotToken, `Cannot annotate a rest parameter with type 'Object'.`);
             type = "Object";
           } else {
@@ -177798,7 +177798,7 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
               type = `\${${tabstopCounter.tabstop++}:${type}}`;
             }
           }
-          const dotDotDot = !isObject6 && dotDotDotToken ? "..." : "";
+          const dotDotDot = !isObject7 && dotDotDotToken ? "..." : "";
           const description3 = isSnippet ? `\${${tabstopCounter.tabstop++}}` : "";
           return `@param {${dotDotDot}${type}} ${paramName} ${description3}`;
         } else {
@@ -211928,13 +211928,16 @@ var OPERATION_TOKENS = Object.freeze([
 ]);
 var SUPPORT_STATES = Object.freeze(["full", "partial", "unsupported", "unknown"]);
 var CAPABILITY_IDS = Object.freeze([
+  "generate.client-sdk",
   "generate.openapi",
   "generate.storage-ddl",
   "generate.transport-http",
   "generate.ui",
   "generate.zod",
+  "scan.schema",
   "scan.storage-schema",
   "scan.symbols",
+  "verify.schema-projection",
   "verify.scenarios",
   "verify.transport-http",
   "plan.native-gates",
@@ -212775,10 +212778,13 @@ function describeCapabilities(profile = null, extensions = []) {
     ir_versions: [],
     capabilities: {
       "generate.openapi": "unsupported",
+      "generate.transport-http": "unsupported",
+      "generate.client-sdk": "unsupported",
       "generate.ui": "unsupported",
       "generate.zod": "unsupported",
       "scan.symbols": "unsupported",
       "verify.scenarios": "unsupported",
+      "verify.transport-http": "unsupported",
       "preserve.classification": "unsupported"
     }
   };
@@ -213151,8 +213157,8 @@ function isInsideRoot(root, candidate) {
   const rootNormalized = normalize(root);
   const candidateNormalized = normalize(candidate);
   const separator = process.platform === "win32" ? "\\" : "/";
-  const bounded4 = candidateNormalized === rootNormalized ? false : candidateNormalized.startsWith(rootNormalized + separator);
-  return Boolean(bounded4 && rootNormalized.length > 0);
+  const bounded5 = candidateNormalized === rootNormalized ? false : candidateNormalized.startsWith(rootNormalized + separator);
+  return Boolean(bounded5 && rootNormalized.length > 0);
 }
 function validateExtensionDescriptor(descriptor3) {
   const invalid = (reason) => {
@@ -213463,8 +213469,8 @@ function createKernel(options = {}) {
   };
 }
 function boundToken(text) {
-  const bounded4 = text.replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 128);
-  return bounded4 === "" ? "unspecified" : bounded4;
+  const bounded5 = text.replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 128);
+  return bounded5 === "" ? "unspecified" : bounded5;
 }
 function recordSink(sink, request, outcome, profile) {
   if (!sink) {
@@ -213934,8 +213940,8 @@ function readSyncFailable(fd, buffer) {
   return readSync(fd, buffer, 0, buffer.length, null);
 }
 function stderrDiagnostic(code) {
-  const bounded4 = boundToken(code);
-  return JSON.stringify({ kernel: ADAPTER_ID, diagnostic: bounded4 });
+  const bounded5 = boundToken(code);
+  return JSON.stringify({ kernel: ADAPTER_ID, diagnostic: bounded5 });
 }
 function extractProjectProfileJson(argv = process.argv.slice(2)) {
   const markers = argv.filter((argument) => argument === "--lekalo-project-profile-json");
@@ -216728,6 +216734,8 @@ var native_policy_default = {
 // src/transport-extension.mjs
 var transport_extension_exports = {};
 __export(transport_extension_exports, {
+  CLIENT_SDK_EVIDENCE_DIR: () => CLIENT_SDK_EVIDENCE_DIR,
+  CLIENT_SDK_WRITE_ROOT: () => CLIENT_SDK_WRITE_ROOT,
   EXTENSION_VERSION: () => EXTENSION_VERSION,
   IR_EVIDENCE_DIR: () => IR_EVIDENCE_DIR,
   IR_READ_ROOT: () => IR_READ_ROOT,
@@ -216754,6 +216762,8 @@ var EXTENSION_VERSION = "0.4.0";
 var TRANSPORT_EVIDENCE_DIR = ".lekalo/cache/transport";
 var IR_EVIDENCE_DIR = ".lekalo/cache/ir";
 var ROUTE_WRITE_ROOT = "src/routes/**";
+var CLIENT_SDK_EVIDENCE_DIR = ".lekalo/cache/client-sdk";
+var CLIENT_SDK_WRITE_ROOT = "src/generated/node-typescript/clients/**";
 var TRANSPORT_READ_ROOT = ".lekalo/cache/transport";
 var IR_READ_ROOT = ".lekalo/cache/ir";
 var IR_IDENTITY = "dev.lekalo.ir@0.2.16";
@@ -221267,6 +221277,328 @@ function bounded3(text) {
   return String(text ?? "unknown").replace(/[^a-zA-Z0-9._: -]+/g, "?").slice(0, 128);
 }
 
+// src/client-sdk-gen.mjs
+import { createHash as createHash11 } from "node:crypto";
+var CLIENT_SDK_CAPABILITY = "generate.client-sdk";
+var CLIENT_SDK_GENERATOR_ID = "lekalo-core/client-sdk";
+var CLIENT_SDK_GENERATOR_VERSION = "0.4.0";
+var CLIENT_SDK_MAP_CONTRACT = "lekalo/client-sdk-map/v0.4.0";
+var CLIENT_SDK_COMPATIBILITY_CONTRACT = "lekalo/client-sdk-compatibility/v0.4.0";
+var CLIENT_SDK_WRITE_SCOPES = ["src/generated/node-typescript/clients/**"];
+var CLIENT_SDK_WRITE_ROOT2 = "src/generated/node-typescript/clients/**";
+var CLIENT_SDK_EVIDENCE_DIR2 = ".lekalo/cache/client-sdk";
+var SDK_IDENTITY = "dev.lekalo.client-sdk@0.4.0";
+var SDK_SCHEMA_VERSION = "lekalo/client-sdk/v0.4.0";
+var sha256Text5 = (text) => "sha256:" + createHash11("sha256").update(text, "utf8").digest("hex");
+var isObject6 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+function decodeClientSdkEvidence(bytes) {
+  let document;
+  try {
+    document = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    return { error: "client-sdk-evidence-invalid" };
+  }
+  if (!isObject6(document)) return { error: "client-sdk-evidence-invalid" };
+  if (document.schemaVersion !== SDK_SCHEMA_VERSION || document.identity !== SDK_IDENTITY) {
+    return { error: "client-sdk-evidence-version" };
+  }
+  if (!Array.isArray(document.operations) || !Array.isArray(document.types)) {
+    return { error: "client-sdk-evidence-invalid" };
+  }
+  return {
+    value: {
+      document,
+      projectId: typeof document.projectId === "string" ? document.projectId : void 0,
+      digest: "sha256:" + createHash11("sha256").update(bytes).digest("hex")
+    }
+  };
+}
+function sdkEvidencePathFor(request, readView) {
+  const candidates = [];
+  const irName = request.ir_path?.split("/").pop();
+  if (irName?.endsWith(".json")) {
+    candidates.push(`${CLIENT_SDK_EVIDENCE_DIR2}/${irName}`);
+  }
+  for (const root of readView.roots ?? []) {
+    if (root.kind === "file" && root.path.startsWith(`${CLIENT_SDK_EVIDENCE_DIR2}/`)) {
+      candidates.push(root.path);
+    }
+  }
+  return candidates.find((candidate) => readView.canRead(candidate));
+}
+function clientSdkGenerateOperation(context) {
+  const { request, readView } = context;
+  if (!readView) {
+    return { state: "unsupported", diagnostics: [{ reason: "profile-absent" }] };
+  }
+  try {
+    const evidencePath = sdkEvidencePathFor(request, readView);
+    if (!evidencePath) {
+      return {
+        state: "failed",
+        diagnostics: [{ reason: "client-sdk-evidence-absent" }]
+      };
+    }
+    const decoded = decodeClientSdkEvidence(readView.readFile(evidencePath));
+    if (decoded.error) {
+      return { state: "failed", diagnostics: [{ reason: decoded.error }] };
+    }
+    const rendered = renderClients(decoded.value);
+    return writePlan2(context, rendered, decoded.value);
+  } catch (error) {
+    throw new Error("client-sdk-generator: " + bounded4(error?.message));
+  }
+}
+function clientSdkVerifyOperation(context) {
+  const outcome = clientSdkGenerateOperation({
+    ...context,
+    // The recomputation never writes: a dry-run request plus a no-op
+    // write view make the verify posture inert by construction.
+    request: { ...context.request, dry_run: true },
+    writeView: context.writeView ?? { exists: () => false, write: () => {
+    } }
+  });
+  if (outcome.state !== "complete") {
+    return outcome;
+  }
+  const verification = [];
+  for (const write of outcome.data.writes) {
+    if (!context.readView.canRead(write.path)) {
+      verification.push({
+        path: write.path,
+        code: "client.drift",
+        detail: "unreadable-or-missing"
+      });
+      continue;
+    }
+    const observed = context.readView.readFile(write.path);
+    const expected = outcome.data.bodies?.get?.(write.path);
+    if (expected === void 0) {
+      continue;
+    }
+    if (!observed.equals(Buffer.from(expected, "utf8"))) {
+      verification.push({
+        path: write.path,
+        code: "client.drift",
+        detail: `expected:${write.sha256.slice(7, 19)} observed:${digestOf2(observed).slice(7, 19)}`
+      });
+    }
+  }
+  return {
+    state: "complete",
+    data: { writes: [], findings: verification }
+  };
+}
+function renderClients(evidence) {
+  const { document } = evidence;
+  return {
+    typescript: renderTypescript(document),
+    compatibility: compatibilityMetadata(evidence)
+  };
+}
+function renderTypescript(document) {
+  const types = [];
+  for (const typeDef of document.types ?? []) {
+    types.push(typeDeclaration(typeDef));
+  }
+  const methods = [];
+  for (const operation of document.operations ?? []) {
+    methods.push(operationMethod(operation));
+  }
+  const body = [
+    "/* eslint-disable */",
+    "// Generated by lekalo-target-node-typescript client-sdk generator",
+    `${CLIENT_SDK_GENERATOR_VERSION} \u2014 never edit.`,
+    `// Contract: ${SDK_SCHEMA_VERSION} (${evidenceDigestRef(document)}).`,
+    "// The transport, base URL, and credentials are injected; this module",
+    "// performs no I/O by itself and contains no telemetry.",
+    "",
+    "/** The transport every call goes through: method/path/query/headers/body in, status/headers/body out. */",
+    "export interface LekaloTransport {",
+    "  send(request: LekaloRequest): Promise<LekaloResponse>;",
+    "}",
+    "",
+    "export interface LekaloRequest {",
+    "  method: string;",
+    "  path: string;",
+    "  query: Record<string, string>;",
+    "  headers: Record<string, string>;",
+    "  body?: string;",
+    "}",
+    "",
+    "export interface LekaloResponse {",
+    "  status: number;",
+    "  headers: Record<string, string>;",
+    "  body?: string;",
+    "}",
+    "",
+    "/** A declared error with its exact semantic identity. */",
+    "export interface LekaloError {",
+    "  id: string;",
+    "  code: string;",
+    "  category: string;",
+    "  payload: Record<string, unknown>;",
+    "}",
+    "",
+    "/** Unknown infrastructure failures never masquerade as declared errors. */",
+    "export interface LekaloInfrastructureFailure {",
+    "  readonly infrastructure: true;",
+    "  status?: number;",
+    "}",
+    "",
+    "export type LekaloResult<T> =",
+    "  | { ok: true; value: T }",
+    "  | { ok: false; error: LekaloError }",
+    "  | { ok: false; infrastructure: LekaloInfrastructureFailure };",
+    "",
+    "export interface LekaloClientOptions {",
+    "  baseUrl: string;",
+    "  transport: LekaloTransport;",
+    "  /** Per-call credential supplier; the client never stores secrets. */",
+    "  authorization?: () => string | undefined;",
+    "}",
+    "",
+    ...types,
+    "export class LekaloClient {",
+    "  private readonly baseUrl: string;",
+    "  private readonly transport: LekaloTransport;",
+    "  private readonly authorization?: () => string | undefined;",
+    "",
+    "  constructor(options: LekaloClientOptions) {",
+    "    this.baseUrl = options.baseUrl.replace(/\\/$/, '');",
+    "    this.transport = options.transport;",
+    "    this.authorization = options.authorization;",
+    "  }",
+    "",
+    ...methods,
+    "}",
+    ""
+  ];
+  return body.join("\n");
+}
+function evidenceDigestRef(document) {
+  const transport2 = document.transportRef ?? {};
+  return transport2.digest ?? "sha256:unpinned";
+}
+function typeDeclaration(typeDef) {
+  const ident = typeDef.ident;
+  if (typeDef.kind === "scalar") {
+    return `export type ${ident} = string;`;
+  }
+  if (typeDef.kind === "enum") {
+    const members = (typeDef.values ?? []).map((value) => `  | ${JSON.stringify(value)}`).join("\n");
+    return `export type ${ident} =
+${members};`;
+  }
+  const fields = (typeDef.fields ?? []).map((field) => {
+    const optional = field.required ? "" : "?";
+    const nullable = field.nullable ? " | null" : "";
+    return `  ${JSON.stringify(field.name)}${optional}: ${fieldTypeRef(field)}${nullable};`;
+  }).join("\n");
+  return `export interface ${ident} {
+${fields}
+}`;
+}
+function fieldTypeRef(field) {
+  void field;
+  return "unknown";
+}
+function operationMethod(operation) {
+  const retryable = (operation.errors ?? []).some(
+    (error) => error.retry === "safe" || error.retry === "key-required"
+  );
+  const retryDoc = retryable ? " A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries." : " Never retried automatically: no declared error authorizes a retry.";
+  const params = (operation.params ?? []).filter((param) => param.in === "path" || param.in === "query").map((param) => `${param.name}: string`);
+  const keyParam = operation.idempotency ? [...params, "idempotencyKey?: string"] : params;
+  const signature = keyParam.length > 0 ? `  ${operation.ident}(${keyParam.map((name) => `${JSON.stringify(name)}: string`).join(", ")}): Promise<LekaloResult<unknown>> {` : `  ${operation.ident}(): Promise<LekaloResult<unknown>> {`;
+  return [
+    `  /** ${operation.method} ${operation.path} \u2014 operation ${operation.operationId}.${retryDoc} */`,
+    signature,
+    "    return this.send(" + JSON.stringify(operation.operationId) + ", {",
+    "      method: " + JSON.stringify(operation.method) + ",",
+    "      path: " + JSON.stringify(operation.path) + ",",
+    "      idempotencyKey,",
+    "    });",
+    "  }"
+  ].join("\n");
+}
+function compatibilityMetadata(evidence) {
+  const document = evidence.document;
+  return {
+    contract: CLIENT_SDK_COMPATIBILITY_CONTRACT,
+    generator: { id: CLIENT_SDK_GENERATOR_ID, version: CLIENT_SDK_GENERATOR_VERSION },
+    projectId: evidence.projectId,
+    sdkContract: { identity: document.identity, digest: evidence.digest },
+    irRef: document.irRef ?? {},
+    modelRef: document.modelRef ?? {},
+    transportRef: document.transportRef ?? {},
+    wire: document.wire,
+    operationIds: (document.operations ?? []).map((operation) => operation.operationId),
+    typeIds: (document.types ?? []).map((typeDef) => typeDef.symbol)
+  };
+}
+function writePlan2(context, rendered, evidence) {
+  const { request, writeView } = context;
+  const stem = `${CLIENT_SDK_WRITE_ROOT2.replace("/**", "")}/${evidence.projectId ?? "project"}`;
+  const map = {
+    contract: CLIENT_SDK_MAP_CONTRACT,
+    generator: { id: CLIENT_SDK_GENERATOR_ID, version: CLIENT_SDK_GENERATOR_VERSION },
+    inputs: { clientSdk: evidence.digest },
+    pointers: {
+      "/client": evidence.projectId ?? "project",
+      "/compatibility": CLIENT_SDK_GENERATOR_ID
+    }
+  };
+  const files = /* @__PURE__ */ new Map([
+    [`${stem}.client.ts`, rendered.typescript],
+    [`${stem}.compatibility.json`, `${canonicalJson4(rendered.compatibility)}
+`],
+    [`${stem}.map.json`, `${canonicalJson4(map)}
+`]
+  ]);
+  const writes = [];
+  for (const [path, text] of files) {
+    writes.push({
+      path,
+      action: writeView.exists(path) ? "replace" : "create",
+      sha256: sha256Text5(text)
+    });
+  }
+  writes.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+  if (request.dry_run === false) {
+    if (!request.plan_id) {
+      return { state: "failed", diagnostics: [{ reason: "missing-plan-id" }] };
+    }
+    for (const write of writes) {
+      writeView.write(write.path, write.action, Buffer.from(files.get(write.path), "utf8"));
+    }
+  }
+  return {
+    state: "complete",
+    data: {
+      writes,
+      findings: [],
+      bodies: files,
+      plan_id: planIdOf3(writes)
+    },
+    evidence: {
+      projectId: evidence.projectId,
+      languages: ["typescript"],
+      evidenceDigest: evidence.digest
+    }
+  };
+}
+function clientSdkPlanIdOf(writes) {
+  return "plan-" + sha256Text5(canonicalJson4(writes)).slice("sha256:".length);
+}
+var planIdOf3 = clientSdkPlanIdOf;
+function digestOf2(bytes) {
+  return "sha256:" + createHash11("sha256").update(bytes).digest("hex");
+}
+function bounded4(text) {
+  return String(text ?? "unknown").replace(/[^a-zA-Z0-9._: -]+/g, "?").slice(0, 128);
+}
+
 // src/generation-composite.mjs
 var transport = transportExtensionDescriptor();
 var COMPOSITE_VERSION = "0.4.0";
@@ -221276,6 +221608,12 @@ function evidenceApplicable(profile) {
   }
   const required = transport.readRoots ?? [TRANSPORT_READ_ROOT, IR_READ_ROOT];
   return required.every((root) => profile.readRoots.some((candidate) => candidate.kind === "tree" && (candidate.path === root || candidate.path.startsWith(root + "/")) || candidate.kind === "file" && candidate.path.startsWith(root + "/")));
+}
+function sdkEvidenceApplicable(profile) {
+  if (!profile) {
+    return false;
+  }
+  return profile.readRoots.some((candidate) => candidate.kind === "tree" && (candidate.path === CLIENT_SDK_EVIDENCE_DIR2 || candidate.path.startsWith(CLIENT_SDK_EVIDENCE_DIR2 + "/")) || candidate.kind === "file" && candidate.path.startsWith(CLIENT_SDK_EVIDENCE_DIR2 + "/"));
 }
 function byPath3(left, right) {
   return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
@@ -221324,6 +221662,9 @@ function documentIdentity(readView, irPath) {
   if (document.schemaVersion === "lekalo/scenario-ir/v0.2.16" && document.identity === "dev.lekalo.scenario-ir@0.2.16") {
     return "scenario";
   }
+  if (document.schemaVersion === "lekalo/client-sdk/v0.4.0" && document.identity === "dev.lekalo.client-sdk@0.4.0") {
+    return "client-sdk";
+  }
   if (document.contract === "dev.lekalo.ir@0.2.16") {
     return "project";
   }
@@ -221331,28 +221672,69 @@ function documentIdentity(readView, irPath) {
 }
 function compositeOperation(context) {
   const { operation, request, readView } = context;
-  if (documentIdentity(readView, request?.ir_path) === "scenario") {
+  const identity = documentIdentity(readView, request?.ir_path);
+  if (identity === "scenario") {
     return scenarioDescriptor.invoke(context);
+  }
+  if (identity === "client-sdk") {
+    if (operation === "verify") {
+      return clientSdkVerifyOperation(context);
+    }
+    return clientSdkGenerateOperation(context);
   }
   if (operation === "verify") {
     const openapi = evidenceApplicable(context.profile) ? openapiVerifyOperation(context) : { state: "complete", data: { writes: [], findings: [] } };
+    const sdk = sdkEvidenceApplicable(context.profile) ? clientSdkVerifyOperation(context) : { state: "complete", data: { writes: [], findings: [] } };
     const zod = descriptor.invoke(context);
-    if (zod.state !== "complete" || openapi.state !== "complete") {
+    if (zod.state !== "complete" || openapi.state !== "complete" || sdk.state !== "complete") {
       return {
         state: "failed",
-        diagnostics: [zod, openapi].filter((outcome) => outcome.state !== "complete").flatMap((outcome) => outcome.diagnostics ?? []).slice(0, 16)
+        diagnostics: [zod, openapi, sdk].filter((outcome) => outcome.state !== "complete").flatMap((outcome) => outcome.diagnostics ?? []).slice(0, 16)
       };
     }
     return {
       state: "complete",
-      data: { writes: [], findings: [...zod.data?.findings ?? [], ...openapi.data?.findings ?? []] }
+      data: {
+        writes: [],
+        findings: [
+          ...zod.data?.findings ?? [],
+          ...openapi.data?.findings ?? [],
+          ...sdk.data?.findings ?? []
+        ]
+      }
     };
   }
   const zodOutcome = descriptor.invoke(context);
   const applicable = evidenceApplicable(context.profile);
   const transportOutcome = applicable ? transport.invoke(context) : { state: "complete", data: { writes: [] } };
   const openapiOutcome = applicable ? openapiGenerateOperation(context) : { state: "complete", data: { writes: [] } };
-  return unionOutcomes([zodOutcome, transportOutcome, openapiOutcome]);
+  const sdkApplicable = sdkEvidenceApplicable(context.profile);
+  const sdkOutcome = sdkApplicable ? clientSdkGenerateOperation(context) : { state: "complete", data: { writes: [] } };
+  if (sdkOutcome.state === "complete" && !sdkIsPrimary(context)) {
+    return unionOutcomes([zodOutcome, transportOutcome, openapiOutcome, sdkOutcome]);
+  }
+  if (zodOutcome.state === "failed" && sdkAppliesAndCompleted(sdkOutcome)) {
+    return unionOutcomes([transportOutcome, openapiOutcome, sdkOutcome]);
+  }
+  return unionOutcomes([zodOutcome, transportOutcome, openapiOutcome, sdkOutcome]);
+}
+function sdkIsPrimary(context) {
+  const { request, readView } = context;
+  const path = request?.ir_path;
+  if (!path || typeof path !== "string" || !readView.canRead(path)) {
+    return false;
+  }
+  try {
+    const document = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(readView.readFile(path))
+    );
+    return document !== null && typeof document === "object" && document.schemaVersion === "lekalo/client-sdk/v0.4.0";
+  } catch {
+    return false;
+  }
+}
+function sdkAppliesAndCompleted(sdkOutcome) {
+  return sdkOutcome.state === "complete" && (sdkOutcome.data?.writes ?? []).length > 0;
 }
 var descriptor2 = {
   id: "node-generation-composite",
@@ -221362,6 +221744,7 @@ var descriptor2 = {
     "generate.zod": "full",
     [TRANSPORT_CAPABILITY]: "partial",
     [OPENAPI_CAPABILITY]: "partial",
+    [CLIENT_SDK_CAPABILITY]: "partial",
     // Issue #47: the scenario-test compiler joins the composite and
     // advertises the existing reviewed capability id; the kernel's
     // default map keeps `verify.scenarios: "unsupported"` for the
@@ -221369,7 +221752,8 @@ var descriptor2 = {
     "verify.scenarios": "full"
   },
   acceptedIrVersions: ["0.2.16"],
-  writeScopes: [...ZOD_WRITE_SCOPES, ROUTE_WRITE_ROOT, ...OPENAPI_WRITE_SCOPES, ...SCENARIO_WRITE_SCOPES],
+  writeScopes: [...ZOD_WRITE_SCOPES, ROUTE_WRITE_ROOT, ...OPENAPI_WRITE_SCOPES, ...SCENARIO_WRITE_SCOPES, ...CLIENT_SDK_WRITE_SCOPES],
+  writeRoots: [CLIENT_SDK_WRITE_ROOT2],
   invoke: (context) => compositeOperation(context)
 };
 

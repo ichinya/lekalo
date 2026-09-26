@@ -45,6 +45,7 @@
       "standalone"
     ],
     "named": {
+      "generate.client-sdk": "partial",
       "generate.openapi": "partial",
       "generate.transport-http": "partial",
       "generate.ui": "unsupported",
@@ -52,7 +53,8 @@
       "plan.native-gates": "full",
       "preserve.classification": "unsupported",
       "scan.symbols": "full",
-      "verify.scenarios": "full"
+      "verify.scenarios": "full",
+      "verify.transport-http": "unsupported"
     },
     "constraints": {},
     "readScopes": [
@@ -61,6 +63,7 @@
     ],
     "writeScopes": [
       "docs/**",
+      "src/generated/node-typescript/clients/**",
       "src/generated/node-typescript/scenario-tests/**",
       "src/generated/node-typescript/zod/**",
       "src/routes/**"
@@ -86,12 +89,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:b44fe06b9cc54ebc49148d5626306c0eba4d4bebd782144a73d008bd17d1a54c",
+    "packageDigest": "sha256:09f5b4b90e04f84b05a6399aa5a5a95976ecf9dccc2ddbe39aec7fcb8f02ae7d",
     "files": [
       {
         "path": "adapter.mjs",
-        "digest": "sha256:46da844a7c98ba1b1d50a3db6b480674dd99194fe686bc59136957c95e2def93",
-        "bytes": 13507361
+        "digest": "sha256:267dbdd060232ef5745f61840180cc852ae60b1e760f6dd3ecefaab062849182",
+        "bytes": 13521836
       }
     ],
     "signaturePolicy": "unsigned",
@@ -105,6 +108,7 @@
       ],
       "writeScopes": [
         "docs/**",
+        "src/generated/node-typescript/clients/**",
         "src/generated/node-typescript/scenario-tests/**",
         "src/generated/node-typescript/zod/**",
         "src/routes/**"

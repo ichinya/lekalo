@@ -16,7 +16,8 @@ use serde::Serialize;
 /// adds `generate.transport-http` and `verify.transport-http`
 /// (issue #70), `generate.storage-ddl` and `scan.storage-schema`
 /// (issue #69), `scan.schema`/`verify.schema-projection`
-/// (issue #117), and `preserve.classification` (issue #87).
+/// (issue #117), `preserve.classification` (issue #87), and
+/// `generate.client-sdk` (issue #72).
 pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.4.0";
 
 /// One versioned capability definition.
@@ -36,6 +37,12 @@ pub struct CapabilityDefinition {
 /// lowercase dotted grammar as the lock's `CapabilityId`; the paired test
 /// pins the grammar and the sort order.
 const DEFINITIONS: &[CapabilityDefinition] = &[
+    CapabilityDefinition {
+        id: "generate.client-sdk",
+        definition_version: "0.4.0",
+        domain: "generate",
+        semantics: "Emits typed client code (per language backend) from the client-SDK projection evidence derived from the transport-http, error-contract, and query-model families. `full` renders every declared operation and type for every configured language; `partial` covers a declared subset or reports backend limits as unsupported; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
+    },
     CapabilityDefinition {
         id: "generate.openapi",
         definition_version: "0.3.1",
@@ -138,6 +145,7 @@ mod tests {
         assert_eq!(
             ids,
             vec![
+                "generate.client-sdk",
                 "generate.openapi",
                 "generate.storage-ddl",
                 "generate.transport-http",
