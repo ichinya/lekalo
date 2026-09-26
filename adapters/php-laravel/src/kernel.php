@@ -1207,7 +1207,7 @@ function main(): int
         fwrite(STDOUT, canonical_json(dispatch($request)));
         return 0;
     } catch (RequestRefusal $refusal) {
-        fwrite(STDERR, stderr_diagnostic($refusal->code) . "\n");
+        fwrite(STDERR, stderr_diagnostic($refusal->getMessage()) . "\n");
         return 1;
     } catch (JsonException) {
         fwrite(STDERR, stderr_diagnostic('syntax') . "\n");
