@@ -82,6 +82,16 @@ fn an_installed_adapter_store_validates_as_a_runtime_home() {
     let _ = std::fs::remove_dir_all(&root);
     // The project marker find_root anchors on.
     std::fs::create_dir_all(root.join("lekalo")).expect("lekalo dir");
+    // macOS temp dirs live under the /var -> /private/var symlink; the
+    // selection policy refuses alias spellings, so validate the resolved
+    // spelling (the Windows 8.3 short-name alias resolves the same way,
+    // and canonicalize's \\?\ verbatim prefix is stripped per convention).
+    let root = root.canonicalize().expect("canonical temp root");
+    #[cfg(windows)]
+    let root = match root.to_string_lossy().strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => std::path::PathBuf::from(rest),
+        _ => root,
+    };
     std::fs::write(
         root.join("lekalo/project.yaml"),
         "project: adapters-structure\n",

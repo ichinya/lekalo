@@ -33,8 +33,8 @@ fn scanner_command() -> AdapterCommand {
 
 fn fixture_profile() -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/node-typescript-scanner/protocol/conformance.profile.json");
-    let text = std::fs::read_to_string(&path).expect("conformance profile fixture");
+        .join("../../tests/fixtures/node-typescript-scanner/protocol/scan.profile.json");
+    let text = std::fs::read_to_string(&path).expect("scan profile fixture");
     text.split_whitespace().collect::<String>()
 }
 
