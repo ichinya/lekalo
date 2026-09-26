@@ -362,10 +362,9 @@ fn canonical_bytes_are_deterministic_and_digested() {
     let query_model = QueryModelAttachment::from_value(&read_fixture("query-model.json")).expect("ok");
     let capabilities = CapabilityMap::http_json();
     let session = session(&compiled, registry, &query_model, &capabilities);
-    let first = project(&session.document, &session.context, &ClientConfig::generated())
-        .expect("projection")
-        .canonical_bytes()
-        .expect("bytes");
+    let contract = project(&session.document, &session.context, &ClientConfig::generated())
+        .expect("projection");
+    let first = contract.canonical_bytes().expect("bytes");
     for _ in 0..3 {
         let again = project(&session.document, &session.context, &ClientConfig::generated())
             .expect("projection")
@@ -374,14 +373,21 @@ fn canonical_bytes_are_deterministic_and_digested() {
         assert_eq!(first, again, "generation is deterministic");
     }
     assert!(!first.contains('\n'), "compact form");
-    // The key order is byte-sorted: re-parsing and re-serializing
-    // through serde_json's canonical object form is identical.
-    let reparsed: serde_json::Value = serde_json::from_str(&first).unwrap();
-    assert_eq!(first, reparsed.to_string());
-    let digest = project(&session.document, &session.context, &ClientConfig::generated())
-        .expect("projection")
-        .digest()
-        .expect("digest");
+    // The committed golden is byte-pinned (the two-implementation
+    // rule: the Rust projection reproduces the committed bytes).
+    let golden =
+        std::fs::read_to_string("tests/fixtures/client-sdk/golden/planner.expect.json")
+            .expect("committed golden");
+    assert_eq!(first, golden, "the projection is byte-pinned");
+    // The pinned digest matches the golden digest file.
+    let pinned = std::fs::read_to_string(
+        "tests/fixtures/client-sdk/golden/planner.expect.digest.txt",
+    )
+    .expect("committed digest")
+    .trim()
+    .to_owned();
+    let digest = contract.digest().expect("digest");
+    assert_eq!(digest.as_str(), pinned);
     assert_eq!(
         digest.as_str(),
         format!("sha256:{}", lekalo_core::digest::sha256_hex(first.as_bytes()))

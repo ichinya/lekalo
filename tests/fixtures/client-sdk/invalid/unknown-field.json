@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "lekalo/client-sdk/v0.4.0",
+  "identity": "dev.lekalo.client-sdk@0.4.0",
+  "attachmentRevision": "0.4.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "0.2.16",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.2.16",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "transportRef": {
+    "identity": "dev.lekalo.transport-http@0.4.0",
+    "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "wire": "lekalo-http-wire/v1",
+  "operations": [],
+  "types": [],
+  "foreign": true
+}

@@ -99,7 +99,10 @@
     "modelRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["modelVersion", "digest"],
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
       "properties": {
         "modelVersion": {
           "const": "0.2.16"
@@ -112,7 +115,10 @@
     "irRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["identity", "digest"],
+      "required": [
+        "identity",
+        "digest"
+      ],
       "properties": {
         "identity": {
           "const": "dev.lekalo.ir@0.2.16"
@@ -125,7 +131,10 @@
     "transportRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["identity", "digest"],
+      "required": [
+        "identity",
+        "digest"
+      ],
       "properties": {
         "identity": {
           "const": "dev.lekalo.transport-http@0.4.0"
@@ -136,15 +145,30 @@
       }
     },
     "paramLocation": {
-      "enum": ["path", "query", "header", "cookie"]
+      "enum": [
+        "path",
+        "query",
+        "header",
+        "cookie"
+      ]
     },
     "paramStyle": {
-      "enum": ["simple", "form", "deepObject"]
+      "enum": [
+        "simple",
+        "form",
+        "deepObject"
+      ]
     },
     "param": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "in", "field", "typeRef", "required"],
+      "required": [
+        "name",
+        "in",
+        "field",
+        "typeRef",
+        "required"
+      ],
       "properties": {
         "name": {
           "$ref": "#/$defs/wireName"
@@ -173,12 +197,20 @@
       }
     },
     "bodyMode": {
-      "enum": ["whole", "explicit"]
+      "enum": [
+        "whole",
+        "explicit"
+      ]
     },
     "bodyField": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "field", "typeRef", "required"],
+      "required": [
+        "name",
+        "field",
+        "typeRef",
+        "required"
+      ],
       "properties": {
         "name": {
           "$ref": "#/$defs/wireName"
@@ -200,7 +232,10 @@
     "body": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "typeRef"],
+      "required": [
+        "mode",
+        "typeRef"
+      ],
       "properties": {
         "mode": {
           "$ref": "#/$defs/bodyMode"
@@ -220,7 +255,10 @@
     "auth": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["actor", "schemes"],
+      "required": [
+        "actor",
+        "schemes"
+      ],
       "properties": {
         "actor": {
           "enum": [
@@ -244,7 +282,10 @@
     "idempotency": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["header", "required"],
+      "required": [
+        "header",
+        "required"
+      ],
       "properties": {
         "header": {
           "$ref": "#/$defs/headerName"
@@ -257,10 +298,16 @@
     "pagination": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["style", "limitParam"],
+      "required": [
+        "style",
+        "limitParam"
+      ],
       "properties": {
         "style": {
-          "enum": ["offset", "cursor"]
+          "enum": [
+            "offset",
+            "cursor"
+          ]
         },
         "limitParam": {
           "$ref": "#/$defs/wireName"
@@ -280,12 +327,23 @@
       }
     },
     "retryAuthorization": {
-      "enum": ["never", "safe", "key-required", "reconciliation-only"]
+      "enum": [
+        "never",
+        "safe",
+        "key-required",
+        "reconciliation-only"
+      ]
     },
     "errorVariant": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["error", "code", "category", "status", "retry"],
+      "required": [
+        "error",
+        "code",
+        "category",
+        "status",
+        "retry"
+      ],
       "properties": {
         "error": {
           "$ref": "#/$defs/semanticId"
@@ -318,7 +376,11 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "typeRef", "required"],
+            "required": [
+              "name",
+              "typeRef",
+              "required"
+            ],
             "properties": {
               "name": {
                 "$ref": "#/$defs/wireName"
@@ -335,7 +397,11 @@
       }
     },
     "resultShape": {
-      "enum": ["value", "empty", "page"]
+      "enum": [
+        "value",
+        "empty",
+        "page"
+      ]
     },
     "operation": {
       "type": "object",
@@ -349,8 +415,7 @@
         "ident",
         "params",
         "successStatus",
-        "resultShape",
-        "errors"
+        "resultShape"
       ],
       "properties": {
         "operationId": {
@@ -363,7 +428,13 @@
           "$ref": "#/$defs/semanticId"
         },
         "method": {
-          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
         },
         "path": {
           "type": "string",
@@ -385,7 +456,12 @@
           "$ref": "#/$defs/body"
         },
         "successStatus": {
-          "enum": [200, 201, 202, 204]
+          "enum": [
+            200,
+            201,
+            202,
+            204
+          ]
         },
         "successBody": {
           "$ref": "#/$defs/body"
@@ -441,7 +517,12 @@
     "namedType": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["symbol", "typeId", "ident", "kind"],
+      "required": [
+        "symbol",
+        "typeId",
+        "ident",
+        "kind"
+      ],
       "properties": {
         "symbol": {
           "$ref": "#/$defs/semanticId"
@@ -455,7 +536,11 @@
           "$ref": "#/$defs/identifier"
         },
         "kind": {
-          "enum": ["scalar", "enum", "object"]
+          "enum": [
+            "scalar",
+            "enum",
+            "object"
+          ]
         },
         "base": {
           "$ref": "#/$defs/scalarMapping"
@@ -474,7 +559,12 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "typeRef", "nullable", "required"],
+            "required": [
+              "name",
+              "typeRef",
+              "nullable",
+              "required"
+            ],
             "properties": {
               "name": {
                 "$ref": "#/$defs/wireName"
