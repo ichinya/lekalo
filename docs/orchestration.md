@@ -32,6 +32,13 @@ same receipt; the human line is a one-line summary of the same data.
   adapter may read as input. Generate maintains the file (runtime
   cache, atomic replace, read-back check); verify consumes it and
   refuses a stale or absent file as `lock.stale` instead of writing.
+- Transport preflight (issue #70): when the canonical transport home
+  `lekalo/transport.yaml` exists, generate validates it against the
+  compiled project before any adapter is discovered and writes its
+  canonical bytes to `.lekalo/cache/transport/<project>.json` under
+  the same `lekalo.cache` evidence home — the only transport input an
+  adapter may read, covered by its declared read scopes. An invalid
+  home refuses the run.
 - `scope` records the attribution scope: every module, or one module.
 - Generate receipts carry one isolated row per target (`planned`,
   `applied`, or `failed`) with the protocol plan id, the sorted write
@@ -168,3 +175,13 @@ precedence (5 > 1 > 3 > 4).
   the pinned golden receipts (regenerate with the documented fixture
   sequence when the fixture project bytes change), and the
   cross-language invariants, with exact Ajv 8.17.1 on Node 18 and 24.
+
+## Adapter package gate (issue #32)
+
+The catalog seam (`lekalo lock -- PROGRAM`, `generate`/`verify --`
+`PROGRAM`) runs the adapter package resolution gate before the safe
+describe handshake: the implicit local-development descriptor is
+synthesized from the launched entry, then the integrity, signature, and
+trust gates run with the project-scoped revocation store. A refusal
+carries its registered `adapter.*` rule and never spawns the adapter.
+The normative contract is [adapter-manifest.md](adapter-manifest.md).

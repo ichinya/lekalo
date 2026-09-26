@@ -144,8 +144,8 @@ fn doctor_reports_the_fresh_fixture_without_mutating_it() {
     let json = stdout_text(&output);
     let document: serde_json::Value = serde_json::from_str(&json).expect("wire document parses");
     assert_eq!(document["status"], "valid");
-    assert_eq!(document["schemaVersion"], "lekalo/doctor/v0.2.16");
-    assert_eq!(document["identity"], "dev.lekalo.doctor@0.2.16");
+    assert_eq!(document["schemaVersion"], "lekalo/doctor/v0.3.2");
+    assert_eq!(document["identity"], "dev.lekalo.doctor@0.3.2");
     assert_eq!(document["report"], "doctor");
     assert_eq!(document["productVersion"], env!("CARGO_PKG_VERSION"));
     assert_eq!(document["verdict"], "ready");
@@ -166,10 +166,12 @@ fn doctor_reports_the_fresh_fixture_without_mutating_it() {
         ids,
         vec![
             "adapters.inventory",
+            "adapters.trust",
             "artifacts.drift",
             "bindings.freshness",
             "cache.health",
             "capabilities.profiles",
+            "classification.attachment",
             "fs.confinement",
             "integrations.hlv",
             "lock.freshness",

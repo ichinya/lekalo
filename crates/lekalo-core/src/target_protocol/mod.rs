@@ -26,6 +26,7 @@ mod confinement;
 mod conformance;
 pub mod diagnostic;
 pub mod discovery;
+pub mod evidence;
 pub mod plan;
 pub mod scopes;
 pub mod selection;
@@ -35,6 +36,7 @@ pub mod wire;
 
 use std::sync::atomic::AtomicBool;
 
+use crate::adapter_package::budget::SessionBudget;
 use crate::project_fs::Fs;
 use transport::AdapterCommand;
 use wire::{Operation, RequestEnvelope, ResponseEnvelope, ResponseInvalidity, ResponseStatus};
@@ -100,6 +102,10 @@ pub struct CallOutcome {
     pub response: ResponseEnvelope,
     /// The plan identifier the exchange bound (planning and apply).
     pub plan_id: Option<String>,
+    /// The deterministic confinement evidence of the exchange (issue
+    /// #89): granted budget, described scopes, effective scopes, and
+    /// the honest per-dimension enforcement record.
+    pub confinement: evidence::ConfinementEvidence,
 }
 
 /// The closed failure taxonomy of the target protocol client.
@@ -156,6 +162,24 @@ pub enum TargetFailure {
     OutputLimit { stream: transport::Stream },
     /// The caller cancelled the exchange.
     Cancelled,
+    /// The adapter's described scopes exceed its manifest-enforced
+    /// confinement budget (issue #89): refused before any sandbox.
+    PermissionEscalated {
+        /// The exceeded capability member (`capabilities.readScopes` or
+        /// `capabilities.writeScopes`).
+        member: &'static str,
+        /// The adapter identity the session is bound to.
+        adapter: String,
+    },
+    /// A confinement guarantee was violated or could not be honored
+    /// (issue #89): fail-closed refusal mapped onto the registered
+    /// `adapter.security-failure` rule.
+    SecurityRefusal {
+        /// The violated check (bounded token, e.g. `writes-outside-scopes`).
+        check: &'static str,
+        /// The bounded reason token (e.g. `publication-guard`).
+        detail: &'static str,
+    },
 }
 
 impl TargetFailure {
@@ -203,6 +227,10 @@ pub struct TargetClient {
     limits: transport::TransportLimits,
     described: Option<(AdapterCommand, DescribeOutcome)>,
     binding: Option<PlanBinding>,
+    /// The execution confinement budget (issue #89). The default is the
+    /// strict implicit budget; `scan_service`/`catalog` set it from the
+    /// resolved manifest after the trust/consistency gates.
+    budget: SessionBudget,
 }
 
 impl Default for TargetClient {
@@ -218,7 +246,20 @@ impl TargetClient {
             limits,
             described: None,
             binding: None,
+            budget: SessionBudget::strict_implicit(),
         }
+    }
+
+    /// Set the session's confinement budget (issue #89). Called after
+    /// the package gates have resolved the verified manifest; the
+    /// budget is the enforcement ceiling of every later exchange.
+    pub fn set_budget(&mut self, budget: SessionBudget) {
+        self.budget = budget;
+    }
+
+    /// The session's confinement budget.
+    pub fn budget(&self) -> &SessionBudget {
+        &self.budget
     }
 
     /// The cached handshake outcome, if any.
@@ -298,8 +339,12 @@ impl TargetClient {
         );
         envelope.request_id = wire::request_id(&envelope);
         let serialized = serialize(&envelope)?;
-        let sandbox = confinement::Sandbox::new(cwd, &[], &[], false)?;
-        let exchange = sandbox.run(command, &serialized, &self.limits, false, cancel);
+        let sandbox =
+            confinement::Sandbox::new(cwd, &[], &[], false, confinement::SandboxPolicy::strict())?;
+        // Safe discovery discloses nothing but the request bytes: the
+        // handshake runs with empty scopes and an empty environment
+        // regardless of the session budget (issue #89).
+        let exchange = sandbox.run(command, &serialized, &self.limits, false, cancel, &[]);
         let response = self.interpret(exchange, &envelope)?;
         let invalid = |detail| Err(TargetFailure::ResponseInvalid { detail });
         if response.writes.is_some() {
@@ -376,6 +421,18 @@ impl TargetClient {
             });
         }
         let capabilities = described.capabilities.clone();
+        // Issue #89: the manifest-enforced budget is the ceiling. The
+        // described scopes pass through the budget check before any
+        // sandbox exists; exceeding scopes refuse as
+        // `adapter.permission-escalated` (denied) unless the session
+        // carries an explicit escalation policy.
+        let effective = self
+            .budget
+            .check_scopes(&capabilities.read_scopes, &capabilities.write_scopes)
+            .map_err(|escalation| TargetFailure::PermissionEscalated {
+                member: escalation.member(),
+                adapter: capabilities.adapter.id.clone(),
+            })?;
         // Refuse undeclared IR support before disclosing project IR.
         if request.operation.requires_ir()
             && !capabilities
@@ -394,7 +451,7 @@ impl TargetClient {
                 detail: "profile-resolution",
             });
         }
-        self.validate_call_request(&request, &capabilities)?;
+        self.validate_call_request(&request, &capabilities, &effective.read)?;
         if applying && pending.is_none() {
             return Err(TargetFailure::RequestInvalid { detail: "plan-id" });
         }
@@ -406,7 +463,9 @@ impl TargetClient {
         let fs = Fs::open(&root).map_err(|_| TargetFailure::RequestInvalid {
             detail: "project-root",
         })?;
-        let inputs = snapshot_scopes(&fs, &capabilities.read_scopes)?;
+        // The budget-checked (effective) scopes — not the raw describe
+        // claim — drive every snapshot and the sandbox view (issue #89).
+        let inputs = snapshot_scopes(&fs, &effective.read)?;
         if request
             .ir_path
             .is_some_and(|path| !inputs.get(path).is_some_and(|value| value != "directory"))
@@ -424,7 +483,7 @@ impl TargetClient {
             &inputs,
             &described.capability_digest,
         )));
-        let before = snapshot_scopes(&fs, &capabilities.write_scopes)?;
+        let before = snapshot_scopes(&fs, &effective.write)?;
         if applying {
             let binding = pending
                 .as_ref()
@@ -483,30 +542,52 @@ impl TargetClient {
 
         let sandbox = confinement::Sandbox::new(
             &root,
-            &capabilities.read_scopes,
-            &capabilities.write_scopes,
+            &effective.read,
+            &effective.write,
             applying,
+            confinement::SandboxPolicy::from_budget(&self.budget),
         )?;
         let stage_fs = Fs::open(&sandbox.project).map_err(|_| TargetFailure::TransportFailed {
             detail: "sandbox-view",
         })?;
         let stage_before = plan::snapshot_all(&stage_fs).map_err(snapshot_rejection)?;
-        let exchange = sandbox.run(command, &serialized, &self.limits, use_file, cancel);
+        // The granted environment pairs resolve at spawn time from the
+        // session budget; values enter only the child environment block
+        // and are never logged, persisted, or echoed (issue #89).
+        let granted_env = self.budget.resolve_environment();
+        let exchange = sandbox.run(
+            command,
+            &serialized,
+            &self.limits,
+            use_file,
+            cancel,
+            &granted_env,
+        );
         let response = self.interpret(exchange, &envelope)?;
         self.validate_response_payload(&request, &response, &capabilities)?;
         let writes = response.writes.clone().unwrap_or_default();
 
         let mut outcome_plan_id = None;
+        let mut write_audit = None;
+        let declared_writes = writes.len();
         if request.operation.declares_writes() {
             let after = plan::snapshot_all(&stage_fs).map_err(snapshot_rejection)?;
+            // Issue #89 write-plan versus actual audit: every staged
+            // change is compared against the effective write scopes;
+            // the passing case is an empty `outsideScopes` list.
+            let changed = plan::changed_paths(&stage_before, &after);
+            let outside_scopes: Vec<String> = changed
+                .iter()
+                .filter(|path| !plan::covered_by(path, &effective.write))
+                .cloned()
+                .collect();
             let is_planning = request.operation == Operation::PlanClean
                 || (request.operation == Operation::Generate && request.dry_run == Some(true));
             if is_planning {
-                if let Some(path) = plan::changed_paths(&stage_before, &after)
-                    .into_iter()
-                    .next()
-                {
-                    return Err(TargetFailure::DryRunMutation { path: Some(path) });
+                if let Some(path) = changed.first() {
+                    return Err(TargetFailure::DryRunMutation {
+                        path: Some(path.clone()),
+                    });
                 }
                 plan::validate_preconditions(&writes, &before)?;
                 if request.operation == Operation::PlanClean
@@ -546,11 +627,24 @@ impl TargetClient {
                 if !plan::plans_equal(&binding.entries, &writes) {
                     return Err(TargetFailure::plan_mismatch(None, "plan-drift"));
                 }
+                // Issue #89: a staged change outside the effective write
+                // scopes is a confinement violation — refuse before any
+                // publication, never silently drop it. The security
+                // classification fires before plan verification (fix
+                // round 2, C-F3) so an out-of-scope staged change is
+                // observed as `adapter.security-failure`; undeclared
+                // changes still refuse as plan-mismatch below.
+                if !outside_scopes.is_empty() {
+                    return Err(TargetFailure::SecurityRefusal {
+                        check: "writes-outside-scopes",
+                        detail: "publication-guard",
+                    });
+                }
                 plan::verify_applied(&stage_fs, &writes, &stage_before, &after)?;
                 // Validate every response and staged byte before publishing.
                 // Re-check real inputs/output pre-state after the child exits.
-                if snapshot_scopes(&fs, &capabilities.read_scopes)? != inputs
-                    || snapshot_scopes(&fs, &capabilities.write_scopes)? != before
+                if snapshot_scopes(&fs, &effective.read)? != inputs
+                    || snapshot_scopes(&fs, &effective.write)? != before
                 {
                     return Err(TargetFailure::plan_mismatch(None, "before-drift"));
                 }
@@ -560,10 +654,24 @@ impl TargetClient {
                 sandbox.publish(&root, &writes, &before)?;
                 outcome_plan_id = Some(binding.plan_id);
             }
+            write_audit = Some(evidence::WriteAuditEvidence::new(
+                declared_writes,
+                changed,
+                outside_scopes,
+            ));
         }
         Ok(CallOutcome {
             response,
             plan_id: outcome_plan_id,
+            confinement: evidence::ConfinementEvidence::build(
+                &self.budget,
+                &capabilities.read_scopes,
+                &capabilities.write_scopes,
+                &effective.read,
+                &effective.write,
+                write_audit,
+                sandbox.report(),
+            ),
         })
     }
 
@@ -659,6 +767,7 @@ impl TargetClient {
         &self,
         request: &CallRequest<'_>,
         capabilities: &wire::Capabilities,
+        effective_read: &[String],
     ) -> Result<(), TargetFailure> {
         let invalid = |detail| Err(TargetFailure::RequestInvalid { detail });
         if request.operation == Operation::Describe {
@@ -739,7 +848,7 @@ impl TargetClient {
             if !scopes::is_logical_path(ir_path) {
                 return invalid("grammar");
             }
-            if !plan::covered_by(ir_path, &capabilities.read_scopes) {
+            if !plan::covered_by(ir_path, effective_read) {
                 return Err(TargetFailure::scope_violation(
                     Some(ir_path.to_owned()),
                     "ir-uncovered",

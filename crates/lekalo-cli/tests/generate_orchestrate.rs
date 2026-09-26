@@ -530,3 +530,127 @@ fn an_undeclared_apply_write_is_caught_and_never_published() {
         assert!(!root.join("src/generated").exists());
     });
 }
+
+// ---------------------------------------------------------------------------
+// Issue #45: the committed generation artifact `adapter-zod.mjs` — the
+// kernel plus the Zod generator, self-contained and far below the 4 MiB
+// entry bound the full compiler bundle cannot fit — drives the real
+// generation pipeline end to end (plan §7 step 7; the plan's "real
+// bundle" is qualified by this dedicated artifact because the protocol's
+// entry-digest bound rejects entries over 4 MiB).
+// ---------------------------------------------------------------------------
+
+/// The compact launch profile handed to the adapter through argv: the
+/// read roots cover the canonical IR evidence home, the only input
+/// generation consumes. Never an ambient grant.
+const ZOD_E2E_PROFILE: &str = concat!(
+    r#"{"id":"generate","mode":"observed","target":"node-typescript",""#,
+    r#"readRoots":[{"path":".lekalo/cache/ir","kind":"tree"}],"#,
+    r#""exclusions":[],"provenance":{"origin":"declared","#,
+    r#""revision":"issue-45-e2e-0001","disposition":"public-fixture"}}"#
+);
+
+/// Copy the committed generation artifact into the project copy so the
+/// lock can pin it exactly like the reference implementation.
+fn with_zod_adapter(root: &Path) {
+    let home = root.join("adapters/node-typescript");
+    std::fs::create_dir_all(&home).expect("adapter home");
+    std::fs::copy(
+        workspace_path("adapters/node-typescript/adapter-zod.mjs"),
+        home.join("adapter-zod.mjs"),
+    )
+    .expect("copy the generation artifact");
+}
+
+/// Run the real binary with the generation artifact vector.
+fn zod_lekalo_in(root: &Path, head: &[&str]) -> Output {
+    let mut args: Vec<&str> = head.to_vec();
+    args.push("--");
+    args.extend_from_slice(&[
+        "node",
+        "adapters/node-typescript/adapter-zod.mjs",
+        "--lekalo-project-profile-json",
+        ZOD_E2E_PROFILE,
+    ]);
+    Command::new(env!("CARGO_BIN_EXE_lekalo"))
+        .args(&args)
+        .current_dir(alias_free_path(root))
+        .output()
+        .expect("run the real lekalo binary")
+}
+
+#[test]
+fn the_zod_generation_artifact_drives_the_real_pipeline() {
+    with_project(|root| {
+        with_zod_adapter(root);
+        let lock = zod_lekalo_in(root, &["--json", "lock"]);
+        assert_eq!(exit_code(&lock), 0, "stdout={}", stdout(&lock));
+        // Dry run: the plan lists the whole generated set, nothing exists.
+        let planned = zod_lekalo_in(
+            root,
+            &[
+                "--json",
+                "generate",
+                "--target",
+                "node-typescript",
+                "--dry-run",
+            ],
+        );
+        assert_eq!(exit_code(&planned), 0, "stdout={}", stdout(&planned));
+        let receipt: serde_json::Value = serde_json::from_str(&stdout(&planned)).expect("json");
+        let writes = receipt["targets"][0]["writes"].as_array().expect("writes");
+        assert!(
+            writes.len() >= 4,
+            "every generated file is planned: {writes:?}"
+        );
+        let paths: Vec<&str> = writes
+            .iter()
+            .map(|write| write["path"].as_str().expect("path"))
+            .collect();
+        assert!(paths.contains(&"src/generated/node-typescript/zod/notify.ts"));
+        assert!(paths.contains(&"src/generated/node-typescript/zod/runtime.ts"));
+        assert!(paths.contains(&"src/generated/node-typescript/zod/index.ts"));
+        assert!(paths.contains(&"src/generated/node-typescript/zod/notify.map.json"));
+        assert!(!root
+            .join("src/generated/node-typescript/zod/notify.ts")
+            .exists());
+        // Apply: the files exist, the manifest attributes schema and data
+        // kinds, and the sidecar declaration ranges land as source maps
+        // bound to the module artifacts.
+        let applied = zod_lekalo_in(root, &["--json", "generate", "--target", "node-typescript"]);
+        assert_eq!(exit_code(&applied), 0, "stdout={}", stdout(&applied));
+        let applied_receipt: serde_json::Value =
+            serde_json::from_str(&stdout(&applied)).expect("json");
+        assert_eq!(applied_receipt["targets"][0]["state"], "applied");
+        assert!(root
+            .join("src/generated/node-typescript/zod/notify.ts")
+            .exists());
+        let manifest_text =
+            std::fs::read_to_string(root.join(".lekalo/generated/manifests/ownership.json"))
+                .expect("manifest exists");
+        assert!(manifest_text.contains("\"schema\""), "kind schema recorded");
+        assert!(manifest_text.contains("\"data\""), "kind data recorded");
+        assert!(
+            manifest_text.contains("source_maps"),
+            "source maps recorded"
+        );
+        assert!(
+            manifest_text.contains("notify.ts"),
+            "source maps bind module artifacts"
+        );
+        // The drift gate accepts the fresh generation.
+        let check = lekalo_in(root, &["generate", "--check"], false);
+        assert_eq!(exit_code(&check), 0, "stdout={}", stdout(&check));
+        assert!(stdout(&check).contains("clean 4"));
+        // Tamper: the gate refuses.
+        let generated = root.join("src/generated/node-typescript/zod/notify.ts");
+        let body = std::fs::read_to_string(&generated).expect("read generated");
+        std::fs::write(
+            &generated,
+            body.replace("NotifyChannelSchema", "NotifyChannelSchemaTampered"),
+        )
+        .expect("tamper");
+        let drifted = lekalo_in(root, &["generate", "--check"], false);
+        assert_eq!(exit_code(&drifted), 1, "stdout={}", stdout(&drifted));
+    });
+}

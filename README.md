@@ -54,6 +54,9 @@ dev.lekalo.privacy-export-policy@0.2.16@sha256:430ba543098c91f70d0c4e37c32ac8e41
 - [Privacy and export policy](docs/privacy.md)
 - [ADR-0002: exact-custody privacy decision contract](docs/adr/0002-privacy-export-policy.md)
 - Accepted policy: `contracts/privacy-policy.v0.2.16.json` with its manifest and sidecars
+- [Data classification and the data-flow report (issue #87)](docs/classification.md)
+- [ADR-0043: data classification, secret/PII boundaries, and sensitive-effect gates](docs/adr/0043-data-classification-security-gates.md)
+- Classification attachments: `contracts/data-classification.schema.v0.4.0.json`, `contracts/classification-policy.schema.v0.4.0.json`, and the derived `contracts/data-flow-report.schema.v0.4.0.json`
 
 Validate one export decision or run the full protocol suites:
 
@@ -67,6 +70,19 @@ Exit protocol: `0` allow, `3` well-formed deny or transform-required, `1`
 malformed or custody failure. The checker trusts only the hard-pinned
 accepted manifest bytes; a recomputed digest never authorizes changed
 semantics.
+
+Validate the data-classification attachments and derive the data-flow
+report (issue #87):
+
+```sh
+node scripts/test-classification-contracts.mjs
+node scripts/test-classification-cli.mjs   # requires: cargo build -p lekalo-cli
+```
+
+The two declared attachments bind to the exact
+`projectId`/`modelRef`/`irRef` custody triple; the derived data-flow
+report pins their canonical digests. Unknown is never safe and
+`credential` never declassifies downward.
 
 ## Canonical project structure
 
@@ -234,7 +250,9 @@ issue #62 adds the `error.*` family, and issue #26 adds the
 `publication.*`, `contract.*`, and `case.*` families, and issue #63 adds
 the `invariant.*` family, issue #27 adds the `target.*` family, and issue #36
 adds the `requirements.*` family, and issue #65 adds the `storage.*` family,
-each as a wire-shape-preserving minor increment).
+each as a wire-shape-preserving minor increment; issue #87 joins the
+shared 0.4.0 successor with the `classification.*` (LEK-CLS-001..012)
+and `dataflow.*` (LEK-DFL-001..009) families).
 
 ## Generated-artifact ownership and drift detection
 
@@ -608,7 +626,7 @@ native tests to semantic symbols, and a module moves from observed to
 contracted by promotion plus one declaration merge, without a rewrite.
 The mode lives in [docs/contracted-mode.md](docs/contracted-mode.md),
 [ADR-0034](docs/adr/0034-contracted-mode.md), and
-`contracts/contracted-declaration.schema.v0.2.16.json`; the planner
+`contracts/contracted-declaration.schema.v0.4.0.json`; the planner
 reference module is the first contracted slice under
 `tests/fixtures/contracted/planner-slice/`.
 
@@ -634,6 +652,30 @@ emission, no adapter. See
 [docs/storage-projection.md](docs/storage-projection.md),
 [ADR-0025](docs/adr/0025-storage-projection.md), and the hermetic
 fixtures under `tests/fixtures/storage-projection/`.
+
+## PostgreSQL storage engine profile
+
+Issue #69 adds the engine layer over the #65 projection: one closed
+engine profile (`dev.lekalo.storage-engine@0.4.0`) pinning the exact
+PostgreSQL version (majors 15–18; an outside pin refuses, never
+clamps), the policy-gated type table (JSON/enum/array/time/pagination,
+always-quoted identifiers), tenancy with explicit RLS, optimistic
+versioning, the checked-mode introspection declaration and test
+lifecycle with production access const-forbidden, and the extension
+allow-list. The deterministic DDL renderer emits every statement with
+quoted identifiers, deterministic names, and visible data risk; the
+migration planner gates destructive plans behind the exact `planId`
+digest; the adapter-produced checked-mode evidence drives the drift
+comparison, which reports missing, extra, divergent, and unsupported
+findings as data; and the honest #24 capability snapshot checks
+planner isolation, locking, and optimistic-versioning guarantees on
+PostgreSQL. The Node.js, PHP, and Go runtimes consume one canonical
+engine input document, byte-identical by construction. Pure
+declaration, validation, and rendering: core never connects, never
+executes, never sees credentials. See
+[docs/storage-engine.md](docs/storage-engine.md),
+[ADR-0042](docs/adr/0042-postgres-storage-engine.md), and the
+fixtures under `tests/fixtures/storage-engine/`.
 
 ## Typed expressions for conditions and assignments
 

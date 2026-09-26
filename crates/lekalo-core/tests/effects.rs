@@ -579,3 +579,88 @@ fn the_canonical_export_is_stable_and_matches_the_golden() {
     let golden = std::fs::read_to_string(&golden_path).expect("golden effect export");
     assert_eq!(first, golden.trim_end_matches('\n'), "pinned golden bytes");
 }
+
+// -----------------------------------------------------------------------
+// Issue #87: sensitivity stamping of declared edges from a classification
+// resolution.
+// -----------------------------------------------------------------------
+
+/// The classification attachment wire covering the planner fixture:
+/// every entity the planner reads or writes is classified, so every
+/// declared edge must carry the marker.
+const PLANNER_CLASSIFICATION: &str = r#"{
+  "schemaVersion": "lekalo/data-classification/v0.4.0",
+  "identity": "dev.lekalo.data-classification@0.4.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {"modelVersion": "0.2.16", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "irRef": {"irVersion": "0.2.16", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+  "defaults": {"profile": "default", "unclassifiedFields": "internal", "unclassifiedPayloads": "internal"},
+  "classifications": [
+    {"subject": "planner.task", "kind": "internal"},
+    {"subject": "planner.task_id", "kind": "internal"},
+    {"subject": "planner.text", "kind": "internal"},
+    {"subject": "planner.due_date", "kind": "internal"},
+    {"subject": "planner.task_state", "kind": "internal"},
+    {"subject": "planner.due_window", "kind": "internal"},
+    {"subject": "planner.task_focused", "kind": "internal"},
+    {"subject": "planner.task_archived", "kind": "internal"},
+    {"subject": "notify.text", "kind": "internal"},
+    {"subject": "notify.user_id", "kind": "personal"},
+    {"subject": "notify.user", "kind": "personal"}
+  ],
+  "declassifications": [],
+  "openQuestions": []
+}"#;
+
+#[test]
+fn classified_edges_carry_the_marker_and_uncovered_edges_do_not() {
+    let project = planner();
+    let attachment =
+        lekalo_core::classification::Attachment::parse(PLANNER_CLASSIFICATION.as_bytes())
+            .expect("planner classification parses");
+    let resolution = lekalo_core::classification::Resolution::build(&attachment);
+    let graph = lekalo_core::effects::build_with_classification(&project, Some(&resolution))
+        .expect("graph builds");
+    assert!(!graph.declared().is_empty(), "the planner declares edges");
+    for edge in graph.declared() {
+        let resource = edge.key().subject().resource().as_str();
+        let marker = edge
+            .sensitivity()
+            .unwrap_or_else(|| panic!("{resource}: marker missing"));
+        assert_eq!(marker.contract(), "dev.lekalo/data-classification@0.4.0");
+        assert!(marker.classified());
+    }
+
+    // Without the resolution the exact same graph builds with no
+    // markers at all.
+    let bare = build(&project).expect("bare graph builds");
+    assert!(bare
+        .declared()
+        .iter()
+        .all(|edge| edge.sensitivity().is_none()));
+}
+
+#[test]
+fn stamping_never_changes_the_edge_identity_set() {
+    let project = planner();
+    let bare = build(&project).expect("bare graph builds");
+    let attachment =
+        lekalo_core::classification::Attachment::parse(PLANNER_CLASSIFICATION.as_bytes())
+            .expect("planner classification parses");
+    let resolution = lekalo_core::classification::Resolution::build(&attachment);
+    let stamped = lekalo_core::effects::build_with_classification(&project, Some(&resolution))
+        .expect("stamped graph builds");
+    let bare_keys: Vec<_> = bare.declared().iter().map(|edge| edge.key()).collect();
+    let stamped_keys: Vec<_> = stamped.declared().iter().map(|edge| edge.key()).collect();
+    assert_eq!(bare_keys, stamped_keys, "stamping is identity-neutral");
+    // The canonical bytes differ only in the sensitivity members.
+    assert_ne!(
+        bare.to_canonical_json().expect("bare canonical"),
+        stamped.to_canonical_json().expect("stamped canonical")
+    );
+    assert!(stamped
+        .to_canonical_json()
+        .expect("stamped canonical")
+        .contains("\"sensitivity\":{\"contract\":\"dev.lekalo/data-classification@0.4.0\""));
+}

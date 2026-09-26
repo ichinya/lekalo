@@ -16,9 +16,15 @@ lock resolve the same components, byte for byte.
   order, semantic arrays in the documented sorted order, and exactly one LF
   at the end of the file. (Strict JSON is also a YAML 1.2 subset; no second
   YAML canonicalization exists.)
-- The schema artifact is `contracts/lock.schema.v0.2.16.json`
-  (Draft 2020-12, closed), identity `dev.lekalo.lock@0.2.16`; the wire
-  discriminator is `schema_version = "lekalo/lock/v0.2.16"`. These versions
+- The schema artifact is `contracts/lock.schema.v0.3.2.json`
+  (Draft 2020-12, closed), identity `dev.lekalo.lock@0.3.2`; the wire
+  discriminator is `schema_version = "lekalo/lock/v0.3.2"`. Since
+  issue #32 the `adapters[]` entries carry the additive provenance
+  members `manifest_digest`, `trust` (the five-level package trust
+  vocabulary), and `provenance {source, install_plan_id?}`; the source
+  kind `installed` addresses the governed `.lekalo/adapters/packages/**`
+  store as a #4-safe project-relative POSIX path. All three members are
+  optional; existing pins keep their exact published meaning. These versions
   are independent of the product release, the Model/IR/protocol contract
   versions, and the resolver algorithm version.
 - `LockDigest` is SHA-256 over the canonical payload bytes **without** the

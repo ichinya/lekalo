@@ -1,0 +1,25 @@
+{
+  "source": "mysql",
+  "target": "mariadb",
+  "changes": [
+    {
+      "id": "lock.shared",
+      "source": "full",
+      "target": "partial"
+    },
+    {
+      "id": "storage.returning",
+      "source": "unsupported",
+      "target": "partial"
+    },
+    {
+      "id": "storage.sequences",
+      "source": "unsupported",
+      "target": "full"
+    }
+  ],
+  "loses": [],
+  "gains": [
+    "storage.sequences"
+  ]
+}

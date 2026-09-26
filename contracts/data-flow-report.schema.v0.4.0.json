@@ -1,0 +1,409 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/data-flow-report.schema.v0.4.0.json",
+  "title": "Lekalo Data-Flow Report",
+  "description": "Closed derived read-only report contract projecting data-classification flows, tenant relations, sensitive-effect gate decisions, and findings for one project (issue #87). The report is derived output bound to the exact canonical digests of its classification and policy inputs and to the projectId/modelRef/irRef custody triple; it is never an input to itself and never feeds validation as a declaration. Unknown and low-confidence flows are first-class report states: a flow that rests on observed or incomplete evidence can never satisfy a gate, and absence of evidence is never proof of safety. The report is metadata-only: it never carries, quotes, or embeds field values, source text, physical paths, runtime principals, tokens, secrets, provider transcripts, or Model/IR bytes; findings reference subjects by path and carry only bounded detail tokens. The contract is independent of the product release, of the Model and IR contract versions, of the effect-graph and transport contract versions, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "reportRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "classificationRef",
+    "policyRef",
+    "generatedBy",
+    "inputsComplete",
+    "verdict",
+    "flows",
+    "findings",
+    "unknowns"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/data-flow-report/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.data-flow-report@0.4.0"
+    },
+    "reportRevision": {
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/projectId"
+    },
+    "modelRef": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "$ref": "#/$defs/irRef"
+    },
+    "classificationRef": {
+      "description": "Exact canonical digest of the classification attachment this report was derived from.",
+      "$ref": "#/$defs/sha256Digest"
+    },
+    "policyRef": {
+      "description": "Exact canonical digest of the classification-policy attachment this report was derived from.",
+      "$ref": "#/$defs/sha256Digest"
+    },
+    "generatedBy": {
+      "description": "The core engine version that derived this report; never a wall-clock timestamp.",
+      "$ref": "#/$defs/boundedToken"
+    },
+    "inputsComplete": {
+      "description": "False when any input graph section was incomplete (observed gaps, dynamic hops); false blocks gate satisfaction project-wide.",
+      "type": "boolean"
+    },
+    "verdict": {
+      "description": "The aggregated gate verdict: pass requires every gate satisfied and no error-severity finding.",
+      "enum": [
+        "pass",
+        "denied"
+      ]
+    },
+    "flows": {
+      "type": "array",
+      "maxItems": 8192,
+      "items": {
+        "$ref": "#/$defs/flow"
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "unknowns": {
+      "description": "The first-class unknown-flow list. Unknown is never safe: every entry blocks the gates on its path.",
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "$ref": "#/$defs/unknownFlow"
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/openQuestion"
+      }
+    }
+  },
+  "$defs": {
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+      "not": {
+        "enum": [
+          "lekalo",
+          "dev"
+        ]
+      }
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)([-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$"
+    },
+    "boundedToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$"
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "irVersion",
+        "digest"
+      ],
+      "properties": {
+        "irVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
+      }
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+    },
+    "subjectPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 324,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*(:[a-z][a-z0-9_]*)?(/[a-z][a-z0-9_]*(:[a-z][a-z0-9_]*)?){0,2}$"
+    },
+    "dataKind": {
+      "type": "string",
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "personal",
+        "credential",
+        "financial",
+        "health",
+        "tenant-scoped",
+        "retention-limited",
+        "derived"
+      ]
+    },
+    "flowId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "edgeRef": {
+      "description": "One opaque effect-edge occurrence reference inside the bound effect graph; never a runtime handle.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:#/-]*$"
+    },
+    "provenance": {
+      "description": "canonical: derived from the closed Model/IR; observed: from recorded evidence; declared: declared-only, unverified.",
+      "type": "string",
+      "enum": [
+        "canonical",
+        "observed",
+        "declared"
+      ]
+    },
+    "confidence": {
+      "description": "The impact-analyzer confidence vocabulary. Unknown flows can never satisfy gates.",
+      "type": "string",
+      "enum": [
+        "high",
+        "low",
+        "unknown"
+      ]
+    },
+    "tenantRelation": {
+      "description": "same: source and sink share one declared tenant scope; crossing: scopes differ; unknown: scopes not derivable — treated as crossing.",
+      "type": "string",
+      "enum": [
+        "same",
+        "crossing",
+        "unknown"
+      ]
+    },
+    "sinkKind": {
+      "description": "The closed sink vocabulary of the data-flow projection.",
+      "type": "string",
+      "enum": [
+        "storage-write",
+        "cache-write",
+        "event-publish",
+        "external-call",
+        "publication",
+        "endpoint-response",
+        "log",
+        "trace",
+        "context-capsule",
+        "diagnostic",
+        "evidence",
+        "export"
+      ]
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "satisfied",
+        "reason"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "satisfied": {
+          "type": "boolean"
+        },
+        "reason": {
+          "description": "The closed reason vocabulary for the gate state.",
+          "type": "string",
+          "enum": [
+            "not-required",
+            "destination-declared",
+            "approval-present",
+            "missing-destination",
+            "missing-approval",
+            "destination-forbidden",
+            "unknown-flow",
+            "sink-ceiling-exceeded",
+            "unclassified-subject"
+          ]
+        }
+      }
+    },
+    "flow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source",
+        "path",
+        "sink",
+        "sinkKind",
+        "provenance",
+        "confidence",
+        "tenantRelation",
+        "classification"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/flowId"
+        },
+        "source": {
+          "$ref": "#/$defs/subjectPath"
+        },
+        "path": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/edgeRef"
+          }
+        },
+        "sink": {
+          "description": "The sink symbol or bounded sink token.",
+          "$ref": "#/$defs/semanticId"
+        },
+        "sinkKind": {
+          "$ref": "#/$defs/sinkKind"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "tenantRelation": {
+          "$ref": "#/$defs/tenantRelation"
+        },
+        "classification": {
+          "$ref": "#/$defs/dataKind"
+        },
+        "gate": {
+          "$ref": "#/$defs/gate"
+        }
+      }
+    },
+    "finding": {
+      "description": "One rule violation. The subject is a path string and detail is a fixed bounded token; no value ever appears.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ruleId",
+        "severity",
+        "subject",
+        "detail"
+      ],
+      "properties": {
+        "ruleId": {
+          "description": "One registered diagnostic id from the classification.* or dataflow.* families.",
+          "type": "string",
+          "pattern": "^(classification|dataflow)\\.[a-z-]+$"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warning"
+          ]
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 324,
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:#/-]*$"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        }
+      }
+    },
+    "unknownFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "reason"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/subjectPath"
+        },
+        "reason": {
+          "description": "The closed unknown-reason vocabulary.",
+          "type": "string",
+          "enum": [
+            "dynamic-hop",
+            "foreign-implementation",
+            "observed-incomplete",
+            "unresolved-subject",
+            "partial-adapter-outcome"
+          ]
+        }
+      }
+    },
+    "openQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "question"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$"
+        },
+        "question": {
+          "description": "Bounded declaration text. Never source text, paths, credentials, URLs, runtime values, or provider output.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;()/_-]*$"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+# Synthetic pnpm-workspace consumer fixture (issue #49 pilot).
+# Every name is fictional; this tree mirrors the layout of a real
+# consumer only so the observed-mode flow runs against realistic code.
+packages:
+  - "packages/*"
+  - "apps/*"

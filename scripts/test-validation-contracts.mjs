@@ -38,11 +38,11 @@ if (ajvVersion !== "8.17.1") {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
-const schema = read("contracts/validation-profile.schema.v0.3.2.json");
-const registry = read("contracts/diagnostic-registry.v0.3.2.json");
+const schema = read("contracts/validation-profile.schema.v0.4.0.json");
+const registry = read("contracts/diagnostic-registry.v0.4.0.json");
 const profiles = [
-  ["contracts/validation-profile.default.v0.3.2.json", "default"],
-  ["contracts/validation-profile.strict.v0.3.2.json", "strict"],
+  ["contracts/validation-profile.default.v0.4.0.json", "default"],
+  ["contracts/validation-profile.strict.v0.4.0.json", "strict"],
 ].map(([file, id]) => [read(file), id]);
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
@@ -55,7 +55,7 @@ const fail = (reason, detail) => {
 
 // The registry instance feeding the cross-check must itself be the pinned
 // successor validated by test-diagnostic-contracts.mjs.
-if (registry.registry_version !== "0.3.2") fail("registry-version", registry.registry_version);
+if (registry.registry_version !== "0.4.0") fail("registry-version", registry.registry_version);
 const registryRules = new Map(registry.entries.map((entry) => [entry.id, entry]));
 
 // 1. Each embedded profile instance must satisfy the closed schema.

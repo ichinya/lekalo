@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.scenario-run-schema@0.4.0",
+  "title": "Lekalo scenario run record v0.4.0",
+  "description": "Closed wire shape of one durable scenario run record (issue #47): the neutral per-assertion evidence the generated test reporter writes into the adjudicated ingest home. Canonical form is compact JSON with byte-sorted keys and one trailing LF. Outcome rows use the closed vocabulary pass | fail | unsupported | infrastructure | degraded; an unsupported row can never roll up as a pass. No absolute paths, no host data.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/scenario-run/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.scenario-run@0.4.0"
+    },
+    "scenario": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "version": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "ir_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "symbols": {
+          "$ref": "#/$defs/boundedList"
+        },
+        "operations": {
+          "$ref": "#/$defs/boundedList"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "ir_digest",
+        "symbols",
+        "operations"
+      ],
+      "additionalProperties": false
+    },
+    "runner": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "version": {
+          "$ref": "#/$defs/boundedToken"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "profile": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/boundedToken"
+            },
+            "version": {
+              "$ref": "#/$defs/boundedToken"
+            },
+            "digest": {
+              "$ref": "#/$defs/sha256"
+            }
+          },
+          "required": [
+            "digest",
+            "id",
+            "version"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "test": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "path": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "fingerprint",
+        "id",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "binding_mode": {
+      "enum": [
+        "generated",
+        "scaffolded",
+        "checked"
+      ]
+    },
+    "started_by": {
+      "$ref": "#/$defs/boundedToken"
+    },
+    "assertions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "items": {
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/boundedToken"
+              }
+            ]
+          },
+          "observes": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/boundedToken"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/$defs/boundedToken"
+          },
+          "outcome": {
+            "enum": [
+              "pass",
+              "fail",
+              "unsupported",
+              "infrastructure",
+              "degraded"
+            ]
+          },
+          "detail": {
+            "$ref": "#/$defs/boundedToken"
+          }
+        },
+        "required": [
+          "kind",
+          "observes",
+          "outcome",
+          "step_id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "assertions",
+    "binding_mode",
+    "identity",
+    "profile",
+    "runner",
+    "schema_version",
+    "scenario",
+    "started_by",
+    "test"
+  ],
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "$defs": {
+    "boundedToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u001f]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "boundedList": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/boundedToken"
+      }
+    }
+  }
+}

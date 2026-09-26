@@ -1,0 +1,388 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/storage-introspection.schema.v0.4.0.json",
+  "title": "Lekalo Storage Introspection Evidence",
+  "description": "Closed independent attachment contract carrying one adapter-produced, read-only schema introspection of one explicitly configured test schema in explicit checked mode (issue #117). The runtime adapter — never the core — runs the read-only information-schema queries against the named test schema and emits this document; the core only validates it and compares it against a declared projection. The document echoes the exact engine identity, binds exactly one test schema under the declared prefix, records the observed tables with their columns, indexes, foreign keys and digests, and carries the read-only and checked declarations. Credentials, hosts, URLs, ports, data source names, users, and passwords are inexpressible in the grammar: the closed member sets refuse them before they can serialize.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "mode",
+    "readOnly",
+    "engine",
+    "testSchema",
+    "tables",
+    "observedDigest"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/storage-introspection/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.storage-introspection@0.4.0"
+    },
+    "attachmentRevision": {
+      "description": "The exact revision of this attachment; a change is a wire-layer fact.",
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "modelRef": {
+      "description": "The exact bound source Model contract: accepted version plus canonical digest.",
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "description": "The exact bound IR contract: accepted identity plus canonical digest.",
+      "$ref": "#/$defs/irRef"
+    },
+    "mode": {
+      "description": "The closed mode token: evidence exists only in explicit checked mode. The grammar refuses an implicit or unchecked scan.",
+      "const": "checked"
+    },
+    "readOnly": {
+      "description": "The mandatory read-only declaration of the producing adapter run. The grammar carries no true-but-unchecked form: the constant is true.",
+      "const": true
+    },
+    "engine": {
+      "description": "The exact observed engine identity echo of the introspected instance.",
+      "$ref": "#/$defs/observedEngine"
+    },
+    "testSchema": {
+      "description": "The one observed test schema name, under the declared lifecycle prefix. Hosts, ports, users, and data source names are inexpressible.",
+      "$ref": "#/$defs/schemaName"
+    },
+    "tables": {
+      "description": "The observed tables of the test schema, canonical order by name.",
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/observedTable"
+      }
+    },
+    "observedDigest": {
+      "description": "The declared digest over the canonical observed payload, so a re-scan can prove the exact observed bytes.",
+      "$ref": "#/$defs/sha256"
+    },
+    "evidence": {
+      "description": "The bounded provenance record of the producing run.",
+      "$ref": "#/$defs/evidenceRef"
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "safeText": {
+      "description": "Bounded declaration text. Never source text, paths, credentials, URLs, runtime values, or provider output.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;()/_-]*$"
+    },
+    "safeToken": {
+      "description": "One bounded lowercase identifier token.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "evidenceRef": {
+      "description": "One bounded provenance record of the producing run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "vendor-docs",
+            "engine-reference",
+            "adapter-docs",
+            "observed-run"
+          ]
+        },
+        "ref": {
+          "$ref": "#/$defs/safeText"
+        }
+      }
+    },
+    "schemaName": {
+      "description": "One bounded lowercase test schema name under the lifecycle prefix.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "observedEngine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "engineVersion",
+        "sqlMode",
+        "defaultStorageEngine",
+        "charset",
+        "collation",
+        "timeZone"
+      ],
+      "properties": {
+        "engine": {
+          "description": "The observed engine token of the introspected instance.",
+          "enum": [
+            "mysql",
+            "mariadb"
+          ]
+        },
+        "engineVersion": {
+          "description": "The exact observed engine release string.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sqlMode": {
+          "description": "The observed server SQL mode as the closed token list, sorted and deduplicated.",
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "ANSI_QUOTES",
+              "ERROR_FOR_DIVISION_BY_ZERO",
+              "NO_ENGINE_SUBSTITUTION",
+              "NO_ZERO_DATE",
+              "NO_ZERO_IN_DATE",
+              "ONLY_FULL_GROUP_BY",
+              "STRICT_ALL_TABLES",
+              "STRICT_TRANS_TABLES",
+              "TRADITIONAL"
+            ]
+          }
+        },
+        "defaultStorageEngine": {
+          "$ref": "#/$defs/safeToken"
+        },
+        "charset": {
+          "$ref": "#/$defs/safeToken"
+        },
+        "collation": {
+          "$ref": "#/$defs/safeToken"
+        },
+        "timeZone": {
+          "description": "The observed session time zone declaration.",
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 6,
+          "pattern": "^(SYSTEM|UTC|[+-][0-9]{2}:[0-9]{2})$"
+        }
+      }
+    },
+    "observedTable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "engine",
+        "collation",
+        "columns"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/safeToken"
+        },
+        "engine": {
+          "description": "The observed storage engine of this table (innodb, aria, myisam).",
+          "$ref": "#/$defs/safeToken"
+        },
+        "collation": {
+          "description": "The observed table collation.",
+          "$ref": "#/$defs/safeToken"
+        },
+        "columns": {
+          "description": "The observed columns, canonical order by name.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/observedColumn"
+          }
+        },
+        "indexes": {
+          "description": "The observed indexes, canonical order by (name, columns).",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/observedIndex"
+          }
+        },
+        "foreignKeys": {
+          "description": "The observed foreign keys, canonical order by column.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/observedForeignKey"
+          }
+        }
+      }
+    },
+    "observedColumn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "nullable"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/safeToken"
+        },
+        "type": {
+          "description": "The observed data type spelling (varchar(200), datetime(6), bigint unsigned).",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*(\\([0-9]+(,[0-9]+)?\\))?( unsigned)?$"
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "charset": {
+          "description": "The observed column character set, when the column is textual.",
+          "$ref": "#/$defs/safeToken"
+        },
+        "collation": {
+          "description": "The observed column collation, when the column is textual.",
+          "$ref": "#/$defs/safeToken"
+        },
+        "default": {
+          "description": "The bounded observed default declaration (NULL, CURRENT_TIMESTAMP(6), or a literal token).",
+          "$ref": "#/$defs/safeToken"
+        },
+        "extra": {
+          "description": "The bounded observed extra declaration (auto_increment, STORED GENERATED, VIRTUAL GENERATED).",
+          "$ref": "#/$defs/safeToken"
+        }
+      }
+    },
+    "observedIndex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "columns",
+        "unique"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/safeToken"
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/safeToken"
+          }
+        },
+        "unique": {
+          "type": "boolean"
+        },
+        "kind": {
+          "description": "The observed index kind; the default is btree.",
+          "enum": [
+            "btree",
+            "fulltext",
+            "spatial"
+          ]
+        },
+        "prefixLengths": {
+          "description": "The observed per-column prefix lengths parallel to columns (absent members mean no prefix).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3072
+          }
+        }
+      }
+    },
+    "observedForeignKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "column",
+        "referencesTable",
+        "onDelete"
+      ],
+      "properties": {
+        "column": {
+          "$ref": "#/$defs/safeToken"
+        },
+        "referencesTable": {
+          "$ref": "#/$defs/safeToken"
+        },
+        "onDelete": {
+          "description": "The observed delete action.",
+          "enum": [
+            "CASCADE",
+            "RESTRICT",
+            "SET NULL",
+            "NO ACTION"
+          ]
+        }
+      }
+    }
+  }
+}

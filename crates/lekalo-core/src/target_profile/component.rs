@@ -270,11 +270,19 @@ const DEFINITIONS: &[ComponentDefinition] = &[
         definition_version: COMPONENTS_DEFINITION_VERSION,
         provides: &[
             ProvidedCapability {
+                id: "transport.download",
+                support: Support::Partial,
+            },
+            ProvidedCapability {
                 id: "transport.http",
                 support: Support::Full,
             },
             ProvidedCapability {
                 id: "transport.streaming",
+                support: Support::Partial,
+            },
+            ProvidedCapability {
+                id: "transport.upload",
                 support: Support::Partial,
             },
         ],
@@ -328,10 +336,66 @@ const DEFINITIONS: &[ComponentDefinition] = &[
         conflicts: &[],
     },
     ComponentDefinition {
+        id: "mariadb-sql",
+        axis: Axis::Storage,
+        definition_version: COMPONENTS_DEFINITION_VERSION,
+        provides: &[
+            // Version-gated: enforced only from 10.2.1; older releases
+            // parse and ignore. The versioned engine profile beside the
+            // component carries the exact per-release evidence.
+            ProvidedCapability {
+                id: "storage.check-constraints",
+                support: Support::Partial,
+            },
+            ProvidedCapability {
+                id: "storage.generated-columns",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.migrations",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.pooling",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.sequences",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.sql",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.transactions",
+                support: Support::Full,
+            },
+        ],
+        requires_components: &[],
+        requires_capabilities: &[],
+        conflicts: &[],
+    },
+    ComponentDefinition {
         id: "mysql-sql",
         axis: Axis::Storage,
         definition_version: COMPONENTS_DEFINITION_VERSION,
         provides: &[
+            // Version-gated: enforced only from 8.0.16; older releases
+            // parse and ignore. The versioned engine profile beside the
+            // component carries the exact per-release evidence.
+            ProvidedCapability {
+                id: "storage.check-constraints",
+                support: Support::Partial,
+            },
+            ProvidedCapability {
+                id: "storage.fulltext-index",
+                support: Support::Partial,
+            },
+            ProvidedCapability {
+                id: "storage.generated-columns",
+                support: Support::Full,
+            },
             ProvidedCapability {
                 id: "storage.migrations",
                 support: Support::Full,
@@ -339,6 +403,10 @@ const DEFINITIONS: &[ComponentDefinition] = &[
             ProvidedCapability {
                 id: "storage.pooling",
                 support: Support::Partial,
+            },
+            ProvidedCapability {
+                id: "storage.prefix-index",
+                support: Support::Full,
             },
             ProvidedCapability {
                 id: "storage.sql",
@@ -359,7 +427,19 @@ const DEFINITIONS: &[ComponentDefinition] = &[
         definition_version: COMPONENTS_DEFINITION_VERSION,
         provides: &[
             ProvidedCapability {
+                id: "testing.clock",
+                support: Support::Full,
+            },
+            ProvidedCapability {
                 id: "testing.coverage",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "testing.event-capture",
+                support: Support::Partial,
+            },
+            ProvidedCapability {
+                id: "testing.fixtures",
                 support: Support::Full,
             },
             ProvidedCapability {
@@ -416,7 +496,23 @@ const DEFINITIONS: &[ComponentDefinition] = &[
         definition_version: COMPONENTS_DEFINITION_VERSION,
         provides: &[
             ProvidedCapability {
+                id: "storage.array-types",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.deferred-constraints",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.generated-columns",
+                support: Support::Full,
+            },
+            ProvidedCapability {
                 id: "storage.migrations",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.partial-index",
                 support: Support::Full,
             },
             ProvidedCapability {
@@ -424,7 +520,19 @@ const DEFINITIONS: &[ComponentDefinition] = &[
                 support: Support::Full,
             },
             ProvidedCapability {
+                id: "storage.returning",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.sequences",
+                support: Support::Full,
+            },
+            ProvidedCapability {
                 id: "storage.sql",
+                support: Support::Full,
+            },
+            ProvidedCapability {
+                id: "storage.timestamptz",
                 support: Support::Full,
             },
             ProvidedCapability {
@@ -569,11 +677,37 @@ mod tests {
     }
 
     #[test]
+    fn node_native_declares_the_node_scenario_runner_capabilities() {
+        // Issue #47: the `node-native` testing component is the runner
+        // capability source for the scenario-test compiler. The serial
+        // `node:test` harness never provides a deterministic concurrency
+        // scheduler, so `testing.concurrency` is deliberately absent —
+        // absence is the unsupported state, never an optimistic upgrade.
+        let node_native = definition(Axis::Testing, "node-native").expect("node-native");
+        let provided: Vec<(&str, Support)> = node_native
+            .provides
+            .iter()
+            .map(|capability| (capability.id, capability.support))
+            .collect();
+        assert_eq!(
+            provided,
+            vec![
+                ("testing.clock", Support::Full),
+                ("testing.coverage", Support::Full),
+                ("testing.event-capture", Support::Partial),
+                ("testing.fixtures", Support::Full),
+                ("testing.parallel", Support::Full),
+            ]
+        );
+        assert!(!provided.iter().any(|(id, _)| *id == "testing.concurrency"));
+    }
+
+    #[test]
     fn lookup_respects_axis() {
         assert!(definition(Axis::Runtime, "node-typescript").is_some());
         assert!(definition(Axis::Storage, "node-typescript").is_none());
         assert!(definition(Axis::Runtime, "unknown-runtime").is_none());
-        assert_eq!(definitions().len(), 16);
+        assert_eq!(definitions().len(), 17);
     }
 
     #[test]

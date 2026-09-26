@@ -267,8 +267,11 @@ target adapter (`lekalo-target-node-typescript`, product version 0.3.0):
 a dependency-free, read-only, single-file Node kernel. It implements the
 mandatory `describe` handshake at protocol 0.3.1 and nothing else on
 the wire: `scan` belongs to #44, native gates to #48, and generation to
-#45–#47, so its operation surface is exactly `["describe"]` and its five
-declared capability ids are all `unsupported`. A direct request to an
+#45–#47. From #45 the adapter family declares `generate`/`verify` with
+the named capability `generate.zod` and a declared write scope; the
+dedicated generation artifact `adapter-zod.mjs` (kernel plus the Zod
+generator, self-contained) carries that surface — see
+[zod-generation.md](zod-generation.md). A direct request to an
 unimplemented operation returns one valid `unsupported` error envelope
 (fixed code `operation-unsupported`), and core refuses undeclared
 operations before launch as usual.
@@ -286,6 +289,18 @@ the handshake, which has no slot for them. The strict conformance
 profile therefore fails `capability.surface` for this adapter by
 design; the applicable default-profile rows pass. Adding operations or
 wire members remains separately owned contract work.
+
+The issue #70 transport extension adds one configured deployment
+surface: when the bound resolved profile reads the transport evidence
+home (`.lekalo/cache/transport/**`, written by `lekalo generate` from
+the canonical `lekalo/transport.yaml`), the kernel advertises the
+`generate` operation with `generate.transport-http: partial` and
+`generate.openapi: unsupported`, a declared `src/routes/**` write
+scope, and a deterministic route-layer plan derived from the single
+evidence file — explicit `unsupported` notes for declared
+streaming/upload/download capabilities it does not implement, never a
+silent downgrade. Profiles that do not read the evidence home never
+see the generator; the bare kernel keeps its `describe`-only surface.
 
 ## Failure classification and integration
 

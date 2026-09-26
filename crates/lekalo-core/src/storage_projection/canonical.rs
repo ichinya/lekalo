@@ -163,7 +163,36 @@ fn field_payload(field: &super::entity::DomainField) -> String {
         ("type", Some(domain_type_payload(field.field_type()))),
         ("required", flag_if(field.required(), false)),
         ("visibility", Some(string(field.visibility().key()))),
+        ("default", field.default().map(field_default_payload)),
     ])
+}
+
+/// One canonical field default.
+fn field_default_payload(default: &super::entity::FieldDefault) -> String {
+    use super::entity::FieldDefault;
+    match default {
+        FieldDefault::Literal(literal) => object(vec![
+            ("kind", Some(string("literal"))),
+            ("value", Some(literal_payload(literal))),
+        ]),
+        FieldDefault::Now => object(vec![("kind", Some(string("now")))]),
+        FieldDefault::UuidGenerate => object(vec![("kind", Some(string("uuid_generate")))]),
+        FieldDefault::Sequence { column } => object(vec![
+            ("kind", Some(string("sequence"))),
+            ("ref", Some(string(column.as_str()))),
+        ]),
+    }
+}
+
+/// One canonical typed literal.
+fn literal_payload(literal: &super::entity::Literal) -> String {
+    use super::entity::Literal;
+    match literal {
+        Literal::Boolean(value) => flag(*value),
+        Literal::Integer(value) => integer(*value),
+        Literal::Decimal(text) => string(text),
+        Literal::Text(text) => string(text),
+    }
 }
 
 /// One canonical domain value type.
@@ -185,6 +214,23 @@ fn domain_type_payload(field_type: &DomainType) -> String {
             ("name", Some(string("decimal"))),
             ("precision", Some(integer(*precision))),
             ("scale", Some(integer(*scale))),
+        ]),
+        DomainType::Enum { members } => object(vec![
+            ("name", Some(string("enum"))),
+            (
+                "members",
+                Some(array(
+                    &members
+                        .iter()
+                        .map(|member| string(member))
+                        .collect::<Vec<String>>(),
+                )),
+            ),
+        ]),
+        DomainType::Array { element, max_items } => object(vec![
+            ("name", Some(string("array"))),
+            ("element", Some(domain_type_payload(element))),
+            ("maxItems", max_items.map(integer)),
         ]),
     }
 }
@@ -251,6 +297,15 @@ fn scenario_payload(reference: &super::relation::ScenarioRef) -> String {
 fn projection_payload(projection: &super::projection::Projection) -> String {
     object(vec![
         ("namespace", Some(string(projection.namespace().key()))),
+        (
+            "textDefaults",
+            projection.text_defaults().map(|(charset, collation)| {
+                object(vec![
+                    ("charset", Some(string(charset))),
+                    ("collation", Some(string(collation))),
+                ])
+            }),
+        ),
         (
             "tables",
             Some(array(
@@ -353,6 +408,18 @@ fn table_payload(table: &super::projection::Table) -> String {
                     .collect::<Vec<String>>(),
             ),
         ),
+        ("charset", table.charset().map(string)),
+        ("collation", table.collation().map(string)),
+        (
+            "checks",
+            optional_array(
+                &table
+                    .checks()
+                    .iter()
+                    .map(check_payload)
+                    .collect::<Vec<String>>(),
+            ),
+        ),
     ])
 }
 
@@ -395,7 +462,78 @@ fn index_payload(index: &super::projection::Index) -> String {
             )),
         ),
         ("unique", Some(flag(index.unique()))),
+        ("kind", optional_string_if_not(index.kind().key(), "btree")),
+        (
+            "prefixLengths",
+            index.prefix_lengths().map(|lengths| {
+                // Sparse positions render as `null`; positions with a
+                // length render as the number (round-4 review F-1).
+                array(
+                    &lengths
+                        .iter()
+                        .map(|length| match length {
+                            Some(length) => length.to_string(),
+                            None => "null".to_owned(),
+                        })
+                        .collect::<Vec<String>>(),
+                )
+            }),
+        ),
+        (
+            "descending",
+            index.descending().map(|flags| {
+                array(
+                    &flags
+                        .iter()
+                        .map(|flag| flag.to_string())
+                        .collect::<Vec<String>>(),
+                )
+            }),
+        ),
+        (
+            "where",
+            index
+                .where_()
+                .map(|predicates| predicate_conjunction_payload(predicates)),
+        ),
     ])
+}
+
+/// One canonical predicate conjunction.
+fn predicate_conjunction_payload(predicates: &[super::projection::ColumnPredicate]) -> String {
+    array(
+        &predicates
+            .iter()
+            .map(|predicate| {
+                object(vec![
+                    ("column", Some(string(predicate.column().as_str()))),
+                    ("op", Some(string(predicate.op().key()))),
+                    ("value", predicate.value().map(literal_payload)),
+                ])
+            })
+            .collect::<Vec<String>>(),
+    )
+}
+
+/// One canonical CHECK constraint.
+fn check_payload(check: &super::projection::CheckConstraint) -> String {
+    object(vec![
+        ("name", Some(string(check.name().as_str()))),
+        (
+            "where",
+            Some(predicate_conjunction_payload(check.predicates())),
+        ),
+    ])
+}
+
+/// One canonical string member only when the value is not the default
+/// spelling (the btree index kind is the implicit default).
+fn optional_string_if_not(value: &str, default: &str) -> Option<String> {
+    if value == default {
+        None
+    } else {
+        Some(string(value))
+    }
 }
 
 /// One canonical join table.
@@ -517,6 +655,7 @@ fn derived_table_payload(table: &super::derivation::DerivedTable) -> String {
                     .collect::<Vec<String>>(),
             ),
         ),
+        ("collation", table.collation.as_deref().map(string)),
     ])
 }
 
@@ -528,6 +667,14 @@ fn derived_column_payload(column: &super::derivation::DerivedColumn) -> String {
         ("nullable", Some(flag(column.nullable))),
         ("origin", Some(string(column.origin.key()))),
         ("visibility", Some(string(column.visibility.key()))),
+        (
+            "default",
+            column.default.as_ref().map(field_default_payload),
+        ),
+        (
+            "generatedKind",
+            column.generated_kind.map(|kind| string(kind.key())),
+        ),
     ])
 }
 

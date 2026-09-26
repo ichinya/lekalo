@@ -4,6 +4,7 @@
 
 use super::{plan, scopes, transport, wire, TargetFailure};
 use crate::project_fs::Fs;
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -11,15 +12,291 @@ use std::sync::atomic::AtomicBool;
 #[path = "confinement_windows.rs"]
 mod windows;
 
+/// The sandbox's hard memory bound where the platform enforces one
+/// (Windows job object). A resource constant, never host-derived.
+pub(super) const SANDBOX_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+/// The bounded process/task count applied when the budget denies
+/// children on Linux. `RLIMIT_NPROC` counts tasks (threads included),
+/// so the bound must admit a runtime's own thread pool while still
+/// capping fork bombs. It is applied only where it bounds the sandbox
+/// namespace itself (kernel ≥ 5.14, see
+/// [`PER_USERNS_NPROC_KERNEL`]); it is an honest bound, not a fork
+/// primitive.
+pub(super) const SANDBOX_TASK_BOUND: u64 = 64;
+
+/// The per-session sandbox policy the budget projects onto the OS
+/// primitives (issue #89).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct SandboxPolicy {
+    /// `processes.children: denied` — children are refused where the
+    /// platform has a primitive and bounded/honestly reported where it
+    /// does not. Children that do spawn stay inside the sandbox either
+    /// way.
+    pub children_denied: bool,
+    /// `network.mode: allowlist` — no supported platform offers a
+    /// namespace-level destination filter, so the sandbox keeps its
+    /// denial and the report degrades honestly (issue #89).
+    pub network_allowlist: bool,
+}
+
+impl SandboxPolicy {
+    /// The strictest policy: children denied, network denied (read-only
+    /// probes and the describe handshake).
+    pub fn strict() -> Self {
+        Self {
+            children_denied: true,
+            network_allowlist: false,
+        }
+    }
+
+    /// Project the session budget onto the sandbox policy.
+    pub fn from_budget(budget: &crate::adapter_package::budget::SessionBudget) -> Self {
+        use crate::adapter_package::budget::{ChildPolicy, NetworkBudget};
+        Self {
+            children_denied: budget.children() == ChildPolicy::Denied,
+            network_allowlist: matches!(budget.network(), NetworkBudget::Allowlist(_)),
+        }
+    }
+}
+
+/// The honest enforcement verdict of one confinement dimension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum Enforcement {
+    /// An OS primitive enforces the declared policy on this platform.
+    Enforced,
+    /// The declared policy cannot be enforced as spelled; the sandbox
+    /// degrades to denial/bounding and says so. Never a silent
+    /// allowance.
+    Degraded,
+    /// The platform has no primitive; the gap is recorded, and the
+    /// namespace/job containment still applies.
+    Unenforced,
+}
+
+impl Enforcement {
+    /// The stable evidence token.
+    pub(super) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Enforced => "enforced",
+            Self::Degraded => "degraded",
+            Self::Unenforced => "unenforced",
+        }
+    }
+}
+
+/// The honest per-dimension confinement record of one sandbox: what
+/// the platform enforced, degraded, or could not enforce. Network
+/// denial is `enforced` on every supported platform; an allowlist
+/// mode degrades to denial (`Degraded`) because no supported platform
+/// offers a namespace-level destination filter (issue #89).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ConfinementReport {
+    pub network: Enforcement,
+    pub children: Enforcement,
+    pub resources: Enforcement,
+    pub children_denied: bool,
+}
+
+impl ConfinementReport {
+    /// Compute the honest record for the host platform from the sandbox
+    /// policy.
+    pub(super) fn compute(policy: SandboxPolicy) -> Self {
+        let children = if policy.children_denied {
+            if cfg!(windows) {
+                Enforcement::Enforced
+            } else if cfg!(target_os = "linux") && prlimit_available() {
+                // Bounded, and only where the bound is namespace-local.
+                Enforcement::Degraded
+            } else {
+                Enforcement::Unenforced
+            }
+        } else {
+            // `declared` is the policy the sandbox already implements:
+            // children stay inside the namespace/job.
+            Enforcement::Enforced
+        };
+        let resources = if cfg!(windows) {
+            Enforcement::Enforced
+        } else {
+            // Linux RLIMIT_RSS is a historical no-op and macOS exposes
+            // no sandbox primitive: recording anything stronger would
+            // be a dishonest claim.
+            Enforcement::Unenforced
+        };
+        Self {
+            network: if policy.network_allowlist {
+                Enforcement::Degraded
+            } else {
+                Enforcement::Enforced
+            },
+            children,
+            resources,
+            children_denied: policy.children_denied,
+        }
+    }
+
+    /// The effective process bound for the evidence (Windows job cap 1
+    /// when denied; the Linux task bound where the wrapper exists and
+    /// the kernel bounds the namespace, `None` otherwise).
+    pub(super) fn process_limit(&self) -> Option<u64> {
+        if !self.children_denied {
+            return None;
+        }
+        if cfg!(windows) {
+            Some(1)
+        } else if cfg!(target_os = "linux") && prlimit_available() {
+            Some(SANDBOX_TASK_BOUND)
+        } else {
+            None
+        }
+    }
+
+    /// The effective memory bound for the evidence (Windows only).
+    pub(super) fn memory_limit(&self) -> Option<u64> {
+        (cfg!(windows) && self.resources == Enforcement::Enforced)
+            .then_some(SANDBOX_MEMORY_LIMIT_BYTES)
+    }
+}
+
+/// Whether the Linux `prlimit` wrapper is available for the bounded
+/// children policy — and the kernel charges `RLIMIT_NPROC` per user
+/// namespace, so a fixed `--nproc` bound tracks the sandbox namespace
+/// rather than the whole-uid host task count. Otherwise the wrapper is
+/// skipped and the report honestly says `denied-unenforced`
+/// (issue #89 fix round 2, C-F2).
+#[cfg(target_os = "linux")]
+fn prlimit_available() -> bool {
+    prlimit_path().is_some() && kernel_bounds_nproc_per_userns()
+}
+
+/// The prlimit wrapper location, resolved once to the first existing
+/// path. The availability check and the spawned wrapper share this one
+/// resolution, so a report of `denied-bounded` always corresponds to a
+/// wrapper that was actually spawnable (issue #89 fix round 2, C-F7).
+#[cfg(target_os = "linux")]
+fn prlimit_path() -> Option<PathBuf> {
+    static RESOLVED: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    RESOLVED
+        .get_or_init(|| {
+            ["/usr/bin/prlimit", "/bin/prlimit"]
+                .iter()
+                .map(Path::new)
+                .find(|path| path.is_file())
+                .map(Path::to_path_buf)
+        })
+        .clone()
+}
+
+/// The kernel release where the ucounts rework (5.14,
+/// torvalds/linux@21d1c5e386bc) made `RLIMIT_NPROC` a per-uid-per-
+/// user-namespace charge: a fresh `--unshare-all` namespace starts its
+/// task count at zero, so a fixed `--nproc` bound bounds the namespace
+/// deterministically. Older kernels count tasks per real uid across the
+/// whole host, where a fixed bound denies the runtime's own threads on
+/// any busy machine — fail-closed, but wrong.
+#[cfg(target_os = "linux")]
+const PER_USERNS_NPROC_KERNEL: (u64, u64) = (5, 14);
+
+/// Parse the leading `major.minor` of a kernel release string
+/// (`6.5.0-18-generic` → `(6, 5)`); `None` when unparseable.
+#[cfg(target_os = "linux")]
+fn parse_kernel_release(release: &str) -> Option<(u64, u64)> {
+    let mut parts = release.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
+}
+
+/// Whether the host kernel charges `RLIMIT_NPROC` per user namespace
+/// (release ≥ [`PER_USERNS_NPROC_KERNEL`]), resolved once per process.
+/// An unreadable or unparseable release fails closed: the bound is
+/// skipped and reported `denied-unenforced`.
+#[cfg(target_os = "linux")]
+fn kernel_bounds_nproc_per_userns() -> bool {
+    static PER_USERNS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PER_USERNS.get_or_init(|| {
+        std::fs::read_to_string("/proc/sys/kernel/osrelease")
+            .ok()
+            .and_then(|release| parse_kernel_release(release.trim()))
+            .is_some_and(|release| release >= PER_USERNS_NPROC_KERNEL)
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn prlimit_available() -> bool {
+    false
+}
+
+/// The fixed private environment names of the Windows LPAC block
+/// (pointing at the per-exchange staging paths). They are provided
+/// unconditionally so the runtime can locate system directories
+/// without inheriting the host environment.
+pub(super) const WINDOWS_PRIVATE_ENV_NAMES: [&str; 8] = [
+    "APPDATA",
+    "LOCALAPPDATA",
+    "SystemDrive",
+    "SystemRoot",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "windir",
+];
+
+/// Whether a granted environment name collides (case-insensitively)
+/// with the fixed private block of this platform and is therefore
+/// dropped at spawn: the private value must never be overridden by a
+/// host-sourced grant. The spawn path and the evidence consult this
+/// one predicate, so a dropped name can never reach the child and is
+/// always visible in `budget.envDropped` (issue #89 fix round 2, C-F5).
+pub(super) fn env_grant_dropped(name: &str) -> bool {
+    cfg!(windows)
+        && WINDOWS_PRIVATE_ENV_NAMES
+            .iter()
+            .any(|fixed| fixed.eq_ignore_ascii_case(name))
+}
+
 pub(super) struct Sandbox {
     owned: tempfile::TempDir,
     pub project: PathBuf,
     runtime: PathBuf,
     write_roots: Vec<PathBuf>,
+    /// The effective write scopes this sandbox was built for; the
+    /// publication guard validates every published entry against them
+    /// (issue #89: a staged file outside the scopes cannot publish).
+    write_scopes: Vec<String>,
+    /// The sandbox policy projected from the session budget. Read by
+    /// the Windows job cap and the Linux task bound; the macOS seatbelt
+    /// profile expresses the same denial through its static rule set, so
+    /// the field is platform-dead there.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    pub(super) policy: SandboxPolicy,
+    /// The honest per-dimension enforcement record.
+    pub(super) report: ConfinementReport,
 }
 
 fn refusal(detail: &'static str) -> TargetFailure {
     TargetFailure::TransportFailed { detail }
+}
+
+impl Drop for Sandbox {
+    fn drop(&mut self) {
+        // On Windows the confined child's directory handles can outlive
+        // its exit status by a few hundred ms; a single remove_dir_all
+        // would then fail and leak the staging dir. Retry briefly —
+        // the TempDir field still performs the final removal after this.
+        #[cfg(windows)]
+        {
+            let path = self.owned.path().to_path_buf();
+            for _ in 0..40 {
+                if !path.exists() || std::fs::remove_dir_all(&path).is_ok() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+    }
 }
 
 impl Sandbox {
@@ -30,6 +307,17 @@ impl Sandbox {
         before: &plan::Snapshot,
     ) -> Result<(), TargetFailure> {
         use std::io::Write;
+        // Issue #89 publication guard: only paths inside the effective
+        // write scopes this sandbox was built for can ever publish. A
+        // staged file outside them refuses before any real-project I/O.
+        for entry in writes {
+            if !plan::covered_by(&entry.path, &self.write_scopes) {
+                return Err(TargetFailure::SecurityRefusal {
+                    check: "writes-outside-scopes",
+                    detail: "publication-guard",
+                });
+            }
+        }
         plan::validate_preconditions(writes, before)?;
         let staged = Fs::open(&self.project).map_err(|_| refusal("sandbox-view"))?;
         let real = Fs::open(root).map_err(|_| refusal("project-root"))?;
@@ -119,6 +407,7 @@ impl Sandbox {
         reads: &[String],
         writes: &[String],
         apply: bool,
+        policy: SandboxPolicy,
     ) -> Result<Self, TargetFailure> {
         let root = std::fs::canonicalize(root).map_err(|_| refusal("project-root"))?;
         #[cfg(windows)]
@@ -218,7 +507,15 @@ impl Sandbox {
             project,
             runtime,
             write_roots,
+            write_scopes: writes.to_vec(),
+            report: ConfinementReport::compute(policy),
+            policy,
         })
+    }
+
+    /// The honest per-dimension enforcement record of this sandbox.
+    pub(super) fn report(&self) -> ConfinementReport {
+        self.report
     }
 
     fn command(
@@ -276,6 +573,7 @@ impl Sandbox {
         limits: &transport::TransportLimits,
         file_transport: bool,
         cancel: Option<&AtomicBool>,
+        env: &[(String, String)],
     ) -> Result<transport::TransportSuccess, TargetFailure> {
         let _custody = self.owned.path();
         if request.len() > limits.max_request_bytes {
@@ -301,11 +599,11 @@ impl Sandbox {
             ]);
         }
         #[cfg(windows)]
-        let result = windows::run(&command, request, limits, self, cancel);
+        let result = windows::run(&command, request, limits, self, cancel, env);
         #[cfg(target_os = "linux")]
-        let result = self.run_linux(&command, request, limits, cancel);
+        let result = self.run_linux(&command, request, limits, cancel, env);
         #[cfg(target_os = "macos")]
-        let result = self.run_macos(&command, request, limits, cancel);
+        let result = self.run_macos(&command, request, limits, cancel, env);
         #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         let result = Err(transport::TransportFailure::Spawn);
         result.map_err(super::transport_failure)
@@ -318,12 +616,20 @@ impl Sandbox {
         request: &[u8],
         limits: &transport::TransportLimits,
         cancel: Option<&AtomicBool>,
+        env: &[(String, String)],
     ) -> Result<transport::TransportSuccess, transport::TransportFailure> {
+        // Issue #89 (fix round 1, devin F-1): no `--clearenv`/`--setenv`
+        // — `--setenv` would put granted values (secrets included) into
+        // the bwrap argv, readable via /proc/<pid>/cmdline for the whole
+        // run. `run_private` env_clears the spawned process and injects
+        // exactly the grant pairs via envp, so bwrap's own environment
+        // is the grant set and the namespaced child inherits it
+        // identically without any argv exposure. envp is the only
+        // environment channel on this platform.
         let mut args: Vec<String> = [
             "--die-with-parent",
             "--unshare-all",
             "--new-session",
-            "--clearenv",
             "--proc",
             "/proc",
             "--dev",
@@ -359,14 +665,34 @@ impl Sandbox {
             "--chdir".into(),
             self.project.to_string_lossy().into_owned(),
             "--".into(),
-            command.program.to_string_lossy().into_owned(),
         ]);
+        // Issue #89: a denied children policy cannot be enforced inside
+        // bwrap (no fork primitive), but where the resolved prlimit
+        // binary exists and the kernel charges RLIMIT_NPROC per user
+        // namespace (≥5.14) it bounds the confined tree — applied to the
+        // payload INSIDE the namespace, not around bwrap. Outside the
+        // namespace the rlimit check compares against the task's current
+        // (init) userns count — the whole-uid task total — so a busy
+        // host trips the bound before bwrap's setup fork even runs.
+        // Inside the fresh userns the count covers only this tree, so
+        // the bound tracks the sandbox deterministically. The report
+        // records the bound (or its honest absence) either way.
+        if self.policy.children_denied {
+            if let Some(prlimit) = prlimit_path() {
+                args.extend([
+                    prlimit.to_string_lossy().into_owned(),
+                    format!("--nproc={SANDBOX_TASK_BOUND}"),
+                    "--".into(),
+                ]);
+            }
+        }
+        args.push(command.program.to_string_lossy().into_owned());
         args.extend(command.args.clone());
         let wrapper = transport::AdapterCommand {
             program: "/usr/bin/bwrap".into(),
             args,
         };
-        transport::run_private(&wrapper, request, limits, &self.project, cancel)
+        transport::run_private(&wrapper, request, limits, &self.project, cancel, env)
     }
 
     #[cfg(target_os = "macos")]
@@ -376,9 +702,19 @@ impl Sandbox {
         request: &[u8],
         limits: &transport::TransportLimits,
         cancel: Option<&AtomicBool>,
+        env: &[(String, String)],
     ) -> Result<transport::TransportSuccess, transport::TransportFailure> {
-        let wrapper = self.macos_command(command);
-        transport::run_private(&wrapper, request, limits, &self.project, cancel)
+        // sandbox-exec inherits the spawning environment; the private
+        // runner scrubs it (env -i semantics) and re-grants exactly the
+        // budget pairs at spawn, keeping host values out of argv.
+        transport::run_private(
+            &self.macos_command(command),
+            request,
+            limits,
+            &self.project,
+            cancel,
+            env,
+        )
     }
 
     #[cfg(target_os = "macos")]
@@ -472,7 +808,7 @@ mod tests {
     #[test]
     fn unix_confined_runtime_qualification() {
         let root = tempfile::tempdir().unwrap();
-        let sandbox = Sandbox::new(root.path(), &[], &[], false).unwrap();
+        let sandbox = Sandbox::new(root.path(), &[], &[], false, SandboxPolicy::strict()).unwrap();
         let command = transport::AdapterCommand {
             program: "node".into(),
             args: vec![
@@ -486,7 +822,9 @@ mod tests {
             max_stderr_bytes: 8_192,
             ..Default::default()
         };
-        let result = sandbox.run(&command, b"", &limits, false, None).unwrap();
+        let result = sandbox
+            .run(&command, b"", &limits, false, None, &[])
+            .unwrap();
         assert_eq!(
             result.exit_code,
             0,
@@ -497,7 +835,7 @@ mod tests {
 
         // Loading a copied module and reading the request exercise runtime
         // paths that the inline startup control above does not touch.
-        let sandbox = Sandbox::new(root.path(), &[], &[], false).unwrap();
+        let sandbox = Sandbox::new(root.path(), &[], &[], false, SandboxPolicy::strict()).unwrap();
         let command = transport::AdapterCommand {
             program: "node".into(),
             args: vec![Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -513,7 +851,7 @@ mod tests {
             ..limits
         };
         let result = sandbox
-            .run(&command, request, &limits, false, None)
+            .run(&command, request, &limits, false, None, &[])
             .unwrap();
         assert_eq!(
             result.exit_code,
@@ -528,7 +866,7 @@ mod tests {
         // preserve the real project. Empty mount ancestors are not outputs.
         std::fs::create_dir_all(root.path().join(".lekalo/ir")).unwrap();
         std::fs::write(root.path().join(".lekalo/ir/input.json"), b"owned input").unwrap();
-        let sandbox = Sandbox::new(root.path(), &[], &[], false).unwrap();
+        let sandbox = Sandbox::new(root.path(), &[], &[], false, SandboxPolicy::strict()).unwrap();
         let command = transport::AdapterCommand {
             program: "node".into(),
             args: vec![
@@ -543,7 +881,7 @@ mod tests {
             ],
         };
         let result = sandbox
-            .run(&command, request, &limits, false, None)
+            .run(&command, request, &limits, false, None, &[])
             .unwrap();
         assert_eq!(
             result.exit_code,
@@ -560,6 +898,42 @@ mod tests {
         assert!(!root.path().join("other").exists());
     }
 
+    // The kernel-release parser runs the per-userns gate; its floor and
+    // spellings are pinned here (linux-only: the gate reads /proc).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn kernel_release_parsing_drives_the_per_userns_floor() {
+        assert_eq!(parse_kernel_release("6.5.0-18-generic"), Some((6, 5)));
+        assert_eq!(parse_kernel_release("5.14.0-1022-azure"), Some((5, 14)));
+        assert_eq!(parse_kernel_release("5.15"), Some((5, 15)));
+        assert_eq!(parse_kernel_release("4.19.0"), Some((4, 19)));
+        assert_eq!(parse_kernel_release(""), None);
+        assert_eq!(parse_kernel_release("x.y"), None);
+        // The floor itself passes; anything below it does not.
+        assert!((5, 14) >= PER_USERNS_NPROC_KERNEL);
+        assert!((5, 13) < PER_USERNS_NPROC_KERNEL);
+        assert!((6, 0) >= PER_USERNS_NPROC_KERNEL);
+        assert!((4, 20) < PER_USERNS_NPROC_KERNEL);
+    }
+
+    #[test]
+    fn env_grants_colliding_with_the_private_block_are_dropped() {
+        // The matching itself is case-insensitive over the fixed names.
+        assert!(super::WINDOWS_PRIVATE_ENV_NAMES
+            .iter()
+            .any(|fixed| fixed.eq_ignore_ascii_case("temp")));
+        assert!(super::WINDOWS_PRIVATE_ENV_NAMES
+            .iter()
+            .any(|fixed| fixed.eq_ignore_ascii_case("WINDIR")));
+        assert!(!super::WINDOWS_PRIVATE_ENV_NAMES
+            .iter()
+            .any(|fixed| fixed.eq_ignore_ascii_case("PATH")));
+        // On Windows the grant is dropped; elsewhere there is no
+        // private block and nothing is dropped.
+        assert_eq!(env_grant_dropped("TEMP"), cfg!(windows));
+        assert!(!env_grant_dropped("LEKALO_GRANTED_VAR"));
+    }
+
     #[test]
     fn isolated_node_handshake_has_a_working_positive_control() {
         let root = tempfile::tempdir().unwrap();
@@ -573,5 +947,70 @@ mod tests {
         };
         let result = client.describe(&command, root.path());
         assert!(result.is_ok(), "{result:?}");
+    }
+
+    // Issue #89 (plan S5): read-only modes never receive write authority
+    // — `apply` false builds no write roots at all.
+    #[test]
+    fn read_only_sandboxes_have_no_write_roots() {
+        let root = tempfile::tempdir().unwrap();
+        let sandbox = Sandbox::new(
+            root.path(),
+            &["a/**".into()],
+            &["b/**".into()],
+            false,
+            SandboxPolicy::strict(),
+        )
+        .unwrap();
+        assert!(sandbox.write_roots.is_empty(), "no write roots");
+        let sandbox = Sandbox::new(
+            root.path(),
+            &["a/**".into()],
+            &["b/**".into()],
+            true,
+            SandboxPolicy::strict(),
+        )
+        .unwrap();
+        assert!(!sandbox.write_roots.is_empty(), "apply builds write roots");
+        assert_eq!(sandbox.write_scopes, ["b/**"], "effective scopes stored");
+    }
+
+    // Issue #89 (plan S5): a staged file outside the effective write
+    // scopes cannot publish — the publication guard refuses before any
+    // real-project I/O. The guard logic is platform-independent, so the
+    // test runs everywhere (issue #89 fix round 2, C-F9).
+    #[test]
+    fn a_staged_file_outside_the_write_scopes_cannot_publish() {
+        let root = tempfile::tempdir().unwrap();
+        let sandbox = Sandbox::new(
+            root.path(),
+            &[".lekalo/ir/**".into()],
+            &["out/**".into()],
+            true,
+            SandboxPolicy::strict(),
+        )
+        .unwrap();
+        // Simulate an impossible-in-confinement out-of-scope staged
+        // write (an adapter breaching its sandbox view).
+        let staged = sandbox.project.join("elsewhere");
+        std::fs::create_dir_all(&staged).unwrap();
+        std::fs::write(staged.join("escape.txt"), b"breach").unwrap();
+        let entries = [wire::WriteEntry {
+            path: "elsewhere/escape.txt".into(),
+            action: wire::WriteAction::Create,
+            sha256: Some(format!("sha256:{}", plan::sha256_hex(b"breach"))),
+        }];
+        let before = plan::Snapshot::new();
+        let error = sandbox
+            .publish(root.path(), &entries, &before)
+            .expect_err("publication guard");
+        assert!(
+            matches!(error, TargetFailure::SecurityRefusal { .. }),
+            "security refusal, got {error:?}"
+        );
+        assert!(
+            !root.path().join("elsewhere").exists(),
+            "the real project is untouched"
+        );
     }
 }

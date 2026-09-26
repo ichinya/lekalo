@@ -1,0 +1,17 @@
+{
+  "name": "@taskhub/sync",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@taskhub/tasks": "workspace:^",
+    "@taskhub/events": "workspace:^",
+    "@taskhub/integrations": "workspace:^"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "node --test",
+    "gate:test": "node gates/verify.mjs --mode test"
+  }
+}

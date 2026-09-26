@@ -13,8 +13,16 @@ const fixturesDir = join(root, "tests", "fixtures", "structure");
 
 const KIND_FILES = ["entities", "commands", "queries", "policies", "events", "scenarios", "bindings"];
 const MODULE_FILES = new Set(["module", ...KIND_FILES]);
-const CANONICAL_ROOT_ENTRIES = new Set(["project.yaml", "modules", "targets", "authorization.yaml"]);
-const RUNTIME_ENTRIES = new Set(["import", "cache", "generated", "consumer", "privacy"]);
+const CANONICAL_ROOT_ENTRIES = new Set([
+  "project.yaml", "modules", "targets", "authorization.yaml",
+  "transport.yaml", "scenarios", "test-port.json",
+  "classification.json", "classification-policy.json"
+]);
+const RUNTIME_ENTRIES = new Set(["import", "cache", "generated", "consumer", "privacy", "adapters"]);
+// The governed issue #32 adapter store (docs/canonical-structure.md).
+const RUNTIME_ADAPTERS_CHILDREN = new Set([
+  "packages", "quarantine", "staging", "evidence", "inventory.json"
+]);
 const RUNTIME_CONTAINER_CHILDREN = new Map([
   ["consumer", new Set(["model", "bindings"])],
   ["privacy", new Set(["exports", "redacted", "aggregates", "decisions"])],
@@ -172,6 +180,20 @@ function runtimePlacementFailure(entry, logicalPath) {
     return null;
   }
 
+  if (top === "adapters") {
+    if (!RUNTIME_ADAPTERS_CHILDREN.has(segments[1])) return denied(["structure.runtime-unexpected-entry", logicalPath]);
+    if (segments[1] === "inventory.json") {
+      return segments.length === 2 && entry.isFile() ? null : denied(["structure.runtime-unexpected-entry", logicalPath]);
+    }
+    if (segments.length === 2 && !entry.isDirectory()) return denied(["structure.runtime-unexpected-entry", logicalPath]);
+    // The evidence tree is closed one level deeper: record files and the
+    // installs/<id>/receipt.json receipt subtree.
+    if (segments[1] === "evidence" && segments.length > 3 && segments[2] !== "installs") {
+      return denied(["structure.runtime-unexpected-entry", logicalPath]);
+    }
+    return null;
+  }
+
   if (!RUNTIME_CONTAINER_CHILDREN.get("privacy").has(segments[1])) return denied(["structure.runtime-unexpected-entry", logicalPath]);
   if (segments.length === 2 && !entry.isDirectory()) return denied(["structure.runtime-unexpected-entry", logicalPath]);
   if (segments[1] !== "decisions") return null;
@@ -232,6 +254,7 @@ export async function validateProject(projectRoot) {
     if (!CANONICAL_ROOT_ENTRIES.has(entry.name)) return denied(["structure.canonical-unexpected-entry", `lekalo/${entry.name}`]);
     if (entry.name === "project.yaml" && !entry.isFile()) return invalid(["structure.document-missing", "lekalo/project.yaml"]);
     if (entry.name === "authorization.yaml" && !entry.isFile()) return invalid(["structure.directory-required", "lekalo/authorization.yaml"]);
+    if (entry.name === "transport.yaml" && !entry.isFile()) return invalid(["structure.directory-required", "lekalo/transport.yaml"]);
     if (["modules", "targets"].includes(entry.name) && !entry.isDirectory()) return invalid(["structure.directory-required", `lekalo/${entry.name}`]);
   }
 

@@ -306,3 +306,9 @@ the invalid vector matrix; `scripts/test-requirements-contracts.mjs`
 re-validates everything under exact Ajv 8.17.1 on Node 18 and 24, and the
 Rust suite proves resolution semantics, archive symmetry, rename and
 removal impact, the conflict gate, and the no-write boundary.
+
+NFR constraints ([docs/nfr.md](nfr.md), issue #85) reference these
+provider requirement identities as plain `sourceRequirement` data —
+the `{source, requirement}` pair and its grammar are shared, but this
+family is not extended: provider traceability and Lekalo-owned
+constraint semantics stay separate families.

@@ -23,7 +23,9 @@ to maintained source locations, records the typed signature and
 declared-effect claims captured at declaration time, the ownership
 manifest of every generated support artifact, and the attached native
 tests. The contract is published as
-[`contracts/contracted-declaration.schema.v0.2.16.json`](../contracts/contracted-declaration.schema.v0.2.16.json)
+[`contracts/contracted-declaration.schema.v0.4.0.json`](../contracts/contracted-declaration.schema.v0.4.0.json)
+(issue #45 review moved the changed family to the 0.4.0 product line;
+the frozen v0.3.2 predecessor stays in place)
 (the adapter declaration document; the registry itself is Lekalo-owned
 derived state with canonical compact bytes).
 
@@ -58,6 +60,8 @@ derived state with canonical compact bytes).
   fragments, DTO/type fragments, binding manifests, and conformance
   metadata are the supported kinds; actual rendering pipelines stay
   with the target adapters (#91).
+- **Generated schemas are shape-checked.** A type-bearing symbol (`scalar`, `enum`, `value-object`, `entity`) may carry a canonical `shape` claim (issue #45): the field list, the scalar base, or the declared values. `contract check` recomputes it from the typed IR on every run and flags drift (`contracted.binding-drift`, detail `shape`) exactly like a signature; a generated Zod schema linked with `contract support --kind types --lifecycle checked` is re-digested per the staleness gate below.
+
 - **Scenario failures link to semantic symbols.** Native tests attach
   to canonical symbols as verbatim external ids; every scenario that
   covers a bound operation resolves through the model's `covers`

@@ -55,7 +55,7 @@ pub use version::{
     MAX_RESULT_ROWS, SCHEMA_VERSION, VERSION,
 };
 
-pub use build::build;
+pub use build::{build, build_with_classification};
 
 /// The confidence vocabulary reused from the accepted #13 graph.
 pub use crate::graph::model::Confidence;

@@ -29,11 +29,12 @@ const DIGEST_IR = digest(2);
 const DIGEST_SCENARIO_A = digest(3);
 const DIGEST_SCENARIO_B = digest(4);
 
-const field = (name, type, visibility, required) => ({
+const field = (name, type, visibility, required, def) => ({
   field: name,
-  ...(required === undefined ? {} : { required }),
+  ...(required ? { required: true } : {}),
   type,
   visibility,
+  ...(def === undefined ? {} : { default: def }),
 });
 
 const uuid = (visibility, required = true) =>
@@ -63,6 +64,20 @@ const entities = [
     visibility: "internal",
   },
   {
+    description: "One named assignee roster of a planner task.",
+    entity: "planner.task_roster",
+    entityKey: "task_roster",
+    fields: [
+      field(
+        "members",
+        { element: { length: 64, name: "string" }, maxItems: 32, name: "array" },
+        "internal",
+      ),
+      uuid("internal"),
+    ],
+    visibility: "internal",
+  },
+  {
     description: "A remote issue owned by an external provider.",
     entity: "jira.issue",
     entityKey: "jira_issue",
@@ -74,7 +89,11 @@ const entities = [
     description: "A reusable label attached to planner tasks.",
     entity: "planner.tag",
     entityKey: "tag",
-    fields: [uuid("public"), field("label", { length: 64, name: "string" }, "public", true)],
+    fields: [
+      field("color", { members: ["blue", "green", "red"], name: "enum" }, "internal"),
+      field("label", { length: 64, name: "string" }, "public", true),
+      uuid("public"),
+    ],
     visibility: "public",
   },
   {
@@ -85,6 +104,13 @@ const entities = [
     fields: [
       field("due_date", { name: "date" }, "public"),
       uuid("public"),
+      field(
+        "minutes",
+        { name: "integer" },
+        "internal",
+        false,
+        { kind: "literal", value: 0 },
+      ),
       field("note", { name: "text" }, "internal"),
       field("status", { length: 16, name: "string" }, "internal", true),
       field("title", { length: 200, name: "string" }, "public", true),
@@ -122,7 +148,7 @@ const entities = [
 const scenario = (id) => ({
   irDigest: DIGEST_SCENARIO_A,
   scenarioId: id,
-  scenarioVersion: "0.2.16",
+  scenarioVersion: "0.4.0",
 });
 
 const relations = [
@@ -174,7 +200,7 @@ const relations = [
       {
         irDigest: DIGEST_SCENARIO_B,
         scenarioId: "planner.scenario.external_link_roundtrip",
-        scenarioVersion: "0.2.16",
+        scenarioVersion: "0.4.0",
       },
     ],
     target: "task_external_link",
@@ -223,6 +249,14 @@ const table = (entity, name, rest) => ({
   ...rest,
 });
 
+// MySQL-family secondary indexes over textual/blob key parts must
+// declare per-column prefix lengths (the InnoDB key-part rule). The
+// tagged columns below are the fixture's textual/blob key parts.
+const withPrefixes = (index) => ({
+  prefixLengths: index.columns.map(() => 16),
+  ...index,
+});
+
 
 const projections = [
   {
@@ -250,6 +284,7 @@ const projections = [
       table("tag", "tag", {
         indexes: [{ columns: ["label"], unique: true }],
       }),
+      table("task_roster", "task_roster", {}),
       table("task", "task", {
         indexes: [
           { columns: ["due_date"], unique: false },
@@ -283,7 +318,65 @@ const projections = [
         uniquePair: true,
       },
     ],
-    namespace: "postgres",
+    namespace: "mariadb",
+    polymorphics: [
+      {
+        keyColumn: "target_id",
+        relation: "planner.relation.comment_target",
+        typeColumn: "target_type",
+      },
+    ],
+    tables: [
+      table("comment", "comment", {}),
+      table("focus_session", "focus_session", {
+        generatedColumns: [{ kind: "sequence", name: "session_no" }],
+      }),
+      table("tag", "tag", {
+        charset: "utf8mb4",
+        collation: "utf8mb4_general_ci",
+        indexes: [withPrefixes({ columns: ["label"], unique: true })],
+      }),
+      table("task_roster", "task_roster", {}),
+      table("task", "task", {
+        indexes: [
+          { columns: ["due_date"], unique: false },
+          {
+            columns: ["tenant_id"],
+            name: "idx_task_tenant",
+            prefixLengths: [16],
+            unique: false,
+          },
+        ],
+        softDelete: { column: "deleted_at" },
+        technicalColumns: [
+          { name: "row_etag", nullable: false, purpose: "optimistic concurrency token", type: "varbinary" },
+        ],
+        tenantKey: { column: "tenant_id", type: "binary" },
+        timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
+      }),
+      table("task_detail", "task_detail", {}),
+      table("task_external_link", "task_external_link", {
+        indexes: [
+          withPrefixes({
+            columns: ["provider", "external_key"],
+            name: "uq_external_identity",
+            unique: true,
+          }),
+        ],
+      }),
+    ],
+    textDefaults: { charset: "utf8mb4", collation: "utf8mb4_general_ci" },
+  },
+  {
+    joins: [
+      {
+        columns: ["task_id", "tag_id"],
+        relation: "planner.relation.task_tags",
+        table: "task_tag",
+        uniquePair: true,
+      },
+    ],
+    namespace: "mysql",
     polymorphics: [
       {
         keyColumn: "target_id",
@@ -297,11 +390,82 @@ const projections = [
         generatedColumns: [{ kind: "identity", name: "session_no" }],
       }),
       table("tag", "tag", {
-        indexes: [{ columns: ["label"], unique: true }],
+        charset: "utf8mb4",
+        collation: "utf8mb4_0900_ai_ci",
+        indexes: [withPrefixes({ columns: ["label"], unique: true })],
       }),
+      table("task_roster", "task_roster", {}),
       table("task", "task", {
         indexes: [
           { columns: ["due_date"], unique: false },
+          {
+            columns: ["tenant_id"],
+            name: "idx_task_tenant",
+            prefixLengths: [16],
+            unique: false,
+          },
+        ],
+        softDelete: { column: "deleted_at" },
+        technicalColumns: [
+          { name: "row_etag", nullable: false, purpose: "optimistic concurrency token", type: "varbinary" },
+        ],
+        tenantKey: { column: "tenant_id", type: "binary" },
+        timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
+      }),
+      table("task_detail", "task_detail", {}),
+      table("task_external_link", "task_external_link", {
+        indexes: [
+          withPrefixes({
+            columns: ["provider", "external_key"],
+            name: "uq_external_identity",
+            unique: true,
+          }),
+        ],
+      }),
+    ],
+    textDefaults: { charset: "utf8mb4", collation: "utf8mb4_0900_ai_ci" },
+  },
+  {
+    joins: [
+      {
+        columns: ["task_id", "tag_id"],
+        relation: "planner.relation.task_tags",
+        table: "task_tag",
+        uniquePair: true,
+      },
+    ],
+    namespace: "postgres",
+    polymorphics: [
+      {
+        keyColumn: "target_id",
+        relation: "planner.relation.comment_target",
+        typeColumn: "target_type",
+      },
+    ],
+    tables: [
+      table("comment", "comment", {}),
+      table("focus_session", "focus_session", {
+        generatedColumns: [{ kind: "sequence", name: "session_no" }],
+      }),
+      table("tag", "tag", {
+        indexes: [{ columns: ["label"], unique: true }],
+      }),
+      table("task_roster", "task_roster", {}),
+      table("task", "task", {
+        checks: [
+          {
+            name: "chk_task_window",
+            where: [{ column: "deleted_at", op: "is-null" }],
+          },
+        ],
+        indexes: [
+          { columns: ["due_date"], unique: false },
+          {
+            columns: ["due_date"],
+            name: "idx_task_due_open",
+            unique: false,
+            where: [{ column: "deleted_at", op: "is-null" }],
+          },
           { columns: ["tenant_id"], name: "idx_task_tenant", unique: false },
         ],
         softDelete: { column: "deleted_at" },
@@ -326,15 +490,15 @@ const projections = [
 ];
 
 const validAttachment = () => ({
-  attachmentRevision: "0.2.16",
+  attachmentRevision: "0.4.0",
   entities,
-  identity: "dev.lekalo.storage-projection@0.2.16",
+  identity: "dev.lekalo.storage-projection@0.4.0",
   irRef: { digest: DIGEST_IR, identity: "dev.lekalo.ir@0.2.16" },
   modelRef: { digest: DIGEST_MODEL, modelVersion: "0.2.16" },
   projectId: "planner",
   projections,
   relations,
-  schemaVersion: "lekalo/storage-projection/v0.2.16",
+  schemaVersion: "lekalo/storage-projection/v0.4.0",
 });
 
 // --- canonical form --------------------------------------------------------
@@ -357,6 +521,9 @@ const normalize = (attachment) => {
     entity.fields.sort(byKey("field"));
     entity.invariants?.sort();
     entity.stateSpaces?.sort();
+    for (const entry of entity.fields) {
+      if (entry.type?.name === "enum") entry.type.members.sort();
+    }
   }
   for (const relation of clone.relations) {
     relation.scenarios?.sort(byKey("scenarioId"));
@@ -369,12 +536,15 @@ const normalize = (attachment) => {
     for (const table of projection.tables) {
       table.technicalColumns?.sort(byName);
       table.generatedColumns?.sort(byName);
+      table.checks?.sort(byName);
       table.indexes?.sort((left, right) => {
         const leftKey = [left.name ?? "", ...left.columns].join("\u0000");
         const rightKey = [right.name ?? "", ...right.columns].join("\u0000");
         return Buffer.compare(Buffer.from(leftKey), Buffer.from(rightKey));
       });
     }
+    // textDefaults is a behavioral pair (charset then collation); its
+    // member order follows the canonical byte-sorted writer.
   }
   return clone;
 };
@@ -530,7 +700,7 @@ addInvalid(
 write(
   "invalid/duplicate-json-key.json",
   null,
-  '{"attachmentRevision":"0.2.16","attachmentRevision":"0.2.16"}',
+  '{"attachmentRevision":"0.4.0","attachmentRevision":"0.4.0"}',
 );
 write(
   "invalid/duplicate-json-key.expect.json",
@@ -844,6 +1014,74 @@ addInvalid(
   "tag",
 );
 addInvalid(
+  "unknown-index-predicate-column",
+  mutate({}, (clone) => {
+    findProjection(clone, "postgres").tables.find(
+      (entry) => entry.entity === "task",
+    ).indexes[1].where[0].column = "ghost";
+  }),
+  "storage.projection-invalid",
+  "unknown-index-predicate-column",
+  "task",
+);
+addInvalid(
+  "unknown-check-column",
+  mutate({}, (clone) => {
+    findProjection(clone, "postgres").tables.find(
+      (entry) => entry.entity === "task",
+    ).checks[0].where[0].column = "ghost";
+  }),
+  "storage.projection-invalid",
+  "unknown-check-column",
+  "task",
+);
+addInvalid(
+  "default-type-mismatch",
+  mutate({}, (clone) => {
+    findEntity(clone, "task").fields.find(
+      (entry) => entry.field === "minutes",
+    ).default = { kind: "literal", value: "zero" };
+  }),
+  "storage.domain-invalid",
+  "default-type-mismatch",
+  "minutes",
+);
+addInvalid(
+  "default-sequence-unresolved",
+  mutate({}, (clone) => {
+    findEntity(clone, "task").fields.find(
+      (entry) => entry.field === "minutes",
+    ).default = { kind: "sequence", ref: "ghost_seq" };
+  }),
+  "storage.projection-invalid",
+  "default-sequence-unresolved",
+  "task",
+);
+addInvalid(
+  "mapping-unsupported",
+  mutate({}, (clone) => {
+    findProjection(clone, "laravel").tables.find(
+      (entry) => entry.entity === "task",
+    ).checks = [{
+      name: "chk_task_window",
+      where: [{ column: "deleted_at", op: "is-null" }],
+    }];
+  }),
+  "storage.mapping-invalid",
+  "mapping-unsupported",
+  "task",
+);
+addInvalid(
+  "enum-member-empty",
+  mutate({}, (clone) => {
+    findEntity(clone, "tag").fields.find(
+      (entry) => entry.field === "color",
+    ).type = { members: [], name: "enum" };
+  }),
+  "storage.input-invalid",
+  "type-params",
+);
+addInvalid(
   "bad-storage-type",
   mutate({}, (clone) => {
     findProjection(clone, "postgres").tables.find(
@@ -908,6 +1146,167 @@ addInvalid(
   "planner.relation.comment_target",
 );
 
+// MySQL-namespace violations (issue #117): the closed per-namespace
+// storage-type subset, the sequence refusal, and the collation rules.
+addInvalid(
+  "unknown-namespace",
+  mutate({}, (clone) => {
+    clone.projections.push({
+      namespace: "mssql",
+      tables: [],
+    });
+  }),
+  "storage.input-invalid",
+  "namespace",
+);
+addInvalid(
+  "unsupported-storage-type-mysql",
+  mutate({}, (clone) => {
+    findProjection(clone, "mysql").tables
+      .find((entry) => entry.entity === "task")
+      .technicalColumns.push({
+        name: "legacy_flag",
+        purpose: "legacy flag column",
+        type: "bytea",
+      });
+  }),
+  "storage.input-invalid",
+  "storage-type",
+);
+addInvalid(
+  "mysql-sequence-refused",
+  mutate({}, (clone) => {
+    findProjection(clone, "mysql").tables
+      .find((entry) => entry.entity === "focus_session")
+      .generatedColumns = [{ kind: "sequence", name: "session_no" }];
+  }),
+  "storage.projection-invalid",
+  "sequence-unsupported",
+  "focus_session",
+);
+addInvalid(
+  "blob-key-without-prefix",
+  mutate({}, (clone) => {
+    findProjection(clone, "mysql").tables
+      .find((entry) => entry.entity === "task")
+      .indexes.push({ columns: ["row_etag"], unique: true });
+  }),
+  "storage.projection-invalid",
+  "prefix-required",
+  "task",
+);
+addInvalid(
+  "prefix-on-int-column",
+  mutate({}, (clone) => {
+    const session = findProjection(clone, "mysql").tables.find(
+      (entry) => entry.entity === "focus_session",
+    );
+    session.indexes = session.indexes ?? [];
+    session.indexes.push({
+      columns: ["session_no"],
+      prefixLengths: [4],
+      unique: false,
+    });
+  }),
+  "storage.projection-invalid",
+  "prefix-on-non-textual",
+  "focus_session",
+);
+addInvalid(
+  "field-without-prefix",
+  mutate({}, (clone) => {
+    const tag = findProjection(clone, "mysql").tables.find(
+      (entry) => entry.entity === "tag",
+    );
+    tag.indexes[0].prefixLengths = undefined;
+  }),
+  "storage.projection-invalid",
+  "prefix-required",
+  "tag",
+);
+addInvalid(
+  "fulltext-unique",
+  mutate({}, (clone) => {
+    findProjection(clone, "mysql").tables
+      .find((entry) => entry.entity === "task")
+      .indexes.push({
+        columns: ["title"],
+        kind: "fulltext",
+        unique: true,
+      });
+  }),
+  "storage.projection-invalid",
+  "fulltext-unique",
+  "task",
+);
+addInvalid(
+  "collation-charset-mismatch",
+  mutate({}, (clone) => {
+    findProjection(clone, "mysql").textDefaults = {
+      charset: "utf8mb4",
+      collation: "latin1_swedish_ci",
+    };
+  }),
+  "storage.projection-invalid",
+  "collation-charset-mismatch",
+);
+addInvalid(
+  "mariadb-uuid-in-mysql",
+  mutate({}, (clone) => {
+    findProjection(clone, "mysql").tables
+      .find((entry) => entry.entity === "task_detail").technicalColumns = [
+      {
+        name: "external_uuid",
+        purpose: "mariadb native uuid column",
+        type: "uuid",
+      },
+    ];
+  }),
+  "storage.input-invalid",
+  "storage-type",
+);
+addInvalid(
+  "index-kind-unknown",
+  mutate({}, (clone) => {
+    findProjection(clone, "postgres").tables
+      .find((entry) => entry.entity === "tag")
+      .indexes[0].kind = "hash";
+  }),
+  "storage.input-invalid",
+  "index-kind",
+);
+addInvalid(
+  "prefix-arity-mismatch",
+  mutate({}, (clone) => {
+    findProjection(clone, "mysql").tables
+      .find((entry) => entry.entity === "task")
+      .indexes.push({
+        columns: ["row_etag", "status"],
+        prefixLengths: [8],
+        unique: false,
+      });
+  }),
+  "storage.input-invalid",
+  "prefix-shape",
+);
+
+// A valid mixed textual+non-textual composite index (round-4 F-1):
+// the sparse prefixLengths `[16, null]` prefixes the textual member
+// and declares no prefix for the non-textual member — the composite
+// shape is expressible without splitting the index.
+write(
+  "valid/mixed-composite-prefix.json",
+  mutate({}, (clone) => {
+    findProjection(clone, "mysql").tables
+      .find((entry) => entry.entity === "task")
+      .indexes.push({
+        columns: ["title", "due_date"],
+        prefixLengths: [16, null],
+        unique: false,
+      });
+  }),
+);
+
 
 
 // --- summary ---------------------------------------------------------------
@@ -917,6 +1316,6 @@ process.stdout.write(
     diffVectors: 4,
     invalidVectors: invalid.length + 1,
     ok: true,
-    validGoldens: 1,
+    validGoldens: 2,
   })}\n`,
 );

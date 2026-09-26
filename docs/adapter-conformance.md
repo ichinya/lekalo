@@ -17,7 +17,9 @@ Everything after the program path is passed to the adapter verbatim
 
 ## Checks and classes
 
-The closed catalog carries eighteen checks in fixed order. Every check
+The closed catalog carries twenty-eight checks in fixed order (the
+five `transport.*` rows were added by issue #70 and the five
+`storage.*` rows by issue #117). Every check
 has one inherent failure class; a recorded failure carries the class of
 what actually failed, so a crash during a feature check is a
 process-class failure and a refusal during any exchange is a
@@ -43,11 +45,22 @@ security-class one:
 | `artifact.manifest-evidence` | feature | applied bytes match declared digests |
 | `redaction.evidence` | security | redaction of durable evidence |
 | `process.cancellation` | process | cancellation and recovery |
+| `transport.projection-parity` | feature | a declared transport generator derives its plan from the one evidence file deterministically |
+| `transport.error-identity` | feature | error responses preserve `{id,code,category}`; infrastructure failures never carry declared ids |
+| `transport.unsupported-capability` | feature | declared streaming/upload/download unsupported by the runtime is reported `unsupported`, never silent |
+| `transport.blackbox-scenarios` | feature | fixture endpoint scenarios execute/normalize through the declared backend binding (execution stays with #47/#56/#107 owners) |
+| `transport.wire-diff-block` | feature | breaking wire change in the fixture pair is classified `breaking` and blocks under `wire-consumer` |
+| `storage.projection-parity` | feature | adapter's verify answer is an honest ok over the fixture and the mysql derivation holds (issue #117) |
+| `storage.profile-evidence` | feature | honest `scan.schema`/`verify.schema-projection` capability declaration (issue #117) |
+| `storage.introspection-checked` | security | declared scan surface answers a real read-only exchange; evidence grammar stays checked, read-only, credential-free (issue #117) |
+| `storage.migration-gate` | feature | destructive diff of the fixture produces an explicitly gated plan step (issue #117) |
+| `storage.collation-uniqueness` | feature | declared collation stays visible beside the derived unique index (issue #117) |
 
 Skipped checks record a bounded reason (`operation-undeclared`,
 `legacy-session`, `no-ir-operations`, `default-profile`,
 `nothing-to-clean`, `no-error-observed`, `fixture-not-in-read-scopes`,
-`no-repeatable-probe`, `not-run`, `no-plan`). A skip is never a pass.
+`no-repeatable-probe`, `not-run`, `no-plan`, `capability-undeclared`). A
+skip is never a pass.
 
 ## Verdict, hard failures, and the badge
 
@@ -129,3 +142,13 @@ falls back to an unconfined launch. A suite infrastructure failure
 The suite owns neutral fixture evidence and normalization assertions; scenario execution
 backends stay with their own issues, and no persisted cross-session
 plan authority exists.
+
+## Manifest gate (issue #32)
+
+`adapter test` resolves the launched entry through the adapter package
+gate before the battery starts: the synthesized local-development
+descriptor is integrity-checked, the signature policy is evaluated, and
+the revocation store is consulted. The shipped adapter commits its
+`adapter.manifest.json` with per-file digests, verified in CI by
+`scripts/test-adapter-manifest-golden.mjs`. A gate refusal renders its
+registered `adapter.*` rule and no check runs.

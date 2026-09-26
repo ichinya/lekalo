@@ -12,10 +12,12 @@
 
 use std::path::Path;
 
+use crate::adapter_package::budget::ExpansionPolicy;
 use crate::artifacts::check::{inputs_revision, Prepared};
 use crate::artifacts::types::{
     AdapterRef, ArtifactEntry, ArtifactKey, ArtifactKind, ArtifactManifest, ArtifactPath,
-    Lifecycle, ProjectRef, SemanticOwnerId, MANIFEST_DIR, MANIFEST_NAME,
+    Lifecycle, ProjectRef, SemanticOwnerId, SourceMapBinding, SourceRange, MANIFEST_DIR,
+    MANIFEST_NAME, MAX_ARTIFACT_BYTES,
 };
 use crate::artifacts::ArtifactFailure;
 use crate::diagnostics::types::token_value;
@@ -30,12 +32,14 @@ use crate::target_protocol::transport::TransportLimits;
 use crate::target_protocol::wire::{Operation, WriteAction, WriteEntry};
 use crate::target_protocol::{CallRequest, TargetClient, TargetFailure};
 
-use super::catalog::{binding_failure, discover, locked_adapter, AdapterSupply};
+use super::catalog::{binding_failure, discover_with_policy, locked_adapter, AdapterSupply};
 use super::receipt::{
     AdapterReceipt, GenerateReceipt, InputsReceipt, IrEvidenceReceipt, ScopeReceipt, TargetCounts,
     TargetReceipt, TargetState, Verdict, WriteReceipt, IDENTITY, SCHEMA_VERSION,
 };
-use super::version::{DEFAULT_TIMEOUT_MS, IR_EVIDENCE_DIR, MAX_TARGETS};
+use super::version::{
+    DEFAULT_TIMEOUT_MS, IR_EVIDENCE_DIR, MAX_TARGETS, OPENAPI_EVIDENCE_DIR, TRANSPORT_EVIDENCE_DIR,
+};
 use super::Failure;
 
 /// The request of one generate invocation.
@@ -50,6 +54,11 @@ pub struct GenerateRequest<'a> {
     pub locked: bool,
     pub supply: Option<AdapterSupply>,
     pub timeout_ms: u64,
+    /// Issue #89: when set, the adapter's described scopes may exceed
+    /// its manifest ceiling for this run (`--allow-permission-expansion`).
+    /// The widening is refused by default and stays visible in the
+    /// confinement evidence when permitted.
+    pub allow_permission_expansion: bool,
 }
 
 /// One target's terminal outcome.
@@ -115,9 +124,52 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     // generate run, and the only bytes an adapter may read as input.
     let evidence_path = format!("{IR_EVIDENCE_DIR}/{project_id}.json");
     write_evidence(prepared.root(), &evidence_path, ir_bytes.as_bytes())?;
+    // Transport preflight (#70): when the canonical transport home
+    // exists, it validates against the compiled project and its
+    // canonical bytes land under the `lekalo.cache` evidence home —
+    // the only transport input an adapter may read, covered by its
+    // declared read scopes. An invalid home refuses the run before
+    // any adapter is discovered.
+    match crate::transport_http::read_document(prepared.root()) {
+        Err(diagnostics) => return Err(DomainResult::invalid(diagnostics)),
+        Ok(Some(attachment)) => {
+            let context = crate::transport_http::ValidationContext::new(&compilation.project);
+            crate::transport_http::validate(&attachment, &context)
+                .map_err(DomainResult::invalid)?;
+            let transport_path = format!("{TRANSPORT_EVIDENCE_DIR}/{project_id}.json");
+            let transport_bytes = attachment
+                .canonical_bytes()
+                .map_err(DomainResult::invalid)?;
+            write_evidence(prepared.root(), &transport_path, transport_bytes.as_bytes())?;
+            // OpenAPI evidence (#46): the canonical projection of the
+            // validated transport home lands beside the other evidence
+            // homes — the only OpenAPI input an adapter may read. The
+            // embedded #62 registry is bound so the identity variants
+            // render; the declared defaults (3.1, full) apply.
+            let registry =
+                crate::error_contract::ErrorRegistry::embedded().map_err(DomainResult::invalid)?;
+            let context = crate::transport_http::ValidationContext::new(&compilation.project)
+                .with_errors(registry);
+            let rendered =
+                crate::openapi::render(&attachment, &context, &crate::openapi::RenderConfig::new())
+                    .map_err(DomainResult::invalid)?;
+            let openapi_path = format!("{OPENAPI_EVIDENCE_DIR}/{project_id}.json");
+            write_evidence(
+                prepared.root(),
+                &openapi_path,
+                rendered.canonical_bytes().as_bytes(),
+            )?;
+        }
+        Ok(None) => {}
+    }
 
     let mut client = TargetClient::new(limits);
-    let discovered = discover(&mut client, supply, prepared.root(), limits)?;
+    let policy = if request.allow_permission_expansion {
+        ExpansionPolicy::AllowEscalated
+    } else {
+        ExpansionPolicy::Refuse
+    };
+    let discovered = discover_with_policy(&mut client, supply, prepared.root(), limits, policy)?;
     let Some(locked) = locked_adapter(prepared.lock(), &discovered) else {
         return Err(DomainResult::from(&Failure::AdapterNotLocked {
             adapter: discovered.adapter.id.clone(),
@@ -187,6 +239,7 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
         // registered diagnostic in the aggregate envelope.
         return Err(aggregate_envelopes(failures));
     }
+    let propagated = crate::privacy::export::propagated_class(prepared.root());
     let receipt = GenerateReceipt {
         schema_version: SCHEMA_VERSION,
         operation: "generate",
@@ -204,6 +257,8 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
         targets,
         counts,
         verdict: Verdict::Ready,
+        class: propagated.as_ref().map(|(labels, _)| labels.clone()),
+        policy_ref: propagated.map(|(_, policy)| policy),
     };
     Ok(receipt)
 }
@@ -698,7 +753,11 @@ fn update_manifest(
             .map_err(|_| ArtifactFailure::ReferenceInvalid)?
             .ok_or(ArtifactFailure::ReferenceInvalid)?;
         let key_path = ArtifactPath::parse(&entry.path).ok_or(ArtifactFailure::ReferenceInvalid)?;
-        let key = ArtifactKey::new(owner.clone(), key_path, ArtifactKind::Source);
+        // Issue #45 attribution: the written path determines the closed
+        // kind by convention — generated Zod schema modules are `schema`,
+        // their `.map.json` sidecars are `data`, everything else stays
+        // `source`. No wire change: the convention is core-side only.
+        let key = ArtifactKey::new(owner.clone(), key_path, artifact_kind_for(&entry.path));
         keep.retain(|recorded| recorded.key() != &key);
         keep.push(ArtifactEntry::new(
             key,
@@ -710,6 +769,27 @@ fn update_manifest(
         ));
     }
     keep.sort_by(|left, right| left.key().cmp(right.key()));
+    // Source maps: ingest the emitted `.map.json` sidecars of this run's
+    // writes into the manifest's `source_maps` bindings (issue #45). Each
+    // sidecar declaration range becomes one half-open byte range bound to
+    // the exact generation inputs; a malformed sidecar fails the whole
+    // apply — deterministic, never a half-recorded map.
+    let mut source_maps = Vec::new();
+    for entry in writes {
+        if entry.action == WriteAction::Delete || !entry.path.ends_with(".map.json") {
+            continue;
+        }
+        let binding = source_map_binding_for(
+            prepared,
+            &entry.path,
+            &owner,
+            model_version,
+            inputs_revision(prepared.inputs().model(), prepared.inputs().ir()),
+        )?;
+        if let Some(binding) = binding {
+            source_maps.push(binding);
+        }
+    }
     let build = |digest: Sha256Digest| {
         ArtifactManifest::new(
             project.clone(),
@@ -717,7 +797,7 @@ fn update_manifest(
             prepared.inputs().model().clone(),
             prepared.inputs().ir().clone(),
             keep.clone(),
-            Vec::new(),
+            source_maps.clone(),
             digest,
         )
     };
@@ -734,6 +814,101 @@ fn update_manifest(
     let parsed = ArtifactManifest::parse_canonical(&bytes)?;
     write_manifest_atomic(prepared.root(), &bytes)?;
     Ok(parsed.manifest_digest().clone())
+}
+
+/// The closed artifact kind of one generated write, by path convention
+/// (issue #45): `.map.json` sidecars are `data`, `.ts` modules under a
+/// `zod/` segment are `schema`, everything else stays `source`.
+fn artifact_kind_for(path: &str) -> ArtifactKind {
+    if path.ends_with(".map.json") {
+        return ArtifactKind::Data;
+    }
+    if path.ends_with(".ts") && path.split('/').any(|segment| segment == "zod") {
+        return ArtifactKind::Schema;
+    }
+    // Issue #47: the generated scenario-test compiler owns the
+    // scenario-tests home — test files and the shared testkit are `test`
+    // artifacts (review F-6: the emitted spellings are `<id>.test.ts`
+    // and `testkit.ts`); the port shim and reporter stay support
+    // `source`.
+    if path.split('/').any(|segment| segment == "scenario-tests")
+        && (path.ends_with(".test.ts") || path.ends_with("/testkit.ts"))
+    {
+        return ArtifactKind::Test;
+    }
+    ArtifactKind::Source
+}
+
+/// One ingested source-map binding from an emitted `.map.json` sidecar,
+/// or `None` when the sidecar is absent from the staged view (a `create`
+/// plan's map may legitimately not exist yet at planning time — the
+/// digest binding stays with the write receipt).
+fn source_map_binding_for(
+    prepared: &Prepared,
+    sidecar_path: &str,
+    owner: &SemanticOwnerId,
+    model_version: ModelVersion,
+    input_revision: Sha256Digest,
+) -> Result<Option<SourceMapBinding>, ArtifactFailure> {
+    let (dir, name) = match sidecar_path.rfind('/') {
+        Some(at) => (&sidecar_path[..at], &sidecar_path[at + 1..]),
+        None => (".", sidecar_path),
+    };
+    let bytes = match prepared.fs().read_file_opt(dir, name, MAX_ARTIFACT_BYTES) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => return Ok(None),
+        Err(_) => return Err(ArtifactFailure::Io("artifact-read")),
+    };
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| ArtifactFailure::SourceMapInvalid)?;
+    let declarations = value
+        .get("declarations")
+        .and_then(serde_json::Value::as_array)
+        .ok_or(ArtifactFailure::SourceMapInvalid)?;
+    if declarations.len() > 4096 {
+        return Err(ArtifactFailure::SourceMapInvalid);
+    }
+    let mut entries = Vec::with_capacity(declarations.len());
+    for declaration in declarations {
+        let semantic_id = declaration
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or(ArtifactFailure::SourceMapInvalid)?;
+        let start = declaration
+            .get("start")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|start| *start <= u32::MAX as u64)
+            .ok_or(ArtifactFailure::SourceMapInvalid)? as u32;
+        let end = declaration
+            .get("end")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|end| *end <= u32::MAX as u64)
+            .ok_or(ArtifactFailure::SourceMapInvalid)? as u32;
+        entries.push(SourceRange::new(
+            SemanticOwnerId::parse(semantic_id, model_version)
+                .ok_or(ArtifactFailure::ReferenceInvalid)?,
+            start,
+            end,
+        ));
+    }
+    let module_path = module_path_of(sidecar_path);
+    let key = ArtifactKey::new(
+        owner.clone(),
+        // The binding targets the generated module the ranges index (the
+        // `.ts` sibling of the sidecar), never the sidecar itself — the
+        // ranges are declaration offsets inside the module's bytes.
+        ArtifactPath::parse(&module_path).ok_or(ArtifactFailure::ReferenceInvalid)?,
+        artifact_kind_for(&module_path),
+    );
+    Ok(Some(SourceMapBinding::new(key, input_revision, entries)))
+}
+
+/// The `.ts` module path of one `.map.json` sidecar path.
+fn module_path_of(sidecar_path: &str) -> String {
+    sidecar_path
+        .strip_suffix(".map.json")
+        .map(|base| format!("{base}.ts"))
+        .unwrap_or_else(|| sidecar_path.to_owned())
 }
 
 fn write_manifest_atomic(root: &Path, bytes: &[u8]) -> Result<(), ArtifactFailure> {
@@ -814,5 +989,106 @@ mod tests {
             super::super::receipt::ComponentState::Unsupported.as_str(),
             "unsupported"
         );
+    }
+
+    /// Issue #47 (plan S6, aligned by review F-6): the ownership manifest
+    /// classifies the EMITTED scenario-test spellings — test files and
+    /// the shared testkit are test artifacts, .test.map.json sidecars are
+    /// data, the port.ts shim and reporter stay support source, and the
+    /// zod home keeps schema.
+    #[test]
+    fn artifact_kinds_classify_by_path_convention() {
+        use super::artifact_kind_for;
+        assert_eq!(
+            artifact_kind_for(
+                "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.ts"
+            ),
+            ArtifactKind::Test
+        );
+        // The emitted shared testkit is a test artifact (review F-6: the
+        // classifier pins the EMITTED spelling testkit.ts).
+        assert_eq!(
+            artifact_kind_for("src/generated/node-typescript/scenario-tests/testkit.ts"),
+            ArtifactKind::Test
+        );
+        assert_eq!(
+            artifact_kind_for(
+                "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.map.json"
+            ),
+            ArtifactKind::Data
+        );
+        // The port shim and the reporter are support code, never tests.
+        assert_eq!(
+            artifact_kind_for("src/generated/node-typescript/scenario-tests/port.ts"),
+            ArtifactKind::Source
+        );
+        assert_eq!(
+            artifact_kind_for("src/generated/node-typescript/scenario-tests/reporter.mjs"),
+            ArtifactKind::Source
+        );
+        // A test-looking file outside the scenario-tests home stays source.
+        assert_eq!(
+            artifact_kind_for("src/generated/other/minimal.test.ts"),
+            ArtifactKind::Source
+        );
+
+        // The zod home keeps its issue #45 classification.
+        assert_eq!(
+            artifact_kind_for(".lekalo/generated/node-typescript/zod/planner.ts"),
+            ArtifactKind::Schema
+        );
+        // Review F-6: the emitted sidecar spelling `.test.map.json` pairs
+        // through module_path_of to the emitted `.test.ts` artifact.
+        assert_eq!(
+            super::module_path_of(
+                "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.map.json",
+            ),
+            "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.ts",
+        );
+    }
+
+    /// Review cline F-1: the ownership manifest ingests every emitted
+    /// sidecar declaration id through `SemanticOwnerId::parse` (the Model
+    /// symbol grammar), and the pairing binds the sidecar to the emitted
+    /// `<id>.test.ts` artifact. The emitted declaration ids are
+    /// grammar-valid Model symbols; the kind/step spelling rides in
+    /// metadata.
+    #[test]
+    fn emitted_sidecar_declaration_ids_ingest_through_the_owner_grammar() {
+        use crate::loader::ModelVersion;
+        let version = ModelVersion::Current;
+        let scenario_id = "planner.scenario.minimal";
+        // The exact declaration-id spellings the emitter produces:
+        // the scenario id itself, and the scenario leaf scoped under
+        // each then-step id.
+        let emitted_ids = [
+            scenario_id.to_owned(),
+            "minimal.output".to_owned(),
+            "minimal.state".to_owned(),
+        ];
+        for id in &emitted_ids {
+            assert!(
+                crate::ir::grammar::is_symbol_id(version, id),
+                "grammar-valid declaration id: {id}"
+            );
+            assert!(
+                SemanticOwnerId::parse(id, version).is_some(),
+                "manifest-ingestible declaration id: {id}"
+            );
+        }
+        // The refused shapes stay refused: the old kind-prefixed ids the
+        // emitter used before the fix are exactly what the grammar
+        // rejects, so the manifest apply hard-failed on them.
+        for id in ["scenario:planner.scenario.minimal", "then:output"] {
+            assert!(SemanticOwnerId::parse(id, version).is_none());
+        }
+        // The sidecar path pairs to the emitted module and classifies
+        // as `test`, so the binding passes the map-without-artifact
+        // refusal for the emitted write set.
+        let sidecar =
+            "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.map.json";
+        let module = super::module_path_of(sidecar);
+        assert!(module.ends_with(".test.ts"));
+        assert_eq!(super::artifact_kind_for(&module), ArtifactKind::Test);
     }
 }

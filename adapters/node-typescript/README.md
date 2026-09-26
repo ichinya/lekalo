@@ -101,6 +101,121 @@ signature digest, up to eight typed reference rows). Uncertainty in
 the index keeps the outcome honestly `partial` — a partial scan is an
 in-envelope error, never a silently complete receipt.
 
+## The Zod schema generator (issue #45)
+
+Generation of deterministic, typechecking Zod schemas from the
+compiled project IR inside the kernel's read/write views:
+
+- inputs: the canonical IR evidence under `.lekalo/cache/ir/**` (a
+  declared read root) and the optional adapter-owned policy document
+  `lekalo/targets/node-typescript.yaml` (`zod.date`,
+  `zod.unknown-keys`; absent file = documented defaults, malformed
+  present file = in-envelope refusal, never a silent fallback).
+- outputs: one emission group per weakly connected component of the
+  cross-module reference graph (acyclic projects keep one file per
+  module), the shared `runtime.ts` (`LekaloDateString`, `lekaloBrand`,
+  `normalizeIssues`), a sorted `index.ts` barrel, and one canonical
+  `.map.json` sidecar per group (field path → semantic id, declaration
+  byte ranges) — all under `src/generated/node-typescript/zod/**`.
+- orthogonality: `required` governs key presence (`.optional()`), the
+  IR `optional` wrapper governs value nullability (`.nullable()`); all
+  four presence × nullability combinations emit distinct compositions.
+- honesty: every emitted declaration is byte-stable for identical IR
+  (fixed header, sorted imports, topological declaration order, LF,
+  JSON.stringify literals); constructs outside the mapped subset —
+  unknown scalar bases, refs to non-schema kinds, unknown type shapes,
+  missing returns — classify as `zod.unsupported-construct` findings
+  with `symbol:<id>` details, and because the v0.3.2 wire reserves the
+  findings member for validate/verify, a generate run carrying any
+  finding surfaces as an honest partial error and claims nothing.
+- brand: entity identity members emit branded over their own schema
+  (`lekaloBrand(<schema>, "id")`) for every ref kind — scalar, enum,
+  value-object, entity — so `z.infer` seals the type and raw values
+  cannot masquerade as opaque ids without `.parse`.
+- error mapping: runtime zod issues resolve to Lekalo semantic ids
+  through the sibling sidecar (`normalizeIssues`), exact field paths
+  first, then the closest enclosing path, then the module owner.
+
+Write authority is the bounded kernel write view (create/replace
+existence checks mirroring the core plan semantics, atomic stage plus
+rename, bounded counts and bytes); dry runs get a plan-only view and
+write nothing. Minimum zod for consumers of the generated code is
+3.22; the pinned dev dependency exists for this suite only.
+
+## The scenario-test compiler (issue #47)
+
+Compilation of Scenario IR documents (`dev.lekalo.scenario-ir@0.2.16`)
+into deterministic, runner-parameterized TypeScript test files. The
+wire has exactly one `generate` operation, so the compiler joins the
+generation composite (with the Zod and transport generators) and the
+composite routes on the IR document identity at `ir_path`; while
+joined it advertises the reviewed capability id `verify.scenarios` as
+`full` (the extension-free describe keeps the kernel default
+`unsupported`).
+
+- inputs: the scenario document at `ir_path`, the compiled project IR
+  evidence at the canonical cache home (`.lekalo/cache/ir/<project>.json`,
+  digest cross-checked against the scenario's `irRef`), and the project
+  test-port declaration `lekalo/test-port.json` (closed contract:
+  runtime module path plus the closed export surface; absent surfaces
+  compile to explicit `scenario.unsupported-capability` outcomes,
+  never guesses).
+- outputs: under `src/generated/node-typescript/scenario-tests/**` —
+  the runner-neutral `testkit.ts`, the run-record writer `reporter.mjs`,
+  the port binding shim `port.ts`, one
+  `<module>/<scenario-id>.test.ts` per scenario (test name
+  `lekalo:<scenarioId>`, preserving scenario identity in runner
+  output), and one canonical `.map.json` sidecar per test with
+  per-then-block byte ranges.
+- honesty: every assertion block records exactly one outcome row
+  (`pass | fail | unsupported | infrastructure`); a test with any
+  unsupported row and no failure ends in `t.skip(...)` — the runner
+  reports skipped, never pass; assertion failures record `fail`, port
+  throws record `infrastructure`. Concurrency race scenarios (metadata
+  `testing.concurrency`) emit rows and a skip without executing — a
+  serial run never satisfies a race fixture.
+- custody: byte-stable emission (fixed headers with the `sha256:`
+  input digest, sorted imports, LF, canonical sidecars); generation is
+  vetoed by any compile-time finding (`scenario.operation-unresolved`,
+  `scenario.ir-ref-mismatch`, `scenario.port-missing`); `verify`
+  recomputes bytes and reports `scenario.drift`, then joins native
+  `mode: checked` bindings against the observed index (`lekalo:<id>`
+  title convention) with `scenario.binding-missing` /
+  `-ambiguous` / `-mismatch` findings — reported, never silently
+  rewritten. The join accepts a native test whose claimed set contains
+  the bound id, so one shared native test file may cover several
+  scenarios; ambiguity remains only when several different files claim
+  the same id. The per-file `lekalo:` id budget (8 ids, 200 name
+  characters) is enforced by the scanner, and a clipped id list
+  surfaces as scan uncertainty (`test-binding-truncated`), never as
+  silence.
+- evidence: each run writes one canonical run-record document
+  (`lekalo/scenario-run/v0.4.0`) into the adjudicated ingest home
+  `.lekalo/import/scenario-runs/`; `lekalo verify` ingests them into
+  the `scenarios.execution` component (fail on assertion or
+  infrastructure failure, degraded on unsupported rows, the declared
+  absence when nothing ran) and the records license `verifies` /
+  `evidences` trace edges (`scenario_evidence::trace_relations`).
+
+The runner is profile-declared, not hardcoded: the adapter's runner
+registry currently defines `node:test` (capabilities mirroring the
+`node-native` testing component; no deterministic concurrency, so race
+cases stay unsupported). The confined adapter never executes the port
+module — the port surface is proven by execution in the project
+harness (`scripts/test-node-scenario-tests.mjs`).
+
+### Orchestration dispatch of scenario documents is deferred
+
+The core orchestration does not yet enumerate `lekalo/scenarios/*.json`:
+`generate`/`verify` still send only the compiled project IR evidence as
+`ir_path`, so the document-identity routing above never receives a
+scenario document from the CLI. Compiling a scenario today is a direct
+adapter exchange (the e2e gate's pattern); `scenario.drift` and the
+checked-binding join run only inside that exchange. Closing the gap
+needs the receipt surface for per-scenario-document exchanges (the
+`GenerateReceipt` wire is closed), so it is recorded as an explicit
+follow-up, not an already-shipped behavior.
+
 ## Operation table
 
 | Operation | Posture | Owner of the real behavior |
@@ -109,8 +224,8 @@ in-envelope error, never a silently complete receipt.
 | `scan` | Implemented (issue #44) with the launch profile: real Program/TypeChecker indexing. Without the launch profile: `unsupported`, not advertised. | #44 |
 | `bind` | Unsupported/undeclared. Profile validation is not binding. | #42 registry flow (`lekalo bindings propose/confirm/audit`), not an adapter RPC. |
 | `validate` | Unsupported/undeclared. Needs IR; not a profile RPC. | Later semantic/target validator owner. |
-| `verify` | Unsupported/undeclared; test-only runner injection exercises framing without spawning commands. | #48 (+#47 scenarios). |
-| `generate` | Unsupported/undeclared for dry-run and apply. No fake plan. | #45–#47 after #40. |
+| `verify` | Implemented (issue #45) with the launch profile: recomputes expected Zod bytes from the IR evidence and reports `zod.drift` findings; readable generated paths only. | #45 (+#47 scenarios). |
+| `generate` | Implemented (issue #45) with the launch profile: deterministic Zod schema emission from the compiled IR — dry-run plans plus applies honoring the echoed plan id. Constructs outside the mapped subset produce an honest partial error; nothing is silently dropped. | #45 (OpenAPI stays with #46). |
 | `plan-clean` | Unsupported/undeclared. No inferred deletions. | Generation lifecycle owner. |
 | `clean` | Unsupported/undeclared, even with a plausible plan id. | Generation lifecycle owner. |
 
@@ -175,7 +290,8 @@ createKernel({ identity?, resolvedProjectProfile?, extensionRegistry?, localEvid
 
 ExtensionDescriptor = {
   id, version, operations, namedCapabilities?, acceptedIrVersions?,
-  invoke({ operation, request, profile, readView, cancellation, limits })
+  writeScopes?,
+  invoke({ operation, request, profile, readView, writeView?, cancellation, limits })
 }
 InternalOperationOutcome = { state: complete|partial|unknown|unsupported|failed,
                              data?, evidence?, diagnostics? }

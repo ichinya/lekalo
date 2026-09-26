@@ -22,7 +22,7 @@ const fail = (caseName, detail) => failures.push({ case: caseName, detail });
 // The closed canonical SemVer spelling: no build metadata, no leading v.
 const CANONICAL = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
-const DISCRIMINATOR = "lekalo/lock/v0.2.16";
+const DISCRIMINATOR = "lekalo/lock/v0.3.2";
 const TOP_LEVEL = [
   "schema_version",
   "resolver",
@@ -37,9 +37,9 @@ const TOP_LEVEL = [
 // ---------------------------------------------------------------------------
 // 1. The committed schema artifact carries the closed shape.
 // ---------------------------------------------------------------------------
-const schema = JSON.parse(readText("contracts/lock.schema.v0.2.16.json"));
+const schema = JSON.parse(readText("contracts/lock.schema.v0.3.2.json"));
 
-if (schema.$id !== "dev.lekalo.lock@0.2.16") {
+if (schema.$id !== "dev.lekalo.lock@0.3.2") {
   fail("schema:identity", `unexpected $id ${schema.$id}`);
 }
 if (schema.$schema !== "https://json-schema.org/draft/2020-12/schema") {
@@ -69,7 +69,7 @@ if (!new RegExp(digestPattern).test("sha256:" + "0".repeat(64)) || new RegExp(di
 }
 // Closed enums on the wire.
 for (const [name, values] of [
-  ["source.kind", schema.$defs.adapter.properties.source.properties.kind.enum],
+  ["source.kind", schema.$defs.source.properties.kind.enum, ["builtin", "catalog", "installed", "project"]],
   ["support", schema.$defs.capability.properties.support.enum],
   ["provider.kind", schema.$defs.capability.properties.provider.properties.kind.enum],
 ]) {

@@ -53,6 +53,10 @@ pub fn rule_for(failure: &TargetFailure) -> (&'static str, Status) {
         TargetFailure::Crash { .. } => ("target.crash", Status::Unavailable),
         TargetFailure::OutputLimit { .. } => ("target.output-limit", Status::Unavailable),
         TargetFailure::Cancelled => ("target.cancelled", Status::Unavailable),
+        TargetFailure::PermissionEscalated { .. } => {
+            ("adapter.permission-escalated", Status::Denied)
+        }
+        TargetFailure::SecurityRefusal { .. } => ("adapter.security-failure", Status::Denied),
     }
 }
 
@@ -126,6 +130,17 @@ impl From<&TargetFailure> for DomainResult {
             }
             TargetFailure::Cancelled => {
                 data.insert("detail".to_owned(), token_value("caller"));
+            }
+            TargetFailure::PermissionEscalated { member, adapter } => {
+                data.insert("adapter".to_owned(), token_value(adapter));
+                // The exceeded capability member, spelled on the closed
+                // capabilities surface (never scope or path contents).
+                data.insert("member".to_owned(), token_value(member));
+            }
+            TargetFailure::SecurityRefusal { check, detail } => {
+                data.insert("check".to_owned(), token_value(check));
+                data.insert("class".to_owned(), token_value("security"));
+                data.insert("detail".to_owned(), token_value(detail));
             }
         }
         let diagnostic = one(id, data);

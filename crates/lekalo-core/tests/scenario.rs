@@ -38,6 +38,37 @@ const VALID: &[(&str, &[u8])] = &[
     ),
 ];
 
+/// The issue #47 fixture scenarios of the orchestration fixture project:
+/// the happy path, the typed-error path, the idempotent replay, and the
+/// concurrency race case the compiler maps to an explicit unsupported
+/// outcome. Custody is the same as every golden: production decoding.
+const FIXTURE_SCENARIOS: &[(&str, &[u8])] = &[
+    (
+        "planner.scenario.focus_happy",
+        include_bytes!(
+            "../../../tests/fixtures/orchestration/project/lekalo/scenarios/planner.scenario.focus_happy.json"
+        ),
+    ),
+    (
+        "planner.scenario.focus_error",
+        include_bytes!(
+            "../../../tests/fixtures/orchestration/project/lekalo/scenarios/planner.scenario.focus_error.json"
+        ),
+    ),
+    (
+        "planner.scenario.focus_idempotent",
+        include_bytes!(
+            "../../../tests/fixtures/orchestration/project/lekalo/scenarios/planner.scenario.focus_idempotent.json"
+        ),
+    ),
+    (
+        "planner.scenario.focus_concurrent",
+        include_bytes!(
+            "../../../tests/fixtures/orchestration/project/lekalo/scenarios/planner.scenario.focus_concurrent.json"
+        ),
+    ),
+];
+
 /// The committed adversarial vectors: (name, fixture bytes, expectation
 /// bytes). The expectation records the exact registered rule and the
 /// fixed detail token of the single diagnostic.
@@ -215,6 +246,24 @@ fn goldens_survive_an_independent_canonical_form_check() {
         let payload_text = text.strip_suffix('\n').expect("one trailing LF");
         let reserialized = serde_json::to_string(&value).expect("serialize");
         assert_eq!(reserialized, payload_text, "{name}: not canonical JSON");
+    }
+}
+
+#[test]
+fn fixture_project_scenarios_decode_and_canonicalize() {
+    // The orchestration fixture project's scenario documents (issue #47,
+    // plan S5) are canonical compact JSON and decode through the
+    // production Scenario IR module — the compiler's custody guarantee.
+    for (name, bytes) in FIXTURE_SCENARIOS {
+        let value = payload(name, bytes);
+        let ir = ScenarioIr::from_value(&value)
+            .unwrap_or_else(|set| panic!("{name}: rejected: {set:?}"));
+        let text = std::str::from_utf8(bytes).expect("utf8");
+        let payload_text = text.strip_suffix('\n').expect("one trailing LF");
+        let canonical = ir
+            .canonical_bytes()
+            .unwrap_or_else(|set| panic!("{name}: export refused: {set:?}"));
+        assert_eq!(canonical, payload_text, "{name}: canonical bytes diverge");
     }
 }
 

@@ -13,6 +13,13 @@
 export * from "./src/kernel.mjs";
 export { compilerMetadata, __setCompilerMetadata } from "./src/kernel.mjs";
 
-import { runIfEntry } from "./src/kernel.mjs";
+import { runIfEntry, __setLaunchExtensions } from "./src/kernel.mjs";
+import { descriptor as generationComposite } from "./src/generation-composite.mjs";
+
+// Issues #45 and #70: source mode registers the generation composite
+// exactly like the bundle tail does, so kernel-level tests exercise
+// generate without the vendored compiler bundle. The scanner stays
+// bundle-only: it requires the attached compiler.
+__setLaunchExtensions([generationComposite]);
 
 await runIfEntry(import.meta.url);

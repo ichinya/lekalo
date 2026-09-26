@@ -72,7 +72,7 @@ const conformance = run([]);
 fixtureCases += 1;
 expectOutcome("conformance", conformance, "valid");
 const conformanceDoc = parseJson(conformance.stdout);
-check("conformance-counts", JSON.stringify(conformanceDoc?.fixtures) === JSON.stringify({ valid: 14, malformed: 1, denied: 6 }), conformanceDoc);
+check("conformance-counts", JSON.stringify(conformanceDoc?.fixtures) === JSON.stringify({ valid: 15, malformed: 1, denied: 6 }), conformanceDoc);
 
 const fixtureDirs = (await readdir(fixturesDir, { withFileTypes: true }))
   .filter((entry) => entry.isDirectory())

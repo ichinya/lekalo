@@ -1,0 +1,29 @@
+{
+  "id": "standalone",
+  "mode": "observed",
+  "target": "node-typescript",
+  "readRoots": [
+    {
+      "path": "src",
+      "kind": "tree"
+    },
+    {
+      "path": ".lekalo/ir",
+      "kind": "tree"
+    },
+    {
+      "path": ".lekalo/cache/ir",
+      "kind": "tree"
+    },
+    {
+      "path": ".lekalo/cache/transport",
+      "kind": "tree"
+    }
+  ],
+  "exclusions": [],
+  "provenance": {
+    "origin": "declared",
+    "revision": "transport-conformance-fixture-0001",
+    "disposition": "public-fixture"
+  }
+}

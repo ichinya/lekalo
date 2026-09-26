@@ -1,0 +1,53 @@
+{
+  "id": "f2fa55fb-d776-4370-b16c-b009eb298de7",
+  "ok": true,
+  "result": {
+    "runId": "run_d17b9193ea96",
+    "deliveryId": "delivery_6b81d47606f8",
+    "messages": [
+      {
+        "id": "msg_1af8ea48e2e1",
+        "run_id": "run_d17b9193ea96",
+        "delivery_contract": "current_delivery",
+        "from_handle": "term_3915e477-4804-4cf9-bd92-e590c68b4d08",
+        "to_handle": "run:run_d17b9193ea96",
+        "subject": "alive",
+        "body": "",
+        "type": "heartbeat",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_2f6ab9a4ac94\",\"dispatchId\":\"ctx_ae362a54d8c2\",\"phase\":\"investigating\"}",
+        "created_at": "2026-09-19T05:09:08Z",
+        "delivered_at": null
+      },
+      {
+        "id": "msg_fbdff8d5ad9f",
+        "run_id": "run_d17b9193ea96",
+        "delivery_contract": "current_delivery",
+        "from_handle": "term_ee45ef10-9837-49dc-8fa4-b2e9ad51520f",
+        "to_handle": "run:run_d17b9193ea96",
+        "subject": "issue-70 research plan complete",
+        "body": "Wrote .m4/issue-70-plan.md covering all 7 required sections: a new transport-http contract family at 0.4.x (lekalo/transport-http/v0.4.x schema, transport_http core module, lekalo transport CLI, node-typescript generate extension, conformance check additions, fixtures and Ajv gate). Scope: new contract + diagnostic family + capability/component registry increments + canonical lekalo/transport.yaml home feeding .lekalo/cache/transport evidence into the existing generate pipeline; Model/IR/scenario/error/query contracts unchanged. Biggest risk: the domain-transport boundary — the plan single-sources method/path in the Model endpoint symbol and projects #62 error identity into wire envelopes, but the canonical-home structure-contract edit and closed-catalog conformance increments need owner review.",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_442a65caf089\",\"dispatchId\":\"ctx_3972b7c4df12\",\"outcome\":\"succeeded\",\"filesModified\":[\".m4/issue-70-plan.md\"],\"reportPath\":\".m4/issue-70-plan.md\"}",
+        "created_at": "2026-09-19T05:17:35Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 2,
+    "replayed": false,
+    "acknowledged": null,
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "d8e6c481-9d47-4e2d-8f40-6538be21f081",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "34a2d20b-810e-4f0e-aa59-57034c5fe2ab"
+  }
+}

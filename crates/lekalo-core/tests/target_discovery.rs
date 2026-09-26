@@ -192,6 +192,7 @@ fn incompatible_adapter_is_filtered_before_any_ir_is_transferred() {
             required: &["scan.symbols".to_owned()],
             preferred_profile: None,
             policy: SelectionPolicy::default(),
+            trust: None,
         },
         "0.2.16",
     );
@@ -220,6 +221,7 @@ fn selection_covers_full_partial_unknown_and_incompatible() {
             required: &required,
             preferred_profile: None,
             policy: SelectionPolicy::default(),
+            trust: None,
         },
         "0.2.16",
     );
@@ -251,6 +253,7 @@ fn selection_covers_full_partial_unknown_and_incompatible() {
             required: &["generate.zod".to_owned()],
             preferred_profile: None,
             policy: SelectionPolicy::default(),
+            trust: None,
         },
         "0.2.16",
     );
@@ -264,6 +267,7 @@ fn selection_covers_full_partial_unknown_and_incompatible() {
                 allow_partial: true,
                 tolerate_unknown: false,
             },
+            trust: None,
         },
         "0.2.16",
     );
@@ -283,6 +287,7 @@ fn selection_covers_full_partial_unknown_and_incompatible() {
             required: &["scan.symbols".to_owned()],
             preferred_profile: None,
             policy: SelectionPolicy::default(),
+            trust: None,
         },
         "0.2.16",
     );
@@ -300,6 +305,7 @@ fn selection_covers_full_partial_unknown_and_incompatible() {
                 allow_partial: false,
                 tolerate_unknown: true,
             },
+            trust: None,
         },
         "0.2.16",
     );
@@ -437,7 +443,7 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
 fn capability_definitions_are_versioned_and_closed() {
     assert_eq!(
         capability::REGISTRY_IDENTITY,
-        "dev.lekalo.target-capabilities@0.3.2"
+        "dev.lekalo.target-capabilities@0.4.0"
     );
     for id in [
         "scan.symbols",

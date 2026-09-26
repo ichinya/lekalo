@@ -1,0 +1,85 @@
+{
+  "id": "cca7c0fc-bfe3-47f3-9555-85fab107ce3b",
+  "ok": true,
+  "result": {
+    "runId": "run_d17b9193ea96",
+    "taskId": "task_e5a9a7b8dfaa",
+    "dispatchId": "ctx_05e6d34367ae",
+    "state": "ready",
+    "stage": "input_accepted",
+    "turnStart": "unsupported",
+    "setup": {
+      "requested": "not_applicable",
+      "effective": "not_applicable",
+      "source": "existing_worktree",
+      "hookFound": false,
+      "startupPolicy": "start-immediately",
+      "state": "not_applicable"
+    },
+    "launch": {
+      "requested": {
+        "agent": "pi",
+        "model": null,
+        "effort": null
+      },
+      "effective": {
+        "agent": "pi",
+        "model": null,
+        "effort": null
+      }
+    },
+    "mode": {
+      "mode": "terminal",
+      "preferred": "terminal",
+      "reason": "user_default",
+      "detail": "Started a terminal agent worker, the default for new agent tabs in your settings."
+    },
+    "timeoutMs": 240000,
+    "effects": [
+      {
+        "kind": "worktree",
+        "action": "reused",
+        "id": "2d6db5ac-6e82-4806-9e8a-c12fe96b1a0f::C:/Users/User/orca/workspaces/lekalo/m4-issue-32"
+      },
+      {
+        "kind": "setup",
+        "action": "not_applicable",
+        "state": "not_applicable"
+      },
+      {
+        "kind": "terminal",
+        "role": "agent",
+        "action": "created",
+        "id": "term_88e966e9-3eac-4004-b404-31850a285018",
+        "surface": "visible"
+      },
+      {
+        "kind": "dispatch_input",
+        "role": "agent",
+        "id": "term_88e966e9-3eac-4004-b404-31850a285018",
+        "state": "accepted"
+      }
+    ],
+    "prompt": {
+      "requestId": "3a5123c5-5828-446b-9693-5ca2ca931f42",
+      "stages": [
+        "input_accepted"
+      ],
+      "provider": "unsupported",
+      "observation": "unsupported",
+      "processIncarnation": "933a8b5d-4105-4e6e-96c7-300a5e10dcf3",
+      "generation": 182,
+      "baselineWorkingSequence": 0,
+      "baselineExplicitWorkingStartedAt": null,
+      "baselinePermissionSequence": 0
+    },
+    "residualResources": [],
+    "mutation": {
+      "requestId": "3a5123c5-5828-446b-9693-5ca2ca931f42",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "34a2d20b-810e-4f0e-aa59-57034c5fe2ab"
+  }
+}

@@ -11,13 +11,13 @@
 pub const FAMILY: &str = "dev.lekalo.doctor";
 
 /// The exact doctor contract version.
-pub const VERSION: &str = "0.2.16";
+pub const VERSION: &str = "0.3.2";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.doctor@0.2.16";
+pub const IDENTITY: &str = "dev.lekalo.doctor@0.3.2";
 
 /// The exact wire discriminator of the doctor contract.
-pub const SCHEMA_VERSION: &str = "lekalo/doctor/v0.2.16";
+pub const SCHEMA_VERSION: &str = "lekalo/doctor/v0.3.2";
 
 /// The maximum number of checks one report may carry (the closed v1
 /// vocabulary is far below this; the bound fails closed).
@@ -40,8 +40,8 @@ mod tests {
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
         assert_eq!(FAMILY, "dev.lekalo.doctor");
-        assert_eq!(VERSION, "0.2.16");
-        assert_eq!(SCHEMA_VERSION, "lekalo/doctor/v0.2.16");
+        assert_eq!(VERSION, "0.3.2");
+        assert_eq!(SCHEMA_VERSION, "lekalo/doctor/v0.3.2");
     }
 
     #[test]

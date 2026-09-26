@@ -482,12 +482,13 @@ pub(super) fn run(
     limits: &transport::TransportLimits,
     sandbox: &Sandbox,
     cancel: Option<&AtomicBool>,
+    env: &[(String, String)],
 ) -> Result<transport::TransportSuccess, Failure> {
     if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
         return Err(Failure::Cancelled);
     }
     let mut profile = Profile::new(sandbox)?;
-    let result = run_profile(command, request, limits, sandbox, cancel, &profile);
+    let result = run_profile(command, request, limits, sandbox, cancel, &profile, env);
     profile.close()?;
     result
 }
@@ -499,6 +500,7 @@ fn run_profile(
     sandbox: &Sandbox,
     cancel: Option<&AtomicBool>,
     profile: &Profile,
+    env: &[(String, String)],
 ) -> Result<transport::TransportSuccess, Failure> {
     grant(sandbox.owned.path(), profile.sid, false)?;
     // LPAC has low integrity; lower only this owned staged copy so write
@@ -590,6 +592,8 @@ fn run_profile(
     let mut command_line = wide(arguments.join(" "));
     let cwd = wide(&sandbox.project);
     // No inherited user/provider environment, DLL search paths or Node options.
+    // Issue #89: exactly the budget-granted pairs extend the private block;
+    // values exist only inside the child environment, never in evidence.
     let system = std::env::var_os("SystemRoot").ok_or(Failure::Spawn)?;
     let private = sandbox.owned.path().to_string_lossy();
     let mut environment: Vec<u16> = Vec::new();
@@ -605,10 +609,29 @@ fn run_profile(
     ] {
         environment.extend(wide(format!("{key}={value}")));
     }
+    for (key, value) in env {
+        // Issue #89 (fix round 2, C-F5): a granted name colliding with
+        // the fixed private block is dropped — the private staging value
+        // wins, never the host-sourced grant. The evidence records the
+        // drop in `budget.envDropped`.
+        if super::env_grant_dropped(key) {
+            continue;
+        }
+        environment.extend(wide(format!("{key}={value}")));
+    }
     environment.push(0);
     let job = handle(unsafe { CreateJobObjectW(null(), null()) })?;
     let mut job_limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
-    job_limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    job_limits.BasicLimitInformation.LimitFlags =
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+    // Issue #89 resource bound: a fixed constant, never host-derived.
+    job_limits.ProcessMemoryLimit = sandbox.report.memory_limit().unwrap_or(0) as usize;
+    if sandbox.policy.children_denied {
+        // Issue #89 children denial: the job holds exactly one process,
+        // so any child creation inside the sandbox fails closed.
+        job_limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+        job_limits.BasicLimitInformation.ActiveProcessLimit = 1;
+    }
     if unsafe {
         SetInformationJobObject(
             job.as_raw_handle(),

@@ -1,0 +1,1593 @@
+{
+  "schemaVersion": "lekalo/observed-scan/v0.2.16",
+  "adapter": {
+    "id": "lekalo-target-node-typescript",
+    "version": "0.4.0",
+    "digest": "sha256:46da844a7c98ba1b1d50a3db6b480674dd99194fe686bc59136957c95e2def93"
+  },
+  "project": "taskhub",
+  "revision": "sha256:d17ea2aa10765297a8c65a2f3529b350b0d7943548aea333c87034c11511d93d",
+  "symbols": [
+    {
+      "id": "taskhub_api.api_request",
+      "kind": "entity",
+      "stableKey": "ts1-f2b513b4ec527b4b3ecb8e60d8cc9c83a3f944914047d88d5088c6b1a383d15d",
+      "location": {
+        "path": "apps/api/src/index.ts",
+        "line": 33
+      },
+      "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-f2b513b4ec527b4b3ecb8e60d8cc9c83a3f944914047d88d5088c6b1a383d15d",
+          "path": "apps/api/src/index.ts",
+          "line": 33,
+          "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_api.parse_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_api.routes",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.encode_task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.new_task_input",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task_state",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_api.api_response",
+      "kind": "entity",
+      "stableKey": "ts1-533e135cb8e552b9df00e48fe8e6bfa8a0e5d47ceea4fc2619e1fa85c409eca3",
+      "location": {
+        "path": "apps/api/src/index.ts",
+        "line": 40
+      },
+      "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-533e135cb8e552b9df00e48fe8e6bfa8a0e5d47ceea4fc2619e1fa85c409eca3",
+          "path": "apps/api/src/index.ts",
+          "line": 40,
+          "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_api.parse_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_api.routes",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.encode_task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.new_task_input",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task_state",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_api.declared",
+      "kind": "entity",
+      "stableKey": "ts1-caf53169a5ea8bae077a3c44328eb769d90117ad610ce199f41e6f410afee1a3",
+      "location": {
+        "path": "apps/api/src/index.ts",
+        "line": 45
+      },
+      "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-caf53169a5ea8bae077a3c44328eb769d90117ad610ce199f41e6f410afee1a3",
+          "path": "apps/api/src/index.ts",
+          "line": 45,
+          "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_api.parse_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_api.routes",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.encode_task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.new_task_input",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task_state",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_api.handle",
+      "kind": "entity",
+      "stableKey": "ts1-94e1374119a7aea48d3b3425e11c6c575e918bc755a01343173d9db6d7fb4d3f",
+      "location": {
+        "path": "apps/api/src/index.ts",
+        "line": 75
+      },
+      "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-94e1374119a7aea48d3b3425e11c6c575e918bc755a01343173d9db6d7fb4d3f",
+          "path": "apps/api/src/index.ts",
+          "line": 75,
+          "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_api.parse_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_api.routes",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.encode_task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.new_task_input",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task_state",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_api.http_method",
+      "kind": "entity",
+      "stableKey": "ts1-318a09af66117e512731c59595c9b6b21ed4dbde05e4ba6fa2714d136fd7deb0",
+      "location": {
+        "path": "apps/api/src/index.ts",
+        "line": 16
+      },
+      "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-318a09af66117e512731c59595c9b6b21ed4dbde05e4ba6fa2714d136fd7deb0",
+          "path": "apps/api/src/index.ts",
+          "line": 16,
+          "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_api.parse_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_api.routes",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.encode_task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.new_task_input",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task_state",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_api.parse_task",
+      "kind": "entity",
+      "stableKey": "ts1-ec639eb7d4394c1539e3e226e8653a1155a02fe3746891a1ca41122d2a09bfb2",
+      "location": {
+        "path": "apps/api/src/index.ts",
+        "line": 62
+      },
+      "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-ec639eb7d4394c1539e3e226e8653a1155a02fe3746891a1ca41122d2a09bfb2",
+          "path": "apps/api/src/index.ts",
+          "line": 62,
+          "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_api.parse_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_api.routes",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.encode_task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.new_task_input",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task_state",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_api.route",
+      "kind": "entity",
+      "stableKey": "ts1-d9dae65c12a98237eb74a09d563b3314b4f80ca0cca27ef1fcec63bff4a11443",
+      "location": {
+        "path": "apps/api/src/index.ts",
+        "line": 19
+      },
+      "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-d9dae65c12a98237eb74a09d563b3314b4f80ca0cca27ef1fcec63bff4a11443",
+          "path": "apps/api/src/index.ts",
+          "line": 19,
+          "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_api.parse_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_api.routes",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.encode_task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.new_task_input",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task_state",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_api.route_table",
+      "kind": "entity",
+      "stableKey": "ts1-2739a0739d4e66c062c69907b6e5cbb09bb89ea669e777226c26c2e0cf1171cd",
+      "location": {
+        "path": "apps/api/src/index.ts",
+        "line": 26
+      },
+      "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-2739a0739d4e66c062c69907b6e5cbb09bb89ea669e777226c26c2e0cf1171cd",
+          "path": "apps/api/src/index.ts",
+          "line": 26,
+          "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_api.parse_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_api.routes",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.encode_task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.new_task_input",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task_state",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_api.routes",
+      "kind": "entity",
+      "stableKey": "ts1-f82ac36d06e4e7b8146a12860bde7723829d031c41ef459202253e4d6080db6c",
+      "location": {
+        "path": "apps/api/src/index.ts",
+        "line": 52
+      },
+      "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-f82ac36d06e4e7b8146a12860bde7723829d031c41ef459202253e4d6080db6c",
+          "path": "apps/api/src/index.ts",
+          "line": 52,
+          "fingerprint": "sha256:a695db2d8205c3bdd9db16f36aa87fd37eeb74cafa1689e6d6cf520d19e4ca27",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_api.parse_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_api.routes",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.encode_task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.create_task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.new_task_input",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task_state",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.transition_task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_events.decode_task_event",
+      "kind": "query",
+      "stableKey": "ts1-1c154a470a668f86c2d054b32c73043ce783a27ac06cf7f1dea957d667dc7efa",
+      "location": {
+        "path": "packages/events/src/index.ts",
+        "line": 49
+      },
+      "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-1c154a470a668f86c2d054b32c73043ce783a27ac06cf7f1dea957d667dc7efa",
+          "path": "packages/events/src/index.ts",
+          "line": 49,
+          "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_events.task_event",
+            "role": "read",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_events.encode_task_event",
+      "kind": "command",
+      "stableKey": "ts1-3195a8d12465b2aaad04ec0384bdcdd274e84691d586d25637049869a4793d48",
+      "location": {
+        "path": "packages/events/src/index.ts",
+        "line": 41
+      },
+      "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-3195a8d12465b2aaad04ec0384bdcdd274e84691d586d25637049869a4793d48",
+          "path": "packages/events/src/index.ts",
+          "line": 41,
+          "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_events.task_event",
+            "role": "read",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_events.envelope",
+      "kind": "entity",
+      "stableKey": "ts1-943f7ec2e715c9642e0f6b01f0657c4e16431dcf6a573017d0a16943ae3d2dbb",
+      "location": {
+        "path": "packages/events/src/index.ts",
+        "line": 35
+      },
+      "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-943f7ec2e715c9642e0f6b01f0657c4e16431dcf6a573017d0a16943ae3d2dbb",
+          "path": "packages/events/src/index.ts",
+          "line": 35,
+          "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskhub_events.task_created_payload",
+      "kind": "entity",
+      "stableKey": "ts1-43fd6035bc389392386dc17be449f9093e6a0e3d4c17188eef81ae8b235d7fd2",
+      "location": {
+        "path": "packages/events/src/index.ts",
+        "line": 19
+      },
+      "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-43fd6035bc389392386dc17be449f9093e6a0e3d4c17188eef81ae8b235d7fd2",
+          "path": "packages/events/src/index.ts",
+          "line": 19,
+          "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskhub_events.task_event",
+      "kind": "entity",
+      "stableKey": "ts1-7b2e1ad0e6050cb3e26613fe7ae14d2c740afa63afbe90c7bfd2df01b2ef664b",
+      "location": {
+        "path": "packages/events/src/index.ts",
+        "line": 11
+      },
+      "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-7b2e1ad0e6050cb3e26613fe7ae14d2c740afa63afbe90c7bfd2df01b2ef664b",
+          "path": "packages/events/src/index.ts",
+          "line": 11,
+          "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "fields": [
+          {
+            "name": "kind",
+            "type": "taskhub_events.task_eventKind",
+            "required": true
+          },
+          {
+            "name": "payload",
+            "type": "taskhub_events.task_eventPayload",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_events.task_event_kind",
+      "kind": "entity",
+      "stableKey": "ts1-e27fead5954799c3b2d3020fcbdc4927a13ad70621fcaab6a5895528c8bd1f15",
+      "location": {
+        "path": "packages/events/src/index.ts",
+        "line": 8
+      },
+      "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-e27fead5954799c3b2d3020fcbdc4927a13ad70621fcaab6a5895528c8bd1f15",
+          "path": "packages/events/src/index.ts",
+          "line": 8,
+          "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskhub_events.task_event_payload",
+      "kind": "entity",
+      "stableKey": "ts1-33b5770b9fd69a75a9c6371894d67135f3532abc4090f648e542e37a2e210f69",
+      "location": {
+        "path": "packages/events/src/index.ts",
+        "line": 32
+      },
+      "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-33b5770b9fd69a75a9c6371894d67135f3532abc4090f648e542e37a2e210f69",
+          "path": "packages/events/src/index.ts",
+          "line": 32,
+          "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskhub_events.task_transitioned_payload",
+      "kind": "entity",
+      "stableKey": "ts1-bba4c54aca7600fcac93bcda50b775264d711b7855096fbd7b05073e872ddec6",
+      "location": {
+        "path": "packages/events/src/index.ts",
+        "line": 25
+      },
+      "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-bba4c54aca7600fcac93bcda50b775264d711b7855096fbd7b05073e872ddec6",
+          "path": "packages/events/src/index.ts",
+          "line": 25,
+          "fingerprint": "sha256:a3a41916edd5901627dd9c7b8974e01d00587d62b3a9d40e7bee2dda2c2bfda0",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskhub_integrations.calendar_sync_payload",
+      "kind": "value-object",
+      "stableKey": "ts1-40fe51ec43abf28b25ea3269901b4f36a7a0a0c526dd02ab6ccb994b489ba237",
+      "location": {
+        "path": "packages/integrations/src/index.ts",
+        "line": 9
+      },
+      "fingerprint": "sha256:38298e7dcf3238e162f675c40e98dd9fde639e5d3561ad5647936a9e9f25834c",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-40fe51ec43abf28b25ea3269901b4f36a7a0a0c526dd02ab6ccb994b489ba237",
+          "path": "packages/integrations/src/index.ts",
+          "line": 9,
+          "fingerprint": "sha256:38298e7dcf3238e162f675c40e98dd9fde639e5d3561ad5647936a9e9f25834c",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "fields": [
+          {
+            "name": "calendar_id",
+            "type": "taskhub_integrations.sync_target_kind",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_integrations.delivery_ack",
+      "kind": "entity",
+      "stableKey": "ts1-32d095da9e671202155d87ad53bfa4d8e5dcb6ee0236247c8d75fcdc959eba43",
+      "location": {
+        "path": "packages/integrations/src/index.ts",
+        "line": 25
+      },
+      "fingerprint": "sha256:38298e7dcf3238e162f675c40e98dd9fde639e5d3561ad5647936a9e9f25834c",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-32d095da9e671202155d87ad53bfa4d8e5dcb6ee0236247c8d75fcdc959eba43",
+          "path": "packages/integrations/src/index.ts",
+          "line": 25,
+          "fingerprint": "sha256:38298e7dcf3238e162f675c40e98dd9fde639e5d3561ad5647936a9e9f25834c",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskhub_integrations.integration_client",
+      "kind": "entity",
+      "stableKey": "ts1-2cfa456b7bdaf2cdf0e72b2acf0d2f79c82171c846fcfb90014f771613ae930c",
+      "location": {
+        "path": "packages/integrations/src/index.ts",
+        "line": 31
+      },
+      "fingerprint": "sha256:38298e7dcf3238e162f675c40e98dd9fde639e5d3561ad5647936a9e9f25834c",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-2cfa456b7bdaf2cdf0e72b2acf0d2f79c82171c846fcfb90014f771613ae930c",
+          "path": "packages/integrations/src/index.ts",
+          "line": 31,
+          "fingerprint": "sha256:38298e7dcf3238e162f675c40e98dd9fde639e5d3561ad5647936a9e9f25834c",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskhub_integrations.sync_payload",
+      "kind": "entity",
+      "stableKey": "ts1-5a74867522574fb556e19ebe8570340bec009a00c01796a9e7d1a1c95145661b",
+      "location": {
+        "path": "packages/integrations/src/index.ts",
+        "line": 22
+      },
+      "fingerprint": "sha256:38298e7dcf3238e162f675c40e98dd9fde639e5d3561ad5647936a9e9f25834c",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-5a74867522574fb556e19ebe8570340bec009a00c01796a9e7d1a1c95145661b",
+          "path": "packages/integrations/src/index.ts",
+          "line": 22,
+          "fingerprint": "sha256:38298e7dcf3238e162f675c40e98dd9fde639e5d3561ad5647936a9e9f25834c",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskhub_integrations.sync_target_kind",
+      "kind": "enum",
+      "stableKey": "ts1-f32086057ac7546e041e36603152debd00613623b879d52758b7ba076a66367b",
+      "location": {
+        "path": "packages/integrations/src/index.ts",
+        "line": 6
+      },
+      "fingerprint": "sha256:38298e7dcf3238e162f675c40e98dd9fde639e5d3561ad5647936a9e9f25834c",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-f32086057ac7546e041e36603152debd00613623b879d52758b7ba076a66367b",
+          "path": "packages/integrations/src/index.ts",
+          "line": 6,
+          "fingerprint": "sha256:38298e7dcf3238e162f675c40e98dd9fde639e5d3561ad5647936a9e9f25834c",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "values": [
+          {
+            "value": "calendar"
+          },
+          {
+            "value": "webhook"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_integrations.webhook_sync_payload",
+      "kind": "entity",
+      "stableKey": "ts1-d1999621c13e9a7e2d50a9715d489d9a851e0ff3123fed289499ed5e7c672ba6",
+      "location": {
+        "path": "packages/integrations/src/index.ts",
+        "line": 16
+      },
+      "fingerprint": "sha256:38298e7dcf3238e162f675c40e98dd9fde639e5d3561ad5647936a9e9f25834c",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-d1999621c13e9a7e2d50a9715d489d9a851e0ff3123fed289499ed5e7c672ba6",
+          "path": "packages/integrations/src/index.ts",
+          "line": 16,
+          "fingerprint": "sha256:38298e7dcf3238e162f675c40e98dd9fde639e5d3561ad5647936a9e9f25834c",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskhub_sync.sync_event",
+      "kind": "effect",
+      "stableKey": "ts1-b17a12959bb21caf9be362ce223b7cdcab0cf3b13c3cb71b0775d9aa1457d2cb",
+      "location": {
+        "path": "packages/sync/src/index.ts",
+        "line": 48
+      },
+      "fingerprint": "sha256:92ae674d710a895e233ce0c8a0b3cc56dc7e1c0a464bdf7f4af6c4a1d86168bc",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-b17a12959bb21caf9be362ce223b7cdcab0cf3b13c3cb71b0775d9aa1457d2cb",
+          "path": "packages/sync/src/index.ts",
+          "line": 48,
+          "fingerprint": "sha256:92ae674d710a895e233ce0c8a0b3cc56dc7e1c0a464bdf7f4af6c4a1d86168bc",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.calendar_sync_payload",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.integration_client",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.integration_client",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.sync_payload",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.sync_payload",
+            "role": "create",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.sync_target_kind",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.webhook_sync_payload",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_sync.to_payload",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_sync.sync_outcome",
+      "kind": "entity",
+      "stableKey": "ts1-bc09108e89d9dc4a65b3928a129591f49bfe874feb721ee24243ca0160778461",
+      "location": {
+        "path": "packages/sync/src/index.ts",
+        "line": 18
+      },
+      "fingerprint": "sha256:92ae674d710a895e233ce0c8a0b3cc56dc7e1c0a464bdf7f4af6c4a1d86168bc",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-bc09108e89d9dc4a65b3928a129591f49bfe874feb721ee24243ca0160778461",
+          "path": "packages/sync/src/index.ts",
+          "line": 18,
+          "fingerprint": "sha256:92ae674d710a895e233ce0c8a0b3cc56dc7e1c0a464bdf7f4af6c4a1d86168bc",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.calendar_sync_payload",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.integration_client",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.integration_client",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.sync_payload",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.sync_target_kind",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.webhook_sync_payload",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_sync.to_payload",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_sync.sync_request",
+      "kind": "entity",
+      "stableKey": "ts1-2ff0a85d18dc3a41422abbdadc3b35143e37cef21627393a9ab062f26e04445d",
+      "location": {
+        "path": "packages/sync/src/index.ts",
+        "line": 24
+      },
+      "fingerprint": "sha256:92ae674d710a895e233ce0c8a0b3cc56dc7e1c0a464bdf7f4af6c4a1d86168bc",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-2ff0a85d18dc3a41422abbdadc3b35143e37cef21627393a9ab062f26e04445d",
+          "path": "packages/sync/src/index.ts",
+          "line": 24,
+          "fingerprint": "sha256:92ae674d710a895e233ce0c8a0b3cc56dc7e1c0a464bdf7f4af6c4a1d86168bc",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.calendar_sync_payload",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.integration_client",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.integration_client",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.sync_payload",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.sync_target_kind",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.webhook_sync_payload",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_sync.to_payload",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_sync.to_payload",
+      "kind": "command",
+      "stableKey": "ts1-9e34035e0a087af5c539fc62341da694a688b1a31ffedfd6682cc714e99ca61b",
+      "location": {
+        "path": "packages/sync/src/index.ts",
+        "line": 31
+      },
+      "fingerprint": "sha256:92ae674d710a895e233ce0c8a0b3cc56dc7e1c0a464bdf7f4af6c4a1d86168bc",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-9e34035e0a087af5c539fc62341da694a688b1a31ffedfd6682cc714e99ca61b",
+          "path": "packages/sync/src/index.ts",
+          "line": 31,
+          "fingerprint": "sha256:92ae674d710a895e233ce0c8a0b3cc56dc7e1c0a464bdf7f4af6c4a1d86168bc",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_events.task_event",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.calendar_sync_payload",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.integration_client",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.integration_client",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.sync_payload",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.sync_payload",
+            "role": "create",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.sync_target_kind",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_integrations.webhook_sync_payload",
+            "role": "reference",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_sync.to_payload",
+            "role": "call",
+            "confidence": "exact"
+          },
+          {
+            "target": "taskhub_tasks.task",
+            "role": "reference",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_tasks.create_task",
+      "kind": "command",
+      "stableKey": "ts1-76d2855439487f8488aa93fa53e9f0f2e667bf87cb4e3b9860f85cba13129317",
+      "location": {
+        "path": "packages/tasks/src/index.ts",
+        "line": 34
+      },
+      "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-76d2855439487f8488aa93fa53e9f0f2e667bf87cb4e3b9860f85cba13129317",
+          "path": "packages/tasks/src/index.ts",
+          "line": 34,
+          "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_tasks.task",
+            "role": "create",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_tasks.list_tasks",
+      "kind": "query",
+      "stableKey": "ts1-d932accafe0705b50778ee8239e175d961fbbc25729b4eebea07d36dfcbf4cad",
+      "location": {
+        "path": "packages/tasks/src/index.ts",
+        "line": 39
+      },
+      "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-d932accafe0705b50778ee8239e175d961fbbc25729b4eebea07d36dfcbf4cad",
+          "path": "packages/tasks/src/index.ts",
+          "line": 39,
+          "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_tasks.task",
+            "role": "read",
+            "confidence": "exact"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_tasks.new_task_input",
+      "kind": "value-object",
+      "stableKey": "ts1-8a45a28a38c49f2fe692b7cfaa51b0d0f7e13539e79c844ade49f5f8e1cca9de",
+      "location": {
+        "path": "packages/tasks/src/index.ts",
+        "line": 21
+      },
+      "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-8a45a28a38c49f2fe692b7cfaa51b0d0f7e13539e79c844ade49f5f8e1cca9de",
+          "path": "packages/tasks/src/index.ts",
+          "line": 21,
+          "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "fields": [
+          {
+            "name": "task_id",
+            "type": "taskhub_tasks.task_id",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_tasks.task",
+      "kind": "entity",
+      "stableKey": "ts1-eeabc5407329b6f44a76a9f210b3d2d5e3c05813b3118ff7c7ab6337c76332d3",
+      "location": {
+        "path": "packages/tasks/src/index.ts",
+        "line": 14
+      },
+      "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-eeabc5407329b6f44a76a9f210b3d2d5e3c05813b3118ff7c7ab6337c76332d3",
+          "path": "packages/tasks/src/index.ts",
+          "line": 14,
+          "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "fields": [
+          {
+            "name": "task_id",
+            "type": "taskhub_tasks.task_id",
+            "required": true
+          },
+          {
+            "name": "state",
+            "type": "taskhub_tasks.task_state",
+            "required": true
+          }
+        ],
+        "identityFields": [
+          "task_id"
+        ]
+      }
+    },
+    {
+      "id": "taskhub_tasks.task_id",
+      "kind": "scalar",
+      "stableKey": "ts1-7d344e111ca6960aa93ee2a51156bf9f1ad27b9dbf424bd08dc7fea252df97cf",
+      "location": {
+        "path": "packages/tasks/src/index.ts",
+        "line": 11
+      },
+      "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-7d344e111ca6960aa93ee2a51156bf9f1ad27b9dbf424bd08dc7fea252df97cf",
+          "path": "packages/tasks/src/index.ts",
+          "line": 11,
+          "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "base": "string"
+      }
+    },
+    {
+      "id": "taskhub_tasks.task_page",
+      "kind": "entity",
+      "stableKey": "ts1-4621f5c6535cea8f508fe994d7ccff5673c20d51be3a66c8d34cdfa84035f636",
+      "location": {
+        "path": "packages/tasks/src/index.ts",
+        "line": 27
+      },
+      "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-4621f5c6535cea8f508fe994d7ccff5673c20d51be3a66c8d34cdfa84035f636",
+          "path": "packages/tasks/src/index.ts",
+          "line": 27,
+          "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "taskhub_tasks.task_state",
+      "kind": "enum",
+      "stableKey": "ts1-7b5c4d5bb77fd53b4148f9b900050b601061f746753f849fbd76b4824651adf3",
+      "location": {
+        "path": "packages/tasks/src/index.ts",
+        "line": 8
+      },
+      "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-7b5c4d5bb77fd53b4148f9b900050b601061f746753f849fbd76b4824651adf3",
+          "path": "packages/tasks/src/index.ts",
+          "line": 8,
+          "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "values": [
+          {
+            "value": "backlog",
+            "description": "Not started"
+          },
+          {
+            "value": "focused",
+            "description": "In progress"
+          },
+          {
+            "value": "done",
+            "description": "Completed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskhub_tasks.transition_task",
+      "kind": "command",
+      "stableKey": "ts1-7b3edd16ebd4b9d2dc3a32158b5f7e3fa13e7d3e41e4292d7769925391be3813",
+      "location": {
+        "path": "packages/tasks/src/index.ts",
+        "line": 52
+      },
+      "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+      "mappingConfidence": "medium",
+      "candidates": [
+        {
+          "native": "ts1-7b3edd16ebd4b9d2dc3a32158b5f7e3fa13e7d3e41e4292d7769925391be3813",
+          "path": "packages/tasks/src/index.ts",
+          "line": 52,
+          "fingerprint": "sha256:153889106a6821fa75e2ec6ea98cbfe318c842f78168ba28b032f96ab9d137e6",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": {
+        "references": [
+          {
+            "target": "taskhub_tasks.task",
+            "role": "update",
+            "confidence": "exact"
+          }
+        ]
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "id": "taskhub_api.tasks_list_route",
+      "method": "GET",
+      "path": "/tasks",
+      "symbol": "taskhub_api.handle"
+    },
+    {
+      "id": "taskhub_api.tasks_create_route",
+      "method": "POST",
+      "path": "/tasks",
+      "symbol": "taskhub_api.handle"
+    },
+    {
+      "id": "taskhub_api.tasks_transition_route",
+      "method": "POST",
+      "path": "/tasks/{task_id}/transition",
+      "symbol": "taskhub_api.handle"
+    }
+  ],
+  "target": "node-typescript"
+}

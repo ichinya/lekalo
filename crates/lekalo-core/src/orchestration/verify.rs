@@ -18,6 +18,7 @@ use crate::diagnostics::{DataObject, Diagnostic};
 use crate::ir::Compilation;
 use crate::loader::LoadSelection;
 use crate::lockfile::types::Sha256Digest;
+use crate::project_fs::{EntryType, Fs};
 use crate::result::DomainResult;
 use crate::target_protocol::transport::TransportLimits;
 use crate::target_protocol::wire::Operation;
@@ -34,6 +35,10 @@ use super::receipt::{
 };
 use super::version::IR_EVIDENCE_DIR;
 use super::Failure;
+
+// F-7 (issue #47 review): the exported scenario relations flow through
+// the trace manifest mechanism.
+use crate::scenario_evidence::{trace_manifest_document, RunRecord, TraceContext};
 
 /// The request of one verify invocation.
 pub struct VerifyRequest<'a> {
@@ -199,12 +204,7 @@ fn run(request: VerifyRequest<'_>) -> Result<DomainResult, DomainResult> {
     // Optional components.
     components.push(bindings_component(request.selection));
     components.push(scenarios_component(&compilation, &scope));
-    components.push(Component::state(
-        "scenarios.execution",
-        false,
-        ComponentState::Unsupported,
-        Some("core.capability-unavailable"),
-    ));
+    components.push(scenarios_execution_component(&prepared));
     components.push(Component::state(
         "native.gates",
         false,
@@ -596,6 +596,172 @@ fn bindings_component(selection: &LoadSelection) -> Component {
     }
 }
 
+/// The optional scenario-execution evidence component (issue #47, plan
+/// S9): the durable run records in the adjudicated ingest home roll up
+/// deterministically. A run with any assertion or infrastructure
+/// failure fails the component; unsupported rows degrade it (never a
+/// pass); an empty ingest home stays the declared absence it was before
+/// the backend landed — reported, exit-neutral, never silently skipped.
+fn scenarios_execution_component(prepared: &Prepared) -> Component {
+    let rollup = scenarios_execution_rollup(
+        prepared.fs(),
+        &scenario_trace_context(prepared),
+        prepared.inputs().ir().digest(),
+    );
+    if !rollup.present {
+        // No ingest home (or unreadable): the backend has not run.
+        return Component::state(
+            "scenarios.execution",
+            false,
+            ComponentState::Unsupported,
+            Some("core.capability-unavailable"),
+        );
+    }
+    let state = if rollup.blocking > 0 {
+        ComponentState::Fail
+    } else if rollup.unsupported > 0 || rollup.degraded > 0 || rollup.stale > 0 {
+        ComponentState::Degraded
+    } else {
+        ComponentState::Pass
+    };
+    let reason = match state {
+        ComponentState::Fail => Some("scenario.assertion-failed"),
+        // Review F-10: evidence compiled under a previous IR revision is
+        // stale — it degrades the component with its own reason, never
+        // indistinguishable from current evidence.
+        ComponentState::Degraded if rollup.stale > 0 => Some("scenario.stale-evidence"),
+        ComponentState::Degraded => Some("scenario.unsupported-capability"),
+        _ => None,
+    };
+    let mut component = Component::state("scenarios.execution", false, state, reason);
+    component.receipt.findings =
+        Some(rollup.blocking + rollup.unsupported + rollup.degraded + rollup.stale);
+    // F-7: the exported manifest rows ride in the receipt's trace slot,
+    // so the verify receipt carries the emitted relations.
+    component.receipt.trace = rollup.trace;
+    component
+}
+
+/// The trace export context of one prepared project (review F-7): the
+/// manifest revision is the exact lock revision, and the manifest header
+/// pins the current Model digest.
+fn scenario_trace_context(prepared: &Prepared) -> TraceContext {
+    let mut context = TraceContext::new(prepared.lock().digest().as_str().to_owned());
+    context.model_digest = prepared.inputs().model().digest().as_str().to_owned();
+    context
+}
+
+/// The deterministic rollup of one ingest home (review F-7): every
+/// durable run record is aggregated exactly like the component does, and
+/// the surviving records are exported through the trace manifest
+/// mechanism — [`trace_manifest_document`] assembles the closed wire
+/// document (the production [`crate::scenario_evidence::trace_relations`]
+/// caller) and [`crate::trace::TraceManifest::parse`] re-validates it
+/// before the rows are published. A document that does not survive the
+/// mechanism is a blocking failure, never a silent skip.
+#[derive(Default)]
+pub(crate) struct ExecutionRollup {
+    /// The ingest home held at least one parsable record.
+    pub present: bool,
+    pub blocking: usize,
+    pub unsupported: usize,
+    pub degraded: usize,
+    /// Records compiled under a previous IR revision (review F-10).
+    pub stale: usize,
+    pub trace: Option<TraceSummary>,
+}
+
+/// Roll one ingest home up over the validated root capability.
+pub(crate) fn scenarios_execution_rollup(
+    fs: &Fs,
+    context: &TraceContext,
+    expected_ir: &Sha256Digest,
+) -> ExecutionRollup {
+    let dir = crate::scenario_evidence::INGEST_DIR;
+    let mut rollup = ExecutionRollup::default();
+    let entries = match fs.entries(dir) {
+        Ok(entries) => entries,
+        Err(_) => {
+            // No ingest home (or unreadable): the backend has not run.
+            return rollup;
+        }
+    };
+    let mut names: Vec<String> = entries
+        .iter()
+        .filter(|(name, kind)| *kind == EntryType::File && name.ends_with(".json"))
+        .map(|(name, _)| name.clone())
+        .collect();
+    names.sort();
+    if names.is_empty() {
+        return rollup;
+    }
+    rollup.present = true;
+    let mut all_records = Vec::new();
+    for name in &names {
+        let bytes = match fs.read_file_opt(dir, name, 1 << 20) {
+            Ok(Some(bytes)) => bytes,
+            _ => {
+                rollup.blocking += 1;
+                continue;
+            }
+        };
+        let value: serde_json::Value = match serde_json::from_slice(&bytes) {
+            Ok(value) => value,
+            Err(_) => {
+                rollup.blocking += 1;
+                continue;
+            }
+        };
+        let record = match RunRecord::from_value(&value) {
+            Ok(record) => record,
+            Err(_) => {
+                rollup.blocking += 1;
+                continue;
+            }
+        };
+        let summary = record.summary();
+        // Review F-10: a record produced under a previous IR revision is
+        // stale evidence — it counts, but the component degrades so the
+        // staleness is never indistinguishable from current evidence.
+        if record.ir_digest != expected_ir.as_str() {
+            rollup.stale += 1;
+        }
+        if summary.has_blocking_failure() {
+            rollup.blocking += 1;
+        } else if summary.unsupported > 0 || summary.degraded > 0 {
+            rollup.unsupported += 1;
+        } else if summary.all_passed() {
+            // counted as executed; nothing else to aggregate
+        } else {
+            rollup.degraded += 1;
+        }
+        all_records.push(record);
+    }
+    if all_records.is_empty() {
+        return rollup;
+    }
+    // F-7: export the aggregated relations through the trace manifest
+    // mechanism; the emitted rows are observable in the rollup.
+    match trace_manifest_document(&all_records, context) {
+        Ok(document) => {
+            let bytes = serde_json::to_vec_pretty(&document).expect("document serializes");
+            match crate::trace::TraceManifest::parse(&bytes) {
+                Ok(parsed) => {
+                    let report = parsed.report();
+                    rollup.trace = Some(TraceSummary {
+                        relations: report.relation_count,
+                        gaps: report.gap_count,
+                        uncovered_sinks: parsed.uncovered_sinks().len(),
+                    });
+                }
+                Err(_) => rollup.blocking += 1,
+            }
+        }
+        Err(_) => rollup.blocking += 1,
+    }
+    rollup
+}
+
 /// The optional portable-scenario coverage component.
 fn scenarios_component(compilation: &Compilation, scope: &ScopeReceipt) -> Component {
     let scenarios: Vec<&crate::ir::ScenarioDef> = compilation
@@ -679,5 +845,129 @@ fn trace_component(prepared: &Prepared, logical: &str) -> Component {
             "graph.input-invalid",
             DomainResult::Invalid { diagnostics: set },
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scenarios_execution_rollup;
+    use crate::lockfile::types::Sha256Digest;
+    use crate::project_fs::Fs;
+    use crate::scenario_evidence::TraceContext;
+    use serde_json::json;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// The canonical run-record fixture, byte-identical in shape to the
+    /// reporter's canonical writer output (scenario_evidence tests).
+    fn valid_run_record() -> serde_json::Value {
+        json!({
+            "assertions": [
+                { "kind": "result", "observes": "run", "outcome": "pass", "step_id": "output" },
+                { "kind": "entity_state", "observes": "run", "outcome": "pass", "step_id": "state" }
+            ],
+            "binding_mode": "generated",
+            "identity": "dev.lekalo.scenario-run@0.4.0",
+            "profile": null,
+            "runner": { "id": "node:test", "version": "24.13.0" },
+            "schema_version": "lekalo/scenario-run/v0.4.0",
+            "scenario": {
+                "id": "planner.scenario.focus_happy",
+                "ir_digest": format!("sha256:{}", "1".repeat(64)),
+                "operations": ["planner.focus_task"],
+                "symbols": [],
+                "version": "0.2.16"
+            },
+            "started_by": "lekalo-scenario-harness",
+            "test": {
+                "fingerprint": format!("sha256:{}", "2".repeat(64)),
+                "id": "planner.scenario.focus_happy",
+                "path": "src/generated/node-typescript/scenario-tests/planner/planner.scenario.focus_happy.test.ts"
+            }
+        })
+    }
+
+    fn context() -> TraceContext {
+        let mut context = TraceContext::new("3".repeat(64));
+        context.model_digest = format!("sha256:{}", "4".repeat(64));
+        context
+    }
+
+    /// The prepared IR digest the fixture's record was compiled under.
+    fn fixture_ir() -> Sha256Digest {
+        Sha256Digest::parse(&format!("sha256:{}", "1".repeat(64))).expect("digest")
+    }
+
+    /// Review F-7: `trace_relations` has a production caller — verify
+    /// ingests the durable run records and exports their relations
+    /// through the trace manifest mechanism; the test observes the
+    /// emitted manifest rows in the rollup.
+    #[test]
+    fn execution_rollup_emits_trace_manifest_rows_from_ingested_records() {
+        let temp = TempDir::new().expect("temp dir");
+        let ingest = temp.path().join(".lekalo/import/scenario-runs");
+        fs::create_dir_all(&ingest).expect("ingest home");
+        fs::write(
+            ingest.join("run.json"),
+            serde_json::to_vec_pretty(&valid_run_record()).expect("record serializes"),
+        )
+        .expect("record written");
+        let fs = Fs::open(temp.path()).expect("validated root");
+
+        let rollup = scenarios_execution_rollup(&fs, &context(), &fixture_ir());
+
+        assert!(rollup.present, "ingest home with one record is present");
+        assert_eq!(rollup.blocking, 0, "a passing record never blocks");
+        assert_eq!(rollup.unsupported, 0);
+        assert_eq!(rollup.degraded, 0);
+        assert_eq!(rollup.stale, 0, "a record under the current IR is fresh");
+        let trace = rollup.trace.expect("the manifest rows are emitted");
+        // One record, one operation, no gate: exactly the two verifies
+        // rows (test→scenario, test→symbol) survive the mechanism.
+        assert_eq!(trace.relations, 2, "verifies rows are exported");
+        // The partial manifest declares the explicit missing-requirement
+        // gap the scenario segment cannot close.
+        assert_eq!(trace.gaps, 1);
+    }
+
+    /// Review F-10: a record compiled under a previous IR revision is
+    /// stale evidence — the rollup counts it and the component degrades
+    /// with the stale-evidence reason, never a silent pass.
+    #[test]
+    fn execution_rollup_marks_records_under_a_previous_ir_revision_stale() {
+        let temp = TempDir::new().expect("temp dir");
+        let ingest = temp.path().join(".lekalo/import/scenario-runs");
+        fs::create_dir_all(&ingest).expect("ingest home");
+        fs::write(
+            ingest.join("run.json"),
+            serde_json::to_vec_pretty(&valid_run_record()).expect("record serializes"),
+        )
+        .expect("record written");
+        let fs = Fs::open(temp.path()).expect("validated root");
+        let current = Sha256Digest::parse(&format!("sha256:{}", "9".repeat(64))).expect("digest");
+
+        let rollup = scenarios_execution_rollup(&fs, &context(), &current);
+
+        assert!(rollup.present);
+        assert_eq!(rollup.stale, 1, "the previous-revision record is stale");
+        assert_eq!(rollup.blocking, 0, "staleness is degradation, not failure");
+    }
+
+    /// The declared absence is preserved: without an ingest home the
+    /// rollup reports nothing, and the component stays the unsupported
+    /// absence it was before the backend landed.
+    #[test]
+    fn execution_rollup_stays_absent_without_an_ingest_home() {
+        let temp = TempDir::new().expect("temp dir");
+        let fs = Fs::open(temp.path()).expect("validated root");
+
+        let rollup = scenarios_execution_rollup(&fs, &context(), &fixture_ir());
+
+        assert!(!rollup.present);
+        assert!(rollup.trace.is_none());
+        assert_eq!(
+            (rollup.blocking, rollup.unsupported, rollup.degraded),
+            (0, 0, 0)
+        );
     }
 }

@@ -1,0 +1,238 @@
+{
+  "manifestId": "dev.lekalo.fixture-provenance",
+  "version": "0.1.0",
+  "status": "accepted",
+  "rule": "every public-facing fixture family is synthetic or carries explicit evidence refs",
+  "families": [
+    {
+      "family": "adapter-conformance",
+      "origin": "synthetic"
+    },
+    {
+      "family": "adapter-manifest",
+      "origin": "synthetic"
+    },
+    {
+      "family": "adapter-security",
+      "origin": "synthetic"
+    },
+    {
+      "family": "adopt",
+      "origin": "synthetic"
+    },
+    {
+      "family": "artifacts",
+      "origin": "synthetic"
+    },
+    {
+      "family": "authority",
+      "origin": "synthetic"
+    },
+    {
+      "family": "authorization",
+      "origin": "synthetic"
+    },
+    {
+      "family": "bindings",
+      "origin": "synthetic"
+    },
+    {
+      "family": "cache",
+      "origin": "synthetic"
+    },
+    {
+      "family": "classification",
+      "origin": "synthetic"
+    },
+    {
+      "family": "context",
+      "origin": "synthetic"
+    },
+    {
+      "family": "contracted",
+      "origin": "synthetic"
+    },
+    {
+      "family": "diagnostics",
+      "origin": "synthetic"
+    },
+    {
+      "family": "diff",
+      "origin": "synthetic"
+    },
+    {
+      "family": "doctor",
+      "origin": "synthetic"
+    },
+    {
+      "family": "effects",
+      "origin": "synthetic"
+    },
+    {
+      "family": "error-contract",
+      "origin": "synthetic"
+    },
+    {
+      "family": "expressions",
+      "origin": "synthetic"
+    },
+    {
+      "family": "extended-effects",
+      "origin": "synthetic"
+    },
+    {
+      "family": "graph",
+      "origin": "synthetic"
+    },
+    {
+      "family": "impact",
+      "origin": "synthetic"
+    },
+    {
+      "family": "implementation",
+      "origin": "synthetic"
+    },
+    {
+      "family": "inspect",
+      "origin": "synthetic"
+    },
+    {
+      "family": "invariant-transition",
+      "origin": "synthetic"
+    },
+    {
+      "family": "ir",
+      "origin": "synthetic"
+    },
+    {
+      "family": "loader",
+      "origin": "synthetic"
+    },
+    {
+      "family": "lockfile",
+      "origin": "synthetic"
+    },
+    {
+      "family": "model",
+      "origin": "synthetic"
+    },
+    {
+      "family": "model-v1",
+      "origin": "synthetic"
+    },
+    {
+      "family": "nfr",
+      "origin": "synthetic"
+    },
+    {
+      "family": "node-native-gates",
+      "origin": "synthetic"
+    },
+    {
+      "family": "node-typescript-kernel",
+      "origin": "synthetic"
+    },
+    {
+      "family": "node-typescript-scanner",
+      "origin": "synthetic"
+    },
+    {
+      "family": "node-typescript-transport",
+      "origin": "synthetic"
+    },
+    {
+      "family": "observed",
+      "origin": "synthetic"
+    },
+    {
+      "family": "openapi",
+      "origin": "synthetic"
+    },
+    {
+      "family": "orchestration",
+      "origin": "synthetic"
+    },
+    {
+      "family": "pilot",
+      "origin": "synthetic",
+      "note": "issue #49 observed-mode pilot: the taskhub consumer fixture, its pinned scan document, and its native gate plan are exclusively synthetic"
+    },
+    {
+      "family": "privacy",
+      "origin": "synthetic"
+    },
+    {
+      "family": "privacy-leaks",
+      "origin": "synthetic",
+      "note": "synthetic leak markers for the privacy scanner gate; no real values"
+    },
+    {
+      "family": "query-model",
+      "origin": "synthetic"
+    },
+    {
+      "family": "reference-evaluation",
+      "origin": "synthetic"
+    },
+    {
+      "family": "requirements",
+      "origin": "synthetic"
+    },
+    {
+      "family": "scenario",
+      "origin": "synthetic"
+    },
+    {
+      "family": "storage-engine",
+      "origin": "synthetic"
+    },
+    {
+      "family": "storage-engine-profile",
+      "origin": "synthetic"
+    },
+    {
+      "family": "storage-introspection",
+      "origin": "synthetic"
+    },
+    {
+      "family": "storage-mysql",
+      "origin": "synthetic"
+    },
+    {
+      "family": "storage-projection",
+      "origin": "synthetic"
+    },
+    {
+      "family": "structure",
+      "origin": "synthetic"
+    },
+    {
+      "family": "target-profile",
+      "origin": "synthetic"
+    },
+    {
+      "family": "target-protocol",
+      "origin": "synthetic"
+    },
+    {
+      "family": "trace",
+      "origin": "synthetic"
+    },
+    {
+      "family": "transaction-concurrency",
+      "origin": "synthetic"
+    },
+    {
+      "family": "transport-http",
+      "origin": "synthetic"
+    },
+    {
+      "family": "validation",
+      "origin": "synthetic"
+    },
+    {
+      "family": "versioning",
+      "origin": "synthetic"
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "schemaVersion": "lekalo/nfr/v0.4.0",
+  "identity": "dev.lekalo.nfr@0.4.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "0.2.16",
+    "digest": "sha256:9e0f53127ff9a53768821c21439b636f5ec202b8bcd0df53b87b5b9c4e82972a"
+  },
+  "irRef": {
+    "irVersion": "0.2.16",
+    "digest": "sha256:4a7422a29cea09f7df216cc108405cf0c05a8554c2362be496530a84a81542dd"
+  },
+  "constraints": [
+    {
+      "constraintId": "planner.nfr.api-focus-p95",
+      "dimension": "runtime",
+      "kind": "latency",
+      "scope": {
+        "kind": "endpoint",
+        "ref": "planner.api_focus"
+      },
+      "requirement": {
+        "metric": "latency",
+        "percentile": "p95",
+        "comparator": "lte",
+        "value": "250",
+        "unit": "milliseconds"
+      },
+      "enforcement": "mandatory",
+      "measurement": {
+        "method": "load-test",
+        "gateRef": "perf.gates/api-focus-p95",
+        "evidenceKinds": [
+          "load-test"
+        ]
+      },
+      "environments": [
+        {
+          "envId": "staging-eu",
+          "profileRef": {
+            "id": "targets/node-aws",
+            "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "adapterRef": {
+            "id": "adapters.node/runner-x",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          "runtime": "node-22",
+          "platform": "linux-x64",
+          "labels": [
+            "k8s",
+            "eu-west"
+          ]
+        }
+      ],
+      "validity": {
+        "revision": "1.2.0",
+        "validFrom": "2026-09-01",
+        "validUntil": "2027-03-01"
+      },
+      "sourceRequirement": {
+        "source": "openspec",
+        "requirement": "planner.REQ-focus-perf"
+      }
+    },
+    {
+      "constraintId": "planner.nfr.no-pct",
+      "dimension": "runtime",
+      "kind": "latency",
+      "scope": {
+        "kind": "endpoint",
+        "ref": "planner.api_focus"
+      },
+      "requirement": {
+        "metric": "latency",
+        "comparator": "lte",
+        "value": "9",
+        "unit": "milliseconds"
+      },
+      "enforcement": "mandatory",
+      "measurement": {
+        "method": "load-test",
+        "gateRef": "perf.gates/api-focus-p95",
+        "evidenceKinds": [
+          "load-test"
+        ]
+      },
+      "environments": [
+        {
+          "envId": "staging-eu",
+          "profileRef": {
+            "id": "targets/node-aws",
+            "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "adapterRef": {
+            "id": "adapters.node/runner-x",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          "runtime": "node-22",
+          "platform": "linux-x64",
+          "labels": [
+            "k8s",
+            "eu-west"
+          ]
+        }
+      ],
+      "validity": {
+        "revision": "1.2.0",
+        "validFrom": "2026-09-01",
+        "validUntil": "2027-03-01"
+      },
+      "sourceRequirement": {
+        "source": "openspec",
+        "requirement": "planner.REQ-focus-perf"
+      }
+    }
+  ],
+  "openQuestions": [
+    {
+      "questionId": "planner.nfr.q-latency-prose",
+      "relatedConstraint": "planner.nfr.api-focus-p95"
+    }
+  ]
+}

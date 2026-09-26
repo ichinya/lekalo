@@ -1,0 +1,8 @@
+version: 2
+secret:
+  # The privacy-leak corpus is deliberate fixture material: every file is a
+  # synthetic well-formed marker (RFC example JWT, fake tokens, sample PII)
+  # that the redaction scanner must detect. Declared synthetic in the corpus
+  # manifest; no real credential may ever be added here.
+  ignored_paths:
+    - tests/fixtures/privacy-leaks/**

@@ -24,21 +24,21 @@ const DEFAULTS = {
   authority: new URL("contracts/authority-matrix.v0.3.2.json", BASE),
 };
 
-const TRUSTED_MANIFEST_SHA256 = "8d4a350a4bead32812237acd6a030b3f83cfa9043ca79b1a2a320f5272449129";
-const POLICY_RAW_SHA256 = "5263fb4a54b4fd858690add5c55a6c2f7105c7d3a9108d4fb0c10fd7f0bedd1e";
+const TRUSTED_MANIFEST_SHA256 = "760f64bac4f2dd3e62e68b92a97f251316a215278a841d32b9e5b98a21302bf8";
+const POLICY_RAW_SHA256 = "1fb9047934146e4ec76029b9c2c00b9fac4f605193911147974869b8794ab7dc";
 const CLASSIFICATION_CONTRACT_RAW_SHA256 = "78de535f02b6a8065579b43798ed650849aca0b7edf1aa08b2e0219fc744dde6";
 const AUTHORIZING_EVIDENCE_RAW_SHA256 = "cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e";
 const AUTHORIZATION_SUBJECT_PROFILE_RAW_SHA256 = "11c3c6ddea482ba5cf1bca27f08d602801d7739f1bd57ed5efb15e100584dec0";
-const INPUT_SCHEMA_RAW_SHA256 = "8884b669303be61a78bffb889530b238846e4469fc8d758364eaabffcc7e162b";
-const OUTPUT_SCHEMA_RAW_SHA256 = "13de85bede68b89a905e02ab9a136aedadf20e58afb6051fc13189f6666eb89e";
+const INPUT_SCHEMA_RAW_SHA256 = "e0e95cc56db5758914aa34d12b3d2831954bc9df81d61184d37941d923c63581";
+const OUTPUT_SCHEMA_RAW_SHA256 = "446c0a52433b6f4c265486a9d9736953436a883b120db56540b881dfd6f2b384";
 const CLI_ERROR_SCHEMA_RAW_SHA256 = "46305d2c886f81e6793f4981814d1bb940bd4fffe0a02d25f6d0a615ea7fdf57";
 const CLASSIFICATION_SCHEMA_RAW_SHA256 = "a6d871bb9159e104667afe7543423d665dd3f30498e22b0d7ae63426da8f2741";
-const AUTHORITY_RAW_SHA256 = "cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4";
+const AUTHORITY_RAW_SHA256 = "7ae6454ea20f7b61202d368411ef9bff4e70af96f1f2a408c209d84fe9722f80";
 
 export const POLICY_REF = Object.freeze({
   policyId: "dev.lekalo.privacy-export-policy",
   version: "0.3.2",
-  digest: "sha256:5643547b96e1ca9f422e91e699c8d04e676e6eb820b4ef21a88860c74133c3b9",
+  digest: "sha256:5a80966fa628fd4c9452325d34e7191f40ebb7a9cb49185c91d413861fb18384",
 });
 export const AUTHORITY_REF = Object.freeze({
   contractId: "dev.lekalo.authority-matrix",
@@ -358,13 +358,13 @@ export async function loadTrustedContext(options = {}) {
   "custody.subject-profile-semantic-inventory-mismatch");
 
   const authorityKinds = authority.artifactKinds?.map((entry) => entry.id);
-  requireCondition(Array.isArray(authorityKinds) && authorityKinds.length === 53 && new Set(authorityKinds).size === 53, "custody.authority-registry-not-closed-exact");
+  requireCondition(Array.isArray(authorityKinds) && authorityKinds.length === 57 && new Set(authorityKinds).size === 57, "custody.authority-registry-not-closed-exact");
   const defaults = policy.artifactDefaults;
-  requireCondition(Array.isArray(defaults) && defaults.length === 53, "custody.policy-default-count");
+  requireCondition(Array.isArray(defaults) && defaults.length === 57, "custody.policy-default-count");
   requireCondition(defaults.every((entry, index) => exactKeys(entry, ["artifactKind", "exportDisposition"])
     && entry.artifactKind === authorityKinds[index]
     && policy.vocabularies.exportDisposition.includes(entry.exportDisposition)), "custody.policy-default-registry-mismatch");
-  requireCondition(new Set(defaults.map((entry) => entry.artifactKind)).size === 53, "custody.policy-default-duplicate");
+  requireCondition(new Set(defaults.map((entry) => entry.artifactKind)).size === 57, "custody.policy-default-duplicate");
   requireCondition(policy.constraintPolicy?.localVocabularyOverridesAllowed === false
     && Array.isArray(policy.constraintPolicy?.reviewedBroadeningGrants)
     && policy.constraintPolicy.reviewedBroadeningGrants.length === 0

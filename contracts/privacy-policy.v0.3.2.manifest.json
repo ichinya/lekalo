@@ -10,19 +10,19 @@
   "authorityRef": {
     "contractId": "dev.lekalo.authority-matrix",
     "version": "0.3.2",
-    "digest": "sha256:cf60a50f9df62df54728fab319e1b0e139208f820ec8c82d757bfe853c0f03b4"
+    "digest": "sha256:7ae6454ea20f7b61202d368411ef9bff4e70af96f1f2a408c209d84fe9722f80"
   },
   "acceptedContracts": [
     {
       "policyRef": {
         "policyId": "dev.lekalo.privacy-export-policy",
         "version": "0.3.2",
-        "digest": "sha256:5643547b96e1ca9f422e91e699c8d04e676e6eb820b4ef21a88860c74133c3b9"
+        "digest": "sha256:5a80966fa628fd4c9452325d34e7191f40ebb7a9cb49185c91d413861fb18384"
       },
       "status": "accepted",
       "accepted": true,
       "policyPath": "contracts/privacy-policy.v0.3.2.json",
-      "policyFileDigest": "sha256:5263fb4a54b4fd858690add5c55a6c2f7105c7d3a9108d4fb0c10fd7f0bedd1e",
+      "policyFileDigest": "sha256:1fb9047934146e4ec76029b9c2c00b9fac4f605193911147974869b8794ab7dc",
       "policySidecar": "contracts/privacy-policy.v0.3.2.sha256",
       "classificationContractRef": {
         "contractId": "dev.lekalo.privacy-classification-decision",
@@ -48,13 +48,13 @@
       "inputSchemaRef": {
         "schemaId": "dev.lekalo.privacy-export-input-schema",
         "version": "0.3.2",
-        "digest": "sha256:8884b669303be61a78bffb889530b238846e4469fc8d758364eaabffcc7e162b",
+        "digest": "sha256:e0e95cc56db5758914aa34d12b3d2831954bc9df81d61184d37941d923c63581",
         "path": "contracts/privacy-export.schema.v0.3.2.json"
       },
       "outputSchemaRef": {
         "schemaId": "dev.lekalo.privacy-export-output-schema",
         "version": "0.3.2",
-        "digest": "sha256:13de85bede68b89a905e02ab9a136aedadf20e58afb6051fc13189f6666eb89e",
+        "digest": "sha256:446c0a52433b6f4c265486a9d9736953436a883b120db56540b881dfd6f2b384",
         "path": "contracts/privacy-export.schema.v0.3.2.output.json"
       },
       "cliErrorSchemaRef": {
@@ -85,6 +85,6 @@
   "currentAcceptedRef": {
     "policyId": "dev.lekalo.privacy-export-policy",
     "version": "0.3.2",
-    "digest": "sha256:5643547b96e1ca9f422e91e699c8d04e676e6eb820b4ef21a88860c74133c3b9"
+    "digest": "sha256:5a80966fa628fd4c9452325d34e7191f40ebb7a9cb49185c91d413861fb18384"
   }
 }

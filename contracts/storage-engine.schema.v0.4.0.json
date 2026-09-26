@@ -1,0 +1,405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/storage-engine.schema.v0.4.0.json",
+  "title": "Lekalo Storage Engine Profile",
+  "description": "Closed independent attachment contract declaring one project's storage engine profile (issue #69): the exact engine identity and version pin, the declared SQL-shaping policies (JSON, enum, array, time, pagination, identifier quoting), tenancy enforcement, optimistic-versioning policy, checked-mode introspection declaration, test-database lifecycle, extension allow-list, and the digest binding to the storage-projection attachment it profiles. The profile is pure declaration and validation data: it never executes, never connects, never carries credentials, hosts, URLs, runtime values, or provider output; every database reference is one opaque connection name token resolved outside this family.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "projectionRef",
+    "engine",
+    "engineVersion",
+    "policies"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/storage-engine/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.storage-engine@0.4.0"
+    },
+    "attachmentRevision": {
+      "description": "The exact revision of this attachment; a change is a wire-layer fact.",
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "modelRef": {
+      "description": "The exact bound source Model contract: accepted version plus canonical digest.",
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "description": "The exact bound IR contract: accepted identity plus canonical digest.",
+      "$ref": "#/$defs/irRef"
+    },
+    "projectionRef": {
+      "description": "The canonical digest of the exact storage-projection attachment this profile consumes. A profile can never float free of a declared projection.",
+      "$ref": "#/$defs/sha256"
+    },
+    "engine": {
+      "description": "The closed engine vocabulary of v1.",
+      "enum": [
+        "postgres"
+      ]
+    },
+    "engineVersion": {
+      "description": "The exact canonical version of the target server; it must resolve to one supported row of the owner-published version matrix or the profile is refused as unsupported.",
+      "$ref": "#/$defs/semver"
+    },
+    "policies": {
+      "$ref": "#/$defs/policies"
+    },
+    "tenancy": {
+      "description": "The explicit tenant isolation enforcement of this profile; never implied by a tenant key column alone.",
+      "$ref": "#/$defs/tenancy"
+    },
+    "concurrency": {
+      "description": "The declared optimistic-versioning policy of this profile.",
+      "$ref": "#/$defs/concurrency"
+    },
+    "introspection": {
+      "description": "The checked-mode schema introspection declaration. Absent means no introspection capability is claimed.",
+      "$ref": "#/$defs/introspection"
+    },
+    "testLifecycle": {
+      "description": "The isolated test-database lifecycle. Absent means no test-database capability is claimed.",
+      "$ref": "#/$defs/testLifecycle"
+    },
+    "extensions": {
+      "description": "The closed extension allow-list. An observed extension outside this list is reported as unsupported, never silently coerced.",
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/extension"
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "connectionName": {
+      "description": "One opaque connection name token. It is resolved against a connection registry outside this contract; credentials, hosts, URLs, and parameters are unrepresentable by grammar.",
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "sessionVariable": {
+      "description": "One bounded custom GUC name for the tenant session variable.",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "extensionName": {
+      "description": "One bounded lowercase extension name.",
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identifierQuote",
+        "json",
+        "enum",
+        "array",
+        "time",
+        "pagination"
+      ],
+      "properties": {
+        "identifierQuote": {
+          "description": "The emitted-identifier quoting policy; v1 has exactly one deterministic answer.",
+          "const": "always"
+        },
+        "json": {
+          "description": "The JSON column policy: jsonb by default, the json type only by explicit opt-in.",
+          "enum": [
+            "jsonb",
+            "json"
+          ]
+        },
+        "enum": {
+          "description": "The enum policy: a bounded CHECK predicate, or a native engine enum type created per column.",
+          "enum": [
+            "check",
+            "native_enum"
+          ]
+        },
+        "array": {
+          "description": "The array policy: native engine arrays, JSON encoding, or an explicit refusal for declared array fields.",
+          "enum": [
+            "native",
+            "json",
+            "unsupported"
+          ]
+        },
+        "time": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "instant",
+            "local"
+          ],
+          "properties": {
+            "instant": {
+              "description": "The instant column type; the timezoned type is the only default.",
+              "const": "timestamptz"
+            },
+            "local": {
+              "description": "Whether the timezone-naive local timestamp type may be rendered at all; forbidden is the honest default.",
+              "enum": [
+                "forbidden",
+                "allowed"
+              ]
+            }
+          }
+        },
+        "pagination": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "offset",
+            "cursor"
+          ],
+          "properties": {
+            "offset": {
+              "description": "Whether LIMIT/OFFSET pagination may be rendered.",
+              "enum": [
+                "allowed",
+                "forbidden"
+              ]
+            },
+            "cursor": {
+              "description": "The cursor rendering: keyset row comparison over the declared sort and identity tie-breaker.",
+              "enum": [
+                "keyset",
+                "forbidden"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "tenancy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enforcement"
+      ],
+      "properties": {
+        "enforcement": {
+          "description": "The tenant isolation mechanism: none, an application-level scope, or engine row-level security (which requires a tenant key on every covered table).",
+          "enum": [
+            "none",
+            "application",
+            "rls"
+          ]
+        },
+        "rls": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sessionVariable",
+            "force"
+          ],
+          "properties": {
+            "sessionVariable": {
+              "$ref": "#/$defs/sessionVariable"
+            },
+            "force": {
+              "description": "True when row-level security applies to the table owner too (FORCE ROW LEVEL SECURITY).",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "concurrency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "versioning",
+        "waitPolicy"
+      ],
+      "properties": {
+        "versioning": {
+          "description": "The optimistic-versioning mechanism: a declared technical version column compared and incremented on every update, or none.",
+          "enum": [
+            "none",
+            "version_column"
+          ]
+        },
+        "waitPolicy": {
+          "description": "Whether lock acquisition waits or fails fast.",
+          "enum": [
+            "wait",
+            "no_wait"
+          ]
+        }
+      }
+    },
+    "introspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "scopes",
+        "connection"
+      ],
+      "properties": {
+        "mode": {
+          "description": "The only accepted introspection mode: checked. Unchecked schema observation is unrepresentable by construction.",
+          "const": "checked"
+        },
+        "scopes": {
+          "description": "The bounded schema allow-list the adapter may observe.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/scopeName"
+          }
+        },
+        "connection": {
+          "$ref": "#/$defs/connection"
+        }
+      }
+    },
+    "scopeName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/connectionName"
+        }
+      }
+    },
+    "testLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "isolation",
+        "provision",
+        "cleanup",
+        "production",
+        "connection"
+      ],
+      "properties": {
+        "isolation": {
+          "description": "The test isolation boundary: one database per run, one schema per run, or one transaction rolled back per case.",
+          "enum": [
+            "database",
+            "schema",
+            "transaction"
+          ]
+        },
+        "provision": {
+          "description": "How the test surface is created: created then dropped, cloned from a template, or assumed to exist.",
+          "enum": [
+            "create_drop",
+            "template",
+            "none"
+          ]
+        },
+        "cleanup": {
+          "description": "How the test surface is cleaned: dropped, truncated, or rolled back.",
+          "enum": [
+            "drop",
+            "truncate",
+            "rollback"
+          ]
+        },
+        "production": {
+          "description": "The only wire value: production access through the test lifecycle is forbidden.",
+          "const": "forbidden"
+        },
+        "connection": {
+          "$ref": "#/$defs/connection"
+        }
+      }
+    },
+    "extension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "state"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/extensionName"
+        },
+        "state": {
+          "description": "Whether the extension may be created on demand or must already exist.",
+          "enum": [
+            "allowed",
+            "required"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/adapter-inventory.schema.v0.3.2.json",
+  "title": "Lekalo Adapter Inventory",
+  "description": "Closed wire contract for the governed local adapter store document (.lekalo/adapters/inventory.json, issue #32): one row per installed or quarantined adapter package with its immutable identity, manifest digest, assigned trust level, source coordinate, confirmed install plan id, selected pin, and quarantine custody. Package bytes are immutable; the selected pin is the only mutable field. Rows are sorted by (id, version, digest) with no exact duplicates; every digest is sha256:<64 lowercase hex>; no field carries an absolute path, URL, credential, or host data. The Rust implementation in crates/lekalo-core/src/adapter_package/inventory is normative for cross-field invariants.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "identity", "packages"],
+  "properties": {
+    "schemaVersion": { "const": "lekalo/adapter-inventory/v0.3.2" },
+    "identity": { "const": "dev.lekalo.adapter-inventory@0.3.2" },
+    "packages": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/packageRow" }
+    }
+  },
+  "$defs": {
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "trustLevel": {
+      "description": "The exact execution-isolation trust vocabulary.",
+      "enum": ["builtin", "verified", "local-development", "community", "revoked"]
+    },
+    "packageRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest",
+        "manifestDigest",
+        "trust",
+        "source",
+        "installPlanId",
+        "selected",
+        "quarantined"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,127}$",
+          "maxLength": 128
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "maxLength": 32
+        },
+        "digest": { "$ref": "#/$defs/sha256Digest" },
+        "manifestDigest": { "$ref": "#/$defs/sha256Digest" },
+        "trust": { "$ref": "#/$defs/trustLevel" },
+        "source": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 256,
+          "description": "The closed source coordinate token the package arrived from; never a URL or an absolute host path."
+        },
+        "installPlanId": {
+          "oneOf": [{ "$ref": "#/$defs/sha256Digest" }, { "type": "null" }]
+        },
+        "selected": { "type": "boolean" },
+        "quarantined": { "type": "boolean" }
+      }
+    }
+  }
+}

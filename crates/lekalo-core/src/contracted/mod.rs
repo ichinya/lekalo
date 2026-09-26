@@ -43,7 +43,7 @@ pub const MAX_DECLARATION_BYTES: usize = version::MAX_REGISTRY_BYTES;
 
 /// The exact `schema_version` literal of an adapter declaration
 /// document.
-pub const DECLARATION_SCHEMA_VERSION: &str = "lekalo/contracted-declaration/v0.2.16";
+pub const DECLARATION_SCHEMA_VERSION: &str = "lekalo/contracted-declaration/v0.4.0";
 
 /// The loaded project context every contracted operation runs against.
 pub struct Context {
@@ -249,6 +249,7 @@ pub fn update_registry(
             record.fingerprint = declared.fingerprint.clone();
             record.signature = declared.signature.clone();
             record.effects = declared.effects.clone();
+            record.shape = declared.shape.clone();
             record.provenance.adapter = declaration.adapter.id.clone();
             record.provenance.revision = declaration.revision.clone();
             continue;
@@ -262,6 +263,7 @@ pub fn update_registry(
             state: types::DriftState::Conformant,
             signature: declared.signature.clone(),
             effects: declared.effects.clone(),
+            shape: declared.shape.clone(),
             native_tests: Vec::new(),
             gates: Vec::new(),
             provenance: types::Provenance {

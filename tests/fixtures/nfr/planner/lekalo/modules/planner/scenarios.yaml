@@ -1,0 +1,9 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.focus_flow
+    kind: scenario
+    version: 1
+    description: "Focus flow"
+    summary: "Focusing a task stays under the latency bound."
+    covers:
+      - "planner.focus_task"

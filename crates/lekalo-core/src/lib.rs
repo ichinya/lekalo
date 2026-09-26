@@ -1,11 +1,14 @@
 //! Target-neutral request and result contracts for Lekalo.
 
 pub mod adapter_conformance;
+pub mod adapter_package;
 pub mod artifacts;
 pub mod authorization;
 pub mod cache;
+pub mod classification;
 pub mod context;
 pub mod contracted;
+pub mod dataflow;
 pub mod diagnostics;
 pub mod diff;
 pub mod digest;
@@ -24,19 +27,27 @@ pub mod ir;
 pub mod loader;
 pub mod lockfile;
 pub mod native_gate;
+pub mod nfr;
 pub mod observed;
+pub mod openapi;
 pub mod orchestration;
+pub mod privacy;
 pub mod project_fs;
 pub mod query_model;
 pub mod reference_evaluation;
 pub mod requirements;
 pub mod result;
 pub mod scenario;
+pub mod scenario_evidence;
+pub mod storage_engine;
+pub mod storage_engine_profile;
+pub mod storage_introspection;
 pub mod storage_projection;
 pub mod target_profile;
 pub mod target_protocol;
 pub mod trace;
 pub mod transaction_concurrency;
+pub mod transport_http;
 pub mod validator;
 pub mod versioning;
 

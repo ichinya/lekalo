@@ -1,0 +1,75 @@
+{
+  "id": "a95a6be5-2b71-43dc-8c70-9d28fc9f92cd",
+  "ok": true,
+  "result": {
+    "runId": "run_d17b9193ea96",
+    "taskId": "task_2f6ab9a4ac94",
+    "dispatchId": "ctx_dc9d291f5721",
+    "state": "failed",
+    "stage": "agent_readiness",
+    "failedStage": "agent_readiness",
+    "lastError": "timeout",
+    "setup": {
+      "requested": "not_applicable",
+      "effective": "not_applicable",
+      "source": "existing_worktree",
+      "hookFound": false,
+      "startupPolicy": "start-immediately",
+      "state": "not_applicable"
+    },
+    "launch": {
+      "requested": {
+        "agent": "devin",
+        "model": null,
+        "effort": null
+      },
+      "effective": {
+        "agent": "devin",
+        "model": null,
+        "effort": null
+      }
+    },
+    "mode": {
+      "mode": "terminal",
+      "preferred": "terminal",
+      "reason": "user_default",
+      "detail": "Started a terminal agent worker, the default for new agent tabs in your settings."
+    },
+    "effects": [
+      {
+        "kind": "worktree",
+        "action": "reused",
+        "id": "2d6db5ac-6e82-4806-9e8a-c12fe96b1a0f::C:/Users/User/orca/workspaces/lekalo/m4-issue-85"
+      },
+      {
+        "kind": "setup",
+        "action": "not_applicable",
+        "state": "not_applicable"
+      },
+      {
+        "kind": "terminal",
+        "role": "agent",
+        "action": "created",
+        "id": "term_53fa8979-00c1-4318-ad58-d5688adf9687",
+        "surface": "visible"
+      }
+    ],
+    "residualResources": [
+      {
+        "kind": "terminal",
+        "role": "agent",
+        "action": "created",
+        "id": "term_53fa8979-00c1-4318-ad58-d5688adf9687",
+        "surface": "visible"
+      }
+    ],
+    "recovery": "This start created a terminal that never ran the Task. Close it with: orca orchestration worker-release --dispatch ctx_dc9d291f5721",
+    "mutation": {
+      "requestId": "cbbaa083-50ad-4281-9ed5-5a1d9203aceb",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "34a2d20b-810e-4f0e-aa59-57034c5fe2ab"
+  }
+}

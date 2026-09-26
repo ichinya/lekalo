@@ -37,6 +37,22 @@ pub struct SelectionPolicy {
     pub tolerate_unknown: bool,
 }
 
+/// The trust posture of one candidate, supplied by the issue #32
+/// package gate. Revoked and quarantined candidates are filtered
+/// **before** the deterministic ordering — trust is a filter, never a
+/// sort key, so a community adapter can never outrank a verified one
+/// silently.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TrustPosture {
+    /// The adapter id/version is recorded in the revocation store.
+    pub revoked: bool,
+    /// The package bytes are in quarantine custody.
+    pub quarantined: bool,
+    /// The trust level is auto-selectable (builtin/verified), or the
+    /// invocation carried the explicit opt-in for the level.
+    pub auto_selectable: bool,
+}
+
 /// One selection request over discovered candidates.
 #[derive(Clone, Copy, Debug)]
 pub struct SelectionRequest<'a> {
@@ -47,6 +63,10 @@ pub struct SelectionRequest<'a> {
     pub preferred_profile: Option<&'a str>,
     /// The explicit policy.
     pub policy: SelectionPolicy,
+    /// Per-candidate trust postures keyed by the declared adapter id
+    /// (issue #32). A candidate with no entry is treated as
+    /// auto-selectable — callers that run no package gate omit the map.
+    pub trust: Option<&'a std::collections::BTreeMap<String, TrustPosture>>,
 }
 
 /// The sorted stable exclusion reasons.
@@ -62,6 +82,15 @@ pub mod reasons {
     pub const PARTIAL_POLICY: &str = "partial-policy";
     /// A compatible survivor that deterministic ordering did not select.
     pub const ORDERING: &str = "ordering";
+    /// The adapter is revoked: never selectable, filtered before any
+    /// ordering (issue #32).
+    pub const TRUST_REVOKED: &str = "trust-revoked";
+    /// The adapter package bytes are in quarantine custody: excluded
+    /// from selection (issue #32).
+    pub const TRUST_QUARANTINED: &str = "trust-quarantined";
+    /// The trust level requires an explicit opt-in that was not given
+    /// (issue #32).
+    pub const TRUST_INSUFFICIENT: &str = "trust-insufficient";
 }
 
 /// The warnings recorded on a selection that proceeded past a policy
@@ -153,6 +182,35 @@ pub fn select(
     for candidate in candidates {
         let mut reasons: Vec<&'static str> = Vec::new();
         let mut warnings: Vec<&'static str> = Vec::new();
+
+        // Fixed order, step 0 (issue #32): the trust filter. Revoked
+        // and quarantined candidates are excluded before any capability
+        // or ordering logic can ever surface them; a non-auto-selectable
+        // trust level requires the caller's explicit opt-in recorded in
+        // the posture.
+        if let Some(trust) = request.trust {
+            if let Some(posture) = trust.get(&candidate.adapter.id) {
+                if posture.revoked {
+                    reasons.push(reasons::TRUST_REVOKED);
+                }
+                if posture.quarantined {
+                    reasons.push(reasons::TRUST_QUARANTINED);
+                }
+                if !posture.auto_selectable {
+                    reasons.push(reasons::TRUST_INSUFFICIENT);
+                }
+                if !reasons.is_empty() {
+                    reasons.sort_unstable();
+                    reasons.dedup();
+                    excluded.push(ExcludedAdapter {
+                        adapter: candidate.adapter.id.clone(),
+                        version: candidate.adapter.version.clone(),
+                        reasons,
+                    });
+                    continue;
+                }
+            }
+        }
 
         // Fixed order, step 1: declared IR compatibility. A candidate
         // that never declared the core IR version is refused before any
@@ -352,6 +410,7 @@ mod tests {
             constraints: None,
             targets: vec![id.to_owned()],
             profiles: vec!["default".to_owned()],
+            operations: vec!["describe".to_owned()],
             capability_digest: format!("sha256:{}", "cd".repeat(32)),
             executable_digest: None,
             capabilities: capabilities
@@ -363,6 +422,9 @@ mod tests {
                     provenance: Provenance::Declared,
                 })
                 .collect(),
+            read_scopes: Vec::new(),
+            write_scopes: Vec::new(),
+            transports: Vec::new(),
         }
     }
 
@@ -377,6 +439,7 @@ mod tests {
                 required: req,
                 preferred_profile: None,
                 policy: SelectionPolicy::default(),
+                trust: None,
             },
             "0.3.1",
         )
@@ -423,6 +486,7 @@ mod tests {
                     tolerate_unknown: true,
                     allow_partial: false,
                 },
+                trust: None,
             },
             "0.3.1",
         );
@@ -454,6 +518,7 @@ mod tests {
                     tolerate_unknown: false,
                     allow_partial: true,
                 },
+                trust: None,
             },
             "0.3.1",
         );
@@ -663,6 +728,7 @@ mod tests {
                         required: &required(&["scan.symbols"]),
                         preferred_profile: None,
                         policy,
+                        trust: None,
                     },
                     "0.3.1",
                 )
@@ -716,5 +782,129 @@ mod tests {
         assert_eq!(selected["capabilities"][0]["id"], "scan.symbols");
         assert_eq!(selected["capabilities"][0]["definition_version"], "0.3.1");
         assert_eq!(selected["capabilities"][0]["provenance"], "declared");
+    }
+}
+
+#[cfg(test)]
+mod trust_tests {
+    use super::*;
+    use crate::target_protocol::discovery::{DiscoveredCapability, Provenance};
+    use std::collections::BTreeMap;
+
+    fn adapter(id: &str, version: &str) -> DiscoveredAdapter {
+        DiscoveredAdapter {
+            adapter: wire::AdapterIdentity {
+                id: id.to_owned(),
+                version: version.to_owned(),
+                digest: format!("sha256:{}", "ef".repeat(32)),
+            },
+            negotiated_version: crate::target_protocol::version::VERSION,
+            declared_protocols: vec![crate::target_protocol::version::VERSION.to_owned()],
+            ir_versions: vec![crate::ir::version::VERSION.to_owned()],
+            constraints: None,
+            targets: vec!["t".to_owned()],
+            profiles: vec!["default".to_owned()],
+            operations: vec!["describe".to_owned()],
+            capability_digest: format!("sha256:{}", "01".repeat(32)),
+            executable_digest: None,
+            capabilities: vec![DiscoveredCapability {
+                id: "scan.symbols".to_owned(),
+                state: wire::SupportState::Full,
+                definition_version: "0.3.1",
+                provenance: Provenance::Declared,
+            }],
+            read_scopes: Vec::new(),
+            write_scopes: Vec::new(),
+            transports: Vec::new(),
+        }
+    }
+
+    fn posture(revoked: bool, quarantined: bool, auto_selectable: bool) -> TrustPosture {
+        TrustPosture {
+            revoked,
+            quarantined,
+            auto_selectable,
+        }
+    }
+
+    fn run(
+        candidates: &[DiscoveredAdapter],
+        trust: &BTreeMap<String, TrustPosture>,
+    ) -> SelectionReport {
+        select(
+            candidates,
+            SelectionRequest {
+                required: &["scan.symbols".to_owned()],
+                preferred_profile: None,
+                policy: SelectionPolicy::default(),
+                trust: Some(trust),
+            },
+            crate::ir::version::VERSION,
+        )
+    }
+
+    #[test]
+    fn revoked_candidates_never_surface_even_when_alone() {
+        let candidate = adapter("revoked-adapter", "1.0.0");
+        let mut trust = BTreeMap::new();
+        trust.insert("revoked-adapter".to_owned(), posture(true, false, true));
+        let report = run(std::slice::from_ref(&candidate), &trust);
+        assert!(!report.is_selected());
+        assert_eq!(
+            report.excluded[0].reasons,
+            vec![reasons::TRUST_REVOKED],
+            "a revoked adapter is excluded before ordering, even unopposed"
+        );
+    }
+
+    #[test]
+    fn quarantined_candidates_are_filtered_with_the_stable_reason() {
+        let candidate = adapter("quarantine-adapter", "1.0.0");
+        let mut trust = BTreeMap::new();
+        trust.insert("quarantine-adapter".to_owned(), posture(false, true, true));
+        let report = run(std::slice::from_ref(&candidate), &trust);
+        assert!(!report.is_selected());
+        assert_eq!(report.excluded[0].reasons, vec![reasons::TRUST_QUARANTINED]);
+    }
+
+    #[test]
+    fn community_requires_the_explicit_opt_in() {
+        let candidate = adapter("community-adapter", "1.0.0");
+        let mut trust = BTreeMap::new();
+        trust.insert("community-adapter".to_owned(), posture(false, false, false));
+        let report = run(std::slice::from_ref(&candidate), &trust);
+        assert!(!report.is_selected());
+        assert_eq!(
+            report.excluded[0].reasons,
+            vec![reasons::TRUST_INSUFFICIENT]
+        );
+        // The explicit opt-in unlocks selection.
+        let mut trust = trust.clone();
+        trust.insert("community-adapter".to_owned(), posture(false, false, true));
+        assert!(run(std::slice::from_ref(&candidate), &trust).is_selected());
+    }
+
+    #[test]
+    fn trust_is_a_filter_never_a_sort_key() {
+        let verified = adapter("aaa-verified", "1.0.0");
+        let community = adapter("zzz-community", "9.9.9");
+        let mut trust = BTreeMap::new();
+        trust.insert("aaa-verified".to_owned(), posture(false, false, true));
+        trust.insert("zzz-community".to_owned(), posture(false, false, false));
+        let report = run(&[verified, community], &trust);
+        // The community adapter is excluded, not outranked: the selected
+        // one is the only auto-selectable candidate.
+        assert_eq!(report.selected.as_ref().unwrap().adapter.id, "aaa-verified");
+        assert!(report
+            .excluded
+            .iter()
+            .any(|entry| entry.reasons.contains(&reasons::TRUST_INSUFFICIENT)));
+    }
+
+    #[test]
+    fn unlisted_candidates_default_to_auto_selectable() {
+        let candidate = adapter("plain-adapter", "1.0.0");
+        let trust = BTreeMap::new();
+        assert!(run(std::slice::from_ref(&candidate), &trust).is_selected());
     }
 }

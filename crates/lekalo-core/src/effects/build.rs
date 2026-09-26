@@ -11,11 +11,21 @@
 //! through a typed evidence envelope. Every declared reference must
 //! resolve and point at the declared kind; any miss is a fatal
 //! `graph.input-invalid` and no graph is produced.
+//!
+//! Sensitivity stamping (issue #87): with a parsed classification
+//! resolution, every declared edge whose subject resolves to a
+//! classified entry (or a covering default) carries the opaque
+//! [`Sensitivity`] marker naming the classification contract; edges
+//! with no classification coverage stay unmarked, and markers never
+//! change identity, ordering (beyond the recorded sort-key tiebreak),
+//! or canonical shape — the wire field already exists.
 
 use std::collections::HashMap;
 
 use sha2::{Digest, Sha256};
 
+use crate::classification::resolve::Resolution;
+use crate::classification::types::SubjectPath;
 use crate::diagnostics::types::DataObject;
 use crate::diagnostics::DiagnosticSet;
 use crate::ir::{CompiledProject, Definition, DefinitionKind, EffectOperation};
@@ -35,12 +45,23 @@ use super::EffectGraph;
 /// The graph is either complete or absent: every fatal input violation is
 /// collected into one normalized `invalid` set (exit 1 for CLI callers).
 pub fn build(project: &CompiledProject) -> Result<EffectGraph, DiagnosticSet> {
+    build_with_classification(project, None)
+}
+
+/// Build the declared effect projection with one optional classification
+/// resolution: the sensitivity stamp of every declared edge follows the
+/// resolved kind of the edge's entity subject (issue #87).
+pub fn build_with_classification(
+    project: &CompiledProject,
+    resolution: Option<&Resolution>,
+) -> Result<EffectGraph, DiagnosticSet> {
     let mut builder = Builder {
         project,
         kinds: definition_kinds(project),
         digest: ir_digest(project),
         edges: Vec::new(),
         cap_violation: false,
+        sensitivity: SensitivityStamper::new(resolution),
     };
     builder.project_declared_effects()?;
     if builder.cap_violation || builder.edges.len() > MAX_EFFECTS {
@@ -75,6 +96,31 @@ struct Builder<'a> {
     /// Set when the recorded edge cap was crossed: construction then
     /// fails closed instead of truncating by arrival order.
     cap_violation: bool,
+    sensitivity: SensitivityStamper<'a>,
+}
+
+/// The sensitivity stamp source: the classification resolution of one
+/// attachment, or the no-op stamper when no attachment is present.
+struct SensitivityStamper<'a> {
+    resolution: Option<&'a Resolution>,
+}
+
+impl<'a> SensitivityStamper<'a> {
+    fn new(resolution: Option<&'a Resolution>) -> Self {
+        Self { resolution }
+    }
+
+    /// The opaque marker for one entity-level subject, `None` when no
+    /// resolution is bound or the subject never classified. The
+    /// contract reference is the exact classification identity; the
+    /// state is `classified` whenever any kind resolved for the
+    /// subject (plan §2.4).
+    fn mark(&self, entity: &str) -> Option<super::identity::Sensitivity> {
+        let resolution = self.resolution?;
+        let subject = SubjectPath::parse(entity).ok()?;
+        resolution.resolve(&subject).kind()?;
+        super::identity::Sensitivity::new(crate::classification::EDGE_CONTRACT, true)
+    }
 }
 
 impl<'a> Builder<'a> {
@@ -229,6 +275,7 @@ impl<'a> Builder<'a> {
             return;
         }
         let symbol = operation.semantic_id().to_owned();
+        let sensitivity = self.sensitivity.mark(subject.resource().as_str());
         self.edges.push(EffectEdge::new(
             EffectKey::new(operation.clone(), kind, subject, origin, occurrence),
             EffectProvenance::CanonicalIr {
@@ -238,7 +285,7 @@ impl<'a> Builder<'a> {
                 symbol,
             },
             None,
-            None,
+            sensitivity,
         ));
     }
 }

@@ -1,0 +1,361 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/classification-policy.schema.v0.4.0.json",
+  "title": "Lekalo Classification Policy Attachment",
+  "description": "Closed independent attachment contract declaring per-kind access rules, destination ceilings, and non-model sink policy for one project (issue #87). The attachment is metadata-only declaration data bound to the exact projectId/modelRef/irRef custody triple: it never carries, quotes, or embeds field values, source text, physical paths, runtime principals, tokens, secrets, provider transcripts, or Model/IR bytes. Reader and writer dimensions close over the authorization ScopeDimension vocabulary; destinations close over the extended-effects typed destination vocabulary; masking, retention, export, and encryption members are exact references into the privacy-policy (#120), export-policy (#120), and NFR-constraint (#85) families and never restate their semantics. The credential kind must declare no destinations and no declassification roles: secrets never declassify downward and secret values never enter Model, lock, diagnostics, or evidence. The contract is independent of the product release, of the Model and IR contract versions, of the data-classification attachment it governs, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "kinds",
+    "sinks"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/classification-policy/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.classification-policy@0.4.0"
+    },
+    "attachmentRevision": {
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/projectId"
+    },
+    "modelRef": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "$ref": "#/$defs/irRef"
+    },
+    "kinds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "$ref": "#/$defs/kindRule"
+      }
+    },
+    "sinks": {
+      "description": "Policy for every non-model sink surface. Each ceiling bounds the highest classification kind that surface may consume.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logs",
+        "traces",
+        "contextCapsules",
+        "diagnostics",
+        "evidence",
+        "exports"
+      ],
+      "properties": {
+        "logs": {
+          "$ref": "#/$defs/sinkCeiling"
+        },
+        "traces": {
+          "$ref": "#/$defs/sinkCeiling"
+        },
+        "contextCapsules": {
+          "$ref": "#/$defs/sinkCeiling"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/sinkCeiling"
+        },
+        "evidence": {
+          "$ref": "#/$defs/sinkCeiling"
+        },
+        "exports": {
+          "$ref": "#/$defs/sinkCeiling"
+        }
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/openQuestion"
+      }
+    }
+  },
+  "$defs": {
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+      "not": {
+        "enum": [
+          "lekalo",
+          "dev"
+        ]
+      }
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)([-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$"
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "irVersion",
+        "digest"
+      ],
+      "properties": {
+        "irVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        }
+      }
+    },
+    "boundedToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$"
+    },
+    "boundedText": {
+      "description": "Bounded declaration text. Never source text, paths, credentials, URLs, runtime values, or provider output.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;()/_-]*$"
+    },
+    "dataKind": {
+      "type": "string",
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "personal",
+        "credential",
+        "financial",
+        "health",
+        "tenant-scoped",
+        "retention-limited",
+        "derived"
+      ]
+    },
+    "scopeDimension": {
+      "description": "One closed authorization scope dimension reference (the authorization document ScopeDimension vocabulary).",
+      "type": "string",
+      "enum": [
+        "tenant",
+        "workspace",
+        "user"
+      ]
+    },
+    "scopeRef": {
+      "description": "One bounded scope reference inside one dimension (a tenant, workspace, or user token as bound by the authorization document).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "destinationKind": {
+      "description": "One closed destination surface (the extended-effects typed destination vocabulary).",
+      "type": "string",
+      "enum": [
+        "internal-service",
+        "partner-api",
+        "public-webhook",
+        "message-bus",
+        "email",
+        "storage-export",
+        "event-broker"
+      ]
+    },
+    "maskingStrategy": {
+      "type": "string",
+      "enum": [
+        "redact",
+        "hash",
+        "tokenize",
+        "suppress"
+      ]
+    },
+    "contractRef": {
+      "description": "One exact namespaced contract id with a SemVer tail (an NFR constraint id for encryptionRefs, or a masking/retention policy family id).",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+@[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "policyRef": {
+      "description": "One exact policy document id inside the privacy/export-policy family of issue #120.",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 192,
+      "pattern": "^[a-z0-9][a-zA-Z0-9._:/-]*$"
+    },
+    "roleToken": {
+      "description": "One closed declassification role token.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "crossTenantMode": {
+      "type": "string",
+      "enum": [
+        "forbidden",
+        "reviewed"
+      ]
+    },
+    "kindRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "readers",
+        "writers",
+        "destinations",
+        "masking",
+        "encryptionRefs",
+        "consentRequired",
+        "crossTenant",
+        "declassifyRoles"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/dataKind"
+        },
+        "readers": {
+          "description": "Closed actor references for read-direction flows. Each entry is one scope dimension optionally narrowed by a scope token (`dimension` or `dimension:scope`).",
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "pattern": "^(tenant|workspace|user)(:[a-z][a-z0-9_-]*)?$"
+          }
+        },
+        "writers": {
+          "description": "Closed actor references for write-direction flows; the same grammar as readers.",
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "pattern": "^(tenant|workspace|user)(:[a-z][a-z0-9_-]*)?$"
+          }
+        },
+        "destinations": {
+          "description": "The closed destination set for outbound flows of this kind. Credential-kind rules must list no destinations.",
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/destinationKind"
+          }
+        },
+        "masking": {
+          "description": "Declaration that masking is required for this kind. The referenced policy document is owned by the privacy-policy family (#120); this attachment never restates its semantics and never enforces them (#119 owns enforcement).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "strategy",
+            "policyRef"
+          ],
+          "properties": {
+            "strategy": {
+              "$ref": "#/$defs/maskingStrategy"
+            },
+            "policyRef": {
+              "$ref": "#/$defs/policyRef"
+            }
+          }
+        },
+        "retentionRef": {
+          "description": "Exact reference into the privacy-policy family (#120); optional.",
+          "$ref": "#/$defs/policyRef"
+        },
+        "exportRef": {
+          "description": "Exact reference into the privacy-export-policy family (#120); optional.",
+          "$ref": "#/$defs/policyRef"
+        },
+        "encryptionRefs": {
+          "description": "Exact references to NFR constraint ids (#85) declaring encryption-at-rest/in-transit requirements for this kind; classification references NFR constraints, never restating them.",
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/contractRef"
+          }
+        },
+        "consentRequired": {
+          "description": "When true, every sink consuming this kind requires the extended-effects consent/approval contract at gate time.",
+          "type": "boolean"
+        },
+        "crossTenant": {
+          "description": "Whether cross-tenant flow is forbidden outright or permitted only with a reviewed grant. Forbidden for personal, credential, financial, health, and tenant-scoped kinds by validation.",
+          "$ref": "#/$defs/crossTenantMode"
+        },
+        "declassifyRoles": {
+          "description": "Closed role tokens allowed to approve a downward declassification of this kind. The credential kind must list none: secrets are never declassifiable.",
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/roleToken"
+          }
+        }
+      }
+    },
+    "sinkCeiling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxKind"
+      ],
+      "properties": {
+        "maxKind": {
+          "description": "The highest classification kind this sink may consume.",
+          "$ref": "#/$defs/dataKind"
+        }
+      }
+    },
+    "openQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "question"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "question": {
+          "$ref": "#/$defs/boundedText"
+        },
+        "kind": {
+          "$ref": "#/$defs/dataKind"
+        }
+      }
+    }
+  }
+}

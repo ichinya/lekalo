@@ -34,7 +34,7 @@ use lekalo_core::versioning::{ContractVersion, VersionRegistry};
 const GOLDEN: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:152027472e864ab06955fc21402ee25ca191939dd328960fa4c4ce27691ed62d";
+    "sha256:403016d76a53d77aad35898a01cb950b7e67fb17a9ae9c2e7f8b3108366814cf";
 const MULTI: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/multi-adapter.lock.json");
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/lockfile/project";
@@ -227,7 +227,7 @@ fn golden_contract_only_lock_parses_and_matches_its_independent_digest() {
     let lock = Lockfile::parse_canonical(GOLDEN).expect("golden lock parses");
     assert_eq!(lock.digest().as_str(), GOLDEN_DIGEST);
     assert_eq!(lock.resolver_version().as_str(), RESOLVER_VERSION);
-    assert_eq!(lock.core_version().as_str(), "0.3.2");
+    assert_eq!(lock.core_version().as_str(), "0.4.0");
     let protocol = lock.target_protocol().expect("published protocol");
     assert_eq!(protocol.version().as_str(), "0.3.2");
     // Round-trip: canonical bytes are byte-identical to the committed file.
@@ -266,19 +266,19 @@ fn wire_refusals_carry_the_closed_reason_codes() {
         (
             "duplicate JSON key",
             payload.replace(
-                "\"schema_version\":\"lekalo/lock/v0.2.16\"",
-                "\"schema_version\":\"lekalo/lock/v0.2.16\",\"schema_version\":\"lekalo/lock/v0.2.16\"",
+                "\"schema_version\":\"lekalo/lock/v0.3.2\"",
+                "\"schema_version\":\"lekalo/lock/v0.3.2\",\"schema_version\":\"lekalo/lock/v0.3.2\"",
             ),
             "lock.noncanonical",
         ),
         (
             "future schema discriminator",
-            tampered("lekalo/lock/v0.2.16", "lekalo/lock/v2.0.0"),
+            tampered("lekalo/lock/v0.3.2", "lekalo/lock/v2.0.0"),
             "lock.unsupported-schema-version",
         ),
         (
             "unknown schema spelling",
-            tampered("lekalo/lock/v0.2.16", "lekalo/lock/1"),
+            tampered("lekalo/lock/v0.3.2", "lekalo/lock/1"),
             "lock.schema-invalid",
         ),
         (
@@ -330,7 +330,7 @@ fn wire_refusals_carry_the_closed_reason_codes() {
     }
     // Exit classes: unsupported schema is 5, schema-invalid is 1.
     let future =
-        Lockfile::parse_canonical(tampered("lekalo/lock/v0.2.16", "lekalo/lock/v2.0.0").as_bytes())
+        Lockfile::parse_canonical(tampered("lekalo/lock/v0.3.2", "lekalo/lock/v2.0.0").as_bytes())
             .map(|_: Lockfile| ())
             .expect_err("future");
     assert_eq!(future.exit_code(), 5);
@@ -903,4 +903,45 @@ fn a_symlinked_lock_is_a_policy_denial() {
         assert_eq!(error.exit_code(), 3);
         assert_eq!(error.status(), "denied");
     });
+}
+
+/// Regression (fix round 2, devin F-2): a repoint can never resurrect a
+/// revoked version — `run_adapter_repoint` consults the revocation store
+/// before any plan exists. The gate lives in the CLI; here we pin the
+/// store semantics the gate relies on: exact-version and whole-id `*`
+/// rows both refuse, an unrelated row does not.
+#[test]
+fn revocation_store_semantics_cover_exact_and_wildcard_versions() {
+    let root = std::env::temp_dir().join(format!("lekalo-lock-revoke-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("mkdir");
+    let mut store =
+        lekalo_core::adapter_package::RevocationStore::load(&root).expect("an empty store loads");
+    store
+        .append(
+            &root,
+            lekalo_core::adapter_package::trust::RevocationRecord {
+                id: "adapter-revoked".to_owned(),
+                version: "1.0.0".to_owned(),
+                reason: "compromised".to_owned(),
+            },
+        )
+        .expect("append exact");
+    store
+        .append(
+            &root,
+            lekalo_core::adapter_package::trust::RevocationRecord {
+                id: "adapter-wildcard".to_owned(),
+                version: "*".to_owned(),
+                reason: "publisher-key-compromise".to_owned(),
+            },
+        )
+        .expect("append wildcard");
+    let reloaded =
+        lekalo_core::adapter_package::RevocationStore::load(&root).expect("the store reloads");
+    assert!(reloaded.is_revoked("adapter-revoked", "1.0.0"));
+    assert!(!reloaded.is_revoked("adapter-revoked", "1.0.1"));
+    assert!(reloaded.is_revoked("adapter-wildcard", "9.9.9"));
+    assert!(!reloaded.is_revoked("adapter-unrelated", "1.0.0"));
+    let _ = std::fs::remove_dir_all(&root);
 }

@@ -1,0 +1,4 @@
+{
+  "rule": "transport.mapping-missing",
+  "detail": "union-member-unmapped"
+}

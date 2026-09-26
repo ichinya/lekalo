@@ -15,6 +15,7 @@
 //! propose/confirm/audit/list, candidate sets for ambiguous mappings,
 //! declared targets and profiles, and native test bindings.
 
+pub mod baseline;
 pub mod bindings;
 pub mod diagnostic;
 pub mod index;
@@ -26,6 +27,10 @@ pub mod version;
 pub mod view;
 mod wire;
 
+pub use baseline::{
+    baseline_bytes, counts_of, document_of, record, BaselineAdapter, BaselineCounts,
+    BaselineDocument, BaselineNativePlan, BaselineReceipt, BASELINE_NAME, BASELINE_SCHEMA_VERSION,
+};
 pub use diagnostic::{missing_index_set, scan_io_failure, scan_limit_set};
 pub use index::{
     attach, bind_explicit, canonical_bytes, confirm_binding, index_digest, load_index, parse_index,

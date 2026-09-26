@@ -15,10 +15,10 @@ use std::fmt;
 use super::LockFailure;
 
 /// The closed wire discriminator of the only supported lock schema.
-pub const SCHEMA_VERSION: &str = "lekalo/lock/v0.2.16";
+pub const SCHEMA_VERSION: &str = "lekalo/lock/v0.3.2";
 
 /// The contract identity of the published lock schema artifact.
-pub const LOCK_IDENTITY: &str = "dev.lekalo.lock@0.2.16";
+pub const LOCK_IDENTITY: &str = "dev.lekalo.lock@0.3.2";
 
 /// The independent resolver algorithm version (not a product or contract
 /// version). Bumped only by a reviewed resolver change.
@@ -289,6 +289,8 @@ pub enum SourceKind {
     Catalog,
     /// Located inside the validated project tree.
     Project,
+    /// Installed into the governed .lekalo/adapters store (issue #32).
+    Installed,
 }
 
 impl SourceKind {
@@ -297,6 +299,7 @@ impl SourceKind {
         match text {
             "builtin" => Ok(Self::Builtin),
             "catalog" => Ok(Self::Catalog),
+            "installed" => Ok(Self::Installed),
             "project" => Ok(Self::Project),
             _ => Err(LockFailure::SchemaInvalid),
         }
@@ -307,7 +310,72 @@ impl SourceKind {
         match self {
             Self::Builtin => "builtin",
             Self::Catalog => "catalog",
+            Self::Installed => "installed",
             Self::Project => "project",
+        }
+    }
+}
+
+/// The lock provenance of an installed adapter package (issue #32).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Provenance {
+    source: SourceRef,
+    install_plan_id: Option<Sha256Digest>,
+}
+
+impl Provenance {
+    /// Construct one provenance value from typed parts.
+    pub fn new(source: SourceRef, install_plan_id: Option<Sha256Digest>) -> Self {
+        Self {
+            source,
+            install_plan_id,
+        }
+    }
+
+    /// The source coordinate of the installing custody chain.
+    pub fn source(&self) -> &SourceRef {
+        &self.source
+    }
+
+    /// The confirmed install plan id, when the package arrived
+    /// through a plan.
+    pub fn install_plan_id(&self) -> Option<&Sha256Digest> {
+        self.install_plan_id.as_ref()
+    }
+}
+
+/// The trust level recorded on a lock adapter pin (issue #32). The
+/// vocabulary is the package trust model verbatim.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum LockTrust {
+    Builtin,
+    Verified,
+    LocalDevelopment,
+    Community,
+    Revoked,
+}
+
+impl LockTrust {
+    /// Parse the closed wire token.
+    pub fn parse(text: &str) -> Result<Self, LockFailure> {
+        match text {
+            "builtin" => Ok(Self::Builtin),
+            "verified" => Ok(Self::Verified),
+            "local-development" => Ok(Self::LocalDevelopment),
+            "community" => Ok(Self::Community),
+            "revoked" => Ok(Self::Revoked),
+            _ => Err(LockFailure::SchemaInvalid),
+        }
+    }
+
+    /// The stable wire token.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Builtin => "builtin",
+            Self::Verified => "verified",
+            Self::LocalDevelopment => "local-development",
+            Self::Community => "community",
+            Self::Revoked => "revoked",
         }
     }
 }
@@ -338,6 +406,19 @@ impl SourceRef {
             }
             SourceKind::Builtin | SourceKind::Catalog => {
                 grammar_checked(id).map_err(|_| LockFailure::SchemaInvalid)?;
+            }
+            SourceKind::Installed => {
+                // A store-relative id: adapters/packages/<id>/<version>-<digest8>.
+                // The spelling is store-relative *below* `.lekalo/` — every
+                // segment must satisfy the portable grammar (a leading-dot
+                // `.lekalo` segment never does), so the path-safety check
+                // stays real instead of dead (fix round 2, devin F-8).
+                if crate::project_fs::path_violation(id).is_some() {
+                    return Err(LockFailure::PrivateData { field: "source.id" });
+                }
+                if !id.starts_with("adapters/packages/") {
+                    return Err(LockFailure::PrivateData { field: "source.id" });
+                }
             }
         }
         Ok(Self {
@@ -469,20 +550,31 @@ pub struct ResolvedAdapter {
     source: SourceRef,
     compatibility_digest: Sha256Digest,
     artifacts: Vec<ArtifactPin>,
+    manifest_digest: Option<Sha256Digest>,
+    trust: Option<LockTrust>,
+    provenance: Option<Provenance>,
 }
 
 impl ResolvedAdapter {
-    pub(crate) fn from_parts(
+    /// Construct one adapter pin with the issue #32 provenance members.
+    // The allow is the closed v1 wire: the identity triple plus the
+    // three additive provenance members.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts_with_provenance(
         id: ComponentId,
         version: SemVer,
         digest: Sha256Digest,
         source: SourceRef,
         compatibility_digest: Sha256Digest,
-        mut artifacts: Vec<ArtifactPin>,
+        artifacts: Vec<ArtifactPin>,
+        manifest_digest: Option<Sha256Digest>,
+        trust: Option<LockTrust>,
+        provenance: Option<Provenance>,
     ) -> Result<Self, LockFailure> {
         if artifacts.is_empty() {
             return Err(LockFailure::ReferenceInvalid);
         }
+        let mut artifacts = artifacts;
         artifacts.sort();
         if artifacts.windows(2).any(|pair| pair[0] >= pair[1]) {
             return Err(LockFailure::ReferenceInvalid);
@@ -494,6 +586,9 @@ impl ResolvedAdapter {
             source,
             compatibility_digest,
             artifacts,
+            manifest_digest,
+            trust,
+            provenance,
         })
     }
 
@@ -520,6 +615,21 @@ impl ResolvedAdapter {
     /// The compatibility-manifest digest.
     pub fn compatibility_digest(&self) -> &Sha256Digest {
         &self.compatibility_digest
+    }
+
+    /// The manifest identity digest, when the package shipped one.
+    pub fn manifest_digest(&self) -> Option<&Sha256Digest> {
+        self.manifest_digest.as_ref()
+    }
+
+    /// The selection-time trust level, when recorded.
+    pub fn trust(&self) -> Option<LockTrust> {
+        self.trust
+    }
+
+    /// The install provenance, when recorded.
+    pub fn provenance(&self) -> Option<&Provenance> {
+        self.provenance.as_ref()
     }
 
     /// The sorted platform artifacts.

@@ -43,6 +43,12 @@ pub const OPENSPEC_MARKER: &str = include_str!(
     "../../../../tests/fixtures/adapter-conformance/project/openspec/specs/conformance.md"
 );
 
+/// The declared storage projection fixture (issue #117): the mysql
+/// parity target the evidence checks bind to, decoded through the
+/// production storage-projection normalizer before any adapter runs.
+pub const STORAGE_PROJECTION: &str =
+    include_str!("../../../../tests/fixtures/storage-projection/valid/planner-storage.json");
+
 /// The logical IR path of the fixture input.
 pub const IR_PATH: &str = ".lekalo/ir/minimal.json";
 /// The logical path of the invalid-references input.
@@ -50,13 +56,56 @@ pub const IR_INVALID_PATH: &str = ".lekalo/ir/invalid-refs.json";
 /// The logical path of the scenario input.
 pub const SCENARIO_PATH: &str = ".lekalo/ir/scenario-txn-concurrency.json";
 
+/// The canonical transport-http evidence fixture: one endpoint
+/// binding over the fixture project's `planner.api_focus` with the
+/// full #62 error map, explicit security, a declared streaming
+/// capability the `http-json` profile satisfies partially, the
+/// black-box scenario coverage reference, and the full declared
+/// policy surface (rate limit, cache, api version, tags, summary) so
+/// the route-parity digest covers the complete wire surface, not a
+/// reduced one.
+pub const TRANSPORT_EVIDENCE: &str =
+    include_str!("../../../../tests/fixtures/adapter-conformance/inputs/transport-minimal.json");
+
+/// The committed breaking wire-diff pair of the transport fixture
+/// family (issue #70): an error entry disappears.
+pub const TRANSPORT_DIFF_BASE: &str =
+    include_str!("../../../../tests/fixtures/transport-http/valid/planner.transport.json");
+pub const TRANSPORT_DIFF_BREAKING: &str =
+    include_str!("../../../../tests/fixtures/transport-http/diff/candidate-remove-error.json");
+
+/// The canonical route surface the transport generator must derive
+/// from the fixture evidence joined with the fixture compiled-IR
+/// evidence: the path and the exact sha256 of the committed golden
+/// route module (parity is checkable by byte comparison because every
+/// runtime renders the same canonical surface; the joined method,
+/// path, and invokes come from the Model symbols).
+pub const TRANSPORT_ROUTE_PATH: &str = "src/routes/planner.routes.ts";
+pub const TRANSPORT_ROUTE_DIGEST: &str =
+    "sha256:8cfe4ddfb5c31dbbc85e7cc91589d14b5d3c2a3d1d1d741cda3a37d3d013c6bd";
+
+/// The logical path of the transport evidence input.
+pub const TRANSPORT_PATH: &str = ".lekalo/cache/transport/minimal.json";
+
+/// The logical path of the compiled-IR evidence the transport
+/// generator joins with (the canonical `lekalo.cache` IR home, exactly
+/// like a production `lekalo generate` run materializes before any
+/// adapter exchange).
+pub const IR_EVIDENCE_PATH: &str = ".lekalo/cache/ir/minimal.json";
+
+/// The route-layer home marker the transport generator owns.
+pub const ROUTES_KEEP: &str = "";
+
 /// The fixture files, as logical path plus exact bytes.
-pub const FILES: [(&str, &str); 5] = [
+pub const FILES: [(&str, &str); 8] = [
     ("lekalo/project.yaml", PROJECT_MARKER),
     ("openspec/specs/conformance.md", OPENSPEC_MARKER),
     (IR_PATH, IR_MINIMAL),
     (IR_INVALID_PATH, IR_INVALID_REFS),
     (SCENARIO_PATH, SCENARIO_TXN),
+    (TRANSPORT_PATH, TRANSPORT_EVIDENCE),
+    (IR_EVIDENCE_PATH, IR_MINIMAL),
+    ("src/routes/.keep", ROUTES_KEEP),
 ];
 
 /// The observed fixture root: logical path to content digest, using the
@@ -135,6 +184,27 @@ fn walk(root: &Path, dir: &Path, out: &mut Observation) -> Result<(), std::io::E
         out.insert(logical, digest);
     }
     Ok(())
+}
+
+/// Decode the storage projection fixture through the production
+/// storage-projection module; a fixture that fails its own custody
+/// fails every evidence-keyed storage check (issue #117).
+pub fn storage_custody(
+) -> Result<crate::storage_projection::StorageProjectionAttachment, CheckOutcome> {
+    let json: serde_json::Value = serde_json::from_str(STORAGE_PROJECTION).map_err(|_| {
+        CheckOutcome::fail(
+            CheckId::StorageProfileEvidence,
+            CheckId::StorageProfileEvidence.class(),
+            "fixture-json",
+        )
+    })?;
+    crate::storage_projection::StorageProjectionAttachment::from_value(&json).map_err(|_| {
+        CheckOutcome::fail(
+            CheckId::StorageProfileEvidence,
+            CheckId::StorageProfileEvidence.class(),
+            "fixture-custody",
+        )
+    })
 }
 
 fn logical_to_native(path: &str) -> std::path::PathBuf {

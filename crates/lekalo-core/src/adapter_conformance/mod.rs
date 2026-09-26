@@ -37,6 +37,7 @@ use crate::result::{DomainResult, Status};
 use crate::target_protocol::capability;
 use crate::target_protocol::scopes;
 use crate::target_protocol::transport::{AdapterCommand, TransportLimits};
+use crate::target_protocol::wire::SupportState;
 use crate::target_protocol::wire::{self, Capabilities, Operation, ResponseEnvelope};
 use crate::target_protocol::{CallRequest, TargetClient, TargetFailure};
 
@@ -273,8 +274,288 @@ impl Runner {
         self.clean_phase();
         self.scenario_phase();
         self.process_phase();
+        self.transport_phase();
         self.finish_confinement();
         self.redaction_phase();
+        self.storage_phase();
+        self.classification_phase();
+    }
+
+    /// The issue #117 storage checks. The core never contacts a
+    /// database: the checks drive the adapter's declared schema
+    /// operations over the hermetic fixture and prove the declared
+    /// capability surface against observed behavior. The named
+    /// capability ids (`scan.schema`, `verify.schema-projection`) gate
+    /// the checks; an absent id is undeclared, never optimistically
+    /// available.
+    fn storage_phase(&mut self) {
+        use crate::target_protocol::wire::SupportState;
+        let support_of = |id: &str| {
+            self.capabilities
+                .as_ref()
+                .and_then(|caps| caps.capabilities.get(id).copied())
+        };
+        let schema_scan = support_of("scan.schema");
+        let schema_verify = support_of("verify.schema-projection");
+        let usable = |state: Option<SupportState>| {
+            matches!(
+                state,
+                Some(SupportState::Full) | Some(SupportState::Partial)
+            )
+        };
+        let scan = usable(schema_scan);
+        let verify = usable(schema_verify);
+        // Fixture custody runs once: the parity target is decoded
+        // through the production normalizer before any adapter is
+        // trusted with it. A custody failure is a developer fault in
+        // the fixture, so every storage row records the failure — the
+        // report keeps all five rows visible instead of silently
+        // dropping four (round-3 review F-5).
+        let attachment = match fixture::storage_custody() {
+            Ok(attachment) => attachment,
+            Err(outcome) => {
+                self.record(outcome);
+                for id in [
+                    CheckId::StorageProjectionParity,
+                    CheckId::StorageIntrospectionChecked,
+                    CheckId::StorageMigrationGate,
+                    CheckId::StorageCollationUniqueness,
+                ] {
+                    self.record(CheckOutcome::fail(id, id.class(), "fixture-custody"));
+                }
+                return;
+            }
+        };
+        // storage.projection-parity: the adapter's observed verify
+        // answer must be an honest ok over the fixture IR, and the
+        // derivation itself must reproduce the mysql parity target the
+        // capability claims to verify against.
+        let parity_outcome = match (scan, verify) {
+            (true, true) => {
+                let derives = crate::storage_projection::project(
+                    &attachment,
+                    crate::storage_projection::Namespace::Mysql,
+                )
+                .is_ok();
+                if !derives {
+                    CheckOutcome::fail(
+                        CheckId::StorageProjectionParity,
+                        CheckClass::Feature,
+                        "derivation-refused",
+                    )
+                } else {
+                    self.schema_probe(CheckId::StorageProjectionParity)
+                }
+            }
+            (false, false) => CheckOutcome::skipped(
+                CheckId::StorageProjectionParity,
+                "storage-capabilities-undeclared",
+            ),
+            _ => CheckOutcome::fail(
+                CheckId::StorageProjectionParity,
+                CheckClass::Feature,
+                "half-surface",
+            ),
+        };
+        self.record(parity_outcome);
+        // storage.profile-evidence: the honest declaration itself is
+        // the evidence; a half-declared surface is the failure this
+        // check exists to catch.
+        self.record(match (scan, verify) {
+            (true, true) => CheckOutcome::pass(CheckId::StorageProfileEvidence),
+            (false, false) => CheckOutcome::skipped(
+                CheckId::StorageProfileEvidence,
+                "storage-capabilities-undeclared",
+            ),
+            _ => CheckOutcome::fail(
+                CheckId::StorageProfileEvidence,
+                CheckClass::Feature,
+                "half-surface",
+            ),
+        });
+        // storage.introspection-checked (security): the declared
+        // scan.schema capability must answer a real read-only verify
+        // exchange over the fixture; the evidence contract carries the
+        // checked/read-only constants and refuses credentials by
+        // grammar. A dead or malformed probe is a security failure.
+        let introspection_outcome = if scan {
+            self.schema_probe(CheckId::StorageIntrospectionChecked)
+        } else {
+            CheckOutcome::skipped(
+                CheckId::StorageIntrospectionChecked,
+                "scan-schema-undeclared",
+            )
+        };
+        self.record(introspection_outcome);
+        // storage.migration-gate and storage.collation-uniqueness are
+        // proven core-side by the gated plan derivation and the
+        // collation evidence over the fixture attachment.
+        let ready = scan || verify;
+        let migration_outcome = if ready {
+            self.migration_gate_probe()
+        } else {
+            CheckOutcome::skipped(
+                CheckId::StorageMigrationGate,
+                "storage-capabilities-undeclared",
+            )
+        };
+        self.record(migration_outcome);
+        let collation_outcome = if ready {
+            self.collation_probe(&attachment)
+        } else {
+            CheckOutcome::skipped(
+                CheckId::StorageCollationUniqueness,
+                "storage-capabilities-undeclared",
+            )
+        };
+        self.record(collation_outcome);
+    }
+
+    /// Probe the declared schema surface over the fixture IR: the
+    /// adapter receives one read-only exchange and must answer
+    /// in-envelope. An honest `ok` passes. Only a malformed envelope,
+    /// a result-less response, or a dead exchange fails.
+    fn schema_probe(&mut self, check: CheckId) -> CheckOutcome {
+        let shape = CallShape {
+            operation: Operation::Verify,
+            ir_path: Some(IR_PATH.to_owned()),
+            ..CallShape::default()
+        };
+        match self.exchange(&shape) {
+            Exchange::Ok { response, .. } => match &response.result {
+                Some(result) if result.ok == Some(true) => CheckOutcome::pass(check),
+                Some(_) => CheckOutcome::fail(check, check.class(), "parity-refused"),
+                None => CheckOutcome::fail(check, check.class(), "result-absent"),
+            },
+            Exchange::Failed(failure) => {
+                let (class, detail) = classify(&failure);
+                CheckOutcome::fail(check, class, detail)
+            }
+        }
+    }
+
+    /// The migration-gate probe: derive the gated plan over the
+    /// fixture attachment's destructive diff and require the
+    /// destructive step to gate `explicit` — an unconfirmed apply path
+    /// can never pass silently.
+    fn migration_gate_probe(&mut self) -> CheckOutcome {
+        // One declared table rename in the mysql namespace is the
+        // destructive vector: renaming a table drops and rewrites it.
+        let mut candidate_value =
+            serde_json::from_str::<serde_json::Value>(fixture::STORAGE_PROJECTION)
+                .unwrap_or(serde_json::Value::Null);
+        let renamed = if candidate_value.is_object() {
+            let mut touched = false;
+            if let Some(projections) = candidate_value
+                .get_mut("projections")
+                .and_then(|p| p.as_array_mut())
+            {
+                for projection in projections.iter_mut() {
+                    if projection.get("namespace") == Some(&serde_json::json!("mysql")) {
+                        if let Some(tables) =
+                            projection.get_mut("tables").and_then(|t| t.as_array_mut())
+                        {
+                            for table in tables.iter_mut() {
+                                if table.get("entity") == Some(&serde_json::json!("tag")) {
+                                    table["table"] = serde_json::json!("tag_renamed");
+                                    touched = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            touched
+        } else {
+            false
+        };
+        if !renamed {
+            return CheckOutcome::fail(
+                CheckId::StorageMigrationGate,
+                CheckClass::Feature,
+                "vector-broken",
+            );
+        }
+        let attachment_value: serde_json::Value =
+            serde_json::from_str(fixture::STORAGE_PROJECTION).unwrap_or(serde_json::Value::Null);
+        let base_attachment =
+            crate::storage_projection::StorageProjectionAttachment::from_value(&attachment_value);
+        let candidate_attachment =
+            crate::storage_projection::StorageProjectionAttachment::from_value(&candidate_value);
+        let (base, candidate) = match (base_attachment, candidate_attachment) {
+            (Ok(base), Ok(candidate)) => (base, candidate),
+            _ => {
+                return CheckOutcome::fail(
+                    CheckId::StorageMigrationGate,
+                    CheckClass::Feature,
+                    "vector-broken",
+                );
+            }
+        };
+        let diff = match crate::storage_projection::compare(&base, &candidate) {
+            Ok(diff) => diff,
+            Err(_) => {
+                return CheckOutcome::fail(
+                    CheckId::StorageMigrationGate,
+                    CheckClass::Feature,
+                    "diff-refused",
+                );
+            }
+        };
+        let plan = crate::storage_projection::migration_plan(&diff);
+        let gated_destructive = plan.steps.iter().any(|step| {
+            step.gate == crate::storage_projection::Gate::Explicit
+                && step.risk.as_deref() == Some("destructive")
+        });
+        if gated_destructive {
+            CheckOutcome::pass(CheckId::StorageMigrationGate)
+        } else {
+            CheckOutcome::fail(
+                CheckId::StorageMigrationGate,
+                CheckClass::Feature,
+                "no-destructive-step",
+            )
+        }
+    }
+
+    /// The collation probe: the fixture attachment's mysql namespace
+    /// declares text-default collation evidence; the derived surface
+    /// must carry a unique textual index beside it so uniqueness
+    /// semantics stay visible, never silently passing.
+    fn collation_probe(
+        &mut self,
+        attachment: &crate::storage_projection::StorageProjectionAttachment,
+    ) -> CheckOutcome {
+        let derived = match crate::storage_projection::project(
+            attachment,
+            crate::storage_projection::Namespace::Mysql,
+        ) {
+            Ok(derived) => derived,
+            Err(_) => {
+                return CheckOutcome::fail(
+                    CheckId::StorageCollationUniqueness,
+                    CheckClass::Feature,
+                    "derivation-refused",
+                );
+            }
+        };
+        let declared_collation = attachment
+            .projection(crate::storage_projection::Namespace::Mysql)
+            .and_then(|projection| projection.text_defaults())
+            .map(|(_, collation)| collation);
+        let unique_visible = derived
+            .tables()
+            .iter()
+            .any(|table| table.indexes().iter().any(|index| index.unique()));
+        if unique_visible && declared_collation.is_some() {
+            CheckOutcome::pass(CheckId::StorageCollationUniqueness)
+        } else {
+            CheckOutcome::fail(
+                CheckId::StorageCollationUniqueness,
+                CheckClass::Feature,
+                "collation-invisible",
+            )
+        }
     }
 
     /// The describe handshake and negotiation checks.
@@ -399,6 +680,7 @@ impl Runner {
         let shape = CallShape {
             operation: Operation::Validate,
             ir_path: Some(IR_INVALID_PATH.to_owned()),
+            profile: self.selected_profile(None),
             ..CallShape::default()
         };
         match self.exchange(&shape) {
@@ -465,6 +747,7 @@ impl Runner {
                 let shape = CallShape {
                     operation,
                     ir_path: ir_path.map(str::to_owned),
+                    profile: self.selected_profile(None),
                     ..CallShape::default()
                 };
                 match self.exchange(&shape) {
@@ -511,6 +794,7 @@ impl Runner {
             let shape = CallShape {
                 operation: Operation::Generate,
                 target: Some(target.clone()),
+                profile: self.selected_profile(None),
                 ir_path: Some(IR_PATH.to_owned()),
                 dry_run: Some(true),
                 ..CallShape::default()
@@ -574,10 +858,10 @@ impl Runner {
         let forged = CallShape {
             operation: Operation::Generate,
             target: Some(target.to_owned()),
+            profile: self.selected_profile(None),
             ir_path: Some(IR_PATH.to_owned()),
             dry_run: Some(false),
             plan_id: Some(format!("plan-{}", "0".repeat(64))),
-            ..CallShape::default()
         };
         match self.exchange(&forged) {
             Exchange::Ok { .. } => {
@@ -618,6 +902,7 @@ impl Runner {
         let replan = CallShape {
             operation: Operation::Generate,
             target: Some(target.to_owned()),
+            profile: self.selected_profile(None),
             ir_path: Some(IR_PATH.to_owned()),
             dry_run: Some(true),
             ..CallShape::default()
@@ -657,10 +942,10 @@ impl Runner {
         let apply = CallShape {
             operation: Operation::Generate,
             target: Some(target.to_owned()),
+            profile: self.selected_profile(None),
             ir_path: Some(IR_PATH.to_owned()),
             dry_run: Some(false),
             plan_id: Some(replan_id),
-            ..CallShape::default()
         };
         match self.exchange(&apply) {
             Exchange::Ok { response, .. } => {
@@ -816,6 +1101,7 @@ impl Runner {
             let shape = CallShape {
                 operation: Operation::Verify,
                 ir_path: Some(IR_PATH.to_owned()),
+                profile: self.selected_profile(None),
                 ..CallShape::default()
             };
             match self.exchange(&shape) {
@@ -846,6 +1132,250 @@ impl Runner {
 
     /// Cancellation handling, recovery, and the describe-digest
     /// determinism probe.
+    /// The transport checks (issue #70): the wire-diff gate, the
+    /// error-identity invariant, the explicit-capability refusal, and
+    /// the capability-gated generator/scenario rows. Three checks are
+    /// pure fixture assertions the suite owns; the generator and
+    /// scenario rows run only when the adapter declares the transport
+    /// capabilities, and skip with a bounded reason otherwise —
+    /// execution stays with #47/#56/#107 owners.
+    fn transport_phase(&mut self) {
+        self.transport_wire_diff_block();
+        self.transport_error_identity();
+        self.transport_unsupported_capability();
+        self.transport_projection_parity();
+        self.transport_blackbox_scenarios();
+    }
+
+    /// `transport.wire-diff-block`: the committed breaking pair
+    /// classifies breaking and blocks the `wire-consumer` profile.
+    fn transport_wire_diff_block(&mut self) {
+        let outcome = match (
+            crate::transport_http::TransportDocument::from_value(
+                &serde_json::from_str::<serde_json::Value>(
+                    crate::adapter_conformance::fixture::TRANSPORT_DIFF_BASE,
+                )
+                .unwrap_or(serde_json::Value::Null),
+            ),
+            crate::transport_http::TransportDocument::from_value(
+                &serde_json::from_str::<serde_json::Value>(
+                    crate::adapter_conformance::fixture::TRANSPORT_DIFF_BREAKING,
+                )
+                .unwrap_or(serde_json::Value::Null),
+            ),
+        ) {
+            (Ok(base), Ok(candidate)) => match crate::transport_http::compare(&base, &candidate) {
+                Ok(diff) if diff.wire_consumer_blocked() => {
+                    CheckOutcome::pass(CheckId::TransportWireDiffBlock)
+                }
+                _ => CheckOutcome::fail(
+                    CheckId::TransportWireDiffBlock,
+                    CheckClass::Feature,
+                    "diff-not-blocking",
+                ),
+            },
+            _ => CheckOutcome::fail(
+                CheckId::TransportWireDiffBlock,
+                CheckClass::Feature,
+                "fixture-undecodable",
+            ),
+        };
+        self.record(outcome);
+    }
+
+    /// `transport.error-identity`: every error entry of the fixture
+    /// evidence resolves in the embedded #62 registry and all six
+    /// category defaults are declared.
+    fn transport_error_identity(&mut self) {
+        let ok = (|| -> Option<bool> {
+            let json: serde_json::Value =
+                serde_json::from_str(crate::adapter_conformance::fixture::TRANSPORT_EVIDENCE)
+                    .ok()?;
+            let document = crate::transport_http::TransportDocument::from_value(&json).ok()?;
+            let registry = crate::error_contract::ErrorRegistry::embedded().ok()?;
+            let endpoint = document.endpoints().first()?;
+            for entry in &endpoint.errors {
+                let id = crate::error_contract::id::ErrorId::new(entry.error.as_str())?;
+                registry.error(&id)?;
+            }
+            let defaults = &endpoint.error_defaults;
+            let all_declared = defaults.validation != 0
+                && defaults.auth != 0
+                && defaults.conflict != 0
+                && defaults.not_found != 0
+                && defaults.domain != 0
+                && defaults.infrastructure != 0;
+            all_declared.then_some(true)
+        })()
+        .is_some();
+        self.record(if ok {
+            CheckOutcome::pass(CheckId::TransportErrorIdentity)
+        } else {
+            CheckOutcome::fail(
+                CheckId::TransportErrorIdentity,
+                CheckClass::Feature,
+                "identity-not-preserved",
+            )
+        });
+    }
+
+    /// `transport.unsupported-capability`: the declared streaming
+    /// capability is satisfied by the `http-json` profile surface, and
+    /// an unsatisfied capability declaration is an explicit refusal —
+    /// never a silent downgrade.
+    fn transport_unsupported_capability(&mut self) {
+        let ok = (|| -> Option<bool> {
+            let json: serde_json::Value =
+                serde_json::from_str(crate::adapter_conformance::fixture::TRANSPORT_EVIDENCE)
+                    .ok()?;
+            let document = crate::transport_http::TransportDocument::from_value(&json).ok()?;
+            let map = crate::transport_http::CapabilityMap::http_json();
+            let endpoint = document.endpoints().first()?;
+            let streaming = endpoint.capabilities.first()?;
+            let satisfied = streaming.capability.as_str() == "streaming"
+                && map
+                    .support("transport.streaming")
+                    .satisfies(streaming.minimum_support);
+            if !satisfied {
+                return None;
+            }
+            // The explicit refusal: a full minimum the partial profile
+            // cannot satisfy must refuse with the family rule. (The
+            // upload/download partial declarations are satisfied by the
+            // published http-json surface since the C-6 registry
+            // alignment.)
+            let mut refused = serde_json::from_str::<serde_json::Value>(
+                crate::adapter_conformance::fixture::TRANSPORT_EVIDENCE,
+            )
+            .ok()?;
+            refused["endpoints"][0]["capabilities"] = serde_json::json!([{
+                "capability": "upload",
+                "minimumSupport": "full",
+                "detail": "multipart"
+            }]);
+            let refused = crate::transport_http::TransportDocument::from_value(&refused).ok()?;
+            let refused_with_rule = crate::transport_http::validate_capabilities(
+                &refused,
+                &crate::transport_http::CapabilityMap::http_json(),
+            )
+            .is_err_and(|set| {
+                set.as_slice()
+                    .first()
+                    .is_some_and(|diagnostic| diagnostic.id() == "transport.capability-unsatisfied")
+            });
+            if !refused_with_rule {
+                return None;
+            }
+            Some(true)
+        })()
+        .is_some();
+        self.record(if ok {
+            CheckOutcome::pass(CheckId::TransportUnsupportedCapability)
+        } else {
+            CheckOutcome::fail(
+                CheckId::TransportUnsupportedCapability,
+                CheckClass::Feature,
+                "capability-silent",
+            )
+        });
+    }
+
+    /// `transport.projection-parity`: requires a declared
+    /// `generate.transport-http` capability at a usable support state
+    /// plus the evidence inside the read scopes; the repeated dry-run
+    /// plan is then byte-identical because it derives from the one
+    /// evidence file.
+    fn transport_projection_parity(&mut self) {
+        if !self.transport_capability_declared("generate.transport-http") {
+            self.record(CheckOutcome::skipped(
+                CheckId::TransportProjectionParity,
+                "capability-undeclared",
+            ));
+            return;
+        }
+        // Parity is proven against the already-recorded generate
+        // exchanges of this run: a declared transport generator
+        // derives the canonical route surface of the fixture
+        // evidence, pinned to the byte (the committed golden digest
+        // of src/routes/planner.routes.ts).
+        let mut matched: Option<(String, String)> = None;
+        for bytes in &self.exchanges {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(bytes) else {
+                continue;
+            };
+            let Some(writes) = value.get("writes").and_then(|writes| writes.as_array()) else {
+                continue;
+            };
+            for write in writes {
+                let route_path = write.get("path").and_then(|path| path.as_str());
+                let route_digest = write.get("sha256").and_then(|digest| digest.as_str());
+                if let (Some(path), Some(digest)) = (route_path, route_digest) {
+                    if path == fixture::TRANSPORT_ROUTE_PATH {
+                        matched = Some((path.to_owned(), digest.to_owned()));
+                    }
+                }
+            }
+        }
+        self.record(match matched {
+            Some((_, digest)) if digest == fixture::TRANSPORT_ROUTE_DIGEST => {
+                CheckOutcome::pass(CheckId::TransportProjectionParity)
+            }
+            Some(_) => CheckOutcome::fail(
+                CheckId::TransportProjectionParity,
+                CheckClass::Feature,
+                "surface-diverges",
+            ),
+            None => CheckOutcome::fail(
+                CheckId::TransportProjectionParity,
+                CheckClass::Feature,
+                "no-route-surface",
+            ),
+        });
+    }
+
+    /// `transport.blackbox-scenarios`: requires a declared
+    /// `verify.transport-http` capability plus the scenario fixture
+    /// inside the read scopes; the verify exchange is then normalized
+    /// like every scenario result.
+    fn transport_blackbox_scenarios(&mut self) {
+        if !self.transport_capability_declared("verify.transport-http") {
+            self.record(CheckOutcome::skipped(
+                CheckId::TransportBlackboxScenarios,
+                "capability-undeclared",
+            ));
+            return;
+        }
+        if !self.declared(Operation::Verify) || !self.read_scopes_cover(SCENARIO_PATH) {
+            self.record(CheckOutcome::skipped(
+                CheckId::TransportBlackboxScenarios,
+                "fixture-not-in-read-scopes",
+            ));
+            return;
+        }
+        let shape = CallShape {
+            operation: Operation::Verify,
+            ir_path: Some(IR_PATH.to_owned()),
+            ..CallShape::default()
+        };
+        match self.exchange(&shape) {
+            Exchange::Ok { .. } => {
+                self.record(CheckOutcome::pass(CheckId::TransportBlackboxScenarios));
+            }
+            Exchange::Failed(failure) => {
+                self.record_failure(CheckId::TransportBlackboxScenarios, &failure);
+            }
+        }
+    }
+
+    /// Whether the described adapter declares one transport capability
+    /// at a usable support state (`full` or `partial`).
+    fn transport_capability_declared(&self, id: &str) -> bool {
+        self.capabilities
+            .as_ref()
+            .and_then(|caps| caps.capabilities.get(id).copied())
+            .is_some_and(|state| matches!(state, SupportState::Full | SupportState::Partial))
+    }
+
     fn process_phase(&mut self) {
         let candidate = [
             Operation::Scan,
@@ -870,7 +1400,7 @@ impl Runner {
                 self.first_target()
                     .unwrap_or_else(|| "conformance".to_owned())
             }),
-            profile: (operation == Operation::Bind).then(|| "default".to_owned()),
+            profile: self.selected_profile((operation == Operation::Bind).then_some("default")),
             ..CallShape::default()
         };
         let cancel = AtomicBool::new(true);
@@ -1032,6 +1562,38 @@ impl Runner {
         });
     }
 
+    /// Classification metadata survives every emitted projection
+    /// (issue #87). The fail-closed rule: an adapter that does not
+    /// declare the capability passes through its honest refusal — the
+    /// wire cannot represent kind tokens, and unsupported is never a
+    /// silent lowering — while a declared full/partial support state is
+    /// refused until the projection wire can carry the tokens: a claim
+    /// the current evidence cannot verify is exactly the silent
+    /// lowering the check exists to catch.
+    fn classification_phase(&mut self) {
+        let declared = self
+            .capabilities
+            .as_ref()
+            .and_then(|caps| caps.capabilities.get("preserve.classification"))
+            .map(|state| state.as_str().to_owned());
+        self.record(match declared.as_deref() {
+            None | Some("unsupported") | Some("unknown") => CheckOutcome {
+                detail: Some("honest-unsupported"),
+                ..CheckOutcome::pass(CheckId::ClassificationPreservation)
+            },
+            Some("full") | Some("partial") => CheckOutcome::fail(
+                CheckId::ClassificationPreservation,
+                CheckId::ClassificationPreservation.class(),
+                "wire-cannot-represent",
+            ),
+            Some(_) => CheckOutcome::fail(
+                CheckId::ClassificationPreservation,
+                CheckId::ClassificationPreservation.class(),
+                "state-invalid",
+            ),
+        });
+    }
+
     /// Record one canonical response under its determinism probe.
     fn probe(&mut self, token: &'static str, response: &ResponseEnvelope) {
         let bytes = serde_json::to_string(response).unwrap_or_default();
@@ -1085,6 +1647,9 @@ impl Runner {
     /// Record a failed check from a classified protocol failure; the
     /// caller handles terminal short-circuits.
     fn record_failure(&mut self, id: CheckId, failure: &TargetFailure) {
+        if std::env::var("LEKALO_SUITE_DEBUG").is_ok() {
+            eprintln!("suite failure on {id:?}: {failure:?}");
+        }
         let (class, detail) = classify(failure);
         self.record(CheckOutcome {
             id,
@@ -1146,6 +1711,21 @@ impl Runner {
         self.capabilities
             .as_ref()
             .and_then(|caps| caps.targets.first().cloned())
+    }
+
+    /// The deterministic profile selection: the preferred token when the
+    /// adapter declared it, else the lowest declared profile — the same
+    /// rule discovery applies, so profile-bound deployments (issue #45)
+    /// are driven through their declared profile. An adapter without
+    /// profiles (profile-optional operations only) selects none.
+    fn selected_profile(&self, preferred: Option<&str>) -> Option<String> {
+        let declared = self.capabilities.as_ref()?.profiles.clone();
+        if let Some(preferred) = preferred {
+            if declared.iter().any(|offered| offered == preferred) {
+                return Some(preferred.to_owned());
+            }
+        }
+        declared.iter().min().cloned()
     }
 
     /// Assemble the terminal outcome.
@@ -1274,6 +1854,11 @@ fn classify(failure: &TargetFailure) -> (CheckClass, &'static str) {
         TargetFailure::RequestInvalid { detail } => (CheckClass::Feature, detail),
         TargetFailure::HandshakeRequired { .. } => (CheckClass::Feature, "handshake-required"),
         TargetFailure::CapabilityUnsupported { detail } => (CheckClass::Feature, detail),
+        TargetFailure::PermissionEscalated { .. } => (CheckClass::Security, "permission-escalated"),
+        TargetFailure::SecurityRefusal { check, detail } => {
+            let _ = check;
+            (CheckClass::Security, detail)
+        }
         TargetFailure::ProtocolUnpublished | TargetFailure::RegistryInvalid => {
             (CheckClass::Process, "registry")
         }

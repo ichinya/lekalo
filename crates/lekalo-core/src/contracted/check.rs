@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use super::diagnostic;
 use super::types::{
-    ConformedRegistry, DeclaredEffect, SignatureEvidence, SignatureField, SymbolKind,
+    ConformedRegistry, DeclaredEffect, ShapeEvidence, SignatureEvidence, SignatureField, SymbolKind,
 };
 use crate::ir::{CompiledProject, Definition, TypeRef};
 use crate::project_fs::Fs;
@@ -158,6 +158,22 @@ pub(super) fn run_check(
         if let Some(canonical) = members.as_ref() {
             if canonical.effects != record.effects {
                 push_drift(&mut drifts, &mut drift_items, &record.id, "effects");
+            }
+        }
+        // Canonical shape conformance (issue #45): a claimed shape is
+        // recomputed from the typed IR and compared like a signature; a
+        // missing claim on a shape-bearing kind is `unknown` evidence, not
+        // a failure — the declaration chooses its custody depth.
+        if let Some(claim) = &record.shape {
+            match canonical_shape(&ctx.project, &record.id) {
+                Some(canonical) => {
+                    if !shape_matches(claim, &canonical) {
+                        push_drift(&mut drifts, &mut drift_items, &record.id, "shape");
+                    }
+                }
+                None => {
+                    push_drift(&mut drifts, &mut drift_items, &record.id, "shape");
+                }
             }
         }
     }
@@ -345,6 +361,63 @@ pub(super) fn signature_matches(claim: &SignatureEvidence, canonical: &Signature
     claim_inputs == canonical.inputs
         && claim.output == canonical.output
         && claim.reads == canonical.reads
+}
+
+/// The canonical shape of one type-bearing symbol (issue #45), recomputed
+/// from the typed IR: fields for value-object/entity, the base for a
+/// scalar, declared values for an enum. Shape-less kinds return `None`.
+pub(super) fn canonical_shape(project: &CompiledProject, id: &str) -> Option<ShapeEvidence> {
+    let definition = find_definition(project, id)?;
+    match definition {
+        Definition::ValueObject(value_object) => Some(ShapeEvidence {
+            fields: canonical_fields(&value_object.fields),
+            base: None,
+            values: Vec::new(),
+        }),
+        Definition::Entity(entity) => Some(ShapeEvidence {
+            fields: canonical_fields(&entity.fields),
+            base: None,
+            values: Vec::new(),
+        }),
+        Definition::Scalar(scalar) => Some(ShapeEvidence {
+            fields: Vec::new(),
+            base: Some(scalar.base.as_str().to_owned()),
+            values: Vec::new(),
+        }),
+        Definition::Enum(r#enum) => Some(ShapeEvidence {
+            fields: Vec::new(),
+            base: None,
+            values: r#enum
+                .values
+                .iter()
+                .map(|value| value.value.as_str().to_owned())
+                .collect(),
+        }),
+        _ => None,
+    }
+}
+
+fn canonical_fields(fields: &[crate::ir::Field]) -> Vec<SignatureField> {
+    let mut fields: Vec<SignatureField> = fields
+        .iter()
+        .map(|field| SignatureField {
+            name: field.name.as_str().to_owned(),
+            r#type: render_type(&field.r#type),
+            required: field.required,
+        })
+        .collect();
+    fields.sort_by(|left, right| left.name.cmp(&right.name));
+    fields
+}
+
+/// Whether the claimed shape equals the canonical one: fields as a
+/// name-keyed set, base and values exactly (values keep declared order).
+pub(super) fn shape_matches(claim: &ShapeEvidence, canonical: &ShapeEvidence) -> bool {
+    let mut claim_fields = claim.fields.clone();
+    claim_fields.sort_by(|left, right| left.name.cmp(&right.name));
+    claim_fields == canonical.fields
+        && claim.base == canonical.base
+        && claim.values == canonical.values
 }
 
 fn find_definition<'a>(project: &'a CompiledProject, id: &str) -> Option<&'a Definition> {

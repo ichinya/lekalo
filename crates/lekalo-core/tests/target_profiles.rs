@@ -68,6 +68,7 @@ fn the_monorepo_document_resolves_every_profile_deterministically() {
         [
             "laravel-postgres-http",
             "node-edge",
+            "node-http",
             "node-mysql",
             "node-postgres-http"
         ],
@@ -82,11 +83,20 @@ fn the_monorepo_document_resolves_every_profile_deterministically() {
         ]
     );
     let mysql = first.iter().find(|p| p.id == "node-mysql").expect("mysql");
-    assert_eq!(mysql.overrides_applied, ["storage.pooling".to_owned()]);
     assert_eq!(
-        mysql.capability("storage.pooling"),
+        mysql.capability("storage.check-constraints"),
         Some(Support::Partial),
-        "the explicit override records the weaker accepted state"
+        "the coarse component keeps the version-gated honest partial"
+    );
+    assert_eq!(
+        mysql.capability("storage.fulltext-index"),
+        Some(Support::Partial),
+        "the honest fulltext partial carries over"
+    );
+    assert_eq!(
+        mysql.capability("storage.sequences"),
+        None,
+        "mysql has no sequences; absence is meaningful"
     );
 }
 

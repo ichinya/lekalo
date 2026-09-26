@@ -1,0 +1,79 @@
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":15005,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":30018,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":45030,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":60035,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":75040,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":90049,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":105060,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":120071,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":135073,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":150082,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":165082,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":180098,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":195113,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":210129,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":225136,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":240139,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":255154,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":270157,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":285165,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":300169,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":315181,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":330187,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":345193,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":360202,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":375216,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":390223,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":405232,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":420241,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":435256,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":450256,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":465261,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":480263,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":495273,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":510283,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":525283,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":540287,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":555300,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":570312,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":585314,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":600321,"deadlineMs":900000}
+{"_keepalive":true,"_heartbeat":true,"elapsedMs":615335,"deadlineMs":900000}
+{
+  "id": "e6c51fa9-2224-4fef-ba69-ef0b702a43b5",
+  "ok": true,
+  "result": {
+    "runId": "run_d17b9193ea96",
+    "deliveryId": "delivery_e31f853d7b9f",
+    "messages": [
+      {
+        "id": "msg_73ba8dde771a",
+        "run_id": "run_d17b9193ea96",
+        "delivery_contract": "current_delivery",
+        "from_handle": "term_3915e477-4804-4cf9-bd92-e590c68b4d08",
+        "to_handle": "run:run_d17b9193ea96",
+        "subject": "Issue #85 research plan written",
+        "body": "Plan delivered at .m4/issue-85-plan.md in the worktree root (532 lines, all 7 required sections). Scope: three new contract families (nfr, nfr-evidence, nfr-report at 0.4.x) plus an nfr.* diagnostic registry increment, a new lekalo-core nfr module cloned from requirements+invariant_transition, a lekalo nfr CLI (validate/report/query/trace/diff/impact), fixtures, an Ajv contract suite, docs and an ADR; requirements/invariant-transition/impact contracts stay untouched since impact reuse works via a synthesized ChangedInputSet. Biggest risk: whether 'profile' in the advisory-nonblocking criterion means the CLI --strict gate profile (recommended) or the validation-profile contract, and whether the owner accepts a separate evidence document versus embedding evidence in the attachment — both are flagged with recommended decisions in the plan's risks section.",
+        "type": "worker_done",
+        "priority": "normal",
+        "thread_id": null,
+        "payload": "{\"taskId\":\"task_2f6ab9a4ac94\",\"dispatchId\":\"ctx_ae362a54d8c2\",\"outcome\":\"succeeded\",\"filesModified\":[\".m4/issue-85-plan.md\"],\"reportPath\":\".m4/issue-85-plan.md\"}",
+        "created_at": "2026-09-19T05:28:27Z",
+        "delivered_at": null
+      }
+    ],
+    "count": 1,
+    "replayed": false,
+    "acknowledged": "delivery_6b81d47606f8",
+    "timedOut": false,
+    "cancelled": false,
+    "connectionLost": false,
+    "mutation": {
+      "requestId": "c3fa84ce-b153-495b-98cb-33f883f6a947",
+      "replayed": false
+    }
+  },
+  "_meta": {
+    "runtimeId": "34a2d20b-810e-4f0e-aa59-57034c5fe2ab"
+  }
+}

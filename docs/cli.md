@@ -39,6 +39,25 @@ lekalo expressions validate PATH [--builtin-support FILE]
 lekalo expressions eval PATH --vectors FILE [--builtin-support FILE]
 lekalo expressions render PATH --target node|php|go [--builtin-support FILE]
 lekalo expressions diff BASE CANDIDATE
+lekalo transport validate PATH [--project DIR] [--errors FILE] [--query-model FILE] [--strict]
+lekalo transport inspect PATH --endpoint SYMBOL [--project DIR]
+lekalo transport project PATH --namespace node|laravel|go|rust [--project DIR] [--errors FILE] [--query-model FILE]
+lekalo transport diff BASE CANDIDATE
+lekalo storage validate PATH [--project DIR]
+lekalo storage project PATH --namespace postgres|laravel|mysql|mariadb
+lekalo storage diff BASE CANDIDATE
+lekalo storage plan BASE CANDIDATE [--confirm PLAN_ID]
+lekalo storage introspect-check --projection PATH --evidence PATH --namespace postgres|laravel|mysql|mariadb
+lekalo storage-profile validate PATH
+lekalo storage-profile capabilities PATH
+lekalo storage-profile portability BASE TARGET [--postgres-divergences]
+lekalo storage-profile diff BASE CANDIDATE
+lekalo openapi render PATH [--project DIR] [--errors FILE] [--query-model FILE]
+             [--version 3.1|3.0] [--mode full|fragments]
+lekalo openapi check PATH --transport ATTACHMENT [--project DIR] [--errors FILE]
+             [--query-model FILE] [--ownership FILE]
+lekalo openapi inspect PATH --endpoint SYMBOL [--project DIR] [--errors FILE] [--query-model FILE]
+lekalo openapi diff BASE CANDIDATE [--project DIR] [--version 3.1|3.0]
 lekalo graph show SYMBOL [--project DIR]
 lekalo graph callers SYMBOL [--transitive] [--project DIR]
 lekalo graph path FROM TO [--project DIR]
@@ -47,7 +66,7 @@ lekalo generate --check [--locked] [--project DIR]
 lekalo generate --clean --dry-run [--project DIR]
 lekalo generate --clean --confirm sha256:PLAN_ID [--project DIR]
 lekalo generate [--target TARGET]... [--module MODULE] [--dry-run] [--locked]
-                -- PROGRAM [ARGS...] [--project DIR]
+              [--allow-permission-expansion] -- PROGRAM [ARGS...] [--project DIR]
 lekalo verify [--target TARGET]... [--module MODULE] [--changed] [--locked]
               [--trace PATH] [-- PROGRAM [ARGS...]] [--project DIR]
 lekalo inspect SYMBOL [--include SECTIONS] [--project DIR]
@@ -218,6 +237,73 @@ tests, and the verified badge names the exact protocol/IR versions
 only. The normative contract is
 [adapter-conformance.md](adapter-conformance.md) and
 [ADR-0030](adr/0030-adapter-conformance.md).
+
+## Storage (issue #69)
+
+The `lekalo storage` group projects the storage-engine family over
+the #65 storage projection. The core owns every decision; the binary
+selects, renders, and maps exits on the accepted envelope.
+
+- `lekalo storage profile --engine postgres [--version V]` — the
+  owner-published version matrix, or one version's capability
+  answers. An unpublished major answers `unsupported-version`.
+- `lekalo storage validate-engine PATH` — normalize one engine profile and
+  print its canonical bytes.
+- `lekalo storage ddl PROFILE --projection PATH` — the deterministic
+  DDL document; the profile's `projectionRef` digest must bind the
+  projection.
+- `lekalo storage migrate-plan BASE CANDIDATE --profile PATH
+  [--confirm PLAN_ID]` — the gated migration plan; a destructive
+  plan answers the denied envelope (`LEK-SEN-009`) until the exact
+  `planId` is named.
+- `lekalo storage drift SCAN --projection PATH --profile PATH` —
+  the declared-versus-observed comparison; the verdict stays data.
+- `lekalo storage input PROFILE --projection PATH` — the one
+  runtime-neutral engine input document every runtime consumer
+  receives.
+- `lekalo storage capabilities PROFILE --projection PATH
+  [--requirements PATH] [--profile strict|permissive]` — the engine
+  capability snapshot, optionally mapped against declared
+  transaction-concurrency requirements.
+- `lekalo storage conformance --profile PATH --projection PATH
+  [--scan PATH] [--drifted PATH] [--input PATH] [--runtime PATH]…`
+  — the closed fourteen-check battery; a skip is never a pass.
+
+See [docs/storage-engine.md](storage-engine.md) and
+[ADR-0042](adr/0042-postgres-storage-engine.md).
+
+###  package surfaces (issue #32)
+
+Every adapter execution first passes the package resolution gate:
+manifest decode, exact-set protocol/IR compatibility, per-file checksum
+verification (before any child process exists, describe included), the
+honest signature policy, and the trust/revocation gate. A bare
+`-- PROGRAM` argv synthesizes an unsigned local-development descriptor,
+so the gate is total without breaking any shipped flow.
+
+```sh
+lekalo adapter manifest validate FILE [--project DIR]
+lekalo adapter discover --source path:DIR|exec:NAME|release:C/I|registry:R/P [--offline]
+lekalo adapter list [--project DIR]
+lekalo adapter info ID [--version V] [--project DIR]
+lekalo adapter install SOURCE (--dry-run | --confirm sha256:PLAN_ID) [--offline] [--allow-escalation]
+lekalo adapter update ID [--to VERSION] (--dry-run | --confirm sha256:PLAN_ID) [--allow-escalation]
+lekalo adapter rollback ID --to VERSION (--dry-run | --confirm sha256:PLAN_ID)
+lekalo adapter trust ID --level verified|community|...   # explicit, never inferred
+lekalo adapter revoke ID --version V --reason TOKEN      # or --version *
+lekalo adapter quarantine list|purge [--all]
+```
+
+`install`/`update`/`rollback` without `--confirm` must be `--dry-run`:
+the plan (identity, trust, every staged file, the permission/capability
+diff against the selected version, the `planId`) is rendered and
+nothing is written. `--confirm` applies exactly that previewed plan id;
+a drifted id answers `adapter.source-changed`. A permission-widening
+diff refuses without `--allow-escalation`. Revoked adapters are never
+selectable; quarantined packages never execute. The normative
+contracts are [adapter-manifest.md](adapter-manifest.md),
+[adapter-install.md](adapter-install.md), and
+[ADR-0042](adr/0042-adapter-package-trust.md).
 
 ## Exit and stream contract
 
@@ -543,6 +629,14 @@ read-only and never spawns adapters. A clean or report-only check exits
 stderr; integrity and path-policy refusals exit 3; a future manifest
 discriminator exits 5.
 
+Issue #89: the adapter runs under a confinement budget derived from its
+manifest `permissions` block. Described scopes beyond the ceiling are
+refused with `adapter.permission-escalated` (denied) unless the run
+passes `--allow-permission-expansion`, and every exchange records a
+deterministic confinement evidence member. The normative semantics and
+the enforcement matrix are documented in
+[docs/adapter-confinement.md](adapter-confinement.md).
+
 ```sh
 lekalo generate --check
 valid generate check clean manifest sha256:9d1f... lock sha256:2c40... \
@@ -565,6 +659,34 @@ lekalo generate --clean --dry-run
 lekalo generate --clean --confirm sha256:973d6dd3ef84df5e286622a796e542f9dac20974047f21ec0a1a095501949734
 generate applied plan sha256:973d... (-1)
 ```
+
+### Zod schemas for the Node/TypeScript target (issue #45)
+
+With the node-typescript adapter supplied, `generate` emits deterministic
+Zod modules from the compiled IR — schema constants plus inferred types,
+a shared runtime, a sorted barrel, and one canonical `.map.json` sidecar
+per module (field path → semantic id, declaration byte ranges). The
+pipeline is plan-first: `--dry-run` lists the whole write set and writes
+nothing; the apply consumes the echoed plan id. The ownership manifest
+records the modules as kind `schema`, the sidecars as kind `data`, and
+the sidecar declaration ranges as source maps bound to the exact inputs
+revision, so the `--check` gate above detects any tampering, staleness,
+or orphaning of the generated set.
+
+```sh
+lekalo lock -- node adapters/node-typescript/adapter-zod.mjs \
+  --lekalo-project-profile-json '{"id":"generate", …}'
+lekalo generate --dry-run --target node-typescript -- node adapters/node-typescript/adapter-zod.mjs --lekalo-project-profile-json '{…}'
+lekalo generate --target node-typescript -- node adapters/node-typescript/adapter-zod.mjs --lekalo-project-profile-json '{…}'
+lekalo generate --check
+```
+
+The type-mapping table, the optional/nullable orthogonality rules, the
+codegen policy document, and the unsupported-construct behaviour are
+specified in [docs/zod-generation.md](zod-generation.md). Note the
+generation artifact (`adapter-zod.mjs`) is a dedicated self-contained
+script: the full compiler bundle exceeds the protocol's entry-digest
+bound and is scanner-only.
 
 ## Requirements
 
@@ -597,6 +719,40 @@ depend on. Human and JSON are projections of the same result; the report
 and trace exports emit canonical bytes with pinned digests. See
 [docs/requirements.md](requirements.md) and
 [ADR-0026](adr/0026-requirements-traceability.md).
+
+## NFR (issue #85)
+
+The `lekalo nfr` handoff resolves NFR constraints
+(`lekalo/nfr/v0.4.0`) against their measured evidence
+(`lekalo/nfr-evidence/v0.4.0`): the gate, the derived report, the
+closed queries, the neutral trace projection, the semantic diff, and
+the impact synthesis. All decisions live in the core; nothing is ever
+written. See [docs/nfr.md](nfr.md) and
+[ADR-0042](adr/0042-nfr-constraints.md).
+
+```sh
+lekalo nfr validate tests/fixtures/nfr/planner/nfr.attachment.json \
+  --evidence tests/fixtures/nfr/planner/nfr-evidence.staging-eu.json \
+  --as-of 2026-09-30 --project tests/fixtures/nfr/planner
+# nfr planner
+#   constraints 4; satisfied 3; violated 0; unverified 1; stale 0; ...
+
+lekalo nfr validate ... --strict                    # advisory failures deny too
+lekalo nfr report ... > report.json                 # canonical report bytes + digest
+lekalo nfr query ... unverified                     # constraints without current evidence
+lekalo nfr query ... constraint:planner.nfr.api-focus-p95
+lekalo nfr trace ... > trace.json                   # neutral #22 trace projection
+lekalo nfr diff BASE CANDIDATE                      # breaking / non-breaking / policy-change
+lekalo nfr impact CANDIDATE --base BASE             # changed constraints through impact
+```
+
+Exit protocol: `0` pass, `1` invalid (malformed attachment or evidence,
+unknown selector or subject, malformed as-of date), `3` denied — a
+mandatory constraint violated, unverified, stale, unsupported, or
+conflicted (with `--strict` advisory violated/unverified/stale escalate
+into the denied set), `4` an evidence file absent or unreadable. The
+as-of date is required: expiry and validity evaluation stay
+deterministic and clock-free.
 
 ## Impact
 
@@ -756,3 +912,94 @@ scripts/test-context-contracts.mjs,
 scripts/test-semantic-diff-contracts.mjs,
 and scripts/test-authorization-contracts.mjs through NODE_PATH,
 and fails the job on any install, version, or gate failure.
+
+## Storage and storage profile (issue #117)
+
+The storage commands are thin, read-only handoffs to the core
+storage-projection, storage-engine-profile, and storage-introspection
+families. The documents are read at the given paths; every decision —
+wire validation, semantic self-check, derivation, comparison, and the
+drift check — lives in the core. Nothing is ever written and no
+database connection flag exists anywhere: the introspection evidence is
+produced by the runtime adapter, and the core only consumes it.
+
+```text
+lekalo storage validate PATH
+lekalo storage project PATH --namespace postgres|laravel|mysql|mariadb
+lekalo storage diff BASE CANDIDATE
+lekalo storage introspect-check --projection PATH --evidence PATH --namespace NS
+lekalo storage-profile validate PATH
+lekalo storage-profile capabilities PATH
+lekalo storage-profile portability BASE TARGET [--postgres-divergences]
+lekalo storage-profile diff BASE CANDIDATE
+```
+
+Exit-code discipline matches `query-model diff`: success and typed
+refusals stay on the accepted 0/1/3/4/5 envelope, and every verdict is
+data in the JSON envelope, never a guessed repair.
+
+## OpenAPI (issue #46)
+
+The `openapi` commands project the #70 transport attachment into a
+deterministic, validator-clean OpenAPI document; every decision lives
+in `lekalo_core::openapi` (see [docs/openapi.md](openapi.md)).
+
+`render` prints the canonical document bytes, their digest, and the
+projection findings as warnings:
+
+```json
+{"status":"valid","openapi":{"projectId":"planner","openapiVersion":"3.1.0",
+"mode":"full","canonicalDigest":"sha256:…","endpoints":6,"document":{…}}}
+```
+
+`check` is the checked mode: it binds a maintained document
+(`x-lekalo-endpoint` first, `operationId` second), recomputes the
+fragments, and reports per-pointer drift, manual collisions, and the
+unbound-manual inventory. A conformant document returns
+`{"status":"valid","openapiCheck":{"conformant":true,…}}`; drift
+travels as `openapi.drift`, unresolved anchors as
+`openapi.binding-unresolved`, and collisions as
+`openapi.merge-conflict`.
+
+`diff` renders the pointer-level view of the transport wire
+compatibility classes over two same-family attachments:
+
+```json
+{"status":"valid","openapiDiff":{"equal":false,"breaking":1,"nonBreaking":0,
+"policyChange":0,"wireConsumerBlocked":true,
+"paths":[{"path":"endpoints/…/params","class":"breaking",
+"pointers":["/paths/…/parameters"]}]}}
+```
+
+`inspect` returns one endpoint's rendered operation with its JSON
+pointer. The generation composite of the node-typescript adapter claims
+`generate.openapi` (partial) on `generate`, writes the document plus
+the `ownership`/`map` sidecars under the policy path (default
+`docs/openapi.yaml`), and verifies them on `verify`; `lekalo generate`
+writes the canonical render evidence under
+`.lekalo/cache/openapi/<project>.json`.
+
+## Privacy (issue #119)
+
+Issue #119 adds the privacy family: the deterministic, custody-verified
+export-decision evaluator, the fail-closed export pipeline, and the
+read-only redaction diff contract. The core owns every decision; the
+binary only reads documents, renders, and maps exits. The enforcement
+model, the transform vocabulary, and the fail-closed matrix live in
+[privacy-runtime.md](privacy-runtime.md); the frozen policy contracts
+live in [privacy.md](privacy.md):
+
+```sh
+lekalo privacy evaluate --decision decision.json
+lekalo privacy export artifact.json --destination publish [--dry-run] [--consent consent.json] [--project DIR]
+lekalo privacy redact --payload payload.txt [--repository NAME] [--term NAME] [--dry-run]
+```
+
+`lekalo privacy evaluate` prints the closed `ExportDecisionOutput` and
+exits 0 (allow), 3 (deny or transform-required), or 1 (malformed input
+or custody failure). `lekalo privacy export` runs the fail-closed
+pipeline - class resolution, evaluation, the closed transforms, and
+the leak-scanner verification pass - writing only under
+`.lekalo/privacy/`; `--dry-run` prints the exact candidate payload and
+the redaction diff and writes nothing. `lekalo privacy redact` prints
+the redaction diff contract and never writes.

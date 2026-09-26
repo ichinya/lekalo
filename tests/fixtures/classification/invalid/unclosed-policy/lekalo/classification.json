@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "lekalo/data-classification/v0.4.0",
+  "identity": "dev.lekalo.data-classification@0.4.0",
+  "attachmentRevision": "1.0.0",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "0.2.16",
+    "digest": "sha256:1f7de1b3e27e00e7f7ae53106b6eddaa2a523deaba3a29a34f21fd51ef74817b"
+  },
+  "irRef": {
+    "irVersion": "0.2.16",
+    "digest": "sha256:8f73f9ec22ce41eca4de7f60f4922ba84312d9e32b50cabb7d0fb7b7b85f06d3"
+  },
+  "defaults": {
+    "profile": "strict",
+    "unclassifiedFields": "internal",
+    "unclassifiedPayloads": "confidential"
+  },
+  "classifications": [
+    {
+      "subject": "planner.task",
+      "kind": "internal"
+    },
+    {
+      "subject": "planner.task_id",
+      "kind": "internal"
+    },
+    {
+      "subject": "planner.text",
+      "kind": "internal"
+    },
+    {
+      "subject": "planner.due_date",
+      "kind": "internal"
+    },
+    {
+      "subject": "planner.task_state",
+      "kind": "internal"
+    },
+    {
+      "subject": "planner.due_window",
+      "kind": "internal"
+    },
+    {
+      "subject": "planner.task_focused",
+      "kind": "internal"
+    },
+    {
+      "subject": "planner.task_archived",
+      "kind": "internal"
+    },
+    {
+      "subject": "notify.text",
+      "kind": "internal"
+    },
+    {
+      "subject": "notify.user_id",
+      "kind": "personal"
+    },
+    {
+      "subject": "notify.user",
+      "kind": "personal"
+    },
+    {
+      "subject": "planner.task/window/from",
+      "kind": "confidential"
+    }
+  ],
+  "declassifications": [
+    {
+      "id": "grant.notify.export-user-derived@1.0.0",
+      "subject": "notify.user",
+      "fromKind": "personal",
+      "toKind": "derived",
+      "approvedBy": "review-2025-09-001",
+      "justification": "Aggregate statistics only.",
+      "conditions": [
+        "aggregated"
+      ]
+    }
+  ],
+  "openQuestions": []
+}

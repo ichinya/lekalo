@@ -1,0 +1,107 @@
+{
+  "corpusId": "dev.lekalo.privacy-leak-corpus",
+  "version": "0.1.0",
+  "origin": "synthetic",
+  "note": "every value below is a synthetic well-formed marker; no real credential, person, tenant, or repository appears in this corpus. refusesExport marks the classes the always-on hygiene cannot clean (secrets and PII); hygiene classes ship pseudonymized under their marker.",
+  "samples": [
+    {
+      "file": "secret-token.txt",
+      "declaredClasses": [
+        "secret-token"
+      ],
+      "refusesExport": true
+    },
+    {
+      "file": "email.txt",
+      "declaredClasses": [
+        "email"
+      ],
+      "refusesExport": true
+    },
+    {
+      "file": "phone.txt",
+      "declaredClasses": [
+        "phone"
+      ],
+      "refusesExport": true
+    },
+    {
+      "file": "url.txt",
+      "declaredClasses": [
+        "url"
+      ],
+      "refusesExport": false,
+      "marker": "<redacted:url>"
+    },
+    {
+      "file": "tenant-id.txt",
+      "declaredClasses": [
+        "tenant-id"
+      ],
+      "refusesExport": false,
+      "marker": "<redacted:tenant>"
+    },
+    {
+      "file": "path-fragment.txt",
+      "declaredClasses": [
+        "path-fragment"
+      ],
+      "refusesExport": false,
+      "marker": "<path:H"
+    },
+    {
+      "file": "repository-name.txt",
+      "declaredClasses": [
+        "repository-name"
+      ],
+      "repository": "acme-widgets",
+      "refusesExport": false,
+      "marker": "<repo:"
+    },
+    {
+      "file": "person-name.txt",
+      "declaredClasses": [
+        "person-name"
+      ],
+      "protectedTerms": [
+        "Jane Doe"
+      ],
+      "refusesExport": true
+    },
+    {
+      "file": "jwt.txt",
+      "declaredClasses": [
+        "secret-token"
+      ],
+      "refusesExport": true
+    },
+    {
+      "file": "bare-digits.txt",
+      "declaredClasses": [
+        "phone"
+      ],
+      "refusesExport": true
+    },
+    {
+      "file": "file-uri.txt",
+      "declaredClasses": [
+        "url"
+      ],
+      "refusesExport": false,
+      "marker": "<redacted:url>"
+    },
+    {
+      "file": "drive-relative.txt",
+      "declaredClasses": [
+        "path-fragment"
+      ],
+      "refusesExport": false,
+      "marker": "<path:H"
+    },
+    {
+      "file": "clean.txt",
+      "declaredClasses": [],
+      "refusesExport": false
+    }
+  ]
+}

@@ -19,7 +19,7 @@
 
 use super::types::{
     ArtifactPin, CapabilityId, CatalogRef, ComponentId, Lockfile, Platform, ProviderKind,
-    ProviderRef, SemVer, Sha256Digest, SourceRef, Support, RESOLVER_VERSION,
+    ProviderRef, SemVer, Sha256Digest, SourceKind, SourceRef, Support, RESOLVER_VERSION,
 };
 use super::{canonical, LockFailure};
 use crate::versioning::compatibility::{AdapterCompatibilityManifest, CompatibilityPreflight};
@@ -292,6 +292,16 @@ pub struct CandidateAdapter {
     source: SourceRef,
     artifacts: Vec<ArtifactPin>,
     manifest: AdapterCompatibilityManifest,
+    /// The package manifest digest, when the supply shipped one (issue
+    /// #32); locked into the additive `manifest_digest` member.
+    pub package_manifest_digest: Option<Sha256Digest>,
+    /// The trust level pinned at selection time, when known.
+    pub trust: Option<super::types::LockTrust>,
+    /// The install plan id, when the package arrived through a plan.
+    pub install_plan_id: Option<Sha256Digest>,
+    /// Whether the supply resolves through the installed store (the
+    /// `installed` source kind), not a committed project file.
+    pub installed: bool,
 }
 
 impl CandidateAdapter {
@@ -311,7 +321,33 @@ impl CandidateAdapter {
             source,
             artifacts,
             manifest,
+            package_manifest_digest: None,
+            trust: None,
+            install_plan_id: None,
+            installed: false,
         }
+    }
+
+    /// Attach the issue #32 provenance members (installed store path,
+    /// package manifest digest, pinned trust, plan id). The source kind
+    /// becomes `installed` and the source id the store-relative path.
+    pub fn with_provenance(
+        &mut self,
+        installed_path: &str,
+        package_manifest_digest: Sha256Digest,
+        trust: super::types::LockTrust,
+        install_plan_id: Option<Sha256Digest>,
+    ) -> Result<(), LockFailure> {
+        self.source = SourceRef::new(
+            SourceKind::Installed,
+            installed_path,
+            self.source.digest().clone(),
+        )?;
+        self.package_manifest_digest = Some(package_manifest_digest);
+        self.trust = Some(trust);
+        self.install_plan_id = install_plan_id;
+        self.installed = true;
+        Ok(())
     }
 
     /// The digest over the canonical manifest bytes (the locked
@@ -456,6 +492,53 @@ impl CandidateSet {
     pub fn with_adapter(mut self, adapter: CandidateAdapter) -> Self {
         self.adapters.push(adapter);
         self
+    }
+
+    /// Attach issue #32 installed provenance to the adapter candidate
+    /// matching `id` + `version`: the source kind becomes `installed`, the
+    /// source id the store-relative packages path, and the additive
+    /// manifest/trust/plan-id members are pinned for `lock --check`.
+    /// Every malformed input and every provenance write failure refuses
+    /// (fix round 2, devin F-8) — the silent-skip spellings hid a dead
+    /// code path for the whole r1 fix range.
+    pub fn with_installed_provenance(
+        &mut self,
+        version: &str,
+        package_digest: &str,
+        manifest_digest: &str,
+        trust: &str,
+        install_plan_id: Option<&str>,
+    ) -> Result<(), LockFailure> {
+        let trust = super::types::LockTrust::parse(trust)?;
+        let digest = Sha256Digest::parse(package_digest)?;
+        let manifest = Sha256Digest::parse(manifest_digest)?;
+        let plan = install_plan_id.map(Sha256Digest::parse).transpose()?;
+        let digest8: String = package_digest["sha256:".len()..].chars().take(8).collect();
+        let mut pinned = 0_usize;
+        for adapter in self
+            .adapters
+            .iter_mut()
+            .filter(|a| a.version.as_str() == version && a.digest.as_str() == package_digest)
+        {
+            // Store-relative spelling below `.lekalo/`: every segment is
+            // portable, so the source-id grammar check passes and the
+            // provenance write is live (fix round 2, devin F-8).
+            let installed_path = format!(
+                "adapters/packages/{}/{}-{digest8}",
+                adapter.id.as_str(),
+                version
+            );
+            adapter.with_provenance(&installed_path, manifest.clone(), trust, plan.clone())?;
+            pinned += 1;
+        }
+        let _ = digest;
+        if pinned == 0 {
+            // The caller claimed a selected installed pin, but no lock
+            // candidate carries that identity: refuse instead of silently
+            // locking an unprovenanced pin.
+            return Err(LockFailure::SchemaInvalid);
+        }
+        Ok(())
     }
 
     /// Add one generator candidate.
@@ -603,13 +686,32 @@ impl LockResolver {
 
         let mut adapters = Vec::with_capacity(selected_adapters.len());
         for candidate in &selected_adapters {
-            adapters.push(super::types::ResolvedAdapter::from_parts(
+            // Issue #32 provenance: an installed supply carries its store
+            // path, package manifest digest, and the pinned trust level so
+            // `lock --check` can evaluate the revocation store.
+            let provenance = candidate
+                .installed
+                .then(|| {
+                    Some(super::types::Provenance::new(
+                        candidate.source.clone(),
+                        candidate.install_plan_id.clone(),
+                    ))
+                })
+                .flatten();
+            adapters.push(super::types::ResolvedAdapter::from_parts_with_provenance(
                 candidate.id.clone(),
                 candidate.version.clone(),
                 candidate.digest.clone(),
                 candidate.source.clone(),
                 candidate.compatibility_digest(),
                 candidate.artifacts.clone(),
+                candidate.package_manifest_digest.clone(),
+                if candidate.installed {
+                    candidate.trust
+                } else {
+                    None
+                },
+                provenance,
             )?);
         }
         let generators = selected_generators
@@ -918,3 +1020,100 @@ macro_rules! versioned_candidate {
 }
 
 versioned_candidate!(CandidateAdapter, CandidateGenerator, CandidateProfile);
+
+#[cfg(test)]
+mod installed_provenance_tests {
+    use super::super::types::{
+        ArtifactPin, ComponentId, Platform, SemVer, Sha256Digest, SourceKind, SourceRef,
+    };
+    use super::*;
+    use crate::versioning::compatibility::AdapterCompatibilityManifest;
+
+    fn hex64(byte: u8) -> String {
+        format!("{byte:064x}")
+    }
+
+    fn manifest_for(adapter: &str) -> AdapterCompatibilityManifest {
+        use crate::versioning::family::IrContract;
+        use crate::versioning::ContractVersion;
+        AdapterCompatibilityManifest::new(
+            ContractVersion::<RegistryContract>::parse_canonical(
+                crate::versioning::compatibility::MANIFEST_SCHEMA_VERSION,
+            )
+            .expect("manifest schema version is canonical"),
+            adapter,
+            ContractVersion::<IrContract>::parse_canonical("0.2.16").expect("ir min"),
+            ContractVersion::<IrContract>::parse_canonical("0.2.16").expect("ir max"),
+            None,
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("manifest is valid")
+    }
+
+    /// Regression (fix round 2, devin F-8; relocated in round 4, devin
+    /// N-4): installed lock-provenance is live — the store-relative
+    /// source id spells the real packages path below `.lekalo` (every
+    /// segment portable, so `path_violation` is a real check), and the
+    /// installed kind, package manifest digest, trust, and install plan
+    /// id reach the candidate instead of the write being swallowed.
+    #[test]
+    fn installed_provenance_pins_source_digest_trust_and_plan() {
+        let mut candidates = CandidateSet::empty().with_adapter(CandidateAdapter::new(
+            ComponentId::parse("adapter-installed").expect("adapter id"),
+            SemVer::parse("1.0.0").expect("adapter version"),
+            Sha256Digest::from_hex(&hex64(0x30)),
+            SourceRef::new(
+                SourceKind::Catalog,
+                "adapter-installed",
+                Sha256Digest::from_hex(&hex64(0x31)),
+            )
+            .expect("source"),
+            vec![ArtifactPin::new(
+                Platform::parse("linux-x64").expect("platform"),
+                Sha256Digest::from_hex(&hex64(0x32)),
+            )],
+            manifest_for("adapter-installed"),
+        ));
+        let plan_digest = Sha256Digest::from_hex(&hex64(0x39));
+        candidates
+            .with_installed_provenance(
+                "1.0.0",
+                &format!("sha256:{}", hex64(0x30)),
+                &format!("sha256:{}", hex64(0x33)),
+                "local-development",
+                Some(plan_digest.to_string().as_str()),
+            )
+            .expect("the provenance pins onto the matching candidate");
+        let adapter = candidates
+            .adapters
+            .iter()
+            .find(|adapter| adapter.installed)
+            .expect("the matching candidate carries the installed provenance");
+        assert_eq!(
+            adapter.source.id(),
+            "adapters/packages/adapter-installed/1.0.0-00000000",
+            "the source id is the real store-relative packages path"
+        );
+        assert_eq!(adapter.source.kind(), SourceKind::Installed);
+        assert_eq!(
+            adapter.package_manifest_digest,
+            Some(Sha256Digest::from_hex(&hex64(0x33)))
+        );
+        assert_eq!(adapter.install_plan_id, Some(plan_digest));
+        assert!(adapter.trust.is_some());
+
+        // A zero-match provenance request refuses: the caller claimed a
+        // selected installed pin that no candidate carries.
+        let mut candidates = CandidateSet::empty();
+        assert!(candidates
+            .with_installed_provenance(
+                "9.9.9",
+                &format!("sha256:{}", hex64(0x30)),
+                &format!("sha256:{}", hex64(0x33)),
+                "local-development",
+                None,
+            )
+            .is_err());
+    }
+}

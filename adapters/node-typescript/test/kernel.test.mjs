@@ -61,7 +61,9 @@ test("identity constants are the frozen #43 values", () => {
   assert.deepEqual(SUPPORTED_VERSIONS, ["0.3.2"]);
   assert.equal(VERSION, "0.3.2");
   assert.equal(ADAPTER_ID, "lekalo-target-node-typescript");
-  assert.equal(ADAPTER_VERSION, "0.3.2");
+  // The release constant is the reserved product version (0.4.0),
+  // not a protocol version.
+  assert.equal(ADAPTER_VERSION, "0.4.0");
   assert.match(entryDigest(), /^sha256:[0-9a-f]{64}$/);
 });
 
@@ -95,6 +97,7 @@ test("no invented capability ids ever appear", () => {
     "generate.openapi",
     "generate.ui",
     "generate.zod",
+    "preserve.classification",
     "scan.symbols",
     "verify.scenarios",
   ]);
@@ -376,6 +379,35 @@ test("zero roots are a policy refusal, not an implicit all-files grant", () => {
 // Extension registry validation.
 // ---------------------------------------------------------------------------
 
+test("the classification preservation capability is declarable and honestly unsupported by default (issue #87)", () => {
+  // The default describe map carries the closed unsupported state: the
+  // frozen observed-scan wire cannot carry kind tokens, so the adapter
+  // refuses instead of silently lowering.
+  const describe = describeCapabilities();
+  assert.equal(describe.capabilities["preserve.classification"], "unsupported");
+  // A validated extension may declare the capability; its state is
+  // projected into the describe map verbatim.
+  const descriptor = {
+    id: "fixture-classifier",
+    version: "0.1.0",
+    operations: ["scan"],
+    namedCapabilities: { "preserve.classification": "full" },
+    acceptedIrVersions: ["0.3.1"],
+    invoke: () => ({ state: "complete" }),
+  };
+  const validated = validateExtensionDescriptor(descriptor);
+  assert.equal(validated.namedCapabilities["preserve.classification"], "full");
+  // Unknown look-alike ids stay refused.
+  assert.throws(
+    () =>
+      validateExtensionDescriptor({
+        ...descriptor,
+        namedCapabilities: { "preserve.classification-scope": "full" },
+      }),
+    (error) => error.code === "extension-invalid",
+  );
+});
+
 test("extension descriptors are validated; unknown capability ids are refused", () => {
   const descriptor = {
     id: "fixture-scanner",
@@ -404,6 +436,38 @@ test("internal outcomes are closed and normalized", () => {
     (error) => error.code === "outcome-invalid");
   assert.throws(() => normalizeExtensionOutcome({ state: "complete", surprise: true }),
     (error) => error.code === "outcome-invalid");
+});
+
+test("the postgres-storage extension descriptor validates against the kernel vocabulary", async () => {
+  // The issue #69 spike: its one declared capability must be in the
+  // kernel's closed vocabulary and validate as a descriptor; the
+  // describe handshake then advertises it only with a bound profile.
+  const { createPostgresStorageExtension, STORAGE_DDL_CAPABILITY } = await import(
+    "../src/postgres-storage-extension.mjs"
+  );
+  const apply = async () => ({ applied: 1, planId: "sha256:" + "a".repeat(64) });
+  const descriptor = createPostgresStorageExtension(apply);
+  const validated = validateExtensionDescriptor(descriptor);
+  assert.equal(validated.id, "postgres-storage");
+  assert.deepEqual(validated.operations, ["generate"]);
+  assert.equal(validated.namedCapabilities[STORAGE_DDL_CAPABILITY], "full");
+  // The describe handshake advertises the capability only when a
+  // validated profile is bound.
+  const advertised = describeCapabilities(projectProfile(), [validated]);
+  assert.equal(advertised.capabilities[STORAGE_DDL_CAPABILITY], "full");
+  assert.ok(advertised.operations.includes("generate"));
+  // The invoke gate: no plan id is a typed denial; a plan id completes
+  // with the digest echoed.
+  const denied = await descriptor.invoke({ data: {} });
+  assert.equal(denied.state, "unsupported");
+  assert.equal(denied.diagnostics[0].code, "LEK-SEN-009");
+  const complete = await descriptor.invoke({ native_request: { plan_id: "sha256:" + "b".repeat(64) } });
+  assert.equal(complete.state, "complete");
+  assert.equal(complete.data.planId, "sha256:" + "b".repeat(64));
+  // The declaration alone never wires itself: creating the descriptor
+  // does not register it with the production kernel.
+  const bare = describeCapabilities();
+  assert.equal(bare.capabilities[STORAGE_DDL_CAPABILITY], undefined);
 });
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,16 @@
+{
+  "name": "@taskhub/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@taskhub/tasks": "workspace:^",
+    "@taskhub/events": "workspace:^"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "node --test",
+    "gate:typecheck": "node gates/verify.mjs --mode typecheck"
+  }
+}

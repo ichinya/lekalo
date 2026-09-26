@@ -111,9 +111,46 @@ projection. Every column is one of:
 One-to-one foreign keys derive a unique index. Composite primary keys
 are legal declarations, but any derivation that would need a key
 column refuses explicitly instead of guessing. The same domain model
-derives both namespaces — the committed derived goldens under
-`tests/fixtures/storage-projection/derived/` are two renderings of one
+derives four namespaces — the committed derived goldens under
+`tests/fixtures/storage-projection/derived/` are four renderings of one
 source, proven byte-identical on every run.
+
+## The MySQL and MariaDB namespaces (issue #117)
+
+The `mysql` and `mariadb` namespaces are separate members, never one
+optimistic family. Both render `boolean` as `tinyint(1)`, integers as
+`bigint`, decimals as `decimal(p,s)`, strings as `varchar(n)`, text as
+`text`, UUIDs as `binary(16)` (MariaDB's native `uuid` is a
+version-gated declared technical-column alternative the mysql
+namespace refuses), timestamps as `datetime(6)` — naive and stable,
+with the `timestamp` storage type a declared opt-in for the
+session-time-zone behavior — and binary as `varbinary`/`blob`.
+MariaDB renders `json` the same spelling but the engine stores it as
+`longtext` with a `JSON_VALID` check: the storage-class divergence is
+visible in the engine profile evidence, not hidden behind one
+optimistic type table.
+
+MySQL-family indexes carry the closed `kind` (`btree` default,
+`fulltext` never unique and textual-columns only, `spatial`),
+per-column sparse `prefixLengths` (each position is a length bounded
+1..=3072 against the InnoDB key cap or `null` for no prefix, so a
+mixed textual+non-textual composite prefixes only the textual
+members), and per-column `descending` flags. A prefix length is
+mandatory exactly where the engine needs one: unbounded textual and
+blob families (`text`/`tinytext`/`mediumtext`/`longtext`,
+`blob`/`tinyblob`/`mediumblob`/`longblob`), a `varchar(n)`/`char(n)`
+whose utf8mb4 width can exceed the key cap, and unsized
+`binary`/`varbinary`; fixed-width `binary(n)`/`varbinary(n)` within
+the cap (e.g. the `binary(16)` uuid render) indexes without one.
+Tables and projections declare their `charset`,
+`collation`, and `textDefaults` explicitly: the engine implicit
+default is never accepted silently, and the collation/charset
+coherence is checked over the closed prefix convention (including the
+MariaDB `uca1400` family). The `sequence` generated kind refuses in
+the `mysql` namespace (MariaDB sequences are version-evidenced at
+10.3+). The versioned engine capability evidence lives beside the
+projection in the storage-engine-profile family — see
+[storage-engine-profile.md](storage-engine-profile.md).
 
 ## The public DTO projection
 
@@ -154,6 +191,27 @@ visible data risk, so a migration obligation is never hidden inside a
 class. Because layers are separate, a domain rename is provably not a
 table rename: the rebind produces the domain path and, with an
 unchanged entity key, no storage path at all.
+
+## The 0.4.0 members
+
+The additive 0.4.0 generation (issue #69) carries the facts every
+namespace and the engine layer need: the closed `default`
+vocabulary (typed literal, `now`, `uuid_generate`, owned
+`sequence` — no free expressions), the `enum` and `array`
+domain types (bounded sorted member list; exactly one non-nested
+scalar element with an optional cardinality bound), the
+`index.where` partial-predicate conjunction, and named table CHECK
+constraints over the same closed column-predicate grammar. The diff
+classifies the new paths honestly: a default change is a policy
+change carrying the backfill risk, an enum member removal is breaking
+and destructive, and predicate or CHECK changes are storage policy
+changes. The published derivation renders enums through a bounded
+varchar (postgres `varchar(64)`, Laravel `string(64)`), arrays
+natively on PostgreSQL and as JSON in Laravel, refuses the Laravel
+namespace's partial-index and CHECK surface explicitly
+(`mapping-unsupported`), and carries the declared default onto the
+derived column. The PostgreSQL profile (#69) consumes these members;
+see [docs/storage-engine.md](storage-engine.md).
 
 ## Boundaries
 

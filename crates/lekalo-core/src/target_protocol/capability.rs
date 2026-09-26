@@ -12,8 +12,12 @@
 use serde::Serialize;
 
 /// The identity of the embedded capability definition registry
-/// (`dev.lekalo.target-capabilities@0.3.1`).
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.3.2";
+/// (`dev.lekalo.target-capabilities@0.4.0`). The 0.4.0 generation
+/// adds `generate.transport-http` and `verify.transport-http`
+/// (issue #70), `generate.storage-ddl` and `scan.storage-schema`
+/// (issue #69), `scan.schema`/`verify.schema-projection`
+/// (issue #117), and `preserve.classification` (issue #87).
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.4.0";
 
 /// One versioned capability definition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -39,6 +43,18 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         semantics: "Emits an OpenAPI document from the compiled project IR. `full` covers every declared operation and type; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
+        id: "generate.storage-ddl",
+        definition_version: "0.4.0",
+        domain: "generate",
+        semantics: "Emits-or-applies the core-rendered deterministic storage DDL and migration plan documents under the `generate` operation. `full` applies every core-proposed, digest-addressed document the adapter accepted (the plan's planId stays the apply authority); `partial` covers a declared subset; `unsupported` never applies; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "generate.transport-http",
+        definition_version: "0.4.0",
+        domain: "generate",
+        semantics: "Generates the HTTP route layer from the transport-http evidence. `full` covers every declared endpoint, parameter, error projection, and security scheme; `partial` covers a declared subset or reports declared streaming/upload/download capabilities it does not implement as unsupported; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
         id: "generate.ui",
         definition_version: "0.3.1",
         domain: "generate",
@@ -51,10 +67,40 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         semantics: "Emits Zod schemas from the compiled project IR. `full` covers every declared type and invariant; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
+        id: "plan.native-gates",
+        definition_version: "0.3.2",
+        domain: "plan",
+        semantics: "Plans native build/test gates over a detected Node workspace through the read-only `plan-native` operation. `full` produces the immutable plan over every confirmed gate; `partial` covers a declared subset; `unsupported` never plans; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "preserve.classification",
+        definition_version: "0.4.0",
+        domain: "preserve",
+        semantics: "Preserves classification metadata through every projection the adapter emits (issue #87): every emitted field that maps to a classified subject carries its kind token, and an unrepresentable projection is refused as `unsupported`, never emitted bare. `full` preserves classification on every emitted field; `partial` preserves it on a declared subset; `unsupported` never emits classified fields; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "scan.schema",
+        definition_version: "0.4.0",
+        domain: "scan",
+        semantics: "Produces one storage-introspection evidence document over one explicitly configured test schema through read-only information-schema queries (issue #117). `full` covers every declared table, column, index, and foreign key plus the exact engine identity echo; `partial` covers a declared subset; `unsupported` never introspects; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "scan.storage-schema",
+        definition_version: "0.4.0",
+        domain: "scan",
+        semantics: "Observes the declared schema scopes through the `scan` operation and produces one checked-mode storage-observation evidence document. `full` reads every declared scope read-only; `partial` reads a declared subset; `unsupported` never observes; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
         id: "scan.symbols",
         definition_version: "0.3.1",
         domain: "scan",
         semantics: "Enumerates project symbols through the `scan` operation. `full` covers every declared module and entity; `partial` covers a declared subset; `unsupported` never scans; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "verify.schema-projection",
+        definition_version: "0.4.0",
+        domain: "verify",
+        semantics: "Verifies that one adapter-rendered schema matches the canonical `project()` output of its attachment namespace (issue #117). `full` verifies every declared table and column; `partial` covers a declared subset; `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
         id: "verify.scenarios",
@@ -63,10 +109,10 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         semantics: "Verifies scenario coverage through the `verify` operation. `full` covers every declared scenario; `partial` covers a declared subset; `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
-        id: "plan.native-gates",
-        definition_version: "0.3.2",
-        domain: "plan",
-        semantics: "Plans native build/test gates over a detected Node workspace through the read-only `plan-native` operation. `full` produces the immutable plan over every confirmed gate; `partial` covers a declared subset; `unsupported` never plans; `unknown` is a declared state the core does not treat as available.",
+        id: "verify.transport-http",
+        definition_version: "0.4.0",
+        domain: "verify",
+        semantics: "Verifies black-box endpoint scenarios through the `verify` operation against the transport-http evidence. `full` executes every declared scenario coverage reference; `partial` covers a declared subset; `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
     },
 ];
 
@@ -87,22 +133,31 @@ mod tests {
 
     #[test]
     fn registry_identity_and_definitions_are_pinned() {
-        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.3.2");
+        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.4.0");
         let ids: Vec<&str> = definitions().iter().map(|entry| entry.id).collect();
         assert_eq!(
             ids,
             vec![
                 "generate.openapi",
+                "generate.storage-ddl",
+                "generate.transport-http",
                 "generate.ui",
                 "generate.zod",
-                "scan.symbols",
-                "verify.scenarios",
                 "plan.native-gates",
+                "preserve.classification",
+                "scan.schema",
+                "scan.storage-schema",
+                "scan.symbols",
+                "verify.schema-projection",
+                "verify.scenarios",
+                "verify.transport-http",
             ]
         );
         for entry in definitions() {
             assert!(
-                entry.definition_version == "0.3.1" || entry.definition_version == "0.3.2",
+                entry.definition_version == "0.3.1"
+                    || entry.definition_version == "0.3.2"
+                    || entry.definition_version == "0.4.0",
                 "definition versions stay on the accepted generations"
             );
             assert!(
