@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -143,7 +143,7 @@ function runGeneratedTests(root) {
   });
 }
 
-const root = mkdtempSync(join(tmpdir(), "lekalo-scenario-e2e-"));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-scenario-e2e-")));
 try {
   step("fixture project materializes with the port and the IR evidence", () => {
     materializeProject(root);

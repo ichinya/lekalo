@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,7 +60,7 @@ const REQUEST = {
 };
 
 function evidenceProject() {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-transport-gate-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-transport-gate-")));
   const dir = join(root, ".lekalo", "cache", "transport");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "planner.json"), evidenceBytes, "utf8");
@@ -160,7 +160,7 @@ test("gate: an unjoined endpoint refuses instead of planning nulls", () => {
 });
 
 test("gate: an absent evidence file refuses honestly", () => {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-transport-none-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-transport-none-")));
   try {
     const profile = validateResolvedProjectProfile({ ...PROFILE });
     const view = createReadView(root, profile.readRoots, profile);

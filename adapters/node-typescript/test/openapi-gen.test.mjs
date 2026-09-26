@@ -13,6 +13,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -89,7 +90,7 @@ function readFileOf(root, path) {
 
 /** A temp project with the planner evidence and IR under the homes. */
 function evidenceProject() {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-openapi-gen-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-openapi-gen-")));
   const evidenceDir = join(root, ".lekalo", "cache", "transport");
   const irDir = join(root, ".lekalo", "cache", "ir");
   mkdirSync(evidenceDir, { recursive: true });
@@ -277,7 +278,7 @@ test("verify reports drift when a maintained document diverges", () => {
 });
 
 test("an absent evidence home yields zero openapi writes, not a failure", () => {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-openapi-empty-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-openapi-empty-")));
   try {
     const views = viewsFor(root);
     // Remove the transport evidence: the applicable predicate in the
@@ -293,7 +294,7 @@ test("an absent evidence home yields zero openapi writes, not a failure", () => 
 
 
 test("a declared 3.0 render spells the 3.0 dialect, never 3.1-only forms (r1 F-3/cline F-1)", () => {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-openapi-30-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-openapi-30-")));
   try {
     // The stock evidence carries no optional types, so the command
     // input gains one (an optional planner.text note) — exactly the
@@ -407,7 +408,7 @@ test("a divided errorDefault inlines its category body and never dangles a $ref 
   cloneEndpoint.errorDefaults = { ...cloneEndpoint.errorDefaults, domain: 423 };
   transport.endpoints.push(cloneEndpoint);
 
-  const root = mkdtempSync(join(tmpdir(), "lekalo-openapi-divided-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-openapi-divided-")));
   try {
     const evidenceDir = join(root, ".lekalo", "cache", "transport");
     const irDir = join(root, ".lekalo", "cache", "ir");
@@ -481,7 +482,7 @@ test("the provenance block binds the evidence's model/IR/transport pins (r1 clin
 test("info.version is the attachment revision, not a generator constant (r1 devin F-6)", () => {
   const transport = JSON.parse(plannerEvidence);
   transport.attachmentRevision = "9.9.9-rc.1";
-  const root = mkdtempSync(join(tmpdir(), "lekalo-openapi-rev-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-openapi-rev-")));
   try {
     const evidenceDir = join(root, ".lekalo", "cache", "transport");
     const irDir = join(root, ".lekalo", "cache", "ir");
@@ -822,7 +823,7 @@ test("a path-level non-method member rides the merge without a pseudo-pointer no
 test("evidence without an attachment revision refuses instead of an empty info.version (r2 F-4)", () => {
   const transport = JSON.parse(plannerEvidence);
   delete transport.attachmentRevision;
-  const root = mkdtempSync(join(tmpdir(), "lekalo-openapi-norev-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-openapi-norev-")));
   try {
     const evidenceDir = join(root, ".lekalo", "cache", "transport");
     const irDir = join(root, ".lekalo", "cache", "ir");

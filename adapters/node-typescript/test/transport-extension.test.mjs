@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,7 +49,7 @@ const PROFILE = {
 
 /** A temp project with the planner evidence and IR under the cache homes. */
 function evidenceProject(irText = plannerIr) {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-transport-ext-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-transport-ext-")));
   const evidenceDir = join(root, ".lekalo", "cache", "transport");
   mkdirSync(evidenceDir, { recursive: true });
   writeFileSync(join(evidenceDir, "planner.json"), plannerEvidence, "utf8");
@@ -197,7 +197,7 @@ test("a dry run plans without writing; an apply publishes the plan", () => {
 });
 
 test("a missing evidence file is an honest failure, never a silent plan", () => {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-transport-empty-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-transport-empty-")));
   try {
     const outcome = transportGenerateOperation({
       request: { ...REQUEST_BASE },
@@ -247,7 +247,7 @@ test("an endpoint the IR cannot resolve refuses the plan", () => {
   const missingJoin = JSON.parse(plannerEvidence);
   missingJoin.endpoints[0].endpoint = "planner.endpoint_missing";
   const foreignEvidence = JSON.stringify(missingJoin);
-  const root = mkdtempSync(join(tmpdir(), "lekalo-transport-unjoined-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-transport-unjoined-")));
   try {
     mkdirSync(join(root, ".lekalo", "cache", "transport"), { recursive: true });
     writeFileSync(join(root, ".lekalo", "cache", "transport", "planner.json"), foreignEvidence, "utf8");

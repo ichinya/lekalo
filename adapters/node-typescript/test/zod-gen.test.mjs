@@ -6,7 +6,7 @@
  * temp project; no package manager, no shell, no project scripts.
  */
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -26,7 +26,11 @@ const REQUEST_ID = `req-${"a".repeat(64)}`;
 
 /** One hermetic project with the IR evidence under the cache home. */
 function sandbox(tag, irSource) {
-  const dir = mkdtempSync(join(tmpdir(), `lekalo-zod-gen-${tag}-`));
+  // Canonical: macOS tmpdir spells under the /var -> /private/var symlink
+  // (Windows under 8.3 short names); the kernel resolves read roots
+  // physically and compares against permittedRoot, so the spelled path
+  // must be the resolved one or every root fails containment.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), `lekalo-zod-gen-${tag}-`)));
   const evidenceDir = join(dir, ".lekalo", "cache", "ir");
   mkdirSync(join(dir, ZOD_DIR), { recursive: true });
   mkdirSync(evidenceDir, { recursive: true });

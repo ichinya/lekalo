@@ -294,7 +294,7 @@ test("config-less project: the seeded defaults apply and are recorded (F-2)", as
   const fs = await import("node:fs");
   const path = await import("node:path");
   const os = await import("node:os");
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lekalo-s44-noconfig-"));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lekalo-s44-noconfig-")));
   const project = path.join(root, "project");
   fs.mkdirSync(path.join(project, "src"), { recursive: true });
   fs.writeFileSync(

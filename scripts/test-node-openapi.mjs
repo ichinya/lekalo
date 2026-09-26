@@ -8,7 +8,7 @@
 // edit. Driven through the production kernel. Node built-ins only.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,7 +53,7 @@ const REQUEST = {
 };
 
 function evidenceProject() {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-openapi-gate-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-openapi-gate-")));
   const evidenceDir = join(root, ".lekalo", "cache", "transport");
   const irDir = join(root, ".lekalo", "cache", "ir");
   mkdirSync(join(root, "docs"), { recursive: true });

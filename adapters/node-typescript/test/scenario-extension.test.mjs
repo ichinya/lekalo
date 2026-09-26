@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -120,7 +120,7 @@ function scenarioRequest(operation, extra = {}) {
 }
 
 test("the composite advertises verify.scenarios full and the scenario write scope", () => {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-")));
   try {
     materialize(root);
     const { kernel } = kernelWith(root);
@@ -146,7 +146,7 @@ test("the kernel default map keeps verify.scenarios unsupported", () => {
 });
 
 test("generate dry-run over a scenario document returns the byte-stable plan", () => {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-")));
   try {
     materialize(root);
     const { dispatch } = kernelWith(root);
@@ -171,7 +171,7 @@ test("generate dry-run over a scenario document returns the byte-stable plan", (
 });
 
 test("generate apply echoes the plan id and writes the exact bytes", () => {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-")));
   try {
     materialize(root);
     const { dispatch } = kernelWith(root);
@@ -193,7 +193,7 @@ test("generate apply echoes the plan id and writes the exact bytes", () => {
 });
 
 test("apply without the echoed plan id is refused", () => {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-")));
   try {
     materialize(root);
     const { dispatch } = kernelWith(root);
@@ -205,7 +205,7 @@ test("apply without the echoed plan id is refused", () => {
 });
 
 test("verify is clean after generation and reports scenario.drift after edits", () => {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-")));
   try {
     materialize(root);
     const { dispatch } = kernelWith(root);
@@ -232,7 +232,7 @@ test("verify is clean after generation and reports scenario.drift after edits", 
 });
 
 test("a scenario document without the port declaration vetoes generation", () => {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-")));
   try {
     materialize(root);
     rmSync(join(root, "lekalo", "test-port.json"));
@@ -250,7 +250,7 @@ test("the concurrency scenario compiles but the serial pipeline stays honest", (
   // The concurrency-marked document emits a test file whose rows are
   // recorded unsupported and whose runner outcome is skip — never a
   // pass. The extension itself only refuses to claim more than it did.
-  const root = mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-")));
   try {
     materialize(root, "planner.scenario.focus_concurrent");
     const { dispatch } = kernelWith(root);
@@ -267,7 +267,7 @@ test("the concurrency scenario compiles but the serial pipeline stays honest", (
 });
 
 test("project-IR documents keep routing to the zod pipeline", () => {
-  const root = mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-scenario-ext-")));
   try {
     materialize(root);
     writeFileSync(
