@@ -198,3 +198,89 @@ fn portability_between_node_and_laravel_names_the_changed_components() {
         "the report names the async weakening"
     );
 }
+
+#[test]
+fn portability_golden_names_php_target_limitations_against_node() {
+    // Issue #54 AC: target-specific limitations reflected in the
+    // portability report. The Node→Laravel golden names exactly which
+    // provided capabilities weaken (async/typing full → partial, the
+    // mago analysis deltas) instead of a free-form prose field, and the
+    // report bytes are deterministic over the committed fixtures.
+    let node = resolve_fixture("valid/node.json");
+    let laravel = resolve_fixture("valid/laravel.json");
+    let report = portability(&node, &laravel);
+    assert_eq!(report.source, "node-postgres-http");
+    assert_eq!(report.target, "laravel-postgres-http");
+
+    // Every capability delta the report carries, in the fixed wire
+    // spelling; the catalogue (not free text) is the limitation record.
+    let deltas: Vec<(String, String, String)> = report
+        .axes
+        .iter()
+        .flat_map(|axis| {
+            axis.capability_changes
+                .iter()
+                .map(|change| {
+                    (
+                        axis.axis.as_str().to_owned(),
+                        change.id.clone(),
+                        format!(
+                            "{} -> {}",
+                            change.source.map(|s| s.as_str()).unwrap_or("none"),
+                            change.target.map(|s| s.as_str()).unwrap_or("none")
+                        ),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let names = |axis: &str| {
+        deltas
+            .iter()
+            .filter(|(entry_axis, _, _)| entry_axis == &axis)
+            .map(|(_, id, delta)| format!("{id}: {delta}"))
+            .collect::<Vec<_>>()
+    };
+    let runtime = names("runtime");
+    assert_eq!(
+        runtime,
+        vec![
+            "runtime.async: full -> partial".to_owned(),
+            "runtime.typing: full -> partial".to_owned(),
+        ],
+        "the PHP runtime deltas are the honest typing/async limitations"
+    );
+    let analysis = names("analysis");
+    assert_eq!(
+        analysis,
+        vec![
+            "analysis.lint: none -> full".to_owned(),
+            "analysis.types: full -> partial".to_owned(),
+        ],
+        "mago lint is a gain; mago type analysis stays partial"
+    );
+    let testing = names("testing");
+    // node-native provides testing.clock/event-capture/fixtures which
+    // laratesto does not: those disappear ("full -> none") — exactly the
+    // scenario-harness gaps the portability report must keep visible
+    // (issue #54 AC6) — while testing.coverage is kept and
+    // testing.parallel weakens to partial.
+    assert!(
+        testing.contains(&"testing.clock: full -> none".to_owned())
+            && testing.contains(&"testing.event-capture: partial -> none".to_owned())
+            && testing.contains(&"testing.fixtures: full -> none".to_owned()),
+        "the laratesto gaps stay visible: {testing:?}"
+    );
+    assert!(
+        testing.contains(&"testing.parallel: full -> partial".to_owned()),
+        "parallel weakens, it does not vanish: {testing:?}"
+    );
+    assert!(!testing.is_empty(), "the testing axis changes are visible");
+
+    // Determinism: two runs produce byte-identical canonical bytes.
+    let again = portability(&resolve_fixture("valid/node.json"), &resolve_fixture("valid/laravel.json"));
+    assert_eq!(
+        serde_json::to_string(&report).expect("serializes"),
+        serde_json::to_string(&again).expect("serializes")
+    );
+}
