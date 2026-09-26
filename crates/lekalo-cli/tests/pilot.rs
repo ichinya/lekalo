@@ -467,9 +467,29 @@ fn the_taskhub_pilot_runs_end_to_end_without_touching_the_consumer() {
             "proj",
         ],
     );
-    assert!(canonical_impact
-        .to_string()
-        .contains("observed.incomplete-graph"));
+    // The structured incompleteness fields (the observed.rs impact
+    // precedent): the registered warning rides the top-level
+    // `reasonCodes` AND the impact's completeness section summary
+    // degrades explicitly — a substring match never stands in for the
+    // typed fields.
+    assert!(canonical_impact["reasonCodes"]
+        .as_array()
+        .expect("top-level reason codes")
+        .iter()
+        .any(|code| code == "observed.incomplete-graph"));
+    assert_eq!(
+        canonical_impact["impact"]["completeness"]["state"],
+        "incomplete"
+    );
+    assert_eq!(
+        canonical_impact["impact"]["completeness"]["complete"],
+        false
+    );
+    assert!(canonical_impact["impact"]["completeness"]["reasonRefs"]
+        .as_array()
+        .expect("completeness reason refs")
+        .iter()
+        .any(|code| code == "observed.incomplete-graph"));
 
     // -------------------------------------------------------------
     // Criterion: the capsule for the Task symbol is materially smaller
