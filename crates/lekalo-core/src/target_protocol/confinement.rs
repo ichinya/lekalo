@@ -266,7 +266,11 @@ pub(super) struct Sandbox {
     /// publication guard validates every published entry against them
     /// (issue #89: a staged file outside the scopes cannot publish).
     write_scopes: Vec<String>,
-    /// The sandbox policy projected from the session budget.
+    /// The sandbox policy projected from the session budget. Read by
+    /// the Windows job cap and the Linux task bound; the macOS seatbelt
+    /// profile expresses the same denial through its static rule set, so
+    /// the field is platform-dead there.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub(super) policy: SandboxPolicy,
     /// The honest per-dimension enforcement record.
     pub(super) report: ConfinementReport,

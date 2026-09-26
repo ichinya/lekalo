@@ -154,6 +154,12 @@ jobs:
         with:
           node-version: 24.x
           package-manager-cache: false
+      - name: Provision exact Ajv 8.17.1 outside the checkout (issues #32, #48)
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1
+          export NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.17.1/node_modules"
+          test "$(node -p "require('ajv/package.json').version")" = "8.17.1"
       - name: Provision the Linux process confinement backend
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
@@ -196,6 +202,8 @@ jobs:
       - name: Run the Node/TypeScript kernel suite (issue #43)
         run: node scripts/test-node-typescript-kernel.mjs
       - name: Run the adapter manifest contract gate (issue #32)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
         run: node scripts/test-adapter-manifest-contracts.mjs
       - name: Verify the shipped adapter manifest golden (issue #32)
         run: node scripts/test-adapter-manifest-golden.mjs
@@ -223,12 +231,6 @@ jobs:
         run: node scripts/test-node-scenario-tests.mjs
       - name: Run the scenario unit suites (issue #47 review F-11)
         run: node scripts/test-node-scenario-units.mjs
-      - name: Provision exact Ajv 8.17.1 outside the checkout (issue #48)
-        run: |
-          set -euo pipefail
-          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1
-          export NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.17.1/node_modules"
-          test "$(node -p "require('ajv/package.json').version")" = "8.17.1"
       - name: Run the native gate contract gate (issue #48)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
