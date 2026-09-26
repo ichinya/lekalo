@@ -996,7 +996,9 @@ impl PermissionsWire {
 mod committed_exemplar_tests {
     /// The shipped exemplar must parse through the exact wire structs:
     /// this is the structural schema-parity guard for the serde spellings
-    /// (issue #32 fix round 1, finding F-1).
+    /// (issue #32 fix round 1, finding F-1). Issue #54 adds the second
+    /// adapter's manifest as a committed exemplar so both shipped
+    /// packages stay wired to the closed wire shapes.
     #[test]
     fn the_committed_adapter_manifest_parses() {
         let bytes = include_bytes!("../../../../adapters/node-typescript/adapter.manifest.json",);
@@ -1007,6 +1009,30 @@ mod committed_exemplar_tests {
         assert_eq!(
             document.package_digest().as_str(),
             "sha256:b44fe06b9cc54ebc49148d5626306c0eba4d4bebd782144a73d008bd17d1a54c"
+        );
+    }
+
+    #[test]
+    fn the_committed_php_adapter_manifest_parses() {
+        let bytes = include_bytes!("../../../../adapters/php-laravel/adapter.manifest.json");
+        let document = super::ManifestDocument::from_bytes(bytes)
+            .expect("the committed PHP adapter manifest must parse");
+        assert_eq!(document.adapter_id(), "lekalo-target-php-laravel");
+        assert_eq!(document.adapter_version().as_str(), "0.1.0");
+        // The runtime is the closed php spelling with the 8.3 floor of
+        // the issue's requirements, checked against the raw canonical
+        // bytes (the wire struct keeps the runtime block opaque).
+        let value: serde_json::Value = serde_json::from_slice(bytes).expect("manifest is JSON");
+        assert_eq!(value["executable"]["runtime"]["kind"], "php");
+        assert_eq!(value["executable"]["runtime"]["minVersion"], "8.3.0");
+        // The permission posture is the strict shipped default.
+        assert_eq!(
+            value["permissions"]["network"]["mode"],
+            serde_json::json!("denied")
+        );
+        assert_eq!(
+            value["permissions"]["processes"]["children"],
+            serde_json::json!("denied")
         );
     }
 }
