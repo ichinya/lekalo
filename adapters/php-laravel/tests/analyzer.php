@@ -186,39 +186,31 @@ check($decodedUnknown['diagnostics'][0]['original_code'] === 'some-new-upstream-
 // 2. Analysis states: unavailable ≠ incompatible ≠ failed ≠ ok.
 // ---------------------------------------------------------------------------
 
-$lockDigest = mago_load_toolchain_lock()['lockDigest'] ?? ('sha256:' . str_repeat('0', 64));
-
 // Unavailable: the real analyzer finds no receipt in this suite's view
 // (the suite cwd has no staged .lekalo/import/mago/receipt.json).
-$missingOutcome = (new MagoEvidenceAnalyzer($lockDigest))->analyze();
+$missingOutcome = (new MagoEvidenceAnalyzer())->analyze();
 check($missingOutcome->state === 'unavailable', 'an absent receipt is exactly unavailable');
 
 // Incompatible: tool digest differs from the pinned toolchain.
 $staleBody = receipt_body();
 $staleBody['tool']['digest'] = 'sha256:' . str_repeat('9', 64);
 $staged = mago_decode_receipt(receipt_json($staleBody));
-$reason = mago_check_compatibility($staged, $lockDigest);
+$reason = mago_check_compatibility($staged);
 check(is_string($reason) && str_contains($reason, 'digest'), 'a foreign tool digest is incompatible');
-
-$wrongPin = mago_check_compatibility(mago_decode_receipt(receipt_json(receipt_body())), 'sha256:' . str_repeat('f', 64));
-check(is_string($wrongPin) && str_contains($wrongPin, 'lock digest changed'), 'a foreign lock digest is incompatible');
 
 // Failed: the recorded run did not complete. The FakeAnalyzer decode
 // path is exercised directly: a receipt whose completion says `failed`
 // must never surface as an ok outcome.
 $failedBody = receipt_body();
 $failedBody['completion']['status'] = 'failed';
-$failedDecoded = mago_decode_receipt(receipt_json($failedBody));
-check($failedDecoded['completion']['status'] === 'failed', 'the decoder keeps the failed completion status');
-$incompleteOutcome = new AnalysisOutcome(
-    mago_check_compatibility($failedDecoded, $lockDigest) === null ? 'ok' : 'incompatible',
-    reason: mago_check_compatibility($failedDecoded, $lockDigest) ?? 'completed=false',
-);
-check(!$incompleteOutcome->isOk() || $failedDecoded['completion']['status'] !== 'completed', 'an incomplete run never reports ok');
+$failedAnalyzer = new FakeAnalyzer($failedBody, 'ok');
+$failedOutcome = $failedAnalyzer->analyze();
+check($failedOutcome->state === 'failed', 'an incomplete run reports failed, never ok');
+check(is_string($failedOutcome->reason) && str_contains((string) $failedOutcome->reason, 'did not complete'), 'the failed completion reason is explicit');
 
 // Ok: compatible + completed decodes to findings.
 $compatible = mago_decode_receipt(receipt_json(receipt_body()));
-check(mago_check_compatibility($compatible, $lockDigest) === null, 'a pin-compatible receipt passes the compatibility gate');
+check(mago_check_compatibility($compatible) === null, 'a pin-compatible receipt passes the compatibility gate');
 
 // ---------------------------------------------------------------------------
 // 3. Strict-profile mapping over the recorded fixtures.
@@ -362,10 +354,45 @@ $okAnalyzer = new FakeAnalyzer($okBody, 'ok');
 $okResponse = validate_response($request, $okAnalyzer);
 check($okResponse['status'] === 'ok', 'a current successful analysis answers ok');
 check($okResponse['result']['findings'][0]['code'] === 'target.analysis.strict-types', 'the registered rule id is the finding code');
-check(str_starts_with((string) $okResponse['result']['findings'][0]['detail'], 'strict-types: '), 'the exact original code leads the bounded detail');
+check(str_starts_with((string) $okResponse['result']['findings'][0]['detail'], 'app/Models/User.php — strict-types: '), 'the exact native path precedes the original code in the bounded detail');
 check($okResponse['result']['findings'][0]['path'] === 'app/models/user.php', 'a native path is converted to the lowercase logical-path wire grammar');
 check(is_logical_path((string) $okResponse['result']['findings'][0]['path']), 'the emitted finding path satisfies the wire logical-path grammar');
-check((string) $okResponse['result']['findings'][0]['detail'] === substr((string) $okResponse['result']['findings'][0]['detail'], 0, 128), 'the detail stays within the wire 128-byte bound');
+check(mb_strlen((string) $okResponse['result']['findings'][0]['detail']) <= 128, 'the detail stays within the wire 128-codepoint bound');
+check((bool) preg_match('//u', (string) $okResponse['result']['findings'][0]['detail']), 'the clamped detail is valid UTF-8 (no mid-codepoint cut)');
+
+// Multibyte safety: a message full of multibyte characters clamps on a
+// codepoint boundary — valid UTF-8, ≤128 codepoints, envelope lives.
+$multibyteBody = receipt_body();
+$multibyteBody['diagnostics'][0]['message'] = str_repeat('—–‘’', 20) . str_repeat('“, ”', 10); // ~220 bytes of valid UTF-8: under the 512-byte decoder bound, over the 128-codepoint detail bound
+$multibyteResponse = validate_response($request, new FakeAnalyzer($multibyteBody, 'ok'));
+check($multibyteResponse['status'] === 'ok', 'a multibyte message does not kill the envelope');
+$multibyteDetail = (string) $multibyteResponse['result']['findings'][0]['detail'];
+check(mb_strlen($multibyteDetail) <= 128, 'the multibyte detail clamps to the codepoint bound');
+check((bool) preg_match('//u', $multibyteDetail) && json_encode($multibyteDetail, JSON_THROW_ON_ERROR) !== false, 'the clamped multibyte detail is valid UTF-8, not a mid-codepoint cut');
+check(str_starts_with($multibyteDetail, 'app/Models/User.php — '), 'the native path survives the multibyte clamp');
+
+// Undeclared profile tokens are an in-envelope invalid refusal, never a
+// silent downgrade to the default gate.
+$bogusRequest = $request;
+$bogusRequest['profile'] = 'bogus-profile';
+$bogusResponse = validate_response($bogusRequest, $okAnalyzer);
+check($bogusResponse['status'] === 'error' && $bogusResponse['error']['code'] === 'profile-undeclared', 'an undeclared profile is refused explicitly');
+
+// Strict + unavailable: per-rule evidence-unsupported rows, never a
+// bare clean pass indistinguishable from a real strict run.
+$strictUnavailableRequest = $request;
+$strictUnavailableRequest['profile'] = STRICT_PROFILE_TOKEN;
+$strictUnavailable = validate_response($strictUnavailableRequest, new FakeAnalyzer([], 'unavailable'));
+check($strictUnavailable['status'] === 'ok', 'strict+unavailable still answers ok (advice channel)');
+check(count($strictUnavailable['result']['findings']) === count(STRICT_RULES), 'every strict rule reports a row when evidence is absent');
+$unsupportedDetails = array_map(
+    static fn (array $finding): string => (string) $finding['detail'],
+    $strictUnavailable['result']['findings'],
+);
+check(count(array_unique($unsupportedDetails)) === count($unsupportedDetails), 'each strict row names its own unsupported rule id in the detail');
+check(count(array_filter($unsupportedDetails, static fn (string $d): bool => str_contains($d, 'lekalo.unsupported:'))) === count(STRICT_RULES), 'every strict row carries its evidence-unsupported marker');
+$defaultUnavailable = validate_response($request, new FakeAnalyzer([], 'unavailable'));
+check($defaultUnavailable['result']['findings'] === [], 'the default profile keeps the #54 empty no-claims success');
 
 // Default profile: recorded diagnostics ride verbatim; strict-profile
 // predicates and unsupported rows ride only the strict profile.

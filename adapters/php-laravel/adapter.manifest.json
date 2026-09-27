@@ -91,12 +91,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:42b2d5415cb6b72aaa6c757075d1a2ee2628bd55626eb5cd4374fe0230ba81ed",
+    "packageDigest": "sha256:37b0a4f03c6c224c1658a1621f5a4ec84aaa6bf6030c9d95469cf53d5e5429f3",
     "files": [
       {
         "path": "adapter.php",
-        "digest": "sha256:7a2756d517b17f2f1092efc299cb420b883db36c137bc23c1011b912f9c57d13",
-        "bytes": 93104
+        "digest": "sha256:59902a3f9fdaf4a98fa1e740f9768bad6a4e8ebc666fede7b2eea95414ec1e07",
+        "bytes": 96202
       }
     ],
     "signaturePolicy": "unsigned",
@@ -106,7 +106,8 @@
     "filesystem": {
       "readScopes": [
         ".lekalo/cache/**",
-        ".lekalo/ir/**"
+        ".lekalo/ir/**",
+        ".lekalo/import/**"
       ],
       "writeScopes": [
         ".lekalo/generated/php-laravel/**"

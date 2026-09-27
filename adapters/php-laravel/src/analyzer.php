@@ -90,7 +90,7 @@ interface Analyzer
  */
 final class MagoEvidenceAnalyzer implements Analyzer
 {
-    public function __construct(private readonly string $lockDigest)
+    public function __construct()
     {
     }
 
@@ -99,7 +99,8 @@ final class MagoEvidenceAnalyzer implements Analyzer
         return [
             'analyzer' => 'mago',
             'receipt_schema' => MAGO_RECEIPT_SCHEMA,
-            'toolchain_lock_digest' => $this->lockDigest,
+            'toolchain_lock_digest' => mago_load_toolchain_lock()['lockDigest']
+                ?? ('sha256:' . str_repeat('0', 64)),
             'modes' => ['lint', 'analyze', 'guard'],
         ];
     }
@@ -122,7 +123,7 @@ final class MagoEvidenceAnalyzer implements Analyzer
                 reason: 'receipt refused: ' . $refusal->getMessage(),
             );
         }
-        $compat = mago_check_compatibility($receipt, $this->lockDigest);
+        $compat = mago_check_compatibility($receipt);
         if ($compat !== null) {
             return new AnalysisOutcome('incompatible', reason: $compat);
         }
@@ -158,7 +159,6 @@ final class FakeAnalyzer implements Analyzer
     public function __construct(
         private readonly array $canned = [],
         private readonly string $state = 'unavailable',
-        private readonly ?string $lockDigest = null,
     ) {
     }
 
@@ -192,8 +192,7 @@ final class FakeAnalyzer implements Analyzer
         // completion-status gate — so a canned ok receipt with a failed
         // completion or a foreign tool digest reports failed or
         // incompatible exactly like the real one.
-        $compat = mago_check_compatibility($receipt, $this->lockDigest
-            ?? (mago_load_toolchain_lock()['lockDigest'] ?? ('sha256:' . str_repeat('0', 64))));
+        $compat = mago_check_compatibility($receipt);
         if ($compat !== null) {
             return new AnalysisOutcome('incompatible', reason: $compat);
         }
@@ -539,8 +538,13 @@ function mago_decode_fix(mixed $item): array
  * (tool name/version/digest and the decoder revision the kernel speaks).
  * Returns null when compatible, or the bounded incompatibility reason.
  */
-function mago_check_compatibility(array $receipt, string $lockDigest): ?string
+function mago_check_compatibility(array $receipt): ?string
 {
+    // The lock is the bundled custody source; there is no second digest
+    // input to race against (both the analyzer and the fake resolve the
+    // same cached load), so the receipt is compared against the pin
+    // directly. The artifact digest moving with the lock is the upgrade
+    // gate — a rebuilt artifact carries the new pin by construction.
     $lock = mago_load_toolchain_lock();
     if ($lock === null) {
         return 'toolchain lock missing';
@@ -562,9 +566,6 @@ function mago_check_compatibility(array $receipt, string $lockDigest): ?string
     }
     if (($receipt['tool']['version'] ?? '') !== ($lock['tool']['version'] ?? '')) {
         return 'tool version differs from the pinned toolchain';
-    }
-    if ($lockDigest !== $lock['lockDigest']) {
-        return 'toolchain lock digest changed since adapter build';
     }
     return null;
 }

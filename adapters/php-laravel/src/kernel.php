@@ -551,7 +551,12 @@ function is_analysis_rule_id(mixed $value): bool
     return true;
 }
 
-/** One symbol identity: `php.` prefixed dotted-segment grammar. */
+/**
+ * One symbol identity: a bounded lowercase dotted-segment grammar
+ * (`php.fixture.demo` is the convention; segments may include `_` and
+ * `-`). The `php.` prefix is convention, not grammar — the prefix is
+ * enforced by the closed segment charset, not by a reserved token.
+ */
 function is_symbol_identity(mixed $value): bool
 {
     if (!is_string($value) || $value === '' || strlen($value) > 191) {
@@ -1168,9 +1173,13 @@ function scan_response(array $request, ?Analyzer $analyzer = null): array
                 $truncated = true;
                 break 2;
             }
+            // The wire `kind` is a free bounded token: IR/cache bytes are
+            // 'ir'; the staged provider receipt is not IR, so it carries
+            // its honest 'evidence' spelling.
+            $kind = str_starts_with($path, '.lekalo/import/') ? 'evidence' : 'ir';
             $entry = [
                 'path' => $path,
-                'kind' => 'ir',
+                'kind' => $kind,
             ];
             if ($evidenceForReceipt !== null && $path === MAGO_RECEIPT_PATH) {
                 $entry['evidence'] = $evidenceForReceipt;
@@ -1273,25 +1282,43 @@ function mago_wire_confidence(string $confidence): string
  *
  * Profile: the default profile reports the analysis seam's recorded
  * diagnostics verbatim; the strict profile additionally evaluates the
- * Lekalo strict-profile predicates over the receipt evidence (any
- * other request profile token is a closed-validation refusal, so only
- * these two spellings can reach this function).
+ * Lekalo strict-profile predicates over the receipt evidence. A strict
+ * request with an UNAVAILABLE receipt is not a silent clean pass: every
+ * strict rule without prerequisite evidence emits its explicit
+ * evidence-unsupported row (the #54 empty success can only stand for
+ * the default profile). Only the declared profiles reach this function.
  */
 function validate_response(array $request, ?Analyzer $analyzer = null): array
 {
     $analyzer ??= new FakeAnalyzer();
+    // Profile closure: only the two declared spellings are meaningful;
+    // anything else is an in-envelope invalid refusal, never a silent
+    // downgrade to default (a typo must not silently change the gate).
+    $profile = $request['profile'] ?? PROFILE_TOKEN;
+    if ($profile !== PROFILE_TOKEN && $profile !== STRICT_PROFILE_TOKEN) {
+        return build_response($request, [
+            'error' => [
+                'class' => 'invalid',
+                'code' => 'profile-undeclared',
+                'message' => 'the requested profile is not declared by this adapter',
+                'retryable' => false,
+                'partial' => false,
+            ],
+        ]);
+    }
     $outcome = $analyzer->analyze();
     if (!$outcome->isOk() && $outcome->state !== 'unavailable') {
         return build_response($request, [
             'error' => mago_analysis_error($outcome),
         ]);
     }
+    $strict = ($request['profile'] ?? PROFILE_TOKEN) === STRICT_PROFILE_TOKEN;
     $findings = [];
     if ($outcome->isOk()) {
         foreach ($outcome->diagnostics as $row) {
             $findings[] = mago_wire_finding($row);
         }
-        if (($request['profile'] ?? PROFILE_TOKEN) === STRICT_PROFILE_TOKEN) {
+        if ($strict) {
             $evaluated = strict_profile_evaluate($outcome->diagnostics, $outcome->symbols);
             foreach ($evaluated['findings'] as $row) {
                 $findings[] = mago_wire_finding($row);
@@ -1299,6 +1326,13 @@ function validate_response(array $request, ?Analyzer $analyzer = null): array
             foreach ($evaluated['unsupported'] as $id) {
                 $findings[] = mago_wire_finding(strict_unsupported_diagnostic($id));
             }
+        }
+    } elseif ($strict) {
+        // Strict + unavailable: no evidence is never a clean strict
+        // pass — every rule row without prerequisite evidence reports
+        // its explicit unsupported diagnostic.
+        foreach (array_keys(STRICT_RULES) as $id) {
+            $findings[] = mago_wire_finding(strict_unsupported_diagnostic((string) $id));
         }
     }
     return build_response($request, [
@@ -1318,9 +1352,36 @@ function verify_response(array $request, ?Analyzer $analyzer = null): array
 }
 
 /**
+ * Clamp UTF-8 text to at most `$limit` codepoints without ever cutting
+ * mid-codepoint: PHP `substr` counts BYTES, so a byte clamp on multibyte
+ * text (em-dashes, smart quotes — legal receipt message content) yields
+ * invalid UTF-8 and `json_encode` would refuse the whole envelope. The
+ * wire bound counts codepoints, so back off to the last complete
+ * character boundary at or before the byte position that holds
+ * `$limit` characters.
+ */
+function utf8_safe_clamp(string $text, int $limit): string
+{
+    if (strlen($text) <= $limit) {
+        return $text;
+    }
+    // Walk codepoints up to the limit; O(n) in the clamped prefix.
+    $offset = 0;
+    $count = 0;
+    $length = strlen($text);
+    while ($offset < $length && $count < $limit) {
+        $byte = ord($text[$offset]);
+        $offset += $byte < 0x80 ? 1 : ($byte < 0xE0 ? 2 : ($byte < 0xF0 ? 3 : 4));
+        $count++;
+    }
+    return substr($text, 0, $offset);
+}
+
+/**
  * One in-envelope error for a non-unavailable failed analysis:
  * infrastructure class, non-retryable as-is (the runner must refresh
- * the receipt; retrying the kernel request cannot fix staleness).
+ * the receipt; retrying the kernel request cannot fix staleness). The
+ * message is clamped to the wire's 256-codepoint bound, codepoint-safe.
  *
  * @return array<string, mixed>
  */
@@ -1329,7 +1390,7 @@ function mago_analysis_error(AnalysisOutcome $outcome): array
     return [
         'class' => 'infrastructure',
         'code' => 'analysis-' . $outcome->state,
-        'message' => substr('analyzer evidence is ' . $outcome->state . ': ' . (string) ($outcome->reason ?? 'unspecified'), 0, 256),
+        'message' => utf8_safe_clamp('analyzer evidence is ' . $outcome->state . ': ' . (string) ($outcome->reason ?? 'unspecified'), 256),
         'retryable' => false,
         'partial' => false,
     ];
@@ -1337,20 +1398,23 @@ function mago_analysis_error(AnalysisOutcome $outcome): array
 
 /**
  * One normalized strict-profile row rendered as the bounded wire
- * finding. The wire Finding keeps its closed shape: path, code (the
- * registered rule id), and a bounded detail. Two wire-grammar rules
- * apply: `path` must be a lowercase logical path — a native evidence
- * path (Laravel-cased, e.g. `app/Models/User.php`) is converted to the
- * lowercase spelling, with the exact native path preserved in the
- * detail text; and `detail` is bounded to the wire's 128-byte token
- * limit.
+ * finding. Wire rules: `path` must be a lowercase logical path, so a
+ * native evidence path (Laravel-cased, e.g. `app/Models/User.php`) is
+ * lowercased for the wire grammar — and the EXACT native spelling is
+ * preserved by leading the detail text, because on case-sensitive
+ * filesystems the lowercased spelling points at a nonexistent file.
+ * Two cased siblings (User.php / user.php in one directory — not legal
+ * PSR-4, but possible) collide onto one lowercase path; the detail
+ * still distinguishes them and the receipt keeps both rows exactly.
+ * `detail` is clamped to the wire's 128-codepoint bound, codepoint-safe.
  *
  * @param array<string, mixed> $row
  * @return array<string, mixed>
  */
 function mago_wire_finding(array $row): array
 {
-    $path = (string) $row['path'];
+    $nativePath = (string) $row['path'];
+    $path = $nativePath;
     if (!is_logical_path($path)) {
         // Native evidence path → logical path: lowercase segments,
         // traversal already refused by the receipt decoder.
@@ -1359,7 +1423,11 @@ function mago_wire_finding(array $row): array
             $path = '.lekalo/import/mago/unmappable-finding.json';
         }
     }
-    $detail = substr((string) $row['original_code'] . ': ' . (string) ($row['message'] ?? $row['rule']), 0, 128);
+    $nativePrefix = $path === $nativePath ? '' : $nativePath . ' — ';
+    $detail = utf8_safe_clamp(
+        $nativePrefix . (string) $row['original_code'] . ': ' . (string) ($row['message'] ?? $row['rule']),
+        128,
+    );
     return [
         'path' => $path,
         'code' => (string) $row['rule'],
@@ -1598,9 +1666,7 @@ function main(): int
         // the closed decoder and the pin/compatibility gates. The test
         // double exists for suites and gates only; no request field,
         // environment variable, or argv flag can select it here.
-        $analyzer = new MagoEvidenceAnalyzer(
-            mago_load_toolchain_lock()['lockDigest'] ?? ('sha256:' . str_repeat('0', 64)),
-        );
+        $analyzer = new MagoEvidenceAnalyzer();
         fwrite(STDOUT, canonical_json(dispatch($request, $analyzer)));
         return 0;
     } catch (RequestRefusal $refusal) {
