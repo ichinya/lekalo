@@ -13,13 +13,22 @@
       "argv": ["mago", "--version"],
       "stdout": "mago 1.0.0"
     },
-    "artifact": {
-      "platform": "x86_64-pc-windows-msvc",
-      "archive": "mago-1.0.0-x86_64-pc-windows-msvc.zip",
-      "archiveSha256": "db898a5eea4b13529f202fa5968d2a17643b9c7109a5705001f466fddc07156b",
-      "binary": "mago.exe",
-      "binarySha256": "4702d8c00acb73f23624fa17ba771f5d0e060bb31f299d5b5dae49ece6f845fa"
-    }
+    "artifacts": [
+      {
+        "platform": "x86_64-pc-windows-msvc",
+        "archive": "mago-1.0.0-x86_64-pc-windows-msvc.zip",
+        "archiveSha256": "db898a5eea4b13529f202fa5968d2a17643b9c7109a5705001f466fddc07156b",
+        "binary": "mago.exe",
+        "binarySha256": "4702d8c00acb73f23624fa17ba771f5d0e060bb31f299d5b5dae49ece6f845fa"
+      },
+      {
+        "platform": "x86_64-unknown-linux-gnu",
+        "archive": "mago-1.0.0-x86_64-unknown-linux-gnu.tar.gz",
+        "archiveSha256": "ea012e30d3c9f7b899bf6e2d3feaf61091c931bc3af248519fb01f2ff2375be4",
+        "binary": "mago",
+        "binarySha256": "582646d691f3307caf47cf23d6009aba949078ecc899bafd22c04a1634c185db"
+      }
+    ]
   },
   "compatibility": {
     "decoderRevision": "v1",

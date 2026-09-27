@@ -308,13 +308,29 @@ jobs:
       - name: Install the pinned Mago toolchain (checksum-verified, outside the checkout)
         run: |
           set -euo pipefail
-          PIN_VERSION=$(node -p "require('./adapters/php-laravel/mago-toolchain.lock.json').tool.version")
+          LOCK=adapters/php-laravel/mago-toolchain.lock.json
+          PIN_VERSION=$(node -p "require('./$LOCK').tool.version")
           test "$PIN_VERSION" = "1.0.0"
-          curl -sSfL --retry 3 -o "$RUNNER_TEMP/mago.tar.gz" \
-            "https://github.com/carthage-software/mago/releases/download/${PIN_VERSION}/mago-${PIN_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
-          echo "sha256 digest of the downloaded archive is recorded in the lock's probe.artifact for the reviewed platform pin; the Linux archive digest is verified against mago-toolchain.lock.json during the upgrade review"
+          # Resolve THIS runner's platform entry from the lock — the
+          # digest is custody, not decoration.
+          read -r PLATFORM ARCHIVE WANT_SHA <<EOF
+          $(node -e "
+            const lock = require('./$LOCK');
+            const platform = process.arch === 'arm64' && process.platform === 'darwin'
+              ? 'aarch64-apple-darwin'
+              : 'x86_64-unknown-linux-gnu';
+            const artifact = lock.probe.artifacts.find((a) => a.platform === platform);
+            if (!artifact) { console.error('no pinned artifact for ' + platform); process.exit(1); }
+            console.log(artifact.platform, artifact.archive, artifact.archiveSha256);
+          ")
+          EOF
+          curl -sSfL --retry 3 -o "$RUNNER_TEMP/mago-archive" \
+            "https://github.com/carthage-software/mago/releases/download/${PIN_VERSION}/${ARCHIVE}"
+          # Fail-closed verification: the downloaded archive must match
+          # the pinned digest byte for byte, or the job stops here.
+          echo "${WANT_SHA}  $RUNNER_TEMP/mago-archive" | sha256sum --check --strict
           mkdir -p "$RUNNER_TEMP/mago-bin"
-          tar -xzf "$RUNNER_TEMP/mago.tar.gz" -C "$RUNNER_TEMP/mago-bin"
+          tar -xzf "$RUNNER_TEMP/mago-archive" -C "$RUNNER_TEMP/mago-bin"
           BIN=$(find "$RUNNER_TEMP/mago-bin" -type f -name mago | head -1)
           test -n "$BIN"
           chmod +x "$BIN"

@@ -98,13 +98,83 @@ function runFakeSuite(php) {
   }
   step("describe", { adapter: described.capabilities.adapter.version });
 
-  // 2. Validate with no receipt: no claims either way.
+  // 2. Validate with no receipt: unavailable → no claims either way.
   const validateRequest = request("validate", { ir_path: ".lekalo/ir/planner.json" });
   const unavailable = exchange(php, validateRequest);
   if (unavailable.status !== "ok" || unavailable.result.findings.length !== 0) {
     fail("unavailable-validate", JSON.stringify(unavailable).slice(0, 300));
   }
   step("validate-unavailable", { findings: 0 });
+
+  // 2b. All four analysis states through the artifact's stdin/stdout
+  //     surface: the gate stages real receipt files (pin-compatible tool
+  //     digest, valid IR) and drives the committed artifact exactly like
+  //     core does. The receipt builders here reuse the lock bytes — the
+  //     same custody the artifact embeds.
+  const states = mkdtempSync(join(tmpdir(), "lekalo-mago-states-"));
+  for (const d of [".lekalo/ir", ".lekalo/import/mago"]) {
+    mkdirSync(join(states, d), { recursive: true });
+  }
+  writeFileSync(join(states, ".lekalo/ir/planner.json"), JSON.stringify({
+    contract: "dev.lekalo.ir@0.2.16", definitions: [], modelVersion: "0.2.16",
+    modules: [{ description: "m", id: "m", kind: "module", version: 1 }],
+    project: { id: "p", kind: "project", version: 1 },
+  }));
+  const stateReceipts = {
+    ok: {
+      diagnostics: [{
+        rule: "target.analysis.strict-types",
+        original_code: "strict-types",
+        level: "warning",
+        path: "app/Models/User.php",
+        range: { start: 0, end: 5 },
+        message: "Missing declare(strict_types=1).",
+        producer: "mago",
+      }],
+      completion: { status: "completed", exit_code: 0 },
+    },
+    failed: {
+      diagnostics: [],
+      completion: { status: "failed", exit_code: 1 },
+    },
+    incompatible: {
+      diagnostics: [],
+      completion: { status: "completed", exit_code: 0 },
+      toolOverride: "sha256:" + "9".repeat(64),
+    },
+  };
+  const toolDigest = lock.probe.artifacts[0].binarySha256;
+  const stateRequestBase = () => request("validate", { ir_path: ".lekalo/ir/planner.json" });
+  const stateExpectations = {
+    ok: (response) => response.status === "ok"
+      && response.result.findings.some((f) => f.code === "target.analysis.strict-types"),
+    failed: (response) => response.status === "error"
+      && response.error.code === "analysis-failed"
+      && response.error.class === "infrastructure",
+    incompatible: (response) => response.status === "error"
+      && response.error.code === "analysis-incompatible",
+  };
+  for (const [state, receipt] of Object.entries(stateReceipts)) {
+    const document = {
+      schema: "lekalo/provider-evidence/v0.1.0",
+      receipt_digest: "sha256:" + "a".repeat(64),
+      tool: { name: "mago", version: lock.tool.version, digest: receipt.toolOverride ?? ("sha256:" + toolDigest) },
+      completion: receipt.completion,
+      input_manifest: { inputs: [], source_digest: "sha256:" + "c".repeat(64) },
+      diagnostics: receipt.diagnostics,
+      symbols: [],
+      relations: [],
+      fixes: [],
+    };
+    writeFileSync(join(states, ".lekalo/import/mago/receipt.json"), JSON.stringify(document));
+    const response = exchange(php, stateRequestBase(), states);
+    if (!stateExpectations[state](response)) {
+      fail(`state-${state}-wire`, JSON.stringify(response).slice(0, 300));
+    }
+    step(`state-${state}`, { through: "artifact-stdin-stdout" });
+  }
+  rmSync(states, { recursive: true, force: true });
+  step("validate-unavailable-staged", { states: ["ok", "failed", "incompatible"] });
 
   // 3. The fake gate drives the same gates with staged evidence by
   //    running the kernel suites (which inject fakes through the same

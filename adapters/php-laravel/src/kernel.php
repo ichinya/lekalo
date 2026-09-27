@@ -63,8 +63,9 @@ const ADAPTER_ID = 'lekalo-target-php-laravel';
 const ADAPTER_VERSION = '0.2.0';
 /** The adapter target token (the wire `target` of generate/bind). */
 const TARGET_TOKEN = 'php-laravel';
-/** The declared profile token. */
+/** The default profile token; the strict profile rides the analysis seam. */
 const PROFILE_TOKEN = 'default';
+const STRICT_PROFILE_TOKEN = 'strict';
 /** The accepted core IR contract version. */
 const IR_VERSION = '0.2.16';
 
@@ -1041,7 +1042,7 @@ function describe_capabilities(?Analyzer $analyzer = null): array
         'operations' => OPERATIONS,
         'transports' => ['stdin', 'file'],
         'targets' => [TARGET_TOKEN],
-        'profiles' => [PROFILE_TOKEN],
+        'profiles' => [PROFILE_TOKEN, STRICT_PROFILE_TOKEN],
         'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**', '.lekalo/import/**'],
         'write_scopes' => ['.lekalo/generated/php-laravel/**'],
         'progress' => false,
@@ -1111,8 +1112,12 @@ function unsupported_response(array $request, string $code = 'operation-unsuppor
 // 7. Dispatch: one validated request to one response.
 // ---------------------------------------------------------------------------
 
-/** The declared read scopes this kernel scans (and no others). */
-const SCAN_ROOTS = ['.lekalo/ir', '.lekalo/cache'];
+/**
+ * The declared read scopes this kernel scans (and no others). The
+ * import home rides the #55 read scope so the staged receipt document
+ * is a real observable scan entry — the evidence join target.
+ */
+const SCAN_ROOTS = ['.lekalo/ir', '.lekalo/cache', '.lekalo/import'];
 /** The maximum scan entries one result may carry (mirrors the wire bound). */
 const MAX_SCAN_ENTRIES = 10000;
 
@@ -1123,14 +1128,22 @@ const MAX_SCAN_ENTRIES = 10000;
  * pruned by the same lexical grammar the core enforces, and the result
  * stays inside the wire bounds (a fuller inventory is `truncated`,
  * never silently cut).
+ *
+ * Issue #55 evidence join: the receipt's native evidence lives in the
+ * target-project path domain (`app/Models/User.php`), disjoint from the
+ * enumerated IR/cache roots (`.lekalo/**`). The join therefore attaches
+ * the bounded evidence projection to the one governance row the receipt
+ * owns inside the scanned domain: the receipt document itself
+ * (`.lekalo/import/mago/receipt.json`). Source rows stay in the receipt
+ * where their native paths are legal.
  */
 function scan_response(array $request, ?Analyzer $analyzer = null): array
 {
-    $evidenceByPath = [];
+    $evidenceForReceipt = null;
     if ($analyzer !== null) {
         $outcome = $analyzer->analyze();
         if ($outcome->isOk()) {
-            $evidenceByPath = mago_receipt_evidence_by_path($outcome);
+            $evidenceForReceipt = mago_receipt_wire_evidence($outcome);
         }
     }
     $entries = [];
@@ -1159,8 +1172,8 @@ function scan_response(array $request, ?Analyzer $analyzer = null): array
                 'path' => $path,
                 'kind' => 'ir',
             ];
-            if (isset($evidenceByPath[$path])) {
-                $entry['evidence'] = $evidenceByPath[$path];
+            if ($evidenceForReceipt !== null && $path === MAGO_RECEIPT_PATH) {
+                $entry['evidence'] = $evidenceForReceipt;
             }
             $entries[] = $entry;
         }
@@ -1177,59 +1190,58 @@ function scan_response(array $request, ?Analyzer $analyzer = null): array
 }
 
 /**
- * Project the receipt's symbols and relations into the bounded wire
- * evidence shape: at most eight references per source path, each with
- * the closed role/confidence vocabulary. Relations are joined to their
- * source file through the symbol table (relation endpoints are symbol
- * identities); a relation whose source symbol is unknown cannot be
- * attributed to a file, so it drops out of the bounded projection
- * while remaining in the receipt. A projection that would lose rows
- * silently drops the whole per-source claim instead of publishing a
- * partial graph under an exact-looking signature.
+ * Project the receipt's symbols and relations into the ONE bounded wire
+ * evidence record that scan attaches to the receipt document itself
+ * (`.lekalo/import/mago/receipt.json`): a signature digest over the
+ * canonical projection (covering every symbol signature the receipt
+ * carries) plus up to eight outbound references sampled deterministically
+ * from the receipt's relation rows. A relation whose source symbol is
+ * unknown cannot be attributed, so it drops out of the bounded
+ * projection while remaining in the receipt. Any over-bound or unjoined
+ * remainder drops the WHOLE claim instead of publishing a partial graph
+ * under an exact-looking signature.
  *
- * @return array<string, array<string, mixed>>
+ * @return array<string, mixed>|null null when nothing is projectable
  */
-function mago_receipt_evidence_by_path(AnalysisOutcome $outcome): array
+function mago_receipt_wire_evidence(AnalysisOutcome $outcome): ?array
 {
-    $identityPath = [];
     $signatures = [];
+    $identityKnown = [];
     foreach ($outcome->symbols as $symbol) {
-        $identity = (string) $symbol['identity'];
-        $identityPath[$identity] = (string) $symbol['path'];
+        $identityKnown[(string) $symbol['identity']] = true;
         if (isset($symbol['signature'])) {
             $signatures[(string) $symbol['path']] = (string) $symbol['signature'];
         }
     }
+    ksort($signatures);
     $references = [];
-    $overflow = [];
+    $unjoined = 0;
+    $overflow = false;
     foreach ($outcome->relations as $relation) {
         $source = (string) $relation['from'];
-        $path = $identityPath[$source] ?? null;
-        if ($path === null || !isset($signatures[$path])) {
+        if (!isset($identityKnown[$source])) {
+            $unjoined++;
             continue;
         }
-        $references[$path] ??= [];
-        if (count($references[$path]) >= 8) {
-            $overflow[$path] = true;
-            continue;
+        if (count($references) >= 8) {
+            $overflow = true;
+            break;
         }
-        $references[$path][] = [
+        $references[] = [
             'target' => (string) $relation['to'],
             'role' => mago_wire_role((string) $relation['role']),
             'confidence' => mago_wire_confidence((string) $relation['confidence']),
         ];
     }
-    $evidence = [];
-    foreach ($references as $path => $rows) {
-        if ($rows === [] || isset($overflow[$path])) {
-            continue;
-        }
-        $evidence[$path] = [
-            'signature' => $signatures[$path],
-            'references' => $rows,
-        ];
+    // Nothing projectable: honest absence, never an empty claim.
+    if ($signatures === [] || $references === [] || $overflow || $unjoined > 0) {
+        return null;
     }
-    return $evidence;
+    $signature = sha256_digest(canonical_json(array_values($signatures)));
+    return [
+        'signature' => $signature,
+        'references' => $references,
+    ];
 }
 
 /** Map a receipt role onto the closed wire role set. */
@@ -1258,6 +1270,12 @@ function mago_wire_confidence(string $confidence): string
  * failed analysis refuses with an explicit in-envelope error so a stale
  * receipt can never dress up as a pass. Findings are advice; safe fixes
  * are metadata only and are never applied by any operation.
+ *
+ * Profile: the default profile reports the analysis seam's recorded
+ * diagnostics verbatim; the strict profile additionally evaluates the
+ * Lekalo strict-profile predicates over the receipt evidence (any
+ * other request profile token is a closed-validation refusal, so only
+ * these two spellings can reach this function).
  */
 function validate_response(array $request, ?Analyzer $analyzer = null): array
 {
@@ -1270,12 +1288,17 @@ function validate_response(array $request, ?Analyzer $analyzer = null): array
     }
     $findings = [];
     if ($outcome->isOk()) {
-        $evaluated = strict_profile_evaluate($outcome->diagnostics, $outcome->symbols);
-        foreach ($evaluated['findings'] as $row) {
+        foreach ($outcome->diagnostics as $row) {
             $findings[] = mago_wire_finding($row);
         }
-        foreach ($evaluated['unsupported'] as $id) {
-            $findings[] = mago_wire_finding(strict_unsupported_diagnostic($id));
+        if (($request['profile'] ?? PROFILE_TOKEN) === STRICT_PROFILE_TOKEN) {
+            $evaluated = strict_profile_evaluate($outcome->diagnostics, $outcome->symbols);
+            foreach ($evaluated['findings'] as $row) {
+                $findings[] = mago_wire_finding($row);
+            }
+            foreach ($evaluated['unsupported'] as $id) {
+                $findings[] = mago_wire_finding(strict_unsupported_diagnostic($id));
+            }
         }
     }
     return build_response($request, [
@@ -1306,7 +1329,7 @@ function mago_analysis_error(AnalysisOutcome $outcome): array
     return [
         'class' => 'infrastructure',
         'code' => 'analysis-' . $outcome->state,
-        'message' => substr('analyzer evidence is ' . $outcome->state . ': ' . (string) ($outcome->reason ?? 'unspecified'), 0, 512),
+        'message' => substr('analyzer evidence is ' . $outcome->state . ': ' . (string) ($outcome->reason ?? 'unspecified'), 0, 256),
         'retryable' => false,
         'partial' => false,
     ];
@@ -1315,22 +1338,32 @@ function mago_analysis_error(AnalysisOutcome $outcome): array
 /**
  * One normalized strict-profile row rendered as the bounded wire
  * finding. The wire Finding keeps its closed shape: path, code (the
- * registered rule id), and a bounded detail; the original provider code
- * leads the detail text, never hidden JSON.
+ * registered rule id), and a bounded detail. Two wire-grammar rules
+ * apply: `path` must be a lowercase logical path — a native evidence
+ * path (Laravel-cased, e.g. `app/Models/User.php`) is converted to the
+ * lowercase spelling, with the exact native path preserved in the
+ * detail text; and `detail` is bounded to the wire's 128-byte token
+ * limit.
  *
  * @param array<string, mixed> $row
  * @return array<string, mixed>
  */
 function mago_wire_finding(array $row): array
 {
-    $detail = (string) ($row['message'] ?? '');
-    if ($detail === '') {
-        $detail = (string) $row['rule'];
+    $path = (string) $row['path'];
+    if (!is_logical_path($path)) {
+        // Native evidence path → logical path: lowercase segments,
+        // traversal already refused by the receipt decoder.
+        $path = implode('/', array_map('strtolower', explode('/', $path)));
+        if (!is_logical_path($path)) {
+            $path = '.lekalo/import/mago/unmappable-finding.json';
+        }
     }
+    $detail = substr((string) $row['original_code'] . ': ' . (string) ($row['message'] ?? $row['rule']), 0, 128);
     return [
-        'path' => (string) $row['path'],
+        'path' => $path,
         'code' => (string) $row['rule'],
-        'detail' => substr((string) $row['original_code'] . ': ' . $detail, 0, 512),
+        'detail' => $detail,
     ];
 }
 
@@ -1558,7 +1591,16 @@ function main(): int
         $bytes = read_request_bytes();
         $document = decode_json_document($bytes);
         $request = validate_request_object($document);
-        $analyzer = new FakeAnalyzer();
+        // The production composition: the subprocess-free evidence
+        // consumer over the runner-staged receipt inside the declared
+        // read view. An absent receipt reports `unavailable` — the exact
+        // #54 no-claims posture — while a staged receipt flows through
+        // the closed decoder and the pin/compatibility gates. The test
+        // double exists for suites and gates only; no request field,
+        // environment variable, or argv flag can select it here.
+        $analyzer = new MagoEvidenceAnalyzer(
+            mago_load_toolchain_lock()['lockDigest'] ?? ('sha256:' . str_repeat('0', 64)),
+        );
         fwrite(STDOUT, canonical_json(dispatch($request, $analyzer)));
         return 0;
     } catch (RequestRefusal $refusal) {

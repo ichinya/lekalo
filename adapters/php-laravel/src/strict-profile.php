@@ -44,11 +44,13 @@ const STRICT_RULES = [
         'rule' => 'target.analysis.no-magic-domain-state',
         'source' => 'predicate',
     ],
+    // Explicit nullable/array-shape/type coverage has no pinned upstream
+    // rule AND no public shape-inference evidence in the receipt, so the
+    // honest state is `unsupported` — never a re-mapped copy of the
+    // strict-types diagnostics (which would double-report one rule).
     'explicit-types' => [
         'rule' => 'target.analysis.explicit-types',
-        'source' => 'lint',
-        'mago_code' => 'strict-types',
-        'notes' => 'type completeness rides the signature evidence predicate below',
+        'source' => 'predicate',
     ],
 ];
 

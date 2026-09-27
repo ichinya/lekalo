@@ -24,9 +24,10 @@
  *   failed        — the recorded run itself failed (nonzero completion,
  *                   parse errors, or refused output)
  *   ok            — a well-formed, current, successful receipt
+ *
+ * (No module-level declare: the artifact's single strict_types
+ * declaration at the top of the bundled file covers every module.)
  */
-
-declare(strict_types=1);
 
 /** The receipt schema this kernel decodes (closed; bump on change). */
 const MAGO_RECEIPT_SCHEMA = 'lekalo/provider-evidence/v0.1.0';
@@ -157,6 +158,7 @@ final class FakeAnalyzer implements Analyzer
     public function __construct(
         private readonly array $canned = [],
         private readonly string $state = 'unavailable',
+        private readonly ?string $lockDigest = null,
     ) {
     }
 
@@ -183,6 +185,23 @@ final class FakeAnalyzer implements Analyzer
             return new AnalysisOutcome(
                 'failed',
                 reason: 'fake receipt refused: ' . $refusal->getMessage(),
+            );
+        }
+        // The fake traverses the same semantic gates as the production
+        // consumer: compatibility against the bundled/file lock and the
+        // completion-status gate — so a canned ok receipt with a failed
+        // completion or a foreign tool digest reports failed or
+        // incompatible exactly like the real one.
+        $compat = mago_check_compatibility($receipt, $this->lockDigest
+            ?? (mago_load_toolchain_lock()['lockDigest'] ?? ('sha256:' . str_repeat('0', 64))));
+        if ($compat !== null) {
+            return new AnalysisOutcome('incompatible', reason: $compat);
+        }
+        if (($receipt['completion']['status'] ?? '') !== 'completed') {
+            return new AnalysisOutcome(
+                'failed',
+                reason: 'recorded run did not complete: '
+                    . (string) ($receipt['completion']['status'] ?? 'missing'),
             );
         }
         return new AnalysisOutcome(
@@ -526,7 +545,19 @@ function mago_check_compatibility(array $receipt, string $lockDigest): ?string
     if ($lock === null) {
         return 'toolchain lock missing';
     }
-    if (($receipt['tool']['digest'] ?? '') !== ($lock['probe']['artifact']['binarySha256'] ?? '')) {
+    // The lock stores bare hex; the receipt carries the `sha256:`
+    // spelling — compare against both so custody compares the bytes.
+    $digestMatch = false;
+    foreach (($lock['probe']['artifacts'] ?? []) as $artifact) {
+        if (in_array($receipt['tool']['digest'] ?? '', [
+            'sha256:' . ($artifact['binarySha256'] ?? ''),
+            $artifact['binarySha256'] ?? '',
+        ], true)) {
+            $digestMatch = true;
+            break;
+        }
+    }
+    if (!$digestMatch) {
         return 'tool digest differs from the pinned toolchain';
     }
     if (($receipt['tool']['version'] ?? '') !== ($lock['tool']['version'] ?? '')) {
@@ -552,14 +583,22 @@ function mago_load_toolchain_lock(): ?array
         return $lock;
     }
     $cache = true;
-    // The lock lives beside the artifact root, not beside this source
-    // module: the bundler copies it next to the kernel's directory, so
-    // resolve against the adapter root (one level up from src/).
-    $path = dirname(__DIR__) . '/mago-toolchain.lock.json';
-    if (!is_file($path)) {
-        return null;
+    // Custody source of truth: the verbatim lock bytes bundled into the
+    // artifact by build.php (MAGO_TOOLCHAIN_LOCK_BUNDLED). The lock is
+    // part of the shipped bytes, so the deployed single-file package
+    // carries its own custody and no sibling file is needed. In the
+    // source tree (before bundling) the constant does not exist yet;
+    // dev/test then reads the same lock file beside src/ — the exact
+    // bytes build.php embeds.
+    if (defined('MAGO_TOOLCHAIN_LOCK_BUNDLED')) {
+        $bytes = (string) MAGO_TOOLCHAIN_LOCK_BUNDLED;
+    } else {
+        $path = dirname(__DIR__) . '/mago-toolchain.lock.json';
+        if (!is_file($path)) {
+            return null;
+        }
+        $bytes = (string) file_get_contents($path);
     }
-    $bytes = (string) file_get_contents($path);
     try {
         $lock = json_decode($bytes, true, 32, JSON_THROW_ON_ERROR);
     } catch (JsonException) {

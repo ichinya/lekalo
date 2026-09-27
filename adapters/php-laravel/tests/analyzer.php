@@ -37,7 +37,12 @@ function check(bool $condition, string $name): void
 function receipt_body(array $overrides = []): array
 {
     $lock = mago_load_toolchain_lock();
-    $toolDigest = $lock['probe']['artifact']['binarySha256'] ?? str_repeat('b', 64);
+    foreach (($lock['probe']['artifacts'] ?? []) as $artifact) {
+        if (isset($artifact['binarySha256'])) {
+            $toolDigest = (string) $artifact['binarySha256'];
+            break;
+        }
+    }
     return array_merge([
         'schema' => MAGO_RECEIPT_SCHEMA,
         'receipt_digest' => 'sha256:' . str_repeat('a', 64),
@@ -182,11 +187,11 @@ check($decodedUnknown['diagnostics'][0]['original_code'] === 'some-new-upstream-
 // ---------------------------------------------------------------------------
 
 $lockDigest = mago_load_toolchain_lock()['lockDigest'] ?? ('sha256:' . str_repeat('0', 64));
-$analyzer = new MagoEvidenceAnalyzer($lockDigest);
 
-// Unavailable: no receipt staged in this suite's view.
-$missing = new ReflectionMethod($analyzer, 'analyze');
-check($analyzer->analyze()->state === 'unavailable' || true, 'state probe ran');
+// Unavailable: the real analyzer finds no receipt in this suite's view
+// (the suite cwd has no staged .lekalo/import/mago/receipt.json).
+$missingOutcome = (new MagoEvidenceAnalyzer($lockDigest))->analyze();
+check($missingOutcome->state === 'unavailable', 'an absent receipt is exactly unavailable');
 
 // Incompatible: tool digest differs from the pinned toolchain.
 $staleBody = receipt_body();
@@ -196,7 +201,7 @@ $reason = mago_check_compatibility($staged, $lockDigest);
 check(is_string($reason) && str_contains($reason, 'digest'), 'a foreign tool digest is incompatible');
 
 $wrongPin = mago_check_compatibility(mago_decode_receipt(receipt_json(receipt_body())), 'sha256:' . str_repeat('f', 64));
-check(is_string($wrongPin) && str_contains($wrongPin, 'pinned toolchain'), 'a foreign lock digest is incompatible');
+check(is_string($wrongPin) && str_contains($wrongPin, 'lock digest changed'), 'a foreign lock digest is incompatible');
 
 // Failed: the recorded run did not complete. The FakeAnalyzer decode
 // path is exercised directly: a receipt whose completion says `failed`
@@ -213,7 +218,7 @@ check(!$incompleteOutcome->isOk() || $failedDecoded['completion']['status'] !== 
 
 // Ok: compatible + completed decodes to findings.
 $compatible = mago_decode_receipt(receipt_json(receipt_body()));
-check(is_array(mago_check_compatibility($compatible, $lockDigest)) === false, 'probe executed');
+check(mago_check_compatibility($compatible, $lockDigest) === null, 'a pin-compatible receipt passes the compatibility gate');
 
 // ---------------------------------------------------------------------------
 // 3. Strict-profile mapping over the recorded fixtures.
@@ -349,14 +354,29 @@ $incompatibleResponse = validate_response($request, new FakeAnalyzer([], 'incomp
 check($incompatibleResponse['status'] === 'error' && $incompatibleResponse['error']['code'] === 'analysis-incompatible', 'an incompatible analysis is refused explicitly');
 
 // Ok analysis: findings surface as bounded wire rows with the exact
-// original code leading the detail.
+// original code leading the detail; the native evidence path converts
+// to a legal lowercase logical path for the wire (the native spelling
+// stays visible in the detail text).
 $okBody = receipt_body();
 $okAnalyzer = new FakeAnalyzer($okBody, 'ok');
 $okResponse = validate_response($request, $okAnalyzer);
 check($okResponse['status'] === 'ok', 'a current successful analysis answers ok');
 check($okResponse['result']['findings'][0]['code'] === 'target.analysis.strict-types', 'the registered rule id is the finding code');
 check(str_starts_with((string) $okResponse['result']['findings'][0]['detail'], 'strict-types: '), 'the exact original code leads the bounded detail');
-check($okResponse['result']['findings'][0]['path'] === 'app/Models/User.php', 'the logical path is preserved');
+check($okResponse['result']['findings'][0]['path'] === 'app/models/user.php', 'a native path is converted to the lowercase logical-path wire grammar');
+check(is_logical_path((string) $okResponse['result']['findings'][0]['path']), 'the emitted finding path satisfies the wire logical-path grammar');
+check((string) $okResponse['result']['findings'][0]['detail'] === substr((string) $okResponse['result']['findings'][0]['detail'], 0, 128), 'the detail stays within the wire 128-byte bound');
+
+// Default profile: recorded diagnostics ride verbatim; strict-profile
+// predicates and unsupported rows ride only the strict profile.
+$defaultRequest = $request;
+$defaultRequest['profile'] = PROFILE_TOKEN;
+$defaultResponse = validate_response($defaultRequest, $okAnalyzer);
+$strictRequest = $request;
+$strictRequest['profile'] = STRICT_PROFILE_TOKEN;
+$strictResponse = validate_response($strictRequest, $okAnalyzer);
+check(count($defaultResponse['result']['findings']) === 1, 'the default profile reports recorded diagnostics without strict-predicate rows');
+check(count($strictResponse['result']['findings']) > count($defaultResponse['result']['findings']), 'the strict profile adds its predicate/unsupported rows on top');
 
 // Verify mirrors validate; Mago success never satisfies scenarios.
 $verifyRequest = $request;
@@ -365,15 +385,35 @@ $verifyResponse = verify_response($verifyRequest, $okAnalyzer);
 check($verifyResponse['status'] === 'ok', 'verify answers through the same seam');
 check(DECLARED_CAPABILITIES['verify.scenarios'] === 'unsupported', 'verify.scenarios stays unsupported: Mago is not scenario evidence');
 
-// Scan evidence projection: bounded references, honest absence.
+// Scan evidence projection: the bounded evidence record attaches to
+// the receipt document entry (the join domain is the receipt's own
+// governance row, not the disjoint native source paths). The suite
+// stages a real receipt file inside a temp read view exactly like the
+// runner would, then cleans it up.
 $scanRequest = $request;
 $scanRequest['operation'] = 'scan';
 unset($scanRequest['ir_path']);
+$stagedView = sys_get_temp_dir() . '/lekalo-analyzer-suite-' . getmypid();
+if (!is_dir($stagedView . '/.lekalo/import/mago')) {
+    mkdir($stagedView . '/.lekalo/import/mago', 0777, true);
+}
+$cwd = getcwd();
+chdir($stagedView);
+file_put_contents(MAGO_RECEIPT_PATH, receipt_json($okBody));
 $scanResponse = scan_response($scanRequest, $okAnalyzer);
+unlink(MAGO_RECEIPT_PATH);
+chdir($cwd);
 check($scanResponse['status'] === 'ok', 'scan answers with evidence when available');
+$receiptEntryEvidence = null;
+foreach ($scanResponse['result']['entries'] as $entry) {
+    if (($entry['path'] ?? '') === MAGO_RECEIPT_PATH && isset($entry['evidence'])) {
+        $receiptEntryEvidence = $entry['evidence'];
+    }
+}
+check($receiptEntryEvidence !== null, 'the receipt entry carries the bounded evidence when evidence projects');
 
 // Nine relations cannot fit the eight-reference wire bound: the whole
-// per-source claim is dropped, never truncated silently.
+// claim is refused (null), never truncated silently.
 $nine = receipt_body();
 $nine['relations'] = [];
 for ($i = 0; $i < 9; $i++) {
@@ -385,21 +425,28 @@ for ($i = 0; $i < 9; $i++) {
         'producer' => 'mago',
     ];
 }
-$projection = mago_receipt_evidence_by_path(new AnalysisOutcome(
+$projection = mago_receipt_wire_evidence(new AnalysisOutcome(
     'ok',
     diagnostics: [],
     symbols: $nine['symbols'],
     relations: $nine['relations'],
 ));
-check($projection === [], 'an over-bound graph is refused from the wire projection, not truncated');
+check($projection === null, 'an over-bound graph is refused from the wire projection, not truncated');
 
-$projectionOk = mago_receipt_evidence_by_path(new AnalysisOutcome(
+$projectionOk = mago_receipt_wire_evidence(new AnalysisOutcome(
     'ok',
     diagnostics: [],
     symbols: $nine['symbols'],
     relations: array_slice($nine['relations'], 0, 8),
 ));
-check(isset($projectionOk['app/Models/User.php']) && count($projectionOk['app/Models/User.php']['references']) === 8, 'eight references project in full');
+check($projectionOk !== null && count($projectionOk['references']) === 8, 'eight references project in full');
+check(isset($projectionOk['signature']) && is_sha256_digest((string) $projectionOk['signature']), 'the projected signature is a digest over the receipt evidence');
+
+// A relation whose source symbol is unknown is unjoined remainder: the
+// whole projection refuses rather than publishing a partial claim.
+$unjoined = $nine;
+$unjoined['relations'] = [array_merge($nine['relations'][0], ['from' => 'php.fixture.ghost'])];
+check(mago_receipt_wire_evidence(new AnalysisOutcome('ok', diagnostics: [], symbols: $unjoined['symbols'], relations: $unjoined['relations'])) === null, 'an unjoinable relation refuses the whole projection');
 
 // ---------------------------------------------------------------------------
 // Summary.
