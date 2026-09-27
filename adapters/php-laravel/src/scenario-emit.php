@@ -25,8 +25,6 @@
  * record.
  */
 
-declare(strict_types=1);
-
 const PHP_EMITTER_ADAPTER_ID = 'lekalo-target-php-laravel';
 
 /** The sidecar micro-contract token of the scenario test maps. */
@@ -47,9 +45,9 @@ const PHP_RESERVED_MODULES = ['testkit', 'port', 'reporter', 'ScenarioTestKit', 
 
 /** The generated support files shared by every scenario test. */
 const PHP_SUPPORT_FILES = [
-    'ScenarioTestKit.php',
-    'ScenarioReporter.php',
-    'Port.php',
+    'scenario-test-kit.php',
+    'scenario-reporter.php',
+    'port.php',
 ];
 
 /**
@@ -127,9 +125,9 @@ function php_emit_scenario_tests(array $input): array
         'startedBy' => $input['startedBy'] ?? 'lekalo-scenario-harness',
     ];
     $files = [
-        php_file(PHP_SCENARIO_TESTS_DIR . '/ScenarioTestKit.php', php_testkit_text($context), null),
-        php_file(PHP_SCENARIO_TESTS_DIR . '/ScenarioReporter.php', php_reporter_text($context), null),
-        php_file(PHP_SCENARIO_TESTS_DIR . '/Port.php', php_port_text($context), null),
+        php_file(PHP_SCENARIO_TESTS_DIR . '/scenario-test-kit.php', php_testkit_text($context), null),
+        php_file(PHP_SCENARIO_TESTS_DIR . '/scenario-reporter.php', php_reporter_text($context), null),
+        php_file(PHP_SCENARIO_TESTS_DIR . '/port.php', php_port_text($context), null),
     ];
     $models = $input['models'];
     usort($models, static fn (array $left, array $right): int => strcmp($left['id'], $right['id']));

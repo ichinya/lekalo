@@ -203,7 +203,7 @@ check(str_contains($gen['bytes'], 'declare(strict_types=1);'), 'strict types dec
 check(is_logical_path($gen['path']), 'generated path is logical');
 check(scope_covers('.lekalo/generated/php-laravel/**', $gen['path']), 'generated path inside write scope');
 check($gen['digest'] === sha256_digest($gen['bytes']), 'plan digest covers exact bytes');
-$writes = deterministic_writes(['target' => 'php-laravel', 'profile' => 'default', 'ir_path' => '.lekalo/ir/minimal.json']);
+$writes = deterministic_writes($gen);
 check(plan_id($writes) === 'plan-' . sha256_hex(canonical_json($writes)), 'plan id deterministic over canonical bytes');
 $genAgain = deterministic_generation(['target' => 'php-laravel', 'profile' => 'default', 'ir_path' => '.lekalo/ir/minimal.json']);
 check($genAgain['bytes'] === $gen['bytes'] && $genAgain['digest'] === $gen['digest'], 'generation is a pure function');

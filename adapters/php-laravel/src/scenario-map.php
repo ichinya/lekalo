@@ -29,8 +29,6 @@
  *   and can never report pass.
  */
 
-declare(strict_types=1);
-
 const PHP_SCENARIO_IDENTITY = 'dev.lekalo.scenario-ir@0.2.16';
 const PHP_IR_IDENTITY = 'dev.lekalo.ir@0.2.16';
 
