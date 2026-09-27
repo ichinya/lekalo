@@ -739,9 +739,15 @@ PHP;
 {
 ", null);
     $body = php_render_body($model);
-    $push($body['text'], null);
+    foreach ($body['segments'] as $segment) {
+        // One segment per then-step (the Node emitter's layout): each
+        // keeps its step id so the sidecar can declare exact byte
+        // ranges per assertion step, never only the whole-class span.
+        $push($segment['text'], $segment['stepId']);
+    }
     $push("}\n", null);
     $text = implode('', array_map(static fn (array $segment): string => $segment['text'], $segments));
+    $leaf = php_scenario_leaf($model['id']);
     $map = [
         'contract' => PHP_MAP_CONTRACT,
         'adapter' => ['id' => PHP_EMITTER_ADAPTER_ID, 'version' => $context['adapterVersion']],
@@ -755,9 +761,34 @@ PHP;
                 'start' => $blockStart,
                 'end' => strlen($text),
             ],
+            // The scenario leaf scoped under each then-step id is a
+            // grammar-valid two-segment Model symbol, unique within the
+            // sidecar; the kind and the full step spelling ride beside
+            // it, exactly like the Node emitter's map records.
+            ...array_map(
+                static fn (array $segment): array => [
+                    'id' => $leaf . '.' . $segment['stepId'],
+                    'kind' => 'then',
+                    'step' => $segment['stepId'],
+                    'export' => $classFqn,
+                    'start' => $segment['start'],
+                    'end' => $segment['start'] + strlen($segment['text']),
+                ],
+                array_values(array_filter(
+                    $segments,
+                    static fn (array $segment): bool => $segment['stepId'] !== null,
+                )),
+            ),
         ],
     ];
     return ['text' => $text, 'map' => $map];
+}
+
+/** The leaf of one scenario id: the last dot-separated segment. */
+function php_scenario_leaf(string $scenarioId): string
+{
+    $cut = strrpos($scenarioId, '.');
+    return $cut === false ? $scenarioId : substr($scenarioId, $cut + 1);
 }
 
 /**
@@ -768,46 +799,54 @@ PHP;
  * pass), and any non-assertion throwable rethrows after flushing
  * (Testo reports it as `Error`, which normalizes to infrastructure
  * evidence).
+ *
+ * Returns the method as tagged `{text, stepId}` segments: one segment
+ * per then-step so the caller's byte ranges can declare per-step
+ * ownership, exactly like the Node emitter's segment list.
  */
 function php_render_body(array $model): array
 {
     $groups = php_render_groups($model);
-    $method = '    public function test' . ucfirst(php_identifier_of($model['id'])) . "(): void\n    {\n";
-    $method .= "        \$recorder = new ScenarioReporter([\n";
-    $method .= "            'scenario' => ['id' => " . php_emit_value($model['id']) . ", 'version' => "
+    $head = '    public function test' . ucfirst(php_identifier_of($model['id'])) . "(): void\n    {\n";
+    $head .= "        \$recorder = new ScenarioReporter([\n";
+    $head .= "            'scenario' => ['id' => " . php_emit_value($model['id']) . ", 'version' => "
         . php_emit_value($model['version']) . ", 'irDigest' => " . php_emit_value($model['irDigest'] ?? null)
         . ", 'symbols' => [], 'operations' => " . php_emit_value(php_operations_of($model)) . "],\n";
-    $method .= "            'runner' => ['id' => " . php_emit_value($model['runner']['id']) . ", 'version' => "
+    $head .= "            'runner' => ['id' => " . php_emit_value($model['runner']['id']) . ", 'version' => "
         . php_emit_value($model['runner']['declaredVersion'] ?? PHP_RUNNER_VERSION) . "],\n";
-    $method .= "            'test' => ['id' => " . php_emit_value(php_native_test_id($model['id'])) . "],\n";
-    $method .= "            'bindingMode' => " . php_emit_value($model['binding']['mode']) . ",\n";
-    $method .= "            'startedBy' => 'lekalo-scenario-harness',\n";
-    $method .= "        ], __FILE__);\n";
-    $method .= "        try {\n";
+    $head .= "            'test' => ['id' => " . php_emit_value(php_native_test_id($model['id'])) . "],\n";
+    $head .= "            'bindingMode' => " . php_emit_value($model['binding']['mode']) . ",\n";
+    $head .= "            'startedBy' => 'lekalo-scenario-harness',\n";
+    $head .= "        ], __FILE__);\n";
+    $head .= "        try {\n";
     // The PHP mirror of the Node emitter's `await resetPort()`: the shim
     // drops its memoized instances, so every test constructs a fresh
     // project port and inherits no in-memory state from a previous test
     // in the same process (the DB lifecycle is the migrations
     // attribute's contract).
-    $method .= "            Port::reset();\n";
+    $head .= "            Port::reset();\n";
+    $segments = [['text' => $head, 'stepId' => null]];
     foreach ($groups as $group) {
+        $text = '';
         foreach ($group['lines'] as $line) {
-            $method .= $line . "\n";
+            $text .= $line . "\n";
         }
+        $segments[] = ['text' => $text, 'stepId' => $group['stepId']];
     }
-    $method .= "            if (\$recorder->hasUnsupported()) {\n";
-    $method .= "                // Unsupported rows never become passes: skip the test and\n";
-    $method .= "                // let the flushed record carry the exact rows.\n";
-    $method .= "                \$recorder->flush();\n";
-    $method .= "                throw new \\Testo\\Core\\Exception\\SkipTest('scenario.unsupported-capability');\n";
-    $method .= "            }\n";
-    $method .= "            \$recorder->flush();\n";
-    $method .= "        } catch (\\Throwable \$_error) {\n";
-    $method .= "            \$recorder->flush();\n";
-    $method .= "            throw \$_error;\n";
-    $method .= "        }\n";
-    $method .= "    }\n";
-    return ['text' => $method];
+    $tail = "            if (\$recorder->hasUnsupported()) {\n";
+    $tail .= "                // Unsupported rows never become passes: skip the test and\n";
+    $tail .= "                // let the flushed record carry the exact rows.\n";
+    $tail .= "                \$recorder->flush();\n";
+    $tail .= "                throw new \\Testo\\Core\\Exception\\SkipTest('scenario.unsupported-capability');\n";
+    $tail .= "            }\n";
+    $tail .= "            \$recorder->flush();\n";
+    $tail .= "        } catch (\\Throwable \$_error) {\n";
+    $tail .= "            \$recorder->flush();\n";
+    $tail .= "            throw \$_error;\n";
+    $tail .= "        }\n";
+    $tail .= "    }\n";
+    $segments[] = ['text' => $tail, 'stepId' => null];
+    return ['segments' => $segments];
 }
 
 /** The sorted distinct operation ids of one model's when steps. */
