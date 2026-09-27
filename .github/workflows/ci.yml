@@ -160,7 +160,9 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          tools: none
+          # Composer is needed on every OS by the issue #56 fixture
+          # provisioning step (the locked vendor tree is not committed).
+          tools: composer
           # The locked Laravel runtime of the issue #56 fixture needs its
           # platform extensions; every dependency-free suite is unaffected.
           extensions: mbstring, openssl, pdo_sqlite, sqlite3, tokenizer, xml, dom, xmlwriter, ctype, fileinfo, iconv, session
