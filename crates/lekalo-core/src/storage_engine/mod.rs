@@ -17,6 +17,7 @@ pub mod input;
 pub mod introspection;
 pub mod migration;
 pub mod postgres;
+pub mod rollback;
 mod validate;
 pub(crate) mod version;
 pub(crate) mod wire;
@@ -26,7 +27,8 @@ pub use id::{ConnectionName, Engine, VersionPin};
 pub use history::{StorageRenameKind, StorageRenameMap};
 pub use input::engine_input as input_document;
 pub use introspection::IntrospectionEvidence;
-pub use migration::{plan as plan_migration, PlanStatus};
+pub use migration::{plan as plan_migration, plan_with_history, PlanStatus};
+pub use rollback::{build_reverse_plan, classify as classify_rollback, RollbackClass};
 pub use version::{FAMILY, IDENTITY, SCHEMA_VERSION, VERSION};
 
 use crate::diagnostics::DiagnosticSet;
