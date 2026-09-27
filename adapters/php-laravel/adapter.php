@@ -43,6 +43,8 @@ declare(strict_types=1);
 const MAGO_RECEIPT_SCHEMA = 'lekalo/provider-evidence/v0.1.0';
 /** The pinned toolchain identity the receipt must agree with. */
 const MAGO_TOOLCHAIN_LOCK_FILE = 'mago-toolchain.lock.json';
+/** The pinned upstream tool version the decoder speaks (build-checked). */
+const MAGO_PINNED_TOOL_VERSION = '1.0.0';
 const MAGO_RECEIPT_PATH = '.lekalo/import/mago/receipt.json';
 /** The maximum receipt document size (mirrors the core import bounds). */
 const MAGO_RECEIPT_MAX_BYTES = 1024 * 1024;

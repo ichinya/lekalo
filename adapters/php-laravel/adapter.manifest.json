@@ -91,12 +91,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:436de1c76a1cad6069575b3b2dab73abcc059140915c1351145965554139e9a1",
+    "packageDigest": "sha256:5c03917f4e02282b7a087851fe2757a4aba98a35e6ecba11776f779499548557",
     "files": [
       {
         "path": "adapter.php",
-        "digest": "sha256:c0c54248c236f1a4a63b98d37675fe8edc82fec1a07323f283fe4930d47e8363",
-        "bytes": 84359
+        "digest": "sha256:ea6b7c52591824e4f3a14e2e8d0b764150f65bf6118b648afffa8166831c2ed0",
+        "bytes": 84477
       }
     ],
     "signaturePolicy": "unsigned",
