@@ -31,11 +31,15 @@ use crate::transport_http::{
 };
 
 /// Load and compile the committed planner fixture project (shared by
-/// the module's unit tests; the integration suite uses its own copy).
-/// The loader resolves relative selectors against the process working
-/// directory, so the workspace root is derived from the manifest path.
+/// the module's unit tests). The unit test suite serializes this
+/// helper behind the workspace-root cwd lock because the loader
+/// resolves relative selectors against the process working directory
+/// and sibling suites (cache, project_fs) also use relative temp
+/// cases; the integration suite owns its own copy instead.
 #[cfg(test)]
 pub(crate) fn fixture_project() -> CompiledProject {
+    static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = CWD_LOCK.lock().expect("cwd lock");
     let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(std::path::Path::parent)
