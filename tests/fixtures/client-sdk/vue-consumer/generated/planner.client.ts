@@ -50,12 +50,15 @@ export interface LekaloClientOptions {
 }
 
 export type dueDate = string;
+export interface focusTaskInput {
+  "task_id": taskId;
+}
 export interface task {
-  "task_id": unknown;
-  "tenant": unknown;
-  "title": unknown;
-  "state": unknown;
-  "due"?: unknown | null;
+  "task_id": taskId;
+  "tenant": tenantId;
+  "title": text;
+  "state": taskState;
+  "due"?: dueDate | null;
 }
 export type taskId = string;
 export type taskState =
@@ -64,6 +67,9 @@ export type taskState =
   | "done";
 export type tenantId = string;
 export type text = string;
+export interface unit_2 {
+
+}
 export class LekaloClient {
   private readonly baseUrl: string;
   private readonly transport: LekaloTransport;
@@ -76,106 +82,175 @@ export class LekaloClient {
   }
 
   /** GET /tasks — operation listTasks. A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries. */
-  listTasks(): Promise<LekaloResult<unknown>> {
-    return this.send("listTasks", {
+  listTasks(): Promise<LekaloResult<task>> {
+    const query: Record<string, string> = {};
+    const headers: Record<string, string> = {};
+    return this.decode("listTasks", {
       method: "GET",
-      path: "/tasks",
-      idempotencyKey: undefined,
+      path: this.baseUrl + "/tasks",
+      query,
+      headers,
+      body: undefined,
     });
   }
   /** GET /tasks/focused-count — operation plannerEndpointCountFocused. A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries. */
-  plannerEndpointCountFocused(): Promise<LekaloResult<unknown>> {
-    return this.send("plannerEndpointCountFocused", {
+  plannerEndpointCountFocused(): Promise<LekaloResult<taskState>> {
+    const query: Record<string, string> = {};
+    const headers: Record<string, string> = {};
+    return this.decode("plannerEndpointCountFocused", {
       method: "GET",
-      path: "/tasks/focused-count",
-      idempotencyKey: undefined,
+      path: this.baseUrl + "/tasks/focused-count",
+      query,
+      headers,
+      body: undefined,
     });
   }
   /** POST /tasks/focus — operation plannerEndpointFocusTask. A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries. */
-  plannerEndpointFocusTask(idempotencyKey?: string): Promise<LekaloResult<unknown>> {
-    return this.send("plannerEndpointFocusTask", {
+  plannerEndpointFocusTask(input: focusTaskInput, idempotencyKey?: string, xCorrelationId?: string, xRequestId?: string): Promise<LekaloResult<void>> {
+    const query: Record<string, string> = {};
+    const headers: Record<string, string> = {};
+    if (idempotencyKey !== undefined) headers["Idempotency-Key"] = idempotencyKey;
+    {
+      const value = xCorrelationId;
+      if (value !== undefined) headers["X-Correlation-Id"] = value;
+    }
+    {
+      const value = xRequestId;
+      if (value !== undefined) headers["X-Request-Id"] = value;
+    }
+    return this.decode("plannerEndpointFocusTask", {
       method: "POST",
-      path: "/tasks/focus",
-      idempotencyKey,
+      path: this.baseUrl + "/tasks/focus",
+      query,
+      headers,
+      body: JSON.stringify(input),
     });
   }
   /** POST /tasks/{task_id}/focus — operation plannerEndpointFocusTaskById. A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries. */
-  plannerEndpointFocusTaskById(taskId: string, idempotencyKey?: string): Promise<LekaloResult<unknown>> {
-    return this.send("plannerEndpointFocusTaskById", {
+  plannerEndpointFocusTaskById(taskId: string, input: { "taskId": taskId }, idempotencyKey?: string): Promise<LekaloResult<void>> {
+    const encodedPath = `/tasks/${encodeSegment(taskId)}/focus`;
+    const query: Record<string, string> = {};
+    const headers: Record<string, string> = {};
+    if (idempotencyKey !== undefined) headers["Idempotency-Key"] = idempotencyKey;
+    return this.decode("plannerEndpointFocusTaskById", {
       method: "POST",
-      path: "/tasks/{task_id}/focus",
-      idempotencyKey,
+      path: this.baseUrl + encodedPath,
+      query,
+      headers,
+      body: JSON.stringify(input),
     });
   }
   /** GET /tasks/stream — operation plannerEndpointTaskStream. A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries. */
-  plannerEndpointTaskStream(): Promise<LekaloResult<unknown>> {
-    return this.send("plannerEndpointTaskStream", {
+  plannerEndpointTaskStream(): Promise<LekaloResult<task>> {
+    const query: Record<string, string> = {};
+    const headers: Record<string, string> = {};
+    return this.decode("plannerEndpointTaskStream", {
       method: "GET",
-      path: "/tasks/stream",
-      idempotencyKey: undefined,
+      path: this.baseUrl + "/tasks/stream",
+      query,
+      headers,
+      body: undefined,
     });
   }
   /** GET /projects/{project_ref}/tasks — operation plannerEndpointTasksByProject. Never retried automatically: no declared error authorizes a retry. */
-  plannerEndpointTasksByProject(projectRef: string): Promise<LekaloResult<unknown>> {
-    return this.send("plannerEndpointTasksByProject", {
+  plannerEndpointTasksByProject(projectRef: string): Promise<LekaloResult<task>> {
+    const encodedPath = `/projects/${encodeSegment(projectRef)}/tasks`;
+    const query: Record<string, string> = {};
+    const headers: Record<string, string> = {};
+    return this.decode("plannerEndpointTasksByProject", {
       method: "GET",
-      path: "/projects/{project_ref}/tasks",
-      idempotencyKey: undefined,
+      path: this.baseUrl + encodedPath,
+      query,
+      headers,
+      body: undefined,
     });
   }
+    private async decode<T>(
+      operationId: string,
+      wire: {
+        method: string;
+        path: string;
+        query: Record<string, string>;
+        headers: Record<string, string>;
+        body?: string;
+      },
+    ): Promise<LekaloResult<T>> {
+      const headers: Record<string, string> = { ...wire.headers };
+      const credential = this.authorization?.();
+      if (credential !== undefined) headers['authorization'] = credential;
+      let response: LekaloResponse;
+      try {
+        response = await this.transport.send({
+          method: wire.method,
+          path: wire.path,
+          query: wire.query,
+          headers,
+          body: wire.body,
+        });
+      } catch {
+        // A transport disconnect after send is the unknown state:
+        // one attempt, a typed infrastructure failure, never a
+        // declared error id.
+        return { ok: false, infrastructure: { infrastructure: true } };
+      }
+      if (response.status >= 200 && response.status < 300) {
+        if (response.body === undefined || response.body === '') {
+          return { ok: true, value: undefined as T };
+        }
+        try {
+          return { ok: true, value: JSON.parse(response.body) as T };
+        } catch {
+          return { ok: false, infrastructure: { infrastructure: true, status: response.status } };
+        }
+      }
+      // A declared error body carries the exact canonical identity; a
+      // body the client cannot recognize stays on the infrastructure
+      // channel — a status alone never claims a semantic error.
+      const declared = decodeError(response.body);
+      if (declared !== undefined) {
+        return { ok: false, error: declared };
+      }
+      return { ok: false, infrastructure: { infrastructure: true, status: response.status } };
+    }
+}
 
-  private async send(
-    operationId: string,
-    wire: { method: string; path: string; idempotencyKey?: string },
-  ): Promise<LekaloResult<unknown>> {
-    const headers: Record<string, string> = {};
-    const credential = this.authorization?.();
-    if (credential !== undefined) headers['authorization'] = credential;
-    if (wire.idempotencyKey !== undefined) headers['idempotency-key'] = wire.idempotencyKey;
-    let response: LekaloResponse;
-    try {
-      response = await this.transport.send({
-        method: wire.method,
-        path: this.baseUrl + wire.path,
-        query: {},
-        headers,
-      });
-    } catch {
-      // A transport disconnect after send is the unknown state:
-      // one attempt, a typed infrastructure failure, never a
-      // declared error id.
-      return { ok: false, infrastructure: { infrastructure: true } };
-    }
-    if (response.status >= 200 && response.status < 300) {
-      return { ok: true, value: undefined };
-    }
-    // A declared error body carries the exact canonical identity; a
-    // body the client cannot recognize stays on the infrastructure
-    // channel — a status alone never claims a semantic error.
-    const declared = decodeError(response.body);
-    if (declared !== undefined) {
-      return { ok: false, error: declared };
-    }
-    return { ok: false, infrastructure: { infrastructure: true, status: response.status } };
-  }
+/** Percent-encode one path segment (the RFC 3986 reserved set). */
+function encodeSegment(value: string): string {
+  return encodeURIComponent(value);
 }
 
 /** Decode a canonical error envelope, or nothing when the body is
- * not a recognized declared error. */
+ * not a recognized declared error. A status alone never claims a
+ * semantic error. */
 function decodeError(body: string | undefined): LekaloError | undefined {
   if (body === undefined) return undefined;
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(body) as { ok?: unknown; error?: LekaloError };
-    const error = parsed.error;
-    if (parsed.ok === false
-      && error !== undefined && error !== null
-      && typeof error.id === 'string'
-      && typeof error.code === 'string'
-      && typeof error.category === 'string') {
-      return { id: error.id, code: error.code, category: error.category, payload: error.payload };
-    }
-    return undefined;
+    parsed = JSON.parse(body);
   } catch {
     return undefined;
   }
+  if (typeof parsed !== 'object' || parsed === null) return undefined;
+  const record = parsed as { ok?: unknown; error?: unknown };
+  if (record.ok !== false || typeof record.error !== 'object' || record.error === null) {
+    return undefined;
+  }
+  const error = record.error as {
+    id?: unknown;
+    code?: unknown;
+    category?: unknown;
+    payload?: unknown;
+  };
+  if (typeof error.id !== 'string' || typeof error.code !== 'string'
+    || typeof error.category !== 'string') {
+    return undefined;
+  }
+  return {
+    id: error.id,
+    code: error.code,
+    category: error.category,
+    payload: typeof error.payload === 'object' && error.payload !== null
+      ? (error.payload as Record<string, unknown>)
+      : {},
+  };
 }

@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-const FIXTURE_PROJECT: &str = "../../tests/fixtures/transport-http/project";
+// (the fixture project home is copied by scratch() through fixture_path())
 const VALID_ATTACHMENT: &str = "../../tests/fixtures/transport-http/valid/planner.transport.json";
 const QUERY_MODEL: &str = "../../tests/fixtures/transport-http/query-model.json";
 const GOLDEN: &str = "../../tests/fixtures/client-sdk/golden/planner.expect.json";
@@ -131,7 +131,7 @@ fn the_committed_client_sdk_golden_covers_every_fixture_endpoint() {
     assert_eq!(golden["projectId"], "planner");
     assert_eq!(golden["schemaVersion"], "lekalo/client-sdk/v0.4.0");
     assert_eq!(golden["operations"].as_array().map(Vec::len), Some(6));
-    assert_eq!(golden["types"].as_array().map(Vec::len), Some(6));
+    assert_eq!(golden["types"].as_array().map(Vec::len), Some(8));
 }
 
 #[test]

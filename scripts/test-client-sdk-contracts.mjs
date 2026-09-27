@@ -171,16 +171,32 @@ for (const operation of golden.operations) {
       for (const field of error.payload ?? []) {
         if (!publicNames.has(field.name)) fail("payload-private-leak", `${error.error}/${field.name}`);
       }
-      // The conservative retry matrix.
+      // The conservative retry matrix, re-derived with the same
+      // EffectClass/Idempotency downgrade the Rust `authorize`
+      // applies: a `safe` retry on a write/external effect is only
+      // safe when the operation is `guaranteed`; otherwise it
+      // downgrades to `never` — so a regression emitting `safe` for a
+      // non-guaranteed write is caught here.
       const policy = contract.retry.policy;
       const condition = contract.retry.condition;
-      const expected = policy === "never"
-        ? "never"
-        : policy === "safe"
+      let expected;
+      if (policy === "never") {
+        expected = "never";
+      } else if (policy === "safe") {
+        const writeish = contract.effect !== "none" && contract.effect !== "read";
+        expected = !writeish || contract.idempotency === "guaranteed"
           ? "safe"
-          : condition === "reconciliation"
-            ? "reconciliation-only"
-            : "key-required";
+          : "never";
+      } else if (condition === "reconciliation") {
+        expected = "reconciliation-only";
+      } else if (
+        condition === "idempotency-key"
+        && (contract.idempotency === "key-required" || contract.idempotency === "guaranteed")
+      ) {
+        expected = "key-required";
+      } else {
+        expected = "never";
+      }
       if (error.retry !== expected) fail("retry-derivation", `${error.error}: ${error.retry}`);
   }
 }

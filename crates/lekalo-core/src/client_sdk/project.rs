@@ -77,6 +77,12 @@ fn error_leaf_ref(expr: &crate::error_contract::types::TypeExpr) -> String {
     expr.leaf().as_str().to_owned()
 }
 
+/// Whether an error payload field's type expression is nullable
+/// (wrapped in `Optional`).
+fn error_nullable(expr: &crate::error_contract::types::TypeExpr) -> bool {
+    matches!(expr, crate::error_contract::types::TypeExpr::Optional(_))
+}
+
 /// Project one validated attachment into the client contract. The
 /// attachment must already validate against the bound context (the
 /// projection joins the same compiled project); a required context
@@ -141,19 +147,47 @@ pub fn project(
 
     // Every named type the operations can reach: entities,
     // value-objects, enums, scalars, plus the invoked command inputs.
+    // The well-known unit object is always present so every
+    // successBody typeRef resolves (issue #72 fix round); its
+    // collection key is the project-scoped wire symbol
+    // (`<project>.unit`), keeping the canonical symbol order true.
+    let unit_symbol = format!("{}.unit", project_id.as_str());
     let mut types = Vec::new();
     let mut collected = BTreeMap::new();
+    collected.insert(
+        unit_symbol.clone(),
+        TypeKind::Object(vec![]),
+    );
+    let mut used_idents = std::collections::BTreeSet::new();
+    used_idents.insert(camel_of_semantic(&unit_symbol));
     for binding in document.endpoints() {
         let endpoint = resolve_endpoint(project, binding.endpoint.as_str())?;
         collect_operation_types(project, endpoint, &decimals, &mut collected)?;
     }
     for (symbol, kind) in collected {
-        let ident = TargetIdent::parse(&camel_of_semantic(&symbol))
-            .map_err(|set| rename_error(&symbol, set))?;
+        // The generated identifier is deduplicated deterministically:
+        // the camel spelling of the semantic id drops the module
+        // prefix, so `foo.task` and `bar.task` would collide inside
+        // one emitted module. Ties resolve by appending `_2`, `_3`, …
+        // in semantic-id order — stable across runs and languages.
+        let base_ident = camel_of_semantic(&symbol);
+        let ident = {
+            let mut candidate = base_ident.clone();
+            let mut ordinal = 2u32;
+            while used_idents.contains(&candidate) {
+                candidate = format!("{base_ident}_{ordinal}");
+                ordinal += 1;
+            }
+            used_idents.insert(candidate.clone());
+            TargetIdent::parse(&candidate).map_err(|set| rename_error(&symbol, set))?
+        };
         let type_id = ClientType::type_id_of(&symbol);
+        // The well-known unit object's collection key IS its wire
+        // symbol (`<project>.unit`); every other key is a Model
+        // symbol parsed as a semantic id.
+        let symbol_id = SemanticId::parse(&symbol).map_err(|_| unresolved(&symbol))?;
         types.push(ClientType {
-            symbol: SemanticId::parse(&symbol)
-                .map_err(|_| unresolved(&symbol))?,
+            symbol: symbol_id,
             type_id,
             ident,
             kind,
@@ -359,7 +393,7 @@ fn resolve_operation<'a>(
 }
 
 /// The closed scalar mapping of one declared scalar base.
-fn scalar_mapping(base: ScalarBase, decimals: &BTreeMap<String, ScalarMapping>) -> ScalarMapping {
+fn scalar_mapping(base: ScalarBase) -> ScalarMapping {
     match base {
         ScalarBase::String => ScalarMapping::String,
         ScalarBase::Number => ScalarMapping::Number,
@@ -368,18 +402,6 @@ fn scalar_mapping(base: ScalarBase, decimals: &BTreeMap<String, ScalarMapping>) 
         ScalarBase::Datetime => ScalarMapping::Datetime,
         ScalarBase::Uuid => ScalarMapping::Uuid,
         ScalarBase::Uri => ScalarMapping::Uri,
-    }
-    .with_decimal(decimals)
-}
-
-impl ScalarMapping {
-    /// The decimal override when the symbol declared one.
-    fn with_decimal(self, decimals: &BTreeMap<String, ScalarMapping>) -> Self {
-        // Decimal overrides apply per symbol, applied by the caller
-        // through `collect_type`; the base mapping never decides
-        // alone.
-        let _ = decimals;
-        self
     }
 }
 
@@ -435,9 +457,27 @@ fn collect_operation_types(
     let operation = resolve_operation(project, endpoint.invokes.as_str())?;
     match operation {
         Definition::Command(command) => {
+            // The whole-input request body names the command's
+            // synthetic input object as a collected type, so a backend
+            // can always resolve the request shape (issue #72 fix
+            // round: no dangling typeRef).
+            let input_object = format!("{}.input", command.id.as_str());
+            let mut fields = Vec::new();
             for field in &command.input {
                 collect_field_types(project, field, decimals, collected)?;
+                let (name, type_ref, nullable, required) = field_of(field);
+                let field_ref = name.clone();
+                fields.push(ClientField {
+                    name,
+                    field: field_ref,
+                    type_ref,
+                    nullable,
+                    required,
+                });
             }
+            collected
+                .entry(input_object)
+                .or_insert_with(|| TypeKind::Object(fields));
         }
         Definition::Query(query) => {
             if let Some(returns) = &query.returns {
@@ -484,7 +524,9 @@ fn collect_symbol(
     decimals: &BTreeMap<String, ScalarMapping>,
     collected: &mut BTreeMap<String, TypeKind>,
 ) -> Result<(), DiagnosticSet> {
-    if collected.contains_key(symbol) {
+    // The well-known unit object is pre-collected and never resolves
+    // through the project (it names no Model symbol).
+    if collected.contains_key(symbol) || symbol == UNIT_TYPE {
         return Ok(());
     }
     let kind = match resolve_symbol(project, symbol) {
@@ -492,7 +534,7 @@ fn collect_symbol(
             let mapping = if decimals.contains_key(symbol) {
                 ScalarMapping::DecimalString
             } else {
-                scalar_mapping(scalar.base, decimals)
+                scalar_mapping(scalar.base)
             };
             TypeKind::Scalar(mapping)
         }
@@ -587,6 +629,7 @@ fn operation_of(
             &body.mode,
             &body.fields,
             true,
+            subject,
             decimals,
         )?),
         None => None,
@@ -601,6 +644,7 @@ fn operation_of(
             &body.mode,
             &body.fields,
             false,
+            subject,
             decimals,
         )?),
         None => None,
@@ -635,7 +679,7 @@ fn operation_of(
                 name: field.name().to_owned(),
                 field: field.name().to_owned(),
                 type_ref: error_leaf_ref(field.field_type()),
-                nullable: false,
+                nullable: error_nullable(field.field_type()),
                 required: field.required(),
             })
             .collect();
@@ -683,7 +727,7 @@ fn operation_of(
     // iteration termination is explicit, never guessed.
     let pagination = match &binding.pagination {
         Some(pagination) => {
-            let cursor_type_ref = if pagination.style.as_str() == "cursor" {
+            let cursor_type_ref: Option<String> = if pagination.style.as_str() == "cursor" {
                 let cursor_param = pagination.cursor_param.as_ref().ok_or_else(|| {
                     diagnostic::rule_invalid(
                         diagnostic::CONTRACT_INVALID,
@@ -691,21 +735,21 @@ fn operation_of(
                         Some(subject),
                     )
                 })?;
-                let field = pagination.cursor_field.as_ref().ok_or_else(|| {
-                    diagnostic::rule_invalid(
-                        diagnostic::CONTRACT_INVALID,
-                        "cursor-field-missing",
-                        Some(subject),
-                    )
-                })?;
-                // The cursor type binding comes from the invoked
-                // query's query-model pagination when declared; the
-                // fallback names the cursor parameter itself.
-                Some(
-                    query_model_cursor_type(query_model, endpoint.invokes.as_str())
-                        .unwrap_or_else(|| cursor_param.as_str().to_owned()),
-                )
-                .map(|_| field.as_str().to_owned())
+                // The cursor's semantic type id is the declared type of
+                // the cursor parameter: the invoked query's query-model
+                // parameter carries it. A cursor binding without a
+                // resolvable cursor type is a refusal — iteration must
+                // know the cursor's shape, never guess.
+                let type_ref = param_type_ref(operation, query_model, cursor_param.as_str())
+                    .filter(|type_ref| !type_ref.is_empty())
+                    .ok_or_else(|| {
+                        diagnostic::rule_invalid(
+                            diagnostic::SYMBOL_UNRESOLVED,
+                            "cursor-type-unresolved",
+                            Some(cursor_param.as_str()),
+                        )
+                    })?;
+                Some(type_ref)
             } else {
                 None
             };
@@ -722,7 +766,10 @@ fn operation_of(
     };
 
     let operation_id = binding.effective_operation_id().as_str().to_owned();
-    let ident = TargetIdent::parse(&camel_of_semantic(&operation_id_fallback(binding, &operation_id)))
+    // The stable effective operation id doubles as the generated
+    // method-name stem: the derivation guarantees a leading lowercase
+    // letter, so the mapping is total over the closed grammar.
+    let ident = TargetIdent::parse(&operation_id)
         .or_else(|_| TargetIdent::parse(&snake_of_semantic(subject)))
         .map_err(|set| rename_error(subject, set))?;
 
@@ -751,12 +798,6 @@ fn operation_of(
 /// The method-name fallback of one binding: the operation id carries
 /// the camel identity already; the fallback keeps the semantic tail
 /// when an explicit override spells a foreign shape.
-fn operation_id_fallback(_binding: &EndpointBinding, operation_id: &str) -> String {
-    // `plannerEndpointFocusTask` is a legal identifier; keep it as
-    // the generated method name stem.
-    operation_id.to_owned()
-}
-
 /// The declared type reference of one parameter: a command input
 /// member's type, or the query-model parameter's type.
 fn param_type_ref(
@@ -789,37 +830,34 @@ fn param_type_ref(
 }
 
 /// Whether one parameter's declared type is nullable (`Optional`).
+/// Query-model parameters spell their bounded model type-expression in
+/// text, where the nullable spelling is the trailing `?`.
 fn param_nullable(operation: &Definition, query_model: &QueryModelAttachment, name: &str) -> bool {
-    let _ = query_model;
     match operation {
         Definition::Command(command) => command
             .input
             .iter()
             .find(|field| field.name.as_str() == name)
             .is_some_and(|field| nullable_of(&field.r#type)),
+        Definition::Query(query) => query_model
+            .queries()
+            .iter()
+            .find(|decl| decl.query.as_str() == query.id.as_str())
+            .and_then(|decl| {
+                decl.parameters
+                    .iter()
+                    .find(|parameter| parameter.name.as_str() == name)
+            })
+            .is_some_and(|parameter| parameter.parameter_type.ends_with('?')),
         _ => false,
     }
 }
 
-/// The declared cursor type of one query-model pagination, when the
-/// query declares one.
-fn query_model_cursor_type(
-    query_model: &QueryModelAttachment,
-    query: &str,
-) -> Option<String> {
-    query_model
-        .queries()
-        .iter()
-        .find(|decl| decl.query.as_str() == query)
-        .and_then(|decl| {
-            decl.pagination.as_ref().and_then(|pagination| {
-                pagination
-                    .key_parameter
-                    .as_ref()
-                    .map(|key| key.as_str().to_owned())
-            })
-        })
-}
+/// The well-known unit object type for operations that succeed with a
+/// valueless body (a command without a declared output): every
+/// backend renders it as the empty object, and it is always present
+/// in `types[]` so the ref never dangles.
+pub(crate) const UNIT_TYPE: &str = "lekalo.unit";
 
 /// One body projection from its declared mode and field subset.
 fn body_of(
@@ -828,19 +866,43 @@ fn body_of(
     mode: &ProjectionMode,
     fields: &[crate::transport_http::FieldProjection],
     input: bool,
+    subject: &str,
     decimals: &BTreeMap<String, ScalarMapping>,
 ) -> Result<ClientBody, DiagnosticSet> {
     let type_ref = match operation {
         Definition::Command(command) if input => {
-            // A whole-input command body is the input members; the
-            // body type is the synthetic input object of the command.
-            command.id.as_str().to_owned()
+            // A whole-input command body is the command's synthetic
+            // input object — a collected type (never a dangling ref).
+            format!("{}.input", command.id.as_str())
+        }
+        Definition::Command(command) if !input => {
+            // Commands carry no declared output in the IR: a
+            // whole-output success body would otherwise narrow to an
+            // empty ref, so the projection names the well-known unit
+            // object explicitly (collected below, never dangling).
+            let _ = command;
+            UNIT_TYPE.to_owned()
         }
         Definition::Query(query) if !input => match &query.returns {
             Some(returns) => leaf_ref(returns)
                 .map(str::to_owned)
-                .unwrap_or_default(),
-            None => String::new(),
+                .ok_or_else(|| {
+                    diagnostic::rule_invalid(
+                        diagnostic::CONTRACT_INVALID,
+                        "output-type-unresolved",
+                        Some(subject),
+                    )
+                })?,
+            // A whole-output success body without a declared output is
+            // a silent narrowing: refuse instead of emitting an empty
+            // typeRef (issue #72 fix round).
+            None => {
+                return Err(diagnostic::rule_invalid(
+                    diagnostic::CONTRACT_INVALID,
+                    "whole-output-without-declared-type",
+                    Some(subject),
+                ))
+            }
         },
         _ => String::new(),
     };
@@ -849,11 +911,13 @@ fn body_of(
         .iter()
         .map(|field| {
             let member = bound_member(project, operation, input, field.field.as_str().to_owned());
+            let (type_ref, nullable) =
+                member.unwrap_or_else(|| (String::new(), false));
             ClientField {
                 name: field.name.as_str().to_owned(),
                 field: field.field.as_str().to_owned(),
-                type_ref: member.unwrap_or_default(),
-                nullable: false,
+                type_ref,
+                nullable,
                 required: field.required,
             }
         })
@@ -868,37 +932,37 @@ fn body_of(
     })
 }
 
-/// The declared type reference of one body field's bound member: a
-/// command input member for request bodies, a source-entity field for
-/// response bodies. A member the bound contract does not declare is
-/// `None` — the projection never invents a type.
+/// The declared type reference and nullability of one body field's
+/// bound member: a command input member for request bodies, a
+/// source-entity field for response bodies. A member the bound
+/// contract does not declare is `None` — the projection never invents
+/// a type.
 fn bound_member(
     project: &CompiledProject,
     operation: &Definition,
     input: bool,
     field: String,
-) -> Option<String> {
+) -> Option<(String, bool)> {
     let name = field.strip_prefix("input.").unwrap_or(&field);
-    match (operation, input) {
-        (Definition::Command(command), true) => command
-            .input
+    let member = |members: &[Field], name: &str| {
+        members
             .iter()
             .find(|member| member.name.as_str() == name)
-            .and_then(|member| leaf_ref(&member.r#type).map(str::to_owned)),
+            .map(|member| {
+                (
+                    leaf_ref(&member.r#type).map(str::to_owned).unwrap_or_default(),
+                    nullable_of(&member.r#type),
+                )
+            })
+    };
+    match (operation, input) {
+        (Definition::Command(command), true) => member(&command.input, name),
         (Definition::Query(query), false) => {
             let returns = query.returns.as_ref()?;
             let source = leaf_ref(returns)?;
             match resolve_symbol(project, source)? {
-                Definition::Entity(entity) => entity
-                    .fields
-                    .iter()
-                    .find(|member| member.name.as_str() == name)
-                    .and_then(|member| leaf_ref(&member.r#type).map(str::to_owned)),
-                Definition::ValueObject(object) => object
-                    .fields
-                    .iter()
-                    .find(|member| member.name.as_str() == name)
-                    .and_then(|member| leaf_ref(&member.r#type).map(str::to_owned)),
+                Definition::Entity(entity) => member(&entity.fields, name),
+                Definition::ValueObject(object) => member(&object.fields, name),
                 _ => None,
             }
         }
@@ -1028,6 +1092,7 @@ fn param_json(param: &ClientParam) -> Json {
     object.insert("field".to_owned(), Json::String(param.field.clone()));
     object.insert("typeRef".to_owned(), Json::String(param.type_ref.clone()));
     object.insert("required".to_owned(), Json::Bool(param.required));
+    object.insert("nullable".to_owned(), Json::Bool(param.nullable));
     if let Some(style) = param.style {
         object.insert("style".to_owned(), Json::String(style.as_str().to_owned()));
     }
@@ -1054,6 +1119,7 @@ fn body_json(body: &ClientBody) -> Json {
                         entry.insert("field".to_owned(), Json::String(field.field.clone()));
                         entry.insert("typeRef".to_owned(), Json::String(field.type_ref.clone()));
                         entry.insert("required".to_owned(), Json::Bool(field.required));
+                        entry.insert("nullable".to_owned(), Json::Bool(field.nullable));
                         Json::Object(entry)
                     })
                     .collect(),
@@ -1086,6 +1152,7 @@ fn error_json(error: &ErrorVariant) -> Json {
                         entry.insert("name".to_owned(), Json::String(field.name.clone()));
                         entry.insert("typeRef".to_owned(), Json::String(field.type_ref.clone()));
                         entry.insert("required".to_owned(), Json::Bool(field.required));
+                        entry.insert("nullable".to_owned(), Json::Bool(field.nullable));
                         Json::Object(entry)
                     })
                     .collect(),
@@ -1176,13 +1243,18 @@ mod tests {
         let command = resolve_operation(&project, "planner.focus_task").expect("command");
         assert_eq!(
             bound_member(&project, command, true, "input.task_id".to_owned()),
-            Some("planner.task_id".to_owned())
+            Some(("planner.task_id".to_owned(), false))
         );
         assert_eq!(bound_member(&project, command, true, "input.missing".to_owned()), None);
         let query = resolve_operation(&project, "planner.list_tasks").expect("query");
         assert_eq!(
             bound_member(&project, query, false, "title".to_owned()),
-            Some("planner.text".to_owned())
+            Some(("planner.text".to_owned(), false))
+        );
+        // `due` is Optional(due_date): the nullable axis travels.
+        assert_eq!(
+            bound_member(&project, query, false, "due".to_owned()),
+            Some(("planner.due_date".to_owned(), true))
         );
         assert_eq!(bound_member(&project, query, false, "missing".to_owned()), None);
     }

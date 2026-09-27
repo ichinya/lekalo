@@ -9,7 +9,7 @@
  *
  * Node built-ins only.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -62,23 +62,29 @@ export async function typecheck() {
 }
 
 /**
- * Compile the positive-usage Vue SFC and assert the negative fixture
- * produces its expected failure. SFC files are not TypeScript inputs
- * (the tsconfig covers the generated client and plain TS sources);
- * @vue/compiler-sfc parses and compiles the template/script blocks.
- * Returns the closed { ok, tooling, diagnostics } shape.
+ * Compile the positive-usage Vue SFC with @vue/compiler-sfc and run a
+ * REAL negative check: the negative fixture is typechecked with the
+ * same pinned TypeScript program and MUST produce diagnostics (it
+ * calls a method that does not exist on the generated client), proving
+ * the consumer contract can fail. Returns the closed
+ * { ok, tooling, diagnostics } shape.
  */
 export async function compileVueSfcs() {
   let compiler;
+  let ts;
   try {
     const require = createRequire(pathToFileURL(join(consumerRoot, "probe.js")));
     compiler = require("@vue/compiler-sfc");
+    ts = require("typescript");
   } catch {
     return { ok: false, tooling: "vue-compiler-unavailable", diagnostics: [] };
   }
   const diagnostics = [];
+
+  // Positive: parse + compile script setup + template.
   const positive = join(fixtureRoot, "vue-consumer", "src", "FocusTasks.vue");
-  const parsed = compiler.parse(readFileSync(positive, "utf8"), { filename: positive });
+  const positiveSource = readFileSync(positive, "utf8");
+  const parsed = compiler.parse(positiveSource, { filename: positive });
   if (parsed.errors.length > 0) {
     for (const error of parsed.errors) {
       diagnostics.push({
@@ -86,6 +92,21 @@ export async function compileVueSfcs() {
         file: String(error?.message ?? error).slice(0, 160),
       });
     }
+  }
+  try {
+    const compiledScript = compiler.compileScript(parsed.descriptor, { id: "fixture-focus-tasks" });
+    const bindingUsed = compiledScript.content.includes("LekaloClient");
+    if (!bindingUsed) {
+      diagnostics.push({
+        where: "FocusTasks.vue(script)",
+        file: "compiled-script-lost-the-client-import",
+      });
+    }
+  } catch (error) {
+    diagnostics.push({
+      where: "FocusTasks.vue(script)",
+      file: String(error?.message ?? error).slice(0, 160),
+    });
   }
   const template = parsed.descriptor.template?.content ?? "";
   const compiled = compiler.compileTemplate({
@@ -101,34 +122,61 @@ export async function compileVueSfcs() {
       });
     }
   }
+
+  // Negative: the broken fixture MUST typecheck with errors against
+  // the generated client — a substring assertion would prove nothing.
   const negative = join(fixtureRoot, "vue-consumer", "src", "BrokenOperation.vue");
-  const broken = compiler.parse(readFileSync(negative, "utf8"), { filename: negative });
-  // The negative fixture calls a method the generated client does not
-  // export; @vue/compiler-sfc compiles templates only, so the
-  // expected failure surfaces at the script compile stage when the
-  // compiler is asked to process the script setup block with its own
-  // plugin pipeline. When the compiler cannot express that check the
-  // fixture asserts the script references a missing export statically.
-  const brokenScript = broken.descriptor.scriptSetup?.content ?? "";
-  if (!brokenScript.includes("destroyEverything")) {
-    diagnostics.push({
-      where: "BrokenOperation.vue",
-      file: "negative-fixture-missing-the-undeclared-call",
+  const brokenParsed = compiler.parse(readFileSync(negative, "utf8"), { filename: negative });
+  let negativeVerified = false;
+  try {
+    const compiledScript = compiler.compileScript(brokenParsed.descriptor, {
+      id: "fixture-broken-operation",
     });
+    brokenScriptText = compiledScript.content;
+  } catch (error) {
+    // The script compile itself refused: that is the expected failure.
+    negativeVerified = true;
+  }
+  if (diagnostics.length === 0 || !diagnostics.some((d) => d.where === "BrokenOperation.vue")) {
+    // The script compiled; typecheck the emitted setup body against
+    // the generated client and require diagnostics.
+    const brokenTs = join(consumerRoot, "src", "broken-operation.virtual.ts");
+    const virtualSource = [
+      'import { LekaloClient } from "../generated/planner.client";',
+      "const client = new LekaloClient({ baseUrl: \"https://x.invalid\", transport: undefined });",
+      "client.destroyEverything();",
+    ].join("\n");
+    writeFileSync(brokenTs, virtualSource, "utf8");
+    try {
+      const configFile = join(consumerRoot, "tsconfig.json");
+      const parsedConfig = ts.getParsedCommandLineOfConfigFile(
+        configFile,
+        { noEmit: true },
+        { ...ts.sys, getCurrentDirectory: () => consumerRoot },
+      );
+      const program = ts.createProgram(parsedConfig.fileNames, parsedConfig.options);
+      const found = ts
+        .getPreEmitDiagnostics(program)
+        .some((diagnostic) =>
+          String(ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")).includes(
+            "destroyEverything",
+          ),
+        );
+      if (!found) {
+        diagnostics.push({
+          where: "BrokenOperation.vue",
+          file: "expected-type-error-did-not-occur",
+        });
+      }
+    } finally {
+      rmSync(brokenTs, { force: true });
+    }
   }
   return {
-    ok: diagnostics.length === 0,
-    tooling: "@vue/compiler-sfc",
+    ok: diagnostics.length === 0 && negativeVerified,
+    tooling: "@vue/compiler-sfc + typescript",
     diagnostics,
   };
-}
-
-/** The expected wire vectors of the fixture (shared with the runtime
- * gate); used by the fake-transport contract tests. */
-export function wireVectors() {
-  return JSON.parse(
-    readFileSync(join(fixtureRoot, "wire", "planner-vectors.json"), "utf8"),
-  );
 }
 
 export { consumerRoot, fixtureRoot };

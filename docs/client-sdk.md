@@ -93,25 +93,27 @@ The node-typescript adapter claims `generate.client-sdk` (partial) and
 reads only `.lekalo/cache/client-sdk/<project>.json` (written by
 `lekalo generate`'s preflight when the transport home plus the
 `lekalo/query-model.yaml` home validate). From that one evidence
-document it renders, under `src/generated/node-typescript/clients/**`:
-
-- the client module (`<project>.client.ts`): the transport interface,
-  the result/error union, one method per operation bound to the
-  stable operation id, and a private send path that injects
-  authorization and idempotency headers — the base URL, transport,
-  and credentials arrive only through constructor arguments;
-- the compatibility sidecar (`<project>.compatibility.json`): the
-  exact generator identity, contract digests, operation and type ids;
-  no timestamps, no machine paths, no credentials;
-- the ownership map (`<project>.map.json`).
+document it renders two backends under
+`src/generated/node-typescript/clients/**`: the TypeScript module
+(`.client.ts`) and the Go package (`.client.go`), plus the
+compatibility metadata sidecar (`.compatibility.json`, including the
+rendered languages) and the ownership map (`.map.json`). Both backends
+derive their path substitution, query serialization, request bodies,
+and response decoding from the same operation set, so one wire request
+spelled by the TypeScript client is the wire request spelled by the Go
+client. The TypeScript module takes its base URL, transport, and
+credentials only from constructor arguments; the Go client injects a
+`Transport` interface and a `context.Context` credential function per
+call.
 
 The emitted code has no hidden analytics or telemetry and performs no
 I/O by itself. The Vue consumer fixture
 (`tests/fixtures/client-sdk/vue-consumer/`) imports the generated
 module, typechecks strict with the pinned TypeScript, and compiles its
 SFC with the pinned `@vue/compiler-sfc`; the positive usage drives a
-fake transport, the negative usage proves the consumer contract can
-fail.
+fake transport, and the negative fixture is typechecked to prove the
+consumer contract can fail. The Go client is compiled with the pinned
+toolchain (`go build`) in the parity scope of the runtime gate.
 
 ## Consumer impact
 

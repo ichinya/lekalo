@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -67,6 +68,34 @@ if (!vue.ok) {
   );
   process.exit(1);
 }
+
+// ---------------------------------------------------------------------------
+// 3. The Go backend compiles with the pinned toolchain (go build) and
+//    is gofmt-clean — the second derivation must compile, not just the
+//    TypeScript one.
+// ---------------------------------------------------------------------------
+const goFile = join(repoRoot, "tests", "fixtures", "client-sdk", "vue-consumer", "generated", "planner.client.go");
+const goMod = join(repoRoot, "tests", "fixtures", "client-sdk", "vue-consumer", "generated", "go.mod");
+if (!existsSync(goFile)) {
+  process.stderr.write(`${JSON.stringify({ ok: false, reason: "go-client-missing" }, null, 2)}\n`);
+  process.exit(1);
+}
+const gofmt = spawnSync("gofmt", ["-w", goFile], { encoding: "utf8" });
+if (gofmt.status !== 0) {
+  process.stderr.write(`${JSON.stringify({ ok: false, reason: "go-client-unparseable", detail: (gofmt.stdout ?? gofmt.stderr ?? "").slice(0, 200) }, null, 2)}\n`);
+  process.exit(1);
+}
+const goBuild = spawnSync("go", ["build", "./..."], {
+  cwd: dirname(goFile),
+  stdio: "pipe",
+});
+if (goBuild.status !== 0) {
+  process.stderr.write(goBuild.stdout ?? Buffer.alloc(0));
+  process.stderr.write(goBuild.stderr ?? Buffer.alloc(0));
+  process.stderr.write(`${JSON.stringify({ ok: false, reason: "go-client-build" }, null, 2)}\n`);
+  process.exit(1);
+}
+void goMod;
 
 process.stdout.write(
   `${JSON.stringify(

@@ -116,6 +116,10 @@ test("gate: the plan carries the client module and the sidecars", () => {
       paths.some((path) => path.endsWith("planner.client.ts")),
       `client module in plan: ${JSON.stringify(paths)}`,
     );
+    assert.ok(
+      paths.some((path) => path.endsWith("planner.client.go")),
+      `the Go backend module is in the plan: ${JSON.stringify(paths)}`,
+    );
     assert.ok(paths.some((path) => path.endsWith("planner.compatibility.json")));
     assert.ok(paths.some((path) => path.endsWith("planner.map.json")));
     // Every write stays inside the declared client write root.

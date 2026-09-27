@@ -126,8 +126,16 @@ pub fn snake_of_semantic(symbol: &str) -> String {
 
 /// The deterministic `camelCase` spelling of one semantic id
 /// (`planner.endpoint_focus_task` -> `endpointFocusTask`).
+/// The deterministic `camelCase` spelling of one semantic id. Every
+/// dot segment after the module joins camel-case over its
+/// underscore-separated words, so multi-segment ids stay total:
+/// `planner.focus_task.input` -> `focusTaskInput`.
 pub fn camel_of_semantic(symbol: &str) -> String {
-    camel_of_words(&snake_of_semantic(symbol).split('_').collect::<Vec<_>>())
+    let mut words: Vec<&str> = Vec::new();
+    for segment in symbol.split('.').skip(1) {
+        words.extend(segment.split('_'));
+    }
+    camel_of_words(&words)
 }
 
 /// The deterministic `camelCase` spelling of already-split lowercase

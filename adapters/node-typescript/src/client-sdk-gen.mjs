@@ -1,3 +1,56 @@
+function tsDecodeMethod() {
+  const body = [
+    "    private async decode<T>(",
+    "      operationId: string,",
+    "      wire: {",
+    "        method: string;",
+    "        path: string;",
+    "        query: Record<string, string>;",
+    "        headers: Record<string, string>;",
+    "        body?: string;",
+    "      },",
+    "    ): Promise<LekaloResult<T>> {",
+    "      const headers: Record<string, string> = { ...wire.headers };",
+    "      const credential = this.authorization?.();",
+    "      if (credential !== undefined) headers['authorization'] = credential;",
+    "      let response: LekaloResponse;",
+    "      try {",
+    "        response = await this.transport.send({",
+    "          method: wire.method,",
+    "          path: wire.path,",
+    "          query: wire.query,",
+    "          headers,",
+    "          body: wire.body,",
+    "        });",
+    "      } catch {",
+    "        // A transport disconnect after send is the unknown state:",
+    "        // one attempt, a typed infrastructure failure, never a",
+    "        // declared error id.",
+    "        return { ok: false, infrastructure: { infrastructure: true } };",
+    "      }",
+    "      if (response.status >= 200 && response.status < 300) {",
+    "        if (response.body === undefined || response.body === '') {",
+    "          return { ok: true, value: undefined as T };",
+    "        }",
+    "        try {",
+    "          return { ok: true, value: JSON.parse(response.body) as T };",
+    "        } catch {",
+    "          return { ok: false, infrastructure: { infrastructure: true, status: response.status } };",
+    "        }",
+    "      }",
+    "      // A declared error body carries the exact canonical identity; a",
+    "      // body the client cannot recognize stays on the infrastructure",
+    "      // channel — a status alone never claims a semantic error.",
+    "      const declared = decodeError(response.body);",
+    "      if (declared !== undefined) {",
+    "        return { ok: false, error: declared };",
+    "      }",
+    "      return { ok: false, infrastructure: { infrastructure: true, status: response.status } };",
+    "    }",
+  ];
+  return body.join("\n");
+}
+
 /**
  * The client-SDK generation capability of `lekalo-target-node-typescript`
  * (issue #72): `generate.client-sdk`, composed inside the single
@@ -7,11 +60,12 @@
  * The generator reads the canonical client-SDK evidence
  * (`.lekalo/cache/client-sdk/<project>.json`) through the kernel read
  * view and renders deterministic client code for every configured
- * language backend from the ONE shared projection — multiple language
- * clients derive from one contract, never from independent
- * interpretations. The plan is pure data: for each language, the
- * client module, its compatibility-metadata sidecar, and the shared
- * fake client; digests bind every emitted byte to the exact evidence.
+ * language backend from the ONE shared projection — the TypeScript and
+ * Go backends both derive from the same operations/types here, so the
+ * wire behavior of one is the wire behavior of the other. The plan is
+ * pure data: for each language, the client module plus its
+ * compatibility-metadata sidecar and the ownership map; digests bind
+ * every emitted byte to the exact evidence.
  *
  * Boundaries honored here: the rendered client takes its base URL,
  * transport, and credentials only from injected constructor arguments
@@ -34,7 +88,6 @@ export const CLIENT_SDK_GENERATOR_VERSION = "0.4.0";
 export const CLIENT_SDK_MAP_CONTRACT = "lekalo/client-sdk-map/v0.4.0";
 /** The compatibility metadata contract one generated client carries. */
 export const CLIENT_SDK_COMPATIBILITY_CONTRACT = "lekalo/client-sdk-compatibility/v0.4.0";
-/** The write scopes the generated clients live under. */
 /** The write scopes the generated files live under. */
 export const CLIENT_SDK_WRITE_SCOPES = ["src/generated/node-typescript/clients/**"];
 /** The declared write root of the generated clients. */
@@ -116,8 +169,7 @@ export function clientSdkGenerateOperation(context) {
     if (decoded.error) {
       return { state: "failed", diagnostics: [{ reason: decoded.error }] };
     }
-    const rendered = renderClients(decoded.value);
-    return writePlan(context, rendered, decoded.value);
+    return writePlan(context, decoded.value);
   } catch (error) {
     throw new Error("client-sdk-generator: " + bounded(error?.message));
   }
@@ -167,39 +219,134 @@ export function clientSdkVerifyOperation(context) {
 
 /**
  * Render the deterministic client code for every backend from the ONE
- * shared projection. Every backend sees the same operations/types; a
- * construct a backend cannot express is an explicit unsupported note,
- * never a silent narrowing.
+ * shared projection. Every backend sees the same operations/types and
+ * produces the same requests; a construct a backend cannot express is
+ * an explicit unsupported note, never a silent narrowing.
  */
 function renderClients(evidence) {
   const { document } = evidence;
-  return {
-    typescript: renderTypescript(document),
-    compatibility: compatibilityMetadata(evidence),
-  };
+  const typescript = renderTypescript(document);
+  const go = renderGo(document);
+  const compatibility = compatibilityMetadata(evidence, [
+    "typescript",
+    "go",
+  ]);
+  return { typescript, go, compatibility };
 }
+
+// ---------------------------------------------------------------------------
+// Shared derivation (backend-independent, from the one projection).
+// ---------------------------------------------------------------------------
+
+/** The camel identifier of one wire parameter name (`task_id` ->
+ * `taskId`). */
+function camelIdent(name) {
+  return name
+    .split("_")
+    .map((word, index) =>
+      index === 0 ? word : word.charAt(0).toUpperCase() + word.slice(1),
+    )
+    .join("");
+}
+
+/**
+ * The path/query/header parameter split of one operation: path
+ * segments substitute into the URL template, query members serialize
+ * into the query string, header members become request headers.
+ */
+function operationParams(operation) {
+  const path = [];
+  const query = [];
+  const header = [];
+  for (const param of operation.params ?? []) {
+    if (param.in === "path") path.push(param);
+    else if (param.in === "query") query.push(param);
+    else if (param.in === "header") header.push(param);
+    // cookie params: not expressible in a browser-conformant injected
+    // transport; reported in the compatibility sidecar, never silent.
+  }
+  return { path, query, header };
+}
+
+/** Whether one operation accepts an idempotency key. */
+function hasIdempotencyKey(operation) {
+  return operation.idempotency !== undefined && operation.idempotency !== null;
+}
+
+/** The declared headers one operation sends: the declared idempotency
+ * header name (never a hardcoded token) plus the correlation
+ * headers. */
+function declaredHeaders(operation) {
+  const headers = [];
+  if (hasIdempotencyKey(operation)) {
+    headers.push({ name: operation.idempotency.header, kind: "idempotency" });
+  }
+  for (const name of operation.correlation ?? []) {
+    headers.push({ name, kind: "correlation" });
+  }
+  return headers;
+}
+
+
+/** The map from type id to projected type. */
+function typeIndex(document) {
+  return new Map((document.types ?? []).map((typeDef) => [typeDef.typeId, typeDef]));
+}
+
+/**
+ * The TypeScript request body argument type of one operation: whole
+ * mode decodes into the named input object; explicit mode takes an
+ * object with exactly the declared members (typed from the bound
+ * member types).
+ */
+function requestBodyType(operation, index) {
+  const body = operation.body;
+  if (!body) return undefined;
+  if (body.mode === "whole") {
+    return tsTypeRef(body.typeRef, index);
+  }
+  const members = (body.fields ?? [])
+    .map((field) => {
+      const optional = field.required ? "" : "?";
+      const nullable = field.nullable ? " | null" : "";
+      return `${JSON.stringify(camelIdent(field.name))}${optional}: ${tsTypeRef(field.typeRef, index)}${nullable}`;
+    })
+    .join("; ");
+  return `{ ${members} }`;
+}
+
+/** The evidence digest member the header pins. */
+function evidenceDigestRef(document) {
+  const transport = document.transportRef ?? {};
+  return transport.digest ?? "sha256:unpinned";
+}
+
+// ---------------------------------------------------------------------------
+// TypeScript backend.
+// ---------------------------------------------------------------------------
 
 /**
  * The TypeScript/Vue client emission: one module per project with the
  * shared result/error union, one method per operation keyed to the
- * stable operation id, and an injected transport. The transport is a
- * constructor argument; the module declares its interface and never
- * imports fetch, net, or any environment access.
+ * stable operation id, and an injected transport. Path parameters
+ * substitute into the URL template, query members serialize into the
+ * query string, declared bodies serialize as JSON, and success bodies
+ * decode into the projected types.
  */
 function renderTypescript(document) {
+  const index = typeIndex(document);
   const types = [];
   for (const typeDef of document.types ?? []) {
-    types.push(typeDeclaration(typeDef));
+    types.push(typeDeclarationTs(typeDef, index));
   }
   const methods = [];
   for (const operation of document.operations ?? []) {
-    methods.push(operationMethod(operation));
+    methods.push(operationMethodTs(operation, index));
   }
+  methods.push(tsDecodeMethod());
   const body = [
     "/* eslint-disable */",
-    "// Generated by lekalo-target-node-typescript client-sdk generator " +
-      CLIENT_SDK_GENERATOR_VERSION +
-      " — never edit.",
+    "// Generated by lekalo-target-node-typescript client-sdk generator 0.4.0 — never edit.",
     `// Contract: ${SDK_SCHEMA_VERSION} (${evidenceDigestRef(document)}).`,
     "// The transport, base URL, and credentials are injected; this module",
     "// performs no I/O by itself and contains no telemetry.",
@@ -262,75 +409,66 @@ function renderTypescript(document) {
     "  }",
     "",
     ...methods,
+
+    "}",
     "",
-    "  private async send(",
-    "    operationId: string,",
-    "    wire: { method: string; path: string; idempotencyKey?: string },",
-    "  ): Promise<LekaloResult<unknown>> {",
-    "    const headers: Record<string, string> = {};",
-    "    const credential = this.authorization?.();",
-    "    if (credential !== undefined) headers['authorization'] = credential;",
-    "    if (wire.idempotencyKey !== undefined) headers['idempotency-key'] = wire.idempotencyKey;",
-    "    let response: LekaloResponse;",
-    "    try {",
-    "      response = await this.transport.send({",
-    "        method: wire.method,",
-    "        path: this.baseUrl + wire.path,",
-    "        query: {},",
-    "        headers,",
-    "      });",
-    "    } catch {",
-    "      // A transport disconnect after send is the unknown state:",
-    "      // one attempt, a typed infrastructure failure, never a", 
-    "      // declared error id.",
-    "      return { ok: false, infrastructure: { infrastructure: true } };",
-    "    }",
-    "    if (response.status >= 200 && response.status < 300) {",
-    "      return { ok: true, value: undefined };",
-    "    }",
-    "    // A declared error body carries the exact canonical identity; a",
-    "    // body the client cannot recognize stays on the infrastructure",
-    "    // channel — a status alone never claims a semantic error.",
-    "    const declared = decodeError(response.body);",
-    "    if (declared !== undefined) {",
-    "      return { ok: false, error: declared };",
-    "    }",
-    "    return { ok: false, infrastructure: { infrastructure: true, status: response.status } };",
-    "  }",
+    "/** Percent-encode one path segment (the RFC 3986 reserved set). */",
+    "function encodeSegment(value: string): string {",
+    "  return encodeURIComponent(value);",
     "}",
     "",
     "/** Decode a canonical error envelope, or nothing when the body is",
-    " * not a recognized declared error. */",
+    " * not a recognized declared error. A status alone never claims a",
+    " * semantic error. */",
     "function decodeError(body: string | undefined): LekaloError | undefined {",
     "  if (body === undefined) return undefined;",
+    "  let parsed: unknown;",
     "  try {",
-    "    const parsed = JSON.parse(body) as { ok?: unknown; error?: LekaloError };",
-    "    const error = parsed.error;",
-    "    if (parsed.ok === false",
-    "      && error !== undefined && error !== null",
-    "      && typeof error.id === 'string'",
-    "      && typeof error.code === 'string'",
-    "      && typeof error.category === 'string') {",
-    "      return { id: error.id, code: error.code, category: error.category, payload: error.payload };",
-    "    }",
-    "    return undefined;",
+    "    parsed = JSON.parse(body);",
     "  } catch {",
     "    return undefined;",
     "  }",
+    "  if (typeof parsed !== 'object' || parsed === null) return undefined;",
+    "  const record = parsed as { ok?: unknown; error?: unknown };",
+    "  if (record.ok !== false || typeof record.error !== 'object' || record.error === null) {",
+    "    return undefined;",
+    "  }",
+    "  const error = record.error as {",
+    "    id?: unknown;",
+    "    code?: unknown;",
+    "    category?: unknown;",
+    "    payload?: unknown;",
+    "  };",
+    "  if (typeof error.id !== 'string' || typeof error.code !== 'string'",
+    "    || typeof error.category !== 'string') {",
+    "    return undefined;",
+    "  }",
+    "  return {",
+    "    id: error.id,",
+    "    code: error.code,",
+    "    category: error.category,",
+    "    payload: typeof error.payload === 'object' && error.payload !== null",
+    "      ? (error.payload as Record<string, unknown>)",
+    "      : {},",
+    "  };",
     "}",
     "",
   ];
   return body.join("\n");
 }
 
-/** The evidence digest member the header pins. */
-function evidenceDigestRef(document) {
-  const transport = document.transportRef ?? {};
-  return transport.digest ?? "sha256:unpinned";
+/** The TypeScript spelling of one named reference: the unit object
+ * decodes to void at the call boundary; known types resolve to their
+ * generated identifier; an unresolved reference renders `unknown`
+ * (never a guessed shape). */
+function tsTypeRef(typeRef, typeIndex) {
+  if (typeRef === "lekalo.unit") return "void";
+  const known = typeIndex.get(typeRef);
+  return known ? known.ident : "unknown";
 }
 
-/** One named type declaration. */
-function typeDeclaration(typeDef) {
+/** One named type declaration (TypeScript). */
+function typeDeclarationTs(typeDef, index) {
   const ident = typeDef.ident;
   if (typeDef.kind === "scalar") {
     return `export type ${ident} = string;`;
@@ -339,81 +477,467 @@ function typeDeclaration(typeDef) {
     const members = (typeDef.values ?? [])
       .map((value) => `  | ${JSON.stringify(value)}`)
       .join("\n");
-    return `export type ${ident} =\n${members};`;
+    return `export type ${ident} =
+${members};`;
   }
   const fields = (typeDef.fields ?? [])
     .map((field) => {
       const optional = field.required ? "" : "?";
       const nullable = field.nullable ? " | null" : "";
-      return `  ${JSON.stringify(field.name)}${optional}: ${fieldTypeRef(field)}${nullable};`;
+      return `  ${JSON.stringify(field.name)}${optional}: ${tsTypeRef(field.typeRef, index)}${nullable};`;
     })
     .join("\n");
-  return `export interface ${ident} {\n${fields}\n}`;
+  return `export interface ${ident} {
+${fields}
+}`;
 }
 
-/** The TypeScript spelling of one declared field type reference. */
-function fieldTypeRef(field) {
-  void field;
-  // v0.4.0 renders scalar/entity fields as their named alias or the
-  // JSON value domain; named references resolve through the emitted
-  // type block (identifiers are unique by semantic id).
-  return "unknown";
+/** Percent-encode one path segment (the RFC 3986 reserved set). */
+function tsEncodeSegment() {
+  return "function encodeSegment(value: string): string {\n  return encodeURIComponent(value);\n}";
 }
 
-/** One operation method with its bounded retry guard. */
-function operationMethod(operation) {
+/**
+ * The header parameter identifier shared by the TS and Go backends:
+ * header names carry hyphens, which no target identifier grammar
+ * allows, so the declared header maps to a deterministic camel
+ * argument (`X-Request-Id` -> `xRequestId`).
+ */
+function headerIdent(name) {
+  const parts = name.split("-").filter((part) => part.length > 0);
+  const camel = parts
+    .map((part, index) =>
+      index === 0
+        ? part.toLowerCase()
+        : part.charAt(0).toUpperCase() + part.slice(1).toLowerCase(),
+    )
+    .join("");
+  return camel.replace(/([a-z])(ID)$/, "$1ID");
+}
+
+/**
+ * One operation method (TypeScript): path substitution, query
+ * serialization, the declared typed body, declared headers, and the
+ * typed success decode. The send result carries the raw body; the
+ * method decodes it into the projected success type so callers never
+ * see a string where the contract declares an object.
+ */
+function operationMethodTs(operation, index) {
+  const { path: pathParams, query: queryParams, header: headerParams } =
+    operationParams(operation);
   const retryable = (operation.errors ?? []).some(
     (error) => error.retry === "safe" || error.retry === "key-required",
   );
   const retryDoc = retryable
     ? " A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries."
     : " Never retried automatically: no declared error authorizes a retry.";
-  const params = [];
-  for (const param of operation.params ?? []) {
-    if (param.in !== "path" && param.in !== "query") continue;
-    params.push(`${camelIdent(param.name)}: string`);
+
+  const successType = operation.successBody
+    ? tsTypeRef(operation.successBody.typeRef, index)
+    : "void";
+  const hasBodyArg = operation.body !== undefined && operation.body !== null;
+
+  const signatureParts = [];
+  for (const param of pathParams) signatureParts.push(`${camelIdent(param.name)}: string`);
+  for (const param of queryParams) {
+    signatureParts.push(`${camelIdent(param.name)}${param.required ? "" : "?"}: string`);
   }
-  const withKey = operation.idempotency !== undefined && operation.idempotency !== null;
-  if (withKey) {
-    params.push("idempotencyKey?: string");
+  for (const param of headerParams) {
+    signatureParts.push(`${headerIdent(param.name)}${param.required ? "" : "?"}: string`);
   }
-  const signature = `  ${operation.ident}(${params.join(", ")}): Promise<LekaloResult<unknown>> {`;
-  return [
+  if (hasBodyArg) {
+    signatureParts.push(`input: ${requestBodyType(operation, index)}`);
+  }
+  for (const header of declaredHeaders(operation)) {
+    if (header.kind === "idempotency") {
+      signatureParts.push("idempotencyKey?: string");
+    } else {
+      signatureParts.push(`${headerIdent(header.name)}?: string`);
+    }
+  }
+
+  // URL template substitution: every declared path segment is
+  // percent-encoded and substituted; the template is never sent with
+  // an unsubstituted placeholder.
+  let url = operation.path;
+  for (const param of pathParams) {
+    url = url.replace(
+      `{${param.name}}`,
+      `\${encodeSegment(${camelIdent(param.name)})}`,
+    );
+  }
+
+  const lines = [
     `  /** ${operation.method} ${operation.path} — operation ${operation.operationId}.${retryDoc} */`,
-    signature,
-    "    return this.send(" + JSON.stringify(operation.operationId) + ", {",
-    "      method: " + JSON.stringify(operation.method) + ",",
-    "      path: " + JSON.stringify(operation.path) + ",",
-    withKey ? "      idempotencyKey," : "      idempotencyKey: undefined,",
-    "    });",
-    "  }",
-  ].join("\n");
+    `  ${operation.ident}(${signatureParts.join(", ")}): Promise<LekaloResult<${successType}>> {`
+  ];
+  if (pathParams.length > 0) {
+    lines.push("    const encodedPath = `" + url + "`;");
+  }
+  lines.push("    const query: Record<string, string> = {};");
+  for (const param of queryParams) {
+    lines.push(`    query[${JSON.stringify(param.name)}] = ${camelIdent(param.name)};`);
+  }
+  lines.push("    const headers: Record<string, string> = {};");
+  for (const param of headerParams) {
+    lines.push(`    headers[${JSON.stringify(param.name)}] = ${headerIdent(param.name)};`);
+  }
+  for (const header of declaredHeaders(operation)) {
+    if (header.kind === "idempotency") {
+      lines.push(
+        `    if (idempotencyKey !== undefined) headers[${JSON.stringify(header.name)}] = idempotencyKey;`,
+      );
+    } else {
+      lines.push(`    {`);
+      lines.push(`      const value = ${headerIdent(header.name)};`);
+      lines.push(`      if (value !== undefined) headers[${JSON.stringify(header.name)}] = value;`);
+      lines.push(`    }`);
+    }
+  }
+  lines.push("    return this.decode(" + JSON.stringify(operation.operationId) + ", {"
+  );
+  lines.push("      method: " + JSON.stringify(operation.method) + ",");
+  lines.push("      path: this.baseUrl + " + (pathParams.length > 0 ? "encodedPath" : JSON.stringify(url)) + ",");
+  lines.push("      query,");
+  lines.push("      headers,");
+  lines.push(
+    hasBodyArg
+      ? "      body: JSON.stringify(input),"
+      : "      body: undefined,",
+  );
+  lines.push("    });");
+  lines.push("  }");
+  return lines.join("\n");
 }
 
-/** The camel identifier of one wire parameter name (`task_id` ->
- * `taskId`). */
-function camelIdent(name) {
-  return name
-    .split("_")
-    .map((word, index) =>
+/**
+ * The typed send-and-decode path: publishes one wire request and
+ * decodes the declared success body, so every method returns the
+ * projected type (never a raw string, never `unknown`).
+ */
+
+/**
+ * Build the write plan map: the TypeScript client, the Go client, the
+ * compatibility sidecar, and the ownership map — all from one
+ * evidence document.
+ */
+// ---------------------------------------------------------------------------
+// Go backend (the second derivation over the same projection).
+// ---------------------------------------------------------------------------
+
+function renderGo(document) {
+  const index = typeIndex(document);
+  const projectName = document.projectId ?? "project";
+  const packageName = goPackageName(projectName);
+  const structName = goExported(projectName) + "Client";
+  const types = [];
+  for (const typeDef of document.types ?? []) {
+    types.push(typeDeclarationGo(typeDef, index));
+  }
+  const methods = [];
+  for (const operation of document.operations ?? []) {
+    methods.push(operationMethodGo(document, operation, index));
+  }
+  const head = goHead(document, packageName, structName);
+  return [head, "", ...types, "", ...methods, "", goSendAndDecode(structName)].join("\n");
+}
+
+function goHead(document, packageName, structName) {
+  const lines = [
+    "// Generated by lekalo-target-node-typescript client-sdk generator " + CLIENT_SDK_GENERATOR_VERSION + " — never edit.",
+    `// Contract: ${SDK_SCHEMA_VERSION} (${evidenceDigestRef(document)}).`,
+    "// The transport, base URL, and credentials are injected; this package",
+    "// performs no I/O by itself and contains no telemetry.",
+    "",
+    "package " + packageName,
+    "",
+    "import (",
+    "\t\"context\"",
+    "\t\"encoding/json\"",
+    "\t\"fmt\"",
+    "\t\"net/url\"",
+    "\t\"strings\"",
+    ")",
+    "",
+    "// Transport is the injected transport every call goes through.",
+    "type Transport interface {",
+    "	Send(ctx context.Context, request Request) (Response, error)",
+    "}",
+    "",
+    "// Request is the wire request: method, full path, query, headers, body.",
+    "type Request struct {",
+    "	Method  string",
+    "	Path    string",
+    "	Query   url.Values",
+    "	Headers map[string]string",
+    "	Body    []byte",
+    "}",
+    "",
+    "// Response is the wire response.",
+    "type Response struct {",
+    "	Status  int",
+    "	Headers map[string]string",
+    "	Body    []byte",
+    "}",
+    "",
+    "// DeclaredError carries the exact semantic identity of a #62 error.",
+    "type DeclaredError struct {",
+    "	ID       string",
+    "	Code     string",
+    "	Category string",
+    "	Payload  map[string]any",
+    "}",
+    "",
+    "func (e *DeclaredError) Error() string {",
+    "	return fmt.Sprintf(" + JSON.stringify("lekalo: %s (%s / %s)") + ", e.Code, e.Category, e.ID)",
+    "}",
+    "",
+    "// InfrastructureFailure is the unknown-failure channel: it never",
+    "// masquerades as a declared error.",
+    "type InfrastructureFailure struct {",
+    "	Status int",
+    "}",
+    "",
+    "func (e *InfrastructureFailure) Error() string {",
+    "	return " + JSON.stringify("lekalo: infrastructure failure"),
+    "}",
+    "",
+    "// Client is the generated client over the injected transport.",
+    "type " + structName + " struct {",
+    "	baseURL       string",
+    "	transport     Transport",
+    "	authorization func(context.Context) (string, bool)",
+    "}",
+    "",
+    "// New" + structName + " builds a client over the injected transport.",
+    "func New" + structName + "(baseURL string, transport Transport, authorization func(context.Context) (string, bool)) *" + structName + " {",
+    "	return &" + structName + "{baseURL: strings.TrimSuffix(baseURL, " + JSON.stringify("/") + "), transport: transport, authorization: authorization}",
+    "}",
+  ];
+  return lines.join("\n");
+}
+
+function goSendAndDecode(structName) {
+  const lines = [
+    "// send publishes one wire request and projects the response onto",
+    "// the #62 tuple: (nil, nil) success, *DeclaredError, or the",
+    "// *InfrastructureFailure unknown channel.",
+    "func (c *" + structName + ") send(ctx context.Context, operationID string, wire Request) (*Response, error) {",
+    "	headers := map[string]string{}",
+    "	for name, value := range wire.Headers {",
+    "		headers[name] = value",
+    "	}",
+    "	if c.authorization != nil {",
+    "		if credential, ok := c.authorization(ctx); ok {",
+    "			headers[" + JSON.stringify("authorization") + "] = credential",
+    "		}",
+    "	}",
+    "	wire.Headers = headers",
+    "	response, err := c.transport.Send(ctx, wire)",
+    "	if err != nil {",
+    "		// A transport disconnect after send is the unknown state:",
+    "		// one attempt, the typed infrastructure channel, never a",
+    "		// declared error id.",
+    "		return nil, &InfrastructureFailure{}",
+    "	}",
+    "	if response.Status >= 200 && response.Status < 300 {",
+    "		return &response, nil",
+    "	}",
+    "	if declared := decodeError(response.Body); declared != nil {",
+    "		return nil, declared",
+    "	}",
+    "	return nil, &InfrastructureFailure{Status: response.Status}",
+    "}",
+    "",
+    "// decodeError parses a canonical error envelope, or nil when the",
+    "// body is not a recognized declared error. A status alone never",
+    "// claims a semantic error.",
+    "func decodeError(body []byte) *DeclaredError {",
+    "	if body == nil {",
+    "		return nil",
+    "	}",
+    "	var envelope struct {",
+    "\t\tOk    bool \`json:\"ok\"\`",
+    "\t\tError *struct {",
+    "\t\t\tID       string         \`json:\"id\"\`",
+    "\t\t\tCode     string         \`json:\"code\"\`",
+    "\t\t\tCategory string         \`json:\"category\"\`",
+    "\t\t\tPayload  map[string]any \`json:\"payload\"\`",
+    "\t\t} \`json:\"error\"\`",
+    `	}`,
+    "	if err := json.Unmarshal(body, &envelope); err != nil || envelope.Ok || envelope.Error == nil {",
+    "		return nil",
+    "	}",
+    "	payload := envelope.Error.Payload",
+    "	if payload == nil {",
+    "		payload = map[string]any{}",
+    "	}",
+    "	return &DeclaredError{ID: envelope.Error.ID, Code: envelope.Error.Code, Category: envelope.Error.Category, Payload: payload}",
+    "}",
+  ];
+  return lines.join("\n");
+}
+
+function goPackageName(projectId) {
+  return projectId.replace(/[^a-z0-9]/g, "");
+}
+
+function goExported(text) {
+  const parts = String(text)
+    .split(/[^a-zA-Z0-9]/)
+    .filter((part) => part.length > 0);
+  return parts
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
+}
+
+function goTypeRef(typeRef, index) {
+  if (typeRef === "lekalo.unit") return "*struct{}";
+  const known = index.get(typeRef);
+  return known ? "*" + goExported(known.ident) : "any";
+}
+
+function goHeaderIdent(name) {
+  const parts = name.split("-").filter((part) => part.length > 0);
+  const camel = parts
+    .map((part, index) =>
       index === 0
-        ? word
-        : word.charAt(0).toUpperCase() + word.slice(1),
+        ? part.toLowerCase()
+        : part.charAt(0).toUpperCase() + part.slice(1).toLowerCase(),
     )
     .join("");
+  return camel.replace(/([a-z])(ID)$/, "$1ID");
+}
+
+function typeDeclarationGo(typeDef, index) {
+  const name = goExported(typeDef.ident);
+  if (typeDef.kind === "scalar") {
+    return `type ${name} string`;
+  }
+  if (typeDef.kind === "enum") {
+    const lines = [`type ${name} string`, "const ("];
+    for (const value of typeDef.values ?? []) {
+      lines.push(`\t${name}${goExported(value)} ${name} = ${JSON.stringify(value)}`);
+    }
+    lines.push(")");
+    return lines.join("\n");
+  }
+  const fields = (typeDef.fields ?? [])
+    .map((field) => {
+      const pointer = !field.required || field.nullable ? "*" : "";
+      return `\t${goExported(field.name)} ${pointer}${goTypeRef(field.typeRef, index)} \`json:"${field.name}${field.required ? "" : ",omitempty"}"\``;
+    })
+    .join("\n");
+  return [`type ${name} struct {`, fields || "\t_ struct{} `json:\"-\"`", "}"].join("\n");
+}
+
+function operationMethodGo(document, operation, index) {
+  const parts = operationParams(operation);
+  const pathParams = parts.path;
+  const queryParams = parts.query;
+  const headerParams = parts.header;
+  const projectName = document.projectId ?? "project";
+  const structName = goExported(projectName) + "Client";
+  const successType = operation.successBody
+    ? goTypeRef(operation.successBody.typeRef, index)
+    : "*struct{}";
+  const hasBodyArg = operation.body !== undefined && operation.body !== null;
+  const signatureParts = ["ctx context.Context"];
+  for (const param of pathParams) signatureParts.push(`${camelIdent(param.name)} string`);
+  for (const param of queryParams) signatureParts.push(`${camelIdent(param.name)} string`);
+  for (const param of headerParams) signatureParts.push(`${goHeaderIdent(param.name)} string`);
+  if (hasBodyArg) signatureParts.push("input any");
+  for (const header of declaredHeaders(operation)) {
+    signatureParts.push(`${goHeaderIdent(header.name)} string`);
+  }
+  const methodName = goExported(operation.ident);
+  const lines = [
+    `// ${methodName} ${operation.method} ${operation.path} — operation ${operation.operationId}.`,
+    `func (c *${structName}) ${methodName}(${signatureParts.join(", ")}) (${successType}, error) {`,
+    "	query := url.Values{}"
+  ];
+  for (const param of queryParams) {
+    lines.push(`\tquery.Set(${JSON.stringify(param.name)}, ${camelIdent(param.name)})`);
+  }
+  lines.push("\theaders := map[string]string{}");
+  for (const param of headerParams) {
+    lines.push(`\theaders[${JSON.stringify(param.name)}] = ${goHeaderIdent(param.name)}`);
+  }
+  for (const header of declaredHeaders(operation)) {
+    lines.push(`\theaders[${JSON.stringify(header.name)}] = ${goHeaderIdent(header.name)}`);
+  }
+  const args = [];
+  const segments = [];
+  let lastIndex = 0;
+  const pattern = /\{([a-z0-9_]+)\}/g;
+  let match;
+  const template = operation.path;
+  while ((match = pattern.exec(template)) !== null) {
+    const param = pathParams.find((candidate) => candidate.name === match[1]);
+    segments.push(template.slice(lastIndex, match.index));
+    segments.push("%s");
+    args.push(
+      param
+        ? `url.PathEscape(${camelIdent(param.name)})`
+        : JSON.stringify(match[0]),
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  segments.push(template.slice(lastIndex));
+  const url = segments.join("");
+  const pathExpr =
+    args.length > 0
+      ? `fmt.Sprintf(${JSON.stringify(url)}, ${args.join(", ")})`
+      : JSON.stringify(url);
+  lines.push("\twire := Request{");
+  lines.push("\t\tMethod: " + JSON.stringify(operation.method) + ",");
+  lines.push(`\t\tPath: c.baseURL + ${pathExpr},`);
+  lines.push("\t\tQuery: query,");
+  lines.push("\t\tHeaders: headers,");
+  if (hasBodyArg) {
+    lines.push("\t}");
+    lines.push("\tbody, err := json.Marshal(input)");
+    lines.push("\tif err != nil {");
+    lines.push("\t\treturn nil, err");
+    lines.push("\t}");
+    lines.push("\twire.Body = body");
+  } else {
+    lines.push("\t}");
+  }
+  lines.push(`\tresponse, err := c.send(ctx, ${JSON.stringify(operation.operationId)}, wire)`);
+  lines.push("\tif err != nil {");
+  lines.push("\t\treturn nil, err");
+  lines.push("\t}");
+  if (operation.successBody) {
+    const decoded = goTypeRef(operation.successBody.typeRef, index);
+    lines.push(`\tvar value ${decoded}`);
+    lines.push("\tif response.Body != nil {");
+    lines.push("\t\tif err := json.Unmarshal(response.Body, &value); err != nil {");
+    lines.push("\t\t\treturn nil, err");
+    lines.push("\t\t}");
+    lines.push("\t}");
+    lines.push("\treturn value, nil");
+  } else {
+    lines.push("\t_ = response");
+    lines.push("\treturn &struct{}{}, nil");
+  }
+  lines.push("}");
+  return lines.join("\n");
 }
 
 /**
  * The compatibility metadata sidecar: the exact contract versions and
- * digests one client was generated from. No timestamps, no machine
- * paths, no credentials — the bytes are reproducible.
+ * digests one client was generated from, and the backends rendered.
+ * No timestamps, no machine paths, no credentials — the bytes are
+ * reproducible.
  */
-function compatibilityMetadata(evidence) {
+function compatibilityMetadata(evidence, languages) {
   const document = evidence.document;
   return {
     contract: CLIENT_SDK_COMPATIBILITY_CONTRACT,
     generator: { id: CLIENT_SDK_GENERATOR_ID, version: CLIENT_SDK_GENERATOR_VERSION },
     projectId: evidence.projectId,
+    languages,
     sdkContract: { identity: document.identity, digest: evidence.digest },
     irRef: document.irRef ?? {},
     modelRef: document.modelRef ?? {},
@@ -424,12 +948,6 @@ function compatibilityMetadata(evidence) {
   };
 }
 
-/** Build the write plan: the client module, the compatibility
- * sidecar, and the ownership map. Dry runs never write; applies
- * publish the exact bytes inside the permitted root. */
-/** Build the write plan: the client module, the compatibility
- * sidecar, and the ownership map. Dry runs never write; applies
- * publish the exact bytes inside the permitted root. */
 export function renderWritePlan(evidence) {
   const rendered = renderClients(evidence);
   const stem = `${CLIENT_SDK_WRITE_ROOT.replace("/**", "")}/${evidence.projectId ?? "project"}`;
@@ -439,34 +957,21 @@ export function renderWritePlan(evidence) {
     inputs: { clientSdk: evidence.digest },
     pointers: {
       "/client": evidence.projectId ?? "project",
+      "/client-go": evidence.projectId ?? "project",
       "/compatibility": CLIENT_SDK_GENERATOR_ID,
     },
   };
-  const files = new Map([
+  return new Map([
     [`${stem}.client.ts`, rendered.typescript],
+    [`${stem}.client.go`, rendered.go],
     [`${stem}.compatibility.json`, `${canonicalJson(rendered.compatibility)}\n`],
     [`${stem}.map.json`, `${canonicalJson(map)}\n`],
   ]);
-  return files;
 }
 
-function writePlan(context, rendered, evidence) {
+function writePlan(context, evidence) {
   const { request, writeView } = context;
-  const stem = `${CLIENT_SDK_WRITE_ROOT.replace("/**", "")}/${evidence.projectId ?? "project"}`;
-  const map = {
-    contract: CLIENT_SDK_MAP_CONTRACT,
-    generator: { id: CLIENT_SDK_GENERATOR_ID, version: CLIENT_SDK_GENERATOR_VERSION },
-    inputs: { clientSdk: evidence.digest },
-    pointers: {
-      "/client": evidence.projectId ?? "project",
-      "/compatibility": CLIENT_SDK_GENERATOR_ID,
-    },
-  };
-  const files = new Map([
-    [`${stem}.client.ts`, rendered.typescript],
-    [`${stem}.compatibility.json`, `${canonicalJson(rendered.compatibility)}\n`],
-    [`${stem}.map.json`, `${canonicalJson(map)}\n`],
-  ]);
+  const files = renderWritePlan(evidence);
   const writes = [];
   for (const [path, text] of files) {
     writes.push({
@@ -494,7 +999,7 @@ function writePlan(context, rendered, evidence) {
     },
     evidence: {
       projectId: evidence.projectId,
-      languages: ["typescript"],
+      languages: ["typescript", "go"],
       evidenceDigest: evidence.digest,
     },
   };

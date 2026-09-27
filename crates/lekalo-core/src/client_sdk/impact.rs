@@ -160,26 +160,44 @@ pub fn affected_clients(
     let mut affected: Vec<AffectedClient> = Vec::new();
     for path in diff.paths() {
         // The diff path spells `endpoints/<id>/...`; the endpoint id
-        // is the second segment. Non-endpoint paths (document
-        // defaults) affect every artifact of the project.
-        let endpoint_id = path
+        // is the second segment. A removal is the bare
+        // `endpoints/<id>` (no member segment) classified breaking —
+        // the candidate no longer declares the endpoint. Non-endpoint
+        // paths (document defaults) affect every artifact of the
+        // project.
+        let endpoint_segments = path
             .path()
             .strip_prefix("endpoints/")
-            .and_then(|rest| rest.split('/').next())
-            .map(str::to_owned);
+            .map(|rest| rest.split('/').collect::<Vec<_>>());
+        let endpoint_id = endpoint_segments
+            .as_ref()
+            .map(|segments| segments[0].to_owned());
+        let is_endpoint_removal = matches!(&endpoint_segments, Some(segments) if segments.len() == 1)
+            && path.class() == transport_http::DiffClass::Breaking
+            && candidate.endpoint(endpoint_id.as_deref().unwrap_or_default()).is_none();
         let kind = match path.class() {
             transport_http::DiffClass::Breaking => {
-                let removed = path.path().contains("/removed");
-                if removed {
+                if is_endpoint_removal {
                     AffectedKind::EndpointRemoved
                 } else {
                     AffectedKind::EndpointChanged
                 }
             }
-            // Error-map membership/identity changes are policy-class
-            // in the wire diff but still change the typed union the
-            // clients decode.
-            transport_http::DiffClass::PolicyChange => AffectedKind::ErrorChanged,
+            transport_http::DiffClass::PolicyChange => {
+                // Policy-class members reshape the projection without
+                // removing a wire guarantee; only the error map
+                // members change the typed union the clients decode,
+                // so the kind names the actual member family.
+                let member = endpoint_segments
+                    .as_ref()
+                    .and_then(|segments| segments.get(1).copied())
+                    .unwrap_or_default();
+                if member == "errors" {
+                    AffectedKind::ErrorChanged
+                } else {
+                    AffectedKind::EndpointChanged
+                }
+            }
             transport_http::DiffClass::NonBreaking => continue,
         };
         let covering = match &endpoint_id {

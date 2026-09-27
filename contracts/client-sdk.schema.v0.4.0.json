@@ -88,7 +88,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 128,
-      "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+      "pattern": "^[a-z][a-zA-Z0-9_]*$"
     },
     "operationId": {
       "type": "string",
@@ -167,7 +167,8 @@
         "in",
         "field",
         "typeRef",
-        "required"
+        "required",
+        "nullable"
       ],
       "properties": {
         "name": {
@@ -193,6 +194,9 @@
         },
         "explode": {
           "type": "boolean"
+        },
+        "nullable": {
+          "type": "boolean"
         }
       }
     },
@@ -209,7 +213,8 @@
         "name",
         "field",
         "typeRef",
-        "required"
+        "required",
+        "nullable"
       ],
       "properties": {
         "name": {
@@ -226,6 +231,9 @@
         },
         "required": {
           "type": "boolean"
+        },
+        "nullable": {
+          "type": "boolean"
         }
       }
     },
@@ -241,7 +249,8 @@
           "$ref": "#/$defs/bodyMode"
         },
         "typeRef": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "fields": {
           "type": "array",
@@ -324,7 +333,28 @@
         "cursorTypeRef": {
           "type": "string"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "style": {
+                "const": "cursor"
+              }
+            },
+            "required": [
+              "style"
+            ]
+          },
+          "then": {
+            "required": [
+              "cursorParam",
+              "cursorField",
+              "cursorTypeRef"
+            ]
+          }
+        }
+      ]
     },
     "retryAuthorization": {
       "enum": [
@@ -379,7 +409,8 @@
             "required": [
               "name",
               "typeRef",
-              "required"
+              "required",
+              "nullable"
             ],
             "properties": {
               "name": {
@@ -389,6 +420,9 @@
                 "type": "string"
               },
               "required": {
+                "type": "boolean"
+              },
+              "nullable": {
                 "type": "boolean"
               }
             }

@@ -121,7 +121,7 @@ pub fn plan_attempts(
     authorizations: &[RetryAuthorization],
     requested_retries: u32,
 ) -> Result<AttemptPlan, DiagnosticSet> {
-    if requested_retries == 0 || requested_retries + 1 > MAX_ATTEMPTS {
+    if requested_retries == 0 || requested_retries >= MAX_ATTEMPTS {
         return Err(super::diagnostic::rule_invalid(
             super::diagnostic::RETRY_UNSAFE,
             "attempt-bound",
@@ -133,7 +133,7 @@ pub fn plan_attempts(
         .iter()
         .any(|authorization| authorization.authorizes_with_key());
     Ok(AttemptPlan {
-        attempts: (requested_retries + 1).min(MAX_ATTEMPTS),
+        attempts: requested_retries + 1,
         key_required_for_retry: key_required && any_safe,
     })
 }
