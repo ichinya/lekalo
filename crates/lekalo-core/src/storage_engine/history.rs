@@ -312,6 +312,35 @@ pub fn validate_rename_history(
     {
         return Err(refusal("rename-cycle"));
     }
+    // Column renames hold the same one-way discipline: one entry per
+    // source column, one entry per target name, and a target the base
+    // table does not already occupy — a surviving column of the target
+    // name would collide (42710) the moment the swap applied, and an
+    // identity entry is not a rename at all.
+    let mut column_sources: Vec<(&str, &str)> = Vec::new();
+    let mut column_targets: Vec<(&str, &str)> = Vec::new();
+    for rename in map.renames() {
+        if rename.kind != StorageRenameKind::Column {
+            continue;
+        }
+        let entity = rename.entity.as_str();
+        let base_table = declared_table(base, entity)
+            .ok_or_else(|| refusal("rename-entity-unmapped"))?;
+        if rename.from == rename.to
+            || declared_columns(base, base_table)?
+                .iter()
+                .any(|column| *column == rename.to)
+        {
+            return Err(refusal("rename-column-name"));
+        }
+        if column_sources.contains(&(entity, rename.from.as_str()))
+            || column_targets.contains(&(entity, rename.to.as_str()))
+        {
+            return Err(refusal("rename-conflict"));
+        }
+        column_sources.push((entity, rename.from.as_str()));
+        column_targets.push((entity, rename.to.as_str()));
+    }
     Ok(())
 }
 
@@ -504,5 +533,62 @@ mod tests {
             }],
         };
         assert!(validate_rename_history(&map, &base, &candidate).is_err());
+    }
+
+    #[test]
+    fn an_occupied_or_identity_column_rename_refuses() {
+        // A rename whose target already exists in the base would
+        // collide (42710) the moment the swap applied, and an identity
+        // entry is not a rename at all — both refuse instead of
+        // planning an inapplicable statement.
+        let base = attachment("../../tests/fixtures/storage-engine/migration/base.json");
+        let candidate =
+            attachment("../../tests/fixtures/storage-engine/migration/candidate-additive.json");
+        let digest = |attachment: &StorageProjectionAttachment| {
+            format!(
+                "sha256:{}",
+                crate::digest::sha256_hex(
+                    attachment.canonical_bytes().expect("bytes").as_bytes()
+                )
+            )
+        };
+        let rename = |from: &str, to: &str| StorageRenameMap {
+            project_id: base.project_id().as_str().to_owned(),
+            base_digest: digest(&base),
+            candidate_digest: digest(&candidate),
+            renames: vec![StorageRename {
+                entity: "task".to_owned(),
+                kind: StorageRenameKind::Column,
+                from: from.to_owned(),
+                to: to.to_owned(),
+                history_ref: "planner.focus_task.title".to_owned(),
+            }],
+        };
+        // candidate-additive keeps `title` occupied in the base: a
+        // rename onto it collides with the surviving column.
+        assert!(validate_rename_history(&rename("note", "title"), &base, &candidate).is_err());
+        assert!(validate_rename_history(&rename("title", "title"), &base, &candidate).is_err());
+        // A doubled source and a doubled target each conflict.
+        let doubled = |second: StorageRename| {
+            let mut map = rename("note", "summary_note");
+            map.renames.push(second);
+            map
+        };
+        let source = StorageRename {
+            entity: "task".to_owned(),
+            kind: StorageRenameKind::Column,
+            from: "note".to_owned(),
+            to: "other_note".to_owned(),
+            history_ref: "planner.focus_task.note".to_owned(),
+        };
+        let target = StorageRename {
+            entity: "task".to_owned(),
+            kind: StorageRenameKind::Column,
+            from: "due_date".to_owned(),
+            to: "summary_note".to_owned(),
+            history_ref: "planner.focus_task.due_date".to_owned(),
+        };
+        assert!(validate_rename_history(&doubled(source), &base, &candidate).is_err());
+        assert!(validate_rename_history(&doubled(target), &base, &candidate).is_err());
     }
 }

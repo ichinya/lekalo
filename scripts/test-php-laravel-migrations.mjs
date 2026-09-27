@@ -66,16 +66,25 @@ const GOLDENS = [
     golden: "tests/fixtures/laravel-migrations/golden/additive.json",
     candidate: "candidate-additive.json",
     confirm: null,
+    history: null,
   },
   {
     golden: "tests/fixtures/laravel-migrations/golden/destructive-confirmed.json",
     candidate: "candidate-destructive.json",
     confirm: "sha256:915d70bcd50445e963b96aa05f7b3deac72834a93785824cacb42a31486ad3aa",
+    history: null,
   },
   {
     golden: "tests/fixtures/laravel-migrations/golden/backfill-confirmed.json",
     candidate: "candidate-backfill.json",
     confirm: "sha256:1676f92a943d3c2252527993ceecaf8ceb1417d6b300c113f7debd94f0b1020c",
+    history: null,
+  },
+  {
+    golden: "tests/fixtures/laravel-migrations/golden/column-rename-confirmed.json",
+    candidate: "candidate-column-rename.json",
+    confirm: "sha256:2f2d640cc1bb7ef1b7fb21fe78d6eb87d6338c419f79c26a224fe896607047f2",
+    history: "column-rename-history.json",
   },
 ];
 
@@ -92,7 +101,7 @@ const lekalo = (args) =>
   });
 
 const FX = "tests/fixtures/laravel-migrations/inputs";
-for (const { golden, candidate, confirm } of GOLDENS) {
+for (const { golden, candidate, confirm, history } of GOLDENS) {
   const cliArgs = [
     "storage",
     "laravel-plan",
@@ -102,6 +111,7 @@ for (const { golden, candidate, confirm } of GOLDENS) {
     `${FX}/profile-base.json`,
     "--json",
   ];
+  if (history) cliArgs.push("--history", `${FX}/${history}`);
   if (confirm) cliArgs.push("--confirm", confirm);
   const result = lekalo(cliArgs);
   const produced = result.stdout.trim();
@@ -203,6 +213,63 @@ for (const { golden, candidate, confirm } of GOLDENS) {
     !document.operations.some((op) => op.kind === "drop_table" || op.kind === "create_table"),
     "rename:no-drop-add",
     "a validated rename never degrades to drop+add",
+  );
+}
+
+// A validated COLUMN rename produces a RENAME COLUMN step — never the
+// destructive drop+add pair — and the step's rollback class is the
+// exact swap.
+{
+  const result = lekalo([
+    "storage",
+    "laravel-plan",
+    `${FX}/base.json`,
+    `${FX}/candidate-column-rename.json`,
+    "--profile",
+    `${FX}/profile-base.json`,
+    "--history",
+    `${FX}/column-rename-history.json`,
+    "--json",
+    "--confirm",
+    "sha256:2f2d640cc1bb7ef1b7fb21fe78d6eb87d6338c419f79c26a224fe896607047f2",
+  ]);
+  const document = JSON.parse(result.stdout.trim());
+  const rename = document.operations.find((op) => op.kind === "rename_column");
+  check(Boolean(rename), "column-rename:rename-column", "the validated column rename produces a RENAME COLUMN step");
+  check(
+    rename?.statement === 'ALTER TABLE "task" RENAME COLUMN "title" TO "summary";',
+    "column-rename:statement",
+    String(rename?.statement),
+  );
+  check(
+    rename?.inverse === 'ALTER TABLE "task" RENAME COLUMN "summary" TO "title";',
+    "column-rename:inverse",
+    String(rename?.inverse),
+  );
+  check(
+    rename?.rollback === "reversible",
+    "column-rename:reversible",
+    "a rename's swap restores the schema exactly",
+  );
+  check(
+    !document.operations.some((op) => op.kind === "drop_column" || op.kind === "add_column"),
+    "column-rename:no-drop-add",
+    "a validated column rename never degrades to drop+add",
+  );
+  // Without the history the same diff stays the destructive pair.
+  const without = lekalo([
+    "storage",
+    "laravel-plan",
+    `${FX}/base.json`,
+    `${FX}/candidate-column-rename.json`,
+    "--profile",
+    `${FX}/profile-base.json`,
+    "--json",
+  ]);
+  check(
+    without.status !== 0,
+    "column-rename:unvalidated-refuses",
+    "the unvalidated rename proposal refuses (destructive gate)",
   );
 }
 
@@ -385,6 +452,7 @@ if (dockerAvailable()) {
     const SCHEMAS = {
       "additive.json": "t_additive",
       "rename-confirmed.json": "t_rename",
+      "column-rename-confirmed.json": "t_column_rename",
       "destructive-confirmed.json": "t_destructive",
       "backfill-confirmed.json": "t_backfill",
     };
@@ -417,6 +485,22 @@ if (dockerAvailable()) {
       if (golden === "rename-confirmed.json") {
         const renamed = schemaPsql("SELECT count(*) FROM session;").trim().split(NL).pop();
         check(renamed === "1", "db:rename-preserves-rows", `sentinel rows survived: ${renamed}`);
+      }
+      if (golden === "column-rename-confirmed.json") {
+        // The renamed column keeps its values and its NOT NULL
+        // obligation: the swap never touched the rows.
+        schemaPsql(
+          "INSERT INTO task (id, summary, status, minutes, row_etag, tenant_id, created_at, updated_at) " +
+            "VALUES (gen_random_uuid(), 'renamed', 'todo', 0, decode('65746167','hex'), gen_random_uuid(), now(), now());",
+        );
+        const renamed = schemaPsql(
+          "SELECT count(*) FROM information_schema.columns " +
+            "WHERE table_schema = 't_column_rename' AND table_name = 'task' AND column_name = 'summary';",
+        )
+          .trim()
+          .split(NL)
+          .pop();
+        check(renamed === "1", "db:column-rename-applied", `the swapped column is live: ${renamed}`);
       }
     }
 
