@@ -1,0 +1,18 @@
+{
+  "tool": "mago",
+  "version": "1.0.0",
+  "recording": "lint --list-rules --json under the default configuration",
+  "exitCode": 0,
+  "notes": [
+    "the pin reports exactly 99 enabled rules by default; the recorded subset below is the closed set the Lekalo strict profile consumes",
+    "record entries carry {name, code, description}; example/category fields are present upstream but not consumed"
+  ],
+  "defaultRuleCount": 99,
+  "consumedRules": [
+    { "code": "strict-types", "name": "Strict Types" },
+    { "code": "no-variable-variable", "name": "No Variable Variable" }
+  ],
+  "notesOnAbsence": [
+    "no upstream default rule covers final/readonly profiles, facade/service-locator bans, magic __get/__set, or array-shape typing: those Lekalo strict-profile rows are implemented as receipt predicates over AST/evidence, never as fabricated Mago codes"
+  ]
+}

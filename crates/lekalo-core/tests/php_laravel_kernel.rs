@@ -210,7 +210,7 @@ fn the_php_kernel_describes_itself_through_the_production_client() {
         described.capabilities.adapter.id,
         "lekalo-target-php-laravel"
     );
-    assert_eq!(described.capabilities.adapter.version, "0.1.0");
+    assert_eq!(described.capabilities.adapter.version, "0.2.0");
     assert!(described.capabilities.adapter.digest.starts_with("sha256:"));
     assert_eq!(
         described.capabilities.protocol_versions,

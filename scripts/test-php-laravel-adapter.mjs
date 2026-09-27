@@ -46,7 +46,7 @@ if (php === null) {
   fail("php-missing", "no PHP interpreter found; install PHP >= 8.3 or set LEKALO_PHP");
 }
 
-for (const suite of ["tests/protocol.php", "tests/process.php"]) {
+for (const suite of ["tests/protocol.php", "tests/process.php", "tests/analyzer.php"]) {
   const script = join(adapterRoot, suite);
   const outcome = runPhp(php, script);
   if (outcome.code !== 0) {

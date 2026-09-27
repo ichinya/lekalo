@@ -221,6 +221,11 @@ jobs:
         # confinement limitation as an explicit, logged skip.
         timeout-minutes: 10
         run: node scripts/test-php-laravel-adapter.mjs
+      - name: Run the Mago integration gate, fake mode (issue #55)
+        # Requires PHP but no Mago binary and no network: the receipt
+        # decoder, the analysis states, and the strict-profile gates run
+        # against the committed artifact with injected fakes.
+        run: node scripts/test-mago-integration.mjs --fake
       - name: Provision the vendored compiler bundle custody (issue #44)
         run: |
           set -euo pipefail
@@ -279,3 +284,56 @@ jobs:
           if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
             exit 1
           fi
+
+  mago-real:
+    name: Mago real-toolchain gate (issue #55)
+    # The real-toolchain leg: installs the checksum-pinned Mago release
+    # as a visible setup step outside the checkout, then runs the real
+    # suite with --require-available. A missing tool fails this job; a
+    # skipped leg is visible and never counts as Mago acceptance.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - name: Provision PHP 8.3 (no extensions, no Composer tools)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: none
+          extensions: none
+      - name: Install the pinned Mago toolchain (checksum-verified, outside the checkout)
+        run: |
+          set -euo pipefail
+          LOCK=adapters/php-laravel/mago-toolchain.lock.json
+          PIN_VERSION=$(node -p "require('./$LOCK').tool.version")
+          test "$PIN_VERSION" = "1.0.0"
+          # Resolve THIS runner's platform entry from the lock — the
+          # digest is custody, not decoration.
+          read -r PLATFORM ARCHIVE WANT_SHA <<EOF
+          $(node -e "
+            const lock = require('./$LOCK');
+            const platform = process.arch === 'arm64' && process.platform === 'darwin'
+              ? 'aarch64-apple-darwin'
+              : 'x86_64-unknown-linux-gnu';
+            const artifact = lock.probe.artifacts.find((a) => a.platform === platform);
+            if (!artifact) { console.error('no pinned artifact for ' + platform); process.exit(1); }
+            console.log(artifact.platform, artifact.archive, artifact.archiveSha256);
+          ")
+          EOF
+          curl -sSfL --retry 3 -o "$RUNNER_TEMP/mago-archive" \
+            "https://github.com/carthage-software/mago/releases/download/${PIN_VERSION}/${ARCHIVE}"
+          # Fail-closed verification: the downloaded archive must match
+          # the pinned digest byte for byte, or the job stops here.
+          echo "${WANT_SHA}  $RUNNER_TEMP/mago-archive" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/mago-bin"
+          tar -xzf "$RUNNER_TEMP/mago-archive" -C "$RUNNER_TEMP/mago-bin"
+          BIN=$(find "$RUNNER_TEMP/mago-bin" -type f -name mago | head -1)
+          test -n "$BIN"
+          chmod +x "$BIN"
+          echo "LEKALO_MAGO=$BIN" >> "$GITHUB_ENV"
+      - name: Run the Mago integration gate, real mode
+        run: node scripts/test-mago-integration.mjs --real --require-available
