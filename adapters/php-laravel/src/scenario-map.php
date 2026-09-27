@@ -503,7 +503,12 @@ function php_validate_port_doc(array $doc): ?array
     return ['path' => $path, 'class' => $class, 'exports' => $exports];
 }
 
-/** The port surface join: every closed port flag the project declares. */
+/** The port surface join: every closed port flag the project declares.
+ * `port` is the kernel-validated normalized document (`path`, `class`,
+ * `exports`); a declaration-absent project keeps the port-missing
+ * finding and an all-false surface, so every port-backed feature maps
+ * to an explicit unsupported diagnostic.
+ */
 function php_resolve_port_surface(array $input, array &$findings): array
 {
     $port = $input['port'] ?? null;
@@ -511,7 +516,7 @@ function php_resolve_port_surface(array $input, array &$findings): array
         $findings[] = ['code' => 'scenario.port-missing', 'detail' => 'declaration-absent'];
         return php_empty_surface();
     }
-    $exports = is_array($port['port'] ?? null) ? $port['port']['exports'] : null;
+    $exports = is_array($port['exports'] ?? null) ? $port['exports'] : null;
     if (!is_array($exports) || ($exports['invoke'] ?? null) !== true) {
         $findings[] = ['code' => 'scenario.port-shape', 'detail' => 'exports-shape'];
         return php_empty_surface();
