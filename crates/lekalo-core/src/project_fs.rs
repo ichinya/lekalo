@@ -697,7 +697,7 @@ impl Fs {
 }
 
 /// The closed set of canonical `lekalo/` root entries.
-const CANONICAL_ROOT_ENTRIES: [&str; 9] = [
+const CANONICAL_ROOT_ENTRIES: [&str; 10] = [
     "project.yaml",
     "modules",
     "targets",
@@ -711,6 +711,9 @@ const CANONICAL_ROOT_ENTRIES: [&str; 9] = [
     // are canonical declaration homes of every project (optional).
     "classification.json",
     "classification-policy.json",
+    // Issue #72: the conventional query-model home the client-SDK
+    // evidence derivation binds (optional).
+    "query-model.yaml",
 ];
 
 /// The closed runtime top-level entries under `.lekalo/`. `adapters` is

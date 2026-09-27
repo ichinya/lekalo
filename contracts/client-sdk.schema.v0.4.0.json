@@ -1,0 +1,660 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/client-sdk.schema.v0.4.0.json",
+  "title": "Lekalo Client SDK Projection",
+  "description": "Closed independent contract of the typed client-SDK projection (issue #72): the single language-neutral source every generated client (TypeScript, Go, PHP; Rust later) renders from. One projection joins the validated transport-http attachment, the compiled project IR, the #62 error registry, and the #64 query-model attachment; every operation carries its full wire binding (parameters with style/explode, body subsets, error variants with derived retry authorization, auth/idempotency/correlation headers, pagination) and every reachable named symbol projects one named type. The projection is pure declaration data: client generation never defines server behavior, never carries a base URL, credential, or environment value, and never synthesizes a field the bound contracts do not declare. Decimal values are string-backed by explicit policy only; dates stay ISO strings, never runtime date types. The contract version is independent of the product release, of the source Model and IR contract versions, and of every other registered family.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "transportRef",
+    "wire",
+    "operations",
+    "types"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/client-sdk/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.client-sdk@0.4.0"
+    },
+    "attachmentRevision": {
+      "$ref": "#/$defs/semver"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "modelRef": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "$ref": "#/$defs/irRef"
+    },
+    "transportRef": {
+      "$ref": "#/$defs/transportRef"
+    },
+    "wire": {
+      "const": "lekalo-http-wire/v1"
+    },
+    "operations": {
+      "type": "array",
+      "maxItems": 2048,
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    },
+    "types": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/namedType"
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "wireName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "headerName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Z][A-Za-z0-9-]*$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*$"
+    },
+    "operationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-zA-Z0-9]*$"
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "transportRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.transport-http@0.4.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "paramLocation": {
+      "enum": [
+        "path",
+        "query",
+        "header",
+        "cookie"
+      ]
+    },
+    "paramStyle": {
+      "enum": [
+        "simple",
+        "form",
+        "deepObject"
+      ]
+    },
+    "param": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "in",
+        "field",
+        "typeRef",
+        "required",
+        "nullable",
+        "shape"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/wireName"
+        },
+        "in": {
+          "$ref": "#/$defs/paramLocation"
+        },
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 70,
+          "pattern": "^(input\\.)?[a-z][a-z0-9_]*$"
+        },
+        "typeRef": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "style": {
+          "$ref": "#/$defs/paramStyle"
+        },
+        "explode": {
+          "type": "boolean"
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "shape": {
+          "enum": [
+            "value",
+            "list"
+          ]
+        }
+      }
+    },
+    "bodyMode": {
+      "enum": [
+        "whole",
+        "explicit"
+      ]
+    },
+    "bodyField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "field",
+        "typeRef",
+        "required",
+        "nullable",
+        "shape"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/wireName"
+        },
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 70,
+          "pattern": "^(input\\.)?[a-z][a-z0-9_]*$"
+        },
+        "typeRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "shape": {
+          "enum": [
+            "value",
+            "list"
+          ]
+        }
+      }
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "typeRef",
+        "shape"
+      ],
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/bodyMode"
+        },
+        "typeRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/bodyField"
+          }
+        },
+        "shape": {
+          "enum": [
+            "value",
+            "list"
+          ]
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor",
+        "schemes"
+      ],
+      "properties": {
+        "actor": {
+          "enum": [
+            "public",
+            "identity.user",
+            "identity.service",
+            "system.job",
+            "internal"
+          ]
+        },
+        "schemes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/wireName"
+          }
+        }
+      }
+    },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "header",
+        "required"
+      ],
+      "properties": {
+        "header": {
+          "$ref": "#/$defs/headerName"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pagination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "style",
+        "limitParam"
+      ],
+      "properties": {
+        "style": {
+          "enum": [
+            "offset",
+            "cursor"
+          ]
+        },
+        "limitParam": {
+          "$ref": "#/$defs/wireName"
+        },
+        "offsetParam": {
+          "$ref": "#/$defs/wireName"
+        },
+        "cursorParam": {
+          "$ref": "#/$defs/wireName"
+        },
+        "cursorField": {
+          "$ref": "#/$defs/wireName"
+        },
+        "cursorTypeRef": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "style": {
+                "const": "cursor"
+              }
+            },
+            "required": [
+              "style"
+            ]
+          },
+          "then": {
+            "required": [
+              "cursorParam",
+              "cursorField",
+              "cursorTypeRef"
+            ]
+          }
+        }
+      ]
+    },
+    "retryAuthorization": {
+      "enum": [
+        "never",
+        "safe",
+        "key-required",
+        "reconciliation-only"
+      ]
+    },
+    "errorVariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "error",
+        "code",
+        "category",
+        "status",
+        "retry"
+      ],
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^LEK-ERR-[0-9]{3}$"
+        },
+        "category": {
+          "enum": [
+            "validation",
+            "auth",
+            "conflict",
+            "not-found",
+            "domain",
+            "infrastructure"
+          ]
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 599
+        },
+        "retry": {
+          "$ref": "#/$defs/retryAuthorization"
+        },
+        "payload": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "typeRef",
+              "required",
+              "nullable",
+              "shape"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/wireName"
+              },
+              "typeRef": {
+                "type": "string",
+                "minLength": 1
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "nullable": {
+                "type": "boolean"
+              },
+              "shape": {
+                "enum": [
+                  "value",
+                  "list"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "resultShape": {
+      "enum": [
+        "value",
+        "empty",
+        "page"
+      ]
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationId",
+        "endpoint",
+        "invokes",
+        "method",
+        "path",
+        "ident",
+        "params",
+        "successStatus",
+        "resultShape"
+      ],
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/operationId"
+        },
+        "endpoint": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "invokes": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(/)"
+        },
+        "ident": {
+          "$ref": "#/$defs/identifier"
+        },
+        "params": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/param"
+          }
+        },
+        "body": {
+          "$ref": "#/$defs/body"
+        },
+        "successStatus": {
+          "enum": [
+            200,
+            201,
+            202,
+            204
+          ]
+        },
+        "successBody": {
+          "$ref": "#/$defs/body"
+        },
+        "resultShape": {
+          "$ref": "#/$defs/resultShape"
+        },
+        "errors": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/errorVariant"
+          }
+        },
+        "auth": {
+          "$ref": "#/$defs/auth"
+        },
+        "idempotency": {
+          "$ref": "#/$defs/idempotency"
+        },
+        "correlation": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/headerName"
+          }
+        },
+        "pagination": {
+          "$ref": "#/$defs/pagination"
+        },
+        "scenarios": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        }
+      }
+    },
+    "scalarMapping": {
+      "enum": [
+        "string",
+        "number",
+        "boolean",
+        "date",
+        "datetime",
+        "uuid",
+        "uri",
+        "decimal-string"
+      ]
+    },
+    "namedType": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "typeId",
+        "ident",
+        "kind"
+      ],
+      "properties": {
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "typeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192
+        },
+        "ident": {
+          "$ref": "#/$defs/identifier"
+        },
+        "kind": {
+          "enum": [
+            "scalar",
+            "enum",
+            "object"
+          ]
+        },
+        "base": {
+          "$ref": "#/$defs/scalarMapping"
+        },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/wireName"
+          }
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "typeRef",
+              "nullable",
+              "required",
+              "shape"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/wireName"
+              },
+              "typeRef": {
+                "type": "string",
+                "minLength": 1
+              },
+              "nullable": {
+                "type": "boolean"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "shape": {
+                "enum": [
+                  "value",
+                  "list"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

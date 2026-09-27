@@ -154,7 +154,9 @@ same home and joins the Model endpoint symbols (`method`, `path`,
 mismatch, or a project mismatch between the two evidence documents
 refuses the plan — never a null-bearing route. Both homes are the
 only bytes an adapter may read as input, covered by its declared read
-scopes.
+scopes. The typed client-SDK family (issue #72) derives its evidence
+beside these homes from the same validated join; see
+[docs/client-sdk.md](client-sdk.md).
 
 ## Diagnostics
 

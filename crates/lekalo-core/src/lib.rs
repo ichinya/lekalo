@@ -6,6 +6,7 @@ pub mod artifacts;
 pub mod authorization;
 pub mod cache;
 pub mod classification;
+pub mod client_sdk;
 pub mod context;
 pub mod contracted;
 pub mod dataflow;

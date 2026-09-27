@@ -17,3 +17,7 @@
 # (trailing spaces inside the Apache header are upstream content, not errors).
 adapters/node-typescript/adapter.mjs -whitespace
 adapters/php-laravel/adapter.php -whitespace
+
+# Generated Go clients are byte-compared by the client-SDK drift gate:
+# gofmt requires LF, so CRLF checkout conversion would flag the fixture.
+*.go text eol=lf

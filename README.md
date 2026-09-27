@@ -452,6 +452,33 @@ receives the resolved capabilities instead of arbitrary YAML. See
 [ADR-0029](docs/adr/0029-composable-target-profiles.md), and
 `contracts/target-profile.schema.v0.2.16.json`.
 
+## Typed client SDKs
+
+Issue #72 adds the closed client-SDK projection family
+(`lekalo/client-sdk/v0.4.0`, `dev.lekalo.client-sdk@0.4.0`): one
+language-neutral projection joins the validated transport attachment,
+the compiled IR, the #62 registry, and the #64 query-model attachment
+into the typed client contract every language backend renders from —
+TypeScript (Vue/web), Go, and PHP derive from one contract, never from
+independent interpretations (Rust later). Every projected operation
+binds the full wire surface (parameters with style/explode, body
+subsets, error variants with the exact #62 identity and derived retry
+authorization, auth/idempotency/correlation headers, explicit
+pagination termination); named types keep presence and nullability
+distinct, dates stay ISO strings, and decimals are string-backed only
+by explicit policy. Automatic retries are conservative by
+construction: no declared authorization, no retry — unknown failures
+make one attempt. The projection never carries a base URL,
+credential, or telemetry; transports are injected in every generated
+language. `lekalo generate` derives the evidence under
+`.lekalo/cache/client-sdk/<project>.json`; the adapter renders
+clients under `src/generated/node-typescript/clients/**` with
+compatibility metadata and byte-range maps; the maintained-client
+inventory and consumer impact join declared consumer bindings with
+the transport wire diff so removals still find their old consumers.
+See [docs/client-sdk.md](docs/client-sdk.md) and the golden fixtures
+under `tests/fixtures/client-sdk/`.
+
 ## Bootstrap: `lekalo init` and `lekalo module new`
 
 Issue #97 creates a minimal greenfield Lekalo project in the

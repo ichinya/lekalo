@@ -38,7 +38,8 @@ use super::receipt::{
     TargetReceipt, TargetState, Verdict, WriteReceipt, IDENTITY, SCHEMA_VERSION,
 };
 use super::version::{
-    DEFAULT_TIMEOUT_MS, IR_EVIDENCE_DIR, MAX_TARGETS, OPENAPI_EVIDENCE_DIR, TRANSPORT_EVIDENCE_DIR,
+    CLIENT_SDK_EVIDENCE_DIR, DEFAULT_TIMEOUT_MS, IR_EVIDENCE_DIR, MAX_TARGETS,
+    OPENAPI_EVIDENCE_DIR, TRANSPORT_EVIDENCE_DIR,
 };
 use super::Failure;
 
@@ -159,6 +160,41 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
                 &openapi_path,
                 rendered.canonical_bytes().as_bytes(),
             )?;
+            // Client-SDK evidence (#72): the typed client contract the
+            // language backends render from, derived from the same
+            // validated join (transport + IR + the embedded #62
+            // registry + the bound #64 query-model home). The SDK
+            // projection requires the full context: a project without
+            // the query-model home skips the derivation honestly — the
+            // transport home stays the gate — but a PRESENT home that
+            // fails to read or validate propagates its registered
+            // refusal, never a silent skip.
+            let capabilities = crate::transport_http::CapabilityMap::http_json();
+            match crate::client_sdk::source::read_query_model(prepared.root()) {
+                Err(diagnostics) => return Err(DomainResult::invalid(diagnostics)),
+                Ok(None) => {}
+                Ok(Some(query_model)) => {
+                    let context =
+                        crate::transport_http::ValidationContext::new(&compilation.project)
+                            .with_errors(registry)
+                            .with_query_model(&query_model)
+                            .with_capabilities(&capabilities);
+                    let sdk = crate::client_sdk::project(
+                        &attachment,
+                        &context,
+                        &crate::client_sdk::ClientConfig::generated(),
+                    )
+                    .map_err(DomainResult::invalid)?;
+                    let sdk_path = format!("{CLIENT_SDK_EVIDENCE_DIR}/{project_id}.json");
+                    write_evidence(
+                        prepared.root(),
+                        &sdk_path,
+                        sdk.canonical_bytes()
+                            .map_err(DomainResult::invalid)?
+                            .as_bytes(),
+                    )?;
+                }
+            }
         }
         Ok(None) => {}
     }

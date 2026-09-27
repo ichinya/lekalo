@@ -133,13 +133,16 @@ const OPERATION_TOKENS = Object.freeze([
 const SUPPORT_STATES = Object.freeze(["full", "partial", "unsupported", "unknown"]);
 
 const CAPABILITY_IDS = Object.freeze([
+  "generate.client-sdk",
   "generate.openapi",
   "generate.storage-ddl",
   "generate.transport-http",
   "generate.ui",
   "generate.zod",
+  "scan.schema",
   "scan.storage-schema",
   "scan.symbols",
+  "verify.schema-projection",
   "verify.scenarios",
   "verify.transport-http",
   "plan.native-gates",
@@ -1127,10 +1130,13 @@ export function describeCapabilities(profile = null, extensions = []) {
     ir_versions: [],
     capabilities: {
       "generate.openapi": "unsupported",
+      "generate.transport-http": "unsupported",
+      "generate.client-sdk": "unsupported",
       "generate.ui": "unsupported",
       "generate.zod": "unsupported",
       "scan.symbols": "unsupported",
       "verify.scenarios": "unsupported",
+      "verify.transport-http": "unsupported",
       "preserve.classification": "unsupported",
     },
   };

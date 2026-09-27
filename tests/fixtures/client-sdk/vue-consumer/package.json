@@ -1,0 +1,16 @@
+{
+  "name": "lekalo-client-sdk-vue-consumer-fixture",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Pinned Vue consumer fixture for the generated client-SDK types (issue #72). Dependencies are provisioning-only: the emitted client has no dependency and the fixture never installs at runtime.",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@vue/compiler-sfc": "3.4.38",
+    "typescript": "5.9.3",
+    "vue": "3.4.38",
+    "vue-tsc": "2.0.29"
+  }
+}

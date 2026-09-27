@@ -56,6 +56,7 @@ const zodMapPath = join(adapterRoot, "src", "zod-map.mjs");
 const zodEmitPath = join(adapterRoot, "src", "zod-emit.mjs");
 const zodPolicyPath = join(adapterRoot, "src", "zod-policy.mjs");
 const generationCompositePath = join(adapterRoot, "src", "generation-composite.mjs");
+const clientSdkGenPath = join(adapterRoot, "src", "client-sdk-gen.mjs");
 const openapiGenPath = join(adapterRoot, "src", "openapi-gen.mjs");
 const openapiEmitPath = join(adapterRoot, "src", "openapi-emit.mjs");
 const openapiPolicyPath = join(adapterRoot, "src", "openapi-policy.mjs");
@@ -302,6 +303,7 @@ async function buildArtifact() {
   writeFileSync(join(scratchRoot, "src", "zod-emit.mjs"), readFileSync(zodEmitPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "zod-policy.mjs"), readFileSync(zodPolicyPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "generation-composite.mjs"), readFileSync(generationCompositePath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "client-sdk-gen.mjs"), readFileSync(clientSdkGenPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "openapi-gen.mjs"), readFileSync(openapiGenPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "openapi-emit.mjs"), readFileSync(openapiEmitPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "openapi-policy.mjs"), readFileSync(openapiPolicyPath, "utf8").replace(stripShebang, ""));
