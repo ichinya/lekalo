@@ -15,6 +15,9 @@
         }
     },
     "config": {
-        "sort-packages": true
+        "sort-packages": true,
+        "platform": {
+            "php": "8.3.35"
+        }
     }
 }
