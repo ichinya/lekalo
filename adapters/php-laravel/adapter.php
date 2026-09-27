@@ -1438,7 +1438,10 @@ function is_contract_version(mixed $value): bool
         return false;
     }
     foreach ($parts as $part) {
-        if ($part === '' || !ctype_digit($part)) {
+        // strspn, not ctype_digit: the kernel depends only on the
+        // always-compiled basics, and ctype is an optional extension
+        // the confined runtime may not carry.
+        if ($part === '' || strspn($part, '0123456789') !== strlen($part)) {
             return false;
         }
     }
