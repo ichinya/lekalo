@@ -21,7 +21,6 @@
 use serde::Serialize;
 
 use super::migration::Step;
-use crate::storage_projection::projection::DataRisk;
 
 /// The closed rollback classification of one step.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize)]
@@ -139,17 +138,17 @@ pub fn reverse_statement(step: &Step) -> Option<String> {
         }
         "set_column_null" => {
             // The forward set is always SET NOT NULL in v1; the
-            // inverse relaxes it. The column token sits between the
-            // table and the ALTER verb.
+            // inverse relaxes it. The statement shape is fixed:
+            // ALTER TABLE "t" ALTER COLUMN "c" SET NOT NULL;
             let inner = step.statement().strip_suffix(';')?;
             let lower = inner.to_ascii_uppercase();
             let alter = lower.find(" ALTER COLUMN ")?;
-            let after_table = inner.find('"').map(|start| {
-                let end = inner[start + 1..].find('"')? + start + 1;
-                Some(end)
-            })??;
-            let column = inner[after_table + 2..alter].trim();
-            format!("ALTER TABLE {} ALTER COLUMN {} DROP NOT NULL;", table_token(step), column)
+            let column = inner[alter + " ALTER COLUMN ".len()..].trim();
+            format!(
+                "ALTER TABLE {} ALTER COLUMN {} DROP NOT NULL;",
+                table_token(step),
+                column
+            )
         }
         "enable_rls" | "disable_rls" => {
             let verb = if step.kind() == "enable_rls" {
@@ -217,6 +216,7 @@ pub fn build_reverse_plan(steps: &[Step]) -> Vec<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage_projection::DataRisk;
 
     fn step(kind: &'static str, statement: &str, risk: DataRisk) -> Step {
         Step {

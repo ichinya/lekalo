@@ -22,7 +22,7 @@ use crate::storage_projection::projection::{DataRisk, GeneratedKind, PredicateOp
 use crate::storage_projection::{compare, StorageProjectionAttachment};
 
 use super::diagnostic::{self, MAPPING_INVALID, MIGRATION_INVALID, RENDER_UNSUPPORTED};
-use super::history::{validate_rename_history, StorageRenameKind, StorageRenameMap};
+use super::history::{validate_rename_history, StorageRenameMap};
 use super::postgres::quoting::quote;
 use super::StorageEngineAttachment;
 
@@ -243,7 +243,7 @@ impl MigrationPlan {
 }
 
 /// One canonical integer array, or nothing when empty.
-fn optional_usize_array(values: &[usize]) -> Option<String> {
+pub(crate) fn optional_usize_array(values: &[usize]) -> Option<String> {
     if values.is_empty() {
         return None;
     }

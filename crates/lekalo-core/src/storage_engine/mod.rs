@@ -15,6 +15,7 @@ pub mod id;
 pub mod history;
 pub mod input;
 pub mod introspection;
+pub mod laravel_input;
 pub mod migration;
 pub mod postgres;
 pub mod rollback;
@@ -28,6 +29,7 @@ pub use history::{StorageRenameKind, StorageRenameMap};
 pub use input::engine_input as input_document;
 pub use introspection::IntrospectionEvidence;
 pub use migration::{plan as plan_migration, plan_with_history, PlanStatus};
+pub use laravel_input::{laravel_migration_input, LaravelMigrationInput};
 pub use rollback::{build_reverse_plan, classify as classify_rollback, RollbackClass};
 pub use version::{FAMILY, IDENTITY, SCHEMA_VERSION, VERSION};
 
