@@ -1,4 +1,4 @@
-# `lekalo-target-php-laravel` — PHP/Laravel target adapter (issue #54)
+# `lekalo-target-php-laravel` — PHP/Laravel target adapter (issues #54, #55)
 
 The `lekalo.target/v1` protocol kernel implemented in dependency-free
 PHP, proving the language-neutral core claim of the issue: a second,
@@ -6,6 +6,19 @@ non-Node adapter speaking the same wire through the same production
 `TargetClient` and the same confined runtime. The MVP passes the
 conformance battery in both profiles and the capability declarations
 stay honest about what the MVP does not do.
+
+## Version history
+
+- **0.1.0 (issue #54):** the protocol kernel MVP — the closed wire
+  surface, the deterministic generation seam, and the honest
+  unsupported capability map.
+- **0.2.0 (issue #55):** the Mago analyzer seam — receipt-consumed
+  analysis evidence, the strict-profile gates on validate/verify,
+  bounded scan evidence, the embedded toolchain lock, and the bundled
+  `analyzer.php`/`strict-profile.php` modules. A backward-compatible
+  minor bump: the closed v0.3.2 wire shapes are unchanged, and every
+  new behavior degrades to the #54 no-claims posture when no analyzer
+  receipt is staged.
 
 ## Component composition (issue #54 architecture)
 
