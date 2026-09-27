@@ -259,7 +259,9 @@ jobs:
         run: |
           set -euo pipefail
           npm install --prefix "$RUNNER_TEMP/lekalo-client-sdk-vue" --ignore-scripts --no-audit --no-fund --no-save typescript@5.9.3 @vue/compiler-sfc@3.4.38
-          NODE_PATH="$NODE_PATH:$RUNNER_TEMP/lekalo-client-sdk-vue/node_modules" node scripts/test-client-sdk-runtime.mjs
+          # NODE_PATH is colon-delimited on POSIX and semicolon-delimited on Windows.
+          delim=":"; if [ "$RUNNER_OS" = "Windows" ]; then delim=";"; fi
+          NODE_PATH="$NODE_PATH$delim$RUNNER_TEMP/lekalo-client-sdk-vue/node_modules" node scripts/test-client-sdk-runtime.mjs
       - name: Run the scenario-test compiler gate (issue #47)
         run: node scripts/test-node-scenario-tests.mjs
       - name: Run the scenario unit suites (issue #47 review F-11)
