@@ -356,6 +356,129 @@ const stagedRoot = mkdtempSync(join(tmpdir(), "lekalo-laravel-"));
   );
 }
 
+// The append-only ledger in a dispatch path: a second, different
+// generate --apply appends a merged ledger (never a write-denied),
+// and a byte-identical regeneration is a true no-op.
+{
+  const staged = join(stagedRoot, "gen1");
+  const inputPath = join(staged, ".lekalo", "ir", "planner.migration-input.json");
+  const ledgerPath = join(staged, ".lekalo", "generated", "php-laravel", "php-laravel", "migrations", "ledger.json");
+  const firstLedger = JSON.parse(readFileSync(ledgerPath, "utf8"));
+  const request = (id) => ({
+    protocol: "lekalo.target/v1",
+    protocol_version: "0.3.2",
+    operation: "generate",
+    request_id: "req-" + id,
+    project_root: ".",
+    target: "php-laravel",
+    profile: "default",
+    ir_path: ".lekalo/ir/planner.migration-input.json",
+    dry_run: true,
+  });
+  // Apply a different, confirmed-destructive plan over the published
+  // one: the new migration creates, the ledger appends.
+  writeFileSync(inputPath, read("tests/fixtures/laravel-migrations/golden/destructive-confirmed.json"));
+  const second = runAdapter(request("3".repeat(64)), staged);
+  check(second.envelope.status === "ok", "ledger:second-dry-ok", JSON.stringify(second.envelope.error ?? {}));
+  const secondLedgerWrite = second.envelope.writes.find((w) => w.path.endsWith("ledger.json"));
+  check(
+    secondLedgerWrite?.action === "replace",
+    "ledger:append-plans-replace",
+    JSON.stringify(secondLedgerWrite),
+  );
+  const appliedSecond = runAdapter(
+    { ...request("3".repeat(64)), dry_run: false, plan_id: second.envelope.evidence.plan_id },
+    staged,
+  );
+  check(
+    appliedSecond.envelope.status === "ok",
+    "ledger:append-apply-ok",
+    JSON.stringify(appliedSecond.envelope.error ?? {}),
+  );
+  const appended = JSON.parse(readFileSync(ledgerPath, "utf8"));
+  check(appended.migrations.length === 2, "ledger:two-entries", String(appended.migrations.length));
+  check(
+    appended.migrations[0].ordinal < appended.migrations[1].ordinal,
+    "ledger:ordinals-rise",
+    JSON.stringify(appended.migrations.map((m) => m.ordinal)),
+  );
+  check(
+    JSON.stringify(appended.migrations[0]) === JSON.stringify(firstLedger.migrations[0]),
+    "ledger:published-prefix-intact",
+    "the append never rewrites a published entry",
+  );
+  // Re-apply the FIRST plan: byte-identical regeneration plans the
+  // published bytes and the ledger leaves the disk untouched.
+  writeFileSync(inputPath, read("tests/fixtures/laravel-migrations/golden/additive.json"));
+  const regen = runAdapter(request("4".repeat(64)), staged);
+  check(regen.envelope.status === "ok", "ledger:regen-dry-ok", JSON.stringify(regen.envelope.error ?? {}));
+  const before = readFileSync(ledgerPath, "utf8");
+  const regenApply = runAdapter(
+    { ...request("4".repeat(64)), dry_run: false, plan_id: regen.envelope.evidence.plan_id },
+    staged,
+  );
+  check(regenApply.envelope.status === "ok", "ledger:regen-apply-ok", JSON.stringify(regenApply.envelope.error ?? {}));
+  check(before === readFileSync(ledgerPath, "utf8"), "ledger:regen-no-op", "a byte-identical regeneration never touches the ledger");
+  const stillAppended = JSON.parse(readFileSync(ledgerPath, "utf8"));
+  check(stillAppended.migrations.length === 2, "ledger:still-two-entries", String(stillAppended.migrations.length));
+}
+
+// Every committed golden emits a syntactically valid migration, and
+// the adapter accepts the backfill plan now that the default change
+// carries its honest class (previously the whole document refused).
+for (const golden of [
+  "additive.json",
+  "destructive-confirmed.json",
+  "backfill-confirmed.json",
+  "rename-confirmed.json",
+  "column-rename-confirmed.json",
+]) {
+  const staged = join(stagedRoot, "lint-" + golden);
+  mkdirSync(join(staged, ".lekalo", "ir"), { recursive: true });
+  writeFileSync(join(staged, ".lekalo", "ir", "planner.migration-input.json"), read(`tests/fixtures/laravel-migrations/golden/${golden}`));
+  const request = {
+    protocol: "lekalo.target/v1",
+    protocol_version: "0.3.2",
+    operation: "generate",
+    request_id: "req-" + "5".repeat(64),
+    project_root: ".",
+    target: "php-laravel",
+    profile: "default",
+    ir_path: ".lekalo/ir/planner.migration-input.json",
+    dry_run: true,
+  };
+  const planned = runAdapter(request, staged);
+  check(planned.envelope.status === "ok", `lint:${golden}:decode-ok`, JSON.stringify(planned.envelope.error ?? {}));
+  const applied = runAdapter(
+    { ...request, dry_run: false, plan_id: planned.envelope.evidence.plan_id },
+    staged,
+  );
+  check(applied.envelope.status === "ok", `lint:${golden}:apply-ok`, JSON.stringify(applied.envelope.error ?? {}));
+  const migrationWrite = applied.envelope.writes.find((w) => w.path.endsWith(".php"));
+  const migrationPath = join(staged, ...migrationWrite.path.split("/"));
+  const lint = spawnSync(phpBinary, ["-l", migrationPath], { encoding: "utf8" });
+  check(lint.status === 0, `lint:${golden}:php-l`, lint.stdout + lint.stderr);
+  if (golden === "backfill-confirmed.json") {
+    const emitted = readFileSync(migrationPath, "utf8");
+    check(
+      emitted.includes("throw new \\RuntimeException('lekalo: rollback is not safe for this migration');"),
+      "lint:backfill-down-refuses",
+      "the irreversible plan's down() refuses with a legal RuntimeException",
+    );
+  }
+  if (golden === "column-rename-confirmed.json") {
+    const emitted = readFileSync(migrationPath, "utf8");
+    // The rename's own inverse is the exact swap, but the plan also
+    // carries a data-loss-on-rollback extension step, so down()
+    // refuses before any statement — the honest whole-plan verdict.
+    check(
+      emitted.includes("throw new \\RuntimeException('lekalo: rollback is not safe for this migration');"),
+      "lint:column-rename-down-refuses",
+      "the plan's data-loss step refuses the whole down()",
+    );
+  }
+}
+
 // A blocked input generates zero bytes even at the adapter boundary.
 {
   const staged = join(stagedRoot, "blocked");
@@ -502,6 +625,121 @@ if (dockerAvailable()) {
           .pop();
         check(renamed === "1", "db:column-rename-applied", `the swapped column is live: ${renamed}`);
       }
+    }
+
+    // A fully reversible plan's down() executes on real PostgreSQL:
+    // the emitted artifact's down() statements are extracted and run
+    // in order, and every forward object must be restored afterward.
+    {
+      const schema = "t_down";
+      psql(`DROP SCHEMA IF EXISTS ${schema} CASCADE;`);
+      psql(`CREATE SCHEMA ${schema};`);
+      const downPsql = (sql) => psql(sql, "lekalo", schema);
+      for (const statement of baseStatements) {
+        downPsql(statement);
+      }
+      const reversible = {
+        ...JSON.parse(read("tests/fixtures/laravel-migrations/golden/additive.json")),
+        gated: false,
+        backfillGated: false,
+        effectiveStatus: "ready",
+        operations: [
+          {
+            kind: "add_index",
+            ordinal: 1,
+            risk: "none",
+            rollback: "reversible",
+            statement: 'CREATE INDEX "idx_task_note" ON "task" ("note");',
+            inverse: 'DROP INDEX "idx_task_note";',
+          },
+          {
+            kind: "set_column_null",
+            ordinal: 2,
+            risk: "none",
+            rollback: "reversible",
+            statement: 'ALTER TABLE "task" ALTER COLUMN "title" DROP NOT NULL;',
+            inverse: 'ALTER TABLE "task" ALTER COLUMN "title" SET NOT NULL;',
+          },
+          {
+            kind: "rename_column",
+            ordinal: 3,
+            risk: "destructive",
+            rollback: "reversible",
+            statement: 'ALTER TABLE "task" RENAME COLUMN "note" TO "description";',
+            inverse: 'ALTER TABLE "task" RENAME COLUMN "description" TO "note";',
+          },
+        ],
+      };
+      const staged = join(stagedRoot, "down");
+      mkdirSync(join(staged, ".lekalo", "ir"), { recursive: true });
+      writeFileSync(
+        join(staged, ".lekalo", "ir", "planner.migration-input.json"),
+        canonical(reversible),
+      );
+      const request = {
+        protocol: "lekalo.target/v1",
+        protocol_version: "0.3.2",
+        operation: "generate",
+        request_id: "req-" + "6".repeat(64),
+        project_root: ".",
+        target: "php-laravel",
+        profile: "default",
+        ir_path: ".lekalo/ir/planner.migration-input.json",
+        dry_run: true,
+      };
+      const planned = runAdapter(request, staged);
+      check(planned.envelope.status === "ok", "db:down-dry-ok", JSON.stringify(planned.envelope.error ?? {}));
+      const applied = runAdapter(
+        { ...request, dry_run: false, plan_id: planned.envelope.evidence.plan_id },
+        staged,
+      );
+      check(applied.envelope.status === "ok", "db:down-apply-ok", JSON.stringify(applied.envelope.error ?? {}));
+      const migrationWrite = applied.envelope.writes.find((w) => w.path.endsWith(".php"));
+      const emitted = readFileSync(join(staged, ...migrationWrite.path.split("/")), "utf8");
+      const downBody = emitted.slice(emitted.indexOf("public function down(): void"));
+      check(
+        !downBody.includes("RuntimeException"),
+        "db:down-reversible",
+        "a fully reversible plan renders a real down()",
+      );
+      const downStatements = [...downBody.matchAll(/DB::statement\('((?:[^'\\]|\\.)*)'\);/g)].map(
+        (m) => m[1].replace(/\\(['\\])/g, "$1"),
+      );
+      check(
+        JSON.stringify(downStatements) === JSON.stringify([
+          'ALTER TABLE "task" RENAME COLUMN "description" TO "note";',
+          'ALTER TABLE "task" ALTER COLUMN "title" SET NOT NULL;',
+          'DROP INDEX "idx_task_note";',
+        ]),
+        "db:down-order",
+        JSON.stringify(downStatements),
+      );
+      // up() applies, then the emitted down() exactly.
+      const upStatements = [...emitted.matchAll(/DB::statement\('((?:[^'\\]|\\.)*)'\);/g)]
+        .map((m) => m[1].replace(/\\(['\\])/g, "$1"))
+        .slice(0, reversible.operations.length);
+      for (const statement of upStatements) {
+        downPsql(statement);
+      }
+      const renamedLive = downPsql(
+        "SELECT count(*) FROM information_schema.columns WHERE table_schema = 't_down' AND table_name = 'task' AND column_name = 'description';",
+      ).trim().split(NL).pop();
+      check(renamedLive === "1", "db:up-applied", renamedLive);
+      for (const statement of downStatements) {
+        downPsql(statement);
+      }
+      const noteBack = downPsql(
+        "SELECT count(*) FROM information_schema.columns WHERE table_schema = 't_down' AND table_name = 'task' AND column_name = 'note';",
+      ).trim().split(NL).pop();
+      const titleHeld = downPsql(
+        "SELECT count(*) FROM information_schema.columns WHERE table_schema = 't_down' AND table_name = 'task' AND column_name = 'title' AND is_nullable = 'NO';",
+      ).trim().split(NL).pop();
+      const indexGone = downPsql(
+        "SELECT count(*) FROM pg_indexes WHERE schemaname = 't_down' AND indexname = 'idx_task_note';",
+      ).trim().split(NL).pop();
+      check(noteBack === "1", "db:down-restores-column", noteBack);
+      check(titleHeld === "1", "db:down-restores-not-null", titleHeld);
+      check(indexGone === "0", "db:down-drops-index", indexGone);
     }
 
     // The one-focus strategy (AC2): the invariant "at most one focused

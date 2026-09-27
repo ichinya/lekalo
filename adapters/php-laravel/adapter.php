@@ -1960,15 +1960,18 @@ function deterministic_writes(array $request): array
     $artifact = deterministic_generation($request);
     $writes = [[
         'path' => $artifact['path'],
-        'action' => 'create',
+        'action' => $artifact['action'] ?? 'create',
         'sha256' => $artifact['digest'],
     ]];
     // The migration emitter ships its append-only ledger beside the
-    // migration file; both must be planned and written atomically.
+    // migration file; both must be planned and written atomically. A
+    // first publish plans a create, an append plans a replace of the
+    // merged ledger (the append itself is proven by
+    // assert_append_only inside the emitter).
     if (isset($artifact['ledger'])) {
         $writes[] = [
             'path' => $artifact['ledger']['path'],
-            'action' => 'create',
+            'action' => $artifact['ledger']['action'] ?? 'create',
             'sha256' => $artifact['ledger']['digest'],
         ];
     }
@@ -2161,39 +2164,117 @@ function emit_laravel_migrations(array $input, string $target, string $irPath): 
     $path = $directory . '/' . $filename;
     $bytes = render_migration_class($input, $class, $target, $irPath);
     $ledgerPath = $directory . '/ledger.json';
-    $ledger = [
-        'schemaVersion' => 'lekalo/laravel-migration-ledger/v0.4.0',
-        'identity' => 'dev.lekalo.laravel-migration-ledger@0.4.0',
-        'projectId' => $input['projectId'],
-        'engine' => $input['engine'],
-        'engineVersion' => $input['engineVersion'],
-        'migrations' => [[
-            'ordinal' => 1,
-            'filename' => $filename,
-            'digest' => sha256_digest($bytes),
-            'bytes' => strlen($bytes),
-            'planId' => $input['planId'],
-            'inputDigest' => sha256_digest(canonical_json($input)),
-            'baseDigest' => $input['baseDigest'],
-            'candidateDigest' => $input['candidateDigest'],
-            'timestampBase' => MIGRATION_TIMESTAMP_BASE,
-            'gated' => $input['gated'],
-            'backfillGated' => $input['backfillGated'],
-            'effectiveStatus' => $input['effectiveStatus'],
-        ]],
+    $entry = [
+        'filename' => $filename,
+        'digest' => sha256_digest($bytes),
+        'bytes' => strlen($bytes),
+        'planId' => $input['planId'],
+        'inputDigest' => sha256_digest(canonical_json($input)),
+        'baseDigest' => $input['baseDigest'],
+        'candidateDigest' => $input['candidateDigest'],
+        'timestampBase' => MIGRATION_TIMESTAMP_BASE,
+        'gated' => $input['gated'],
+        'backfillGated' => $input['backfillGated'],
+        'effectiveStatus' => $input['effectiveStatus'],
     ];
-    $ledgerBytes = canonical_json($ledger) . "\n";
+    // The ledger is append-only custody: a published ledger never
+    // shrinks and never rewrites an entry. The emitter reads the
+    // published document, proves the append with assert_append_only,
+    // and writes the merged ledger — so a second generate --apply
+    // appends instead of dying write-denied on the existing file, and
+    // a byte-identical regeneration replans exactly the published
+    // bytes (a true no-op at apply time).
+    $published = read_published_ledger($ledgerPath);
+    if ($published === null) {
+        $ledger = [
+            'schemaVersion' => 'lekalo/laravel-migration-ledger/v0.4.0',
+            'identity' => 'dev.lekalo.laravel-migration-ledger@0.4.0',
+            'projectId' => $input['projectId'],
+            'engine' => $input['engine'],
+            'engineVersion' => $input['engineVersion'],
+            'migrations' => [[
+                'ordinal' => 1,
+            ] + $entry],
+        ];
+        $ledgerBytes = canonical_json($ledger) . "\n";
+        $ledgerAction = 'create';
+    } else {
+        $publishedMigrations = $published['migrations'];
+        $alreadyPublished = null;
+        $highestOrdinal = 0;
+        foreach ($publishedMigrations as $publishedEntry) {
+            $highestOrdinal = max($highestOrdinal, (int) $publishedEntry['ordinal']);
+            if (($publishedEntry['filename'] ?? null) === $filename) {
+                $alreadyPublished = $publishedEntry;
+            }
+        }
+        if ($alreadyPublished !== null && $alreadyPublished['digest'] !== $entry['digest']) {
+            // The same published filename with different bytes is a
+            // custody violation: a migration file is named by its
+            // input digest, so the published class must be identical.
+            throw new RequestRefusal('ledger-conflict');
+        }
+        if ($alreadyPublished !== null) {
+            // Byte-identical regeneration: the entry is already
+            // published, the ledger keeps its published bytes, and the
+            // planned write replays them exactly (no-op on disk).
+            $ledgerBytes = file_get_contents($ledgerPath);
+            if ($ledgerBytes === false) {
+                throw new RequestRefusal('ledger-shape');
+            }
+            $ledgerAction = 'create';
+        } else {
+            $entry = ['ordinal' => $highestOrdinal + 1] + $entry;
+            $merged = $published;
+            $merged['migrations'][] = $entry;
+            assert_append_only($published, $merged);
+            $ledgerBytes = canonical_json($merged) . "\n";
+            $ledgerAction = 'replace';
+        }
+    }
     return [
         'path' => $path,
         'bytes' => $bytes,
         'digest' => sha256_digest($bytes),
+        'action' => 'create',
         'ledger' => [
             'path' => $ledgerPath,
             'bytes' => $ledgerBytes,
             'digest' => sha256_digest($ledgerBytes),
+            'action' => $ledgerAction,
         ],
         'filename' => $filename,
     ];
+}
+
+/**
+ * The published ledger of one migrations directory, or null when this
+ * adapter has not published one yet. A present-but-invalid ledger
+ * refuses: append-only custody cannot be proven over a corrupt
+ * document, and silently starting a fresh ledger would orphan every
+ * published migration.
+ */
+function read_published_ledger(string $path): ?array
+{
+    if (!is_file($path)) {
+        return null;
+    }
+    $bytes = file_get_contents($path);
+    if ($bytes === false) {
+        throw new RequestRefusal('ledger-shape');
+    }
+    try {
+        $document = json_decode($bytes, true, 64, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        throw new RequestRefusal('ledger-shape');
+    }
+    if (!is_json_object($document)
+        || !isset($document['migrations'])
+        || !is_array($document['migrations'])
+        || !array_is_list($document['migrations'])) {
+        throw new RequestRefusal('ledger-shape');
+    }
+    return $document;
 }
 
 /**
@@ -2919,7 +3000,23 @@ function apply_writes(array $writes, array $artifact): void
         if (!scope_covers('.lekalo/generated/php-laravel/**', $path)) {
             throw new RequestRefusal('write-denied');
         }
-        if (is_file($path)) {
+        $exists = is_file($path);
+        if ($exists && ($entry['action'] ?? 'create') === 'replace') {
+            // A replace is custody's append lane: only the retained
+            // ledger may be overwritten, and only with the merged
+            // bytes the emitter's assert_append_only proved.
+            if (!retained_artifact($path)) {
+                throw new RequestRefusal('write-denied');
+            }
+        } elseif ($exists) {
+            if (hash_equals($entry['sha256'], sha256_digest((string) file_get_contents($path)))) {
+                // Byte-identical regeneration: the published bytes
+                // already equal the plan, so this entry is a true
+                // no-op — the append-only history stays untouched.
+                continue;
+            }
+            // Create-on-existing with different bytes refuses: a
+            // published artifact is never silently rewritten.
             throw new RequestRefusal('write-denied');
         }
         if (strlen($bytes) > MAX_FILE_BYTES) {
