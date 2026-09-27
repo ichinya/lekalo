@@ -1,0 +1,22 @@
+{
+  "schema_version": "lekalo/php-test-port/v0.1.0",
+  "identity": "dev.lekalo.php-test-port@0.1.0",
+  "port": {
+    "path": "tests/Support/PlannerPort.php",
+    "class": "Tests\\Support\\PlannerPort",
+    "exports": {
+      "invoke": true,
+      "state": true,
+      "fixtures": true,
+      "actor": true,
+      "clock": true,
+      "ids": true,
+      "emissions": true,
+      "effects": true,
+      "authorize": true,
+      "contractCheck": true,
+      "fixtureDigest": true,
+      "reset": true
+    }
+  }
+}

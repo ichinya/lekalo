@@ -407,6 +407,76 @@ unlink($scanRoot . '/protocol-test.json');
 $unsupported = dispatch(describe_request(['operation' => 'plan-native', 'protocol_version' => VERSION, 'native_request' => $nativeBase]));
 check($unsupported['status'] === 'error' && $unsupported['error']['class'] === 'unsupported', 'plan-native honest unsupported');
 
+// --- the adapter-owned PHP port declaration (issue #56) ---------------------
+
+load_scenario_modules();
+
+/** One valid declaration with one overridden or removed member. */
+function port_doc(array $overrides = [], array $remove = []): array
+{
+    $doc = [
+        'schema_version' => PHP_PORT_DOC_SCHEMA_VERSION,
+        'identity' => PHP_PORT_DOC_IDENTITY,
+        'port' => [
+            'path' => 'tests/Support/PlannerPort.php',
+            'class' => 'Tests\\Support\\PlannerPort',
+            'exports' => [
+                'invoke' => true,
+                'state' => true,
+                'actor' => true,
+                'clock' => true,
+                'ids' => true,
+                'emissions' => true,
+                'effects' => true,
+                'authorize' => true,
+                'reset' => true,
+            ],
+        ],
+    ];
+    foreach ($overrides as $key => $value) {
+        $doc[$key] = $value;
+    }
+    foreach ($remove as $key) {
+        unset($doc[$key]);
+    }
+    return $doc;
+}
+
+$validPort = php_validate_port_doc(port_doc());
+check(is_array($validPort), 'valid port declaration accepted');
+check($validPort['class'] === 'Tests\\Support\\PlannerPort', 'port class survives validation');
+check(str_ends_with($validPort['path'], '.php'), 'port path is a php logical path');
+
+$badPortCases = [
+    'wrong-schema-version' => port_doc(['schema_version' => 'lekalo/php-test-port/v0.2.0']),
+    'wrong-identity' => port_doc(['identity' => 'dev.lekalo.php-test-port@0.0.9']),
+    'extra-top-member' => array_merge(port_doc(), ['extra' => true]),
+    'extra-port-member' => port_doc(['port' => array_merge(port_doc()['port'], ['code' => '<?php'])]),
+    'missing-port' => port_doc([], ['port']),
+    'traversal-path' => port_doc(['port' => array_merge(port_doc()['port'], ['path' => '../escape/Port.php'])]),
+    'absolute-path' => port_doc(['port' => array_merge(port_doc()['port'], ['path' => '/etc/Passport.php'])]),
+    'wrong-suffix' => port_doc(['port' => array_merge(port_doc()['port'], ['path' => 'tests/Support/port.mjs'])]),
+    'oversized-path' => port_doc(['port' => array_merge(port_doc()['port'], ['path' => str_repeat('a', 300) . '.php'])]),
+    'missing-class' => port_doc(['port' => array_merge(port_doc()['port'], ['class' => ''])]),
+    'code-in-class' => port_doc(['port' => array_merge(port_doc()['port'], ['class' => 'Tests\\Support\\Port; evil'])]),
+    'leading-backslash-class' => port_doc(['port' => array_merge(port_doc()['port'], ['class' => '\\Tests\\Port'])]),
+    'digit-lead-class' => port_doc(['port' => array_merge(port_doc()['port'], ['class' => '9Port'])]),
+    'missing-invoke' => port_doc(['port' => array_merge(port_doc()['port'], ['exports' => ['state' => true]])]),
+    'false-invoke' => port_doc(['port' => array_merge(port_doc()['port'], ['exports' => ['invoke' => false]])]),
+    'unknown-export' => port_doc(['port' => array_merge(port_doc()['port'], ['exports' => ['invoke' => true, 'gorilla' => true]])]),
+    'non-bool-export' => port_doc(['port' => array_merge(port_doc()['port'], ['exports' => ['invoke' => true, 'state' => 'yes']])]),
+];
+foreach ($badPortCases as $name => $doc) {
+    check(php_validate_port_doc($doc) === null, "hostile port declaration refused: {$name}");
+}
+
+// The scenario-IR recognition admits the planner fixture spellings
+// (`<project>.scenario.<case>.json`) without widening to arbitrary JSON.
+check(is_scenario_ir_path('lekalo/scenarios/planner.scenario.focus_happy.json'), 'planner scenario spelling recognized');
+check(is_scenario_ir_path('lekalo/scenarios/thing.scenario.json'), 'plain scenario spelling recognized');
+check(!is_scenario_ir_path('lekalo/scenarios/notes.json'), 'arbitrary json is not a scenario');
+check(!is_scenario_ir_path('lekalo/php-test-port.json'), 'the port declaration is not a scenario document');
+
 // --- summary ----------------------------------------------------------------
 
 fwrite(STDOUT, json_encode([

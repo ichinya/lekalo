@@ -35,8 +35,26 @@ const PHP_IR_IDENTITY = 'dev.lekalo.ir@0.2.16';
 /** The generated scenario-test home under the generated root. */
 const PHP_SCENARIO_TESTS_DIR = 'src/generated/php-laravel/scenario-tests';
 
-/** The project test-port declaration path (issue #47). */
-const PHP_PORT_DOC_PATH = 'lekalo/test-port.json';
+/**
+ * The adapter-owned PHP port declaration path (issue #56).
+ *
+ * The core `lekalo/test-port` contract v0.4.0 restricts port paths to
+ * `.mjs`/`.ts` modules, and its version custody is pinned to the
+ * workspace product version, so a `.php` port cannot ride that family
+ * without the coordinated contract successor (docs/m5/issue-56-research.md
+ * S1, deliberately deferred). Until that successor lands, the PHP
+ * adapter reads its own bounded sibling document `lekalo/php-test-port.json`
+ * with the exact closed export-flag vocabulary of the core contract, so
+ * the eventual lift is mechanical.
+ */
+const PHP_PORT_DOC_PATH = 'lekalo/php-test-port.json';
+
+/** The closed identity of the adapter-owned PHP port declaration. */
+const PHP_PORT_DOC_SCHEMA_VERSION = 'lekalo/php-test-port/v0.1.0';
+const PHP_PORT_DOC_IDENTITY = 'dev.lekalo.php-test-port@0.1.0';
+
+/** The declared-port class FQN grammar: PSR-4 style, bounded, no code. */
+const PHP_PORT_CLASS_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*)*$/';
 
 /**
  * The closed PHP runner registry. The Laratesto entry mirrors the
@@ -440,6 +458,49 @@ function php_resolve_runner(array $scenario, array &$findings): array
         $runner['declaredVersion'] = $nativeBinding['runnerVersion'];
     }
     return $runner;
+}
+
+/**
+ * Validate the adapter-owned PHP port declaration against its closed
+ * shape (issue #56): bounded document, closed identity, one logical
+ * `.php` path, one PSR-4 class FQN, and the exact closed export-flag
+ * vocabulary of the core test-port contract (absent/other-than-true
+ * means the feature compiles to an explicit unsupported diagnostic).
+ * Returns the normalized `{path, class, exports}` document, or null
+ * when any bound is violated. No code, no expressions, no traversal:
+ * the grammar itself keeps the declaration data-only.
+ */
+function php_validate_port_doc(array $doc): ?array
+{
+    if (($doc['schema_version'] ?? null) !== PHP_PORT_DOC_SCHEMA_VERSION
+        || ($doc['identity'] ?? null) !== PHP_PORT_DOC_IDENTITY
+        || count($doc) !== 3
+        || !is_array($doc['port'] ?? null)
+        || count($doc['port']) !== 3) {
+        return null;
+    }
+    $port = $doc['port'];
+    $path = $port['path'] ?? null;
+    if (!is_string($path) || $path === '' || strlen($path) > 256
+        || preg_match('/^[a-zA-Z0-9][a-zA-Z0-9._\/-]*\\.php$/', $path) !== 1
+        || str_contains($path, '..')) {
+        return null;
+    }
+    $class = $port['class'] ?? null;
+    if (!is_string($class) || $class === '' || strlen($class) > 256
+        || preg_match(PHP_PORT_CLASS_PATTERN, $class) !== 1) {
+        return null;
+    }
+    $exports = $port['exports'] ?? null;
+    if (!is_array($exports) || ($exports['invoke'] ?? null) !== true) {
+        return null;
+    }
+    foreach ($exports as $flag => $value) {
+        if (!in_array($flag, PHP_PORT_FLAGS, true) || !is_bool($value)) {
+            return null;
+        }
+    }
+    return ['path' => $path, 'class' => $class, 'exports' => $exports];
 }
 
 /** The port surface join: every closed port flag the project declares. */

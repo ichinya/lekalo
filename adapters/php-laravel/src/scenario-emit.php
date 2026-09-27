@@ -130,8 +130,16 @@ function php_emit_scenario_tests(array $input): array
         'inputDigest' => $input['inputDigest'],
         'adapterVersion' => $input['adapterVersion'],
         'portModulePath' => $input['portModulePath'],
+        'portClass' => $input['portClass'] ?? '',
         'startedBy' => $input['startedBy'] ?? 'lekalo-scenario-harness',
     ];
+    if ($context['portClass'] === '' && $context['portModulePath'] !== '') {
+        // A declared port always carries both its logical path and its
+        // class; only the declaration-absent compile (every feature an
+        // explicit unsupported row, the shim never invoked) emits with
+        // an empty class binding.
+        throw new LogicException('scenario emit without a validated port class');
+    }
     $files = [
         php_file(PHP_SCENARIO_TESTS_DIR . '/scenario-test-kit.php', php_testkit_text($context), null),
         php_file(PHP_SCENARIO_TESTS_DIR . '/scenario-reporter.php', php_reporter_text($context), null),
@@ -575,11 +583,15 @@ PHP;
 function php_port_text(array $context): string
 {
     $header = php_doc_header($context);
+    // The FQN travels through the closed string escaper: the validated
+    // grammar admits only identifiers and namespace separators, and the
+    // escaping keeps even a hostile value from breaking the constant.
+    $portClass = php_emit_value($context['portClass']);
     return <<<PHP
 $header
 // The project test-port binding shim; content depends only on the
-// adapter version and the declared port path, so this file is itself a
-// determinism probe. Generated file — do not edit.
+// adapter version and the declared port document, so this file is
+// itself a determinism probe. Generated file — do not edit.
 
 declare(strict_types=1);
 
@@ -587,15 +599,15 @@ namespace Lekalo\\Generated\\ScenarioTests;
 
 /**
  * Forwarding shim to the project-declared ScenarioPort implementation.
- * The emitted `Port::instance()` body is completed at generation time
- * with the exact project port class name from the `lekalo/test-port.json`
- * declaration, so the shim itself stays deterministic given the same
- * inputs.
+ * The emitted `PORT_CLASS` constant is completed at generation time
+ * with the exact project port class name from the validated
+ * `lekalo/php-test-port.json` declaration, so the shim itself stays
+ * deterministic given the same inputs.
  */
 final class Port
 {
     private const GENERATED_ROOT_DEPTH = 4;
-    private const PORT_CLASS = '__LEKALO_PORT_CLASS__';
+    private const PORT_CLASS = $portClass;
 
     /** @var array<string, object> resolved instances, keyed by class */
     private static array \$instances = [];
@@ -653,7 +665,7 @@ use Lekalo\\Generated\\ScenarioTests\\Port;
 use Lekalo\\Generated\\ScenarioTests\\ScenarioReporter;
 use Lekalo\\Generated\\ScenarioTests\\ScenarioTestKit;
 use Testo\\Assert;
-use Testo\\Test;
+use Testo\Test;
 
 PHP;
     $push($heredoc, null);
@@ -663,7 +675,10 @@ PHP;
     // spelling stays lowercase (the logical-path grammar forbids
     // uppercase segments) and never relies on the case-suffix
     // convention.
-    $push("#[Test]\n" . 'final class ' . php_class_of($scenarioId) . "\n{\n", null);
+    $push("#[Test]
+" . 'final class ' . php_class_of($scenarioId) . "
+{
+", null);
     $body = php_render_body($model);
     $push($body['text'], null);
     $push("}\n", null);

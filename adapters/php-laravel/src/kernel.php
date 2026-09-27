@@ -1158,6 +1158,16 @@ function scenario_generation(array $request): array
         } catch (JsonException) {
             return ['refusal' => 'port-shape', 'files' => [], 'findings' => []];
         }
+        if (!is_array($port)) {
+            return ['refusal' => 'port-shape', 'files' => [], 'findings' => []];
+        }
+        // The adapter-owned declaration must satisfy its closed shape
+        // before any plan exists: a present-but-invalid document is an
+        // authoring error, never an all-unsupported silent fallback.
+        $port = php_validate_port_doc($port);
+        if ($port === null) {
+            return ['refusal' => 'port-shape', 'files' => [], 'findings' => []];
+        }
     }
     $capabilities = null;
     if (isset($request['profile_capabilities']) && is_array($request['profile_capabilities'])) {
@@ -1178,7 +1188,8 @@ function scenario_generation(array $request): array
         'models' => $mapped['scenarios'],
         'inputDigest' => 'sha256:' . hash('sha256', $scenarioText),
         'adapterVersion' => ADAPTER_VERSION,
-        'portModulePath' => is_string($port['port']['path'] ?? null) ? $port['port']['path'] : '',
+        'portModulePath' => $portPresent ? $port['path'] : '',
+        'portClass' => $portPresent ? $port['class'] : '',
     ]);
     $emitted = [];
     foreach ($files as $file) {
