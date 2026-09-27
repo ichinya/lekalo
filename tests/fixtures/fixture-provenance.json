@@ -105,6 +105,10 @@
       "origin": "synthetic"
     },
     {
+      "family": "laravel-migrations",
+      "origin": "synthetic"
+    },
+    {
       "family": "loader",
       "origin": "synthetic"
     },

@@ -66,9 +66,14 @@ not become a second SQL planner.
    no-op, a changed or missing published file refuses, and clean
    planning skips retained migration files.
 8. **Timestamps come from policy, never the wall clock.** Migration
-   filenames derive from a declared UTC timestamp base plus an
-   append-only ordinal; two runs with identical inputs are
-   byte-identical.
+   filenames carry one declared UTC timestamp base plus the input's
+   short digest; two runs with identical inputs are byte-identical.
+   The filename carries no semantic ordinal: publication sequence is
+   the ledger's append-only ordinal, not alphabetical filename order,
+   and the digest suffix exists to make each published file
+   content-addressed, not to sequence execution. Plans that must
+   compose with already-published migrations are generated and applied
+   as one composed input, never sequenced by digest.
 
 ## Consequences
 

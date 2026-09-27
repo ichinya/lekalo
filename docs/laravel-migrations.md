@@ -32,12 +32,14 @@ lekalo storage migrate-plan BASE CANDIDATE --profile PROFILE
 # The Laravel generation input: SQL plan + effective gate + rename map
 # + rollback classification, bound to every input digest.
 lekalo storage laravel-plan BASE CANDIDATE --profile PROFILE \
-  [--history HISTORY.json] [--timestamp-base 20260927000000] [--json]
+  [--history HISTORY.json] [--json]
 ```
 
 `laravel-plan` is a dry run: it prints the bounded input document the
 PHP adapter consumes. It never writes artifacts and never connects to
-a database.
+a database. The migration filename's timestamp base is declared
+adapter policy (recorded in every ledger entry's `timestampBase`),
+never a CLI flag and never the wall clock.
 
 ## Gates
 
@@ -71,9 +73,13 @@ travel in a validated history document:
 ```
 
 The planner validates every entry (old exists, new unoccupied, no
-cycles) and emits `ALTER TABLE … RENAME` / `ALTER TABLE … RENAME
-COLUMN` instead of drop+add. Ambiguous or unvalidated history blocks
-generation.
+chains or cycles, the target is fresh) and emits `ALTER TABLE …
+RENAME` / `ALTER TABLE … RENAME COLUMN` instead of drop+add. A column
+rename is destructive — it gates exactly like a table rename — and its
+rollback class is the exact swap. Ambiguous, stale, colliding, or
+unvalidated history blocks generation. The history document's closed
+contract is
+`contracts/storage-rename-history.schema.v0.4.0.json`.
 
 ## Rollback classification
 
@@ -89,4 +95,10 @@ generation.
 only: one anonymous-class migration per plan plus `ledger.json`. The
 ledger is append-only — published migrations are never rewritten,
 byte-identical regeneration is a no-op, and `plan-clean` refuses to
-delete them.
+delete them. A second `generate --apply` with a different plan appends
+a merged ledger entry and never dies write-denied on the published
+ledger. The adapter's step-kind vocabulary is the input contract's
+closed plan-v1 set: the planner renders some families through one
+kind (a unique constraint arrives as `add_index`), so an accepted
+kind the planner never emits today is reserved vocabulary, not a
+dead contract member.

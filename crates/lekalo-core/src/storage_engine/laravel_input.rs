@@ -13,8 +13,8 @@
 use crate::diagnostics::DiagnosticSet;
 use crate::storage_projection::StorageProjectionAttachment;
 
-use super::rollback::{classify, reverse_statement, RollbackClass};
 use super::migration::MigrationPlan;
+use super::rollback::{classify, reverse_statement, RollbackClass};
 use super::{diagnostic, StorageEngineAttachment};
 
 /// The contract identity this input document speaks.
@@ -166,10 +166,7 @@ impl LaravelMigrationInput {
             ("baseDigest", Some(string(&self.base_digest))),
             ("candidateDigest", Some(string(&self.candidate_digest))),
             ("diffDigest", Some(string(&self.diff_digest))),
-            (
-                "historyDigest",
-                self.history_digest.as_deref().map(string),
-            ),
+            ("historyDigest", self.history_digest.as_deref().map(string)),
             ("planId", Some(string(&self.plan_id))),
             ("gated", Some(flag(self.gated))),
             ("backfillGated", Some(flag(self.backfill_gated))),
@@ -253,7 +250,6 @@ mod tests {
         StorageProjectionAttachment::from_value(&value).expect("valid")
     }
 
-
     fn base() -> StorageProjectionAttachment {
         load("../../tests/fixtures/storage-projection/valid/planner-storage.json")
     }
@@ -269,30 +265,25 @@ mod tests {
         // base digest; build a profile bound to this exact projection.
         let base_digest = format!(
             "sha256:{}",
-            crate::digest::sha256_hex(
-                base_attachment.canonical_bytes().expect("bytes").as_bytes()
-            )
+            crate::digest::sha256_hex(base_attachment.canonical_bytes().expect("bytes").as_bytes())
         );
         let mut profile_value: serde_json::Value = serde_json::from_slice(include_bytes!(
             "../../../../tests/fixtures/storage-engine/valid/planner-postgres.json"
         ))
         .expect("fixture");
         profile_value["projectionRef"] = serde_json::Value::String(base_digest.clone());
-        let profile =
-            crate::storage_engine::StorageEngineAttachment::from_value(&profile_value)
-                .expect("valid profile");
+        let profile = crate::storage_engine::StorageEngineAttachment::from_value(&profile_value)
+            .expect("valid profile");
         let candidate = additive_candidate();
         let plan = plan_migration(&profile, &base_attachment, &candidate, None).expect("plans");
-        let input = laravel_migration_input(&profile, &base_attachment, &plan)
-            .expect("input");
+        let input = laravel_migration_input(&profile, &base_attachment, &plan).expect("input");
         let bytes = input.canonical_bytes().expect("bytes");
         let parsed: serde_json::Value = serde_json::from_str(&bytes).expect("json");
         assert_eq!(parsed["identity"], IDENTITY);
         assert_eq!(parsed["effectiveStatus"], "ready");
         assert!(input.operations().iter().all(|op| op.ordinal() > 0));
         // Determinism: two builds are byte-identical.
-        let again =
-            laravel_migration_input(&profile, &base_attachment, &plan).expect("input");
+        let again = laravel_migration_input(&profile, &base_attachment, &plan).expect("input");
         assert_eq!(input, again);
         assert_eq!(bytes, again.canonical_bytes().expect("bytes"));
     }
@@ -302,46 +293,38 @@ mod tests {
         let base_attachment = base();
         let base_digest = format!(
             "sha256:{}",
-            crate::digest::sha256_hex(
-                base_attachment.canonical_bytes().expect("bytes").as_bytes()
-            )
+            crate::digest::sha256_hex(base_attachment.canonical_bytes().expect("bytes").as_bytes())
         );
         let mut profile_value: serde_json::Value = serde_json::from_slice(include_bytes!(
             "../../../../tests/fixtures/storage-engine/valid/planner-postgres.json"
         ))
         .expect("fixture");
         profile_value["projectionRef"] = serde_json::Value::String(base_digest);
-        let profile =
-            crate::storage_engine::StorageEngineAttachment::from_value(&profile_value)
-                .expect("valid profile");
+        let profile = crate::storage_engine::StorageEngineAttachment::from_value(&profile_value)
+            .expect("valid profile");
         let destructive =
             load("../../tests/fixtures/storage-engine/migration/candidate-destructive.json");
-        let blocked = plan_migration(&profile, &base_attachment, &destructive, None)
-            .expect("plans blocked");
+        let blocked =
+            plan_migration(&profile, &base_attachment, &destructive, None).expect("plans blocked");
         assert_eq!(blocked.status(), crate::storage_engine::PlanStatus::Blocked);
-        let input = laravel_migration_input(&profile, &base_attachment, &blocked)
-            .expect("input");
+        let input = laravel_migration_input(&profile, &base_attachment, &blocked).expect("input");
         assert_eq!(input.effective_status(), "blocked");
     }
 
     #[test]
     fn rename_history_flows_into_the_document() {
-        let base_attachment =
-            load("../../tests/fixtures/storage-engine/migration/base.json");
+        let base_attachment = load("../../tests/fixtures/storage-engine/migration/base.json");
         let base_digest = format!(
             "sha256:{}",
-            crate::digest::sha256_hex(
-                base_attachment.canonical_bytes().expect("bytes").as_bytes()
-            )
+            crate::digest::sha256_hex(base_attachment.canonical_bytes().expect("bytes").as_bytes())
         );
         let mut profile_value: serde_json::Value = serde_json::from_slice(include_bytes!(
             "../../../../tests/fixtures/storage-engine/valid/planner-postgres.json"
         ))
         .expect("fixture");
         profile_value["projectionRef"] = serde_json::Value::String(base_digest);
-        let profile =
-            crate::storage_engine::StorageEngineAttachment::from_value(&profile_value)
-                .expect("valid profile");
+        let profile = crate::storage_engine::StorageEngineAttachment::from_value(&profile_value)
+            .expect("valid profile");
         let candidate =
             load("../../tests/fixtures/storage-engine/migration/candidate-backfill.json");
         let history = StorageRenameMap {
@@ -354,17 +337,14 @@ mod tests {
             ),
             candidate_digest: format!(
                 "sha256:{}",
-                crate::digest::sha256_hex(
-                    candidate.canonical_bytes().expect("bytes").as_bytes()
-                )
+                crate::digest::sha256_hex(candidate.canonical_bytes().expect("bytes").as_bytes())
             ),
             renames: Vec::new(),
         };
         let plan = plan_with_history(&profile, &base_attachment, &candidate, &history, None)
             .expect("plans");
-        let input =
-            laravel_migration_input(&profile, &base_attachment, &plan).expect("input");
-        assert!(input.operations().len() > 0);
+        let input = laravel_migration_input(&profile, &base_attachment, &plan).expect("input");
+        assert!(!input.operations().is_empty());
         assert!(input.canonical_bytes().is_ok());
     }
 }

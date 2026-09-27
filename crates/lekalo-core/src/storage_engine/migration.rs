@@ -479,9 +479,7 @@ fn plan_inner(
         base_digest,
         candidate_digest,
         diff_digest,
-        history_digest: history
-            .map(super::history::history_digest_of)
-            .transpose()?,
+        history_digest: history.map(super::history::history_digest_of).transpose()?,
         gated,
         backfill_gated,
         status,
@@ -623,8 +621,7 @@ fn push_column_renames(
         if from == to {
             continue;
         }
-        let invalid =
-            || diagnostic::rule_invalid(MAPPING_INVALID, "rename-column-name", None);
+        let invalid = || diagnostic::rule_invalid(MAPPING_INVALID, "rename-column-name", None);
         let from_name = StorageName::parse(from).map_err(|_| invalid())?;
         let to_name = StorageName::parse(to).map_err(|_| invalid())?;
         push_step(
@@ -1180,12 +1177,11 @@ fn plan_tables(
                     .find(|(_, to)| *to == foreign_key.column().as_str())
                     .map(|(from, _)| *from)
                     .unwrap_or(foreign_key.column().as_str());
-                let old_name = StorageName::parse(&format!(
-                    "fk_{}_{}",
-                    base_table.table(),
-                    old_column
-                ))
-                .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None))?;
+                let old_name =
+                    StorageName::parse(&format!("fk_{}_{}", base_table.table(), old_column))
+                        .map_err(|_| {
+                            diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
+                        })?;
                 let drop_id = steps.len();
                 push_step(
                     steps,
@@ -3305,9 +3301,8 @@ mod tests {
         }
         let candidate =
             StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
-        let plan =
-            crate::storage_engine::plan_migration(&profile, &base, &candidate, None)
-                .expect("plans");
+        let plan = crate::storage_engine::plan_migration(&profile, &base, &candidate, None)
+            .expect("plans");
         assert!(plan.steps().iter().any(|step| step.kind() == "drop_column"));
         assert!(plan.steps().iter().any(|step| step.kind() == "add_column"));
         assert!(plan

@@ -50,8 +50,8 @@ pub fn classify(step: &Step) -> RollbackClass {
     match step.kind() {
         // Drops lose the object and its history: the inverse text
         // would recreate an empty shell, never the object's state.
-        "drop_table" | "drop_column" | "drop_sequence" | "drop_index"
-        | "drop_constraint" | "drop_check" | "drop_policy" => RollbackClass::Irreversible,
+        "drop_table" | "drop_column" | "drop_sequence" | "drop_index" | "drop_constraint"
+        | "drop_check" | "drop_policy" => RollbackClass::Irreversible,
         // A backfill writes business values; no inverse restores the
         // pre-migration rows.
         "backfill" => RollbackClass::Irreversible,
@@ -275,10 +275,16 @@ pub fn reverse_statement(step: &Step) -> Option<String> {
 /// The quoted table token of an ALTER TABLE statement: the first
 /// quoted identifier.
 fn table_token(step: &Step) -> &str {
-    let inner = step.statement().strip_suffix(';').unwrap_or(step.statement());
+    let inner = step
+        .statement()
+        .strip_suffix(';')
+        .unwrap_or(step.statement());
     let start = inner.find('"').unwrap_or(0);
     let rest = &inner[start + 1..];
-    let end = rest.find('"').map(|offset| start + 1 + offset).unwrap_or(start);
+    let end = rest
+        .find('"')
+        .map(|offset| start + 1 + offset)
+        .unwrap_or(start);
     &inner[start..=end]
 }
 
@@ -307,10 +313,7 @@ fn inner_rls_mode(statement: &str) -> Option<&'static str> {
 pub fn build_reverse_plan(steps: &[Step]) -> Vec<Option<String>> {
     let mut ordered: Vec<&Step> = steps.iter().collect();
     ordered.reverse();
-    ordered
-        .iter()
-        .map(|step| reverse_statement(step))
-        .collect()
+    ordered.iter().map(|step| reverse_statement(step)).collect()
 }
 
 #[cfg(test)]

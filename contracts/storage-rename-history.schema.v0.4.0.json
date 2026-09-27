@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/storage-rename-history.schema.v0.4.0.json",
+  "title": "Lekalo Storage Rename History",
+  "description": "Closed independent contract for the validated storage rename history of one base-to-candidate transition (issue #57). The document carries the owner-reviewed physical renames: which table or column changed its stored name and where the evidence comes from. Renaming a Model symbol never renames a table; a physical rename exists only when this document declares it. The planner applies it only after validating the map against its two pinned attachments - the old name exists in the base, the new name is unoccupied in the candidate, entries are one-per-source and one-per-target, and the project and both digests match exactly. Without validated evidence a same-entity name change stays a destructive drop+add pair. The document is pure data - no credentials, hosts, URLs, users, wall-clock timestamps, or provider output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "projectId",
+    "baseDigest",
+    "candidateDigest",
+    "renames"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/storage-rename-history/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.storage-rename-history@0.4.0"
+    },
+    "projectId": {
+      "description": "The stable project identity both pinned attachments belong to.",
+      "$ref": "#/$defs/semanticId"
+    },
+    "baseDigest": {
+      "description": "The canonical digest of the base storage-projection attachment; must equal the pin exactly.",
+      "$ref": "#/$defs/sha256"
+    },
+    "candidateDigest": {
+      "description": "The canonical digest of the candidate storage-projection attachment; must equal the pin exactly.",
+      "$ref": "#/$defs/sha256"
+    },
+    "renames": {
+      "description": "The declared physical renames in canonical byte-sorted order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/rename"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "storageName": {
+      "description": "One physical storage name under the shared snake_case grammar.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "rename": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entity",
+        "kind",
+        "from",
+        "to",
+        "historyRef"
+      ],
+      "properties": {
+        "entity": {
+          "description": "The stable entity key both names belong to.",
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "description": "The closed rename target: a table (or join table), or a column of one table.",
+          "enum": ["table", "column"]
+        },
+        "from": {
+          "description": "The physical name in the base projection; must exist there under the same entity.",
+          "$ref": "#/$defs/storageName"
+        },
+        "to": {
+          "description": "The physical name in the candidate projection; must be occupied by the renamed object there.",
+          "$ref": "#/$defs/storageName"
+        },
+        "historyRef": {
+          "description": "The semantic-history reference the review cites: a stable symbol id, a registry entry, or a reviewed ticket.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    }
+  }
+}

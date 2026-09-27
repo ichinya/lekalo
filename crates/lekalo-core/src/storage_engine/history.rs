@@ -14,7 +14,9 @@
 use serde::Serialize;
 
 use crate::diagnostics::DiagnosticSet;
-use crate::storage_projection::{id::EntityKey, id::StorageName, Namespace, StorageProjectionAttachment};
+use crate::storage_projection::{
+    id::EntityKey, id::StorageName, Namespace, StorageProjectionAttachment,
+};
 
 use super::diagnostic::{self, MAPPING_INVALID};
 
@@ -47,7 +49,11 @@ impl StorageRename {
     fn material(&self) -> String {
         format!(
             "{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{2}",
-            self.entity, self.kind.key(), self.from, self.to, self.history_ref
+            self.entity,
+            self.kind.key(),
+            self.from,
+            self.to,
+            self.history_ref
         )
     }
 }
@@ -210,14 +216,15 @@ impl StorageRenameMap {
 }
 
 /// The digest member must be an exact `sha256:<64 hex>` spelling.
-fn digest_member(object: &serde_json::Map<String, serde_json::Value>, key: &str) -> Result<String, DiagnosticSet> {
+fn digest_member(
+    object: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<String, DiagnosticSet> {
     let value = object
         .get(key)
         .and_then(|v| v.as_str())
         .ok_or_else(|| refusal(key))?;
-    let rest = value
-        .strip_prefix("sha256:")
-        .ok_or_else(|| refusal(key))?;
+    let rest = value.strip_prefix("sha256:").ok_or_else(|| refusal(key))?;
     if rest.len() != 64 || !rest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(refusal(key));
     }
@@ -225,7 +232,10 @@ fn digest_member(object: &serde_json::Map<String, serde_json::Value>, key: &str)
 }
 
 /// The physical-name member must parse under the storage-name grammar.
-fn name_member(entry: &serde_json::Map<String, serde_json::Value>, key: &str) -> Result<String, DiagnosticSet> {
+fn name_member(
+    entry: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<String, DiagnosticSet> {
     let value = entry
         .get(key)
         .and_then(|v| v.as_str())
@@ -306,10 +316,7 @@ pub fn validate_rename_history(
     {
         return Err(refusal("rename-conflict"));
     }
-    if targets
-        .iter()
-        .any(|target| sources.contains(target))
-    {
+    if targets.iter().any(|target| sources.contains(target)) {
         return Err(refusal("rename-cycle"));
     }
     // Column renames hold the same one-way discipline: one entry per
@@ -324,13 +331,9 @@ pub fn validate_rename_history(
             continue;
         }
         let entity = rename.entity.as_str();
-        let base_table = declared_table(base, entity)
-            .ok_or_else(|| refusal("rename-entity-unmapped"))?;
-        if rename.from == rename.to
-            || declared_columns(base, base_table)?
-                .iter()
-                .any(|column| *column == rename.to)
-        {
+        let base_table =
+            declared_table(base, entity).ok_or_else(|| refusal("rename-entity-unmapped"))?;
+        if rename.from == rename.to || declared_columns(base, base_table)?.contains(&rename.to) {
             return Err(refusal("rename-column-name"));
         }
         if column_sources.contains(&(entity, rename.from.as_str()))
@@ -345,9 +348,7 @@ pub fn validate_rename_history(
 }
 
 /// The canonical attachment digest the pins carry.
-fn attachment_digest(
-    attachment: &StorageProjectionAttachment,
-) -> Result<String, DiagnosticSet> {
+fn attachment_digest(attachment: &StorageProjectionAttachment) -> Result<String, DiagnosticSet> {
     let bytes = attachment.canonical_bytes()?;
     Ok(format!(
         "sha256:{}",
@@ -361,7 +362,8 @@ fn declared_table<'a>(
     attachment: &'a StorageProjectionAttachment,
     entity_key: &str,
 ) -> Option<&'a StorageName> {
-    let entity_key = EntityKey::parse(entity_key).ok()?;    attachment
+    let entity_key = EntityKey::parse(entity_key).ok()?;
+    attachment
         .projection(Namespace::Postgres)?
         .tables()
         .iter()
@@ -457,8 +459,6 @@ pub(crate) fn history_digest_of(map: &StorageRenameMap) -> Result<String, Diagno
     map.digest()
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -504,7 +504,8 @@ mod tests {
             attachment("../../tests/fixtures/storage-engine/migration/candidate-additive.json");
         let map = StorageRenameMap {
             project_id: base.project_id().as_str().to_owned(),
-            base_digest: "sha256:0606060606060606060606060606060606060606060606060606060606060606".to_owned(),
+            base_digest: "sha256:0606060606060606060606060606060606060606060606060606060606060606"
+                .to_owned(),
             candidate_digest: attachment_digest(&candidate).expect("digest"),
             renames: Vec::new(),
         };
@@ -522,8 +523,10 @@ mod tests {
             attachment("../../tests/fixtures/storage-engine/migration/candidate-additive.json");
         let map = StorageRenameMap {
             project_id: base.project_id().as_str().to_owned(),
-            base_digest: "sha256:bd66d2a7c62819bec13470f3160b335713cb73ed7795fd8af757fea5dd19af9e".to_owned(),
-            candidate_digest: "sha256:7b6c78a1ae83ae754843bb6b13e7072e9fac9e0e4b8bcde83e9dff226b5fb7f1".to_owned(),
+            base_digest: "sha256:bd66d2a7c62819bec13470f3160b335713cb73ed7795fd8af757fea5dd19af9e"
+                .to_owned(),
+            candidate_digest:
+                "sha256:7b6c78a1ae83ae754843bb6b13e7072e9fac9e0e4b8bcde83e9dff226b5fb7f1".to_owned(),
             renames: vec![StorageRename {
                 entity: "task".to_owned(),
                 kind: StorageRenameKind::Column,
@@ -547,9 +550,7 @@ mod tests {
         let digest = |attachment: &StorageProjectionAttachment| {
             format!(
                 "sha256:{}",
-                crate::digest::sha256_hex(
-                    attachment.canonical_bytes().expect("bytes").as_bytes()
-                )
+                crate::digest::sha256_hex(attachment.canonical_bytes().expect("bytes").as_bytes())
             )
         };
         let rename = |from: &str, to: &str| StorageRenameMap {

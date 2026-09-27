@@ -7050,8 +7050,7 @@ fn storage_laravel_plan(
         Ok(plan) => plan,
         Err(diagnostics) => return DomainResult::invalid(diagnostics),
     };
-    let input = match lekalo_core::storage_engine::laravel_migration_input(&profile, &base, &plan)
-    {
+    let input = match lekalo_core::storage_engine::laravel_migration_input(&profile, &base, &plan) {
         Ok(input) => input,
         Err(diagnostics) => return DomainResult::invalid(diagnostics),
     };
@@ -7078,10 +7077,7 @@ fn storage_laravel_plan(
 fn read_projection_attachment(
     path: &str,
 ) -> Result<lekalo_core::storage_projection::StorageProjectionAttachment, DomainResult> {
-    let document = match read_attachment_document(path) {
-        Ok(document) => document,
-        Err(result) => return Err(result),
-    };
+    let document = read_attachment_document(path)?;
     match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(&document) {
         Ok(attachment) => Ok(attachment),
         Err(diagnostics) => Err(DomainResult::invalid(diagnostics)),
