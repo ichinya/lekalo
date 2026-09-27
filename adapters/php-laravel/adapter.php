@@ -2256,7 +2256,7 @@ function render_migration_class(array $input, string $class, string $target, str
     } else {
         $lines[] = '        // The plan carries irreversible or data-loss-on-rollback';
         $lines[] = '        // operations: the rollback refuses before the first statement.';
-        $lines[] = '        throw new \'RuntimeException\'(\'lekalo: rollback is not safe for this migration\');';
+        $lines[] = '        throw new \RuntimeException(\'lekalo: rollback is not safe for this migration\');';
     }
     $lines[] = '    }';
     $lines[] = '};';
