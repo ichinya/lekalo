@@ -81,18 +81,18 @@ if (!existsSync(goFile)) {
   process.exit(1);
 }
 const gofmt = spawnSync("gofmt", ["-w", goFile], { encoding: "utf8" });
-if (gofmt.status !== 0) {
-  process.stderr.write(`${JSON.stringify({ ok: false, reason: "go-client-unparseable", detail: (gofmt.stdout ?? gofmt.stderr ?? "").slice(0, 200) }, null, 2)}\n`);
+if (gofmt.error || gofmt.status !== 0) {
+  process.stderr.write(`${JSON.stringify({ ok: false, reason: "go-client-unparseable", detail: String(gofmt.error?.message ?? gofmt.stderr ?? "").slice(0, 200) }, null, 2)}\n`);
   process.exit(1);
 }
 const goBuild = spawnSync("go", ["build", "./..."], {
   cwd: dirname(goFile),
   stdio: "pipe",
 });
-if (goBuild.status !== 0) {
+if (goBuild.error || goBuild.status !== 0) {
   process.stderr.write(goBuild.stdout ?? Buffer.alloc(0));
   process.stderr.write(goBuild.stderr ?? Buffer.alloc(0));
-  process.stderr.write(`${JSON.stringify({ ok: false, reason: "go-client-build" }, null, 2)}\n`);
+  process.stderr.write(`${JSON.stringify({ ok: false, reason: "go-client-build", detail: String(goBuild.error?.message ?? "").slice(0, 200) }, null, 2)}\n`);
   process.exit(1);
 }
 void goMod;
