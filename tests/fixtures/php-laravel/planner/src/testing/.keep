@@ -1,0 +1,4 @@
+The generated scenario-test home (`src/generated/php-laravel/scenario-tests/`)
+is materialized inside this tree by `lekalo generate` over the shipped
+php-laravel adapter. The `.keep` file guarantees the parent directories
+exist in every checkout so a staged write view can always be created.

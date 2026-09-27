@@ -203,3 +203,40 @@ cargo run --locked -p lekalo-cli -- adapter test --profile strict \
 No hidden `composer install/update`, no lifecycle scripts, no network:
 the manifest's `permissions` block denies children and network, and the
 kernel launches nothing.
+
+## Scenario test compiler (issue #56)
+
+The adapter compiles Scenario IR documents (`lekalo/scenarios/*.json`)
+into deterministic Laratesto test files plus their canonical map
+sidecars under `src/generated/php-laravel/scenario-tests/`. The
+project's adapter-owned port declaration `lekalo/php-test-port.json`
+names the one ScenarioPort class the generated tests bind to; its
+export-flag vocabulary mirrors the core test-port contract verbatim,
+so the eventual contract successor is a mechanical lift. The core
+contract successor itself is deliberately deferred: contract version
+custody rides the workspace product version
+(docs/m5/issue-56-research.md S1), so the adapter-owned sibling
+document is the interim binding.
+
+Runtime proof lives in `scripts/test-php-laravel-scenario-tests.mjs`:
+the planner fixture (`tests/fixtures/php-laravel/planner/`) is
+materialized into a disposable root, the four focus scenarios are
+generated, executed under the pinned Testo suite, and their durable
+run records are validated. Reruns are byte-identical. The concurrency
+scenario records unsupported rows and skips; a lying port produces a
+recorded fail row; a broken bootstrap produces no per-step record at
+all, so assertion failure and infrastructure failure never collapse
+into one outcome.
+
+### Capability matrix (the honest one)
+
+| Surface | State | Where it is proven / bounded |
+| --- | --- | --- |
+| Event capture | full | the port's emission ledger observes real dispatched events; asserted by the generated `emitted` rows and the port self-test |
+| DB state/count assertions | full | real migrations + real queries through the port's `state` surface |
+| HTTP transport binding | full | `invoke` dispatches through the real HTTP kernel (`routes/api.php`) |
+| Idempotency replay | full | the port's key cache deduplicates; asserted by the idempotent scenario |
+| Clock/UUID determinism | full | frozen clock + seeded id source through the port's control surfaces |
+| Parallelism | partial | the Laratesto suite is strictly sequential; the frozen profile catalog declares `testing.parallel` partial, every race case compiles to an explicit unsupported row and skips |
+| Laravel fakes under Testo | partial | fakes ride Laratesto's bundled Testo shim: the fixture's capture surfaces are port-observed rather than PHPUnit-fake-based, and shim coverage of every fake helper is NOT claimed — a helper the shim cannot answer surfaces as an explicit unsupported row, never a pass |
+| Real-PHPUnit-only helpers | unsupported | helpers that require a real PHPUnit install are declared unsupported and never silently substituted |

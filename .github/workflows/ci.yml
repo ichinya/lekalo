@@ -161,7 +161,9 @@ jobs:
         with:
           php-version: '8.3'
           tools: none
-          extensions: none
+          # The locked Laravel runtime of the issue #56 fixture needs its
+          # platform extensions; every dependency-free suite is unaffected.
+          extensions: mbstring, openssl, pdo_sqlite, sqlite3, tokenizer, xml, dom, xmlwriter, ctype, fileinfo, iconv, session
         id: php
       - name: Provision exact Ajv 8.17.1 outside the checkout (issues #32, #48)
         run: |
@@ -228,6 +230,15 @@ jobs:
         # decoder, the analysis states, and the strict-profile gates run
         # against the committed artifact with injected fakes.
         run: node scripts/test-mago-integration.mjs --fake
+      - name: Provision the planner fixture vendor tree per the committed lock (issue #56)
+        # A provisioning step: install from the committed composer.lock,
+        # never inside a compiler or adapter process, no lifecycle
+        # scripts. The runtime gates stay offline afterwards.
+        timeout-minutes: 15
+        run: composer install --no-interaction --prefer-dist --no-scripts --working-dir tests/fixtures/php-laravel/planner
+      - name: Run the Laratesto scenario E2E gate (issue #56)
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-scenario-tests.mjs
       - name: Run the Laravel migration pipeline gate (issue #57)
         # The pipeline stages (CLI goldens, PHP artifacts, custody)
         # run wherever the repo's gates run; the PostgreSQL execution
