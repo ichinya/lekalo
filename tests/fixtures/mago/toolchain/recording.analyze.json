@@ -1,0 +1,13 @@
+{
+  "tool": "mago",
+  "version": "1.0.0",
+  "recording": "analyze --reporting-format json over a file with an undefined variable",
+  "exitCode": 1,
+  "notes": [
+    "analyze exits 1 when error-level findings exist; lint exits 0 for the same default minimum-fail-level",
+    "exit code alone never separates findings from infrastructure failure: exit 1 covers both, and only a valid decoded report with the recorded schema proves an analysis run"
+  ],
+  "recordedFindings": [
+    { "code": "undefined-variable", "level": "Error", "primaryOffset": [19, 29] }
+  ]
+}

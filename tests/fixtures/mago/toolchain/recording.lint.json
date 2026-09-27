@@ -1,0 +1,56 @@
+{
+  "tool": "mago",
+  "version": "1.0.0",
+  "recording": "lint --reporting-format json over violations.php",
+  "exitCode": 0,
+  "stdoutSchema": {
+    "issues": [
+      {
+        "level": "Warning|Error|Note|Help",
+        "code": "strict-types",
+        "message": "Missing `declare(strict_types=1);` statement at the beginning of the file.",
+        "notes": ["string"],
+        "help": "string",
+        "annotations": [
+          {
+            "kind": "Primary",
+            "span": {
+              "file_id": {
+                "name": "tests/fixtures/mago/toolchain/violations.php",
+                "path": "<host absolute path>",
+                "size": 226,
+                "file_type": "Host"
+              },
+              "start": { "offset": 0, "line": 0 },
+              "end": { "offset": 5, "line": 0 }
+            }
+          }
+        ],
+        "edits": [
+          [
+            { "file_id summary": "same closed shape as annotations[].span.file_id" },
+            [
+              {
+                "range": { "start": 5, "end": 5 },
+                "new_text": "\n\ndeclare(strict_types=1);\n",
+                "safety": "potentiallyunsafe"
+              }
+            ]
+          ]
+        ]
+      },
+      {
+        "level": "Warning",
+        "code": "no-variable-variable",
+        "annotations": [
+          { "kind": "Primary", "span": { "start": { "offset": 115, "line": 8 }, "end": { "offset": 121, "line": 8 } } }
+        ]
+      }
+    ]
+  },
+  "recordedFindings": [
+    { "code": "strict-types", "level": "Warning", "primaryOffset": [0, 5] },
+    { "code": "no-variable-variable", "level": "Warning", "primaryOffset": [115, 121] },
+    { "code": "no-variable-variable", "level": "Warning", "primaryOffset": [142, 148] }
+  ]
+}

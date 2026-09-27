@@ -1,0 +1,17 @@
+{
+  "tool": "mago",
+  "version": "1.0.0",
+  "recording": "lint --fix --dry-run --unsafe --only strict-types over a file without declare(strict_types=1)",
+  "exitCode": 1,
+  "notes": [
+    "the strict-types insertion fix is classified `potentiallyunsafe` upstream, so preview requires --unsafe (or --potentially-unsafe); without it Mago skips the fix and reports nothing to apply",
+    "--fix cannot be combined with --reporting-format: the preview is a unified diff on stdout, never a structured report",
+    "dry-run never modified the file (verified by before/after SHA-256 equality in the integration suite)",
+    "apply stays out of scope for #55: the adapter never invokes --fix without --dry-run"
+  ],
+  "preview": {
+    "format": "unified-diff-text",
+    "structuralEdits": false,
+    "hunk": "+declare(strict_types=1);"
+  }
+}
