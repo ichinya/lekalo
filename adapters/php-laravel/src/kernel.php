@@ -27,9 +27,16 @@
  * - Unsupported operations are honest in-envelope `unsupported` errors,
  *   never silent lowering; core-side refused requests are bounded stderr
  *   diagnostics plus a nonzero exit, never a synthetic envelope.
+ *
+ * Issue #55 extends the kernel with the external-analyzer seam: the
+ * kernel stays subprocess-free (it never launches Mago, Composer, or a
+ * shell) and instead consumes a runner-produced analyzer receipt inside
+ * its declared read view. Validate/verify keep their #54 empty-success
+ * behavior when the analysis seam is absent; once a receipt exists, an
+ * incompatible or failed analysis refuses semantic claims instead of
+ * reporting a fake pass. Safe fixes are advice-only: no request can
+ * ever apply one.
  */
-
-declare(strict_types=1);
 
 // The protocol transport is exact-byte stdout: PHP CLI notice/warning
 // rendering (which targets STDOUT by default) is disabled before any
@@ -50,8 +57,10 @@ const VERSION = '0.3.2';
 const SUPPORTED_VERSIONS = ['0.3.2'];
 /** The adapter identity token. */
 const ADAPTER_ID = 'lekalo-target-php-laravel';
-/** The adapter release version. */
-const ADAPTER_VERSION = '0.1.0';
+/**
+ * The adapter identity token.
+ */
+const ADAPTER_VERSION = '0.2.0';
 /** The adapter target token (the wire `target` of generate/bind). */
 const TARGET_TOKEN = 'php-laravel';
 /** The declared profile token. */
@@ -947,9 +956,16 @@ function adapter_identity(): array
     ];
 }
 
-/** The capability map of this kernel (issue #28 fluent surface). */
-function describe_capabilities(): array
+/**
+ * The capability map of this kernel (issue #28 fluent surface), extended
+ * for #55 with the analysis seam identity. The seam reports the injected
+ * analyzer's capabilities; the wire named-capability map stays unchanged
+ * (`scan.symbols` remains unsupported: the bounded scan wire cannot
+ * carry a full native graph — see scan_response).
+ */
+function describe_capabilities(?Analyzer $analyzer = null): array
 {
+    $analyzer ??= new FakeAnalyzer();
     return [
         'adapter' => adapter_identity(),
         'protocol_versions' => SUPPORTED_VERSIONS,
@@ -957,7 +973,7 @@ function describe_capabilities(): array
         'transports' => ['stdin', 'file'],
         'targets' => [TARGET_TOKEN],
         'profiles' => [PROFILE_TOKEN],
-        'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**'],
+        'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**', '.lekalo/import/**'],
         'write_scopes' => ['.lekalo/generated/php-laravel/**'],
         'progress' => false,
         'ir_versions' => [IR_VERSION],
@@ -967,6 +983,19 @@ function describe_capabilities(): array
         // internally enforced one.
         'constraints' => ['max_entries' => MAX_WRITE_FILES],
     ];
+}
+
+/**
+ * The analyzer capability identity (#55). Deliberately NOT part of the
+ * closed describe envelope: the v0.3.2 wire `Capabilities` struct is
+ * closed (`deny_unknown_fields`), so the seam identity travels through
+ * internal evidence instead of undeclared extra members. Exposed as a
+ * kernel function for evidence rendering and tests.
+ */
+function analysis_seam_identity(?Analyzer $analyzer = null): array
+{
+    $analyzer ??= new FakeAnalyzer();
+    return $analyzer->capabilities();
 }
 
 /**
@@ -1026,8 +1055,15 @@ const MAX_SCAN_ENTRIES = 10000;
  * stays inside the wire bounds (a fuller inventory is `truncated`,
  * never silently cut).
  */
-function scan_response(array $request): array
+function scan_response(array $request, ?Analyzer $analyzer = null): array
 {
+    $evidenceByPath = [];
+    if ($analyzer !== null) {
+        $outcome = $analyzer->analyze();
+        if ($outcome->isOk()) {
+            $evidenceByPath = mago_receipt_evidence_by_path($outcome);
+        }
+    }
     $entries = [];
     $truncated = false;
     foreach (SCAN_ROOTS as $root) {
@@ -1050,10 +1086,14 @@ function scan_response(array $request): array
                 $truncated = true;
                 break 2;
             }
-            $entries[] = [
+            $entry = [
                 'path' => $path,
                 'kind' => 'ir',
             ];
+            if (isset($evidenceByPath[$path])) {
+                $entry['evidence'] = $evidenceByPath[$path];
+            }
+            $entries[] = $entry;
         }
     }
     // Canonical entry order: sorted by path (the closed wire keeps the
@@ -1067,15 +1107,164 @@ function scan_response(array $request): array
     ]);
 }
 
-function dispatch(array $request): array
+/**
+ * Project the receipt's symbols and relations into the bounded wire
+ * evidence shape: at most eight references per source path, each with
+ * the closed role/confidence vocabulary. A projection that would lose
+ * rows silently drops the whole per-source claim instead of publishing
+ * a partial graph under an exact-looking signature.
+ *
+ * @return array<string, array<string, mixed>>
+ */
+function mago_receipt_evidence_by_path(AnalysisOutcome $outcome): array
 {
+    $signatures = [];
+    foreach ($outcome->symbols as $symbol) {
+        $path = (string) $symbol['path'];
+        if (isset($symbol['signature'])) {
+            $signatures[$path] = (string) $symbol['signature'];
+        }
+    }
+    $references = [];
+    $overflow = [];
+    foreach ($outcome->relations as $relation) {
+        $source = (string) $relation['from'];
+        $references[$source] ??= [];
+        if (count($references[$source]) >= 8) {
+            $overflow[$source] = true;
+            continue;
+        }
+        $references[$source][] = [
+            'target' => (string) $relation['to'],
+            'role' => mago_wire_role((string) $relation['role']),
+            'confidence' => mago_wire_confidence((string) $relation['confidence']),
+        ];
+    }
+    $evidence = [];
+    foreach ($references as $source => $rows) {
+        if ($rows === [] || isset($overflow[$source]) || !isset($signatures[$source])) {
+            continue;
+        }
+        $evidence[$source] = [
+            'signature' => $signatures[$source],
+            'references' => $rows,
+        ];
+    }
+    return $evidence;
+}
+
+/** Map a receipt role onto the closed wire role set. */
+function mago_wire_role(string $role): string
+{
+    return match ($role) {
+        'reads' => 'read',
+        'writes' => 'update',
+        'calls' => 'call',
+        default => 'reference',
+    };
+}
+
+/** Map a receipt confidence onto the closed wire confidence set. */
+function mago_wire_confidence(string $confidence): string
+{
+    return in_array($confidence, ['exact', 'high', 'medium', 'low', 'unknown'], true)
+        ? $confidence
+        : 'unknown';
+}
+
+/**
+ * The validate exchange (#55): the analysis seam's verdict on the
+ * staged view. Without a receipt (unavailable) the #54 empty success is
+ * preserved — no analyzer, no claims either way. An incompatible or
+ * failed analysis refuses with an explicit in-envelope error so a stale
+ * receipt can never dress up as a pass. Findings are advice; safe fixes
+ * are metadata only and are never applied by any operation.
+ */
+function validate_response(array $request, ?Analyzer $analyzer = null): array
+{
+    $analyzer ??= new FakeAnalyzer();
+    $outcome = $analyzer->analyze();
+    if (!$outcome->isOk() && $outcome->state !== 'unavailable') {
+        return build_response($request, [
+            'error' => mago_analysis_error($outcome),
+        ]);
+    }
+    $findings = [];
+    if ($outcome->isOk()) {
+        $evaluated = strict_profile_evaluate($outcome->diagnostics, $outcome->symbols);
+        foreach ($evaluated['findings'] as $row) {
+            $findings[] = mago_wire_finding($row);
+        }
+        foreach ($evaluated['unsupported'] as $id) {
+            $findings[] = mago_wire_finding(strict_unsupported_diagnostic($id));
+        }
+    }
+    return build_response($request, [
+        'result' => ['ok' => true, 'findings' => $findings],
+    ]);
+}
+
+/**
+ * The verify exchange (#55): the same analysis-seam gate as validate.
+ * Mago success never satisfies scenario verification — the named
+ * `verify.scenarios` capability stays `unsupported`, so a green Mago
+ * run cannot masquerade as a verified scenario (#56 owns those).
+ */
+function verify_response(array $request, ?Analyzer $analyzer = null): array
+{
+    return validate_response($request, $analyzer);
+}
+
+/**
+ * One in-envelope error for a non-unavailable failed analysis:
+ * infrastructure class, non-retryable as-is (the runner must refresh
+ * the receipt; retrying the kernel request cannot fix staleness).
+ *
+ * @return array<string, mixed>
+ */
+function mago_analysis_error(AnalysisOutcome $outcome): array
+{
+    return [
+        'class' => 'infrastructure',
+        'code' => 'analysis-' . $outcome->state,
+        'message' => substr('analyzer evidence is ' . $outcome->state . ': ' . (string) ($outcome->reason ?? 'unspecified'), 0, 512),
+        'retryable' => false,
+        'partial' => false,
+    ];
+}
+
+/**
+ * One normalized strict-profile row rendered as the bounded wire
+ * finding. The wire Finding keeps its closed shape: path, code (the
+ * registered rule id), and a bounded detail; the original provider code
+ * leads the detail text, never hidden JSON.
+ *
+ * @param array<string, mixed> $row
+ * @return array<string, mixed>
+ */
+function mago_wire_finding(array $row): array
+{
+    $detail = (string) ($row['message'] ?? '');
+    if ($detail === '') {
+        $detail = (string) $row['rule'];
+    }
+    return [
+        'path' => (string) $row['path'],
+        'code' => (string) $row['rule'],
+        'detail' => substr((string) $row['original_code'] . ': ' . $detail, 0, 512),
+    ];
+}
+
+function dispatch(array $request, ?Analyzer $analyzer = null): array
+{
+    $analyzer ??= new FakeAnalyzer();
     $operation = $request['operation'];
     if ($operation === 'describe') {
-        return build_response($request, ['capabilities' => describe_capabilities()]);
+        return build_response($request, ['capabilities' => describe_capabilities($analyzer)]);
     }
     switch ($operation) {
         case 'scan':
-            return scan_response($request);
+            return scan_response($request, $analyzer);
         case 'bind':
             return build_response($request, [
                 'result' => [
@@ -1087,9 +1276,9 @@ function dispatch(array $request): array
                 ],
             ]);
         case 'validate':
-            return build_response($request, ['result' => ['ok' => true, 'findings' => []]]);
+            return validate_response($request, $analyzer);
         case 'verify':
-            return build_response($request, ['result' => ['ok' => true, 'findings' => []]]);
+            return verify_response($request, $analyzer);
         case 'generate':
             return generate_response($request);
         case 'plan-clean':
@@ -1290,7 +1479,8 @@ function main(): int
         $bytes = read_request_bytes();
         $document = decode_json_document($bytes);
         $request = validate_request_object($document);
-        fwrite(STDOUT, canonical_json(dispatch($request)));
+        $analyzer = new FakeAnalyzer();
+        fwrite(STDOUT, canonical_json(dispatch($request, $analyzer)));
         return 0;
     } catch (RequestRefusal $refusal) {
         fwrite(STDERR, stderr_diagnostic($refusal->getMessage()) . "\n");

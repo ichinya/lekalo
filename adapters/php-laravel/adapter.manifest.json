@@ -4,7 +4,7 @@
   "adapter": {
     "id": "lekalo-target-php-laravel",
     "name": "PHP/Laravel target adapter",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "publisher": {
     "id": "lekalo",
@@ -46,7 +46,8 @@
       "php-laravel"
     ],
     "profiles": [
-      "default"
+      "default",
+      "strict"
     ],
     "named": {
       "generate.openapi": "unsupported",
@@ -63,7 +64,8 @@
     },
     "readScopes": [
       ".lekalo/cache/**",
-      ".lekalo/ir/**"
+      ".lekalo/ir/**",
+      ".lekalo/import/**"
     ],
     "writeScopes": [
       ".lekalo/generated/php-laravel/**"
@@ -89,12 +91,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:aa755a0205b85819dedb87b488c4aaeeb5d356fc7d89b75ecc6f89999a43456f",
+    "packageDigest": "sha256:4c661ba7504d394a0b15b2752f137d16e69d7beba37028b7835cc0d9a887d192",
     "files": [
       {
         "path": "adapter.php",
-        "digest": "sha256:39a077dc258f05a5bd0e1ad0d0fd4012a0d4cbfa2d5641890f4ef4a496aa9a55",
-        "bytes": 46414
+        "digest": "sha256:c50970b1beb70f1400e329c04929d08ef37477e5b2b0b69daa17d0abc594b56c",
+        "bytes": 81185
       }
     ],
     "signaturePolicy": "unsigned",

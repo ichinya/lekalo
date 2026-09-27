@@ -1,7 +1,7 @@
 <?php
 /**
  * The committed single-file adapter artifact of `lekalo-target-php-laravel`
- * (issue #54).
+ * (issues #54, #55).
  *
  * GENERATED FILE — regenerate with `php adapters/php-laravel/build.php`;
  * verify with `php adapters/php-laravel/build.php --check`. Never edit.
@@ -10,6 +10,750 @@
  * package, no extension beyond always-compiled basics, so the confined
  * core runtime can copy the interpreter plus exactly this script.
  */
+
+/**
+ * The external-analyzer seam of the PHP kernel (issue #55).
+ *
+ * The kernel itself stays subprocess-free: it never launches Mago, reads
+ * a PATH, or runs Composer. Instead, a core-owned runner may produce an
+ * *analyzer receipt* (`.lekalo/import/mago/receipt.json`) describing one
+ * bounded Mago run; the kernel consumes that receipt through this closed
+ * `Analyzer` contract. Two implementations exist:
+ *
+ * - `MagoEvidenceAnalyzer`: strict decoder/validation of a runner
+ *   receipt; refuses missing, stale, mismatched, or malformed evidence
+ *   with an explicit state instead of a fake success.
+ * - `FakeAnalyzer`: a deterministic test double used by the suites and
+ *   the fake integration gate; its canned output traverses exactly the
+ *   same decoder, so a fake can never diverge from real semantics.
+ *
+ * Closed analysis states (the issue requires `Mago unavailable` to be
+ * distinct from `analysis failure`):
+ *   unavailable   — no receipt exists (tool never ran; absent capability)
+ *   incompatible  — receipt exists, but tool version/decoder revision
+ *                   differs from the pinned toolchain lock
+ *   failed        — the recorded run itself failed (nonzero completion,
+ *                   parse errors, or refused output)
+ *   ok            — a well-formed, current, successful receipt
+ */
+
+declare(strict_types=1);
+
+/** The receipt schema this kernel decodes (closed; bump on change). */
+const MAGO_RECEIPT_SCHEMA = 'lekalo/provider-evidence/v0.1.0';
+/** The pinned toolchain identity the receipt must agree with. */
+const MAGO_TOOLCHAIN_LOCK_FILE = 'mago-toolchain.lock.json';
+const MAGO_RECEIPT_PATH = '.lekalo/import/mago/receipt.json';
+/** The maximum receipt document size (mirrors the core import bounds). */
+const MAGO_RECEIPT_MAX_BYTES = 1024 * 1024;
+/** The maximum number of diagnostics and symbols one receipt may carry. */
+const MAGO_RECEIPT_MAX_ITEMS = 256;
+
+/** The closed analysis states. */
+const MAGO_STATES = ['ok', 'unavailable', 'incompatible', 'failed'];
+
+/**
+ * The analysis outcome handed to dispatch; every state other than `ok`
+ * carries a bounded, machine-readable reason.
+ */
+final class AnalysisOutcome
+{
+    /** @param array<int, array<string, mixed>> $diagnostics */
+    public function __construct(
+        public readonly string $state,
+        public readonly array $diagnostics = [],
+        public readonly array $symbols = [],
+        public readonly array $relations = [],
+        public readonly array $fixes = [],
+        public readonly ?string $reason = null,
+        public readonly ?string $receiptDigest = null,
+    ) {
+    }
+
+    public function isOk(): bool
+    {
+        return $this->state === 'ok';
+    }
+}
+
+/** Why a receipt was refused. */
+final class ReceiptRefusal extends RuntimeException
+{
+}
+
+/** The closed analyzer contract; injection happens at composition only. */
+interface Analyzer
+{
+    /** Capability identity: which receipt schema and pin this analyzer reads. */
+    public function capabilities(): array;
+
+    /** Produce one outcome for the staged read view (never launches anything). */
+    public function analyze(): AnalysisOutcome;
+}
+
+/**
+ * The production analyzer: decode and validate the runner receipt inside
+ * the declared read view. Missing, incompatible, and failed receipts are
+ * explicit outcomes — never collapsed into an empty success.
+ */
+final class MagoEvidenceAnalyzer implements Analyzer
+{
+    public function __construct(private readonly string $lockDigest)
+    {
+    }
+
+    public function capabilities(): array
+    {
+        return [
+            'analyzer' => 'mago',
+            'receipt_schema' => MAGO_RECEIPT_SCHEMA,
+            'toolchain_lock_digest' => $this->lockDigest,
+            'modes' => ['lint', 'analyze', 'guard'],
+        ];
+    }
+
+    public function analyze(): AnalysisOutcome
+    {
+        if (!is_file(MAGO_RECEIPT_PATH)) {
+            return new AnalysisOutcome(
+                'unavailable',
+                reason: 'no analyzer receipt at ' . MAGO_RECEIPT_PATH,
+            );
+        }
+        try {
+            $receipt = mago_decode_receipt(
+                (string) file_get_contents(MAGO_RECEIPT_PATH),
+            );
+        } catch (ReceiptRefusal $refusal) {
+            return new AnalysisOutcome(
+                'failed',
+                reason: 'receipt refused: ' . $refusal->getMessage(),
+            );
+        }
+        $compat = mago_check_compatibility($receipt, $this->lockDigest);
+        if ($compat !== null) {
+            return new AnalysisOutcome('incompatible', reason: $compat);
+        }
+        if (($receipt['completion']['status'] ?? '') !== 'completed') {
+            return new AnalysisOutcome(
+                'failed',
+                reason: 'recorded run did not complete: '
+                    . (string) ($receipt['completion']['status'] ?? 'missing'),
+                receiptDigest: $receipt['receipt_digest'] ?? null,
+            );
+        }
+        return new AnalysisOutcome(
+            'ok',
+            diagnostics: $receipt['diagnostics'],
+            symbols: $receipt['symbols'],
+            relations: $receipt['relations'],
+            fixes: $receipt['fixes'],
+            receiptDigest: isset($receipt['receipt_digest']) ? (string) $receipt['receipt_digest'] : null,
+        );
+    }
+}
+
+/**
+ * The deterministic test double used by the default production dispatch
+ * (and the suites). The default dispatch has no staged receipt and must
+ * preserve the #54 no-evidence, no-claims behavior, so the composition
+ * default is an explicitly `unavailable` analyzer: no canned rows, and
+ * the state is honest absence rather than a failed decode.
+ */
+final class FakeAnalyzer implements Analyzer
+{
+    /** @param array<string, mixed> $canned */
+    public function __construct(
+        private readonly array $canned = [],
+        private readonly string $state = 'unavailable',
+    ) {
+    }
+
+    public function capabilities(): array
+    {
+        return [
+            'analyzer' => 'fake',
+            'receipt_schema' => MAGO_RECEIPT_SCHEMA,
+            'toolchain_lock_digest' => 'sha256:' . str_repeat('0', 64),
+            'modes' => ['lint', 'analyze', 'guard'],
+        ];
+    }
+
+    public function analyze(): AnalysisOutcome
+    {
+        if ($this->state !== 'ok') {
+            return new AnalysisOutcome($this->state, reason: 'fake analyzer canned state');
+        }
+        try {
+            $receipt = mago_decode_receipt(
+                json_encode($this->canned, JSON_THROW_ON_ERROR),
+            );
+        } catch (ReceiptRefusal $refusal) {
+            return new AnalysisOutcome(
+                'failed',
+                reason: 'fake receipt refused: ' . $refusal->getMessage(),
+            );
+        }
+        return new AnalysisOutcome(
+            'ok',
+            diagnostics: $receipt['diagnostics'],
+            symbols: $receipt['symbols'],
+            relations: $receipt['relations'],
+            fixes: $receipt['fixes'],
+            receiptDigest: isset($receipt['receipt_digest']) ? (string) $receipt['receipt_digest'] : null,
+        );
+    }
+}
+// ---------------------------------------------------------------------------
+// Receipt decoding: the strict, closed, bounded decoder.
+// ---------------------------------------------------------------------------
+
+/**
+ * Decode one receipt document with the kernel's fatal conventions:
+ * malformed UTF-8, duplicate keys, unknown members, null members, bound
+ * overflow, and digest mismatches are refusals — never silent drops.
+ *
+ * @return array<string, mixed>
+ */
+function mago_decode_receipt(string $bytes): array
+{
+    if ($bytes === '') {
+        throw new ReceiptRefusal('empty');
+    }
+    if (strlen($bytes) > MAGO_RECEIPT_MAX_BYTES) {
+        throw new ReceiptRefusal('receipt-too-large');
+    }
+    if (!preg_match('//u', $bytes)) {
+        throw new ReceiptRefusal('utf-8');
+    }
+    reject_duplicate_keys($bytes);
+    try {
+        $value = json_decode($bytes, true, 32, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        throw new ReceiptRefusal('syntax');
+    }
+    if (!is_json_object($value)) {
+        throw new ReceiptRefusal('shape');
+    }
+    $keys = [
+        'schema', 'receipt_digest', 'tool', 'completion', 'input_manifest',
+        'diagnostics', 'symbols', 'relations', 'fixes',
+    ];
+    foreach (array_keys($value) as $key) {
+        if (!in_array($key, $keys, true)) {
+            throw new ReceiptRefusal('unknown-key:' . $key);
+        }
+        if ($value[$key] === null) {
+            throw new ReceiptRefusal('null-member:' . $key);
+        }
+    }
+    foreach (['schema', 'receipt_digest', 'tool', 'completion', 'input_manifest'] as $key) {
+        if (!array_key_exists($key, $value)) {
+            throw new ReceiptRefusal('missing-key:' . $key);
+        }
+    }
+    if ($value['schema'] !== MAGO_RECEIPT_SCHEMA) {
+        throw new ReceiptRefusal('schema');
+    }
+    if (!is_sha256_digest($value['receipt_digest'])) {
+        throw new ReceiptRefusal('receipt-digest');
+    }
+    if (!is_json_object($value['tool']) || !is_json_object($value['completion'])
+        || !is_json_object($value['input_manifest'])) {
+        throw new ReceiptRefusal('shape');
+    }
+    foreach ($value['tool'] as $key => $_) {
+        if (!in_array($key, ['name', 'version', 'digest'], true)) {
+            throw new ReceiptRefusal('unknown-key:tool.' . $key);
+        }
+    }
+    if (($value['tool']['name'] ?? '') !== 'mago' || !is_string($value['tool']['version'])
+        || $value['tool']['version'] === '' || strlen((string) $value['tool']['version']) > 32
+        || !is_sha256_digest($value['tool']['digest'] ?? null)) {
+        throw new ReceiptRefusal('tool');
+    }
+    foreach ($value['completion'] as $key => $_) {
+        if (!in_array($key, ['status', 'exit_code'], true)) {
+            throw new ReceiptRefusal('unknown-key:completion.' . $key);
+        }
+    }
+    if (!in_array($value['completion']['status'] ?? '', ['completed', 'failed'], true)) {
+        throw new ReceiptRefusal('completion.status');
+    }
+    foreach ($value['input_manifest'] as $key => $_) {
+        if (!in_array($key, ['inputs', 'source_digest'], true)) {
+            throw new ReceiptRefusal('unknown-key:input_manifest.' . $key);
+        }
+    }
+    if (!is_sha256_digest($value['input_manifest']['source_digest'] ?? null)) {
+        throw new ReceiptRefusal('input_manifest.source_digest');
+    }
+    foreach (['diagnostics', 'symbols', 'relations', 'fixes'] as $key) {
+        $items = $value[$key] ?? [];
+        if ($items === []) {
+            $value[$key] = [];
+            continue;
+        }
+        if (!is_array($items) || !array_is_list($items)) {
+            throw new ReceiptRefusal($key . ':shape');
+        }
+        if (count($items) > MAGO_RECEIPT_MAX_ITEMS) {
+            throw new ReceiptRefusal($key . ':overflow');
+        }
+    }
+    foreach (($value['diagnostics'] ?? []) as $index => $item) {
+        $value['diagnostics'][$index] = mago_decode_diagnostic($item);
+    }
+    foreach (($value['symbols'] ?? []) as $index => $item) {
+        $value['symbols'][$index] = mago_decode_symbol($item);
+    }
+    foreach (($value['relations'] ?? []) as $index => $item) {
+        $value['relations'][$index] = mago_decode_relation($item);
+    }
+    foreach (($value['fixes'] ?? []) as $index => $item) {
+        $value['fixes'][$index] = mago_decode_fix($item);
+    }
+    return $value;
+}
+
+/**
+ * One normalized diagnostic row: registered Lekalo rule id, bounded
+ * logical path, half-open range, namespaced original code, and the
+ * bounded payload. Unknown upstream codes keep their exact original
+ * code under the generic native-finding rule.
+ *
+ * @return array<string, mixed>
+ */
+function mago_decode_diagnostic(mixed $item): array
+{
+    if (!is_json_object($item)) {
+        throw new ReceiptRefusal('diagnostic:shape');
+    }
+    foreach (array_keys($item) as $key) {
+        if (!in_array($key, ['rule', 'original_code', 'level', 'path', 'range', 'message', 'producer'], true)) {
+            throw new ReceiptRefusal('diagnostic:unknown-key:' . $key);
+        }
+    }
+    foreach (['rule', 'original_code', 'level', 'path', 'range', 'producer'] as $key) {
+        if (!array_key_exists($key, $item)) {
+            throw new ReceiptRefusal('diagnostic:missing:' . $key);
+        }
+        if ($item[$key] === null) {
+            throw new ReceiptRefusal('diagnostic:null:' . $key);
+        }
+    }
+    if (!is_string($item['rule']) || !is_token($item['rule']) || !str_starts_with($item['rule'], 'target.analysis.')) {
+        throw new ReceiptRefusal('diagnostic:rule');
+    }
+    $code = $item['original_code'];
+    if (!is_string($code) || $code === '' || strlen($code) > 64
+        || (bool) preg_match('/[\x00-\x1f]/', $code)) {
+        throw new ReceiptRefusal('diagnostic:original-code');
+    }
+    if (!in_array($item['level'], ['note', 'help', 'warning', 'error'], true)) {
+        throw new ReceiptRefusal('diagnostic:level');
+    }
+    if (!is_logical_path($item['path'])) {
+        throw new ReceiptRefusal('diagnostic:path');
+    }
+    $range = $item['range'];
+    if (!is_json_object($range)
+        || !isset($range['start'], $range['end'])
+        || !is_int($range['start']) || !is_int($range['end'])
+        || $range['start'] < 0 || $range['end'] < $range['start']
+        || $range['end'] - $range['start'] > MAGO_RECEIPT_MAX_BYTES) {
+        throw new ReceiptRefusal('diagnostic:range');
+    }
+    if (array_key_exists('message', $item)
+        && (!is_string($item['message']) || strlen($item['message']) > 512)) {
+        throw new ReceiptRefusal('diagnostic:message');
+    }
+    if (!in_array($item['producer'], ['mago', 'lekalo'], true)) {
+        throw new ReceiptRefusal('diagnostic:producer');
+    }
+    return $item;
+}
+
+/**
+ * One symbol row: package-qualified identity, kind, span, and the
+ * structural signature digest. Line movement never changes identity.
+ *
+ * @return array<string, mixed>
+ */
+function mago_decode_symbol(mixed $item): array
+{
+    if (!is_json_object($item)) {
+        throw new ReceiptRefusal('symbol:shape');
+    }
+    foreach (array_keys($item) as $key) {
+        if (!in_array($key, ['identity', 'kind', 'path', 'range', 'signature', 'modifiers'], true)) {
+            throw new ReceiptRefusal('symbol:unknown-key:' . $key);
+        }
+    }
+    foreach (['identity', 'kind', 'path', 'range'] as $key) {
+        if (!array_key_exists($key, $item)) {
+            throw new ReceiptRefusal('symbol:missing:' . $key);
+        }
+    }
+    if (!is_string($item['identity']) || !is_token($item['identity'])
+        || !str_starts_with($item['identity'], 'php.')) {
+        throw new ReceiptRefusal('symbol:identity');
+    }
+    if (!in_array($item['kind'], ['class', 'interface', 'trait', 'enum', 'function', 'method', 'property'], true)) {
+        throw new ReceiptRefusal('symbol:kind');
+    }
+    if (!is_logical_path($item['path'])) {
+        throw new ReceiptRefusal('symbol:path');
+    }
+    $range = $item['range'];
+    if (!is_json_object($range) || !isset($range['start'], $range['end'])
+        || !is_int($range['start']) || !is_int($range['end'])
+        || $range['start'] < 0 || $range['end'] < $range['start']) {
+        throw new ReceiptRefusal('symbol:range');
+    }
+    if (array_key_exists('signature', $item)
+        && (!is_string($item['signature']) || !is_sha256_digest($item['signature']))) {
+        throw new ReceiptRefusal('symbol:signature');
+    }
+    if (array_key_exists('modifiers', $item)) {
+        if (!is_array($item['modifiers']) || !array_is_list($item['modifiers'])) {
+            throw new ReceiptRefusal('symbol:modifiers');
+        }
+        foreach ($item['modifiers'] as $modifier) {
+            if (!in_array($modifier, ['final', 'readonly', 'abstract', 'static', 'public', 'protected', 'private', 'extensible'], true)) {
+                throw new ReceiptRefusal('symbol:modifier');
+            }
+        }
+    }
+    return $item;
+}
+
+/**
+ * One relation row: typed endpoint pair with explicit confidence and
+ * provenance. Unresolved endpoints are refused here; uncertainty is
+ * expressed with confidence `unknown`, never with invented targets.
+ *
+ * @return array<string, mixed>
+ */
+function mago_decode_relation(mixed $item): array
+{
+    if (!is_json_object($item)) {
+        throw new ReceiptRefusal('relation:shape');
+    }
+    foreach (array_keys($item) as $key) {
+        if (!in_array($key, ['from', 'to', 'role', 'confidence', 'producer', 'derivation'], true)) {
+            throw new ReceiptRefusal('relation:unknown-key:' . $key);
+        }
+    }
+    foreach (['from', 'to', 'role', 'confidence', 'producer'] as $key) {
+        if (!array_key_exists($key, $item)) {
+            throw new ReceiptRefusal('relation:missing:' . $key);
+        }
+    }
+    foreach (['from', 'to'] as $key) {
+        if (!is_string($item[$key]) || !is_token($item[$key])) {
+            throw new ReceiptRefusal('relation:' . $key);
+        }
+    }
+    if (!in_array($item['role'], ['extends', 'implements', 'uses', 'calls', 'reads', 'writes', 'instantiates', 'relation', 'route', 'container-binding'], true)) {
+        throw new ReceiptRefusal('relation:role');
+    }
+    if (!in_array($item['confidence'], ['exact', 'high', 'medium', 'low', 'unknown'], true)) {
+        throw new ReceiptRefusal('relation:confidence');
+    }
+    if (!in_array($item['producer'], ['mago', 'laravel-extension', 'lekalo'], true)) {
+        throw new ReceiptRefusal('relation:producer');
+    }
+    if (array_key_exists('derivation', $item)
+        && (!is_string($item['derivation']) || strlen($item['derivation']) > 128)) {
+        throw new ReceiptRefusal('relation:derivation');
+    }
+    return $item;
+}
+
+/**
+ * One safe-fix record: advice only. A fix never carries raw source
+ * patches across the boundary — only ranges, replacements, hashes, and
+ * the conservative safety classification.
+ *
+ * @return array<string, mixed>
+ */
+function mago_decode_fix(mixed $item): array
+{
+    if (!is_json_object($item)) {
+        throw new ReceiptRefusal('fix:shape');
+    }
+    foreach (array_keys($item) as $key) {
+        if (!in_array($key, ['rule', 'path', 'range', 'replacement', 'before_digest', 'safety'], true)) {
+            throw new ReceiptRefusal('fix:unknown-key:' . $key);
+        }
+    }
+    foreach (['rule', 'path', 'range', 'before_digest', 'safety'] as $key) {
+        if (!array_key_exists($key, $item)) {
+            throw new ReceiptRefusal('fix:missing:' . $key);
+        }
+    }
+    if (!is_string($item['rule']) || !is_token($item['rule'])) {
+        throw new ReceiptRefusal('fix:rule');
+    }
+    if (!is_logical_path($item['path'])) {
+        throw new ReceiptRefusal('fix:path');
+    }
+    $range = $item['range'];
+    if (!is_json_object($range) || !isset($range['start'], $range['end'])
+        || !is_int($range['start']) || !is_int($range['end'])
+        || $range['start'] < 0 || $range['end'] < $range['start']) {
+        throw new ReceiptRefusal('fix:range');
+    }
+    if (!is_sha256_digest($item['before_digest'])) {
+        throw new ReceiptRefusal('fix:before-digest');
+    }
+    if (!in_array($item['safety'], ['safe', 'potentially-unsafe', 'unsafe'], true)) {
+        throw new ReceiptRefusal('fix:safety');
+    }
+    if (array_key_exists('replacement', $item)
+        && (!is_string($item['replacement']) || strlen($item['replacement']) > 4096)) {
+        throw new ReceiptRefusal('fix:replacement');
+    }
+    return $item;
+}
+
+/**
+ * Compatibility gate: the receipt must agree with the pinned toolchain
+ * (tool name/version/digest and the decoder revision the kernel speaks).
+ * Returns null when compatible, or the bounded incompatibility reason.
+ */
+function mago_check_compatibility(array $receipt, string $lockDigest): ?string
+{
+    $lock = mago_load_toolchain_lock();
+    if ($lock === null) {
+        return 'toolchain lock missing';
+    }
+    if (($receipt['tool']['digest'] ?? '') !== ($lock['probe']['artifact']['binarySha256'] ?? '')) {
+        return 'tool digest differs from the pinned toolchain';
+    }
+    if (($receipt['tool']['version'] ?? '') !== ($lock['tool']['version'] ?? '')) {
+        return 'tool version differs from the pinned toolchain';
+    }
+    if ($lockDigest !== $lock['lockDigest']) {
+        return 'toolchain lock digest changed since adapter build';
+    }
+    return null;
+}
+
+/**
+ * Load the adapter-owned toolchain lock (bundled beside the kernel at
+ * build time); returns null when the packaging did not embed one.
+ *
+ * @return array<string, mixed>|null
+ */
+function mago_load_toolchain_lock(): ?array
+{
+    static $cache = false;
+    static $lock = null;
+    if ($cache === true) {
+        return $lock;
+    }
+    $cache = true;
+    $path = __DIR__ . '/mago-toolchain.lock.json';
+    if (!is_file($path)) {
+        return null;
+    }
+    $bytes = (string) file_get_contents($path);
+    try {
+        $lock = json_decode($bytes, true, 32, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return $lock = null;
+    }
+    if (!is_array($lock) || !is_json_object($lock)) {
+        return $lock = null;
+    }
+    $lock['lockDigest'] = sha256_digest($bytes);
+    return $lock;
+}
+
+/**
+ * The Lekalo strict-profile rules over the analyzer receipt (issue #55).
+ *
+ * The issue's target table maps each required rule to its evidence
+ * source. Two implementation shapes exist and are kept strictly apart:
+ *
+ * - `lint` rows: a pinned Mago rule supplies the finding verbatim; the
+ *   kernel only maps the original code into a registered rule id and
+ *   keeps the exact original code in namespaced metadata.
+ * - `predicate` rows: no upstream rule exists for the requirement, so
+ *   the kernel evaluates a deterministic predicate over the receipt's
+ *   symbol/AST evidence. When the prerequisite evidence is absent the
+ *   row is `unsupported` — never a silent pass.
+ *
+ * Every row: compliant inputs produce no finding; violating inputs
+ * produce one; evidence that cannot decide produces an explicit
+ * `target.analysis.evidence-unsupported` diagnostic instead of a
+ * fabricated pass or fail.
+ */
+
+/** The closed strict-profile row set (ids are kernel-stable). */
+const STRICT_RULES = [
+    'strict-types' => [
+        'rule' => 'target.analysis.strict-types',
+        'source' => 'lint',
+        'mago_code' => 'strict-types',
+    ],
+    'final-readonly-profile' => [
+        'rule' => 'target.analysis.final-readonly-profile',
+        'source' => 'predicate',
+    ],
+    'no-dynamic-members' => [
+        'rule' => 'target.analysis.no-dynamic-members',
+        'source' => 'lint',
+        'mago_code' => 'no-variable-variable',
+    ],
+    'no-service-locator' => [
+        'rule' => 'target.analysis.no-service-locator',
+        'source' => 'predicate',
+    ],
+    'no-magic-domain-state' => [
+        'rule' => 'target.analysis.no-magic-domain-state',
+        'source' => 'predicate',
+    ],
+    'explicit-types' => [
+        'rule' => 'target.analysis.explicit-types',
+        'source' => 'lint',
+        'mago_code' => 'strict-types',
+        'notes' => 'type completeness rides the signature evidence predicate below',
+    ],
+];
+
+/**
+ * Evaluate the whole strict profile over one `ok` outcome. Returns the
+ * normalizer-ready diagnostic rows (Lekalo rule ids, logical paths,
+ * half-open ranges, namespaced original codes) plus one `unsupported`
+ * row per rule whose prerequisite evidence was missing.
+ *
+ * @param array<int, array<string, mixed>> $diagnostics
+ * @param array<int, array<string, mixed>> $symbols
+ * @return array{findings: array<int, array<string, mixed>>, unsupported: array<int, string>}
+ */
+function strict_profile_evaluate(array $diagnostics, array $symbols): array
+{
+    $findings = [];
+    $unsupported = [];
+    foreach (STRICT_RULES as $id => $row) {
+        if ($row['source'] === 'lint') {
+            $matched = strict_map_lint_row($diagnostics, (string) $row['mago_code'], (string) $row['rule']);
+            if ($matched === false) {
+                $unsupported[] = (string) $id;
+                continue;
+            }
+            foreach ($matched as $finding) {
+                $findings[] = $finding;
+            }
+            continue;
+        }
+        $predicate = $id === 'final-readonly-profile'
+            ? strict_predicate_final_readonly($symbols)
+            : strict_predicate_unavailable((string) $id);
+        if ($predicate === null) {
+            $unsupported[] = (string) $id;
+            continue;
+        }
+        foreach ($predicate as $finding) {
+            $findings[] = $finding;
+        }
+    }
+    return ['findings' => $findings, 'unsupported' => $unsupported];
+}
+
+/**
+ * Map one Mago lint code onto its registered Lekalo row. `false` means
+ * the prerequisite lint evidence was not in the receipt (the row's rule
+ * never ran) — that is `unsupported`, not `compliant`.
+ *
+ * @param array<int, array<string, mixed>> $diagnostics
+ * @return array<int, array<string, mixed>>|false
+ */
+function strict_map_lint_row(array $diagnostics, string $magoCode, string $ruleId): array|false
+{
+    $coverage = false;
+    $findings = [];
+    foreach ($diagnostics as $item) {
+        if (($item['producer'] ?? '') !== 'mago') {
+            continue;
+        }
+        if (($item['original_code'] ?? '') === $magoCode) {
+            $coverage = true;
+            $findings[] = $item;
+        }
+    }
+    return $coverage ? $findings : false;
+}
+
+/**
+ * The final/readonly profile predicate over symbol evidence: mutable
+ * (non-final, non-abstract) domain classes are violations unless they
+ * carry the explicit `extensible` marker in their modifiers. Symbol
+ * evidence absent ⇒ `null` (unsupported), never a pass.
+ *
+ * @param array<int, array<string, mixed>> $symbols
+ * @return array<int, array<string, mixed>>|null
+ */
+function strict_predicate_final_readonly(array $symbols): ?array
+{
+    $classes = array_values(array_filter(
+        $symbols,
+        static fn (array $symbol): bool => in_array($symbol['kind'], ['class', 'interface', 'trait', 'enum'], true),
+    ));
+    if ($classes === []) {
+        return null;
+    }
+    $findings = [];
+    foreach ($classes as $symbol) {
+        $modifiers = $symbol['modifiers'] ?? [];
+        $extensible = in_array('extensible', array_map('strval', $modifiers), true);
+        if ($extensible || in_array('final', $modifiers, true) || in_array('abstract', $modifiers, true)) {
+            continue;
+        }
+        $findings[] = [
+            'rule' => 'target.analysis.final-readonly-profile',
+            'original_code' => 'lekalo.final-profile',
+            'level' => 'warning',
+            'path' => $symbol['path'],
+            'range' => $symbol['range'],
+            'message' => 'domain class ' . (string) $symbol['identity'] . ' is neither final nor explicitly extensible',
+            'producer' => 'lekalo',
+        ];
+    }
+    return $findings;
+}
+
+/**
+ * Rows whose prerequisite evidence does not exist in this slice: the
+ * service-locator and magic-state predicates need resolved-reference
+ * evidence the pinned toolchain does not export as a public graph.
+ * Unsupported is the honest state (issue boundary: no regex fallback).
+ */
+function strict_predicate_unavailable(string $id): ?array
+{
+    return null;
+}
+
+/**
+ * The single explicit `evidence-unsupported` diagnostic for one rule.
+ *
+ * @return array<string, mixed>
+ */
+function strict_unsupported_diagnostic(string $id): array
+{
+    return [
+        'rule' => 'target.analysis.evidence-unsupported',
+        'original_code' => 'lekalo.unsupported:' . $id,
+        'level' => 'note',
+        'path' => '.lekalo/import/mago/receipt.json',
+        'range' => ['start' => 0, 'end' => 0],
+        'message' => 'strict-profile rule ' . $id . ' lacks prerequisite evidence and is unsupported, not passing',
+        'producer' => 'lekalo',
+    ];
+}
 /**
  * The `lekalo.target/v1` protocol kernel of `lekalo-target-php-laravel`
  * (issue #54) — the PHP reference implementation of the target protocol.
@@ -38,9 +782,16 @@
  * - Unsupported operations are honest in-envelope `unsupported` errors,
  *   never silent lowering; core-side refused requests are bounded stderr
  *   diagnostics plus a nonzero exit, never a synthetic envelope.
+ *
+ * Issue #55 extends the kernel with the external-analyzer seam: the
+ * kernel stays subprocess-free (it never launches Mago, Composer, or a
+ * shell) and instead consumes a runner-produced analyzer receipt inside
+ * its declared read view. Validate/verify keep their #54 empty-success
+ * behavior when the analysis seam is absent; once a receipt exists, an
+ * incompatible or failed analysis refuses semantic claims instead of
+ * reporting a fake pass. Safe fixes are advice-only: no request can
+ * ever apply one.
  */
-
-declare(strict_types=1);
 
 // The protocol transport is exact-byte stdout: PHP CLI notice/warning
 // rendering (which targets STDOUT by default) is disabled before any
@@ -61,8 +812,10 @@ const VERSION = '0.3.2';
 const SUPPORTED_VERSIONS = ['0.3.2'];
 /** The adapter identity token. */
 const ADAPTER_ID = 'lekalo-target-php-laravel';
-/** The adapter release version. */
-const ADAPTER_VERSION = '0.1.0';
+/**
+ * The adapter identity token.
+ */
+const ADAPTER_VERSION = '0.2.0';
 /** The adapter target token (the wire `target` of generate/bind). */
 const TARGET_TOKEN = 'php-laravel';
 /** The declared profile token. */
@@ -958,9 +1711,16 @@ function adapter_identity(): array
     ];
 }
 
-/** The capability map of this kernel (issue #28 fluent surface). */
-function describe_capabilities(): array
+/**
+ * The capability map of this kernel (issue #28 fluent surface), extended
+ * for #55 with the analysis seam identity. The seam reports the injected
+ * analyzer's capabilities; the wire named-capability map stays unchanged
+ * (`scan.symbols` remains unsupported: the bounded scan wire cannot
+ * carry a full native graph — see scan_response).
+ */
+function describe_capabilities(?Analyzer $analyzer = null): array
 {
+    $analyzer ??= new FakeAnalyzer();
     return [
         'adapter' => adapter_identity(),
         'protocol_versions' => SUPPORTED_VERSIONS,
@@ -968,7 +1728,7 @@ function describe_capabilities(): array
         'transports' => ['stdin', 'file'],
         'targets' => [TARGET_TOKEN],
         'profiles' => [PROFILE_TOKEN],
-        'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**'],
+        'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**', '.lekalo/import/**'],
         'write_scopes' => ['.lekalo/generated/php-laravel/**'],
         'progress' => false,
         'ir_versions' => [IR_VERSION],
@@ -978,6 +1738,19 @@ function describe_capabilities(): array
         // internally enforced one.
         'constraints' => ['max_entries' => MAX_WRITE_FILES],
     ];
+}
+
+/**
+ * The analyzer capability identity (#55). Deliberately NOT part of the
+ * closed describe envelope: the v0.3.2 wire `Capabilities` struct is
+ * closed (`deny_unknown_fields`), so the seam identity travels through
+ * internal evidence instead of undeclared extra members. Exposed as a
+ * kernel function for evidence rendering and tests.
+ */
+function analysis_seam_identity(?Analyzer $analyzer = null): array
+{
+    $analyzer ??= new FakeAnalyzer();
+    return $analyzer->capabilities();
 }
 
 /**
@@ -1037,8 +1810,15 @@ const MAX_SCAN_ENTRIES = 10000;
  * stays inside the wire bounds (a fuller inventory is `truncated`,
  * never silently cut).
  */
-function scan_response(array $request): array
+function scan_response(array $request, ?Analyzer $analyzer = null): array
 {
+    $evidenceByPath = [];
+    if ($analyzer !== null) {
+        $outcome = $analyzer->analyze();
+        if ($outcome->isOk()) {
+            $evidenceByPath = mago_receipt_evidence_by_path($outcome);
+        }
+    }
     $entries = [];
     $truncated = false;
     foreach (SCAN_ROOTS as $root) {
@@ -1061,10 +1841,14 @@ function scan_response(array $request): array
                 $truncated = true;
                 break 2;
             }
-            $entries[] = [
+            $entry = [
                 'path' => $path,
                 'kind' => 'ir',
             ];
+            if (isset($evidenceByPath[$path])) {
+                $entry['evidence'] = $evidenceByPath[$path];
+            }
+            $entries[] = $entry;
         }
     }
     // Canonical entry order: sorted by path (the closed wire keeps the
@@ -1078,15 +1862,164 @@ function scan_response(array $request): array
     ]);
 }
 
-function dispatch(array $request): array
+/**
+ * Project the receipt's symbols and relations into the bounded wire
+ * evidence shape: at most eight references per source path, each with
+ * the closed role/confidence vocabulary. A projection that would lose
+ * rows silently drops the whole per-source claim instead of publishing
+ * a partial graph under an exact-looking signature.
+ *
+ * @return array<string, array<string, mixed>>
+ */
+function mago_receipt_evidence_by_path(AnalysisOutcome $outcome): array
 {
+    $signatures = [];
+    foreach ($outcome->symbols as $symbol) {
+        $path = (string) $symbol['path'];
+        if (isset($symbol['signature'])) {
+            $signatures[$path] = (string) $symbol['signature'];
+        }
+    }
+    $references = [];
+    $overflow = [];
+    foreach ($outcome->relations as $relation) {
+        $source = (string) $relation['from'];
+        $references[$source] ??= [];
+        if (count($references[$source]) >= 8) {
+            $overflow[$source] = true;
+            continue;
+        }
+        $references[$source][] = [
+            'target' => (string) $relation['to'],
+            'role' => mago_wire_role((string) $relation['role']),
+            'confidence' => mago_wire_confidence((string) $relation['confidence']),
+        ];
+    }
+    $evidence = [];
+    foreach ($references as $source => $rows) {
+        if ($rows === [] || isset($overflow[$source]) || !isset($signatures[$source])) {
+            continue;
+        }
+        $evidence[$source] = [
+            'signature' => $signatures[$source],
+            'references' => $rows,
+        ];
+    }
+    return $evidence;
+}
+
+/** Map a receipt role onto the closed wire role set. */
+function mago_wire_role(string $role): string
+{
+    return match ($role) {
+        'reads' => 'read',
+        'writes' => 'update',
+        'calls' => 'call',
+        default => 'reference',
+    };
+}
+
+/** Map a receipt confidence onto the closed wire confidence set. */
+function mago_wire_confidence(string $confidence): string
+{
+    return in_array($confidence, ['exact', 'high', 'medium', 'low', 'unknown'], true)
+        ? $confidence
+        : 'unknown';
+}
+
+/**
+ * The validate exchange (#55): the analysis seam's verdict on the
+ * staged view. Without a receipt (unavailable) the #54 empty success is
+ * preserved — no analyzer, no claims either way. An incompatible or
+ * failed analysis refuses with an explicit in-envelope error so a stale
+ * receipt can never dress up as a pass. Findings are advice; safe fixes
+ * are metadata only and are never applied by any operation.
+ */
+function validate_response(array $request, ?Analyzer $analyzer = null): array
+{
+    $analyzer ??= new FakeAnalyzer();
+    $outcome = $analyzer->analyze();
+    if (!$outcome->isOk() && $outcome->state !== 'unavailable') {
+        return build_response($request, [
+            'error' => mago_analysis_error($outcome),
+        ]);
+    }
+    $findings = [];
+    if ($outcome->isOk()) {
+        $evaluated = strict_profile_evaluate($outcome->diagnostics, $outcome->symbols);
+        foreach ($evaluated['findings'] as $row) {
+            $findings[] = mago_wire_finding($row);
+        }
+        foreach ($evaluated['unsupported'] as $id) {
+            $findings[] = mago_wire_finding(strict_unsupported_diagnostic($id));
+        }
+    }
+    return build_response($request, [
+        'result' => ['ok' => true, 'findings' => $findings],
+    ]);
+}
+
+/**
+ * The verify exchange (#55): the same analysis-seam gate as validate.
+ * Mago success never satisfies scenario verification — the named
+ * `verify.scenarios` capability stays `unsupported`, so a green Mago
+ * run cannot masquerade as a verified scenario (#56 owns those).
+ */
+function verify_response(array $request, ?Analyzer $analyzer = null): array
+{
+    return validate_response($request, $analyzer);
+}
+
+/**
+ * One in-envelope error for a non-unavailable failed analysis:
+ * infrastructure class, non-retryable as-is (the runner must refresh
+ * the receipt; retrying the kernel request cannot fix staleness).
+ *
+ * @return array<string, mixed>
+ */
+function mago_analysis_error(AnalysisOutcome $outcome): array
+{
+    return [
+        'class' => 'infrastructure',
+        'code' => 'analysis-' . $outcome->state,
+        'message' => substr('analyzer evidence is ' . $outcome->state . ': ' . (string) ($outcome->reason ?? 'unspecified'), 0, 512),
+        'retryable' => false,
+        'partial' => false,
+    ];
+}
+
+/**
+ * One normalized strict-profile row rendered as the bounded wire
+ * finding. The wire Finding keeps its closed shape: path, code (the
+ * registered rule id), and a bounded detail; the original provider code
+ * leads the detail text, never hidden JSON.
+ *
+ * @param array<string, mixed> $row
+ * @return array<string, mixed>
+ */
+function mago_wire_finding(array $row): array
+{
+    $detail = (string) ($row['message'] ?? '');
+    if ($detail === '') {
+        $detail = (string) $row['rule'];
+    }
+    return [
+        'path' => (string) $row['path'],
+        'code' => (string) $row['rule'],
+        'detail' => substr((string) $row['original_code'] . ': ' . $detail, 0, 512),
+    ];
+}
+
+function dispatch(array $request, ?Analyzer $analyzer = null): array
+{
+    $analyzer ??= new FakeAnalyzer();
     $operation = $request['operation'];
     if ($operation === 'describe') {
-        return build_response($request, ['capabilities' => describe_capabilities()]);
+        return build_response($request, ['capabilities' => describe_capabilities($analyzer)]);
     }
     switch ($operation) {
         case 'scan':
-            return scan_response($request);
+            return scan_response($request, $analyzer);
         case 'bind':
             return build_response($request, [
                 'result' => [
@@ -1098,9 +2031,9 @@ function dispatch(array $request): array
                 ],
             ]);
         case 'validate':
-            return build_response($request, ['result' => ['ok' => true, 'findings' => []]]);
+            return validate_response($request, $analyzer);
         case 'verify':
-            return build_response($request, ['result' => ['ok' => true, 'findings' => []]]);
+            return verify_response($request, $analyzer);
         case 'generate':
             return generate_response($request);
         case 'plan-clean':
@@ -1301,7 +2234,8 @@ function main(): int
         $bytes = read_request_bytes();
         $document = decode_json_document($bytes);
         $request = validate_request_object($document);
-        fwrite(STDOUT, canonical_json(dispatch($request)));
+        $analyzer = new FakeAnalyzer();
+        fwrite(STDOUT, canonical_json(dispatch($request, $analyzer)));
         return 0;
     } catch (RequestRefusal $refusal) {
         fwrite(STDERR, stderr_diagnostic($refusal->getMessage()) . "\n");
