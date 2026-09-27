@@ -1024,7 +1024,8 @@ function validate_native_content_ref(mixed $reference): void
 function is_scenario_ir_path(string $path): bool
 {
     return str_ends_with($path, '.scenario.json')
-        || str_ends_with($path, 'scenario-txn-concurrency.json');
+        || str_ends_with($path, 'scenario-txn-concurrency.json')
+        || str_contains(basename($path), '.scenario.');
 }
 
 /**

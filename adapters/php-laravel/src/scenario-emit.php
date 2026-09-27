@@ -77,12 +77,20 @@ function php_module_of(string $scenarioId): string
     return $cut === false || $cut === 0 ? $scenarioId : substr($scenarioId, 0, $cut);
 }
 
-/** The PSR-4-safe class identifier of one scenario id. */
+/** The PSR-4-safe class identifier of one scenario id: always ends
+ * with `Test` (the case-suffix the naming convention locates) and the
+ * emitted file spelling `<id>.test.php` ends with the file suffix
+ * `Test.php` is checked against — the class name is what matters, so
+ * the generated class carries the suffix.
+ */
 function php_class_of(string $scenarioId): string
 {
     $sanitized = preg_replace('/[^a-zA-Z0-9]/', '_', $scenarioId);
     $parts = array_map(static fn (string $part): string => ucfirst($part), explode('_', $sanitized));
-    return implode('', $parts);
+    // The Laratesto naming convention discovers `*Test.php` files whose
+    // class name also ends in `Test`, so the suffix is part of the
+    // stable class mapping.
+    return implode('', $parts) . 'Test';
 }
 
 /** The safe PHP identifier of one scenario or step id (snake_case use). */
@@ -645,11 +653,17 @@ use Lekalo\\Generated\\ScenarioTests\\Port;
 use Lekalo\\Generated\\ScenarioTests\\ScenarioReporter;
 use Lekalo\\Generated\\ScenarioTests\\ScenarioTestKit;
 use Testo\\Assert;
+use Testo\\Test;
 
 PHP;
     $push($heredoc, null);
     $blockStart = $cursor;
-    $push('final class ' . php_class_of($scenarioId) . "\n{\n", null);
+    // The class carries the `#[Test]` attribute: the canonical
+    // attribute-driven discovery of the pinned Testo version. The file
+    // spelling stays lowercase (the logical-path grammar forbids
+    // uppercase segments) and never relies on the case-suffix
+    // convention.
+    $push("#[Test]\n" . 'final class ' . php_class_of($scenarioId) . "\n{\n", null);
     $body = php_render_body($model);
     $push($body['text'], null);
     $push("}\n", null);
