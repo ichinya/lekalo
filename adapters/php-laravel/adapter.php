@@ -1033,11 +1033,46 @@ const DECLARED_CAPABILITIES = [
     'generate.openapi' => 'unsupported',
     'generate.ui' => 'unsupported',
     'scan.symbols' => 'unsupported',
-    'verify.scenarios' => 'unsupported',
+    'verify.scenarios' => 'full',
     'verify.transport-http' => 'unsupported',
     'generate.transport-http' => 'unsupported',
     'preserve.classification' => 'unsupported',
 ];
+
+/**
+ * The generated scenario-test write scope (issue #56).
+ */
+const SCENARIO_WRITE_SCOPES = ['src/generated/php-laravel/scenario-tests/**'];
+
+/**
+ * The canonical evidence home of the compiled project IR (core-owned).
+ */
+const IR_EVIDENCE_HOME = '.lekalo/cache/ir';
+
+/**
+ * The scenario compiler modules, in fixed load order. `build.php`
+ * concatenates the kernel plus these modules into the shipped
+ * single-file artifact, so inside the shipped artifact the functions
+ * are already defined and loading is a no-op; the source-tree kernel
+ * loads them directly.
+ */
+function load_scenario_modules(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+    $loaded = true;
+    if (function_exists('php_map_scenario') && function_exists('php_emit_scenario_tests')) {
+        return;
+    }
+    foreach ([__DIR__ . '/scenario-map.php', __DIR__ . '/scenario-emit.php'] as $module) {
+        if (!is_file($module)) {
+            throw new RequestRefusal('compiler-module-missing');
+        }
+        require_once $module;
+    }
+}
 
 /**
  * One request that failed closed decoding/validation before any
@@ -1922,7 +1957,212 @@ function validate_native_content_ref(mixed $reference): void
  * generator capabilities (those are the #55/#56 seams), and generation
  * never claims a construct it did not map.
  */
+/**
+ * Whether the request's `ir_path` names a scenario document: either the
+ * closed `.scenario.json` spelling or the conformance fixture's exact
+ * scenario input path.
+ */
+function is_scenario_ir_path(string $path): bool
+{
+    return str_ends_with($path, '.scenario.json')
+        || str_ends_with($path, 'scenario-txn-concurrency.json')
+        || str_contains(basename($path), '.scenario.');
+}
+
+/**
+ * The deterministic generation entry (issue #56): a scenario document
+ * at `ir_path` maps to the full Laratesto test set (support files plus
+ * one test and one canonical sidecar per scenario); anything else
+ * falls back to the #54 kernel artifact. A generation over a scenario
+ * document carries the mapper's typed findings; a compile-time finding
+ * vetoes every write exactly like the Node pipeline.
+ */
 function deterministic_generation(array $request): array
+{
+    $irPath = $request['ir_path'] ?? '';
+    if (is_string($irPath) && is_scenario_ir_path($irPath)) {
+        $outcome = scenario_generation($request);
+        if (isset($outcome['refusal'])) {
+            throw new RequestRefusal($outcome['refusal']);
+        }
+        if ($outcome['findings'] !== []) {
+            // Capability honesty: the mapper cannot express the document.
+            // Nothing is emitted and nothing is written.
+            return [
+                'path' => null,
+                'bytes' => '',
+                'digest' => null,
+                'writes' => [],
+                'findings' => $outcome['findings'],
+            ];
+        }
+        $writes = [];
+        foreach ($outcome['files'] as $file) {
+            $writes[] = [
+                'path' => $file['path'],
+                'action' => 'create',
+                'sha256' => $file['digest'],
+            ];
+        }
+        return [
+            'path' => null,
+            'bytes' => '',
+            'digest' => null,
+            'writes' => $writes,
+            'files' => $outcome['files'],
+            'findings' => [],
+        ];
+    }
+    $artifact = kernel_artifact($request);
+    $writes = [[
+        'path' => $artifact['path'],
+        'action' => 'create',
+        'sha256' => $artifact['digest'],
+    ]];
+    return [
+        'path' => $artifact['path'],
+        'bytes' => $artifact['bytes'],
+        'digest' => $artifact['digest'],
+        'writes' => $writes,
+        'findings' => [],
+    ];
+}
+
+/**
+ * The scenario read-and-map path shared by generate/validate/verify:
+ * reads the scenario document, the compiled project IR evidence from
+ * the canonical cache home, and the project test-port declaration;
+ * maps through the pure mapper; and returns the emitted files plus
+ * typed findings. A read refusal or a closed-shape refusal is an
+ * in-envelope `failed` outcome, never a guessed plan.
+ */
+function read_and_map_scenario(array $request): array
+{
+    $outcome = scenario_generation($request);
+    if (isset($outcome['refusal'])) {
+        return ['error' => [
+            'class' => 'invalid',
+            'code' => $outcome['refusal'],
+            'message' => 'the scenario document could not be read or mapped',
+            'retryable' => false,
+            'partial' => false,
+        ]];
+    }
+    return $outcome;
+}
+
+/**
+ * The scenario compiler: map the scenario document and emit the
+ * deterministic test files. Compilation only reads data: application,
+ * vendor, and port code never execute inside the compiler process.
+ */
+function scenario_generation(array $request): array
+{
+    $irPath = $request['ir_path'] ?? '';
+    if (!is_string($irPath) || !is_scenario_ir_path($irPath)) {
+        // Not a scenario document: the #54 kernel artifact path owns it.
+        return ['not-scenario' => true, 'files' => [], 'findings' => []];
+    }
+    $scenarioText = read_view_file($irPath);
+    if ($scenarioText === null) {
+        return ['refusal' => 'scenario-unreadable', 'files' => [], 'findings' => []];
+    }
+    try {
+        $scenario = json_decode($scenarioText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'scenario-shape', 'files' => [], 'findings' => []];
+    }
+    if (($scenario['schemaVersion'] ?? null) !== 'lekalo/scenario-ir/v0.2.16') {
+        return ['refusal' => 'ir-version-unsupported', 'files' => [], 'findings' => []];
+    }
+    $projectId = $scenario['projectId'] ?? null;
+    if (!is_string($projectId) || preg_match('/^[a-z][a-z0-9-]*$/', $projectId) !== 1) {
+        return ['refusal' => 'scenario-project-id', 'files' => [], 'findings' => []];
+    }
+    $irEvidenceText = read_view_file(IR_EVIDENCE_HOME . '/' . $projectId . '.json');
+    if ($irEvidenceText === null) {
+        return ['refusal' => 'ir-evidence-unreadable', 'files' => [], 'findings' => []];
+    }
+    try {
+        $irEvidence = json_decode($irEvidenceText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'ir-evidence-shape', 'files' => [], 'findings' => []];
+    }
+    $port = null;
+    $portPresent = false;
+    load_scenario_modules();
+    $portText = read_view_file(PHP_PORT_DOC_PATH);
+    if ($portText !== null) {
+        $portPresent = true;
+        try {
+            $port = json_decode($portText, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return ['refusal' => 'port-shape', 'files' => [], 'findings' => []];
+        }
+        if (!is_array($port)) {
+            return ['refusal' => 'port-shape', 'files' => [], 'findings' => []];
+        }
+        // The adapter-owned declaration must satisfy its closed shape
+        // before any plan exists: a present-but-invalid document is an
+        // authoring error, never an all-unsupported silent fallback.
+        $port = php_validate_port_doc($port);
+        if ($port === null) {
+            return ['refusal' => 'port-shape', 'files' => [], 'findings' => []];
+        }
+    }
+    $capabilities = null;
+    if (isset($request['profile_capabilities']) && is_array($request['profile_capabilities'])) {
+        $capabilities = $request['profile_capabilities'];
+    }
+    $mapped = php_map_scenario([
+        'scenario' => $scenario,
+        'ir' => $irEvidence,
+        'irDigest' => 'sha256:' . hash('sha256', $irEvidenceText),
+        'port' => $port,
+        'portPresent' => $portPresent,
+        'profileCapabilities' => $capabilities,
+    ]);
+    if ($mapped['state'] === 'refused') {
+        return ['refusal' => 'scenario-' . $mapped['refusal'], 'files' => [], 'findings' => []];
+    }
+    $files = php_emit_scenario_tests([
+        'models' => $mapped['scenarios'],
+        'inputDigest' => 'sha256:' . hash('sha256', $scenarioText),
+        'adapterVersion' => ADAPTER_VERSION,
+        'portModulePath' => $portPresent ? $port['path'] : '',
+        'portClass' => $portPresent ? $port['class'] : '',
+    ]);
+    $emitted = [];
+    foreach ($files as $file) {
+        $emitted[] = [
+            'path' => $file['path'],
+            'bytes' => $file['text'],
+            'digest' => 'sha256:' . hash('sha256', $file['text']),
+        ];
+    }
+    return ['files' => $emitted, 'findings' => $mapped['findings']];
+}
+
+/** One bounded read inside the declared read roots (null when absent). */
+function read_view_file(string $path): ?string
+{
+    if (!is_logical_path($path) || strlen($path) > 4096) {
+        return null;
+    }
+    if (str_starts_with($path, '.lekalo/ir/') || str_starts_with($path, '.lekalo/cache/')
+        || str_starts_with($path, 'lekalo/')) {
+        $bytes = @file_get_contents($path);
+        return $bytes === false ? null : $bytes;
+    }
+    return null;
+}
+
+/**
+ * The generated-artifact entry the kernel owns when no scenario
+ * document is present (the #54 MVP surface, kept for the conformance
+ * battery). Generation never claims a construct it did not map.
+ */
+function kernel_artifact(array $request): array
 {
     $target = $request['target'] ?? TARGET_TOKEN;
     $profile = $request['profile'] ?? PROFILE_TOKEN;
@@ -1958,14 +2198,10 @@ function deterministic_generation(array $request): array
     ];
 }
 
-function deterministic_writes(array $request): array
+/** The write entries of one generation outcome (already computed). */
+function deterministic_writes(array $artifact): array
 {
-    $artifact = deterministic_generation($request);
-    $writes = [[
-        'path' => $artifact['path'],
-        'action' => $artifact['action'] ?? 'create',
-        'sha256' => $artifact['digest'],
-    ]];
+    $writes = $artifact['writes'];
     // The migration emitter ships its append-only ledger beside the
     // migration file; both must be planned and written atomically. A
     // first publish plans a create, an append plans a replace of the
@@ -2423,7 +2659,10 @@ function describe_capabilities(?Analyzer $analyzer = null): array
         'targets' => [TARGET_TOKEN],
         'profiles' => [PROFILE_TOKEN, STRICT_PROFILE_TOKEN],
         'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**', '.lekalo/import/**'],
-        'write_scopes' => ['.lekalo/generated/php-laravel/**'],
+        'write_scopes' => array_merge(
+            ['.lekalo/generated/php-laravel/**'],
+            SCENARIO_WRITE_SCOPES,
+        ),
         'progress' => false,
         'ir_versions' => [IR_VERSION],
         'capabilities' => DECLARED_CAPABILITIES,
@@ -2664,6 +2903,11 @@ function mago_wire_confidence(string $confidence): string
  */
 function validate_response(array $request, ?Analyzer $analyzer = null): array
 {
+    // A scenario document takes the scenario gate (issue #56); every
+    // other input keeps the analysis-seam gate (#55).
+    if (is_scenario_ir_path(is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '')) {
+        return scenario_validate_response($request);
+    }
     $analyzer ??= new FakeAnalyzer();
     // Profile closure: only the two declared spellings are meaningful;
     // anything else is an in-envelope invalid refusal, never a silent
@@ -2716,12 +2960,18 @@ function validate_response(array $request, ?Analyzer $analyzer = null): array
 
 /**
  * The verify exchange (#55): the same analysis-seam gate as validate.
- * Mago success never satisfies scenario verification — the named
- * `verify.scenarios` capability stays `unsupported`, so a green Mago
- * run cannot masquerade as a verified scenario (#56 owns those).
+ * Mago success never satisfies scenario verification — a green Mago run
+ * cannot masquerade as a verified scenario: scenario documents verify
+ * through the dedicated scenario drift gate (#56), which is what the
+ * `verify.scenarios` capability names.
  */
 function verify_response(array $request, ?Analyzer $analyzer = null): array
 {
+    // Scenario documents verify through the scenario drift gate (issue
+    // #56); everything else keeps the analysis-seam gate (#55).
+    if (is_scenario_ir_path(is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '')) {
+        return scenario_verify_response($request);
+    }
     return validate_response($request, $analyzer);
 }
 
@@ -2830,6 +3080,7 @@ function dispatch(array $request, ?Analyzer $analyzer = null): array
                 ],
             ]);
         case 'validate':
+        case 'validate':
             return validate_response($request, $analyzer);
         case 'verify':
             return verify_response($request, $analyzer);
@@ -2847,6 +3098,59 @@ function dispatch(array $request, ?Analyzer $analyzer = null): array
 }
 
 /**
+ * The scenario validate/verify exchange over the compiled IR evidence
+ * (issue #56): the same read-and-map path generate uses, but no writes
+ * ever result. Verify recomputes the expected scenario files and
+ * reports one `scenario.drift` finding per drifted, missing, or
+ * unreadable file; validate reports the mapper's typed findings (an
+ * empty set is an honest empty findings answer).
+ */
+function scenario_validate_response(array $request): array
+{
+    $mapped = read_and_map_scenario($request);
+    if (isset($mapped['error'])) {
+        return $mapped['error'];
+    }
+    return build_response($request, ['result' => [
+        'ok' => true,
+        'findings' => array_map(
+            static fn (array $finding): array => [
+                'path' => $finding['symbol'] ?? ($finding['detail'] ?? 'scenario'),
+                'code' => $finding['code'],
+                'detail' => $finding['detail'] ?? null,
+            ],
+            $mapped['findings'],
+        ),
+    ]]);
+}
+
+function scenario_verify_response(array $request): array
+{
+    $mapped = read_and_map_scenario($request);
+    if (isset($mapped['error'])) {
+        return $mapped['error'];
+    }
+    $findings = [];
+    foreach ($mapped['findings'] as $finding) {
+        $findings[] = [
+            'path' => $finding['symbol'] ?? ($finding['detail'] ?? 'scenario'),
+            'code' => $finding['code'],
+            'detail' => $finding['detail'] ?? null,
+        ];
+    }
+    foreach ($mapped['files'] as $file) {
+        $expectedDigest = $file['digest'];
+        $actual = is_file($file['path']) ? hash_file('sha256', $file['path']) : false;
+        if ($actual === false) {
+            $findings[] = ['path' => $file['path'], 'code' => 'scenario.drift', 'detail' => 'missing'];
+        } elseif ($actual !== substr($expectedDigest, 7)) {
+            $findings[] = ['path' => $file['path'], 'code' => 'scenario.drift', 'detail' => 'drifted'];
+        }
+    }
+    return build_response($request, ['result' => ['ok' => true, 'findings' => $findings]]);
+}
+
+/**
  * The generate exchange: a dry run plans the deterministic write set
  * (existence-probing create semantics); an apply echoes the pending
  * plan id and writes exactly those bytes. Applied and declared bytes
@@ -2854,7 +3158,12 @@ function dispatch(array $request, ?Analyzer $analyzer = null): array
  */
 function generate_response(array $request): array
 {
-    $writes = deterministic_writes($request);
+    $artifact = deterministic_generation($request);
+    $writes = deterministic_writes($artifact);
+    if ($artifact['findings'] !== []) {
+        // Capability honesty: a compile-time finding vetoes every write.
+        return build_response($request, ['result' => ['writes' => [], 'findings' => $artifact['findings']]]);
+    }
     if (($request['dry_run'] ?? null) === false) {
         // The apply authority is the client's pending binding, never a
         // kernel-recomputed plan id: the binding identity mixes server-
@@ -2874,7 +3183,18 @@ function generate_response(array $request): array
                 ],
             ]);
         }
-        apply_writes($writes, deterministic_generation($request));
+        $files = $artifact['files']
+            ?? [['path' => $artifact['path'], 'bytes' => $artifact['bytes'], 'digest' => $artifact['digest']]];
+        if (isset($artifact['ledger'])) {
+            // The migration ledger's exact bytes ride beside the
+            // migration file so the apply loop can verify both.
+            $files[] = [
+                'path' => $artifact['ledger']['path'],
+                'bytes' => $artifact['ledger']['bytes'],
+                'digest' => $artifact['ledger']['digest'],
+            ];
+        }
+        apply_writes($writes, $files);
     }
     return build_response($request, [
         'writes' => $writes,
@@ -2885,7 +3205,7 @@ function generate_response(array $request): array
 /** The plan-clean exchange: deletions only, over the owned artifact. */
 function plan_clean_response(array $request): array
 {
-    $writes = deterministic_writes($request);
+    $writes = deterministic_writes(deterministic_generation($request));
     // Published migration artifacts are append-only custody (issue
     // #57): the ledger records them, and a generic clean confirmation
     // never retires them. The plan skips them — the deletion plan
@@ -2917,7 +3237,7 @@ function retained_artifact(string $path): bool
 /** The clean apply: delete exactly the planned paths, echo the plan id. */
 function clean_response(array $request): array
 {
-    $writes = deterministic_writes($request);
+    $writes = deterministic_writes(deterministic_generation($request));
     // Retained custody mirrors the plan: a migration or ledger path
     // refuses the apply outright instead of silently surviving.
     foreach ($writes as $entry) {
@@ -2976,20 +3296,23 @@ function plan_native_response(array $request): array
 // ---------------------------------------------------------------------------
 
 /**
- * Apply one declared create inside the core's private staged view.
+ * Apply the declared creates inside the core's private staged view.
  * The kernel trusts the core's sandbox for scope authority; it still
  * refuses paths outside its own declared write scope, protected homes,
  * non-logical paths, and create-on-existing, mirroring the plan
- * semantics core verifies after the child exits.
+ * semantics core verifies after the child exits. Each write's declared
+ * digest must match the bytes it carries: a plan/byte divergence is a
+ * kernel bug, never a silent publish.
  */
-function apply_writes(array $writes, array $artifact): void
+function apply_writes(array $writes, array $files): void
 {
-    // The migration emitter ships a second artifact (the ledger); the
-    // byte set is keyed by path so every planned entry writes its own
-    // exact bytes.
-    $bytesByPath = [$artifact['path'] => $artifact['bytes']];
-    if (isset($artifact['ledger'])) {
-        $bytesByPath[$artifact['ledger']['path']] = $artifact['ledger']['bytes'];
+    // Every planned entry writes its own exact bytes: the scenario
+    // emitter ships the file list directly; the fixture and migration
+    // emitters ship artifact (and ledger) bytes normalized by the
+    // caller into the same file-list shape.
+    $bytesByPath = [];
+    foreach ($files as $file) {
+        $bytesByPath[$file['path']] = $file['bytes'];
     }
     foreach ($writes as $entry) {
         $path = $entry['path'];
@@ -3000,7 +3323,24 @@ function apply_writes(array $writes, array $artifact): void
         if (!is_logical_path($path) || protected_home($path) !== null) {
             throw new RequestRefusal('write-denied');
         }
-        if (!scope_covers('.lekalo/generated/php-laravel/**', $path)) {
+        // The scenario home writes under the project's src tree; every
+        // other generated artifact stays inside the runtime-owned
+        // `.lekalo/generated/php-laravel/**` home.
+        $inScenarioScope = false;
+        foreach (SCENARIO_WRITE_SCOPES as $scope) {
+            if (scope_covers($scope, $path)) {
+                $inScenarioScope = true;
+                break;
+            }
+        }
+        if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope) {
+            throw new RequestRefusal('write-denied');
+        }
+        $bytes = $bytesByPath[$path] ?? null;
+        if ($bytes === null || strlen($bytes) > MAX_FILE_BYTES) {
+            throw new RequestRefusal('write-denied');
+        }
+        if (('sha256:' . hash('sha256', $bytes)) !== $entry['sha256']) {
             throw new RequestRefusal('write-denied');
         }
         $exists = is_file($path);
@@ -3022,9 +3362,6 @@ function apply_writes(array $writes, array $artifact): void
             // published artifact is never silently rewritten.
             throw new RequestRefusal('write-denied');
         }
-        if (strlen($bytes) > MAX_FILE_BYTES) {
-            throw new RequestRefusal('write-denied');
-        }
         $directory = dirname($path);
         if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
             throw new RequestRefusal('write-denied');
@@ -3040,7 +3377,14 @@ function delete_write(string $path): void
     if (!is_logical_path($path) || protected_home($path) !== null) {
         throw new RequestRefusal('write-denied');
     }
-    if (!scope_covers('.lekalo/generated/php-laravel/**', $path)) {
+    $inScenarioScope = false;
+    foreach (SCENARIO_WRITE_SCOPES as $scope) {
+        if (scope_covers($scope, $path)) {
+            $inScenarioScope = true;
+            break;
+        }
+    }
+    if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope) {
         throw new RequestRefusal('write-denied');
     }
     if (is_file($path)) {
@@ -3115,6 +3459,2414 @@ function main(): int
         fwrite(STDERR, stderr_diagnostic('kernel') . "\n");
         return 1;
     }
+}
+
+// ----- scenario compiler module: scenario-map.php -----
+
+
+/**
+ * Pure Scenario IR → test-AST mapping for the scenario-test compiler
+ * (issue #56, S2). A structural port of the Node mapper
+ * (`adapters/node-typescript/src/scenario-map.mjs`): the same closed
+ * scenario shapes resolve to the same test model, with the PHP runner
+ * registry in place of the Node one.
+ *
+ * Inputs are one decoded Scenario IR document, one decoded compiled
+ * project IR document, one decoded project test-port declaration, and
+ * the profile's negotiated capability snapshot. The output is a closed
+ * test model plus typed findings. No filesystem, clock, environment,
+ * process, or network access happens here: the same inputs always map
+ * to the same model — the determinism contract the byte-stable emitter
+ * depends on.
+ *
+ * Honesty rules (mirrored from the Node mapper):
+ * - Every scenario feature without a port surface, runner capability,
+ *   or resolvable target lands in `unsupported[]` with its diagnostic
+ *   — never silently dropped, never approximated, never a pass.
+ * - Operation references resolve to `command` or `query` from the
+ *   compiled IR, never from the name; anything else is a
+ *   `scenario.operation-unresolved` compile-time finding.
+ * - Concurrency race scenarios (metadata `testing.concurrency`) map to
+ *   an explicit whole-scenario unsupported outcome: a serial execution
+ *   never satisfies a race fixture.
+ * - `unsupported` assertion kinds compile to recorded unsupported rows
+ *   and can never report pass.
+ */
+
+const PHP_SCENARIO_IDENTITY = 'dev.lekalo.scenario-ir@0.2.16';
+const PHP_IR_IDENTITY = 'dev.lekalo.ir@0.2.16';
+
+/** The generated scenario-test home under the generated root. */
+const PHP_SCENARIO_TESTS_DIR = 'src/generated/php-laravel/scenario-tests';
+
+/**
+ * The adapter-owned PHP port declaration path (issue #56).
+ *
+ * The core `lekalo/test-port` contract v0.4.0 restricts port paths to
+ * `.mjs`/`.ts` modules, and its version custody is pinned to the
+ * workspace product version, so a `.php` port cannot ride that family
+ * without the coordinated contract successor (docs/m5/issue-56-research.md
+ * S1, deliberately deferred). Until that successor lands, the PHP
+ * adapter reads its own bounded sibling document `lekalo/php-test-port.json`
+ * with the exact closed export-flag vocabulary of the core contract, so
+ * the eventual lift is mechanical.
+ */
+const PHP_PORT_DOC_PATH = 'lekalo/php-test-port.json';
+
+/** The closed identity of the adapter-owned PHP port declaration. */
+const PHP_PORT_DOC_SCHEMA_VERSION = 'lekalo/php-test-port/v0.1.0';
+const PHP_PORT_DOC_IDENTITY = 'dev.lekalo.php-test-port@0.1.0';
+
+/** The declared-port class FQN grammar: PSR-4 style, bounded, no code. */
+const PHP_PORT_CLASS_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*)*$/';
+
+/**
+ * The closed PHP runner registry. The Laratesto entry mirrors the
+ * bridge's declared facts on the pinned toolchain: the Laravel suite is
+ * sequential (fresh application per test), so `testing.concurrency`
+ * stays deliberately absent — a race case compiles to an explicit
+ * unsupported outcome, never to a serial run that would lie.
+ */
+const PHP_RUNNER_REGISTRY = [
+    'laratesto' => [
+        'capabilities' => [
+            'testing.clock',
+            'testing.db-refresh',
+            'testing.event-capture',
+            'testing.fixtures',
+            'testing.http',
+            'testing.session',
+        ],
+        'concurrency' => false,
+        'eventCapture' => 'plugin',
+        'syntax' => 'laratesto',
+    ],
+];
+
+/** The default runner when a scenario declares no native binding. */
+const PHP_DEFAULT_RUNNER = 'laratesto';
+
+/**
+ * Binding capabilities the port's `invoke` surface itself provides when
+ * the dispatch enforces idempotency dedup (mirrors the Node mapper).
+ */
+const PHP_PORT_PROVIDED_CAPABILITIES = [
+    'idempotency.durable_key',
+    'idempotency.replay',
+];
+
+/** The scenario metadata key whose presence marks a concurrency race case. */
+const PHP_CONCURRENCY_METADATA_KEY = 'testing.concurrency';
+
+/** The closed given-step precondition kinds. */
+const PHP_PRECONDITION_KINDS = ['state', 'fixture', 'actor', 'clock', 'id_source'];
+
+/** The closed assertion kinds. */
+const PHP_ASSERTION_KINDS = [
+    'result', 'error', 'entity_state', 'emitted', 'forbidden_effect',
+    'authorization', 'idempotency', 'contract_match', 'deterministic_fixture',
+    'unsupported',
+];
+
+/** The closed typed-value wire kinds (scenario/value.rs). */
+const PHP_VALUE_KINDS = [
+    'null', 'boolean', 'integer', 'string', 'decimal', 'date', 'datetime',
+    'uuid', 'uri', 'list', 'object',
+];
+
+/** The closed reference kinds (scenario/reference.rs). */
+const PHP_REF_KINDS = [
+    'symbol', 'operation', 'entity', 'field', 'event', 'job', 'effect',
+    'error', 'requirement', 'fixture', 'actor', 'clock', 'id-source',
+    'step-output', 'given-value',
+];
+
+/** IR bounds mirrored from the core (scenario/version.rs). */
+const PHP_LIMITS = [
+    'maxGivenSteps' => 256,
+    'maxWhenSteps' => 256,
+    'maxThenSteps' => 512,
+    'maxTotalSteps' => 1024,
+    'maxBindings' => 32,
+    'maxTypedDepth' => 32,
+    'maxTypedItems' => 4096,
+    'maxScalarCodepoints' => 4096,
+];
+
+/** The closed port surface flags (beyond the mandatory `invoke`). */
+const PHP_PORT_FLAGS = [
+    'invoke', 'state', 'fixtures', 'actor', 'clock', 'ids',
+    'emissions', 'effects', 'authorize', 'contractCheck', 'fixtureDigest',
+    'reset',
+];
+
+// ---------------------------------------------------------------------------
+// Closed-shape grammar checks (mirrors of the Node mapper predicates).
+// ---------------------------------------------------------------------------
+
+/**
+ * The closed SemanticId grammar mirrored from the core
+ * (scenario/id.rs): two or three dot-separated lowercase segments
+ * (`[a-z][a-z0-9_]*`, ≤63 each), total ≤191 bytes, and the first
+ * segment never the reserved `lekalo`/`dev`.
+ */
+function is_php_semantic_id(mixed $text): bool
+{
+    if (!is_string($text) || $text === '' || strlen($text) > 191) {
+        return false;
+    }
+    $segments = explode('.', $text);
+    $count = count($segments);
+    if ($count < 2 || $count > 3) {
+        return false;
+    }
+    foreach ($segments as $index => $segment) {
+        if ($segment === '' || strlen($segment) > 63) {
+            return false;
+        }
+        if (!preg_match('/^[a-z][a-z0-9_]*$/', $segment)) {
+            return false;
+        }
+        if ($index === 0 && ($segment === 'lekalo' || $segment === 'dev')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** The closed single-segment step-id grammar (scenario/id.rs::StepId). */
+function is_php_step_id(mixed $text): bool
+{
+    return is_string($text)
+        && $text !== ''
+        && strlen($text) <= 64
+        && preg_match('/^[a-z][a-z0-9_]*$/', $text) === 1;
+}
+
+/** The closed canonical JSON writer (byte-identical to the Node rule). */
+function php_canonical_json(mixed $value): string
+{
+    if ($value === null) {
+        return 'null';
+    }
+    if (is_bool($value)) {
+        return $value ? 'true' : 'false';
+    }
+    if (is_int($value)) {
+        return (string) $value;
+    }
+    if (is_string($value)) {
+        return json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+    if (is_array($value) && array_is_list($value)) {
+        $items = array_map(__FUNCTION__, $value);
+        return '[' . implode(',', $items) . ']';
+    }
+    if (is_array($value)) {
+        $keys = array_keys($value);
+        usort($keys, 'strcmp');
+        $body = [];
+        foreach ($keys as $key) {
+            $body[] = php_canonical_json((string) $key) . ':' . php_canonical_json($value[$key]);
+        }
+        return '{' . implode(',', $body) . '}';
+    }
+    // Floats never appear in a closed scenario document: the wire keeps
+    // integers as integers (or decimal spellings) and strings as strings.
+    throw new LogicException('unrenderable canonical JSON value');
+}
+
+// ---------------------------------------------------------------------------
+// Mapping entry point.
+// ---------------------------------------------------------------------------
+
+/**
+ * Map one scenario document plus its joined context into the test model.
+ *
+ * `input` is `{scenario, ir, port, portPresent, profileCapabilities}`:
+ * `scenario` is the decoded Scenario IR document, `ir` the decoded
+ * compiled project IR evidence (null when absent), `port` the decoded
+ * test-port declaration (null when `portPresent` is false), and
+ * `profileCapabilities` the negotiated `[{id, support}]` snapshot (null
+ * when the launch carries no resolution). Returns the closed mapper
+ * outcome: `{state: "refused", refusal}` or
+ * `{state: "mapped", scenarios, findings}`.
+ */
+function php_map_scenario(array $input): array
+{
+    $scenario = $input['scenario'] ?? null;
+    $findings = [];
+    $context = [
+        'findings' => &$findings,
+        'scenarioId' => is_string($scenario['scenarioId'] ?? null) ? $scenario['scenarioId'] : null,
+        'operationIndex' => php_operation_index($input['ir'] ?? null),
+    ];
+    $shapeRefusal = php_check_scenario_shape($scenario);
+    if ($shapeRefusal !== null) {
+        return ['state' => 'refused', 'refusal' => $shapeRefusal, 'scenarios' => [], 'findings' => []];
+    }
+    $ir = $input['ir'] ?? null;
+    $irDigest = $input['irDigest'] ?? null;
+    $irRefOk = is_array($ir)
+        && ($ir['contract'] ?? null) === PHP_IR_IDENTITY
+        && isset($scenario['irRef']['digest'])
+        && $irDigest !== null
+        && $scenario['irRef']['digest'] === $irDigest;
+    if (!$irRefOk) {
+        $findings[] = [
+            'code' => 'scenario.ir-ref-mismatch',
+            'symbol' => $scenario['scenarioId'],
+            'detail' => 'ir-ref-digest',
+        ];
+    }
+    $runner = php_resolve_runner($scenario, $findings);
+    $portSurface = php_resolve_port_surface($input, $findings);
+    $unsupported = [];
+    php_collect_concurrency_unsupported($scenario, $runner, $unsupported);
+    php_collect_capability_gaps($scenario, $input, $runner, $unsupported);
+    $model = [
+        'id' => $scenario['scenarioId'],
+        'version' => $scenario['scenarioVersion'],
+        'summary' => $scenario['summary'],
+        'projectId' => $scenario['projectId'],
+        'irDigest' => $scenario['irRef']['digest'] ?? null,
+        'runner' => $runner,
+        'binding' => php_binding_model($scenario),
+        'tags' => $scenario['tags'] ?? [],
+        'unsupported' => $unsupported,
+        'given' => php_map_given($scenario['given'] ?? [], $portSurface),
+        'when' => php_map_when($scenario['when'] ?? [], $context, $portSurface),
+        'then' => php_map_then($scenario['then'] ?? [], $context, $portSurface),
+    ];
+    return ['state' => 'mapped', 'scenarios' => [$model], 'findings' => $findings];
+}
+
+/** The closed-shape decoder (defense in depth over the core's custody). */
+function php_check_scenario_shape(mixed $scenario): ?string
+{
+    if (!is_array($scenario) || array_is_list($scenario)) {
+        return 'scenario-shape';
+    }
+    if (($scenario['schemaVersion'] ?? null) !== 'lekalo/scenario-ir/v0.2.16'
+        || ($scenario['identity'] ?? null) !== PHP_SCENARIO_IDENTITY) {
+        return 'scenario-identity';
+    }
+    foreach ([
+        'projectId', 'scenarioId', 'scenarioVersion', 'summary',
+        'irRef', 'modelRef', 'given', 'when', 'then', 'bindings', 'tags', 'metadata',
+    ] as $key) {
+        if (!array_key_exists($key, $scenario)) {
+            return 'scenario-missing-field';
+        }
+    }
+    if (!is_php_semantic_id($scenario['scenarioId'])) {
+        return 'scenario-id';
+    }
+    if (!is_array($scenario['given']) || !is_array($scenario['when']) || !is_array($scenario['then'])) {
+        return 'scenario-steps-shape';
+    }
+    if (count($scenario['when']) === 0 || count($scenario['then']) === 0) {
+        return 'scenario-empty';
+    }
+    if (count($scenario['given']) > PHP_LIMITS['maxGivenSteps']
+        || count($scenario['when']) > PHP_LIMITS['maxWhenSteps']
+        || count($scenario['then']) > PHP_LIMITS['maxThenSteps']
+        || count($scenario['given']) + count($scenario['when']) + count($scenario['then'])
+            > PHP_LIMITS['maxTotalSteps']) {
+        return 'scenario-steps-bound';
+    }
+    if (!is_array($scenario['bindings']) || count($scenario['bindings']) > PHP_LIMITS['maxBindings']) {
+        return 'scenario-bindings-bound';
+    }
+    $stepIds = [];
+    foreach ([$scenario['given'], $scenario['when'], $scenario['then']] as $role) {
+        foreach ($role as $step) {
+            if (!is_array($step) || array_is_list($step)
+                || !is_php_step_id($step['stepId'] ?? null)) {
+                return 'scenario-step-id';
+            }
+            if (in_array($step['stepId'], $stepIds, true)) {
+                return 'scenario-duplicate-step-id';
+            }
+            $stepIds[] = $step['stepId'];
+        }
+    }
+    return null;
+}
+
+/** The wire-shape check for one typed value or reference leaf. */
+function php_check_leaf(mixed $leaf, int $depth): ?string
+{
+    if (!is_array($leaf) || array_is_list($leaf)) {
+        return 'leaf-shape';
+    }
+    if ($depth > PHP_LIMITS['maxTypedDepth']) {
+        return 'leaf-depth';
+    }
+    if (is_string($leaf['$ref'] ?? null)) {
+        return in_array($leaf['$ref'], PHP_REF_KINDS, true) ? null : 'leaf-ref-kind';
+    }
+    if (!is_string($leaf['type'] ?? null) || !in_array($leaf['type'], PHP_VALUE_KINDS, true)) {
+        return 'leaf-value-kind';
+    }
+    if ($leaf['type'] === 'list') {
+        if (!is_array($leaf['value'] ?? null) || count($leaf['value']) > PHP_LIMITS['maxTypedItems']) {
+            return 'leaf-items';
+        }
+        foreach ($leaf['value'] as $item) {
+            $problem = php_check_leaf($item, $depth + 1);
+            if ($problem !== null) {
+                return $problem;
+            }
+        }
+        return null;
+    }
+    if ($leaf['type'] === 'object') {
+        $map = $leaf['value'] ?? null;
+        if (!is_array($map) || array_is_list($map)) {
+            return 'leaf-object';
+        }
+        if (count($map) > PHP_LIMITS['maxTypedItems']) {
+            return 'leaf-items';
+        }
+        foreach ($map as $child) {
+            $problem = php_check_leaf($child, $depth + 1);
+            if ($problem !== null) {
+                return $problem;
+            }
+        }
+        return null;
+    }
+    if (!array_key_exists('value', $leaf)) {
+        return 'leaf-value';
+    }
+    if (is_string($leaf['value'])
+        && mb_strlen($leaf['value']) > PHP_LIMITS['maxScalarCodepoints']) {
+        return 'leaf-scalar';
+    }
+    return null;
+}
+
+// ---------------------------------------------------------------------------
+// Resolution: operations, runners, port surfaces, capabilities.
+// ---------------------------------------------------------------------------
+
+/** The command/query index of the compiled IR evidence. */
+function php_operation_index(mixed $ir): array
+{
+    $index = [];
+    if (!is_array($ir) || !is_array($ir['definitions'] ?? null)) {
+        return $index;
+    }
+    foreach ($ir['definitions'] as $definition) {
+        if (!is_array($definition)) {
+            continue;
+        }
+        if (($definition['kind'] ?? null) === 'command' || ($definition['kind'] ?? null) === 'query') {
+            $index[$definition['id']] = $definition['kind'];
+        }
+    }
+    return $index;
+}
+
+/**
+ * Resolve one scenario operation reference against the compiled IR. The
+ * exact definition id wins; otherwise the kind-qualified wire spelling
+ * (`<module>.command.<name>` / `<module>.query.<name>`) resolves when
+ * the base id is declared with exactly that kind. Anything else is
+ * unresolved — never a guessed call kind.
+ */
+function php_resolve_operation(array $index, string $id): ?array
+{
+    if (isset($index[$id])) {
+        return ['id' => $id, 'kind' => $index[$id]];
+    }
+    $segments = explode('.', $id);
+    $count = count($segments);
+    if ($count >= 3) {
+        $kind = $segments[$count - 2];
+        if ($kind === 'command' || $kind === 'query') {
+            $base = implode('.', array_merge(array_slice($segments, 0, -2), [$segments[$count - 1]]));
+            if (($index[$base] ?? null) === $kind) {
+                return ['id' => $base, 'kind' => $kind, 'ref' => $id];
+            }
+        }
+    }
+    return null;
+}
+
+/** The resolved runner entry, or an unknown-runner finding with the default. */
+function php_resolve_runner(array $scenario, array &$findings): array
+{
+    $nativeBinding = null;
+    foreach ($scenario['bindings'] ?? [] as $binding) {
+        if (is_array($binding) && ($binding['backend'] ?? null) === 'native') {
+            $nativeBinding = $binding;
+            break;
+        }
+    }
+    $runnerId = is_string($nativeBinding['runner'] ?? null)
+        ? $nativeBinding['runner']
+        : PHP_DEFAULT_RUNNER;
+    if (!isset(PHP_RUNNER_REGISTRY[$runnerId])) {
+        $findings[] = [
+            'code' => 'scenario.runner-unknown',
+            'symbol' => $scenario['scenarioId'],
+            'detail' => php_bound_token($runnerId),
+        ];
+        $runnerId = PHP_DEFAULT_RUNNER;
+    }
+    $entry = PHP_RUNNER_REGISTRY[$runnerId];
+    $runner = array_merge(['id' => $runnerId], $entry);
+    if (is_string($nativeBinding['runnerVersion'] ?? null)) {
+        $runner['declaredVersion'] = $nativeBinding['runnerVersion'];
+    }
+    return $runner;
+}
+
+/**
+ * Validate the adapter-owned PHP port declaration against its closed
+ * shape (issue #56): bounded document, closed identity, one logical
+ * `.php` path, one PSR-4 class FQN, and the exact closed export-flag
+ * vocabulary of the core test-port contract (absent/other-than-true
+ * means the feature compiles to an explicit unsupported diagnostic).
+ * Returns the normalized `{path, class, exports}` document, or null
+ * when any bound is violated. No code, no expressions, no traversal:
+ * the grammar itself keeps the declaration data-only.
+ */
+function php_validate_port_doc(array $doc): ?array
+{
+    if (($doc['schema_version'] ?? null) !== PHP_PORT_DOC_SCHEMA_VERSION
+        || ($doc['identity'] ?? null) !== PHP_PORT_DOC_IDENTITY
+        || count($doc) !== 3
+        || !is_array($doc['port'] ?? null)
+        || count($doc['port']) !== 3) {
+        return null;
+    }
+    $port = $doc['port'];
+    $path = $port['path'] ?? null;
+    if (!is_string($path) || $path === '' || strlen($path) > 256
+        || preg_match('/^[a-zA-Z0-9][a-zA-Z0-9._\/-]*\\.php$/', $path) !== 1
+        || str_contains($path, '..')) {
+        return null;
+    }
+    $class = $port['class'] ?? null;
+    if (!is_string($class) || $class === '' || strlen($class) > 256
+        || preg_match(PHP_PORT_CLASS_PATTERN, $class) !== 1) {
+        return null;
+    }
+    $exports = $port['exports'] ?? null;
+    if (!is_array($exports) || ($exports['invoke'] ?? null) !== true) {
+        return null;
+    }
+    foreach ($exports as $flag => $value) {
+        if (!in_array($flag, PHP_PORT_FLAGS, true) || !is_bool($value)) {
+            return null;
+        }
+    }
+    return ['path' => $path, 'class' => $class, 'exports' => $exports];
+}
+
+/** The port surface join: every closed port flag the project declares.
+ * `port` is the kernel-validated normalized document (`path`, `class`,
+ * `exports`); a declaration-absent project keeps the port-missing
+ * finding and an all-false surface, so every port-backed feature maps
+ * to an explicit unsupported diagnostic.
+ */
+function php_resolve_port_surface(array $input, array &$findings): array
+{
+    $port = $input['port'] ?? null;
+    if (($input['portPresent'] ?? false) !== true || !is_array($port)) {
+        $findings[] = ['code' => 'scenario.port-missing', 'detail' => 'declaration-absent'];
+        return php_empty_surface();
+    }
+    $exports = is_array($port['exports'] ?? null) ? $port['exports'] : null;
+    if (!is_array($exports) || ($exports['invoke'] ?? null) !== true) {
+        $findings[] = ['code' => 'scenario.port-shape', 'detail' => 'exports-shape'];
+        return php_empty_surface();
+    }
+    $surface = [];
+    foreach (PHP_PORT_FLAGS as $flag) {
+        $surface[$flag] = ($exports[$flag] ?? null) === true;
+    }
+    return $surface;
+}
+
+function php_empty_surface(): array
+{
+    $surface = [];
+    foreach (PHP_PORT_FLAGS as $flag) {
+        $surface[$flag] = false;
+    }
+    return $surface;
+}
+
+/**
+ * Concurrency race cases: a scenario that declares the concurrency
+ * metadata compiles to one whole-scenario unsupported row. A serial
+ * execution never satisfies a race fixture, and the Laratesto suite is
+ * sequential by contract.
+ */
+function php_collect_concurrency_unsupported(array $scenario, array $runner, array &$unsupported): void
+{
+    $metadata = $scenario['metadata'] ?? null;
+    if (!is_array($metadata) || !array_key_exists(PHP_CONCURRENCY_METADATA_KEY, $metadata)) {
+        return;
+    }
+    if (in_array('testing.concurrency', $runner['capabilities'], true)) {
+        return;
+    }
+    $unsupported[] = [
+        'step' => null,
+        'capability' => 'testing.concurrency',
+        'reason' => 'scenario-requires-concurrency',
+        'detail' => php_bound_token((string) $metadata[PHP_CONCURRENCY_METADATA_KEY]),
+    ];
+}
+
+/**
+ * The binding capability join: every declared binding capability must be
+ * resolvable from the runner registry entry, the port dispatch surface,
+ * or the negotiated profile snapshot; each gap is one unsupported row.
+ */
+function php_collect_capability_gaps(array $scenario, array $input, array $runner, array &$unsupported): void
+{
+    $profile = [];
+    foreach ($input['profileCapabilities'] ?? [] as $entry) {
+        if (is_array($entry) && isset($entry['id']) && isset($entry['support'])
+            && $entry['support'] !== 'unsupported') {
+            $profile[$entry['id']] = true;
+        }
+    }
+    foreach ($scenario['bindings'] ?? [] as $binding) {
+        if (!is_array($binding) || ($binding['backend'] ?? null) !== 'native') {
+            continue; // fake-reference stays with #107
+        }
+        foreach (is_array($binding['capabilities'] ?? null) ? $binding['capabilities'] : [] as $capability) {
+            if (!is_string($capability)) {
+                continue;
+            }
+            if (in_array($capability, $runner['capabilities'], true)) {
+                continue;
+            }
+            if (in_array($capability, PHP_PORT_PROVIDED_CAPABILITIES, true)) {
+                continue;
+            }
+            if ($profile !== [] && !isset($profile[$capability])) {
+                $unsupported[] = [
+                    'step' => null,
+                    'capability' => $capability,
+                    'reason' => 'binding-capability-gap',
+                    'detail' => 'profile-snapshot',
+                ];
+                continue;
+            }
+            if ($profile === []) {
+                $unsupported[] = [
+                    'step' => null,
+                    'capability' => $capability,
+                    'reason' => 'binding-capability-gap',
+                    'detail' => 'runner-registry',
+                ];
+            }
+        }
+    }
+}
+
+/** The binding metadata of the generated test (native binding only). */
+function php_binding_model(array $scenario): array
+{
+    $nativeBinding = null;
+    foreach ($scenario['bindings'] ?? [] as $binding) {
+        if (is_array($binding) && ($binding['backend'] ?? null) === 'native') {
+            $nativeBinding = $binding;
+            break;
+        }
+    }
+    if ($nativeBinding === null) {
+        return ['mode' => 'generated', 'backend' => 'none', 'test' => null, 'capabilityDigest' => null];
+    }
+    return [
+        'mode' => is_string($nativeBinding['mode'] ?? null) ? $nativeBinding['mode'] : 'generated',
+        'backend' => 'native',
+        'test' => is_string($nativeBinding['test'] ?? null) ? $nativeBinding['test'] : null,
+        'capabilityDigest' => is_string($nativeBinding['capabilityDigest'] ?? null)
+            ? $nativeBinding['capabilityDigest'] : null,
+    ];
+}
+
+// ---------------------------------------------------------------------------
+// Step mapping: given / when / then, each port-joined.
+// ---------------------------------------------------------------------------
+
+function php_map_given(array $given, array $portSurface): array
+{
+    $surfaceOf = [
+        'state' => 'state',
+        'fixture' => 'fixtures',
+        'actor' => 'actor',
+        'clock' => 'clock',
+        'id_source' => 'ids',
+    ];
+    return array_map(static function (array $step) use ($surfaceOf, $portSurface): array {
+        $precondition = is_array($step['precondition'] ?? null) ? $step['precondition'] : [];
+        $kind = $precondition['kind'] ?? null;
+        $mapped = [
+            'stepId' => $step['stepId'],
+            'kind' => in_array($kind, PHP_PRECONDITION_KINDS, true) ? $kind : 'unknown',
+            'port' => null,
+            'unsupported' => null,
+        ];
+        $surface = $surfaceOf[$kind] ?? null;
+        if ($surface === null) {
+            $mapped['unsupported'] = [
+                'capability' => 'scenario.precondition.' . ($kind ?? 'unknown'),
+                'reason' => 'precondition-kind-unknown',
+            ];
+            return $mapped;
+        }
+        if (!$portSurface[$surface]) {
+            $mapped['unsupported'] = [
+                'capability' => 'testing.' . ($surface === 'ids' ? 'ids' : $surface),
+                'reason' => 'port-surface-absent',
+                'detail' => $surface,
+            ];
+            return $mapped;
+        }
+        $mapped['port'] = $surface;
+        $mapped['payload'] = php_precondition_payload($precondition);
+        // Typed leaves propagate as unsupported rows (review R-3), never
+        // as mid-render crashes.
+        if ($kind === 'state') {
+            $problem = php_state_leaf_problem($mapped['payload']);
+            if ($problem !== null) {
+                $mapped['unsupported'] = [
+                    'capability' => 'scenario.value',
+                    'reason' => $problem['reason'],
+                    'detail' => php_bound_token($problem['field']),
+                ];
+            }
+        }
+        return $mapped;
+    }, $given);
+}
+
+/** The first unrenderable leaf of one mapped state precondition. */
+function php_state_leaf_problem(array $payload): ?array
+{
+    foreach ($payload['selector'] ?? [] as $term) {
+        $problem = php_check_leaf($term['equals'] ?? null, 0);
+        if ($problem !== null) {
+            return ['reason' => $problem, 'field' => $term['field'] ?? null];
+        }
+    }
+    foreach ($payload['fields'] ?? [] as $entry) {
+        $problem = php_check_leaf($entry[1] ?? null, 0);
+        if ($problem !== null) {
+            return ['reason' => $problem, 'field' => $entry[0] ?? null];
+        }
+    }
+    return null;
+}
+
+/** The first unrenderable leaf of one mapped entity_state assertion. */
+function php_entity_state_leaf_problem(array $payload): ?array
+{
+    foreach ($payload['where'] ?? [] as $term) {
+        $problem = php_check_leaf($term['equals'] ?? null, 0);
+        if ($problem !== null) {
+            return ['reason' => $problem, 'field' => $term['field'] ?? null];
+        }
+    }
+    foreach ($payload['fields'] ?? [] as $field => $expectation) {
+        if (is_array($expectation) && array_key_exists('match', $expectation)) {
+            continue; // A match-kind expectation is a kind token, never a leaf.
+        }
+        $problem = php_check_leaf(is_array($expectation) && array_key_exists('value', $expectation)
+            ? $expectation['value'] : $expectation, 0);
+        if ($problem !== null) {
+            return ['reason' => $problem, 'field' => $field];
+        }
+    }
+    return null;
+}
+
+function php_precondition_payload(array $precondition): array
+{
+    switch ($precondition['kind'] ?? null) {
+        case 'state':
+            $fields = [];
+            foreach ($precondition['fields'] ?? [] as $field => $leaf) {
+                $fields[] = [$field, $leaf];
+            }
+            return [
+                'entity' => $precondition['entity'] ?? null,
+                'selector' => array_map(static fn (array $term): array => [
+                    'field' => $term['field'] ?? null,
+                    'equals' => $term['equals'] ?? null,
+                ], $precondition['selector'] ?? []),
+                'fields' => $fields,
+            ];
+        case 'fixture':
+            return [
+                'fixture' => $precondition['fixture'] ?? null,
+                'version' => $precondition['version'] ?? null,
+                'capabilities' => $precondition['capabilities'] ?? [],
+            ];
+        case 'actor':
+            return [
+                'actor' => $precondition['actor'] ?? null,
+                'scope' => $precondition['scope'] ?? null,
+            ];
+        case 'clock':
+            return ['at' => $precondition['at']['value'] ?? null];
+        case 'id_source':
+            return [
+                'seed' => $precondition['seed'] ?? null,
+                'algorithm' => $precondition['algorithm'] ?? null,
+            ];
+        default:
+            return [];
+    }
+}
+
+function php_map_when(array $when, array &$context, array $portSurface): array
+{
+    return array_map(static function (array $step) use (&$context, $portSurface): array {
+        $action = is_array($step['action'] ?? null) ? $step['action'] : [];
+        $mapped = [
+            'stepId' => $step['stepId'],
+            'kind' => 'invoke',
+            'operation' => null,
+            'input' => [],
+            'ctx' => [],
+            'replay' => null,
+            'unsupported' => null,
+        ];
+        if (($action['kind'] ?? null) !== 'invoke') {
+            $mapped['unsupported'] = ['capability' => 'scenario.action', 'reason' => 'action-kind-unknown'];
+            return $mapped;
+        }
+        $operationId = $action['operation'] ?? null;
+        if (!is_string($operationId)) {
+            $context['findings'][] = [
+                'code' => 'scenario.operation-unresolved',
+                'symbol' => $context['scenarioId'],
+                'detail' => php_bound_token((string) $operationId),
+            ];
+            $mapped['unsupported'] = [
+                'capability' => 'scenario.operation',
+                'reason' => 'operation-unresolved',
+                'detail' => php_bound_token((string) $operationId),
+            ];
+            return $mapped;
+        }
+        $operation = php_resolve_operation($context['operationIndex'], $operationId);
+        if ($operation === null) {
+            $context['findings'][] = [
+                'code' => 'scenario.operation-unresolved',
+                'symbol' => $context['scenarioId'],
+                'detail' => php_bound_token($operationId),
+            ];
+            $mapped['unsupported'] = [
+                'capability' => 'scenario.operation',
+                'reason' => 'operation-unresolved',
+                'detail' => php_bound_token($operationId),
+            ];
+            return $mapped;
+        }
+        $mapped['operation'] = $operation;
+        $mapped['input'] = [];
+        foreach ($action['input'] ?? [] as $field => $leaf) {
+            $mapped['input'][] = [
+                'field' => $field,
+                'leaf' => $leaf,
+                'leafProblem' => php_check_leaf($leaf, 0),
+            ];
+        }
+        // Review F-9: a `when`-input leaf outside the closed typed set is
+        // unsupported, never a crash.
+        foreach ($mapped['input'] as $entry) {
+            if ($entry['leafProblem'] !== null) {
+                $mapped['unsupported'] = [
+                    'capability' => 'scenario.value',
+                    'reason' => $entry['leafProblem'],
+                    'detail' => php_bound_token($entry['field']),
+                ];
+                break;
+            }
+        }
+        if (array_key_exists('actor', $action)) {
+            $mapped['ctx']['actor'] = $action['actor'];
+        }
+        if (array_key_exists('clock', $action)) {
+            $mapped['ctx']['clock'] = $action['clock'];
+        }
+        if (array_key_exists('idempotencyKey', $action)) {
+            $mapped['ctx']['idempotencyKey'] = $action['idempotencyKey'];
+            $problem = php_check_leaf($action['idempotencyKey'], 0);
+            if ($problem !== null) {
+                $mapped['unsupported'] = ['capability' => 'scenario.value', 'reason' => $problem];
+            }
+        }
+        if (!$portSurface['invoke']) {
+            $mapped['unsupported'] = [
+                'capability' => 'testing.fixtures',
+                'reason' => 'port-surface-absent',
+                'detail' => 'invoke',
+            ];
+        }
+        if (is_array($step['replay'] ?? null)) {
+            $mapped['replay'] = [
+                'of' => $step['replay']['of'] ?? null,
+                'expect' => $step['replay']['expect'] ?? null,
+            ];
+        }
+        return $mapped;
+    }, $when);
+}
+
+function php_map_then(array $then, array &$context, array $portSurface): array
+{
+    $surfaceOf = [
+        'entity_state' => 'state',
+        'emitted' => 'emissions',
+        'forbidden_effect' => 'effects',
+        'authorization' => 'authorize',
+        'contract_match' => 'contractCheck',
+        'deterministic_fixture' => 'fixtureDigest',
+    ];
+    return array_map(static function (array $step) use (&$context, $surfaceOf, $portSurface): array {
+        $assertion = is_array($step['assertion'] ?? null) ? $step['assertion'] : [];
+        $kind = $assertion['kind'] ?? null;
+        $mapped = [
+            'stepId' => $step['stepId'],
+            'observes' => $step['observes'] ?? null,
+            'kind' => in_array($kind, PHP_ASSERTION_KINDS, true) ? $kind : 'unknown',
+            'port' => null,
+            'unsupported' => null,
+            'payload' => [],
+        ];
+        if (!in_array($kind, PHP_ASSERTION_KINDS, true)) {
+            $mapped['unsupported'] = ['capability' => 'scenario.assertion', 'reason' => 'assertion-kind-unknown'];
+            return $mapped;
+        }
+        if ($kind === 'unsupported') {
+            // The explicit unsupported expectation: always a recorded
+            // unsupported row carrying the capability ref — never a pass.
+            $mapped['unsupported'] = [
+                'capability' => $assertion['capability'] ?? 'scenario.capability',
+                'reason' => 'declared-unsupported',
+                'detail' => array_key_exists('note', $assertion)
+                    ? php_bound_token((string) $assertion['note']) : null,
+            ];
+            return $mapped;
+        }
+        if ($kind === 'result') {
+            $mapped['payload']['valueType'] = $assertion['valueType'] ?? null;
+            if (array_key_exists('value', $assertion)) {
+                $mapped['payload']['value'] = $assertion['value'];
+                $problem = php_check_leaf($assertion['value'], 0);
+                if ($problem !== null) {
+                    $mapped['unsupported'] = ['capability' => 'scenario.value', 'reason' => $problem];
+                }
+            }
+            return $mapped;
+        }
+        if ($kind === 'error') {
+            $mapped['payload']['error'] = $assertion['error'] ?? null;
+            $mapped['payload']['payload'] = [];
+            foreach ($assertion['payload'] ?? [] as $field => $leaf) {
+                $mapped['payload']['payload'][] = [
+                    'field' => $field,
+                    'leaf' => $leaf,
+                    'leafProblem' => php_check_leaf($leaf, 0),
+                ];
+            }
+            $mapped['payload']['contract'] = $assertion['contract'] ?? null;
+            if ($mapped['payload']['contract'] !== null && !$portSurface['contractCheck']) {
+                // The contract half needs the port contract check; the
+                // typed error identity and public-field subset stay supported.
+                $mapped['unsupported'] = [
+                    'capability' => 'scenario.contract-check',
+                    'reason' => 'port-surface-absent',
+                    'detail' => 'contractCheck',
+                ];
+            }
+            return $mapped;
+        }
+        if ($kind === 'idempotency') {
+            // The weaker semantic-equivalence relation has no evaluator in
+            // v1; an explicit unsupported row, never a proxy.
+            if (($assertion['equivalence'] ?? null) === 'equivalent') {
+                $mapped['unsupported'] = [
+                    'capability' => 'scenario.equivalence-equivalent',
+                    'reason' => 'equivalence-unimplemented',
+                    'detail' => 'equivalent',
+                ];
+                return $mapped;
+            }
+            $mapped['payload']['replay'] = $assertion['replay'] ?? null;
+            $mapped['payload']['equivalence'] = $assertion['equivalence'] ?? null;
+            $mapped['payload']['duplicates'] = $assertion['duplicates'] ?? null;
+            return $mapped;
+        }
+        $surface = $surfaceOf[$kind] ?? null;
+        if ($surface !== null && !$portSurface[$surface]) {
+            $mapped['unsupported'] = [
+                'capability' => 'testing.' . $surface,
+                'reason' => 'port-surface-absent',
+                'detail' => $surface,
+            ];
+            return $mapped;
+        }
+        if ($kind === 'forbidden_effect' && ($assertion['scope'] ?? null) === 'resource') {
+            // No resource ledger surface exists on the closed port contract.
+            $mapped['unsupported'] = [
+                'capability' => 'scenario.forbidden-scope-resource',
+                'reason' => 'scope-unimplemented',
+                'detail' => 'resource',
+            ];
+            return $mapped;
+        }
+        if ($kind === 'entity_state') {
+            // A matcher outside the closed vocabulary is unsupported,
+            // never silently weakened.
+            $known = ['datetime', 'uuid', 'uri', 'decimal', 'non-null'];
+            $unknown = [];
+            foreach ($assertion['fields'] ?? [] as $field => $expectation) {
+                if (is_array($expectation) && array_key_exists('match', $expectation)
+                    && !in_array($expectation['match'], $known, true)) {
+                    $unknown[] = $field . ':' . $expectation['match'];
+                }
+            }
+            if ($unknown !== []) {
+                $mapped['unsupported'] = [
+                    'capability' => 'scenario.match-kind',
+                    'reason' => 'match-kind-unimplemented',
+                    'detail' => php_bound_token(implode(',', $unknown)),
+                ];
+                return $mapped;
+            }
+        }
+        $mapped['port'] = $surface ?? null;
+        $mapped['payload'] = $assertion;
+        unset($mapped['payload']['kind']);
+        if ($kind === 'entity_state') {
+            $problem = php_entity_state_leaf_problem($mapped['payload']);
+            if ($problem !== null) {
+                $mapped['unsupported'] = [
+                    'capability' => 'scenario.value',
+                    'reason' => $problem['reason'],
+                    'detail' => php_bound_token($problem['field']),
+                ];
+            }
+        }
+        foreach ($mapped['payload'] as $value) {
+            if (is_array($value) && !array_is_list($value)
+                && (isset($value['$ref']) || isset($value['type']))) {
+                $problem = php_check_leaf($value, 0);
+                if ($problem !== null) {
+                    $mapped['unsupported'] = ['capability' => 'scenario.value', 'reason' => $problem];
+                }
+            }
+        }
+        return $mapped;
+    }, $then);
+}
+
+/** Bounded, control-cleaned detail token (no raw attacker text). */
+function php_bound_token(mixed $text): string
+{
+    $value = (string) ($text ?? 'unknown');
+    $value = preg_replace('/[^a-zA-Z0-9._:\\/-]+/', '?', $value) ?? '?';
+    return substr($value, 0, 128);
+}
+
+/** The canonical AST digest input: the mapper model in canonical JSON. */
+function php_ast_digest_input(array $model): string
+{
+    return php_canonical_json($model);
+}
+
+// ----- scenario compiler module: scenario-emit.php -----
+
+
+/**
+ * Deterministic PHP emitter for the scenario-test compiler (issue #56,
+ * S2). A structural port of the Node emitter
+ * (`adapters/node-typescript/src/scenario-emit.mjs`): input is the pure
+ * test model of `scenario-map.php`; output is one strict PHP test file
+ * per scenario plus the shared `ScenarioTestKit.php`, the run-record
+ * reporter `ScenarioReporter.php`, and the port shim `Port.php`, each
+ * test paired with one canonical `.test.map.json` sidecar.
+ *
+ * Byte stability is the contract: a fixed header comment (adapter id /
+ * version, contract identities, the `sha256:` digest of the exact
+ * scenario document bytes — no timestamps, no host paths, no host
+ * data), deterministic scenario/step ordering, 4-space indent, LF
+ * endings, no trailing whitespace, exactly one final newline. String
+ * literals are emitted via `php_emit_value`, whose escaping is
+ * `var_export`-free single-quote encoding, so no interpolation or code
+ * injection survives into a generated test.
+ *
+ * Evidence honesty mirrors the Node emitter: every assertion block
+ * records exactly one outcome row (`pass | fail | unsupported |
+ * infrastructure | degraded`), unsupported rows can never become
+ * passes, and the reporter persists the rows into the durable run
+ * record.
+ */
+
+const PHP_EMITTER_ADAPTER_ID = 'lekalo-target-php-laravel';
+
+/** The sidecar micro-contract token of the scenario test maps. */
+const PHP_MAP_CONTRACT = 'lekalo/scenario-test-map/v0.4.0';
+
+/** The runner version reported when a scenario declares no explicit pin. */
+const PHP_RUNNER_VERSION = 'bundled-toolchain';
+
+/** The run-record contract family the reporter writes. */
+const PHP_RUN_RECORD_SCHEMA_VERSION = 'lekalo/scenario-run/v0.4.0';
+const PHP_RUN_RECORD_IDENTITY = 'dev.lekalo.scenario-run@0.4.0';
+
+/** The run-record ingest home (an adjudicated `.lekalo/import` home). */
+const PHP_RUN_RECORD_DIR = '.lekalo/import/scenario-runs';
+
+/** Reserved emitted module names; a scenario module may never collide. */
+const PHP_RESERVED_MODULES = ['testkit', 'port', 'reporter', 'ScenarioTestKit', 'Port', 'ScenarioReporter'];
+
+/** The generated support files shared by every scenario test. */
+const PHP_SUPPORT_FILES = [
+    'scenario-test-kit.php',
+    'scenario-reporter.php',
+    'port.php',
+];
+
+/**
+ * The semantic native-test id of one scenario on one target: the target
+ * token is part of the identity, so a Node test and a Laravel test for
+ * the same scenario never collide into one trace node.
+ */
+function php_native_test_id(string $scenarioId): string
+{
+    return 'php-laravel:' . $scenarioId;
+}
+
+/** The stable PHP FQN of one scenario's generated test class. */
+function php_test_class_fqn(string $scenarioId): string
+{
+    return 'Lekalo\\Generated\\ScenarioTests\\' . php_module_of($scenarioId) . '\\'
+        . php_class_of($scenarioId);
+}
+
+/**
+ * The emission module of one scenario: the id prefix before the first
+ * dot (the module namespace segment).
+ */
+function php_module_of(string $scenarioId): string
+{
+    $cut = strpos($scenarioId, '.');
+    return $cut === false || $cut === 0 ? $scenarioId : substr($scenarioId, 0, $cut);
+}
+
+/** The PSR-4-safe class identifier of one scenario id: always ends
+ * with `Test` (the case-suffix the naming convention locates) and the
+ * emitted file spelling `<id>.test.php` ends with the file suffix
+ * `Test.php` is checked against — the class name is what matters, so
+ * the generated class carries the suffix.
+ */
+function php_class_of(string $scenarioId): string
+{
+    $sanitized = preg_replace('/[^a-zA-Z0-9]/', '_', $scenarioId);
+    $parts = array_map(static fn (string $part): string => ucfirst($part), explode('_', $sanitized));
+    // The Laratesto naming convention discovers `*Test.php` files whose
+    // class name also ends in `Test`, so the suffix is part of the
+    // stable class mapping.
+    return implode('', $parts) . 'Test';
+}
+
+/** The safe PHP identifier of one scenario or step id (snake_case use). */
+function php_identifier_of(string $id): string
+{
+    $sanitized = preg_replace('/[^a-zA-Z0-9_]/', '_', $id);
+    return ctype_digit(substr($sanitized, 0, 1)) ? '_' . $sanitized : $sanitized;
+}
+
+/**
+ * One comment-safe single-line projection of free wire text: every line
+ * terminator and control character collapses, so a core-valid `summary`
+ * can never close a generated comment and inject live code into the
+ * emitted test.
+ */
+function php_comment_safe(mixed $text): string
+{
+    $value = (string) ($text ?? '');
+    $value = preg_replace('/\r\n|[\r\n\x{0085}\x{2028}\x{2029}]|\p{Cc}/u', ' ', $value) ?? '';
+    $value = preg_replace('/\s+/', ' ', $value) ?? '';
+    $value = trim($value);
+    return mb_substr($value, 0, 200);
+}
+
+/**
+ * Emit every generated file of one mapped scenario document.
+ *
+ * `input` is `{models, inputDigest, adapterVersion, portModulePath,
+ * startedBy}`. Returns sorted `{path, text, map}` records; `map` is
+ * non-null only on sidecars. A checked binding emits nothing for its
+ * scenario (review F-4: the checked identity belongs exclusively to the
+ * existing native test).
+ */
+function php_emit_scenario_tests(array $input): array
+{
+    $context = [
+        'inputDigest' => $input['inputDigest'],
+        'adapterVersion' => $input['adapterVersion'],
+        'portModulePath' => $input['portModulePath'],
+        'portClass' => $input['portClass'] ?? '',
+        'startedBy' => $input['startedBy'] ?? 'lekalo-scenario-harness',
+    ];
+    if ($context['portClass'] === '' && $context['portModulePath'] !== '') {
+        // A declared port always carries both its logical path and its
+        // class; only the declaration-absent compile (every feature an
+        // explicit unsupported row, the shim never invoked) emits with
+        // an empty class binding.
+        throw new LogicException('scenario emit without a validated port class');
+    }
+    $files = [
+        php_file(PHP_SCENARIO_TESTS_DIR . '/scenario-test-kit.php', php_testkit_text($context), null),
+        php_file(PHP_SCENARIO_TESTS_DIR . '/scenario-reporter.php', php_reporter_text($context), null),
+        php_file(PHP_SCENARIO_TESTS_DIR . '/port.php', php_port_text($context), null),
+    ];
+    $models = $input['models'];
+    usort($models, static fn (array $left, array $right): int => strcmp($left['id'], $right['id']));
+    foreach ($models as $model) {
+        if ($model['binding']['mode'] === 'checked') {
+            // A checked binding declares that an EXISTING native test
+            // owns the scenario identity: nothing is generated for it.
+            continue;
+        }
+        $module = php_module_of($model['id']);
+        if (in_array($module, PHP_RESERVED_MODULES, true)) {
+            throw new LogicException('scenario module collides with a reserved emitted file: ' . $module);
+        }
+        $testFile = php_emit_test($model, $context);
+        $files[] = php_file(
+            PHP_SCENARIO_TESTS_DIR . '/' . $module . '/' . $model['id'] . '.test.php',
+            $testFile['text'],
+            null,
+        );
+        $files[] = php_file(
+            PHP_SCENARIO_TESTS_DIR . '/' . $module . '/' . $model['id'] . '.test.map.json',
+            php_canonical_json($testFile['map']) . "\n",
+            $testFile['map'],
+        );
+    }
+    usort($files, static fn (array $left, array $right): int => strcmp($left['path'], $right['path']));
+    return $files;
+}
+
+function php_file(string $path, string $text, ?array $map): array
+{
+    return ['path' => $path, 'text' => $text, 'map' => $map];
+}
+
+// ---------------------------------------------------------------------------
+// Shared emitted support files.
+// ---------------------------------------------------------------------------
+
+function php_doc_header(array $context): string
+{
+    // The open tag leads every emitted file: without it PHP would parse
+    // the whole file as inline HTML and the class would never exist.
+    return "<?php\n\n// Generated by " . PHP_EMITTER_ADAPTER_ID . '@' . $context['adapterVersion']
+        . ' (scenario-test-compiler, issue #56).' . "\n"
+        . '// From ' . PHP_SCENARIO_IDENTITY . ' input ' . $context['inputDigest'] . '.'
+        . ' Do not edit: regenerate with `lekalo generate`.';
+}
+
+function php_testkit_text(array $context): string
+{
+    $header = php_doc_header($context);
+    return <<<PHP
+$header
+// The shared runner-neutral helpers; content depends only on the
+// adapter version, so this file is itself a determinism probe.
+// Generated file — do not edit.
+
+declare(strict_types=1);
+
+namespace Lekalo\\Generated\\ScenarioTests;
+
+use Testo\\Assert;
+
+/**
+ * Canonical typed equality over the closed Scenario IR value domain:
+ * dates, datetimes, uuids, uris, and decimals compare exactly as their
+ * canonical strings; integers compare numerically; objects compare
+ * field-by-field in any key order.
+ */
+final class ScenarioTestKit
+{
+    /**
+     * One bounded, control-cleaned failure detail: the run record
+     * carries no absolute paths, no host data, and never more than one
+     * short line.
+     */
+    public static function boundedDetail(mixed \$value): string
+    {
+        \$text = \$value === null ? 'unknown' : (string) \$value;
+        \$text = preg_replace('/[^a-zA-Z0-9._:\\/() -]+/', '?', \$text) ?? '?';
+        \$text = trim(\$text);
+        return substr(\$text, 0, 200);
+    }
+
+    /** Canonical typed equality (see class docblock). */
+    public static function typedEqual(mixed \$actual, mixed \$expected): bool
+    {
+        if (\$actual === \$expected) {
+            return true;
+        }
+        if (is_object(\$actual) || is_object(\$expected)) {
+            if (!is_object(\$actual) || !is_object(\$expected)) {
+                return false;
+            }
+            if (get_class(\$actual) !== get_class(\$expected)) {
+                return false;
+            }
+            return self::typedEqual((array) \$actual, (array) \$expected);
+        }
+        if (is_array(\$actual) || is_array(\$expected)) {
+            if (!is_array(\$actual) || !is_array(\$expected)) {
+                return false;
+            }
+            if (array_is_list(\$actual) !== array_is_list(\$expected)) {
+                return false;
+            }
+            if (array_is_list(\$actual)) {
+                if (count(\$actual) !== count(\$expected)) {
+                    return false;
+                }
+                foreach (\$actual as \$index => \$item) {
+                    if (!self::typedEqual(\$item, \$expected[\$index])) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            \$leftKeys = array_keys(\$actual);
+            sort(\$leftKeys, SORT_STRING);
+            \$rightKeys = array_keys(\$expected);
+            sort(\$rightKeys, SORT_STRING);
+            if (\$leftKeys !== \$rightKeys) {
+                return false;
+            }
+            foreach (\$leftKeys as \$key) {
+                if (!self::typedEqual(\$actual[\$key], \$expected[\$key])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * The public subset of one error object: the id plus the declared
+     * payload fields only — a generated test never asserts private
+     * error internals.
+     */
+    public static function errorFieldsMatch(mixed \$error, array \$fields): bool
+    {
+        if (!is_array(\$error)) {
+            return false;
+        }
+        foreach (\$fields as \$key => \$expected) {
+            \$carried = \$error['fields'][\$key] ?? null;
+            if (!self::typedEqual(\$carried, \$expected)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // -----------------------------------------------------------------
+    // Canonical-form matchers: exact ports of the core grammar
+    // functions in scenario/value.rs. A stored state field that
+    // violates the canonical contract must fail the generated matcher —
+    // over-accepting approximations are false passes.
+    // -----------------------------------------------------------------
+
+    /** Real Gregorian month lengths, leap years included (value.rs). */
+    private static function daysInMonth(int \$year, int \$month): int
+    {
+        if (in_array(\$month, [1, 3, 5, 7, 8, 10, 12], true)) {
+            return 31;
+        }
+        if (in_array(\$month, [4, 6, 9, 11], true)) {
+            return 30;
+        }
+        return ((\$year % 4 === 0 && \$year % 100 !== 0) || \$year % 400 === 0) ? 29 : 28;
+    }
+
+    /** The canonical calendar date with real month and day values. */
+    private static function canonicalDate(string \$text): bool
+    {
+        if (preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/', \$text) !== 1) {
+            return false;
+        }
+        \$year = (int) substr(\$text, 0, 4);
+        \$month = (int) substr(\$text, 5, 2);
+        \$day = (int) substr(\$text, 8, 2);
+        if (\$year < 1 || \$year > 9999 || \$month < 1 || \$month > 12) {
+            return false;
+        }
+        return \$day >= 1 && \$day <= self::daysInMonth(\$year, \$month);
+    }
+
+    /** The canonical decimal spelling (value.rs canonical_decimal). */
+    public static function canonicalDecimal(mixed \$text): bool
+    {
+        \$value = (string) \$text;
+        if (\$value === '-0') {
+            return false;
+        }
+        \$negative = str_starts_with(\$value, '-');
+        \$rest = \$negative ? substr(\$value, 1) : \$value;
+        \$dot = strpos(\$rest, '.');
+        \$integral = \$dot === false ? \$rest : substr(\$rest, 0, \$dot);
+        \$fractional = \$dot === false ? null : substr(\$rest, \$dot + 1);
+        if (preg_match('/^[0-9]+$/', \$integral) !== 1) {
+            return false;
+        }
+        if (strlen(\$integral) > 1 && str_starts_with(\$integral, '0')) {
+            return false;
+        }
+        if (\$integral === '0' && \$negative) {
+            return false;
+        }
+        if (\$fractional === null) {
+            return true;
+        }
+        return preg_match('/^[0-9]+$/', \$fractional) === 1 && !str_ends_with(\$fractional, '0');
+    }
+
+    /** The canonical UTC datetime (value.rs canonical_datetime). */
+    public static function canonicalDatetime(mixed \$text): bool
+    {
+        \$value = (string) \$text;
+        if (strlen(\$value) < 20 || !str_ends_with(\$value, 'Z')) {
+            return false;
+        }
+        if (!self::canonicalDate(substr(\$value, 0, 10))) {
+            return false;
+        }
+        if (\$value[10] !== 'T') {
+            return false;
+        }
+        \$time = substr(\$value, 11, strlen(\$value) - 12);
+        \$dot = strpos(\$time, '.');
+        \$clock = \$dot === false ? \$time : substr(\$time, 0, \$dot);
+        \$fraction = \$dot === false ? null : substr(\$time, \$dot + 1);
+        \$parts = explode(':', \$clock);
+        if (count(\$parts) !== 3) {
+            return false;
+        }
+        foreach (\$parts as \$part) {
+            if (strlen(\$part) !== 2 || preg_match('/^[0-9]+$/', \$part) !== 1) {
+                return false;
+            }
+        }
+        \$hour = (int) \$parts[0];
+        \$minute = (int) \$parts[1];
+        \$second = (int) \$parts[2];
+        if (\$hour > 23 || \$minute > 59 || \$second > 59) {
+            return false;
+        }
+        if (\$fraction === null) {
+            return true;
+        }
+        \$length = strlen(\$fraction);
+        return \$length >= 1 && \$length <= 9 && preg_match('/^[0-9]+$/', \$fraction) === 1;
+    }
+
+    /** The canonical URI (value.rs canonical_uri). */
+    public static function canonicalUri(mixed \$text): bool
+    {
+        \$value = (string) \$text;
+        \$characters = mb_strlen(\$value);
+        if (\$characters < 8 || \$characters > 2048) {
+            return false;
+        }
+        \$marker = strpos(\$value, '://');
+        if (\$marker === false) {
+            return false;
+        }
+        \$scheme = substr(\$value, 0, \$marker);
+        \$rest = substr(\$value, \$marker + 3);
+        if (\$scheme === '' || !preg_match('/^[a-z]/', \$scheme)) {
+            return false;
+        }
+        if (preg_match('/^[a-z0-9+.-]*$/', substr(\$scheme, 1)) !== 1) {
+            return false;
+        }
+        if (\$rest === '') {
+            return false;
+        }
+        if (preg_match('/[<>"{}|\\\\^` ]|[\\x00-\\x1f\\x7f-\\x9f]/', \$value) === 1) {
+            return false;
+        }
+        \$authorityMatch = strpbrk(\$rest, '/?#');
+        \$authorityEnd = \$authorityMatch === false ? strlen(\$rest) : strpos(\$rest, \$authorityMatch[0]);
+        return strpos(substr(\$rest, 0, \$authorityEnd), '@') === false;
+    }
+}
+
+PHP;
+}
+
+function php_reporter_text(array $context): string
+{
+    $header = php_doc_header($context);
+    $schemaVersion = PHP_RUN_RECORD_SCHEMA_VERSION;
+    $identity = PHP_RUN_RECORD_IDENTITY;
+    $ingestDir = PHP_RUN_RECORD_DIR;
+    return <<<PHP
+$header
+// The durable run-record writer: one $schemaVersion document per
+// scenario run, written into the adjudicated ingest home $ingestDir/.
+// Generated file — do not edit.
+
+declare(strict_types=1);
+
+namespace Lekalo\\Generated\\ScenarioTests;
+
+/**
+ * One run recorder for one scenario test. Records exactly one bounded
+ * outcome row per executed assertion and flushes the closed
+// run-record document into the ingest home. The test fingerprint is
+ * computed over the exact bytes of the importing test file at flush
+ * time; the project root is derived from this file's own fixed
+ * location under the generated root, never from the cwd.
+ */
+final class ScenarioReporter
+{
+    private const GENERATED_ROOT_DEPTH = 4;
+
+    private array \$assertions = [];
+
+    /** @param array<string, mixed> \$spec */
+    public function __construct(
+        private readonly array \$spec,
+        private readonly string \$testFile,
+    ) {}
+
+    /**
+     * Record exactly one assertion outcome row. Outcomes are closed:
+     * pass | fail | unsupported | infrastructure | degraded. An
+     * unsupported row can never become a pass.
+     */
+    public function record(array \$row): void
+    {
+        \$outcome = (string) \$row['outcome'];
+        if (!in_array(\$outcome, ['pass', 'fail', 'unsupported', 'infrastructure', 'degraded'], true)) {
+            throw new LogicException('closed outcome vocabulary violation: ' . \$outcome);
+        }
+        \$entry = [
+            'step_id' => \$row['step_id'] === null ? null : (string) \$row['step_id'],
+            'observes' => (\$row['observes'] ?? null) === null ? null : (string) \$row['observes'],
+            'kind' => (string) \$row['kind'],
+            'outcome' => \$outcome,
+        ];
+        if (isset(\$row['detail']) && \$row['detail'] !== null) {
+            \$entry['detail'] = substr((string) \$row['detail'], 0, 200);
+        }
+        \$this->assertions[] = \$entry;
+    }
+
+    /** Whether any row is unsupported (such a run is never a pass). */
+    public function hasUnsupported(): bool
+    {
+        foreach (\$this->assertions as \$row) {
+            if (\$row['outcome'] === 'unsupported') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether any row failed on an assertion or on infrastructure. */
+    public function hasBlockingFailure(): bool
+    {
+        foreach (\$this->assertions as \$row) {
+            if (\$row['outcome'] === 'fail' || \$row['outcome'] === 'infrastructure') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Persist the canonical run record into the ingest home; returns
+     * its project-relative path.
+     */
+    public function flush(): string
+    {
+        \$scenario = \$this->spec['scenario'];
+        \$runner = \$this->spec['runner'];
+        \$test = \$this->spec['test'];
+        \$document = [
+            'schema_version' => '$schemaVersion',
+            'identity' => '$identity',
+            'scenario' => [
+                'id' => (string) \$scenario['id'],
+                'version' => (string) \$scenario['version'],
+                'ir_digest' => (string) \$scenario['irDigest'],
+                'symbols' => is_array(\$scenario['symbols'] ?? null) ? \$scenario['symbols'] : [],
+                'operations' => is_array(\$scenario['operations'] ?? null) ? \$scenario['operations'] : [],
+            ],
+            'runner' => [
+                'id' => (string) \$runner['id'],
+                'version' => (string) \$runner['version'],
+            ],
+            'profile' => null,
+            'test' => [
+                'id' => (string) \$test['id'],
+                'path' => \$this->relativeTestPath(),
+                'fingerprint' => 'sha256:' . hash_file('sha256', \$this->testFile),
+            ],
+            'binding_mode' => (string) \$this->spec['bindingMode'],
+            'started_by' => (string) \$this->spec['startedBy'],
+            'assertions' => \$this->assertions,
+        ];
+        \$root = \$this->projectRoot();
+        \$target = \$root . '/' . '$ingestDir' . '/' . \$scenario['id'] . '.json';
+        \$dir = dirname(\$target);
+        if (!is_dir(\$dir)) {
+            mkdir(\$dir, 0777, true);
+        }
+        file_put_contents(\$target, self::canonicalJson(\$document) . "\\n");
+        return '$ingestDir' . '/' . \$scenario['id'] . '.json';
+    }
+
+    /**
+     * Canonical JSON over the closed run-record domain: sorted object
+     * keys, no whitespace, no escaped slashes, non-ASCII kept literal.
+     * The self-contained mirror of the kernel encoder — the emitted
+     * reporter never runs inside the adapter process.
+     */
+    private static function canonicalJson(mixed \$value): string
+    {
+        if (\$value === null) {
+            return 'null';
+        }
+        if (is_bool(\$value)) {
+            return \$value ? 'true' : 'false';
+        }
+        if (is_int(\$value)) {
+            return (string) \$value;
+        }
+        if (is_string(\$value)) {
+            return self::canonicalString(\$value);
+        }
+        if (!is_array(\$value)) {
+            throw new LogicException('run-record value outside the closed canonical domain');
+        }
+        if (array_is_list(\$value)) {
+            return '[' . implode(',', array_map([self::class, 'canonicalJson'], \$value)) . ']';
+        }
+        \$keys = array_keys(\$value);
+        usort(\$keys, 'strcmp');
+        \$body = [];
+        foreach (\$keys as \$key) {
+            \$body[] = self::canonicalString((string) \$key)
+                . ':' . self::canonicalJson(\$value[\$key]);
+        }
+        return '{' . implode(',', \$body) . '}';
+    }
+
+    /** The canonical JSON string spelling of one bounded UTF-8 value. */
+    private static function canonicalString(string \$value): string
+    {
+        \$sentinel = str_replace("\\x7F", "\\x00", \$value);
+        \$encoded = json_encode(
+            \$sentinel,
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+        );
+        return str_replace('\\u0000', "\\x7F", \$encoded);
+    }
+
+    /** The project-relative logical path of the importing test file. */
+    private function relativeTestPath(): string
+    {
+        \$root = \$this->projectRoot();
+        \$relative = str_replace('\\\\', '/', substr(\$this->testFile, strlen(\$root) + 1));
+        return \$relative;
+    }
+
+    /**
+     * The project root derived from this file's fixed emitted location —
+     * never from the current working directory, never from host config.
+     */
+    private function projectRoot(): string
+    {
+        \$here = dirname(__FILE__);
+        \$root = \$here;
+        for (\$index = 0; \$index < self::GENERATED_ROOT_DEPTH; \$index += 1) {
+            \$root = dirname(\$root);
+        }
+        return \$root;
+    }
+}
+
+PHP;
+}
+
+function php_port_text(array $context): string
+{
+    $header = php_doc_header($context);
+    // The FQN travels through the closed string escaper: the validated
+    // grammar admits only identifiers and namespace separators, and the
+    // escaping keeps even a hostile value from breaking the constant.
+    $portClass = php_emit_value($context['portClass']);
+    return <<<PHP
+$header
+// The project test-port binding shim; content depends only on the
+// adapter version and the declared port document, so this file is
+// itself a determinism probe. Generated file — do not edit.
+
+declare(strict_types=1);
+
+namespace Lekalo\\Generated\\ScenarioTests;
+
+/**
+ * Forwarding shim to the project-declared ScenarioPort implementation.
+ * The emitted `PORT_CLASS` constant is completed at generation time
+ * with the exact project port class name from the validated
+ * `lekalo/php-test-port.json` declaration, so the shim itself stays
+ * deterministic given the same inputs.
+ */
+final class Port
+{
+    private const GENERATED_ROOT_DEPTH = 4;
+    private const PORT_CLASS = $portClass;
+
+    /** @var array<string, object> resolved instances, keyed by class */
+    private static array \$instances = [];
+
+    /** The resolved project port instance (one per test process). */
+    public static function instance(): object
+    {
+        \$class = self::PORT_CLASS;
+        if (isset(self::\$instances[\$class])) {
+            return self::\$instances[\$class];
+        }
+        if (!class_exists(\$class)) {
+            throw new LogicException('the declared ScenarioPort class does not exist: ' . \$class);
+        }
+        return self::\$instances[\$class] = new \$class();
+    }
+
+    public static function reset(): void
+    {
+        self::\$instances = [];
+    }
+}
+
+PHP;
+}
+
+// ---------------------------------------------------------------------------
+// Per-scenario test rendering.
+// ---------------------------------------------------------------------------
+
+function php_emit_test(array $model, array $context): array
+{
+    $segments = [];
+    $cursor = 0;
+    $push = static function (string $text, ?string $stepId = null) use (&$segments, &$cursor): void {
+        $segments[] = ['text' => $text, 'start' => $cursor, 'stepId' => $stepId];
+        $cursor += strlen($text);
+    };
+    $runnerVersion = $model['runner']['declaredVersion'] ?? null;
+    $classFqn = php_test_class_fqn($model['id']);
+    $scenarioId = $model['id'];
+    $header = php_doc_header($context);
+    $heredoc = <<<PHP
+$header
+//
+// Scenario {$scenarioId} @{$model['version']}: {$model['summary']}
+// Runner {$model['runner']['id']}; binding {$model['binding']['mode']}; native test id
+// php-laravel:{$scenarioId}; generated by the scenario-test compiler (issue #56).
+
+declare(strict_types=1);
+
+namespace Lekalo\\Generated\\ScenarioTests\\{$model['projectId']};
+
+use Lekalo\\Generated\\ScenarioTests\\Port;
+use Lekalo\\Generated\\ScenarioTests\\ScenarioReporter;
+use Lekalo\\Generated\\ScenarioTests\\ScenarioTestKit;
+use Laratesto\\Attribute\\DatabaseMigrations;
+use Testo\\Assert;
+use Testo\Test;
+
+// The sibling support files travel with every generation (the PHP
+// mirror of the Node emitter's relative import block): the emitted
+// test is self-contained and never depends on project autoload
+// configuration for the generated namespace.
+require_once __DIR__ . '/../scenario-test-kit.php';
+require_once __DIR__ . '/../scenario-reporter.php';
+require_once __DIR__ . '/../port.php';
+
+PHP;
+    $push($heredoc, null);
+    $blockStart = $cursor;
+    // The class carries the `#[Test]` attribute: the canonical
+    // attribute-driven discovery of the pinned Testo version. The file
+    // spelling stays lowercase (the logical-path grammar forbids
+    // uppercase segments) and never relies on the case-suffix
+    // convention.
+    $push("#[DatabaseMigrations]
+#[Test]
+" . 'final class ' . php_class_of($scenarioId) . "
+{
+", null);
+    $body = php_render_body($model);
+    $push($body['text'], null);
+    $push("}\n", null);
+    $text = implode('', array_map(static fn (array $segment): string => $segment['text'], $segments));
+    $map = [
+        'contract' => PHP_MAP_CONTRACT,
+        'adapter' => ['id' => PHP_EMITTER_ADAPTER_ID, 'version' => $context['adapterVersion']],
+        'owner' => $model['id'],
+        'fields' => ['' => $model['id']],
+        'declarations' => [
+            [
+                'id' => $model['id'],
+                'kind' => 'scenario',
+                'export' => $classFqn,
+                'start' => $blockStart,
+                'end' => strlen($text),
+            ],
+        ],
+    ];
+    return ['text' => $text, 'map' => $map];
+}
+
+/**
+ * The per-scenario test body: ONE public `test*` method per scenario
+ * (the Laratesto naming convention discovers `*Test.php` classes with
+ * `test*` methods). The recorder wraps every recorded row group,
+ * unsupported rows short-circuit into a `Skipped` throw (never a
+ * pass), and any non-assertion throwable rethrows after flushing
+ * (Testo reports it as `Error`, which normalizes to infrastructure
+ * evidence).
+ */
+function php_render_body(array $model): array
+{
+    $groups = php_render_groups($model);
+    $method = '    public function test' . ucfirst(php_identifier_of($model['id'])) . "(): void\n    {\n";
+    $method .= "        \$recorder = new ScenarioReporter([\n";
+    $method .= "            'scenario' => ['id' => " . php_emit_value($model['id']) . ", 'version' => "
+        . php_emit_value($model['version']) . ", 'irDigest' => " . php_emit_value($model['irDigest'] ?? null)
+        . ", 'symbols' => [], 'operations' => " . php_emit_value(php_operations_of($model)) . "],\n";
+    $method .= "            'runner' => ['id' => " . php_emit_value($model['runner']['id']) . ", 'version' => "
+        . php_emit_value($model['runner']['declaredVersion'] ?? PHP_RUNNER_VERSION) . "],\n";
+    $method .= "            'test' => ['id' => " . php_emit_value(php_native_test_id($model['id'])) . "],\n";
+    $method .= "            'bindingMode' => " . php_emit_value($model['binding']['mode']) . ",\n";
+    $method .= "            'startedBy' => 'lekalo-scenario-harness',\n";
+    $method .= "        ], __FILE__);\n";
+    $method .= "        try {\n";
+    // The PHP mirror of the Node emitter's `await resetPort()`: the shim
+    // drops its memoized instances, so every test constructs a fresh
+    // project port and inherits no in-memory state from a previous test
+    // in the same process (the DB lifecycle is the migrations
+    // attribute's contract).
+    $method .= "            Port::reset();\n";
+    foreach ($groups as $group) {
+        foreach ($group['lines'] as $line) {
+            $method .= $line . "\n";
+        }
+    }
+    $method .= "            if (\$recorder->hasUnsupported()) {\n";
+    $method .= "                // Unsupported rows never become passes: skip the test and\n";
+    $method .= "                // let the flushed record carry the exact rows.\n";
+    $method .= "                \$recorder->flush();\n";
+    $method .= "                throw new \\Testo\\Core\\Exception\\SkipTest('scenario.unsupported-capability');\n";
+    $method .= "            }\n";
+    $method .= "            \$recorder->flush();\n";
+    $method .= "        } catch (\\Throwable \$_error) {\n";
+    $method .= "            \$recorder->flush();\n";
+    $method .= "            throw \$_error;\n";
+    $method .= "        }\n";
+    $method .= "    }\n";
+    return ['text' => $method];
+}
+
+/** The sorted distinct operation ids of one model's when steps. */
+function php_operations_of(array $model): array
+{
+    $operations = [];
+    foreach ($model['when'] as $step) {
+        $id = $step['operation']['id'] ?? null;
+        if (is_string($id) && !in_array($id, $operations, true)) {
+            $operations[] = $id;
+        }
+    }
+    sort($operations, SORT_STRING);
+    return $operations;
+}
+
+/** The body row groups: given, when, then, in scenario order. */
+function php_render_groups(array $model): array
+{
+    $groups = [];
+    $wholeScenarioUnsupported = $model['unsupported'] !== [];
+    $stepVars = [];
+    $clockIsos = [];
+    if ($wholeScenarioUnsupported) {
+        // Concurrency race cases and binding-capability gaps: record the
+        // declared rows and execute nothing (a serial run would lie).
+        $lines = [];
+        foreach ($model['unsupported'] as $entry) {
+            $lines[] = php_unsupported_row(null, null, 'scenario', $entry['capability'] . ': ' . $entry['reason']);
+        }
+        foreach ($model['then'] as $step) {
+            $lines[] = php_unsupported_row($step['stepId'], $step['observes'], $step['kind'], 'scenario-unsupported');
+        }
+        $groups[] = ['lines' => $lines, 'stepId' => null];
+        return $groups;
+    }
+    foreach ($model['given'] as $step) {
+        if ($step['unsupported'] !== null) {
+            $groups[] = [
+                'lines' => [php_unsupported_row($step['stepId'], null, 'given:' . $step['kind'],
+                    $step['unsupported']['capability'] . ': ' . $step['unsupported']['reason'])],
+                'stepId' => null,
+            ];
+            continue;
+        }
+        $groups[] = [
+            'lines' => array_merge(
+                ['    // given ' . $step['stepId'] . ' (' . $step['kind'] . ')'],
+                php_render_given($step, $stepVars, $clockIsos),
+            ),
+            'stepId' => null,
+        ];
+    }
+    foreach ($model['when'] as $step) {
+        if ($step['unsupported'] !== null) {
+            $groups[] = [
+                'lines' => [php_unsupported_row($step['stepId'], null, 'when',
+                    $step['unsupported']['capability'] . ': ' . $step['unsupported']['reason'])],
+                'stepId' => null,
+            ];
+            continue;
+        }
+        $groups[] = [
+            'lines' => array_merge(
+                ['    // when ' . $step['stepId'] . ' (' . $step['operation']['kind'] . ' ' . $step['operation']['id'] . ')'],
+                php_render_when($step, $stepVars),
+            ),
+            'stepId' => null,
+        ];
+    }
+    foreach ($model['then'] as $step) {
+        $groups[] = ['lines' => php_render_then($step, $model, $stepVars, $clockIsos), 'stepId' => $step['stepId']];
+    }
+    return $groups;
+}
+
+function php_unsupported_row(?string $stepId, ?string $observes, string $kind, string $detail): string
+{
+    return '    $recorder->record(['
+        . "'step_id' => " . php_emit_value($stepId) . ', '
+        . "'observes' => " . php_emit_value($observes) . ', '
+        . "'kind' => " . php_emit_value($kind) . ', '
+        . "'outcome' => 'unsupported', "
+        . "'detail' => ScenarioTestKit::boundedDetail(" . php_emit_value($detail) . ')]);';
+}
+
+function php_render_given(array $step, array &$stepVars, array &$clockIsos): array
+{
+    $variable = 'given_' . php_identifier_of($step['stepId']);
+    $stepVars[$step['stepId']] = $variable;
+    $payload = $step['payload'] ?? [];
+    switch ($step['kind']) {
+        case 'state':
+            return [
+        '    $' . $variable . ' = Port::instance()->state->seed('
+                . php_emit_value($payload['entity'] ?? null) . ', ',
+        '        ' . php_emit_value(php_selector_object($payload['selector'] ?? [], $stepVars)) . ', ',
+        '        ' . php_emit_value(php_fields_object($payload['fields'] ?? [])) . ');',
+            ];
+        case 'fixture':
+            return [
+        '    Port::instance()->fixtures->load('
+                . php_emit_value($payload['fixture'] ?? null) . ', ['
+                . "'version' => " . php_emit_value($payload['version'] ?? null) . ', '
+                . "'capabilities' => " . php_emit_value($payload['capabilities'] ?? []) . ']);',
+            ];
+        case 'actor':
+            return $payload['scope'] === null
+                ? ["    \$" . $variable . ' = Port::instance()->actor(' . php_emit_value($payload['actor'] ?? null) . ');']
+                : ["    \$" . $variable . ' = Port::instance()->actor('
+                    . php_emit_value($payload['actor'] ?? null) . ', '
+                    . php_emit_value($payload['scope']) . ');'];
+        case 'clock':
+            $clockIsos[$step['stepId']] = $payload['at'] ?? null;
+            return ['    Port::instance()->clock->freeze(' . php_emit_value($payload['at'] ?? null) . ');'];
+        case 'id_source':
+            return [
+        '    Port::instance()->ids->seed(['
+                . "'algorithm' => " . php_emit_value($payload['algorithm'] ?? null) . ', '
+                . "'seed' => " . php_emit_value($payload['seed'] ?? null) . ']);',
+            ];
+        default:
+            return ['    // unknown precondition kind ' . $step['kind'] . '; nothing to establish'];
+    }
+}
+
+/** The emitted selector object of one state precondition. */
+function php_selector_object(array $selector, array $stepVars): array
+{
+    $object = [];
+    foreach ($selector as $term) {
+        $object[$term['field']] = php_literal_of($term['equals'] ?? null, $stepVars);
+    }
+    return $object;
+}
+
+/** The emitted fields object of one state precondition. */
+function php_fields_object(array $fields): array
+{
+    $object = [];
+    $emptyVars = [];
+    foreach ($fields as $entry) {
+        $object[$entry[0]] = php_literal_of($entry[1] ?? null, $emptyVars);
+    }
+    return $object;
+}
+
+function php_render_when(array $step, array &$stepVars): array
+{
+    $variable = 'step_' . php_identifier_of($step['stepId']);
+    $stepVars[$step['stepId']] = $variable;
+    $input = [];
+    foreach ($step['input'] as $entry) {
+        $leaf = $entry['leaf'];
+        $emptyVars = [];
+        $input[$entry['field']] = php_literal_of($leaf, $emptyVars);
+    }
+    $ctx = [];
+    if (array_key_exists('actor', $step['ctx'])) {
+        $actor = $step['ctx']['actor'];
+        $actorId = is_array($actor) ? ($actor['id'] ?? null) : $actor;
+        $ctx['actor'] = isset($stepVars[$actorId]) ? ['__stepVar' => $stepVars[$actorId]] : $actorId;
+    }
+    if (array_key_exists('clock', $step['ctx'])) {
+        // The clock ctx references a given clock step's frozen instant;
+        // an unestablished reference resolves to null (the mapper has
+        // already validated reachability before emission).
+        $clockRef = is_array($step['ctx']['clock']) ? ($step['ctx']['clock']['id'] ?? null) : $step['ctx']['clock'];
+        $ctx['clock'] = $clockRef;
+    }
+    if (array_key_exists('idempotencyKey', $step['ctx'])) {
+        $emptyVars = [];
+        $ctx['idempotencyKey'] = php_literal_of($step['ctx']['idempotencyKey'], $emptyVars);
+    }
+    return [
+        "    \$" . $variable . ' = null;',
+        '    try {',
+        '        $' . $variable . ' = Port::instance()->invoke('
+            . php_emit_value($step['operation']['id']) . ', ',
+        '            ' . php_emit_value($input) . ', ',
+        '            ' . php_emit_value($ctx) . ');',
+        '    } catch (\Throwable $when_error) {',
+        '        $recorder->record([' . "'step_id' => " . php_emit_value($step['stepId'])
+            . ", 'observes' => null, 'kind' => 'when', 'outcome' => 'infrastructure', "
+            . "'detail' => ScenarioTestKit::boundedDetail(\$when_error->getMessage())]);",
+        '        throw $when_error;',
+        '    }',
+    ];
+}
+
+function php_render_then(array $step, array $model, array $stepVars, array $clockIsos): array
+{
+    $observed = $stepVars[$step['observes'] ?? ''] ?? ('step_' . php_identifier_of((string) ($step['observes'] ?? 'run')));
+    $meta = "'step_id' => " . php_emit_value($step['stepId'])
+        . ", 'observes' => " . php_emit_value($step['observes'])
+        . ", 'kind' => " . php_emit_value($step['kind']);
+    if ($step['unsupported'] !== null) {
+        return [php_unsupported_row($step['stepId'], $step['observes'], $step['kind'],
+            $step['unsupported']['capability'] . ': ' . $step['unsupported']['reason'])];
+    }
+    $checks = php_render_checks($step, $model, $stepVars, $clockIsos, $observed);
+    $lines = [
+        '    // then ' . $step['stepId'] . ': ' . $step['kind'] . ' over ' . $step['observes'],
+        '    try {',
+    ];
+    foreach ($checks as $check) {
+        $lines[] = '        ' . $check;
+    }
+    $lines[] = '        $recorder->record([' . $meta . ", 'outcome' => 'pass']);";
+    $lines[] = '    } catch (\\Testo\\Assert\\State\\Assertion\\AssertionException $then_failure) {';
+    $lines[] = '        $recorder->record([' . $meta . ", 'outcome' => 'fail', "
+            . "'detail' => ScenarioTestKit::boundedDetail(\$then_failure->getMessage())]);";
+    $lines[] = '        throw $then_failure;';
+    $lines[] = '    } catch (\Throwable $then_error) {';
+    $lines[] = '        $recorder->record([' . $meta . ", 'outcome' => 'infrastructure', "
+            . "'detail' => ScenarioTestKit::boundedDetail(\$then_error->getMessage())]);";
+    $lines[] = '        throw $then_error;';
+    $lines[] = '    }';
+    return $lines;
+}
+
+/** The check statements of one mapped then step. */
+function php_render_checks(array $step, array $model, array $stepVars, array $clockIsos, string $observed): array
+{
+    $payload = $step['payload'] ?? [];
+    switch ($step['kind']) {
+        case 'result':
+            $checks = ["Assert::same(true, \$" . $observed . "['ok'], ScenarioTestKit::boundedDetail(\$"
+                . $observed . "['error']['id'] ?? 'invoke-failed'));"];
+            if (array_key_exists('value', $payload)) {
+                $emptyVars = [];
+                $checks[] = 'Assert::true(ScenarioTestKit::typedEqual($' . $observed
+                    . "['value'] ?? null, " . php_emit_value(php_literal_of($payload['value'], $emptyVars)) . '), '
+                    . php_emit_value('result-value') . ');';
+            }
+            return $checks;
+        case 'error':
+            $checks = [
+                'Assert::same(false, $' . $observed . "['ok'], " . php_emit_value('expected a typed error') . ');',
+                'Assert::same(' . php_emit_value($payload['error'] ?? null) . ', $' . $observed
+                    . "['error']['id'] ?? null, " . php_emit_value('error-id') . ');',
+            ];
+            foreach ($payload['payload'] ?? [] as $entry) {
+                if (($entry['leafProblem'] ?? null) !== null) {
+                    continue;
+                }
+                $emptyVars = [];
+                $checks[] = 'Assert::true(ScenarioTestKit::errorFieldsMatch($' . $observed . "['error'] ?? null, ["
+                    . php_emit_value($entry['field']) . ' => '
+                    . php_emit_value(php_literal_of($entry['leaf'], $emptyVars)) . ']), '
+                    . php_emit_value('error-fields') . ');';
+            }
+            if (!empty($payload['contract'])) {
+                $projection = array_map(static fn (array $entry): string => (string) $entry['field'], $payload['payload'] ?? []);
+                $checks[] = 'Assert::same(true, Port::instance()->contractCheck('
+                    . php_emit_value($payload['contract']) . ', '
+                    . php_emit_value($projection) . ', '
+                    . '$' . $observed . "['error'] ?? null), " . php_emit_value('error-contract') . ');';
+            }
+            return $checks;
+        case 'entity_state':
+            $emptyVars = [];
+            $selector = php_emit_value(php_selector_object($payload['where'] ?? [], $emptyVars));
+            $exactFields = [];
+            $matchFields = [];
+            foreach ($payload['fields'] ?? [] as $field => $expectation) {
+                if (is_array($expectation) && array_key_exists('match', $expectation)) {
+                    $matchFields[] = [$field, $expectation['match']];
+                    continue;
+                }
+                $exactFields[$field] = php_literal_of(
+                    is_array($expectation) && array_key_exists('value', $expectation)
+                        ? $expectation['value'] : $expectation,
+                    $emptyVars,
+                );
+            }
+            $checks = [
+                '$stateRows = Port::instance()->state->query('
+                    . php_emit_value($payload['entity'] ?? null) . ', ' . $selector . ');',
+            ];
+            $expect = $payload['expect'] ?? null;
+            $count = php_expect_count($expect);
+            if ($count === null) {
+                $checks[] = "Assert::true(count(\$stateRows) >= 1, " . php_emit_value('entity-exists') . ');';
+            } else {
+                $checks[] = 'Assert::same(' . var_export($count, true) . ', count($stateRows), '
+                    . php_emit_value('entity-count') . ');';
+            }
+            if ($exactFields !== []) {
+                // Per-row projection equals the expected fields object:
+                // the PHP mirror of the Node emitter's every-row check.
+                $checks[] = 'Assert::true(count(array_filter($stateRows, static fn (array $row): bool => ScenarioTestKit::typedEqual('
+                    . "array_intersect_key(\$row, "
+                    . php_emit_value(array_fill_keys(array_keys($exactFields), true)) . '), '
+                    . php_emit_value($exactFields) . '))) === count($stateRows), '
+                    . php_emit_value('entity-fields') . ');';
+            }
+            foreach ($matchFields as [$field, $matcher]) {
+                $check = php_match_check($matcher);
+                if ($check === null) {
+                    $checks[] = 'Assert::fail(' . php_emit_value('unrenderable match kind ' . $matcher) . ');';
+                    continue;
+                }
+                // The row value is bound into a single-expression closure
+                // so the matcher text stays a pure function of one value
+                // with no interpolation surface.
+                $checks[] = 'foreach ($stateRows as $match_row) { $value = $match_row['
+                    . php_emit_value($field) . ']; Assert::true('
+                    . str_replace('\\$value', '$value', $check) . ', '
+                    . php_emit_value('entity-match:' . $field . ':' . $matcher) . '); }';
+            }
+            return array_map(
+                static fn (string $line): string => ltrim($line),
+                $checks,
+            );
+        case 'emitted':
+            $target = $payload['target'] ?? [];
+            $countExpr = php_emit_count($payload['count'] ?? null);
+            return [
+                '$emissions = array_values(array_filter('
+                . 'Port::instance()->emissions(), '
+                . 'static fn (array $entry): bool => '
+                . '($entry[' . "'id'" . '] ?? null) === ' . php_emit_value($target['id'] ?? null)
+                . ' && ($entry[' . "'kind'" . '] ?? null) === ' . php_emit_value($target['kind'] ?? null) . '));',
+                $countExpr === null
+                    ? "Assert::true(count(\$emissions) >= 1, " . php_emit_value('emitted-at-least-one') . ');'
+                    : 'Assert::true(count($emissions) ' . $countExpr . ', '
+                        . php_emit_value('emitted-count') . ');',
+            ];
+        case 'forbidden_effect':
+            $scopeFilters = [];
+            if (($payload['scope'] ?? null) === 'field') {
+                $scopeFilters[] = '($entry[' . "'field'" . '] ?? null) === ' . php_emit_value($payload['field'] ?? null);
+            }
+            return [
+                '$matching = array_values(array_filter('
+                . 'Port::instance()->effects(), '
+                . 'static fn (array $entry): bool => '
+                . '($entry[' . "'effect'" . '] ?? null) === ' . php_emit_value($payload['effect'] ?? null)
+                . ($scopeFilters !== [] ? ' && ' . implode(' && ', $scopeFilters) : '') . '));',
+                'Assert::same(0, count($matching), ' . php_emit_value('forbidden-effect') . ');',
+            ];
+        case 'authorization':
+            return [
+                '$decision = Port::instance()->authorize('
+                . php_emit_value($payload['actor']['id'] ?? null) . ', '
+                . php_emit_value($payload['policy'] ?? null) . ', '
+                . php_emit_value(php_observes_operation($model, $step)) . ');',
+                'Assert::same(' . php_emit_value($payload['outcome'] ?? null) . ', $decision, '
+                    . php_emit_value('authorization-outcome') . ');',
+            ];
+        case 'idempotency':
+            $original = 'step_' . php_identifier_of((string) ($payload['replay'] ?? ''));
+            $checks = [
+                'Assert::true(ScenarioTestKit::typedEqual($' . $observed . ', $' . $original . '), '
+                    . php_emit_value('replay-equivalence') . ');',
+            ];
+            if (($payload['duplicates'] ?? null) === 'none') {
+                $originalStep = null;
+                foreach ($model['when'] as $candidate) {
+                    if ($candidate['stepId'] === ($payload['replay'] ?? null)) {
+                        $originalStep = $candidate;
+                        break;
+                    }
+                }
+                if (($originalStep['operation']['id'] ?? null) !== null) {
+                    $checks[] = '$original_emissions = array_filter('
+                    . 'Port::instance()->emissions(), '
+                    . 'static fn (array $entry): bool => '
+                    . '($entry[' . "'operation'" . '] ?? null) === '
+                    . php_emit_value($originalStep['operation']['id']) . ');';
+                    $checks[] = 'Assert::true(count($original_emissions) <= 1, '
+                        . php_emit_value('duplicates-none') . ');';
+                }
+            }
+            return array_map(
+                static fn (string $line): string => ltrim($line),
+                $checks,
+            );
+        case 'contract_match':
+            return [
+                '$projection = ' . php_emit_value($payload['projection'] ?? []) . ';',
+                '$actual = $' . $observed . "['value'] ?? null;",
+                'Assert::same(true, Port::instance()->contractCheck('
+                    . php_emit_value($payload['contract'] ?? null) . ', $projection, $actual), '
+                    . php_emit_value('contract-match') . ');',
+            ];
+        case 'deterministic_fixture':
+            $fixtureStep = null;
+            foreach ($model['given'] as $candidate) {
+                if ($candidate['kind'] === 'fixture') {
+                    $fixtureStep = $candidate;
+                    break;
+                }
+            }
+            if ($fixtureStep === null) {
+                return ['Assert::fail(' . php_emit_value('deterministic_fixture without a fixture precondition') . ');'];
+            }
+            // The digest covers the fixture, the seeded id source, and the
+            // frozen clock, so the equality transitively asserts the
+            // declared clock/idSource control refs.
+            return [
+                'Assert::same(' . php_emit_value($payload['digest'] ?? null) . ', '
+                . 'Port::instance()->fixtureDigest('
+                . php_emit_value($fixtureStep['payload']['fixture'] ?? null) . '), '
+                . php_emit_value('fixture-digest') . ');',
+            ];
+        default:
+            return ['Assert::fail(' . php_emit_value('unrenderable assertion kind ' . $step['kind']) . ');'];
+    }
+}
+
+/** The emitted value check for one closed matcher kind. */
+function php_match_check(string $matcher): ?string
+{
+    return match ($matcher) {
+        'uuid' => "preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\$/', (string) \\$value) === 1",
+        'datetime' => 'ScenarioTestKit::canonicalDatetime((string) \\$value)',
+        'uri' => 'ScenarioTestKit::canonicalUri((string) \\$value)',
+        'decimal' => 'ScenarioTestKit::canonicalDecimal((string) \\$value)',
+        'non-null' => '\\$value !== null',
+        default => null,
+    };
+}
+
+/** Wrap one matcher expression over `$value` into a full assert line. */
+function php_match_assert(string $check, string $label): string
+{
+    return 'Assert::true((static function (mixed $value): bool { return '
+        . $check . '; })(' . '$' . "row['" . str_replace('entity-match:', '', $label) . "'] ?? null" . '), '
+        . php_emit_value($label) . ');';
+}
+
+/** The observed when step of one then step. */
+function php_observes_operation(array $model, array $step): ?string
+{
+    foreach ($model['when'] as $candidate) {
+        if ($candidate['stepId'] === ($step['observes'] ?? null)) {
+            return $candidate['operation']['id'] ?? null;
+        }
+    }
+    return null;
+}
+
+/** The exact row count expectation, or null for at-least-one. */
+function php_expect_count(mixed $expect): int|string|null
+{
+    if (is_array($expect)) {
+        if (array_key_exists('count', $expect)) {
+            return $expect['count'];
+        }
+        if (($expect['presence'] ?? null) === 'missing') {
+            return 0;
+        }
+        if (($expect['presence'] ?? null) === 'exists') {
+            return null;
+        }
+    }
+    if (is_int($expect)) {
+        return $expect;
+    }
+    return $expect;
+}
+
+/** The emitted comparison operator of one closed count shape. */
+function php_emit_count(mixed $count): ?string
+{
+    if (is_array($count)) {
+        if (array_key_exists('exactly', $count)) {
+            return '=== ' . var_export($count['exactly'], true);
+        }
+        if (array_key_exists('atLeast', $count)) {
+            return '>= ' . var_export($count['atLeast'], true);
+        }
+    }
+    return null;
+}
+
+/**
+ * Render one typed leaf (value or reference) into its emitted argument.
+ * `step-output` and `given-value` references become the emitted
+ * variable bindings of their steps; every other reference kind compiles
+ * to its identity string (a port-call argument, never guessed code).
+ */
+function php_literal_of(mixed $leaf, array &$stepVars = []): mixed
+{
+    if ($leaf === null || !is_array($leaf) || array_is_list($leaf)) {
+        return null;
+    }
+    if (is_string($leaf['$ref'] ?? null)) {
+        if (($leaf['$ref'] === 'step-output' || $leaf['$ref'] === 'given-value')
+            && is_string($leaf['id'] ?? null)
+            && isset($stepVars[$leaf['id']])) {
+            return ['__stepVar' => $stepVars[$leaf['id']]];
+        }
+        return '$ref:' . $leaf['$ref'] . ':' . ($leaf['id'] ?? 'null');
+    }
+    switch ($leaf['type'] ?? null) {
+        case 'null':
+            return null;
+        case 'boolean':
+        case 'string':
+        case 'decimal':
+        case 'date':
+        case 'datetime':
+        case 'uuid':
+        case 'uri':
+            return $leaf['value'] ?? null;
+        case 'integer':
+            return is_string($leaf['value'] ?? null) ? (int) $leaf['value'] : $leaf['value'];
+        case 'list':
+            $items = [];
+            foreach ($leaf['value'] ?? [] as $item) {
+                $items[] = php_literal_of($item, $stepVars);
+            }
+            return $items;
+        case 'object':
+            $object = [];
+            foreach ($leaf['value'] ?? [] as $key => $value) {
+                $object[$key] = php_literal_of($value, $stepVars);
+            }
+            return $object;
+        default:
+            throw new LogicException('unrenderable leaf kind ' . (string) ($leaf['type'] ?? 'null'));
+    }
+}
+
+/**
+ * Render one literal_of output into its exact emitted PHP text: step
+ * variables pass through raw, everything else is single-quote encoded
+ * with no interpolation (no escaping drift, no code injection).
+ */
+function php_emit_value(mixed $value): string
+{
+    if ($value === null) {
+        return 'null';
+    }
+    if (is_bool($value)) {
+        return $value ? 'true' : 'false';
+    }
+    if (is_int($value)) {
+        return (string) $value;
+    }
+    if (is_float($value)) {
+        // Closed-wire decimals never ride as floats; a float here is an
+        // emitter bug, and emitting a raw float literal would silently
+        // weaken the typed contract.
+        throw new LogicException('float value in a closed typed position');
+    }
+    if (is_string($value)) {
+        return "'" . str_replace(['\\', "'"], ['\\\\', "\\'"], $value) . "'";
+    }
+    if (is_array($value) && isset($value['__stepVar'])) {
+        return '$' . $value['__stepVar'];
+    }
+    if (is_array($value) && array_is_list($value)) {
+        $items = array_map(__FUNCTION__, $value);
+        return '[' . implode(', ', $items) . ']';
+    }
+    if (is_array($value)) {
+        $members = [];
+        foreach ($value as $key => $member) {
+            $members[] = php_emit_value((string) $key) . ' => ' . php_emit_value($member);
+        }
+        return '[' . implode(', ', $members) . ']';
+    }
+    throw new LogicException('unrenderable emitted value');
 }
 
 exit(main());

@@ -239,6 +239,7 @@ jobs:
       - name: Run the Laratesto scenario E2E gate (issue #56)
         timeout-minutes: 10
         run: node scripts/test-php-laravel-scenario-tests.mjs
+<<<<<<< ours
       - name: Run the Laravel migration pipeline gate (issue #57)
         # The pipeline stages (CLI goldens, PHP artifacts, custody)
         # run wherever the repo's gates run; the PostgreSQL execution
@@ -246,6 +247,15 @@ jobs:
         # records an explicit skip when it is absent — never a pass.
         timeout-minutes: 15
         run: node scripts/test-php-laravel-migrations.mjs
+=======
+      - name: Run the Node/Laravel scenario parity gate (issue #56)
+        # Both backends run the same committed scenario corpus under
+        # their real runners; the durable run records must normalize to
+        # identical semantic row tuples, including the shared failing
+        # mutation.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-parity.mjs
+>>>>>>> theirs
       - name: Provision the vendored compiler bundle custody (issue #44)
         run: |
           set -euo pipefail
