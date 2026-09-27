@@ -3,10 +3,12 @@
  * acceptance: the client passes contract tests). The client is
  * executed against a scripted fake transport that captures every
  * request and replays scripted responses; assertions cover path
- * substitution, query serialization, request bodies, the declared
- * error identity preservation, and the retry-safety posture — across
- * every operation shape, not just the parameter-free ones. Node
- * built-ins only.
+ * substitution, query serialization, request bodies with verbatim
+ * wire member keys, list-shaped decoding, declared error identity
+ * preservation, and the no-auto-retry posture — across every
+ * operation shape, not just the parameter-free ones. Node built-ins
+ * only (typechecking of these same calls happens in the Vue consumer
+ * fixture under strict tsc).
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -38,7 +40,11 @@ async function importClient() {
 
 const okBody = (body) => ({ status: 200, headers: {}, body: JSON.stringify(body) });
 const okEmpty = () => ({ status: 204, headers: {} });
-const errBody = (error) => ({ status: 409, headers: {}, body: JSON.stringify({ ok: false, error }) });
+const errBody = (error) => ({
+  status: 409,
+  headers: {},
+  body: JSON.stringify({ ok: false, error }),
+});
 
 test("wire: list_tasks sends GET /tasks through the injected transport", async () => {
   const { LekaloClient } = await importClient();
@@ -51,11 +57,29 @@ test("wire: list_tasks sends GET /tasks through the injected transport", async (
   assert.equal(transport.sent[0].path, "https://unit.invalid/tasks");
 });
 
+test("decode: a list-typed output decodes to an ARRAY (shape survives)", async () => {
+  const { LekaloClient } = await importClient();
+  const transport = fakeTransport([
+    okBody([
+      { task_id: "t-1", tenant: "ten-1", title: "First", state: "focused", due: null },
+      { task_id: "t-2", tenant: "ten-1", title: "Second", state: "backlog", due: null },
+    ]),
+  ]);
+  const client = new LekaloClient({ baseUrl: "https://unit.invalid", transport });
+  const result = await client.listTasks();
+  assert.equal(result.ok, true);
+  // The declared shape is list<planner.task>: the decoded value is an
+  // array and array methods work — never the bare element type.
+  assert.equal(Array.isArray(result.value), true, "list shape decodes an array");
+  const titles = result.value.map((row) => row.title);
+  assert.deepEqual(titles, ["First", "Second"]);
+});
+
 test("wire: path params substitute into the URL template (never a literal)", async () => {
   const { LekaloClient } = await importClient();
   const transport = fakeTransport([okEmpty()]);
   const client = new LekaloClient({ baseUrl: "https://unit.invalid", transport });
-  const result = await client.plannerEndpointFocusTaskById("task/1 & x");
+  const result = await client.plannerEndpointFocusTaskById("task/1 & x", { task_id: "t-9" }, "key-1");
   assert.equal(result.ok, true);
   assert.equal(
     transport.sent[0].path,
@@ -68,29 +92,32 @@ test("wire: path params substitute into the URL template (never a literal)", asy
   );
 });
 
-test("wire: the second path-param operation substitutes too", async () => {
+test("wire: explicit body members travel with their VERBATIM wire names", async () => {
   const { LekaloClient } = await importClient();
-  const transport = fakeTransport([okBody([])]);
+  const transport = fakeTransport([okEmpty()]);
   const client = new LekaloClient({ baseUrl: "https://unit.invalid", transport });
-  await client.plannerEndpointTasksByProject("proj-7");
+  // The declared member is task_id: the wire body must carry
+  // {"task_id": ...}, never a camelized {"taskId": ...}.
+  await client.plannerEndpointFocusTaskById("t-1", { task_id: "t-1" }, "key-1");
+  const body = JSON.parse(transport.sent[0].body);
+  assert.deepEqual(Object.keys(body), ["task_id"], "wire member keys are the declared names");
+  assert.equal(body.task_id, "t-1");
+  assert.equal(body.taskId, undefined, "no camelized alias ever appears");
+  assert.equal(transport.sent[0].headers["Idempotency-Key"], "key-1");
+});
+
+test("wire: declared pagination members are sendable query params", async () => {
+  const { LekaloClient } = await importClient();
+  const transport = fakeTransport([okBody({ items: [], next_cursor: "c2" })]);
+  const client = new LekaloClient({ baseUrl: "https://unit.invalid", transport });
+  await client.plannerEndpointTasksByProject("proj-7", "50", "cursor-1");
+  const query = transport.sent[0].query;
+  assert.equal(query["limit"], "50", "the declared limit param serializes");
+  assert.equal(query["after_task"], "cursor-1", "the declared cursor param serializes");
   assert.equal(
     transport.sent[0].path,
     "https://unit.invalid/projects/proj-7/tasks",
   );
-});
-
-test("wire: request bodies serialize as JSON with the declared members", async () => {
-  const { LekaloClient } = await importClient();
-  const transport = fakeTransport([okEmpty()]);
-  const client = new LekaloClient({ baseUrl: "https://unit.invalid", transport });
-  await client.plannerEndpointFocusTask({ task_id: "t-1" }, "key-1");
-  assert.equal(transport.sent[0].body, JSON.stringify({ task_id: "t-1" }));
-  // The declared idempotency header name is honored (not a hardcoded token).
-  assert.equal(transport.sent[0].headers["Idempotency-Key"], "key-1");
-  // Declared correlation headers are sendable.
-  await client.plannerEndpointFocusTask({ task_id: "t-1" }, "key-2", "corr-1", "req-1");
-  assert.equal(transport.sent[1].headers["X-Correlation-Id"], "corr-1");
-  assert.equal(transport.sent[1].headers["X-Request-Id"], "req-1");
 });
 
 test("identity: a declared error preserves the exact id, code, and category", async () => {
@@ -111,19 +138,6 @@ test("identity: a declared error preserves the exact id, code, and category", as
   assert.equal(result.error.code, "LEK-ERR-001");
   assert.equal(result.error.id, "planner.focus_conflict");
   assert.equal(result.error.category, "conflict");
-});
-
-test("responses: whole success bodies decode into the declared type", async () => {
-  const { LekaloClient } = await importClient();
-  const transport = fakeTransport([
-    okBody([
-      { task_id: "t-1", title: "Ship", state: "focused", due: null },
-    ]),
-  ]);
-  const client = new LekaloClient({ baseUrl: "https://unit.invalid", transport });
-  const result = await client.listTasks();
-  assert.equal(result.ok, true);
-  assert.equal(result.value[0].title, "Ship", "the body is decoded, not a string");
 });
 
 test("retry-safety: an infrastructure failure never masquerades as declared", async () => {

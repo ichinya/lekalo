@@ -1,7 +1,6 @@
 function tsDecodeMethod() {
   const body = [
     "    private async decode<T>(",
-    "      operationId: string,",
     "      wire: {",
     "        method: string;",
     "        path: string;",
@@ -265,6 +264,23 @@ function operationParams(operation) {
     // cookie params: not expressible in a browser-conformant injected
     // transport; reported in the compatibility sidecar, never silent.
   }
+  // The pagination binding DECLARES its wire parameters (limit plus
+  // the offset/cursor continuation param): they join the query set so
+  // a paged call can actually carry them (round 2). Requiredness
+  // follows the binding: limit optional, continuation optional.
+  const pagination = operation.pagination;
+  if (pagination) {
+    const wireNames = new Set(query.map((param) => param.name));
+    for (const name of [
+      pagination.limitParam,
+      pagination.offsetParam,
+      pagination.cursorParam,
+    ]) {
+      if (!name || wireNames.has(name)) continue;
+      wireNames.add(name);
+      query.push({ name, field: name, required: false, in: "query" });
+    }
+  }
   return { path, query, header };
 }
 
@@ -296,20 +312,21 @@ function typeIndex(document) {
 /**
  * The TypeScript request body argument type of one operation: whole
  * mode decodes into the named input object; explicit mode takes an
- * object with exactly the declared members (typed from the bound
- * member types).
+ * object with exactly the declared members — keyed by the WIRE member
+ * name verbatim (round 2), typed from the bound member types with
+ * their declared shapes.
  */
 function requestBodyType(operation, index) {
   const body = operation.body;
   if (!body) return undefined;
   if (body.mode === "whole") {
-    return tsTypeRef(body.typeRef, index);
+    return tsValueTypeRef(body.typeRef, body.shape, index);
   }
   const members = (body.fields ?? [])
     .map((field) => {
       const optional = field.required ? "" : "?";
       const nullable = field.nullable ? " | null" : "";
-      return `${JSON.stringify(camelIdent(field.name))}${optional}: ${tsTypeRef(field.typeRef, index)}${nullable}`;
+      return `${JSON.stringify(field.name)}${optional}: ${tsValueTypeRef(field.typeRef, field.shape, index)}${nullable}`;
     })
     .join("; ");
   return `{ ${members} }`;
@@ -467,6 +484,15 @@ function tsTypeRef(typeRef, typeIndex) {
   return known ? known.ident : "unknown";
 }
 
+/** The shape-aware spelling: a `list` shape renders the array type
+ * over the named reference (round 2 — a list-typed output never
+ * collapses to its element). */
+function tsValueTypeRef(typeRef, shape, typeIndex) {
+  if (typeRef === "lekalo.unit") return "void";
+  const inner = tsTypeRef(typeRef, typeIndex);
+  return shape === "list" ? `${inner}[]` : inner;
+}
+
 /** One named type declaration (TypeScript). */
 function typeDeclarationTs(typeDef, index) {
   const ident = typeDef.ident;
@@ -484,7 +510,7 @@ ${members};`;
     .map((field) => {
       const optional = field.required ? "" : "?";
       const nullable = field.nullable ? " | null" : "";
-      return `  ${JSON.stringify(field.name)}${optional}: ${tsTypeRef(field.typeRef, index)}${nullable};`;
+      return `  ${JSON.stringify(field.name)}${optional}: ${tsValueTypeRef(field.typeRef, field.shape, index)}${nullable};`;
     })
     .join("\n");
   return `export interface ${ident} {
@@ -525,15 +551,19 @@ function headerIdent(name) {
 function operationMethodTs(operation, index) {
   const { path: pathParams, query: queryParams, header: headerParams } =
     operationParams(operation);
+  // The retry matrix is caller policy: this client never retries
+  // automatically. The doc comment names which declared errors carry
+  // an authorization a CALLER may act on (with a reused key for
+  // key-required errors).
   const retryable = (operation.errors ?? []).some(
     (error) => error.retry === "safe" || error.retry === "key-required",
   );
   const retryDoc = retryable
-    ? " A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries."
-    : " Never retried automatically: no declared error authorizes a retry.";
+    ? " Caller-driven retries follow the declared error contracts; a nonempty idempotency key is required to act on a key-required error. This client itself never retries automatically."
+    : " Never retried: no declared error authorizes a retry, and this client never retries automatically.";
 
   const successType = operation.successBody
-    ? tsTypeRef(operation.successBody.typeRef, index)
+    ? tsValueTypeRef(operation.successBody.typeRef, operation.successBody.shape, index)
     : "void";
   const hasBodyArg = operation.body !== undefined && operation.body !== null;
 
@@ -550,7 +580,13 @@ function operationMethodTs(operation, index) {
   }
   for (const header of declaredHeaders(operation)) {
     if (header.kind === "idempotency") {
-      signatureParts.push("idempotencyKey?: string");
+      // A binding with required:true makes the key a required call
+      // argument; an optional binding keeps it optional.
+      signatureParts.push(
+        operation.idempotency && operation.idempotency.required
+          ? "idempotencyKey: string"
+          : "idempotencyKey?: string",
+      );
     } else {
       signatureParts.push(`${headerIdent(header.name)}?: string`);
     }
@@ -576,7 +612,16 @@ function operationMethodTs(operation, index) {
   }
   lines.push("    const query: Record<string, string> = {};");
   for (const param of queryParams) {
-    lines.push(`    query[${JSON.stringify(param.name)}] = ${camelIdent(param.name)};`);
+    if (param.required) {
+      lines.push(`    query[${JSON.stringify(param.name)}] = ${camelIdent(param.name)};`);
+    } else {
+      // Optional query members (declared pagination continuation and
+      // limit members included) serialize only when supplied.
+      lines.push(`    {`);
+      lines.push(`      const value = ${camelIdent(param.name)};`);
+      lines.push(`      if (value !== undefined) query[${JSON.stringify(param.name)}] = value;`);
+      lines.push(`    }`);
+    }
   }
   lines.push("    const headers: Record<string, string> = {};");
   for (const param of headerParams) {
@@ -584,9 +629,16 @@ function operationMethodTs(operation, index) {
   }
   for (const header of declaredHeaders(operation)) {
     if (header.kind === "idempotency") {
-      lines.push(
-        `    if (idempotencyKey !== undefined) headers[${JSON.stringify(header.name)}] = idempotencyKey;`,
-      );
+      const requiredKey = operation.idempotency && operation.idempotency.required;
+      if (requiredKey) {
+        lines.push(
+          `    headers[${JSON.stringify(header.name)}] = idempotencyKey;`,
+        );
+      } else {
+        lines.push(
+          `    if (idempotencyKey !== undefined) headers[${JSON.stringify(header.name)}] = idempotencyKey;`,
+        );
+      }
     } else {
       lines.push(`    {`);
       lines.push(`      const value = ${headerIdent(header.name)};`);
@@ -594,8 +646,7 @@ function operationMethodTs(operation, index) {
       lines.push(`    }`);
     }
   }
-  lines.push("    return this.decode(" + JSON.stringify(operation.operationId) + ", {"
-  );
+  lines.push("    return this.decode({");
   lines.push("      method: " + JSON.stringify(operation.method) + ",");
   lines.push("      path: this.baseUrl + " + (pathParams.length > 0 ? "encodedPath" : JSON.stringify(url)) + ",");
   lines.push("      query,");
@@ -797,6 +848,13 @@ function goTypeRef(typeRef, index) {
   return known ? "*" + goExported(known.ident) : "any";
 }
 
+/** The shape-aware Go spelling: a `list` shape renders a slice over
+ * the named reference (round 2 — never the bare element type). */
+function goValueTypeRef(typeRef, shape, index) {
+  const inner = goTypeRef(typeRef, index);
+  return shape === "list" ? "[]" + inner : inner;
+}
+
 function goHeaderIdent(name) {
   const parts = name.split("-").filter((part) => part.length > 0);
   const camel = parts
@@ -825,7 +883,7 @@ function typeDeclarationGo(typeDef, index) {
   const fields = (typeDef.fields ?? [])
     .map((field) => {
       const pointer = !field.required || field.nullable ? "*" : "";
-      return `\t${goExported(field.name)} ${pointer}${goTypeRef(field.typeRef, index)} \`json:"${field.name}${field.required ? "" : ",omitempty"}"\``;
+      return `\t${goExported(field.name)} ${pointer}${goValueTypeRef(field.typeRef, field.shape, index)} \`json:"${field.name}${field.required ? "" : ",omitempty"}"\``;
     })
     .join("\n");
   return [`type ${name} struct {`, fields || "\t_ struct{} `json:\"-\"`", "}"].join("\n");
@@ -839,14 +897,17 @@ function operationMethodGo(document, operation, index) {
   const projectName = document.projectId ?? "project";
   const structName = goExported(projectName) + "Client";
   const successType = operation.successBody
-    ? goTypeRef(operation.successBody.typeRef, index)
+    ? goValueTypeRef(operation.successBody.typeRef, operation.successBody.shape, index)
     : "*struct{}";
   const hasBodyArg = operation.body !== undefined && operation.body !== null;
+if (operation.operationId === 'planner.focus_task') {
+     console.log('operation.body:', operation.body);
+   }
   const signatureParts = ["ctx context.Context"];
   for (const param of pathParams) signatureParts.push(`${camelIdent(param.name)} string`);
   for (const param of queryParams) signatureParts.push(`${camelIdent(param.name)} string`);
   for (const param of headerParams) signatureParts.push(`${goHeaderIdent(param.name)} string`);
-  if (hasBodyArg) signatureParts.push("input any");
+  if (hasBodyArg) signatureParts.push(`input ${goValueTypeRef(operation.body.typeRef, operation.body.shape, index)}`);
   for (const header of declaredHeaders(operation)) {
     signatureParts.push(`${goHeaderIdent(header.name)} string`);
   }
@@ -857,14 +918,30 @@ function operationMethodGo(document, operation, index) {
     "	query := url.Values{}"
   ];
   for (const param of queryParams) {
-    lines.push(`\tquery.Set(${JSON.stringify(param.name)}, ${camelIdent(param.name)})`);
+    if (param.required) {
+      lines.push(`\tquery.Set(${JSON.stringify(param.name)}, ${camelIdent(param.name)})`);
+    } else {
+      lines.push(`\tif ${camelIdent(param.name)} != "" {`);
+      lines.push(`\t\tquery.Set(${JSON.stringify(param.name)}, ${camelIdent(param.name)})`);
+      lines.push(`\t}`);
+    }
   }
   lines.push("\theaders := map[string]string{}");
   for (const param of headerParams) {
     lines.push(`\theaders[${JSON.stringify(param.name)}] = ${goHeaderIdent(param.name)}`);
   }
   for (const header of declaredHeaders(operation)) {
-    lines.push(`\theaders[${JSON.stringify(header.name)}] = ${goHeaderIdent(header.name)}`);
+    const goArg = goHeaderIdent(header.name);
+    const requiredHeader =
+      header.kind === "idempotency" && operation.idempotency && operation.idempotency.required;
+    if (requiredHeader) {
+      lines.push(`\theaders[${JSON.stringify(header.name)}] = ${goArg}`);
+    } else {
+      // An optional declared header writes only a nonempty value.
+      lines.push(`\tif ${goArg} != "" {`);
+      lines.push(`\t\theaders[${JSON.stringify(header.name)}] = ${goArg}`);
+      lines.push(`\t}`);
+    }
   }
   const args = [];
   const segments = [];
@@ -909,7 +986,7 @@ function operationMethodGo(document, operation, index) {
   lines.push("\t\treturn nil, err");
   lines.push("\t}");
   if (operation.successBody) {
-    const decoded = goTypeRef(operation.successBody.typeRef, index);
+    const decoded = goValueTypeRef(operation.successBody.typeRef, operation.successBody.shape, index);
     lines.push(`\tvar value ${decoded}`);
     lines.push("\tif response.Body != nil {");
     lines.push("\t\tif err := json.Unmarshal(response.Body, &value); err != nil {");

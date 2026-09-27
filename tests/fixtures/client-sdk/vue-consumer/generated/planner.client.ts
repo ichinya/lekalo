@@ -81,11 +81,11 @@ export class LekaloClient {
     this.authorization = options.authorization;
   }
 
-  /** GET /tasks — operation listTasks. A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries. */
-  listTasks(): Promise<LekaloResult<task>> {
+  /** GET /tasks — operation listTasks. Caller-driven retries follow the declared error contracts; a nonempty idempotency key is required to act on a key-required error. This client itself never retries automatically. */
+  listTasks(): Promise<LekaloResult<task[]>> {
     const query: Record<string, string> = {};
     const headers: Record<string, string> = {};
-    return this.decode("listTasks", {
+    return this.decode({
       method: "GET",
       path: this.baseUrl + "/tasks",
       query,
@@ -93,11 +93,11 @@ export class LekaloClient {
       body: undefined,
     });
   }
-  /** GET /tasks/focused-count — operation plannerEndpointCountFocused. A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries. */
+  /** GET /tasks/focused-count — operation plannerEndpointCountFocused. Caller-driven retries follow the declared error contracts; a nonempty idempotency key is required to act on a key-required error. This client itself never retries automatically. */
   plannerEndpointCountFocused(): Promise<LekaloResult<taskState>> {
     const query: Record<string, string> = {};
     const headers: Record<string, string> = {};
-    return this.decode("plannerEndpointCountFocused", {
+    return this.decode({
       method: "GET",
       path: this.baseUrl + "/tasks/focused-count",
       query,
@@ -105,11 +105,11 @@ export class LekaloClient {
       body: undefined,
     });
   }
-  /** POST /tasks/focus — operation plannerEndpointFocusTask. A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries. */
-  plannerEndpointFocusTask(input: focusTaskInput, idempotencyKey?: string, xCorrelationId?: string, xRequestId?: string): Promise<LekaloResult<void>> {
+  /** POST /tasks/focus — operation plannerEndpointFocusTask. Caller-driven retries follow the declared error contracts; a nonempty idempotency key is required to act on a key-required error. This client itself never retries automatically. */
+  plannerEndpointFocusTask(input: focusTaskInput, idempotencyKey: string, xCorrelationId?: string, xRequestId?: string): Promise<LekaloResult<void>> {
     const query: Record<string, string> = {};
     const headers: Record<string, string> = {};
-    if (idempotencyKey !== undefined) headers["Idempotency-Key"] = idempotencyKey;
+    headers["Idempotency-Key"] = idempotencyKey;
     {
       const value = xCorrelationId;
       if (value !== undefined) headers["X-Correlation-Id"] = value;
@@ -118,7 +118,7 @@ export class LekaloClient {
       const value = xRequestId;
       if (value !== undefined) headers["X-Request-Id"] = value;
     }
-    return this.decode("plannerEndpointFocusTask", {
+    return this.decode({
       method: "POST",
       path: this.baseUrl + "/tasks/focus",
       query,
@@ -126,13 +126,13 @@ export class LekaloClient {
       body: JSON.stringify(input),
     });
   }
-  /** POST /tasks/{task_id}/focus — operation plannerEndpointFocusTaskById. A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries. */
-  plannerEndpointFocusTaskById(taskId: string, input: { "taskId": taskId }, idempotencyKey?: string): Promise<LekaloResult<void>> {
+  /** POST /tasks/{task_id}/focus — operation plannerEndpointFocusTaskById. Caller-driven retries follow the declared error contracts; a nonempty idempotency key is required to act on a key-required error. This client itself never retries automatically. */
+  plannerEndpointFocusTaskById(taskId: string, input: { "task_id": taskId }, idempotencyKey: string): Promise<LekaloResult<void>> {
     const encodedPath = `/tasks/${encodeSegment(taskId)}/focus`;
     const query: Record<string, string> = {};
     const headers: Record<string, string> = {};
-    if (idempotencyKey !== undefined) headers["Idempotency-Key"] = idempotencyKey;
-    return this.decode("plannerEndpointFocusTaskById", {
+    headers["Idempotency-Key"] = idempotencyKey;
+    return this.decode({
       method: "POST",
       path: this.baseUrl + encodedPath,
       query,
@@ -140,11 +140,11 @@ export class LekaloClient {
       body: JSON.stringify(input),
     });
   }
-  /** GET /tasks/stream — operation plannerEndpointTaskStream. A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries. */
-  plannerEndpointTaskStream(): Promise<LekaloResult<task>> {
+  /** GET /tasks/stream — operation plannerEndpointTaskStream. Caller-driven retries follow the declared error contracts; a nonempty idempotency key is required to act on a key-required error. This client itself never retries automatically. */
+  plannerEndpointTaskStream(): Promise<LekaloResult<task[]>> {
     const query: Record<string, string> = {};
     const headers: Record<string, string> = {};
-    return this.decode("plannerEndpointTaskStream", {
+    return this.decode({
       method: "GET",
       path: this.baseUrl + "/tasks/stream",
       query,
@@ -152,12 +152,20 @@ export class LekaloClient {
       body: undefined,
     });
   }
-  /** GET /projects/{project_ref}/tasks — operation plannerEndpointTasksByProject. Never retried automatically: no declared error authorizes a retry. */
-  plannerEndpointTasksByProject(projectRef: string): Promise<LekaloResult<task>> {
+  /** GET /projects/{project_ref}/tasks — operation plannerEndpointTasksByProject. Never retried: no declared error authorizes a retry, and this client never retries automatically. */
+  plannerEndpointTasksByProject(projectRef: string, limit?: string, afterTask?: string): Promise<LekaloResult<task[]>> {
     const encodedPath = `/projects/${encodeSegment(projectRef)}/tasks`;
     const query: Record<string, string> = {};
+    {
+      const value = limit;
+      if (value !== undefined) query["limit"] = value;
+    }
+    {
+      const value = afterTask;
+      if (value !== undefined) query["after_task"] = value;
+    }
     const headers: Record<string, string> = {};
-    return this.decode("plannerEndpointTasksByProject", {
+    return this.decode({
       method: "GET",
       path: this.baseUrl + encodedPath,
       query,
@@ -166,7 +174,6 @@ export class LekaloClient {
     });
   }
     private async decode<T>(
-      operationId: string,
       wire: {
         method: string;
         path: string;

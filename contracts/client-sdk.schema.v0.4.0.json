@@ -88,7 +88,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 128,
-      "pattern": "^[a-z][a-zA-Z0-9_]*$"
+      "pattern": "^[a-z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*$"
     },
     "operationId": {
       "type": "string",
@@ -168,7 +168,8 @@
         "field",
         "typeRef",
         "required",
-        "nullable"
+        "nullable",
+        "shape"
       ],
       "properties": {
         "name": {
@@ -197,6 +198,12 @@
         },
         "nullable": {
           "type": "boolean"
+        },
+        "shape": {
+          "enum": [
+            "value",
+            "list"
+          ]
         }
       }
     },
@@ -214,7 +221,8 @@
         "field",
         "typeRef",
         "required",
-        "nullable"
+        "nullable",
+        "shape"
       ],
       "properties": {
         "name": {
@@ -227,13 +235,20 @@
           "pattern": "^(input\\.)?[a-z][a-z0-9_]*$"
         },
         "typeRef": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "required": {
           "type": "boolean"
         },
         "nullable": {
           "type": "boolean"
+        },
+        "shape": {
+          "enum": [
+            "value",
+            "list"
+          ]
         }
       }
     },
@@ -242,7 +257,8 @@
       "additionalProperties": false,
       "required": [
         "mode",
-        "typeRef"
+        "typeRef",
+        "shape"
       ],
       "properties": {
         "mode": {
@@ -258,6 +274,12 @@
           "items": {
             "$ref": "#/$defs/bodyField"
           }
+        },
+        "shape": {
+          "enum": [
+            "value",
+            "list"
+          ]
         }
       }
     },
@@ -331,7 +353,8 @@
           "$ref": "#/$defs/wireName"
         },
         "cursorTypeRef": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         }
       },
       "allOf": [
@@ -410,20 +433,28 @@
               "name",
               "typeRef",
               "required",
-              "nullable"
+              "nullable",
+              "shape"
             ],
             "properties": {
               "name": {
                 "$ref": "#/$defs/wireName"
               },
               "typeRef": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               "required": {
                 "type": "boolean"
               },
               "nullable": {
                 "type": "boolean"
+              },
+              "shape": {
+                "enum": [
+                  "value",
+                  "list"
+                ]
               }
             }
           }
@@ -597,20 +628,28 @@
               "name",
               "typeRef",
               "nullable",
-              "required"
+              "required",
+              "shape"
             ],
             "properties": {
               "name": {
                 "$ref": "#/$defs/wireName"
               },
               "typeRef": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               "nullable": {
                 "type": "boolean"
               },
               "required": {
                 "type": "boolean"
+              },
+              "shape": {
+                "enum": [
+                  "value",
+                  "list"
+                ]
               }
             }
           }

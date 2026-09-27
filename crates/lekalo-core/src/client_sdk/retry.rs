@@ -107,14 +107,16 @@ impl AttemptPlan {
     }
 }
 
-/// Plan the attempt bound of one call: at most one automatic retry
-/// generation is derived from the operation's error union, and the
-/// bound never exceeds [`MAX_ATTEMPTS`]. A requested budget of zero
-/// or beyond the bound is a refusal, not a silent clamp.
+/// Plan the attempt bound of one call: the bound never exceeds
+/// [`MAX_ATTEMPTS`]. A requested budget of zero or at/above the bound
+/// is a refusal, not a silent clamp — a caller asking for zero is a
+/// contract contradiction (this client itself never retries), and an
+/// over-bound budget refuses instead of clamping.
 ///
-/// The v1 plan is deliberately narrow: retries are permitted only per
-/// declared error with a reusable key, so the plan bound is `1` when
-/// no declared error authorizes a retry and `1 + retries` otherwise.
+/// The v1 plan is deliberately narrow: this bound only caps how many
+/// attempts a CALLER-driven retry loop may spend; the authorization
+/// to retry still comes exclusively from the declared error
+/// contracts ([`authorize`]).
 pub fn plan_attempts(
     authorizations: &[RetryAuthorization],
     requested_retries: u32,

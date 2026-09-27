@@ -75,14 +75,19 @@ if (!vue.ok) {
 //    TypeScript one.
 // ---------------------------------------------------------------------------
 const goFile = join(repoRoot, "tests", "fixtures", "client-sdk", "vue-consumer", "generated", "planner.client.go");
-const goMod = join(repoRoot, "tests", "fixtures", "client-sdk", "vue-consumer", "generated", "go.mod");
 if (!existsSync(goFile)) {
   process.stderr.write(`${JSON.stringify({ ok: false, reason: "go-client-missing" }, null, 2)}\n`);
   process.exit(1);
 }
-const gofmt = spawnSync("gofmt", ["-w", goFile], { encoding: "utf8" });
+// READ-ONLY formatting check: the committed fixture must already be
+// gofmt-clean; the gate never rewrites fixture bytes (round 2).
+const gofmt = spawnSync("gofmt", ["-l", goFile], { encoding: "utf8" });
 if (gofmt.error || gofmt.status !== 0) {
   process.stderr.write(`${JSON.stringify({ ok: false, reason: "go-client-unparseable", detail: String(gofmt.error?.message ?? gofmt.stderr ?? "").slice(0, 200) }, null, 2)}\n`);
+  process.exit(1);
+}
+if ((gofmt.stdout ?? "").trim() !== "") {
+  process.stderr.write(`${JSON.stringify({ ok: false, reason: "go-client-not-gofmt-clean", detail: gofmt.stdout.trim() }, null, 2)}\n`);
   process.exit(1);
 }
 const goBuild = spawnSync("go", ["build", "./..."], {
@@ -95,7 +100,16 @@ if (goBuild.error || goBuild.status !== 0) {
   process.stderr.write(`${JSON.stringify({ ok: false, reason: "go-client-build", detail: String(goBuild.error?.message ?? "").slice(0, 200) }, null, 2)}\n`);
   process.exit(1);
 }
-void goMod;
+const goVet = spawnSync("go", ["vet", "./..."], {
+  cwd: dirname(goFile),
+  stdio: "pipe",
+});
+if (goVet.error || goVet.status !== 0) {
+  process.stderr.write(goVet.stdout ?? Buffer.alloc(0));
+  process.stderr.write(goVet.stderr ?? Buffer.alloc(0));
+  process.stderr.write(`${JSON.stringify({ ok: false, reason: "go-client-vet", detail: String(goVet.error?.message ?? "").slice(0, 200) }, null, 2)}\n`);
+  process.exit(1);
+}
 
 process.stdout.write(
   `${JSON.stringify(

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // The positive-usage consumer: imports the generated planner client
 // types and the result union, drives a fake transport, and renders
-// the decoded planner task rows. Typechecked strict by the fixture
+// the decoded planner task rows. The list-typed list_tasks call
+// decodes to `task[]` directly — array methods work on the typed
+// value with no casts (round 2). Typechecked strict by the fixture
 // harness; compiled by @vue/compiler-sfc in the contract gate.
 import { computed, ref } from "vue";
 import {
@@ -40,15 +42,19 @@ const loading = ref(false);
 
 async function refresh(): Promise<void> {
   loading.value = true;
-  const result: LekaloResult<unknown> = await client.listTasks();
+  const result: LekaloResult<task[]> = await client.listTasks();
   loading.value = false;
   if (result.ok) {
-    rows.value = (result.value as readonly task[]) ?? [];
+    // The decoded value IS the declared array: no cast, and array
+    // methods typecheck against the projected element type.
+    rows.value = result.value.map((row) => row);
   }
 }
 
 const titles = computed(() => rows.value.map((row) => row.title));
+const firstState = computed(() => rows.value[0]?.state ?? "backlog");
 void refresh;
+void firstState;
 </script>
 
 <template>

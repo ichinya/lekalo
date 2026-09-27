@@ -39,10 +39,10 @@ Every projected `ClientOperation` binds the full wire surface:
   endpoint and invoked-operation semantic ids ride as metadata;
 - method and path come from the Model endpoint symbol (never restated
   by the client);
-- parameters carry the complete structured data — location, style AND
-  explode, requiredness, nullability, and the resolved type id (the
-  route JSON alone is insufficient, e.g. `param_json` omits
-  `explode`);
+- parameters and body fields carry the complete structured data —
+  location, style AND explode, requiredness, nullability, the resolved
+  type id, and the closed wire `shape` (`value` or `list`), so a
+  `list<T>` output never collapses to its element (issue #72 round 2;
 - the request/success body projections (whole or explicit subset);
 - the error union: every variant preserves the exact #62 semantic
   identity — error id, immutable code (`LEK-ERR-…`), closed category,

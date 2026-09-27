@@ -72,6 +72,8 @@ pub struct ClientParam {
     pub field: String,
     /// The semantic id of the field's declared type.
     pub type_ref: String,
+    /// The closed wire shape of the reference (value or list).
+    pub shape: TypeShape,
     /// Whether the field is nullable (`Optional(T)` in the Model).
     pub nullable: bool,
     /// Whether the parameter must be present.
@@ -80,6 +82,28 @@ pub struct ClientParam {
     pub style: Option<ParamStyle>,
     /// Whether composite values explode.
     pub explode: Option<bool>,
+}
+
+/// The closed wire shape of one projected type reference: a single
+/// value of the named type, or a JSON array of it (`List(T)` in the
+/// Model). The shape travels beside the type id so a list-typed
+/// output never collapses to its element (issue #72 round 2).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum TypeShape {
+    /// One value of the named type.
+    Value,
+    /// A JSON array of the named type.
+    List,
+}
+
+impl TypeShape {
+    /// The exact wire token.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Value => "value",
+            Self::List => "list",
+        }
+    }
 }
 
 /// One request-body/response field projection.
@@ -91,6 +115,8 @@ pub struct ClientField {
     pub field: String,
     /// The semantic id of the field's declared type.
     pub type_ref: String,
+    /// The closed wire shape of the reference (value or list).
+    pub shape: TypeShape,
     /// Whether the field is nullable.
     pub nullable: bool,
     /// Whether the field must be present.
@@ -123,6 +149,8 @@ pub struct ClientBody {
     pub mode: BodyMode,
     /// The type id of the bound input/output symbol.
     pub type_ref: String,
+    /// The closed wire shape of the body value (value or list).
+    pub shape: TypeShape,
     /// The declared field subset (`explicit` mode only).
     pub fields: Vec<ClientField>,
 }

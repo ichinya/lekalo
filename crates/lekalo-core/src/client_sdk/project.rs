@@ -37,6 +37,7 @@ use super::types::{
     BodyMode, ClientAuth, ClientBody, ClientConfig, ClientCorrelation, ClientField,
     ClientIdempotency, ClientOperation, ClientPagination, ClientParam, ClientType, ErrorVariant,
     ParamLocation as WireLocation, ParamStyle as WireStyle, ResultShape, ScalarMapping, TypeKind,
+    TypeShape,
 };
 use super::version;
 use super::ClientContractWire;
@@ -44,6 +45,16 @@ use super::ClientContractWire;
 /// The leaf reference of an error payload field's type expression.
 fn error_leaf_ref(expr: &crate::error_contract::types::TypeExpr) -> String {
     expr.leaf().as_str().to_owned()
+}
+
+/// The closed wire shape of an error payload field's type expression:
+/// a `List` wrapper at any depth projects an array.
+fn error_shape(expr: &crate::error_contract::types::TypeExpr) -> TypeShape {
+    match expr {
+        crate::error_contract::types::TypeExpr::List(_) => TypeShape::List,
+        crate::error_contract::types::TypeExpr::Optional(inner) => error_shape(inner),
+        crate::error_contract::types::TypeExpr::Ref(_) => TypeShape::Value,
+    }
 }
 
 /// Whether an error payload field's type expression is nullable
@@ -379,14 +390,26 @@ fn leaf_ref(type_ref: &TypeRef) -> Option<&str> {
     }
 }
 
+/// The closed wire shape of one `TypeRef`: a `List` wrapper at any
+/// depth makes the reference an array; the leaf still names the
+/// element type.
+fn shape_of(type_ref: &TypeRef) -> TypeShape {
+    match type_ref {
+        TypeRef::List(_) => TypeShape::List,
+        TypeRef::Optional(inner) => shape_of(inner),
+        TypeRef::Ref(_) => TypeShape::Value,
+    }
+}
+
 /// One mapped field reference.
-fn field_of(field: &Field) -> (String, String, bool, bool) {
+fn field_of(field: &Field) -> (String, String, TypeShape, bool, bool) {
     let type_ref = leaf_ref(&field.r#type)
         .map(str::to_owned)
         .unwrap_or_default();
     (
         field.name.as_str().to_owned(),
         type_ref,
+        shape_of(&field.r#type),
         nullable_of(&field.r#type),
         field.required,
     )
@@ -394,12 +417,13 @@ fn field_of(field: &Field) -> (String, String, bool, bool) {
 
 /// One `ClientField` from a Model field.
 fn client_field_of(field: &Field) -> ClientField {
-    let (name, type_ref, nullable, required) = field_of(field);
+    let (name, type_ref, shape, nullable, required) = field_of(field);
     let field_ref = name.clone();
     ClientField {
         name,
         field: field_ref,
         type_ref,
+        shape,
         nullable,
         required,
     }
@@ -423,12 +447,13 @@ fn collect_operation_types(
             let mut fields = Vec::new();
             for field in &command.input {
                 collect_field_types(project, field, decimals, collected)?;
-                let (name, type_ref, nullable, required) = field_of(field);
+                let (name, type_ref, shape, nullable, required) = field_of(field);
                 let field_ref = name.clone();
                 fields.push(ClientField {
                     name,
                     field: field_ref,
                     type_ref,
+                    shape,
                     nullable,
                     required,
                 });
@@ -550,6 +575,7 @@ fn operation_of(
                     Some(field.as_str()),
                 )
             })?;
+        let shape = param_shape(operation, query_model, param.field.name().as_str());
         let nullable = param_nullable(operation, query_model, param.field.name().as_str());
         let location = match param.location {
             ParamLocation::Path => WireLocation::Path,
@@ -567,6 +593,7 @@ fn operation_of(
             location,
             field: field.to_owned(),
             type_ref,
+            shape,
             nullable,
             required: param.required,
             style,
@@ -633,6 +660,7 @@ fn operation_of(
                 name: field.name().to_owned(),
                 field: field.name().to_owned(),
                 type_ref: error_leaf_ref(field.field_type()),
+                shape: error_shape(field.field_type()),
                 nullable: error_nullable(field.field_type()),
                 required: field.required(),
             })
@@ -793,8 +821,53 @@ fn param_type_ref(
                     .iter()
                     .find(|parameter| parameter.name.as_str() == name)
             })
-            .map(|parameter| parameter.parameter_type.clone()),
+            .map(|parameter| parameter_type_leaf(&parameter.parameter_type)),
         _ => None,
+    }
+}
+
+/// The leaf type id of one bounded query-model type-expression:
+/// `list<planner.task_state>` names `planner.task_state` with a list
+/// shape (see [`param_shape`]).
+fn parameter_type_leaf(expression: &str) -> String {
+    let text = expression.trim();
+    if let Some(inner) = text
+        .strip_prefix("list<")
+        .and_then(|rest| rest.strip_suffix('>'))
+    {
+        return inner.trim().to_owned();
+    }
+    text.to_owned()
+}
+
+/// The closed wire shape of one query-model parameter's bounded
+/// type-expression: the `list<...>` spelling projects a list shape.
+fn param_shape(operation: &Definition, query_model: &QueryModelAttachment, name: &str) -> TypeShape {
+    match operation {
+        Definition::Command(command) => command
+            .input
+            .iter()
+            .find(|field| field.name.as_str() == name)
+            .map(|field| shape_of(&field.r#type))
+            .unwrap_or(TypeShape::Value),
+        Definition::Query(query) => query_model
+            .queries()
+            .iter()
+            .find(|decl| decl.query.as_str() == query.id.as_str())
+            .and_then(|decl| {
+                decl.parameters
+                    .iter()
+                    .find(|parameter| parameter.name.as_str() == name)
+            })
+            .map(|parameter| {
+                if parameter.parameter_type.trim().starts_with("list<") {
+                    TypeShape::List
+                } else {
+                    TypeShape::Value
+                }
+            })
+            .unwrap_or(TypeShape::Value),
+        _ => TypeShape::Value,
     }
 }
 
@@ -838,28 +911,35 @@ fn body_of(
     subject: &str,
     decimals: &BTreeMap<String, ScalarMapping>,
 ) -> Result<ClientBody, DiagnosticSet> {
-    let type_ref = match operation {
+    let (type_ref, body_shape) = match operation {
         Definition::Command(command) if input => {
             // A whole-input command body is the command's synthetic
             // input object — a collected type (never a dangling ref).
-            format!("{}.input", command.id.as_str())
+            (format!("{}.input", command.id.as_str()), TypeShape::Value)
         }
-        Definition::Command(command) if !input => {
+        Definition::Command(_) if !input => {
             // Commands carry no declared output in the IR: a
             // whole-output success body would otherwise narrow to an
             // empty ref, so the projection names the well-known unit
             // object explicitly (collected below, never dangling).
-            let _ = command;
-            UNIT_TYPE.to_owned()
+            (UNIT_TYPE.to_owned(), TypeShape::Value)
         }
         Definition::Query(query) if !input => match &query.returns {
-            Some(returns) => leaf_ref(returns).map(str::to_owned).ok_or_else(|| {
-                diagnostic::rule_invalid(
-                    diagnostic::CONTRACT_INVALID,
-                    "output-type-unresolved",
-                    Some(subject),
-                )
-            })?,
+            // The list wrapper survives into the contract: a
+            // `list<planner.task>` output projects shape `list` over
+            // the element type id, so clients decode an array (issue
+            // #72 round 2).
+            Some(returns) => {
+                let shape = shape_of(returns);
+                let type_ref = leaf_ref(returns).map(str::to_owned).ok_or_else(|| {
+                    diagnostic::rule_invalid(
+                        diagnostic::CONTRACT_INVALID,
+                        "output-type-unresolved",
+                        Some(subject),
+                    )
+                })?;
+                (type_ref, shape)
+            }
             // A whole-output success body without a declared output is
             // a silent narrowing: refuse instead of emitting an empty
             // typeRef (issue #72 fix round).
@@ -871,29 +951,41 @@ fn body_of(
                 ))
             }
         },
-        _ => String::new(),
+        _ => (String::new(), TypeShape::Value),
     };
     let _ = decimals;
     let client_fields = fields
         .iter()
         .map(|field| {
             let member = bound_member(project, operation, input, field.field.as_str().to_owned());
-            let (type_ref, nullable) = member.unwrap_or_else(|| (String::new(), false));
-            ClientField {
+            // An explicit-projection member that does not resolve in
+            // the bound contract is a refusal — an empty typeRef would
+            // be the exact silent narrowing the docs forbid.
+            let member_name = field.field.as_str();
+            let (type_ref, shape, nullable) = member.ok_or_else(|| {
+                diagnostic::rule_invalid(
+                    diagnostic::SYMBOL_UNRESOLVED,
+                    "body-member-unresolved",
+                    Some(member_name.as_str()),
+                )
+            })?;
+            Ok(ClientField {
                 name: field.name.as_str().to_owned(),
                 field: field.field.as_str().to_owned(),
                 type_ref,
+                shape,
                 nullable,
                 required: field.required,
-            }
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, DiagnosticSet>>()?;
     Ok(ClientBody {
         mode: match mode {
             ProjectionMode::Whole => BodyMode::Whole,
             ProjectionMode::Explicit => BodyMode::Explicit,
         },
         type_ref,
+        shape: body_shape,
         fields: client_fields,
     })
 }
@@ -908,7 +1000,7 @@ fn bound_member(
     operation: &Definition,
     input: bool,
     field: String,
-) -> Option<(String, bool)> {
+) -> Option<(String, TypeShape, bool)> {
     let name = field.strip_prefix("input.").unwrap_or(&field);
     let member = |members: &[Field], name: &str| {
         members
@@ -919,6 +1011,7 @@ fn bound_member(
                     leaf_ref(&member.r#type)
                         .map(str::to_owned)
                         .unwrap_or_default(),
+                    shape_of(&member.r#type),
                     nullable_of(&member.r#type),
                 )
             })
@@ -1067,6 +1160,7 @@ fn param_json(param: &ClientParam) -> Json {
     );
     object.insert("field".to_owned(), Json::String(param.field.clone()));
     object.insert("typeRef".to_owned(), Json::String(param.type_ref.clone()));
+    object.insert("shape".to_owned(), Json::String(param.shape.as_str().to_owned()));
     object.insert("required".to_owned(), Json::Bool(param.required));
     object.insert("nullable".to_owned(), Json::Bool(param.nullable));
     if let Some(style) = param.style {
@@ -1086,6 +1180,7 @@ fn body_json(body: &ClientBody) -> Json {
         Json::String(body.mode.as_str().to_owned()),
     );
     object.insert("typeRef".to_owned(), Json::String(body.type_ref.clone()));
+    object.insert("shape".to_owned(), Json::String(body.shape.as_str().to_owned()));
     if !body.fields.is_empty() {
         object.insert(
             "fields".to_owned(),
@@ -1097,6 +1192,7 @@ fn body_json(body: &ClientBody) -> Json {
                         entry.insert("name".to_owned(), Json::String(field.name.clone()));
                         entry.insert("field".to_owned(), Json::String(field.field.clone()));
                         entry.insert("typeRef".to_owned(), Json::String(field.type_ref.clone()));
+                        entry.insert("shape".to_owned(), Json::String(field.shape.as_str().to_owned()));
                         entry.insert("required".to_owned(), Json::Bool(field.required));
                         entry.insert("nullable".to_owned(), Json::Bool(field.nullable));
                         Json::Object(entry)
@@ -1133,6 +1229,7 @@ fn error_json(error: &ErrorVariant) -> Json {
                         let mut entry = Map::new();
                         entry.insert("name".to_owned(), Json::String(field.name.clone()));
                         entry.insert("typeRef".to_owned(), Json::String(field.type_ref.clone()));
+                        entry.insert("shape".to_owned(), Json::String(field.shape.as_str().to_owned()));
                         entry.insert("required".to_owned(), Json::Bool(field.required));
                         entry.insert("nullable".to_owned(), Json::Bool(field.nullable));
                         Json::Object(entry)
@@ -1185,6 +1282,7 @@ fn type_json(type_def: &ClientType) -> Json {
                             entry.insert("name".to_owned(), Json::String(field.name.clone()));
                             entry
                                 .insert("typeRef".to_owned(), Json::String(field.type_ref.clone()));
+                            entry.insert("shape".to_owned(), Json::String(field.shape.as_str().to_owned()));
                             entry.insert("nullable".to_owned(), Json::Bool(field.nullable));
                             entry.insert("required".to_owned(), Json::Bool(field.required));
                             Json::Object(entry)

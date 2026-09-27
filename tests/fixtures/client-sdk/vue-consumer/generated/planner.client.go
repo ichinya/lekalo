@@ -95,7 +95,7 @@ type Unit2 struct {
 }
 
 // ListTasks GET /tasks — operation listTasks.
-func (c *PlannerClient) ListTasks(ctx context.Context) (*Task, error) {
+func (c *PlannerClient) ListTasks(ctx context.Context) ([]*Task, error) {
 	query := url.Values{}
 	headers := map[string]string{}
 	wire := Request{
@@ -108,7 +108,7 @@ func (c *PlannerClient) ListTasks(ctx context.Context) (*Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	var value *Task
+	var value []*Task
 	if response.Body != nil {
 		if err := json.Unmarshal(response.Body, &value); err != nil {
 			return nil, err
@@ -141,12 +141,16 @@ func (c *PlannerClient) PlannerEndpointCountFocused(ctx context.Context) (*TaskS
 }
 
 // PlannerEndpointFocusTask POST /tasks/focus — operation plannerEndpointFocusTask.
-func (c *PlannerClient) PlannerEndpointFocusTask(ctx context.Context, input any, idempotencyKey string, xCorrelationId string, xRequestId string) (*struct{}, error) {
+func (c *PlannerClient) PlannerEndpointFocusTask(ctx context.Context, input *FocusTaskInput, idempotencyKey string, xCorrelationId string, xRequestId string) (*struct{}, error) {
 	query := url.Values{}
 	headers := map[string]string{}
 	headers["Idempotency-Key"] = idempotencyKey
-	headers["X-Correlation-Id"] = xCorrelationId
-	headers["X-Request-Id"] = xRequestId
+	if xCorrelationId != "" {
+		headers["X-Correlation-Id"] = xCorrelationId
+	}
+	if xRequestId != "" {
+		headers["X-Request-Id"] = xRequestId
+	}
 	wire := Request{
 		Method:  "POST",
 		Path:    c.baseURL + "/tasks/focus",
@@ -172,7 +176,7 @@ func (c *PlannerClient) PlannerEndpointFocusTask(ctx context.Context, input any,
 }
 
 // PlannerEndpointFocusTaskById POST /tasks/{task_id}/focus — operation plannerEndpointFocusTaskById.
-func (c *PlannerClient) PlannerEndpointFocusTaskById(ctx context.Context, taskId string, input any, idempotencyKey string) (*struct{}, error) {
+func (c *PlannerClient) PlannerEndpointFocusTaskById(ctx context.Context, taskId string, input *FocusTaskInput, idempotencyKey string) (*struct{}, error) {
 	query := url.Values{}
 	headers := map[string]string{}
 	headers["Idempotency-Key"] = idempotencyKey
@@ -196,7 +200,7 @@ func (c *PlannerClient) PlannerEndpointFocusTaskById(ctx context.Context, taskId
 }
 
 // PlannerEndpointTaskStream GET /tasks/stream — operation plannerEndpointTaskStream.
-func (c *PlannerClient) PlannerEndpointTaskStream(ctx context.Context) (*Task, error) {
+func (c *PlannerClient) PlannerEndpointTaskStream(ctx context.Context) ([]*Task, error) {
 	query := url.Values{}
 	headers := map[string]string{}
 	wire := Request{
@@ -209,7 +213,7 @@ func (c *PlannerClient) PlannerEndpointTaskStream(ctx context.Context) (*Task, e
 	if err != nil {
 		return nil, err
 	}
-	var value *Task
+	var value []*Task
 	if response.Body != nil {
 		if err := json.Unmarshal(response.Body, &value); err != nil {
 			return nil, err
@@ -219,8 +223,14 @@ func (c *PlannerClient) PlannerEndpointTaskStream(ctx context.Context) (*Task, e
 }
 
 // PlannerEndpointTasksByProject GET /projects/{project_ref}/tasks — operation plannerEndpointTasksByProject.
-func (c *PlannerClient) PlannerEndpointTasksByProject(ctx context.Context, projectRef string) (*Task, error) {
+func (c *PlannerClient) PlannerEndpointTasksByProject(ctx context.Context, projectRef string, limit string, afterTask string) ([]*Task, error) {
 	query := url.Values{}
+	if limit != "" {
+		query.Set("limit", limit)
+	}
+	if afterTask != "" {
+		query.Set("after_task", afterTask)
+	}
 	headers := map[string]string{}
 	wire := Request{
 		Method:  "GET",
@@ -232,7 +242,7 @@ func (c *PlannerClient) PlannerEndpointTasksByProject(ctx context.Context, proje
 	if err != nil {
 		return nil, err
 	}
-	var value *Task
+	var value []*Task
 	if response.Body != nil {
 		if err := json.Unmarshal(response.Body, &value); err != nil {
 			return nil, err

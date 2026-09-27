@@ -22,20 +22,27 @@ pub const QUERY_MODEL_SOURCE_PATH: &str = "lekalo/query-model.yaml";
 /// bound).
 const SOURCE_BYTES: usize = 1024 * 1024;
 
-/// Read and parse the query-model home under one project root.
+/// Read and parse the query-model home under one project root. A
+/// MISSING home is `Ok(None)` (the derivation skips honestly); every
+/// other metadata failure — permission, IO, a directory in the slot —
+/// propagates as a refusal, never a silent skip (issue #72 round 2).
 pub fn read_query_model(root: &Path) -> Result<Option<QueryModelAttachment>, DiagnosticSet> {
     let path = root.join(QUERY_MODEL_SOURCE_PATH);
-    let Ok(metadata) = std::fs::metadata(&path) else {
-        return Ok(None);
-    };
-    if !metadata.is_file() {
-        return Err(super::diagnostic::io_failure("source-not-file"));
+    match std::fs::metadata(&path) {
+        Ok(metadata) => {
+            if !metadata.is_file() {
+                return Err(super::diagnostic::io_failure("source-not-file"));
+            }
+            if metadata.len() as usize > SOURCE_BYTES {
+                return Err(super::diagnostic::io_failure("source-bytes"));
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(super::diagnostic::io_failure("source-unreadable")),
     }
-    if metadata.len() as usize > SOURCE_BYTES {
-        return Err(super::diagnostic::io_failure("source-bytes"));
-    }
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return Err(super::diagnostic::io_failure("source-encoding"));
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(_) => return Err(super::diagnostic::io_failure("source-unreadable")),
     };
     let index = crate::loader::source::LineIndex::new(&text);
     let parsed = match parse_document(&text, &index) {
@@ -104,5 +111,36 @@ fn node_to_json(node: &Node) -> serde_json::Value {
                 .unwrap_or(serde_json::Value::Null),
             crate::loader::frontends::Scalar::Str(text) => serde_json::Value::String(text.clone()),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_missing_home_is_absent_but_a_present_home_refuses_when_unreadable() {
+        let root = std::env::temp_dir().join(format!(
+            "lekalo-client-sdk-source-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("temp root");
+        // Absent home: the honest skip.
+        assert!(read_query_model(&root).expect("absent home").is_none());
+        // A present home that is a DIRECTORY refuses — never a skip.
+        std::fs::create_dir_all(root.join(QUERY_MODEL_SOURCE_PATH)).expect("dir slot");
+        let set = read_query_model(&root).expect_err("directory home refuses");
+        assert_eq!(
+            set.as_slice()[0].id(),
+            "client.input-invalid",
+            "the refusal is the registered family rule"
+        );
+        // A malformed present home refuses with the syntax rule.
+        std::fs::remove_dir_all(root.join(QUERY_MODEL_SOURCE_PATH)).expect("cleanup slot");
+        std::fs::write(root.join(QUERY_MODEL_SOURCE_PATH), "???").expect("malformed bytes");
+        let set = read_query_model(&root).expect_err("malformed home refuses");
+        assert_eq!(set.as_slice()[0].id(), "query.input-invalid");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

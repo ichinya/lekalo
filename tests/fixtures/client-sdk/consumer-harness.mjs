@@ -62,12 +62,13 @@ export async function typecheck() {
 }
 
 /**
- * Compile the positive-usage Vue SFC with @vue/compiler-sfc and run a
- * REAL negative check: the negative fixture is typechecked with the
- * same pinned TypeScript program and MUST produce diagnostics (it
- * calls a method that does not exist on the generated client), proving
- * the consumer contract can fail. Returns the closed
- * { ok, tooling, diagnostics } shape.
+ * Compile BOTH consumer SFCs with @vue/compiler-sfc and feed the
+ * compiled script-setup blocks into the strict TypeScript program
+ * (round 2): the SFC code that actually calls the generated client is
+ * typechecked, not just the client module. The negative fixture MUST
+ * produce real diagnostics (it calls a method that does not exist on
+ * the generated client), proving the consumer contract can fail.
+ * Returns the closed { ok, tooling, diagnostics } shape.
  */
 export async function compileVueSfcs() {
   let compiler;
@@ -79,104 +80,86 @@ export async function compileVueSfcs() {
   } catch {
     return { ok: false, tooling: "vue-compiler-unavailable", diagnostics: [] };
   }
-  const diagnostics = [];
 
-  // Positive: parse + compile script setup + template.
-  const positive = join(fixtureRoot, "vue-consumer", "src", "FocusTasks.vue");
-  const positiveSource = readFileSync(positive, "utf8");
-  const parsed = compiler.parse(positiveSource, { filename: positive });
-  if (parsed.errors.length > 0) {
-    for (const error of parsed.errors) {
-      diagnostics.push({
-        where: "FocusTasks.vue",
-        file: String(error?.message ?? error).slice(0, 160),
-      });
+  // Compile both script-setup blocks to virtual .ts siblings. Writing
+  // them beside the SFC keeps the SFC's relative import specifiers
+  // ("../generated/planner.client") resolving to the generated client.
+  const virtualFiles = [];
+  const compileOne = (name, id) => {
+    const sfcPath = join(fixtureRoot, "vue-consumer", "src", name);
+    const parsed = compiler.parse(readFileSync(sfcPath, "utf8"), { filename: sfcPath });
+    if (parsed.errors.length > 0) {
+      return {
+        name,
+        virtual: null,
+        parseErrors: parsed.errors.map((error) => ({
+          where: name,
+          file: String(error?.message ?? error).slice(0, 160),
+        })),
+      };
     }
-  }
-  try {
-    const compiledScript = compiler.compileScript(parsed.descriptor, { id: "fixture-focus-tasks" });
-    const bindingUsed = compiledScript.content.includes("LekaloClient");
-    if (!bindingUsed) {
-      diagnostics.push({
-        where: "FocusTasks.vue(script)",
-        file: "compiled-script-lost-the-client-import",
-      });
-    }
-  } catch (error) {
-    diagnostics.push({
-      where: "FocusTasks.vue(script)",
-      file: String(error?.message ?? error).slice(0, 160),
-    });
-  }
-  const template = parsed.descriptor.template?.content ?? "";
-  const compiled = compiler.compileTemplate({
-    source: template,
-    filename: "FocusTasks.vue",
-    id: "fixture-focus-tasks",
-  });
-  if (compiled.errors.length > 0) {
-    for (const error of compiled.errors) {
-      diagnostics.push({
-        where: "FocusTasks.vue(template)",
-        file: String(error?.message ?? error).slice(0, 160),
-      });
-    }
-  }
-
-  // Negative: the broken fixture MUST typecheck with errors against
-  // the generated client — a substring assertion would prove nothing.
-  const negative = join(fixtureRoot, "vue-consumer", "src", "BrokenOperation.vue");
-  const brokenParsed = compiler.parse(readFileSync(negative, "utf8"), { filename: negative });
-  let negativeVerified = false;
-  try {
-    const compiledScript = compiler.compileScript(brokenParsed.descriptor, {
-      id: "fixture-broken-operation",
-    });
-    brokenScriptText = compiledScript.content;
-  } catch (error) {
-    // The script compile itself refused: that is the expected failure.
-    negativeVerified = true;
-  }
-  if (diagnostics.length === 0 || !diagnostics.some((d) => d.where === "BrokenOperation.vue")) {
-    // The script compiled; typecheck the emitted setup body against
-    // the generated client and require diagnostics.
-    const brokenTs = join(consumerRoot, "src", "broken-operation.virtual.ts");
-    const virtualSource = [
-      'import { LekaloClient } from "../generated/planner.client";',
-      "const client = new LekaloClient({ baseUrl: \"https://x.invalid\", transport: undefined });",
-      "client.destroyEverything();",
-    ].join("\n");
-    writeFileSync(brokenTs, virtualSource, "utf8");
-    try {
-      const configFile = join(consumerRoot, "tsconfig.json");
-      const parsedConfig = ts.getParsedCommandLineOfConfigFile(
-        configFile,
-        { noEmit: true },
-        { ...ts.sys, getCurrentDirectory: () => consumerRoot },
-      );
-      const program = ts.createProgram(parsedConfig.fileNames, parsedConfig.options);
-      const found = ts
-        .getPreEmitDiagnostics(program)
-        .some((diagnostic) =>
-          String(ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")).includes(
-            "destroyEverything",
-          ),
-        );
-      if (!found) {
-        diagnostics.push({
-          where: "BrokenOperation.vue",
-          file: "expected-type-error-did-not-occur",
-        });
-      }
-    } finally {
-      rmSync(brokenTs, { force: true });
-    }
-  }
-  return {
-    ok: diagnostics.length === 0 && negativeVerified,
-    tooling: "@vue/compiler-sfc + typescript",
-    diagnostics,
+    const compiled = compiler.compileScript(parsed.descriptor, { id });
+    const virtualPath = join(consumerRoot, "src", name + ".ts");
+    writeFileSync(virtualPath, compiled.content, "utf8");
+    return { name, virtual: virtualPath, parseErrors: [] };
   };
+
+  let positive;
+  let negative;
+  try {
+    positive = compileOne("FocusTasks.vue", "fixture-focus-tasks");
+    negative = compileOne("BrokenOperation.vue", "fixture-broken-operation");
+  } catch (error) {
+    return {
+      ok: false,
+      tooling: "@vue/compiler-sfc",
+      diagnostics: [{ where: "(compileScript)", file: String(error?.message ?? error).slice(0, 160) }],
+    };
+  }
+
+  try {
+    // The strict program includes the compiled SFC scripts (the
+    // tsconfig's src/**/*.ts include picks the virtual files up).
+    const check = await typecheck();
+    if (check.tooling === "typescript-unavailable") {
+      return { ok: false, tooling: "typescript-unavailable", diagnostics: [] };
+    }
+    const byFile = (fragment) =>
+      check.diagnostics.filter((diagnostic) => diagnostic.where.includes(fragment));
+
+    // Positive: the FocusTasks script (the real client usage) must be clean.
+    const positiveErrors = byFile("FocusTasks.vue.ts").concat(positive.parseErrors);
+    if (positiveErrors.length > 0) {
+      return { ok: false, tooling: check.tooling, diagnostics: positiveErrors };
+    }
+
+    // Negative: the broken script must produce a real type error —
+    // destroyEverything does not exist on LekaloClient.
+    const negativeErrors = byFile("BrokenOperation.vue.ts").concat(negative.parseErrors);
+    const realNegative = negativeErrors.some((diagnostic) =>
+      diagnostic.file.includes("destroyEverything"),
+    );
+    if (!realNegative) {
+      return {
+        ok: false,
+        tooling: check.tooling,
+        diagnostics: [
+          {
+            where: "BrokenOperation.vue",
+            file: "expected-type-error-did-not-occur",
+          },
+          ...negativeErrors,
+        ],
+      };
+    }
+    return { ok: true, tooling: check.tooling + " + @vue/compiler-sfc", diagnostics: [] };
+  } finally {
+    for (const compiled of [positive, negative]) {
+      if (compiled && compiled.virtual) {
+        rmSync(compiled.virtual, { force: true });
+      }
+    }
+  }
 }
 
 export { consumerRoot, fixtureRoot };
