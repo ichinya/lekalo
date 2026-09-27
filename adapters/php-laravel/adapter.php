@@ -4733,6 +4733,26 @@ const PHP_RUN_RECORD_IDENTITY = 'dev.lekalo.scenario-run@0.4.0';
 const PHP_RUN_RECORD_DIR = '.lekalo/import/scenario-runs';
 
 /**
+ * The toolchain custody record (issue #56, plan S1): one durable
+ * document per suite run recording the OBSERVED runtime facts — PHP
+ * version, the resolved Laratesto/Testo/Laravel package versions, and
+ * the exact `composer.lock` digest — separate from the closed
+ * run-record shape so custody never overloads the single `runner`
+ * field.
+ */
+const PHP_TOOLCHAIN_DIR = '.lekalo/import/toolchain';
+const PHP_TOOLCHAIN_SCHEMA_VERSION = 'lekalo/scenario-toolchain/v0.1.0';
+const PHP_TOOLCHAIN_IDENTITY = 'dev.lekalo.scenario-toolchain@0.1.0';
+
+/**
+ * The conformance-relevant Composer packages the custody record
+ * probes. The list is fixed emission data — never derived from the
+ * project's composer.json at compile time, and 'not-installed' is an
+ * honest row, never an omission.
+ */
+const PHP_TOOLCHAIN_PACKAGES = ['ichinya/laratesto', 'laravel/framework', 'testo/testo'];
+
+/**
  * The user-owned scaffold home (issue #56, plan S3): a `scaffolded`
  * binding emits its test here exactly once — every later generation
  * keeps the user's bytes — so it must sit outside the managed
@@ -5144,10 +5164,23 @@ function php_reporter_text(array $context): string
     $schemaVersion = PHP_RUN_RECORD_SCHEMA_VERSION;
     $identity = PHP_RUN_RECORD_IDENTITY;
     $ingestDir = PHP_RUN_RECORD_DIR;
+    $toolchainDir = PHP_TOOLCHAIN_DIR;
+    $toolchainSchema = PHP_TOOLCHAIN_SCHEMA_VERSION;
+    $toolchainIdentity = PHP_TOOLCHAIN_IDENTITY;
+    $adapterId = PHP_EMITTER_ADAPTER_ID;
+    $adapterVersion = ADAPTER_VERSION;
+    $probedPackages = implode(', ', array_map(
+        static fn (string $package): string => "'" . $package . "'",
+        PHP_TOOLCHAIN_PACKAGES,
+    ));
     return <<<PHP
 $header
 // The durable run-record writer: one $schemaVersion document per
-// scenario run, written into the adjudicated ingest home $ingestDir/.
+// scenario run, written into the adjudicated ingest home $ingestDir/,
+// plus one toolchain custody record in $toolchainDir/ recording the
+// observed runtime facts (PHP, the resolved Laratesto/Testo/Laravel
+// versions, the composer.lock digest) — the closed run-record shape
+// never carries toolchain data.
 // Generated file — do not edit.
 
 declare(strict_types=1);
@@ -5259,7 +5292,49 @@ final class ScenarioReporter
             mkdir(\$dir, 0777, true);
         }
         file_put_contents(\$target, self::canonicalJson(\$document) . "\\n");
+        self::writeToolchainCustody(\$root, \$runner);
         return '$ingestDir' . '/' . \$scenario['id'] . '.json';
+    }
+
+    /**
+     * Persist the toolchain custody record: the OBSERVED runtime facts
+     * of this suite run — the PHP version, the resolved package
+     * versions of the conformance stack, and the exact digest of the
+     * project's composer.lock. One deterministic document per suite
+     * run; an absent package records 'not-installed', an absent lock a
+     * null digest — honest absence, never an omission.
+     */
+    private static function writeToolchainCustody(string \$root, array \$runner): void
+    {
+        \$packages = [];
+        foreach ([$probedPackages] as \$package) {
+            \$version = null;
+            if (class_exists(\\Composer\\InstalledVersions::class)
+                && \\Composer\\InstalledVersions::isInstalled(\$package)) {
+                \$version = \\Composer\\InstalledVersions::getPrettyVersion(\$package);
+            }
+            \$packages[\$package] = is_string(\$version) ? \$version : 'not-installed';
+        }
+        \$lockPath = \$root . '/composer.lock';
+        \$document = [
+            'schema_version' => '$toolchainSchema',
+            'identity' => '$toolchainIdentity',
+            'adapter' => ['id' => '$adapterId', 'version' => '$adapterVersion'],
+            'runner' => [
+                'id' => (string) \$runner['id'],
+                'version' => (string) \$runner['version'],
+            ],
+            'toolchain' => [
+                'php' => PHP_VERSION,
+                'composer_lock' => is_file(\$lockPath) ? 'sha256:' . hash_file('sha256', \$lockPath) : null,
+                'packages' => \$packages,
+            ],
+        ];
+        \$dir = \$root . '/' . '$toolchainDir';
+        if (!is_dir(\$dir)) {
+            mkdir(\$dir, 0777, true);
+        }
+        file_put_contents(\$dir . '/php-laravel.json', self::canonicalJson(\$document) . "\\n");
     }
 
     /**

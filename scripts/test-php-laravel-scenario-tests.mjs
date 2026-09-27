@@ -215,6 +215,41 @@ try {
     }
   });
 
+  step("the toolchain custody record carries the exact observed versions", () => {
+    // Plan S1: the durable custody document records the facts of the
+    // run that actually happened — PHP version, resolved Laratesto /
+    // Testo / Laravel package versions, and the composer.lock digest —
+    // so evidence never has to trust declared constraints.
+    const custodyPath = join(root, ".lekalo", "import", "toolchain", "php-laravel.json");
+    assert.ok(existsSync(custodyPath), "the suite wrote the toolchain custody record");
+    const custody = JSON.parse(readFileSync(custodyPath, "utf8"));
+    assert.deepEqual(Object.keys(custody).sort(), [
+      "adapter", "identity", "runner", "schema_version", "toolchain",
+    ]);
+    assert.equal(custody.schema_version, "lekalo/scenario-toolchain/v0.1.0");
+    assert.equal(custody.identity, "dev.lekalo.scenario-toolchain@0.1.0");
+    assert.equal(custody.adapter.id, "lekalo-target-php-laravel");
+    assert.equal(custody.runner.id, "laratesto");
+
+    const phpVersion = spawnSync(php, ["-r", "echo PHP_VERSION;"], { encoding: "utf8" });
+    assert.equal(phpVersion.status, 0);
+    assert.equal(custody.toolchain.php, phpVersion.stdout.trim(), "the observed PHP version");
+
+    const lock = JSON.parse(readFileSync(join(fixtureRoot, "composer.lock"), "utf8"));
+    const lockDigest = "sha256:" +
+      createHash("sha256").update(readFileSync(join(fixtureRoot, "composer.lock"))).digest("hex");
+    assert.equal(custody.toolchain.composer_lock, lockDigest, "the exact lock custody");
+    const locked = new Map(
+      lock.packages.map((pkg) => [pkg.name, pkg.version]),
+    );
+    assert.deepEqual(Object.keys(custody.toolchain.packages).sort(), [
+      "ichinya/laratesto", "laravel/framework", "testo/testo",
+    ]);
+    for (const [pkg, version] of Object.entries(custody.toolchain.packages)) {
+      assert.equal(version, locked.get(pkg), `${pkg}: observed version equals the lock`);
+    }
+  });
+
   step("reruns are clean: the second suite run reproduces identical records", () => {
     const before = new Map(scenarioIds.map((scenarioFile) => {
       const scenarioId = scenarioFile.replace(/\.json$/, "");
