@@ -40,6 +40,15 @@ const PHP_RUN_RECORD_IDENTITY = 'dev.lekalo.scenario-run@0.4.0';
 /** The run-record ingest home (an adjudicated `.lekalo/import` home). */
 const PHP_RUN_RECORD_DIR = '.lekalo/import/scenario-runs';
 
+/**
+ * The user-owned scaffold home (issue #56, plan S3): a `scaffolded`
+ * binding emits its test here exactly once — every later generation
+ * keeps the user's bytes — so it must sit outside the managed
+ * generated home. The segments stay lowercase because the write plan
+ * travels the logical-path grammar (uppercase is wire-illegal).
+ */
+const PHP_SCAFFOLD_TESTS_DIR = 'tests/lekalo/scenario-tests';
+
 /** Reserved emitted module names; a scenario module may never collide. */
 const PHP_RESERVED_MODULES = ['testkit', 'port', 'reporter', 'ScenarioTestKit', 'Port', 'ScenarioReporter'];
 
@@ -148,7 +157,8 @@ function php_emit_scenario_tests(array $input): array
     $models = $input['models'];
     usort($models, static fn (array $left, array $right): int => strcmp($left['id'], $right['id']));
     foreach ($models as $model) {
-        if ($model['binding']['mode'] === 'checked') {
+        $mode = $model['binding']['mode'];
+        if ($mode === 'checked') {
             // A checked binding declares that an EXISTING native test
             // owns the scenario identity: nothing is generated for it.
             continue;
@@ -157,17 +167,21 @@ function php_emit_scenario_tests(array $input): array
         if (in_array($module, PHP_RESERVED_MODULES, true)) {
             throw new LogicException('scenario module collides with a reserved emitted file: ' . $module);
         }
-        $testFile = php_emit_test($model, $context);
-        $files[] = php_file(
-            PHP_SCENARIO_TESTS_DIR . '/' . $module . '/' . $model['id'] . '.test.php',
-            $testFile['text'],
-            null,
-        );
-        $files[] = php_file(
-            PHP_SCENARIO_TESTS_DIR . '/' . $module . '/' . $model['id'] . '.test.map.json',
-            php_canonical_json($testFile['map']) . "\n",
-            $testFile['map'],
-        );
+        $scaffolded = $mode === 'scaffolded';
+        // A scaffolded test is user-owned: it is emitted once into the
+        // scaffold home (`frozen` — the kernel plans its write only
+        // when absent) and its map sidecar travels beside it as the
+        // scaffold marker the custody rules key on.
+        $dir = ($scaffolded ? PHP_SCAFFOLD_TESTS_DIR : PHP_SCENARIO_TESTS_DIR) . '/' . $module;
+        $testFile = php_emit_test($model, $context, $scaffolded);
+        $mapPath = $dir . '/' . $model['id'] . '.test.map.json';
+        $test = php_file($dir . '/' . $model['id'] . '.test.php', $testFile['text'], null);
+        if ($scaffolded) {
+            $test['frozen'] = true;
+            $test['marker'] = $mapPath;
+        }
+        $files[] = $test;
+        $files[] = php_file($mapPath, php_canonical_json($testFile['map']) . "\n", $testFile['map']);
     }
     usort($files, static fn (array $left, array $right): int => strcmp($left['path'], $right['path']));
     return $files;
@@ -687,7 +701,7 @@ PHP;
 // Per-scenario test rendering.
 // ---------------------------------------------------------------------------
 
-function php_emit_test(array $model, array $context): array
+function php_emit_test(array $model, array $context, bool $scaffolded = false): array
 {
     $segments = [];
     $cursor = 0;
@@ -699,13 +713,38 @@ function php_emit_test(array $model, array $context): array
     $classFqn = php_test_class_fqn($model['id']);
     $scenarioId = $model['id'];
     $header = php_doc_header($context);
+    // The sibling support files travel with every emission (the PHP
+    // mirror of the Node emitter's relative import block): the emitted
+    // test is self-contained and never depends on project autoload
+    // configuration for the generated namespace. A scaffolded test sits
+    // in the user-owned scaffold home, four segments below the project
+    // root, so its requires walk back to the managed support home.
+    $requires = ($scaffolded
+        ? "// The support files live in the managed generated home; this file is user-owned.\n"
+            . "require_once dirname(__DIR__, 4) . '/src/generated/php-laravel/scenario-tests/scenario-test-kit.php';\n"
+            . "require_once dirname(__DIR__, 4) . '/src/generated/php-laravel/scenario-tests/scenario-reporter.php';\n"
+            . "require_once dirname(__DIR__, 4) . '/src/generated/php-laravel/scenario-tests/port.php';"
+        : "// The sibling support files travel with every generation (the PHP\n"
+            . "// mirror of the Node emitter's relative import block): the emitted\n"
+            . "// test is self-contained and never depends on project autoload\n"
+            . "// configuration for the generated namespace.\n"
+            . "require_once __DIR__ . '/../scenario-test-kit.php';\n"
+            . "require_once __DIR__ . '/../scenario-reporter.php';\n"
+            . "require_once __DIR__ . '/../port.php';");
+    // The scaffolded file is user-owned after its one emission: it
+    // carries the `lekalo:<id>` claim marker the observed index scans
+    // for, plus an explicit edit-freedom note, so the scaffold never
+    // masquerades as managed content.
+    $marker = $scaffolded
+        ? "// lekalo:{$scenarioId} — scaffolded once; edit freely, regeneration never overwrites this file.\n"
+        : '';
     $heredoc = <<<PHP
 $header
 //
 // Scenario {$scenarioId} @{$model['version']}: {$model['summary']}
 // Runner {$model['runner']['id']}; binding {$model['binding']['mode']}; native test id
 // php-laravel:{$scenarioId}; generated by the scenario-test compiler (issue #56).
-
+{$marker}
 declare(strict_types=1);
 
 namespace Lekalo\\Generated\\ScenarioTests\\{$model['projectId']};
@@ -717,13 +756,7 @@ use Laratesto\\Attribute\\DatabaseMigrations;
 use Testo\\Assert;
 use Testo\Test;
 
-// The sibling support files travel with every generation (the PHP
-// mirror of the Node emitter's relative import block): the emitted
-// test is self-contained and never depends on project autoload
-// configuration for the generated namespace.
-require_once __DIR__ . '/../scenario-test-kit.php';
-require_once __DIR__ . '/../scenario-reporter.php';
-require_once __DIR__ . '/../port.php';
+{$requires}
 
 PHP;
     $push($heredoc, null);

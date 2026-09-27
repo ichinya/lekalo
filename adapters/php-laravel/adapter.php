@@ -1045,6 +1045,19 @@ const DECLARED_CAPABILITIES = [
 const SCENARIO_WRITE_SCOPES = ['src/generated/php-laravel/scenario-tests/**'];
 
 /**
+ * The user-owned scaffold scope (issue #56, plan S3): `scaffolded`
+ * bindings emit once here and are never rewritten or deleted by the
+ * kernel. Declared in `write_scopes` for apply honesty; the delete
+ * path refuses it outright.
+ */
+const PHP_SCAFFOLD_SCOPE = 'tests/lekalo/scenario-tests/**';
+
+/**
+ * The observed scan index the checked-binding join reads.
+ */
+const PHP_OBSERVED_INDEX_PATH = '.lekalo/import/observed/index.json';
+
+/**
  * The canonical evidence home of the compiled project IR (core-owned).
  */
 const IR_EVIDENCE_HOME = '.lekalo/cache/ir';
@@ -1997,7 +2010,11 @@ function deterministic_generation(array $request): array
             ];
         }
         $writes = [];
+        $skipWrites = $outcome['skip_writes'] ?? [];
         foreach ($outcome['files'] as $file) {
+            if (isset($skipWrites[$file['path']])) {
+                continue;
+            }
             $writes[] = [
                 'path' => $file['path'],
                 'action' => 'create',
@@ -2133,14 +2150,33 @@ function scenario_generation(array $request): array
         'portClass' => $portPresent ? $port['class'] : '',
     ]);
     $emitted = [];
+    $skipWrites = [];
     foreach ($files as $file) {
-        $emitted[] = [
+        $entry = [
             'path' => $file['path'],
             'bytes' => $file['text'],
             'digest' => 'sha256:' . hash('sha256', $file['text']),
         ];
+        if (($file['frozen'] ?? false) === true) {
+            // Scaffold-once custody: the frozen write is planned only
+            // while its managed marker is absent. Once the marker
+            // exists the file is user-owned — regeneration never
+            // rewrites it, and a deleted test is a verify finding
+            // rather than a silent recreate.
+            $entry['frozen'] = true;
+            $entry['marker'] = $file['marker'];
+            if (is_file($file['marker'])) {
+                $skipWrites[$file['path']] = true;
+            }
+        }
+        $emitted[] = $entry;
     }
-    return ['files' => $emitted, 'findings' => $mapped['findings']];
+    return [
+        'files' => $emitted,
+        'findings' => $mapped['findings'],
+        'skip_writes' => $skipWrites,
+        'scenario' => $scenario,
+    ];
 }
 
 /** One bounded read inside the declared read roots (null when absent). */
@@ -2150,6 +2186,7 @@ function read_view_file(string $path): ?string
         return null;
     }
     if (str_starts_with($path, '.lekalo/ir/') || str_starts_with($path, '.lekalo/cache/')
+        || str_starts_with($path, '.lekalo/import/')
         || str_starts_with($path, 'lekalo/')) {
         $bytes = @file_get_contents($path);
         return $bytes === false ? null : $bytes;
@@ -2662,6 +2699,7 @@ function describe_capabilities(?Analyzer $analyzer = null): array
         'write_scopes' => array_merge(
             ['.lekalo/generated/php-laravel/**'],
             SCENARIO_WRITE_SCOPES,
+            [PHP_SCAFFOLD_SCOPE],
         ),
         'progress' => false,
         'ir_versions' => [IR_VERSION],
@@ -3138,7 +3176,41 @@ function scenario_verify_response(array $request): array
             'detail' => $finding['detail'] ?? null,
         ];
     }
+    // The checked-binding join (Node parity): every `mode: checked`
+    // binding must join against the observed scan index. An absent
+    // index is legal silence — the join has nothing to say.
+    $indexText = read_view_file(PHP_OBSERVED_INDEX_PATH);
+    $index = null;
+    if ($indexText !== null) {
+        try {
+            $index = json_decode($indexText, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            $index = null;
+        }
+    }
+    foreach (php_join_checked_bindings($mapped['scenario'] ?? null, $index) as $finding) {
+        $findings[] = [
+            'path' => $finding['symbol'] ?? 'binding',
+            'code' => $finding['code'],
+            'detail' => $finding['detail'] ?? null,
+        ];
+    }
     foreach ($mapped['files'] as $file) {
+        if (($file['frozen'] ?? false) === true) {
+            // Scaffold-once custody: the user-owned test is
+            // existence-checked only — its bytes are the user's. A
+            // missing test with a surviving marker is a removed
+            // scaffold (actionable); with the marker also gone the
+            // drift finding on the map already says enough.
+            if (!is_file($file['path']) && is_file($file['marker'])) {
+                $findings[] = [
+                    'path' => $file['path'],
+                    'code' => 'scenario.scaffold-missing',
+                    'detail' => 'scaffolded-test-removed',
+                ];
+            }
+            continue;
+        }
         $expectedDigest = $file['digest'];
         $actual = is_file($file['path']) ? hash_file('sha256', $file['path']) : false;
         if ($actual === false) {
@@ -3202,7 +3274,10 @@ function generate_response(array $request): array
     ]);
 }
 
-/** The plan-clean exchange: deletions only, over the owned artifact. */
+/**
+ * The plan-clean exchange: deletions only, over the owned artifact.
+ * The scaffold scope is user-owned and never enters a delete plan.
+ */
 function plan_clean_response(array $request): array
 {
     $writes = deterministic_writes(deterministic_generation($request));
@@ -3210,10 +3285,12 @@ function plan_clean_response(array $request): array
     // #57): the ledger records them, and a generic clean confirmation
     // never retires them. The plan skips them — the deletion plan
     // covers only non-retained owned artifacts — so an orphan sweep
-    // can never rewrite migration history.
+    // can never rewrite migration history. The scaffold scope is
+    // user-owned for the same reason (issue #56).
     $plan = [];
     foreach ($writes as $entry) {
-        if (retained_artifact($entry['path'])) {
+        if (retained_artifact($entry['path'])
+            || scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])) {
             continue;
         }
         $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
@@ -3239,7 +3316,8 @@ function clean_response(array $request): array
 {
     $writes = deterministic_writes(deterministic_generation($request));
     // Retained custody mirrors the plan: a migration or ledger path
-    // refuses the apply outright instead of silently surviving.
+    // refuses the apply outright instead of silently surviving. The
+    // scaffold scope is excluded — never silently kept, never deleted.
     foreach ($writes as $entry) {
         if (retained_artifact($entry['path'])) {
             return build_response($request, [
@@ -3253,10 +3331,13 @@ function clean_response(array $request): array
             ]);
         }
     }
-    $plan = array_map(
-        static fn (array $entry): array => ['path' => $entry['path'], 'action' => 'delete'],
-        $writes,
-    );
+    $plan = [];
+    foreach ($writes as $entry) {
+        if (scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])) {
+            continue;
+        }
+        $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
+    }
     $requested = $request['plan_id'] ?? '';
     // The apply authority is the client's pending binding (see the
     // generate apply note): the echo is shape-checked, never recomputed.
@@ -3323,7 +3404,8 @@ function apply_writes(array $writes, array $files): void
         if (!is_logical_path($path) || protected_home($path) !== null) {
             throw new RequestRefusal('write-denied');
         }
-        // The scenario home writes under the project's src tree; every
+        // The scenario home writes under the project's src tree; the
+        // scaffold scope admits the one-shot user-owned emission; every
         // other generated artifact stays inside the runtime-owned
         // `.lekalo/generated/php-laravel/**` home.
         $inScenarioScope = false;
@@ -3333,7 +3415,8 @@ function apply_writes(array $writes, array $files): void
                 break;
             }
         }
-        if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope) {
+        if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope
+            && !scope_covers(PHP_SCAFFOLD_SCOPE, $path)) {
             throw new RequestRefusal('write-denied');
         }
         $bytes = $bytesByPath[$path] ?? null;
@@ -3374,7 +3457,10 @@ function apply_writes(array $writes, array $files): void
 
 function delete_write(string $path): void
 {
-    if (!is_logical_path($path) || protected_home($path) !== null) {
+    if (!is_logical_path($path) || protected_home($path) !== null
+        || scope_covers(PHP_SCAFFOLD_SCOPE, $path)) {
+        // The scaffold scope is user-owned: no kernel path may delete
+        // inside it, whatever plan claimed otherwise.
         throw new RequestRefusal('write-denied');
     }
     $inScenarioScope = false;
@@ -4489,6 +4575,120 @@ function php_ast_digest_input(array $model): string
     return php_canonical_json($model);
 }
 
+// ---------------------------------------------------------------------------
+// The checked-binding join (issue #56, plan S3) — a structural port of
+// `joinCheckedBindings` in the Node scenario compiler.
+// ---------------------------------------------------------------------------
+
+const PHP_BINDING_MISSING = 'scenario.binding-missing';
+const PHP_BINDING_AMBIGUOUS = 'scenario.binding-ambiguous';
+const PHP_BINDING_MISMATCH = 'scenario.binding-mismatch';
+
+/**
+ * Join every native `checked` binding against the observed index's
+ * `test_bindings` records — the scan pipeline's view of which native
+ * tests claim which `lekalo:<id>` scenario identities. The join is
+ * pure and read-only: a missing, ambiguous, or stale binding is a
+ * typed finding, never a silent pass and never a rewrite.
+ *
+ * `indexDocument` is the parsed observed index (`null` when absent —
+ * legal absence: the join simply has nothing to say). Returns one
+ * finding per violated binding, ordered by the document's binding
+ * order.
+ */
+function php_join_checked_bindings(mixed $scenarioDocument, mixed $indexDocument): array
+{
+    $findings = [];
+    if (!is_array($indexDocument) || !is_array($indexDocument['test_bindings'] ?? null)) {
+        return $findings;
+    }
+    $claims = [];
+    foreach ($indexDocument['test_bindings'] as $record) {
+        if (!is_array($record)) {
+            continue;
+        }
+        $ids = php_claimed_ids($record['id'] ?? null);
+        if ($ids === []) {
+            continue;
+        }
+        $claims[] = [
+            'ids' => $ids,
+            'symbol' => is_string($record['symbol'] ?? null) ? $record['symbol'] : null,
+            'fingerprint' => is_string($record['fingerprint'] ?? null) ? $record['fingerprint'] : null,
+        ];
+    }
+    foreach (is_array($scenarioDocument) ? ($scenarioDocument['bindings'] ?? []) : [] as $binding) {
+        if (!is_array($binding)) {
+            continue;
+        }
+        if (($binding['backend'] ?? null) !== 'native' || ($binding['mode'] ?? null) !== 'checked') {
+            continue;
+        }
+        if (!is_string($binding['test'] ?? null)) {
+            continue;
+        }
+        $testId = $binding['test'];
+        $claiming = [];
+        foreach ($claims as $claim) {
+            if (in_array($testId, $claim['ids'], true)) {
+                $claiming[] = $claim;
+            }
+        }
+        if (count($claiming) === 0) {
+            $findings[] = ['code' => PHP_BINDING_MISSING, 'symbol' => $testId, 'detail' => 'no-scanned-test'];
+            continue;
+        }
+        if (count($claiming) > 1) {
+            $findings[] = [
+                'code' => PHP_BINDING_AMBIGUOUS,
+                'symbol' => $testId,
+                'detail' => 'claimed-by-' . count($claiming) . '-tests',
+            ];
+            continue;
+        }
+        // One native test file may legitimately cover several scenarios
+        // (one shared fixture setup, one harness), so a record whose
+        // claimed set CONTAINS the bound id joins cleanly; a declared
+        // evidence digest that disagrees with the scanned fingerprint
+        // means the test changed under the binding — stale evidence.
+        $record = $claiming[0];
+        if (is_string($binding['evidenceDigest'] ?? null) && $binding['evidenceDigest'] !== ''
+            && $record['fingerprint'] !== null
+            && $binding['evidenceDigest'] !== $record['fingerprint']) {
+            $findings[] = [
+                'code' => PHP_BINDING_MISMATCH,
+                'symbol' => $testId,
+                'detail' => 'stale-evidence-digest',
+            ];
+        }
+    }
+    return $findings;
+}
+
+/**
+ * The claimed scenario ids of one observed test-binding id: the core
+ * spells them `<test-path>#lekalo:<id>[,lekalo:<id>…]`; a bare
+ * `lekalo:<id>` (no path half) still joins.
+ */
+function php_claimed_ids(mixed $id): array
+{
+    if (!is_string($id)) {
+        return [];
+    }
+    $hash = strrpos($id, '#');
+    $name = $hash === false ? $id : substr($id, $hash + 1);
+    $claimed = [];
+    foreach (explode(',', $name) as $part) {
+        if (str_starts_with($part, 'lekalo:')) {
+            $value = substr($part, strlen('lekalo:'));
+            if ($value !== '') {
+                $claimed[] = $value;
+            }
+        }
+    }
+    return $claimed;
+}
+
 // ----- scenario compiler module: scenario-emit.php -----
 
 
@@ -4531,6 +4731,15 @@ const PHP_RUN_RECORD_IDENTITY = 'dev.lekalo.scenario-run@0.4.0';
 
 /** The run-record ingest home (an adjudicated `.lekalo/import` home). */
 const PHP_RUN_RECORD_DIR = '.lekalo/import/scenario-runs';
+
+/**
+ * The user-owned scaffold home (issue #56, plan S3): a `scaffolded`
+ * binding emits its test here exactly once — every later generation
+ * keeps the user's bytes — so it must sit outside the managed
+ * generated home. The segments stay lowercase because the write plan
+ * travels the logical-path grammar (uppercase is wire-illegal).
+ */
+const PHP_SCAFFOLD_TESTS_DIR = 'tests/lekalo/scenario-tests';
 
 /** Reserved emitted module names; a scenario module may never collide. */
 const PHP_RESERVED_MODULES = ['testkit', 'port', 'reporter', 'ScenarioTestKit', 'Port', 'ScenarioReporter'];
@@ -4640,7 +4849,8 @@ function php_emit_scenario_tests(array $input): array
     $models = $input['models'];
     usort($models, static fn (array $left, array $right): int => strcmp($left['id'], $right['id']));
     foreach ($models as $model) {
-        if ($model['binding']['mode'] === 'checked') {
+        $mode = $model['binding']['mode'];
+        if ($mode === 'checked') {
             // A checked binding declares that an EXISTING native test
             // owns the scenario identity: nothing is generated for it.
             continue;
@@ -4649,17 +4859,21 @@ function php_emit_scenario_tests(array $input): array
         if (in_array($module, PHP_RESERVED_MODULES, true)) {
             throw new LogicException('scenario module collides with a reserved emitted file: ' . $module);
         }
-        $testFile = php_emit_test($model, $context);
-        $files[] = php_file(
-            PHP_SCENARIO_TESTS_DIR . '/' . $module . '/' . $model['id'] . '.test.php',
-            $testFile['text'],
-            null,
-        );
-        $files[] = php_file(
-            PHP_SCENARIO_TESTS_DIR . '/' . $module . '/' . $model['id'] . '.test.map.json',
-            php_canonical_json($testFile['map']) . "\n",
-            $testFile['map'],
-        );
+        $scaffolded = $mode === 'scaffolded';
+        // A scaffolded test is user-owned: it is emitted once into the
+        // scaffold home (`frozen` — the kernel plans its write only
+        // when absent) and its map sidecar travels beside it as the
+        // scaffold marker the custody rules key on.
+        $dir = ($scaffolded ? PHP_SCAFFOLD_TESTS_DIR : PHP_SCENARIO_TESTS_DIR) . '/' . $module;
+        $testFile = php_emit_test($model, $context, $scaffolded);
+        $mapPath = $dir . '/' . $model['id'] . '.test.map.json';
+        $test = php_file($dir . '/' . $model['id'] . '.test.php', $testFile['text'], null);
+        if ($scaffolded) {
+            $test['frozen'] = true;
+            $test['marker'] = $mapPath;
+        }
+        $files[] = $test;
+        $files[] = php_file($mapPath, php_canonical_json($testFile['map']) . "\n", $testFile['map']);
     }
     usort($files, static fn (array $left, array $right): int => strcmp($left['path'], $right['path']));
     return $files;
@@ -5179,7 +5393,7 @@ PHP;
 // Per-scenario test rendering.
 // ---------------------------------------------------------------------------
 
-function php_emit_test(array $model, array $context): array
+function php_emit_test(array $model, array $context, bool $scaffolded = false): array
 {
     $segments = [];
     $cursor = 0;
@@ -5191,13 +5405,38 @@ function php_emit_test(array $model, array $context): array
     $classFqn = php_test_class_fqn($model['id']);
     $scenarioId = $model['id'];
     $header = php_doc_header($context);
+    // The sibling support files travel with every emission (the PHP
+    // mirror of the Node emitter's relative import block): the emitted
+    // test is self-contained and never depends on project autoload
+    // configuration for the generated namespace. A scaffolded test sits
+    // in the user-owned scaffold home, four segments below the project
+    // root, so its requires walk back to the managed support home.
+    $requires = ($scaffolded
+        ? "// The support files live in the managed generated home; this file is user-owned.\n"
+            . "require_once dirname(__DIR__, 4) . '/src/generated/php-laravel/scenario-tests/scenario-test-kit.php';\n"
+            . "require_once dirname(__DIR__, 4) . '/src/generated/php-laravel/scenario-tests/scenario-reporter.php';\n"
+            . "require_once dirname(__DIR__, 4) . '/src/generated/php-laravel/scenario-tests/port.php';"
+        : "// The sibling support files travel with every generation (the PHP\n"
+            . "// mirror of the Node emitter's relative import block): the emitted\n"
+            . "// test is self-contained and never depends on project autoload\n"
+            . "// configuration for the generated namespace.\n"
+            . "require_once __DIR__ . '/../scenario-test-kit.php';\n"
+            . "require_once __DIR__ . '/../scenario-reporter.php';\n"
+            . "require_once __DIR__ . '/../port.php';");
+    // The scaffolded file is user-owned after its one emission: it
+    // carries the `lekalo:<id>` claim marker the observed index scans
+    // for, plus an explicit edit-freedom note, so the scaffold never
+    // masquerades as managed content.
+    $marker = $scaffolded
+        ? "// lekalo:{$scenarioId} — scaffolded once; edit freely, regeneration never overwrites this file.\n"
+        : '';
     $heredoc = <<<PHP
 $header
 //
 // Scenario {$scenarioId} @{$model['version']}: {$model['summary']}
 // Runner {$model['runner']['id']}; binding {$model['binding']['mode']}; native test id
 // php-laravel:{$scenarioId}; generated by the scenario-test compiler (issue #56).
-
+{$marker}
 declare(strict_types=1);
 
 namespace Lekalo\\Generated\\ScenarioTests\\{$model['projectId']};
@@ -5209,13 +5448,7 @@ use Laratesto\\Attribute\\DatabaseMigrations;
 use Testo\\Assert;
 use Testo\Test;
 
-// The sibling support files travel with every generation (the PHP
-// mirror of the Node emitter's relative import block): the emitted
-// test is self-contained and never depends on project autoload
-// configuration for the generated namespace.
-require_once __DIR__ . '/../scenario-test-kit.php';
-require_once __DIR__ . '/../scenario-reporter.php';
-require_once __DIR__ . '/../port.php';
+{$requires}
 
 PHP;
     $push($heredoc, null);

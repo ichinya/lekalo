@@ -104,6 +104,19 @@ const DECLARED_CAPABILITIES = [
 const SCENARIO_WRITE_SCOPES = ['src/generated/php-laravel/scenario-tests/**'];
 
 /**
+ * The user-owned scaffold scope (issue #56, plan S3): `scaffolded`
+ * bindings emit once here and are never rewritten or deleted by the
+ * kernel. Declared in `write_scopes` for apply honesty; the delete
+ * path refuses it outright.
+ */
+const PHP_SCAFFOLD_SCOPE = 'tests/lekalo/scenario-tests/**';
+
+/**
+ * The observed scan index the checked-binding join reads.
+ */
+const PHP_OBSERVED_INDEX_PATH = '.lekalo/import/observed/index.json';
+
+/**
  * The canonical evidence home of the compiled project IR (core-owned).
  */
 const IR_EVIDENCE_HOME = '.lekalo/cache/ir';
@@ -1056,7 +1069,11 @@ function deterministic_generation(array $request): array
             ];
         }
         $writes = [];
+        $skipWrites = $outcome['skip_writes'] ?? [];
         foreach ($outcome['files'] as $file) {
+            if (isset($skipWrites[$file['path']])) {
+                continue;
+            }
             $writes[] = [
                 'path' => $file['path'],
                 'action' => 'create',
@@ -1192,14 +1209,33 @@ function scenario_generation(array $request): array
         'portClass' => $portPresent ? $port['class'] : '',
     ]);
     $emitted = [];
+    $skipWrites = [];
     foreach ($files as $file) {
-        $emitted[] = [
+        $entry = [
             'path' => $file['path'],
             'bytes' => $file['text'],
             'digest' => 'sha256:' . hash('sha256', $file['text']),
         ];
+        if (($file['frozen'] ?? false) === true) {
+            // Scaffold-once custody: the frozen write is planned only
+            // while its managed marker is absent. Once the marker
+            // exists the file is user-owned — regeneration never
+            // rewrites it, and a deleted test is a verify finding
+            // rather than a silent recreate.
+            $entry['frozen'] = true;
+            $entry['marker'] = $file['marker'];
+            if (is_file($file['marker'])) {
+                $skipWrites[$file['path']] = true;
+            }
+        }
+        $emitted[] = $entry;
     }
-    return ['files' => $emitted, 'findings' => $mapped['findings']];
+    return [
+        'files' => $emitted,
+        'findings' => $mapped['findings'],
+        'skip_writes' => $skipWrites,
+        'scenario' => $scenario,
+    ];
 }
 
 /** One bounded read inside the declared read roots (null when absent). */
@@ -1209,6 +1245,7 @@ function read_view_file(string $path): ?string
         return null;
     }
     if (str_starts_with($path, '.lekalo/ir/') || str_starts_with($path, '.lekalo/cache/')
+        || str_starts_with($path, '.lekalo/import/')
         || str_starts_with($path, 'lekalo/')) {
         $bytes = @file_get_contents($path);
         return $bytes === false ? null : $bytes;
@@ -1721,6 +1758,7 @@ function describe_capabilities(?Analyzer $analyzer = null): array
         'write_scopes' => array_merge(
             ['.lekalo/generated/php-laravel/**'],
             SCENARIO_WRITE_SCOPES,
+            [PHP_SCAFFOLD_SCOPE],
         ),
         'progress' => false,
         'ir_versions' => [IR_VERSION],
@@ -2197,7 +2235,41 @@ function scenario_verify_response(array $request): array
             'detail' => $finding['detail'] ?? null,
         ];
     }
+    // The checked-binding join (Node parity): every `mode: checked`
+    // binding must join against the observed scan index. An absent
+    // index is legal silence — the join has nothing to say.
+    $indexText = read_view_file(PHP_OBSERVED_INDEX_PATH);
+    $index = null;
+    if ($indexText !== null) {
+        try {
+            $index = json_decode($indexText, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            $index = null;
+        }
+    }
+    foreach (php_join_checked_bindings($mapped['scenario'] ?? null, $index) as $finding) {
+        $findings[] = [
+            'path' => $finding['symbol'] ?? 'binding',
+            'code' => $finding['code'],
+            'detail' => $finding['detail'] ?? null,
+        ];
+    }
     foreach ($mapped['files'] as $file) {
+        if (($file['frozen'] ?? false) === true) {
+            // Scaffold-once custody: the user-owned test is
+            // existence-checked only — its bytes are the user's. A
+            // missing test with a surviving marker is a removed
+            // scaffold (actionable); with the marker also gone the
+            // drift finding on the map already says enough.
+            if (!is_file($file['path']) && is_file($file['marker'])) {
+                $findings[] = [
+                    'path' => $file['path'],
+                    'code' => 'scenario.scaffold-missing',
+                    'detail' => 'scaffolded-test-removed',
+                ];
+            }
+            continue;
+        }
         $expectedDigest = $file['digest'];
         $actual = is_file($file['path']) ? hash_file('sha256', $file['path']) : false;
         if ($actual === false) {
@@ -2261,7 +2333,10 @@ function generate_response(array $request): array
     ]);
 }
 
-/** The plan-clean exchange: deletions only, over the owned artifact. */
+/**
+ * The plan-clean exchange: deletions only, over the owned artifact.
+ * The scaffold scope is user-owned and never enters a delete plan.
+ */
 function plan_clean_response(array $request): array
 {
     $writes = deterministic_writes(deterministic_generation($request));
@@ -2269,10 +2344,12 @@ function plan_clean_response(array $request): array
     // #57): the ledger records them, and a generic clean confirmation
     // never retires them. The plan skips them — the deletion plan
     // covers only non-retained owned artifacts — so an orphan sweep
-    // can never rewrite migration history.
+    // can never rewrite migration history. The scaffold scope is
+    // user-owned for the same reason (issue #56).
     $plan = [];
     foreach ($writes as $entry) {
-        if (retained_artifact($entry['path'])) {
+        if (retained_artifact($entry['path'])
+            || scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])) {
             continue;
         }
         $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
@@ -2298,7 +2375,8 @@ function clean_response(array $request): array
 {
     $writes = deterministic_writes(deterministic_generation($request));
     // Retained custody mirrors the plan: a migration or ledger path
-    // refuses the apply outright instead of silently surviving.
+    // refuses the apply outright instead of silently surviving. The
+    // scaffold scope is excluded — never silently kept, never deleted.
     foreach ($writes as $entry) {
         if (retained_artifact($entry['path'])) {
             return build_response($request, [
@@ -2312,10 +2390,13 @@ function clean_response(array $request): array
             ]);
         }
     }
-    $plan = array_map(
-        static fn (array $entry): array => ['path' => $entry['path'], 'action' => 'delete'],
-        $writes,
-    );
+    $plan = [];
+    foreach ($writes as $entry) {
+        if (scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])) {
+            continue;
+        }
+        $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
+    }
     $requested = $request['plan_id'] ?? '';
     // The apply authority is the client's pending binding (see the
     // generate apply note): the echo is shape-checked, never recomputed.
@@ -2382,7 +2463,8 @@ function apply_writes(array $writes, array $files): void
         if (!is_logical_path($path) || protected_home($path) !== null) {
             throw new RequestRefusal('write-denied');
         }
-        // The scenario home writes under the project's src tree; every
+        // The scenario home writes under the project's src tree; the
+        // scaffold scope admits the one-shot user-owned emission; every
         // other generated artifact stays inside the runtime-owned
         // `.lekalo/generated/php-laravel/**` home.
         $inScenarioScope = false;
@@ -2392,7 +2474,8 @@ function apply_writes(array $writes, array $files): void
                 break;
             }
         }
-        if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope) {
+        if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope
+            && !scope_covers(PHP_SCAFFOLD_SCOPE, $path)) {
             throw new RequestRefusal('write-denied');
         }
         $bytes = $bytesByPath[$path] ?? null;
@@ -2433,7 +2516,10 @@ function apply_writes(array $writes, array $files): void
 
 function delete_write(string $path): void
 {
-    if (!is_logical_path($path) || protected_home($path) !== null) {
+    if (!is_logical_path($path) || protected_home($path) !== null
+        || scope_covers(PHP_SCAFFOLD_SCOPE, $path)) {
+        // The scaffold scope is user-owned: no kernel path may delete
+        // inside it, whatever plan claimed otherwise.
         throw new RequestRefusal('write-denied');
     }
     $inScenarioScope = false;

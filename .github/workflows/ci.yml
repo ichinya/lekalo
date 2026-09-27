@@ -225,6 +225,12 @@ jobs:
         # confinement limitation as an explicit, logged skip.
         timeout-minutes: 10
         run: node scripts/test-php-laravel-adapter.mjs
+      - name: Run the PHP scenario binding custody gate (issue #56)
+        # Scaffold-once and checked-binding semantics over the pure
+        # compile exchange — needs PHP only, no vendor tree: generation
+        # and verification never execute project code.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-scenario-bindings.mjs
       - name: Run the Mago integration gate, fake mode (issue #55)
         # Requires PHP but no Mago binary and no network: the receipt
         # decoder, the analysis states, and the strict-profile gates run

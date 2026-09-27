@@ -1024,3 +1024,117 @@ function php_ast_digest_input(array $model): string
 {
     return php_canonical_json($model);
 }
+
+// ---------------------------------------------------------------------------
+// The checked-binding join (issue #56, plan S3) — a structural port of
+// `joinCheckedBindings` in the Node scenario compiler.
+// ---------------------------------------------------------------------------
+
+const PHP_BINDING_MISSING = 'scenario.binding-missing';
+const PHP_BINDING_AMBIGUOUS = 'scenario.binding-ambiguous';
+const PHP_BINDING_MISMATCH = 'scenario.binding-mismatch';
+
+/**
+ * Join every native `checked` binding against the observed index's
+ * `test_bindings` records — the scan pipeline's view of which native
+ * tests claim which `lekalo:<id>` scenario identities. The join is
+ * pure and read-only: a missing, ambiguous, or stale binding is a
+ * typed finding, never a silent pass and never a rewrite.
+ *
+ * `indexDocument` is the parsed observed index (`null` when absent —
+ * legal absence: the join simply has nothing to say). Returns one
+ * finding per violated binding, ordered by the document's binding
+ * order.
+ */
+function php_join_checked_bindings(mixed $scenarioDocument, mixed $indexDocument): array
+{
+    $findings = [];
+    if (!is_array($indexDocument) || !is_array($indexDocument['test_bindings'] ?? null)) {
+        return $findings;
+    }
+    $claims = [];
+    foreach ($indexDocument['test_bindings'] as $record) {
+        if (!is_array($record)) {
+            continue;
+        }
+        $ids = php_claimed_ids($record['id'] ?? null);
+        if ($ids === []) {
+            continue;
+        }
+        $claims[] = [
+            'ids' => $ids,
+            'symbol' => is_string($record['symbol'] ?? null) ? $record['symbol'] : null,
+            'fingerprint' => is_string($record['fingerprint'] ?? null) ? $record['fingerprint'] : null,
+        ];
+    }
+    foreach (is_array($scenarioDocument) ? ($scenarioDocument['bindings'] ?? []) : [] as $binding) {
+        if (!is_array($binding)) {
+            continue;
+        }
+        if (($binding['backend'] ?? null) !== 'native' || ($binding['mode'] ?? null) !== 'checked') {
+            continue;
+        }
+        if (!is_string($binding['test'] ?? null)) {
+            continue;
+        }
+        $testId = $binding['test'];
+        $claiming = [];
+        foreach ($claims as $claim) {
+            if (in_array($testId, $claim['ids'], true)) {
+                $claiming[] = $claim;
+            }
+        }
+        if (count($claiming) === 0) {
+            $findings[] = ['code' => PHP_BINDING_MISSING, 'symbol' => $testId, 'detail' => 'no-scanned-test'];
+            continue;
+        }
+        if (count($claiming) > 1) {
+            $findings[] = [
+                'code' => PHP_BINDING_AMBIGUOUS,
+                'symbol' => $testId,
+                'detail' => 'claimed-by-' . count($claiming) . '-tests',
+            ];
+            continue;
+        }
+        // One native test file may legitimately cover several scenarios
+        // (one shared fixture setup, one harness), so a record whose
+        // claimed set CONTAINS the bound id joins cleanly; a declared
+        // evidence digest that disagrees with the scanned fingerprint
+        // means the test changed under the binding — stale evidence.
+        $record = $claiming[0];
+        if (is_string($binding['evidenceDigest'] ?? null) && $binding['evidenceDigest'] !== ''
+            && $record['fingerprint'] !== null
+            && $binding['evidenceDigest'] !== $record['fingerprint']) {
+            $findings[] = [
+                'code' => PHP_BINDING_MISMATCH,
+                'symbol' => $testId,
+                'detail' => 'stale-evidence-digest',
+            ];
+        }
+    }
+    return $findings;
+}
+
+/**
+ * The claimed scenario ids of one observed test-binding id: the core
+ * spells them `<test-path>#lekalo:<id>[,lekalo:<id>…]`; a bare
+ * `lekalo:<id>` (no path half) still joins.
+ */
+function php_claimed_ids(mixed $id): array
+{
+    if (!is_string($id)) {
+        return [];
+    }
+    $hash = strrpos($id, '#');
+    $name = $hash === false ? $id : substr($id, $hash + 1);
+    $claimed = [];
+    foreach (explode(',', $name) as $part) {
+        if (str_starts_with($part, 'lekalo:')) {
+            $value = substr($part, strlen('lekalo:'));
+            if ($value !== '') {
+                $claimed[] = $value;
+            }
+        }
+    }
+    return $claimed;
+}
