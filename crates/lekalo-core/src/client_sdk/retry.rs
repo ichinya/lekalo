@@ -67,9 +67,7 @@ pub fn authorize(
             // registry source cannot smuggle an unsafe combination.
             match effect {
                 EffectClass::None | EffectClass::Read => RetryAuthorization::Safe,
-                EffectClass::Write
-                | EffectClass::Destructive
-                | EffectClass::External
+                EffectClass::Write | EffectClass::Destructive | EffectClass::External
                     if idempotency == Idempotency::Guaranteed =>
                 {
                     RetryAuthorization::Safe
@@ -171,7 +169,11 @@ mod tests {
     #[test]
     fn never_and_conditional_reconciliation_never_retry() {
         assert_eq!(
-            authorize(RetryPolicy::Never, Idempotency::NotApplicable, EffectClass::Read),
+            authorize(
+                RetryPolicy::Never,
+                Idempotency::NotApplicable,
+                EffectClass::Read
+            ),
             RetryAuthorization::Never
         );
         assert_eq!(
@@ -188,7 +190,11 @@ mod tests {
     #[test]
     fn safe_reads_retry_and_unsafe_writes_do_not() {
         assert_eq!(
-            authorize(RetryPolicy::Safe, Idempotency::NotApplicable, EffectClass::Read),
+            authorize(
+                RetryPolicy::Safe,
+                Idempotency::NotApplicable,
+                EffectClass::Read
+            ),
             RetryAuthorization::Safe
         );
         // A write without a guaranteed idempotency contract can never
@@ -234,20 +240,14 @@ mod tests {
         assert!(plan_attempts(&authorizations, 0).is_err());
         assert!(plan_attempts(&authorizations, MAX_ATTEMPTS).is_err());
         // Key-required errors flip the plan's key demand.
-        let keyed = [
-            RetryAuthorization::Never,
-            RetryAuthorization::KeyRequired,
-        ];
+        let keyed = [RetryAuthorization::Never, RetryAuthorization::KeyRequired];
         let keyed_plan = plan_attempts(&keyed, 1).expect("plan");
         assert!(keyed_plan.key_required_for_retry);
     }
 
     #[test]
     fn retry_permission_checks_key_and_attempt_bound() {
-        let keyed = [
-            RetryAuthorization::Never,
-            RetryAuthorization::KeyRequired,
-        ];
+        let keyed = [RetryAuthorization::Never, RetryAuthorization::KeyRequired];
         let plan = plan_attempts(&keyed, 1).expect("plan");
         // A declared key-required error with a key: permitted once.
         assert!(retry_permitted(

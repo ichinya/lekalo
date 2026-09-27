@@ -30,37 +30,6 @@ use crate::transport_http::{
     ValidationContext,
 };
 
-/// Load and compile the committed planner fixture project (shared by
-/// the module's unit tests). The unit test suite serializes this
-/// helper behind the workspace-root cwd lock because the loader
-/// resolves relative selectors against the process working directory
-/// and sibling suites (cache, project_fs) also use relative temp
-/// cases; the integration suite owns its own copy instead.
-#[cfg(test)]
-pub(crate) fn fixture_project() -> CompiledProject {
-    static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = CWD_LOCK.lock().expect("cwd lock");
-    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(std::path::Path::parent)
-        .expect("core crate lives under workspace/crates")
-        .to_path_buf();
-    let saved = std::env::current_dir().expect("current dir");
-    std::env::set_current_dir(&workspace).expect("enter workspace root");
-    let result = std::panic::catch_unwind(|| {
-        let selection = crate::loader::LoadSelection {
-            project: Some("tests/fixtures/transport-http/project".to_owned()),
-        };
-        let model = crate::loader::normalize_model(&selection).expect("fixture load");
-        crate::ir::compile(&model).expect("fixture compile").project
-    });
-    std::env::set_current_dir(saved).expect("restore working dir");
-    match result {
-        Ok(project) => project,
-        Err(payload) => std::panic::resume_unwind(payload),
-    }
-}
-
 use super::diagnostic;
 use super::id::{camel_of_semantic, snake_of_semantic, TargetIdent};
 use super::retry;
@@ -132,10 +101,7 @@ pub fn project(
     // The decimal string-mapping set: explicit, bounded, resolved.
     let mut decimals = BTreeMap::new();
     for symbol in &config.decimal_scalars {
-        if !matches!(
-            resolve_symbol(project, symbol),
-            Some(Definition::Scalar(_))
-        ) {
+        if !matches!(resolve_symbol(project, symbol), Some(Definition::Scalar(_))) {
             return Err(diagnostic::rule_invalid(
                 diagnostic::SYMBOL_UNRESOLVED,
                 "decimal-scalar",
@@ -154,10 +120,7 @@ pub fn project(
     let unit_symbol = format!("{}.unit", project_id.as_str());
     let mut types = Vec::new();
     let mut collected = BTreeMap::new();
-    collected.insert(
-        unit_symbol.clone(),
-        TypeKind::Object(vec![]),
-    );
+    collected.insert(unit_symbol.clone(), TypeKind::Object(vec![]));
     let mut used_idents = std::collections::BTreeSet::new();
     used_idents.insert(camel_of_semantic(&unit_symbol));
     for binding in document.endpoints() {
@@ -238,9 +201,7 @@ pub fn project(
 
 /// The canonical payload bytes of one projection: compact JSON with
 /// byte-sorted keys, no trailing LF, bounded.
-pub(crate) fn canonical_bytes(
-    contract: &ClientContractWire,
-) -> Result<String, DiagnosticSet> {
+pub(crate) fn canonical_bytes(contract: &ClientContractWire) -> Result<String, DiagnosticSet> {
     let mut root = Map::new();
     root.insert(
         "schemaVersion".to_owned(),
@@ -360,10 +321,7 @@ fn rename_error(symbol: &str, set: DiagnosticSet) -> DiagnosticSet {
 }
 
 /// Resolve one symbol to its definition, or refuse.
-fn resolve_symbol<'a>(
-    project: &'a CompiledProject,
-    symbol: &str,
-) -> Option<&'a Definition> {
+fn resolve_symbol<'a>(project: &'a CompiledProject, symbol: &str) -> Option<&'a Definition> {
     project
         .definitions
         .iter()
@@ -509,9 +467,7 @@ fn collect_type_ref(
     collected: &mut BTreeMap<String, TypeKind>,
 ) -> Result<(), DiagnosticSet> {
     match type_ref {
-        TypeRef::Ref(symbol) => {
-            collect_symbol(project, symbol.as_str(), decimals, collected)
-        }
+        TypeRef::Ref(symbol) => collect_symbol(project, symbol.as_str(), decimals, collected),
         TypeRef::List(inner) => collect_type_ref(project, inner, decimals, collected),
         TypeRef::Optional(inner) => collect_type_ref(project, inner, decimals, collected),
     }
@@ -618,7 +574,8 @@ fn operation_of(
         });
     }
     params.sort_by(|left, right| {
-        (left.location.as_str(), left.name.as_str()).cmp(&(right.location.as_str(), right.name.as_str()))
+        (left.location.as_str(), left.name.as_str())
+            .cmp(&(right.location.as_str(), right.name.as_str()))
     });
 
     // The request body.
@@ -667,11 +624,8 @@ fn operation_of(
         let contract = registry
             .error_by_str(entry.error.as_str())
             .ok_or_else(|| unresolved(entry.error.as_str()))?;
-        let authorization = retry::authorize(
-            contract.retry(),
-            contract.idempotency(),
-            contract.effect(),
-        );
+        let authorization =
+            retry::authorize(contract.retry(), contract.idempotency(), contract.effect());
         let payload = contract
             .payload()
             .public_fields()
@@ -710,17 +664,23 @@ fn operation_of(
             .map(|scheme| scheme.as_str().to_owned())
             .collect(),
     });
-    let idempotency = binding.idempotency.as_ref().map(|binding| ClientIdempotency {
-        header: binding.header.as_str().to_owned(),
-        required: binding.required,
-    });
-    let correlation = binding.correlation.as_ref().map(|binding| ClientCorrelation {
-        headers: binding
-            .headers
-            .iter()
-            .map(|header| header.as_str().to_owned())
-            .collect(),
-    });
+    let idempotency = binding
+        .idempotency
+        .as_ref()
+        .map(|binding| ClientIdempotency {
+            header: binding.header.as_str().to_owned(),
+            required: binding.required,
+        });
+    let correlation = binding
+        .correlation
+        .as_ref()
+        .map(|binding| ClientCorrelation {
+            headers: binding
+                .headers
+                .iter()
+                .map(|header| header.as_str().to_owned())
+                .collect(),
+        });
 
     // The pagination helper: offset bindings project directly; cursor
     // bindings must resolve the cursor field and its declared type so
@@ -756,9 +716,18 @@ fn operation_of(
             Some(ClientPagination {
                 style: pagination.style.as_str().to_owned(),
                 limit_param: pagination.limit_param.as_str().to_owned(),
-                offset_param: pagination.offset_param.as_ref().map(|p| p.as_str().to_owned()),
-                cursor_param: pagination.cursor_param.as_ref().map(|p| p.as_str().to_owned()),
-                cursor_field: pagination.cursor_field.as_ref().map(|f| f.as_str().to_owned()),
+                offset_param: pagination
+                    .offset_param
+                    .as_ref()
+                    .map(|p| p.as_str().to_owned()),
+                cursor_param: pagination
+                    .cursor_param
+                    .as_ref()
+                    .map(|p| p.as_str().to_owned()),
+                cursor_field: pagination
+                    .cursor_field
+                    .as_ref()
+                    .map(|f| f.as_str().to_owned()),
                 cursor_type_ref,
             })
         }
@@ -884,15 +853,13 @@ fn body_of(
             UNIT_TYPE.to_owned()
         }
         Definition::Query(query) if !input => match &query.returns {
-            Some(returns) => leaf_ref(returns)
-                .map(str::to_owned)
-                .ok_or_else(|| {
-                    diagnostic::rule_invalid(
-                        diagnostic::CONTRACT_INVALID,
-                        "output-type-unresolved",
-                        Some(subject),
-                    )
-                })?,
+            Some(returns) => leaf_ref(returns).map(str::to_owned).ok_or_else(|| {
+                diagnostic::rule_invalid(
+                    diagnostic::CONTRACT_INVALID,
+                    "output-type-unresolved",
+                    Some(subject),
+                )
+            })?,
             // A whole-output success body without a declared output is
             // a silent narrowing: refuse instead of emitting an empty
             // typeRef (issue #72 fix round).
@@ -911,8 +878,7 @@ fn body_of(
         .iter()
         .map(|field| {
             let member = bound_member(project, operation, input, field.field.as_str().to_owned());
-            let (type_ref, nullable) =
-                member.unwrap_or_else(|| (String::new(), false));
+            let (type_ref, nullable) = member.unwrap_or_else(|| (String::new(), false));
             ClientField {
                 name: field.name.as_str().to_owned(),
                 field: field.field.as_str().to_owned(),
@@ -950,7 +916,9 @@ fn bound_member(
             .find(|member| member.name.as_str() == name)
             .map(|member| {
                 (
-                    leaf_ref(&member.r#type).map(str::to_owned).unwrap_or_default(),
+                    leaf_ref(&member.r#type)
+                        .map(str::to_owned)
+                        .unwrap_or_default(),
                     nullable_of(&member.r#type),
                 )
             })
@@ -985,12 +953,12 @@ fn operation_json(operation: &ClientOperation) -> Json {
         "invokes".to_owned(),
         Json::String(operation.invokes.as_str().to_owned()),
     );
-    object.insert(
-        "method".to_owned(),
-        Json::String(operation.method.clone()),
-    );
+    object.insert("method".to_owned(), Json::String(operation.method.clone()));
     object.insert("path".to_owned(), Json::String(operation.path.clone()));
-    object.insert("ident".to_owned(), Json::String(operation.ident.as_str().to_owned()));
+    object.insert(
+        "ident".to_owned(),
+        Json::String(operation.ident.as_str().to_owned()),
+    );
     object.insert(
         "params".to_owned(),
         Json::Array(operation.params.iter().map(param_json).collect()),
@@ -998,7 +966,10 @@ fn operation_json(operation: &ClientOperation) -> Json {
     if let Some(body) = &operation.body {
         object.insert("body".to_owned(), body_json(body));
     }
-    object.insert("successStatus".to_owned(), Json::from(operation.success_status));
+    object.insert(
+        "successStatus".to_owned(),
+        Json::from(operation.success_status),
+    );
     if let Some(body) = &operation.success_body {
         object.insert("successBody".to_owned(), body_json(body));
     }
@@ -1064,8 +1035,10 @@ fn operation_json(operation: &ClientOperation) -> Json {
             pagination_object.insert("cursorField".to_owned(), Json::String(field.clone()));
         }
         if let Some(cursor_type) = &pagination.cursor_type_ref {
-            pagination_object
-                .insert("cursorTypeRef".to_owned(), Json::String(cursor_type.clone()));
+            pagination_object.insert(
+                "cursorTypeRef".to_owned(),
+                Json::String(cursor_type.clone()),
+            );
         }
         object.insert("pagination".to_owned(), Json::Object(pagination_object));
     }
@@ -1088,7 +1061,10 @@ fn operation_json(operation: &ClientOperation) -> Json {
 fn param_json(param: &ClientParam) -> Json {
     let mut object = Map::new();
     object.insert("name".to_owned(), Json::String(param.name.clone()));
-    object.insert("in".to_owned(), Json::String(param.location.as_str().to_owned()));
+    object.insert(
+        "in".to_owned(),
+        Json::String(param.location.as_str().to_owned()),
+    );
     object.insert("field".to_owned(), Json::String(param.field.clone()));
     object.insert("typeRef".to_owned(), Json::String(param.type_ref.clone()));
     object.insert("required".to_owned(), Json::Bool(param.required));
@@ -1105,7 +1081,10 @@ fn param_json(param: &ClientParam) -> Json {
 /// One canonical body object.
 fn body_json(body: &ClientBody) -> Json {
     let mut object = Map::new();
-    object.insert("mode".to_owned(), Json::String(body.mode.as_str().to_owned()));
+    object.insert(
+        "mode".to_owned(),
+        Json::String(body.mode.as_str().to_owned()),
+    );
     object.insert("typeRef".to_owned(), Json::String(body.type_ref.clone()));
     if !body.fields.is_empty() {
         object.insert(
@@ -1132,7 +1111,10 @@ fn body_json(body: &ClientBody) -> Json {
 /// One canonical error-variant object.
 fn error_json(error: &ErrorVariant) -> Json {
     let mut object = Map::new();
-    object.insert("error".to_owned(), Json::String(error.error.as_str().to_owned()));
+    object.insert(
+        "error".to_owned(),
+        Json::String(error.error.as_str().to_owned()),
+    );
     object.insert("code".to_owned(), Json::String(error.code.clone()));
     object.insert("category".to_owned(), Json::String(error.category.clone()));
     object.insert("status".to_owned(), Json::from(error.status));
@@ -1170,7 +1152,10 @@ fn type_json(type_def: &ClientType) -> Json {
         Json::String(type_def.symbol.as_str().to_owned()),
     );
     object.insert("typeId".to_owned(), Json::String(type_def.type_id.clone()));
-    object.insert("ident".to_owned(), Json::String(type_def.ident.as_str().to_owned()));
+    object.insert(
+        "ident".to_owned(),
+        Json::String(type_def.ident.as_str().to_owned()),
+    );
     match &type_def.kind {
         TypeKind::Scalar(mapping) => {
             object.insert("kind".to_owned(), Json::String("scalar".to_owned()));
@@ -1198,7 +1183,8 @@ fn type_json(type_def: &ClientType) -> Json {
                         .map(|field| {
                             let mut entry = Map::new();
                             entry.insert("name".to_owned(), Json::String(field.name.clone()));
-                            entry.insert("typeRef".to_owned(), Json::String(field.type_ref.clone()));
+                            entry
+                                .insert("typeRef".to_owned(), Json::String(field.type_ref.clone()));
                             entry.insert("nullable".to_owned(), Json::Bool(field.nullable));
                             entry.insert("required".to_owned(), Json::Bool(field.required));
                             Json::Object(entry)
@@ -1235,27 +1221,5 @@ mod tests {
         assert!(!is_lower_snake("double__under"));
         assert!(!is_lower_snake("Upper"));
         assert!(!is_lower_snake("has space"));
-    }
-
-    #[test]
-    fn bound_member_resolves_command_inputs_and_entity_fields() {
-        let project = fixture_project();
-        let command = resolve_operation(&project, "planner.focus_task").expect("command");
-        assert_eq!(
-            bound_member(&project, command, true, "input.task_id".to_owned()),
-            Some(("planner.task_id".to_owned(), false))
-        );
-        assert_eq!(bound_member(&project, command, true, "input.missing".to_owned()), None);
-        let query = resolve_operation(&project, "planner.list_tasks").expect("query");
-        assert_eq!(
-            bound_member(&project, query, false, "title".to_owned()),
-            Some(("planner.text".to_owned(), false))
-        );
-        // `due` is Optional(due_date): the nullable axis travels.
-        assert_eq!(
-            bound_member(&project, query, false, "due".to_owned()),
-            Some(("planner.due_date".to_owned(), true))
-        );
-        assert_eq!(bound_member(&project, query, false, "missing".to_owned()), None);
     }
 }

@@ -174,7 +174,9 @@ pub fn affected_clients(
             .map(|segments| segments[0].to_owned());
         let is_endpoint_removal = matches!(&endpoint_segments, Some(segments) if segments.len() == 1)
             && path.class() == transport_http::DiffClass::Breaking
-            && candidate.endpoint(endpoint_id.as_deref().unwrap_or_default()).is_none();
+            && candidate
+                .endpoint(endpoint_id.as_deref().unwrap_or_default())
+                .is_none();
         let kind = match path.class() {
             transport_http::DiffClass::Breaking => {
                 if is_endpoint_removal {
@@ -221,7 +223,11 @@ pub fn affected_clients(
         }
     }
     affected.sort_by(|left, right| {
-        (&left.artifact_id, left.kind.as_str(), left.endpoint.as_ref().map(|e| e.as_str()))
+        (
+            &left.artifact_id,
+            left.kind.as_str(),
+            left.endpoint.as_ref().map(|e| e.as_str()),
+        )
             .cmp(&(
                 &right.artifact_id,
                 right.kind.as_str(),
@@ -255,8 +261,8 @@ mod tests {
             artifact_id: id.to_owned(),
             path: format!(".lekalo/generated/clients/{id}"),
             language: Language::Typescript,
-            contract_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-                .to_owned(),
+            contract_digest:
+                "sha256:0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
             endpoints: endpoints
                 .iter()
                 .map(|endpoint| SemanticId::parse(endpoint).expect("endpoint id"))
@@ -271,13 +277,18 @@ mod tests {
     #[test]
     fn index_sorts_and_refuses_duplicates() {
         let index = ClientArtifactIndex::new(vec![
-            entry("planner.clients.go", &["planner.endpoint_focus_task"], &["billing"]),
+            entry(
+                "planner.clients.go",
+                &["planner.endpoint_focus_task"],
+                &["billing"],
+            ),
             entry("planner.clients.php", &[], &[]),
         ])
         .expect("index");
         assert_eq!(index.entries().len(), 2);
         assert_eq!(
-            index.entries()[0].artifact_id, "planner.clients.go",
+            index.entries()[0].artifact_id,
+            "planner.clients.go",
             "id-sorted"
         );
         assert!(ClientArtifactIndex::new(vec![
@@ -304,6 +315,10 @@ mod tests {
         .expect("index");
         let consumers = index.consumers_of_endpoint("planner.endpoint_focus_task");
         let spelled: Vec<&str> = consumers.iter().map(|consumer| consumer.as_str()).collect();
-        assert_eq!(spelled, vec!["audit", "billing", "web_console"], "sorted, deduped");
+        assert_eq!(
+            spelled,
+            vec!["audit", "billing", "web_console"],
+            "sorted, deduped"
+        );
     }
 }

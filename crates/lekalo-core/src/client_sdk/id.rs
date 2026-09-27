@@ -225,8 +225,14 @@ mod tests {
 
     #[test]
     fn semantic_spellings_are_deterministic() {
-        assert_eq!(snake_of_semantic("planner.endpoint_focus_task"), "endpoint_focus_task");
-        assert_eq!(camel_of_semantic("planner.endpoint_focus_task"), "endpointFocusTask");
+        assert_eq!(
+            snake_of_semantic("planner.endpoint_focus_task"),
+            "endpoint_focus_task"
+        );
+        assert_eq!(
+            camel_of_semantic("planner.endpoint_focus_task"),
+            "endpointFocusTask"
+        );
         assert_eq!(camel_of_semantic("planner.list_tasks"), "listTasks");
         assert_eq!(camel_of_semantic("planner.count_focused"), "countFocused");
     }

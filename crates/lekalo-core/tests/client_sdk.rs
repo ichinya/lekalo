@@ -13,7 +13,7 @@ use std::sync::Mutex;
 
 use lekalo_core::client_sdk::{
     affected_clients, authorize, project, retry_permitted, AffectedClient, ClientArtifactEntry,
-    ClientArtifactIndex, ClientConfig, ConsumerId, Language, RetryAuthorization, ResultShape,
+    ClientArtifactIndex, ClientConfig, ConsumerId, Language, ResultShape, RetryAuthorization,
     ScalarMapping, TypeKind, COMPATIBILITY_IDENTITY, IDENTITY, SCHEMA_VERSION,
 };
 use lekalo_core::error_contract::ErrorRegistry;
@@ -117,8 +117,7 @@ fn sdk_index() -> ClientArtifactIndex {
     .expect("index")
 }
 
-const ZERO_DIGEST: &str =
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+const ZERO_DIGEST: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 #[test]
 fn client_sdk_suite_runs_from_the_workspace_root() {
@@ -148,7 +147,8 @@ fn client_sdk_suite_runs_from_the_workspace_root() {
 fn projection_covers_every_endpoint_and_preserves_identity() {
     let compiled = compile_fixture_project();
     let registry = ErrorRegistry::embedded().expect("registry");
-    let query_model = QueryModelAttachment::from_value(&read_fixture("query-model.json")).expect("ok");
+    let query_model =
+        QueryModelAttachment::from_value(&read_fixture("query-model.json")).expect("ok");
     let capabilities = CapabilityMap::http_json();
     let session = session(&compiled, registry, &query_model, &capabilities);
     let config = ClientConfig::generated();
@@ -160,7 +160,10 @@ fn projection_covers_every_endpoint_and_preserves_identity() {
         COMPATIBILITY_IDENTITY,
         "dev.lekalo.client-sdk-compatibility@0.4.0"
     );
-    assert_eq!(contract.operations().len(), session.document.endpoints().len());
+    assert_eq!(
+        contract.operations().len(),
+        session.document.endpoints().len()
+    );
     let focus = contract
         .operation("plannerEndpointFocusTask")
         .expect("focus projected");
@@ -175,7 +178,10 @@ fn projection_covers_every_endpoint_and_preserves_identity() {
     // Correlation headers carry their exact declared names (the
     // transport attachment normalizes them to sorted order).
     let correlation = focus.correlation.as_ref().expect("correlation declared");
-    assert_eq!(correlation.headers, vec!["X-Correlation-Id", "X-Request-Id"]);
+    assert_eq!(
+        correlation.headers,
+        vec!["X-Correlation-Id", "X-Request-Id"]
+    );
     // The derived list operation keeps the deterministic operation id.
     let list = contract.operation("listTasks").expect("list projected");
     assert_eq!(list.method, "GET");
@@ -188,12 +194,19 @@ fn projection_covers_every_endpoint_and_preserves_identity() {
 fn error_variants_preserve_semantic_codes_and_derive_retry() {
     let compiled = compile_fixture_project();
     let registry = ErrorRegistry::embedded().expect("registry");
-    let query_model = QueryModelAttachment::from_value(&read_fixture("query-model.json")).expect("ok");
+    let query_model =
+        QueryModelAttachment::from_value(&read_fixture("query-model.json")).expect("ok");
     let capabilities = CapabilityMap::http_json();
     let session = session(&compiled, registry, &query_model, &capabilities);
-    let contract = project(&session.document, &session.context, &ClientConfig::generated())
-        .expect("projection");
-    let focus = contract.operation("plannerEndpointFocusTask").expect("focus");
+    let contract = project(
+        &session.document,
+        &session.context,
+        &ClientConfig::generated(),
+    )
+    .expect("projection");
+    let focus = contract
+        .operation("plannerEndpointFocusTask")
+        .expect("focus");
     let by_id = |id: &str| {
         focus
             .errors
@@ -207,7 +220,10 @@ fn error_variants_preserve_semantic_codes_and_derive_retry() {
     assert_eq!(conflict.status, 409);
     assert_eq!(conflict.retry, RetryAuthorization::ReconciliationOnly);
     // Public payload only: the private focused_by never crosses.
-    assert!(conflict.payload.iter().all(|field| field.name != "focused_by"));
+    assert!(conflict
+        .payload
+        .iter()
+        .all(|field| field.name != "focused_by"));
     assert!(conflict.payload.iter().any(|field| field.name == "task_id"));
 
     let denied = by_id("planner.focus_denied");
@@ -230,11 +246,16 @@ fn error_variants_preserve_semantic_codes_and_derive_retry() {
 fn type_collection_covers_every_reachable_named_type() {
     let compiled = compile_fixture_project();
     let registry = ErrorRegistry::embedded().expect("registry");
-    let query_model = QueryModelAttachment::from_value(&read_fixture("query-model.json")).expect("ok");
+    let query_model =
+        QueryModelAttachment::from_value(&read_fixture("query-model.json")).expect("ok");
     let capabilities = CapabilityMap::http_json();
     let session = session(&compiled, registry, &query_model, &capabilities);
-    let contract = project(&session.document, &session.context, &ClientConfig::generated())
-        .expect("projection");
+    let contract = project(
+        &session.document,
+        &session.context,
+        &ClientConfig::generated(),
+    )
+    .expect("projection");
     let by_id = |id: &str| {
         contract
             .types()
@@ -245,10 +266,16 @@ fn type_collection_covers_every_reachable_named_type() {
     let task = by_id("planner.task");
     match &task.kind {
         TypeKind::Object(fields) => {
-            let due = fields.iter().find(|field| field.name == "due").expect("due");
+            let due = fields
+                .iter()
+                .find(|field| field.name == "due")
+                .expect("due");
             assert!(due.nullable, "Optional(due_date) is nullable");
             assert!(!due.required, "due is not required");
-            let title = fields.iter().find(|field| field.name == "title").expect("title");
+            let title = fields
+                .iter()
+                .find(|field| field.name == "title")
+                .expect("title");
             assert!(!title.nullable);
             assert!(title.required);
         }
@@ -259,7 +286,11 @@ fn type_collection_covers_every_reachable_named_type() {
         TypeKind::Enum(values) => {
             assert_eq!(
                 values,
-                &vec!["backlog".to_owned(), "focused".to_owned(), "done".to_owned()]
+                &vec![
+                    "backlog".to_owned(),
+                    "focused".to_owned(),
+                    "done".to_owned()
+                ]
             );
         }
         other => panic!("planner.task_state projects an enum, got {other:?}"),
@@ -270,14 +301,20 @@ fn type_collection_covers_every_reachable_named_type() {
     }
     // Types sort by semantic id, and every type id is its full
     // semantic id: cross-module references stay unambiguous.
-    let ids: Vec<&str> = contract.types().iter().map(|kind| kind.symbol.as_str()).collect();
+    let ids: Vec<&str> = contract
+        .types()
+        .iter()
+        .map(|kind| kind.symbol.as_str())
+        .collect();
     let mut sorted = ids.clone();
     sorted.sort();
     assert_eq!(ids, sorted, "type order is canonical");
     // Decimal mapping is explicit configuration over a declared
     // scalar; the default projection never maps text to decimal.
     let mut decimal_config = ClientConfig::generated();
-    decimal_config.decimal_scalars.push("planner.text".to_owned());
+    decimal_config
+        .decimal_scalars
+        .push("planner.text".to_owned());
     let decimal = project(&session.document, &session.context, &decimal_config).expect("decimal");
     match &decimal
         .types()
@@ -291,7 +328,9 @@ fn type_collection_covers_every_reachable_named_type() {
     }
     // An unknown decimal scalar refuses instead of mapping nothing.
     let mut unknown = ClientConfig::generated();
-    unknown.decimal_scalars.push("planner.not_a_scalar".to_owned());
+    unknown
+        .decimal_scalars
+        .push("planner.not_a_scalar".to_owned());
     assert!(project(&session.document, &session.context, &unknown).is_err());
 }
 
@@ -301,11 +340,16 @@ fn type_collection_covers_every_reachable_named_type() {
 fn pagination_helper_and_shape_are_explicit() {
     let compiled = compile_fixture_project();
     let registry = ErrorRegistry::embedded().expect("registry");
-    let query_model = QueryModelAttachment::from_value(&read_fixture("query-model.json")).expect("ok");
+    let query_model =
+        QueryModelAttachment::from_value(&read_fixture("query-model.json")).expect("ok");
     let capabilities = CapabilityMap::http_json();
     let session = session(&compiled, registry, &query_model, &capabilities);
-    let contract = project(&session.document, &session.context, &ClientConfig::generated())
-        .expect("projection");
+    let contract = project(
+        &session.document,
+        &session.context,
+        &ClientConfig::generated(),
+    )
+    .expect("projection");
     let paged = contract
         .operation("plannerEndpointTasksByProject")
         .expect("paged operation");
@@ -313,11 +357,16 @@ fn pagination_helper_and_shape_are_explicit() {
     assert_eq!(pagination.style, "cursor");
     assert_eq!(pagination.limit_param, "limit");
     assert!(pagination.cursor_param.is_some());
-    assert!(pagination.cursor_field.is_some(), "termination stays explicit");
+    assert!(
+        pagination.cursor_field.is_some(),
+        "termination stays explicit"
+    );
     assert_eq!(paged.result_shape, ResultShape::Page);
     // The focused-count query projects a plain value shape with no
     // pagination helper.
-    let count = contract.operation("plannerEndpointCountFocused").expect("count");
+    let count = contract
+        .operation("plannerEndpointCountFocused")
+        .expect("count");
     assert!(count.pagination.is_none());
     assert_eq!(count.result_shape, ResultShape::Value);
 }
@@ -359,38 +408,48 @@ fn missing_context_refuses_instead_of_projecting() {
 fn canonical_bytes_are_deterministic_and_digested() {
     let compiled = compile_fixture_project();
     let registry = ErrorRegistry::embedded().expect("registry");
-    let query_model = QueryModelAttachment::from_value(&read_fixture("query-model.json")).expect("ok");
+    let query_model =
+        QueryModelAttachment::from_value(&read_fixture("query-model.json")).expect("ok");
     let capabilities = CapabilityMap::http_json();
     let session = session(&compiled, registry, &query_model, &capabilities);
-    let contract = project(&session.document, &session.context, &ClientConfig::generated())
-        .expect("projection");
+    let contract = project(
+        &session.document,
+        &session.context,
+        &ClientConfig::generated(),
+    )
+    .expect("projection");
     let first = contract.canonical_bytes().expect("bytes");
     for _ in 0..3 {
-        let again = project(&session.document, &session.context, &ClientConfig::generated())
-            .expect("projection")
-            .canonical_bytes()
-            .expect("bytes");
+        let again = project(
+            &session.document,
+            &session.context,
+            &ClientConfig::generated(),
+        )
+        .expect("projection")
+        .canonical_bytes()
+        .expect("bytes");
         assert_eq!(first, again, "generation is deterministic");
     }
     assert!(!first.contains('\n'), "compact form");
     // The committed golden is byte-pinned (the two-implementation
     // rule: the Rust projection reproduces the committed bytes).
-    let golden =
-        std::fs::read_to_string("tests/fixtures/client-sdk/golden/planner.expect.json")
-            .expect("committed golden");
+    let golden = std::fs::read_to_string("tests/fixtures/client-sdk/golden/planner.expect.json")
+        .expect("committed golden");
     assert_eq!(first, golden, "the projection is byte-pinned");
     // The pinned digest matches the golden digest file.
-    let pinned = std::fs::read_to_string(
-        "tests/fixtures/client-sdk/golden/planner.expect.digest.txt",
-    )
-    .expect("committed digest")
-    .trim()
-    .to_owned();
+    let pinned =
+        std::fs::read_to_string("tests/fixtures/client-sdk/golden/planner.expect.digest.txt")
+            .expect("committed digest")
+            .trim()
+            .to_owned();
     let digest = contract.digest().expect("digest");
     assert_eq!(digest.as_str(), pinned);
     assert_eq!(
         digest.as_str(),
-        format!("sha256:{}", lekalo_core::digest::sha256_hex(first.as_bytes()))
+        format!(
+            "sha256:{}",
+            lekalo_core::digest::sha256_hex(first.as_bytes())
+        )
     );
 }
 
@@ -419,10 +478,10 @@ fn changed_endpoint_impact_names_artifacts_and_consumers() {
         "the focus endpoint change affects its covering artifacts"
     );
     assert!(
-        focus_hits
-            .iter()
-            .all(|finding| finding.artifact_id == "planner.clients.typescript"
-                || finding.artifact_id == "planner.clients.go"),
+        focus_hits.iter().all(
+            |finding| finding.artifact_id == "planner.clients.typescript"
+                || finding.artifact_id == "planner.clients.go"
+        ),
         "only registered artifacts are named"
     );
     let ts_hit = focus_hits
@@ -504,11 +563,17 @@ fn unrelated_artifacts_are_excluded_from_impact() {
 /// refuse instead of clamping.
 fn unsafe_automatic_retries_are_rejected() {
     use lekalo_core::client_sdk::plan_attempts;
-    use lekalo_core::error_contract::types::{EffectClass, Idempotency, RetryCondition, RetryPolicy};
+    use lekalo_core::error_contract::types::{
+        EffectClass, Idempotency, RetryCondition, RetryPolicy,
+    };
     // A write without a guaranteed idempotency contract never
     // retries, even under `safe`.
     assert_eq!(
-        authorize(RetryPolicy::Safe, Idempotency::NotGuaranteed, EffectClass::Write),
+        authorize(
+            RetryPolicy::Safe,
+            Idempotency::NotGuaranteed,
+            EffectClass::Write
+        ),
         RetryAuthorization::Never
     );
     // Reconciliation is a caller duty, never an automatic retry.

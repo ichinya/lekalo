@@ -116,10 +116,8 @@ fn install_homes(dir: &Path) {
 }
 
 fn golden_value() -> Value {
-    serde_json::from_slice(
-        &fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join(GOLDEN)).unwrap(),
-    )
-    .unwrap()
+    serde_json::from_slice(&fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join(GOLDEN)).unwrap())
+        .unwrap()
 }
 
 #[test]

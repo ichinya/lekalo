@@ -45,6 +45,10 @@
       "origin": "synthetic"
     },
     {
+      "family": "client-sdk",
+      "origin": "synthetic"
+    },
+    {
       "family": "context",
       "origin": "synthetic"
     },

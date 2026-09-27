@@ -381,8 +381,7 @@ pub enum ClientTypeError {
 impl ClientConfig {
     /// Validate one configuration against the closed bounds.
     pub fn validate(&self) -> Result<(), ClientTypeError> {
-        if self.mode != super::version::MODE_GENERATED
-            && self.mode != super::version::MODE_CHECKED
+        if self.mode != super::version::MODE_GENERATED && self.mode != super::version::MODE_CHECKED
         {
             return Err(ClientTypeError::UnknownMode);
         }

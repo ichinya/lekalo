@@ -38,7 +38,8 @@ use super::receipt::{
     TargetReceipt, TargetState, Verdict, WriteReceipt, IDENTITY, SCHEMA_VERSION,
 };
 use super::version::{
-    DEFAULT_TIMEOUT_MS, CLIENT_SDK_EVIDENCE_DIR, IR_EVIDENCE_DIR, MAX_TARGETS, OPENAPI_EVIDENCE_DIR, TRANSPORT_EVIDENCE_DIR,
+    CLIENT_SDK_EVIDENCE_DIR, DEFAULT_TIMEOUT_MS, IR_EVIDENCE_DIR, MAX_TARGETS,
+    OPENAPI_EVIDENCE_DIR, TRANSPORT_EVIDENCE_DIR,
 };
 use super::Failure;
 
@@ -188,7 +189,9 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
                     write_evidence(
                         prepared.root(),
                         &sdk_path,
-                        sdk.canonical_bytes().map_err(DomainResult::invalid)?.as_bytes(),
+                        sdk.canonical_bytes()
+                            .map_err(DomainResult::invalid)?
+                            .as_bytes(),
                     )?;
                 }
             }

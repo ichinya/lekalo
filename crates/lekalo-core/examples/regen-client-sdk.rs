@@ -15,9 +15,7 @@ use lekalo_core::client_sdk::{project, ClientConfig};
 use lekalo_core::error_contract::ErrorRegistry;
 use lekalo_core::loader::{normalize_model, LoadSelection};
 use lekalo_core::query_model::QueryModelAttachment;
-use lekalo_core::transport_http::{
-    CapabilityMap, TransportDocument, ValidationContext,
-};
+use lekalo_core::transport_http::{CapabilityMap, TransportDocument, ValidationContext};
 
 fn main() {
     let root = std::env::args().nth(1).expect("repo root");
@@ -46,8 +44,7 @@ fn main() {
         .with_query_model(&query_model)
         .with_capabilities(&capabilities);
 
-    let contract = project(&document, &context, &ClientConfig::generated())
-        .expect("projection");
+    let contract = project(&document, &context, &ClientConfig::generated()).expect("projection");
     let bytes = contract.canonical_bytes().expect("canonical bytes");
     let digest = contract.digest().expect("digest");
 
@@ -59,5 +56,8 @@ fn main() {
         format!("{}\n", digest.as_str()),
     )
     .expect("write digest");
-    println!("wrote {out_dir}/planner.expect.json digest {}", digest.as_str());
+    println!(
+        "wrote {out_dir}/planner.expect.json digest {}",
+        digest.as_str()
+    );
 }

@@ -23,9 +23,7 @@ pub const QUERY_MODEL_SOURCE_PATH: &str = "lekalo/query-model.yaml";
 const SOURCE_BYTES: usize = 1024 * 1024;
 
 /// Read and parse the query-model home under one project root.
-pub fn read_query_model(
-    root: &Path,
-) -> Result<Option<QueryModelAttachment>, DiagnosticSet> {
+pub fn read_query_model(root: &Path) -> Result<Option<QueryModelAttachment>, DiagnosticSet> {
     let path = root.join(QUERY_MODEL_SOURCE_PATH);
     let Ok(metadata) = std::fs::metadata(&path) else {
         return Ok(None);
@@ -86,9 +84,7 @@ fn has_duplicate_keys(node: &Node, seen: &mut Vec<String>) -> bool {
 /// Convert one frontend node into its JSON form.
 fn node_to_json(node: &Node) -> serde_json::Value {
     match &node.value {
-        Value::Seq(items) => {
-            serde_json::Value::Array(items.iter().map(node_to_json).collect())
-        }
+        Value::Seq(items) => serde_json::Value::Array(items.iter().map(node_to_json).collect()),
         Value::Map(entries) => {
             let mut object = serde_json::Map::new();
             for entry in entries {
@@ -98,23 +94,15 @@ fn node_to_json(node: &Node) -> serde_json::Value {
         }
         Value::Scalar(scalar) => match scalar {
             crate::loader::frontends::Scalar::Null => serde_json::Value::Null,
-            crate::loader::frontends::Scalar::Bool(value) => {
-                serde_json::Value::Bool(*value)
-            }
-            crate::loader::frontends::Scalar::Int(value) => {
-                match i64::try_from(*value) {
-                    Ok(small) => serde_json::Value::Number(small.into()),
-                    Err(_) => serde_json::Value::Null,
-                }
-            }
-            crate::loader::frontends::Scalar::Float(value) => {
-                serde_json::Number::from_f64(*value)
-                    .map(serde_json::Value::Number)
-                    .unwrap_or(serde_json::Value::Null)
-            }
-            crate::loader::frontends::Scalar::Str(text) => {
-                serde_json::Value::String(text.clone())
-            }
+            crate::loader::frontends::Scalar::Bool(value) => serde_json::Value::Bool(*value),
+            crate::loader::frontends::Scalar::Int(value) => match i64::try_from(*value) {
+                Ok(small) => serde_json::Value::Number(small.into()),
+                Err(_) => serde_json::Value::Null,
+            },
+            crate::loader::frontends::Scalar::Float(value) => serde_json::Number::from_f64(*value)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
+            crate::loader::frontends::Scalar::Str(text) => serde_json::Value::String(text.clone()),
         },
     }
 }
