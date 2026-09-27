@@ -52,7 +52,14 @@ return new ApplicationConfig(
     suites: [
         new SuiteConfig(
             name: 'Laravel',
-            location: ['tests/Feature', 'src/generated/php-laravel/scenario-tests'],
+            location: [
+                'tests/Feature',
+                'src/generated/php-laravel/scenario-tests',
+                // The user-owned scaffold home (issue #56 S3): scaffolded
+                // scenario tests live beside the managed suite so they
+                // stay discoverable while regeneration keeps them frozen.
+                'tests/lekalo/scenario-tests',
+            ],
             plugins: [
                 new NamingConventionPlugin(),
                 new LaravelPlugin(new LaravelConfig(basePath: __DIR__)),

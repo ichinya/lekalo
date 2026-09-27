@@ -174,6 +174,79 @@ try {
     for (const scenarioFile of scenarioIds) generate(root, scenarioFile);
   });
 
+  // S3 scaffold-once through the real suite: the scaffolded scenario
+  // emits once into the user-owned home, survives user edits and
+  // regeneration, and still executes — its record says "scaffolded".
+  const scaffoldedFile = "planner.scenario.focus_scaffolded.json";
+  const scaffoldedId = "planner.scenario.focus_scaffolded";
+  const scaffoldedTest = join(
+    root, "tests", "lekalo", "scenario-tests", "planner",
+    `${scaffoldedId}.test.php`,
+  );
+  step("a scaffolded scenario emits once and survives user custody", () => {
+    const doc = JSON.parse(
+      readFileSync(join(scenarioHome, "planner.scenario.focus_happy.json"), "utf8"),
+    );
+    doc.scenarioId = scaffoldedId;
+    doc.bindings = [{
+      backend: "native",
+      runner: "laratesto",
+      runnerVersion: "bundled-toolchain",
+      capabilities: [],
+      capabilityDigest: "sha256:" + "0".repeat(64),
+      mode: "scaffolded",
+      test: scaffoldedId,
+    }];
+    writeFileSync(
+      join(root, "lekalo", "scenarios", scaffoldedFile),
+      JSON.stringify(doc, null, 2) + "\n",
+    );
+    const base = {
+      protocol: "lekalo.target/v1",
+      protocol_version: "0.3.2",
+      project_root: ".",
+      operation: "generate",
+      ir_path: `lekalo/scenarios/${scaffoldedFile}`,
+      target: "php-laravel",
+      profile: "default",
+    };
+    const dry = adapterCall(root, {
+      ...base, request_id: requestId("dry-scaffolded"), dry_run: true,
+    });
+    assert.ok(
+      dry.writes.some((entry) =>
+        entry.path === `tests/lekalo/scenario-tests/planner/${scaffoldedId}.test.php`),
+      `the scaffold write is planned: ${JSON.stringify(dry.writes.map((w) => w.path))}`,
+    );
+    adapterCall(root, {
+      ...base,
+      request_id: requestId("apply-scaffolded"),
+      dry_run: false,
+      plan_id: dry.evidence.plan_id,
+    });
+    assert.ok(existsSync(scaffoldedTest), "the scaffolded test was emitted");
+    // User custody: edit the file, then regenerate — the frozen write
+    // never re-enters the plan and the edited bytes survive.
+    const edited = readFileSync(scaffoldedTest, "utf8")
+      .replace("<?php", "<?php\n\n// user-owned scaffold — edits persist");
+    assert.notEqual(edited, readFileSync(scaffoldedTest, "utf8"), "the edit applied");
+    writeFileSync(scaffoldedTest, edited);
+    const regen = adapterCall(root, {
+      ...base, request_id: requestId("regen-scaffolded"), dry_run: true,
+    });
+    const scaffoldedTestPath = `tests/lekalo/scenario-tests/planner/${scaffoldedId}.test.php`;
+    assert.ok(
+      regen.writes.every((entry) => entry.path !== scaffoldedTestPath),
+      `the frozen test stays out of the plan: ${JSON.stringify(regen.writes.map((w) => w.path))}`,
+    );
+    assert.ok(
+      regen.writes.some((entry) =>
+        entry.path === `tests/lekalo/scenario-tests/planner/${scaffoldedId}.test.map.json`),
+      "the managed marker stays in the plan",
+    );
+    assert.equal(readFileSync(scaffoldedTest, "utf8"), edited, "user bytes preserved");
+  });
+
   step("the generated tests execute under the pinned Testo suite", () => {
     const result = runTesto(root);
     const output = `${result.stdout}${result.stderr}`;
@@ -213,6 +286,24 @@ try {
       const content = readFileSync(recordPath(root, scenarioId), "utf8");
       assert.doesNotMatch(content, /[/\\]Users[/\\]|[/\\]Temp[/\\]|tmpdir/, `${scenarioId}: no host paths`);
     }
+    // The scaffolded scenario ran under the suite too: its durable
+    // record says binding_mode "scaffolded" and carries the user's
+    // fingerprint of the edited file — user-owned bytes that still
+    // produce honest evidence.
+    const scaffolded = readRecord(root, scaffoldedId);
+    assert.equal(scaffolded.binding_mode, "scaffolded");
+    assert.equal(scaffolded.runner.id, "laratesto");
+    assert.ok(
+      scaffolded.assertions.every((row) => row.outcome === "pass"),
+      "the edited scaffold still passes",
+    );
+    const editedFingerprint = "sha256:" +
+      createHash("sha256").update(readFileSync(scaffoldedTest)).digest("hex");
+    assert.equal(
+      scaffolded.test.fingerprint,
+      editedFingerprint,
+      "the record fingerprints the user's bytes, not the emitted ones",
+    );
   });
 
   step("the toolchain custody record carries the exact observed versions", () => {
