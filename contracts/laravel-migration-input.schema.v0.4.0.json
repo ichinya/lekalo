@@ -118,6 +118,7 @@
         },
         "kind": {
           "description": "The closed step-kind vocabulary of the engine plan v1.",
+          "type": "string",
           "enum": [
             "create_table",
             "drop_table",
