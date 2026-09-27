@@ -1958,11 +1958,21 @@ function deterministic_generation(array $request): array
 function deterministic_writes(array $request): array
 {
     $artifact = deterministic_generation($request);
-    return [[
+    $writes = [[
         'path' => $artifact['path'],
         'action' => 'create',
         'sha256' => $artifact['digest'],
     ]];
+    // The migration emitter ships its append-only ledger beside the
+    // migration file; both must be planned and written atomically.
+    if (isset($artifact['ledger'])) {
+        $writes[] = [
+            'path' => $artifact['ledger']['path'],
+            'action' => 'create',
+            'sha256' => $artifact['ledger']['digest'],
+        ];
+    }
+    return $writes;
 }
 
 /** The canonical plan id: sha256 over the canonical ordered entries. */
@@ -2857,8 +2867,19 @@ function plan_native_response(array $request): array
  */
 function apply_writes(array $writes, array $artifact): void
 {
+    // The migration emitter ships a second artifact (the ledger); the
+    // byte set is keyed by path so every planned entry writes its own
+    // exact bytes.
+    $bytesByPath = [$artifact['path'] => $artifact['bytes']];
+    if (isset($artifact['ledger'])) {
+        $bytesByPath[$artifact['ledger']['path']] = $artifact['ledger']['bytes'];
+    }
     foreach ($writes as $entry) {
         $path = $entry['path'];
+        if (!isset($bytesByPath[$path])) {
+            throw new RequestRefusal('write-denied');
+        }
+        $bytes = $bytesByPath[$path];
         if (!is_logical_path($path) || protected_home($path) !== null) {
             throw new RequestRefusal('write-denied');
         }
@@ -2868,14 +2889,14 @@ function apply_writes(array $writes, array $artifact): void
         if (is_file($path)) {
             throw new RequestRefusal('write-denied');
         }
-        if (strlen($artifact['bytes']) > MAX_FILE_BYTES) {
+        if (strlen($bytes) > MAX_FILE_BYTES) {
             throw new RequestRefusal('write-denied');
         }
         $directory = dirname($path);
         if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
             throw new RequestRefusal('write-denied');
         }
-        if (@file_put_contents($path, $artifact['bytes']) === false) {
+        if (@file_put_contents($path, $bytes) === false) {
             throw new RequestRefusal('write-denied');
         }
     }

@@ -1017,11 +1017,21 @@ function deterministic_generation(array $request): array
 function deterministic_writes(array $request): array
 {
     $artifact = deterministic_generation($request);
-    return [[
+    $writes = [[
         'path' => $artifact['path'],
         'action' => 'create',
         'sha256' => $artifact['digest'],
     ]];
+    // The migration emitter ships its append-only ledger beside the
+    // migration file; both must be planned and written atomically.
+    if (isset($artifact['ledger'])) {
+        $writes[] = [
+            'path' => $artifact['ledger']['path'],
+            'action' => 'create',
+            'sha256' => $artifact['ledger']['digest'],
+        ];
+    }
+    return $writes;
 }
 
 /** The canonical plan id: sha256 over the canonical ordered entries. */
@@ -1851,20 +1861,53 @@ function generate_response(array $request): array
 function plan_clean_response(array $request): array
 {
     $writes = deterministic_writes($request);
-    $plan = array_map(
-        static fn (array $entry): array => ['path' => $entry['path'], 'action' => 'delete'],
-        $writes,
-    );
+    // Published migration artifacts are append-only custody (issue
+    // #57): the ledger records them, and a generic clean confirmation
+    // never retires them. The plan skips them — the deletion plan
+    // covers only non-retained owned artifacts — so an orphan sweep
+    // can never rewrite migration history.
+    $plan = [];
+    foreach ($writes as $entry) {
+        if (retained_artifact($entry['path'])) {
+            continue;
+        }
+        $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
+    }
     return build_response($request, [
         'writes' => $plan,
         'evidence_plan_id' => plan_id($plan),
     ]);
 }
 
+/**
+ * Whether one owned artifact path is retained custody: anything under
+ * a migrations directory (migration classes and the ledger) is
+ * append-only history and never deletable through generic clean.
+ */
+function retained_artifact(string $path): bool
+{
+    return str_contains($path, '/migrations/');
+}
+
 /** The clean apply: delete exactly the planned paths, echo the plan id. */
 function clean_response(array $request): array
 {
     $writes = deterministic_writes($request);
+    // Retained custody mirrors the plan: a migration or ledger path
+    // refuses the apply outright instead of silently surviving.
+    foreach ($writes as $entry) {
+        if (retained_artifact($entry['path'])) {
+            return build_response($request, [
+                'error' => [
+                    'class' => 'conflict',
+                    'code' => 'retained-artifact',
+                    'message' => 'published migrations and their ledger are append-only; clean never deletes them',
+                    'retryable' => false,
+                    'partial' => false,
+                ],
+            ]);
+        }
+    }
     $plan = array_map(
         static fn (array $entry): array => ['path' => $entry['path'], 'action' => 'delete'],
         $writes,
@@ -1916,8 +1959,19 @@ function plan_native_response(array $request): array
  */
 function apply_writes(array $writes, array $artifact): void
 {
+    // The migration emitter ships a second artifact (the ledger); the
+    // byte set is keyed by path so every planned entry writes its own
+    // exact bytes.
+    $bytesByPath = [$artifact['path'] => $artifact['bytes']];
+    if (isset($artifact['ledger'])) {
+        $bytesByPath[$artifact['ledger']['path']] = $artifact['ledger']['bytes'];
+    }
     foreach ($writes as $entry) {
         $path = $entry['path'];
+        if (!isset($bytesByPath[$path])) {
+            throw new RequestRefusal('write-denied');
+        }
+        $bytes = $bytesByPath[$path];
         if (!is_logical_path($path) || protected_home($path) !== null) {
             throw new RequestRefusal('write-denied');
         }
@@ -1927,14 +1981,14 @@ function apply_writes(array $writes, array $artifact): void
         if (is_file($path)) {
             throw new RequestRefusal('write-denied');
         }
-        if (strlen($artifact['bytes']) > MAX_FILE_BYTES) {
+        if (strlen($bytes) > MAX_FILE_BYTES) {
             throw new RequestRefusal('write-denied');
         }
         $directory = dirname($path);
         if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
             throw new RequestRefusal('write-denied');
         }
-        if (@file_put_contents($path, $artifact['bytes']) === false) {
+        if (@file_put_contents($path, $bytes) === false) {
             throw new RequestRefusal('write-denied');
         }
     }
