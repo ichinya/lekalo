@@ -842,7 +842,11 @@ fn parameter_type_leaf(expression: &str) -> String {
 
 /// The closed wire shape of one query-model parameter's bounded
 /// type-expression: the `list<...>` spelling projects a list shape.
-fn param_shape(operation: &Definition, query_model: &QueryModelAttachment, name: &str) -> TypeShape {
+fn param_shape(
+    operation: &Definition,
+    query_model: &QueryModelAttachment,
+    name: &str,
+) -> TypeShape {
     match operation {
         Definition::Command(command) => command
             .input
@@ -1160,7 +1164,10 @@ fn param_json(param: &ClientParam) -> Json {
     );
     object.insert("field".to_owned(), Json::String(param.field.clone()));
     object.insert("typeRef".to_owned(), Json::String(param.type_ref.clone()));
-    object.insert("shape".to_owned(), Json::String(param.shape.as_str().to_owned()));
+    object.insert(
+        "shape".to_owned(),
+        Json::String(param.shape.as_str().to_owned()),
+    );
     object.insert("required".to_owned(), Json::Bool(param.required));
     object.insert("nullable".to_owned(), Json::Bool(param.nullable));
     if let Some(style) = param.style {
@@ -1180,7 +1187,10 @@ fn body_json(body: &ClientBody) -> Json {
         Json::String(body.mode.as_str().to_owned()),
     );
     object.insert("typeRef".to_owned(), Json::String(body.type_ref.clone()));
-    object.insert("shape".to_owned(), Json::String(body.shape.as_str().to_owned()));
+    object.insert(
+        "shape".to_owned(),
+        Json::String(body.shape.as_str().to_owned()),
+    );
     if !body.fields.is_empty() {
         object.insert(
             "fields".to_owned(),
@@ -1192,7 +1202,10 @@ fn body_json(body: &ClientBody) -> Json {
                         entry.insert("name".to_owned(), Json::String(field.name.clone()));
                         entry.insert("field".to_owned(), Json::String(field.field.clone()));
                         entry.insert("typeRef".to_owned(), Json::String(field.type_ref.clone()));
-                        entry.insert("shape".to_owned(), Json::String(field.shape.as_str().to_owned()));
+                        entry.insert(
+                            "shape".to_owned(),
+                            Json::String(field.shape.as_str().to_owned()),
+                        );
                         entry.insert("required".to_owned(), Json::Bool(field.required));
                         entry.insert("nullable".to_owned(), Json::Bool(field.nullable));
                         Json::Object(entry)
@@ -1229,7 +1242,10 @@ fn error_json(error: &ErrorVariant) -> Json {
                         let mut entry = Map::new();
                         entry.insert("name".to_owned(), Json::String(field.name.clone()));
                         entry.insert("typeRef".to_owned(), Json::String(field.type_ref.clone()));
-                        entry.insert("shape".to_owned(), Json::String(field.shape.as_str().to_owned()));
+                        entry.insert(
+                            "shape".to_owned(),
+                            Json::String(field.shape.as_str().to_owned()),
+                        );
                         entry.insert("required".to_owned(), Json::Bool(field.required));
                         entry.insert("nullable".to_owned(), Json::Bool(field.nullable));
                         Json::Object(entry)
@@ -1282,7 +1298,10 @@ fn type_json(type_def: &ClientType) -> Json {
                             entry.insert("name".to_owned(), Json::String(field.name.clone()));
                             entry
                                 .insert("typeRef".to_owned(), Json::String(field.type_ref.clone()));
-                            entry.insert("shape".to_owned(), Json::String(field.shape.as_str().to_owned()));
+                            entry.insert(
+                                "shape".to_owned(),
+                                Json::String(field.shape.as_str().to_owned()),
+                            );
                             entry.insert("nullable".to_owned(), Json::Bool(field.nullable));
                             entry.insert("required".to_owned(), Json::Bool(field.required));
                             Json::Object(entry)

@@ -221282,7 +221282,6 @@ import { createHash as createHash11 } from "node:crypto";
 function tsDecodeMethod() {
   const body = [
     "    private async decode<T>(",
-    "      operationId: string,",
     "      wire: {",
     "        method: string;",
     "        path: string;",
@@ -221464,6 +221463,19 @@ function operationParams(operation) {
     else if (param.in === "query") query.push(param);
     else if (param.in === "header") header.push(param);
   }
+  const pagination = operation.pagination;
+  if (pagination) {
+    const wireNames = new Set(query.map((param) => param.name));
+    for (const name of [
+      pagination.limitParam,
+      pagination.offsetParam,
+      pagination.cursorParam
+    ]) {
+      if (!name || wireNames.has(name)) continue;
+      wireNames.add(name);
+      query.push({ name, field: name, required: false, in: "query" });
+    }
+  }
   return { path, query, header };
 }
 function hasIdempotencyKey(operation) {
@@ -221486,12 +221498,12 @@ function requestBodyType(operation, index) {
   const body = operation.body;
   if (!body) return void 0;
   if (body.mode === "whole") {
-    return tsTypeRef(body.typeRef, index);
+    return tsValueTypeRef(body.typeRef, body.shape, index);
   }
   const members = (body.fields ?? []).map((field) => {
     const optional = field.required ? "" : "?";
     const nullable = field.nullable ? " | null" : "";
-    return `${JSON.stringify(camelIdent(field.name))}${optional}: ${tsTypeRef(field.typeRef, index)}${nullable}`;
+    return `${JSON.stringify(field.name)}${optional}: ${tsValueTypeRef(field.typeRef, field.shape, index)}${nullable}`;
   }).join("; ");
   return `{ ${members} }`;
 }
@@ -221626,6 +221638,11 @@ function tsTypeRef(typeRef, typeIndex2) {
   const known = typeIndex2.get(typeRef);
   return known ? known.ident : "unknown";
 }
+function tsValueTypeRef(typeRef, shape, typeIndex2) {
+  if (typeRef === "lekalo.unit") return "void";
+  const inner = tsTypeRef(typeRef, typeIndex2);
+  return shape === "list" ? `${inner}[]` : inner;
+}
 function typeDeclarationTs(typeDef, index) {
   const ident = typeDef.ident;
   if (typeDef.kind === "scalar") {
@@ -221639,7 +221656,7 @@ ${members};`;
   const fields = (typeDef.fields ?? []).map((field) => {
     const optional = field.required ? "" : "?";
     const nullable = field.nullable ? " | null" : "";
-    return `  ${JSON.stringify(field.name)}${optional}: ${tsTypeRef(field.typeRef, index)}${nullable};`;
+    return `  ${JSON.stringify(field.name)}${optional}: ${tsValueTypeRef(field.typeRef, field.shape, index)}${nullable};`;
   }).join("\n");
   return `export interface ${ident} {
 ${fields}
@@ -221657,8 +221674,8 @@ function operationMethodTs(operation, index) {
   const retryable = (operation.errors ?? []).some(
     (error) => error.retry === "safe" || error.retry === "key-required"
   );
-  const retryDoc = retryable ? " A declared error may retry once per its contract; a nonempty idempotency key is required for key-required retries." : " Never retried automatically: no declared error authorizes a retry.";
-  const successType = operation.successBody ? tsTypeRef(operation.successBody.typeRef, index) : "void";
+  const retryDoc = retryable ? " Caller-driven retries follow the declared error contracts; a nonempty idempotency key is required to act on a key-required error. This client itself never retries automatically." : " Never retried: no declared error authorizes a retry, and this client never retries automatically.";
+  const successType = operation.successBody ? tsValueTypeRef(operation.successBody.typeRef, operation.successBody.shape, index) : "void";
   const hasBodyArg = operation.body !== void 0 && operation.body !== null;
   const signatureParts = [];
   for (const param of pathParams) signatureParts.push(`${camelIdent(param.name)}: string`);
@@ -221673,7 +221690,9 @@ function operationMethodTs(operation, index) {
   }
   for (const header of declaredHeaders(operation)) {
     if (header.kind === "idempotency") {
-      signatureParts.push("idempotencyKey?: string");
+      signatureParts.push(
+        operation.idempotency && operation.idempotency.required ? "idempotencyKey: string" : "idempotencyKey?: string"
+      );
     } else {
       signatureParts.push(`${headerIdent(header.name)}?: string`);
     }
@@ -221694,7 +221713,14 @@ function operationMethodTs(operation, index) {
   }
   lines.push("    const query: Record<string, string> = {};");
   for (const param of queryParams) {
-    lines.push(`    query[${JSON.stringify(param.name)}] = ${camelIdent(param.name)};`);
+    if (param.required) {
+      lines.push(`    query[${JSON.stringify(param.name)}] = ${camelIdent(param.name)};`);
+    } else {
+      lines.push(`    {`);
+      lines.push(`      const value = ${camelIdent(param.name)};`);
+      lines.push(`      if (value !== undefined) query[${JSON.stringify(param.name)}] = value;`);
+      lines.push(`    }`);
+    }
   }
   lines.push("    const headers: Record<string, string> = {};");
   for (const param of headerParams) {
@@ -221702,9 +221728,16 @@ function operationMethodTs(operation, index) {
   }
   for (const header of declaredHeaders(operation)) {
     if (header.kind === "idempotency") {
-      lines.push(
-        `    if (idempotencyKey !== undefined) headers[${JSON.stringify(header.name)}] = idempotencyKey;`
-      );
+      const requiredKey = operation.idempotency && operation.idempotency.required;
+      if (requiredKey) {
+        lines.push(
+          `    headers[${JSON.stringify(header.name)}] = idempotencyKey;`
+        );
+      } else {
+        lines.push(
+          `    if (idempotencyKey !== undefined) headers[${JSON.stringify(header.name)}] = idempotencyKey;`
+        );
+      }
     } else {
       lines.push(`    {`);
       lines.push(`      const value = ${headerIdent(header.name)};`);
@@ -221712,9 +221745,7 @@ function operationMethodTs(operation, index) {
       lines.push(`    }`);
     }
   }
-  lines.push(
-    "    return this.decode(" + JSON.stringify(operation.operationId) + ", {"
-  );
+  lines.push("    return this.decode({");
   lines.push("      method: " + JSON.stringify(operation.method) + ",");
   lines.push("      path: this.baseUrl + " + (pathParams.length > 0 ? "encodedPath" : JSON.stringify(url)) + ",");
   lines.push("      query,");
@@ -221888,6 +221919,10 @@ function goTypeRef(typeRef, index) {
   const known = index.get(typeRef);
   return known ? "*" + goExported(known.ident) : "any";
 }
+function goValueTypeRef(typeRef, shape, index) {
+  const inner = goTypeRef(typeRef, index);
+  return shape === "list" ? "[]" + inner : inner;
+}
 function goHeaderIdent(name) {
   const parts = name.split("-").filter((part) => part.length > 0);
   const camel = parts.map(
@@ -221910,7 +221945,7 @@ function typeDeclarationGo(typeDef, index) {
   }
   const fields = (typeDef.fields ?? []).map((field) => {
     const pointer = !field.required || field.nullable ? "*" : "";
-    return `	${goExported(field.name)} ${pointer}${goTypeRef(field.typeRef, index)} \`json:"${field.name}${field.required ? "" : ",omitempty"}"\``;
+    return `	${goExported(field.name)} ${pointer}${goValueTypeRef(field.typeRef, field.shape, index)} \`json:"${field.name}${field.required ? "" : ",omitempty"}"\``;
   }).join("\n");
   return [`type ${name} struct {`, fields || '	_ struct{} `json:"-"`', "}"].join("\n");
 }
@@ -221921,13 +221956,16 @@ function operationMethodGo(document, operation, index) {
   const headerParams = parts.header;
   const projectName = document.projectId ?? "project";
   const structName = goExported(projectName) + "Client";
-  const successType = operation.successBody ? goTypeRef(operation.successBody.typeRef, index) : "*struct{}";
+  const successType = operation.successBody ? goValueTypeRef(operation.successBody.typeRef, operation.successBody.shape, index) : "*struct{}";
   const hasBodyArg = operation.body !== void 0 && operation.body !== null;
+  if (operation.operationId === "planner.focus_task") {
+    console.log("operation.body:", operation.body);
+  }
   const signatureParts = ["ctx context.Context"];
   for (const param of pathParams) signatureParts.push(`${camelIdent(param.name)} string`);
   for (const param of queryParams) signatureParts.push(`${camelIdent(param.name)} string`);
   for (const param of headerParams) signatureParts.push(`${goHeaderIdent(param.name)} string`);
-  if (hasBodyArg) signatureParts.push("input any");
+  if (hasBodyArg) signatureParts.push(`input ${goValueTypeRef(operation.body.typeRef, operation.body.shape, index)}`);
   for (const header of declaredHeaders(operation)) {
     signatureParts.push(`${goHeaderIdent(header.name)} string`);
   }
@@ -221938,14 +221976,28 @@ function operationMethodGo(document, operation, index) {
     "	query := url.Values{}"
   ];
   for (const param of queryParams) {
-    lines.push(`	query.Set(${JSON.stringify(param.name)}, ${camelIdent(param.name)})`);
+    if (param.required) {
+      lines.push(`	query.Set(${JSON.stringify(param.name)}, ${camelIdent(param.name)})`);
+    } else {
+      lines.push(`	if ${camelIdent(param.name)} != "" {`);
+      lines.push(`		query.Set(${JSON.stringify(param.name)}, ${camelIdent(param.name)})`);
+      lines.push(`	}`);
+    }
   }
   lines.push("	headers := map[string]string{}");
   for (const param of headerParams) {
     lines.push(`	headers[${JSON.stringify(param.name)}] = ${goHeaderIdent(param.name)}`);
   }
   for (const header of declaredHeaders(operation)) {
-    lines.push(`	headers[${JSON.stringify(header.name)}] = ${goHeaderIdent(header.name)}`);
+    const goArg = goHeaderIdent(header.name);
+    const requiredHeader = header.kind === "idempotency" && operation.idempotency && operation.idempotency.required;
+    if (requiredHeader) {
+      lines.push(`	headers[${JSON.stringify(header.name)}] = ${goArg}`);
+    } else {
+      lines.push(`	if ${goArg} != "" {`);
+      lines.push(`		headers[${JSON.stringify(header.name)}] = ${goArg}`);
+      lines.push(`	}`);
+    }
   }
   const args = [];
   const segments = [];
@@ -221985,7 +222037,7 @@ function operationMethodGo(document, operation, index) {
   lines.push("		return nil, err");
   lines.push("	}");
   if (operation.successBody) {
-    const decoded = goTypeRef(operation.successBody.typeRef, index);
+    const decoded = goValueTypeRef(operation.successBody.typeRef, operation.successBody.shape, index);
     lines.push(`	var value ${decoded}`);
     lines.push("	if response.Body != nil {");
     lines.push("		if err := json.Unmarshal(response.Body, &value); err != nil {");

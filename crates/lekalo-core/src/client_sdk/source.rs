@@ -120,10 +120,8 @@ mod tests {
 
     #[test]
     fn a_missing_home_is_absent_but_a_present_home_refuses_when_unreadable() {
-        let root = std::env::temp_dir().join(format!(
-            "lekalo-client-sdk-source-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("lekalo-client-sdk-source-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("temp root");
         // Absent home: the honest skip.
