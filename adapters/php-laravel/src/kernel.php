@@ -529,6 +529,75 @@ function is_capability_id(mixed $value): bool
     return true;
 }
 
+/**
+ * One diagnostic rule id: the closed `target.analysis.*` family with
+ * dotted segment grammar (the wire rule id, not the provider code).
+ */
+function is_analysis_rule_id(mixed $value): bool
+{
+    if (!is_string($value) || $value === '' || strlen($value) > 128
+        || !str_starts_with($value, 'target.analysis.')) {
+        return false;
+    }
+    foreach (explode('.', $value) as $segment) {
+        if ($segment === '' || strlen($segment) > 64) {
+            return false;
+        }
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]*$/', $segment)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** One symbol identity: `php.` prefixed dotted-segment grammar. */
+function is_symbol_identity(mixed $value): bool
+{
+    if (!is_string($value) || $value === '' || strlen($value) > 191) {
+        return false;
+    }
+    foreach (explode('.', $value) as $segment) {
+        if ($segment === '' || strlen($segment) > 64) {
+            return false;
+        }
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]*$/', $segment)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * One native evidence path: case-preserving, traversal-free, rooted
+ * (no leading separator), with bounded segments. This is the versioned
+ * native-path domain for target-project sources (see the diagnostic
+ * decoder note on Laravel casing); it is deliberately distinct from the
+ * lowercase Model logical-path grammar, and protected homes are still
+ * refused by the same rule the wire enforces.
+ */
+function is_native_evidence_path(mixed $value): bool
+{
+    if (!is_string($value) || $value === '' || strlen($value) > 512 || str_starts_with($value, '/')) {
+        return false;
+    }
+    $parts = explode('/', $value);
+    if (in_array('', $parts, true)) {
+        return false;
+    }
+    foreach ($parts as $part) {
+        if ($part === '.' || $part === '..' || strlen($part) > 255) {
+            return false;
+        }
+        if ((bool) preg_match('/[\x00-\x1f]/', $part)) {
+            return false;
+        }
+        if ((bool) preg_match('/^[A-Za-z]:/', $part) || str_contains($part, '\\')) {
+            return false;
+        }
+    }
+    return protected_home($value) === null;
+}
+
 function segment_ok(string $segment): bool
 {
     if ($segment === '.' || $segment === '..' || str_ends_with($segment, '.')) {
@@ -1110,43 +1179,53 @@ function scan_response(array $request, ?Analyzer $analyzer = null): array
 /**
  * Project the receipt's symbols and relations into the bounded wire
  * evidence shape: at most eight references per source path, each with
- * the closed role/confidence vocabulary. A projection that would lose
- * rows silently drops the whole per-source claim instead of publishing
- * a partial graph under an exact-looking signature.
+ * the closed role/confidence vocabulary. Relations are joined to their
+ * source file through the symbol table (relation endpoints are symbol
+ * identities); a relation whose source symbol is unknown cannot be
+ * attributed to a file, so it drops out of the bounded projection
+ * while remaining in the receipt. A projection that would lose rows
+ * silently drops the whole per-source claim instead of publishing a
+ * partial graph under an exact-looking signature.
  *
  * @return array<string, array<string, mixed>>
  */
 function mago_receipt_evidence_by_path(AnalysisOutcome $outcome): array
 {
+    $identityPath = [];
     $signatures = [];
     foreach ($outcome->symbols as $symbol) {
-        $path = (string) $symbol['path'];
+        $identity = (string) $symbol['identity'];
+        $identityPath[$identity] = (string) $symbol['path'];
         if (isset($symbol['signature'])) {
-            $signatures[$path] = (string) $symbol['signature'];
+            $signatures[(string) $symbol['path']] = (string) $symbol['signature'];
         }
     }
     $references = [];
     $overflow = [];
     foreach ($outcome->relations as $relation) {
         $source = (string) $relation['from'];
-        $references[$source] ??= [];
-        if (count($references[$source]) >= 8) {
-            $overflow[$source] = true;
+        $path = $identityPath[$source] ?? null;
+        if ($path === null || !isset($signatures[$path])) {
             continue;
         }
-        $references[$source][] = [
+        $references[$path] ??= [];
+        if (count($references[$path]) >= 8) {
+            $overflow[$path] = true;
+            continue;
+        }
+        $references[$path][] = [
             'target' => (string) $relation['to'],
             'role' => mago_wire_role((string) $relation['role']),
             'confidence' => mago_wire_confidence((string) $relation['confidence']),
         ];
     }
     $evidence = [];
-    foreach ($references as $source => $rows) {
-        if ($rows === [] || isset($overflow[$source]) || !isset($signatures[$source])) {
+    foreach ($references as $path => $rows) {
+        if ($rows === [] || isset($overflow[$path])) {
             continue;
         }
-        $evidence[$source] = [
-            'signature' => $signatures[$source],
+        $evidence[$path] = [
+            'signature' => $signatures[$path],
             'references' => $rows,
         ];
     }

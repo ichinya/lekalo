@@ -311,6 +311,12 @@ function mago_decode_receipt(string $bytes): array
  * bounded payload. Unknown upstream codes keep their exact original
  * code under the generic native-finding rule.
  *
+ * Laravel casing: the staged source files under `app/` keep their
+ * canonical casing (e.g. `app/Models/User.php`), which the v0.3.2
+ * logical-path grammar cannot spell. Findings for target sources are
+ * validated as *native evidence paths* — closed, traversal-free, and
+ * case-preserving — not as Model logical paths.
+ *
  * @return array<string, mixed>
  */
 function mago_decode_diagnostic(mixed $item): array
@@ -331,7 +337,7 @@ function mago_decode_diagnostic(mixed $item): array
             throw new ReceiptRefusal('diagnostic:null:' . $key);
         }
     }
-    if (!is_string($item['rule']) || !is_token($item['rule']) || !str_starts_with($item['rule'], 'target.analysis.')) {
+    if (!is_analysis_rule_id($item['rule'])) {
         throw new ReceiptRefusal('diagnostic:rule');
     }
     $code = $item['original_code'];
@@ -342,7 +348,7 @@ function mago_decode_diagnostic(mixed $item): array
     if (!in_array($item['level'], ['note', 'help', 'warning', 'error'], true)) {
         throw new ReceiptRefusal('diagnostic:level');
     }
-    if (!is_logical_path($item['path'])) {
+    if (!is_native_evidence_path($item['path'])) {
         throw new ReceiptRefusal('diagnostic:path');
     }
     $range = $item['range'];
@@ -384,14 +390,13 @@ function mago_decode_symbol(mixed $item): array
             throw new ReceiptRefusal('symbol:missing:' . $key);
         }
     }
-    if (!is_string($item['identity']) || !is_token($item['identity'])
-        || !str_starts_with($item['identity'], 'php.')) {
+    if (!is_symbol_identity($item['identity'])) {
         throw new ReceiptRefusal('symbol:identity');
     }
     if (!in_array($item['kind'], ['class', 'interface', 'trait', 'enum', 'function', 'method', 'property'], true)) {
         throw new ReceiptRefusal('symbol:kind');
     }
-    if (!is_logical_path($item['path'])) {
+    if (!is_native_evidence_path($item['path'])) {
         throw new ReceiptRefusal('symbol:path');
     }
     $range = $item['range'];
@@ -440,7 +445,7 @@ function mago_decode_relation(mixed $item): array
         }
     }
     foreach (['from', 'to'] as $key) {
-        if (!is_string($item[$key]) || !is_token($item[$key])) {
+        if (!is_symbol_identity($item[$key])) {
             throw new ReceiptRefusal('relation:' . $key);
         }
     }
@@ -482,10 +487,11 @@ function mago_decode_fix(mixed $item): array
             throw new ReceiptRefusal('fix:missing:' . $key);
         }
     }
-    if (!is_string($item['rule']) || !is_token($item['rule'])) {
+    if (!is_string($item['rule']) || !is_analysis_rule_id($item['rule'])
+        && !preg_match('/^[a-z0-9][a-z0-9.-]{0,126}[a-z0-9]$/', $item['rule'])) {
         throw new ReceiptRefusal('fix:rule');
     }
-    if (!is_logical_path($item['path'])) {
+    if (!is_native_evidence_path($item['path'])) {
         throw new ReceiptRefusal('fix:path');
     }
     $range = $item['range'];
@@ -544,7 +550,10 @@ function mago_load_toolchain_lock(): ?array
         return $lock;
     }
     $cache = true;
-    $path = __DIR__ . '/mago-toolchain.lock.json';
+    // The lock lives beside the artifact root, not beside this source
+    // module: the bundler copies it next to the kernel's directory, so
+    // resolve against the adapter root (one level up from src/).
+    $path = dirname(__DIR__) . '/mago-toolchain.lock.json';
     if (!is_file($path)) {
         return null;
     }
