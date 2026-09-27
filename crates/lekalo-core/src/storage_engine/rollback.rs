@@ -138,16 +138,18 @@ pub fn reverse_statement(step: &Step) -> Option<String> {
         }
         "set_column_null" => {
             // The forward set is always SET NOT NULL in v1; the
-            // inverse relaxes it. The statement shape is fixed:
+            // inverse relaxes it. The column token is the second
+            // quoted identifier of the fixed-shape statement:
             // ALTER TABLE "t" ALTER COLUMN "c" SET NOT NULL;
             let inner = step.statement().strip_suffix(';')?;
-            let lower = inner.to_ascii_uppercase();
-            let alter = lower.find(" ALTER COLUMN ")?;
-            let column = inner[alter + " ALTER COLUMN ".len()..].trim();
+            let start = inner.find('"')?;
+            let table_end = inner[start + 1..].find('"')? + start + 1;
+            let column_start = inner[table_end + 1..].find('"')? + table_end + 1;
+            let column_end = inner[column_start + 1..].find('"')? + column_start + 1;
             format!(
                 "ALTER TABLE {} ALTER COLUMN {} DROP NOT NULL;",
-                table_token(step),
-                column
+                &inner[start..=table_end],
+                &inner[column_start..=column_end],
             )
         }
         "enable_rls" | "disable_rls" => {
