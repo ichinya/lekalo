@@ -12,6 +12,7 @@ pub mod conformance;
 mod diagnostic;
 pub mod drift;
 pub mod id;
+pub mod history;
 pub mod input;
 pub mod introspection;
 pub mod migration;
@@ -22,6 +23,7 @@ pub(crate) mod wire;
 
 pub use drift::compare as compare_drift;
 pub use id::{ConnectionName, Engine, VersionPin};
+pub use history::{StorageRenameKind, StorageRenameMap};
 pub use input::engine_input as input_document;
 pub use introspection::IntrospectionEvidence;
 pub use migration::{plan as plan_migration, PlanStatus};

@@ -22,6 +22,7 @@ use crate::storage_projection::projection::{DataRisk, GeneratedKind, PredicateOp
 use crate::storage_projection::{compare, StorageProjectionAttachment};
 
 use super::diagnostic::{self, MAPPING_INVALID, MIGRATION_INVALID, RENDER_UNSUPPORTED};
+use super::history::{validate_rename_history, StorageRenameKind, StorageRenameMap};
 use super::postgres::quoting::quote;
 use super::StorageEngineAttachment;
 
@@ -117,7 +118,9 @@ pub struct MigrationPlan {
     pub(crate) base_digest: String,
     pub(crate) candidate_digest: String,
     pub(crate) diff_digest: String,
+    pub(crate) history_digest: Option<String>,
     pub(crate) gated: bool,
+    pub(crate) backfill_gated: bool,
     pub(crate) status: PlanStatus,
     pub(crate) plan_id: String,
     pub(crate) steps: Vec<Step>,
@@ -147,6 +150,25 @@ impl MigrationPlan {
     /// The diff binding digest.
     pub fn diff_digest(&self) -> &str {
         &self.diff_digest
+    }
+
+    /// The canonical digest of the validated rename history this plan
+    /// consumed, when one was declared.
+    pub fn history_digest(&self) -> Option<&str> {
+        self.history_digest.as_deref()
+    }
+
+    /// Whether the plan carries backfill obligations. The engine
+    /// `gated` flag covers destructive steps only; the Laravel
+    /// generation policy unions this with backfill (issue #57).
+    pub const fn backfill_gated(&self) -> bool {
+        self.backfill_gated
+    }
+
+    /// Whether the effective Laravel gate closes: destructive **or**
+    /// backfill obligations exist.
+    pub const fn effectively_gated(&self) -> bool {
+        self.gated || self.backfill_gated
     }
 
     /// Whether the plan contains destructive steps.
@@ -210,7 +232,9 @@ impl MigrationPlan {
             ("baseDigest", Some(string(&self.base_digest))),
             ("candidateDigest", Some(string(&self.candidate_digest))),
             ("diffDigest", Some(string(&self.diff_digest))),
+            ("historyDigest", self.history_digest.as_deref().map(string)),
             ("gated", Some(flag(self.gated))),
+            ("backfillGated", Some(flag(self.backfill_gated))),
             ("status", Some(string(self.status.key()))),
             ("planId", Some(string(&self.plan_id))),
             ("steps", Some(array(&steps))),
@@ -241,6 +265,36 @@ pub fn plan(
     profile: &StorageEngineAttachment,
     base: &StorageProjectionAttachment,
     candidate: &StorageProjectionAttachment,
+    confirm: Option<&str>,
+) -> Result<MigrationPlan, DiagnosticSet> {
+    plan_inner(profile, base, candidate, None, confirm)
+}
+
+/// Derive the migration plan with one validated storage rename
+/// history (issue #57). Every declared table rename becomes an
+/// `ALTER TABLE … RENAME TO` and every declared column rename a
+/// matching-pair `ALTER TABLE … RENAME COLUMN`, instead of the
+/// destructive drop+add a name-only diff would propose. The map is
+/// validated first — a stale, foreign, or ambiguous history refuses
+/// and the plan stays a destructive proposal. Pure and read-only.
+pub fn plan_with_history(
+    profile: &StorageEngineAttachment,
+    base: &StorageProjectionAttachment,
+    candidate: &StorageProjectionAttachment,
+    history: &StorageRenameMap,
+    confirm: Option<&str>,
+) -> Result<MigrationPlan, DiagnosticSet> {
+    validate_rename_history(history, base, candidate)?;
+    plan_inner(profile, base, candidate, Some(history), confirm)
+}
+
+/// The shared planner body: `plan` and `plan_with_history` differ
+/// only in whether a validated rename map rides along.
+fn plan_inner(
+    profile: &StorageEngineAttachment,
+    base: &StorageProjectionAttachment,
+    candidate: &StorageProjectionAttachment,
+    history: Option<&StorageRenameMap>,
     confirm: Option<&str>,
 ) -> Result<MigrationPlan, DiagnosticSet> {
     if base.project_id().as_str() != candidate.project_id().as_str() {
@@ -389,13 +443,28 @@ pub fn plan(
             .collect::<Vec<String>>()
             .join("");
         payload.push_str(&diff_digest);
+        // A rename-validated plan is a different plan: the history the
+        // rename evidence carries is part of the plan's identity, so
+        // an approval can never migrate across two histories.
+        if let Some(history) = history {
+            payload.push('\u{3}');
+            payload.push_str(&super::history::history_material(history));
+        }
         payload
     });
     let plan_id = format!(
         "sha256:{}",
         crate::digest::sha256_hex(plan_material.as_bytes())
     );
-    let status = match (gated, confirm) {
+    // The effective Laravel generation policy unions the destructive
+    // gate with backfill obligations (issue #57): a backfill writes
+    // business data, so it acknowledges exactly like a destructive
+    // rewrite.
+    let backfill_gated = steps
+        .iter()
+        .any(|step| step.risk() == DataRisk::BackfillRequired);
+    let effective_gate = gated || backfill_gated;
+    let status = match (effective_gate, confirm) {
         (false, _) => PlanStatus::Ready,
         (true, Some(named)) if named == plan_id => PlanStatus::Confirmed,
         (true, Some(_)) => {
@@ -409,7 +478,11 @@ pub fn plan(
         base_digest,
         candidate_digest,
         diff_digest,
+        history_digest: history
+            .map(super::history::history_digest_of)
+            .transpose()?,
         gated,
+        backfill_gated,
         status,
         plan_id,
         steps,
