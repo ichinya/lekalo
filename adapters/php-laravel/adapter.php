@@ -2802,20 +2802,53 @@ function generate_response(array $request): array
 function plan_clean_response(array $request): array
 {
     $writes = deterministic_writes($request);
-    $plan = array_map(
-        static fn (array $entry): array => ['path' => $entry['path'], 'action' => 'delete'],
-        $writes,
-    );
+    // Published migration artifacts are append-only custody (issue
+    // #57): the ledger records them, and a generic clean confirmation
+    // never retires them. The plan skips them — the deletion plan
+    // covers only non-retained owned artifacts — so an orphan sweep
+    // can never rewrite migration history.
+    $plan = [];
+    foreach ($writes as $entry) {
+        if (retained_artifact($entry['path'])) {
+            continue;
+        }
+        $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
+    }
     return build_response($request, [
         'writes' => $plan,
         'evidence_plan_id' => plan_id($plan),
     ]);
 }
 
+/**
+ * Whether one owned artifact path is retained custody: anything under
+ * a migrations directory (migration classes and the ledger) is
+ * append-only history and never deletable through generic clean.
+ */
+function retained_artifact(string $path): bool
+{
+    return str_contains($path, '/migrations/');
+}
+
 /** The clean apply: delete exactly the planned paths, echo the plan id. */
 function clean_response(array $request): array
 {
     $writes = deterministic_writes($request);
+    // Retained custody mirrors the plan: a migration or ledger path
+    // refuses the apply outright instead of silently surviving.
+    foreach ($writes as $entry) {
+        if (retained_artifact($entry['path'])) {
+            return build_response($request, [
+                'error' => [
+                    'class' => 'conflict',
+                    'code' => 'retained-artifact',
+                    'message' => 'published migrations and their ledger are append-only; clean never deletes them',
+                    'retryable' => false,
+                    'partial' => false,
+                ],
+            ]);
+        }
+    }
     $plan = array_map(
         static fn (array $entry): array => ['path' => $entry['path'], 'action' => 'delete'],
         $writes,
