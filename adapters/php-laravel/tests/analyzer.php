@@ -357,7 +357,7 @@ check($okResponse['result']['findings'][0]['code'] === 'target.analysis.strict-t
 check(str_starts_with((string) $okResponse['result']['findings'][0]['detail'], 'app/Models/User.php — strict-types: '), 'the exact native path precedes the original code in the bounded detail');
 check($okResponse['result']['findings'][0]['path'] === 'app/models/user.php', 'a native path is converted to the lowercase logical-path wire grammar');
 check(is_logical_path((string) $okResponse['result']['findings'][0]['path']), 'the emitted finding path satisfies the wire logical-path grammar');
-check(mb_strlen((string) $okResponse['result']['findings'][0]['detail']) <= 128, 'the detail stays within the wire 128-codepoint bound');
+check(preg_match_all('/./u', (string) $okResponse['result']['findings'][0]['detail']) <= 128, 'the detail stays within the wire 128-codepoint bound');
 check((bool) preg_match('//u', (string) $okResponse['result']['findings'][0]['detail']), 'the clamped detail is valid UTF-8 (no mid-codepoint cut)');
 
 // Multibyte safety: a message full of multibyte characters clamps on a
@@ -367,7 +367,7 @@ $multibyteBody['diagnostics'][0]['message'] = str_repeat('—–‘’', 20) . s
 $multibyteResponse = validate_response($request, new FakeAnalyzer($multibyteBody, 'ok'));
 check($multibyteResponse['status'] === 'ok', 'a multibyte message does not kill the envelope');
 $multibyteDetail = (string) $multibyteResponse['result']['findings'][0]['detail'];
-check(mb_strlen($multibyteDetail) <= 128, 'the multibyte detail clamps to the codepoint bound');
+check(preg_match_all('/./u', $multibyteDetail) <= 128, 'the multibyte detail clamps to the codepoint bound');
 check((bool) preg_match('//u', $multibyteDetail) && json_encode($multibyteDetail, JSON_THROW_ON_ERROR) !== false, 'the clamped multibyte detail is valid UTF-8, not a mid-codepoint cut');
 check(str_starts_with($multibyteDetail, 'app/Models/User.php — '), 'the native path survives the multibyte clamp');
 
