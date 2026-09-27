@@ -61,6 +61,7 @@ const GOLDEN_EXPECTATIONS = {
   "destructive-confirmed.json": { status: "confirmed", gated: true, backfillGated: false, history: false },
   "backfill-confirmed.json": { status: "confirmed", gated: false, backfillGated: true, history: false },
   "rename-confirmed.json": { status: "confirmed", gated: true, backfillGated: false, history: true },
+  "column-rename-confirmed.json": { status: "confirmed", gated: true, backfillGated: false, history: true },
 };
 let goldenCount = 0;
 const goldensDir = "tests/fixtures/laravel-migrations/golden";
