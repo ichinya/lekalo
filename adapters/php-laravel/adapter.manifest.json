@@ -59,7 +59,7 @@
       "verify.transport-http": "unsupported"
     },
     "constraints": {
-      "maxEntries": 10000
+      "maxEntries": 1024
     },
     "readScopes": [
       ".lekalo/cache/**",
@@ -89,12 +89,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:5de4b72cdd4cbbbfc9a612b2f4c8643ea0ede68ebb1cb73498fa83eee12e324f",
+    "packageDigest": "sha256:aa755a0205b85819dedb87b488c4aaeeb5d356fc7d89b75ecc6f89999a43456f",
     "files": [
       {
         "path": "adapter.php",
-        "digest": "sha256:f6ce1636be2eb1c2c9e728f17c31a3e46ba65b6a1ba9f5a6d7a0d56fa33f2785",
-        "bytes": 43517
+        "digest": "sha256:39a077dc258f05a5bd0e1ad0d0fd4012a0d4cbfa2d5641890f4ef4a496aa9a55",
+        "bytes": 46414
       }
     ],
     "signaturePolicy": "unsigned",

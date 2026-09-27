@@ -409,7 +409,7 @@ function write_canonical(array|bool|int|string|null $value): string
         return (string) $value;
     }
     if (is_string($value)) {
-        return json_encode($value, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        return canonical_string($value);
     }
     $isList = array_is_list($value);
     if ($isList) {
@@ -419,10 +419,30 @@ function write_canonical(array|bool|int|string|null $value): string
     usort($keys, 'strcmp');
     $body = [];
     foreach ($keys as $key) {
-        $body[] = json_encode((string) $key, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)
+        $body[] = canonical_string((string) $key)
             . ':' . write_canonical($value[$key]);
     }
     return '{' . implode(',', $body) . '}';
+}
+
+/**
+ * Canonical JSON string encoding, byte-compatible with the core's
+ * `serde_json` serializer: raw UTF-8 non-ASCII (never `\uXXXX`-escaped),
+ * unescaped `/`, the closed escape set (`"`, `\`, and control
+ * characters), and every other byte — DEL (U+007F) included — carried
+ * raw. json_encode would silently DROP a DEL byte, so it travels as a
+ * raw NUL sentinel through the encoder and is restored after; raw NUL
+ * can never reach this function because the strict decoder refuses
+ * control characters in request strings.
+ */
+function canonical_string(string $value): string
+{
+    $sentinel = str_replace("\x7F", "\x00", $value);
+    $encoded = json_encode(
+        $sentinel,
+        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+    );
+    return str_replace('\\u0000', "\x7F", $encoded);
 }
 
 /** SHA-256 hex of the given UTF-8 bytes (binding anchors and digests). */
@@ -748,8 +768,13 @@ function validate_profile_capabilities(mixed $capabilities): void
     }
     $previous = '';
     foreach ($capabilities as $capability) {
+        // Member closure is order-insensitive (serde `deny_unknown_fields`
+        // never depends on decoded member order), so exactly the closed
+        // pair — in any key order — is legal.
         if (!is_json_object($capability)
-            || array_keys($capability) !== ['id', 'support']) {
+            || count($capability) !== 2
+            || !array_key_exists('id', $capability)
+            || !array_key_exists('support', $capability)) {
             throw new RequestRefusal('profile-capabilities');
         }
         if (!is_capability_id($capability['id'])
@@ -948,7 +973,10 @@ function describe_capabilities(): array
         'progress' => false,
         'ir_versions' => [IR_VERSION],
         'capabilities' => DECLARED_CAPABILITIES,
-        'constraints' => ['max_entries' => 10000],
+        // The advisory bound mirrors the kernel's real write-plan file
+        // cap (MAX_WRITE_FILES): a declared constraint never exceeds an
+        // internally enforced one.
+        'constraints' => ['max_entries' => MAX_WRITE_FILES],
     ];
 }
 
@@ -996,6 +1024,60 @@ function unsupported_response(array $request, string $code = 'operation-unsuppor
 // 7. Dispatch: one validated request to one response.
 // ---------------------------------------------------------------------------
 
+/** The declared read scopes this kernel scans (and no others). */
+const SCAN_ROOTS = ['.lekalo/ir', '.lekalo/cache'];
+/** The maximum scan entries one result may carry (mirrors the wire bound). */
+const MAX_SCAN_ENTRIES = 10000;
+
+/**
+ * The scan exchange: a real read-only enumeration of the staged view's
+ * declared read roots, never a canned entry list. Every returned path
+ * was observed on the filesystem under a declared scope; the roots are
+ * pruned by the same lexical grammar the core enforces, and the result
+ * stays inside the wire bounds (a fuller inventory is `truncated`,
+ * never silently cut).
+ */
+function scan_response(array $request): array
+{
+    $entries = [];
+    $truncated = false;
+    foreach (SCAN_ROOTS as $root) {
+        if (!is_dir($root)) {
+            continue;
+        }
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::LEAVES_ONLY,
+        );
+        foreach ($iterator as $file) {
+            if (!$file->isFile()) {
+                continue;
+            }
+            $path = str_replace('\\', '/', $file->getPathname());
+            if (!is_logical_path($path)) {
+                continue;
+            }
+            if (count($entries) >= MAX_SCAN_ENTRIES) {
+                $truncated = true;
+                break 2;
+            }
+            $entries[] = [
+                'path' => $path,
+                'kind' => 'ir',
+            ];
+        }
+    }
+    // Canonical entry order: sorted by path (the closed wire keeps the
+    // core's plan validator byte-comparable; scan results sort the same).
+    usort($entries, static fn (array $a, array $b): int => strcmp($a['path'], $b['path']));
+    return build_response($request, [
+        'result' => [
+            'entries' => $entries,
+            'truncated' => $truncated,
+        ],
+    ]);
+}
+
 function dispatch(array $request): array
 {
     $operation = $request['operation'];
@@ -1004,14 +1086,7 @@ function dispatch(array $request): array
     }
     switch ($operation) {
         case 'scan':
-            return build_response($request, [
-                'result' => [
-                    'entries' => [
-                        ['path' => '.lekalo/ir/minimal.json', 'kind' => 'ir'],
-                    ],
-                    'truncated' => false,
-                ],
-            ]);
+            return scan_response($request);
         case 'bind':
             return build_response($request, [
                 'result' => [

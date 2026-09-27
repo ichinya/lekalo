@@ -215,7 +215,10 @@ jobs:
       - name: Verify the shipped adapter manifest golden (issue #32, #54)
         run: node scripts/test-adapter-manifest-golden.mjs
       - name: Run the PHP/Laravel adapter suite (issue #54)
-        if: runner.os != 'macos'
+        # Runs on every OS: the PHP unit suites and packaging gate run
+        # wherever PHP runs; the confined conformance battery proves for
+        # real on Linux, and on macOS/Windows reports the platform's
+        # confinement limitation as an explicit, logged skip.
         timeout-minutes: 10
         run: node scripts/test-php-laravel-adapter.mjs
       - name: Provision the vendored compiler bundle custody (issue #44)

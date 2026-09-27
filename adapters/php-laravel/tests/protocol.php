@@ -105,7 +105,7 @@ try {
 
 check(canonical_json(['b' => 1, 'a' => ['z' => 1, 'A' => 2]]) === '{"a":{"A":2,"z":1},"b":1}', 'keys sorted bytewise');
 check(canonical_json(['/x' => 1]) === '{"/x":1}', 'slashes unescaped like serde_json');
-check(canonical_json('é') === '"\\u00e9"', 'non-ascii escaped like json_encode');
+check(bin2hex(canonical_json("é")) === bin2hex('"é"'), 'non-ascii carried raw like serde_json');
 check(canonical_json([]) === '[]' && canonical_json(new stdClass() instanceof stdClass ? [] : []) === '[]', 'empty list');
 check(sha256_hex('abc') === 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 'sha256 anchor');
 
@@ -227,6 +227,18 @@ check($response['status'] === 'ok' && isset($response['capabilities']), 'describ
 $scanRequest = describe_request(['operation' => 'scan']);
 $scanResponse = dispatch($scanRequest);
 check(($scanResponse['result']['truncated'] ?? null) === false, 'scan dispatch');
+check($scanResponse['result']['entries'] === [], 'scan of an empty staged view observes nothing');
+// A real file inside a declared read root is enumerated, not fabricated.
+$scanRoot = '.lekalo/ir';
+if (!is_dir($scanRoot)) {
+    mkdir($scanRoot, 0777, true);
+}
+file_put_contents($scanRoot . '/protocol-test.json', 'x');
+$scanned = dispatch($scanRequest)['result']['entries'];
+$observedPaths = array_column($scanned, 'path');
+check(in_array('.lekalo/ir/protocol-test.json', $observedPaths, true), 'scan enumerates a real staged file');
+check(!in_array('.lekalo/ir/minimal.json', $observedPaths, true), 'scan never fabricates an unobserved entry');
+unlink($scanRoot . '/protocol-test.json');
 $unsupported = dispatch(describe_request(['operation' => 'plan-native', 'protocol_version' => VERSION, 'native_request' => $nativeBase]));
 check($unsupported['status'] === 'error' && $unsupported['error']['class'] === 'unsupported', 'plan-native honest unsupported');
 

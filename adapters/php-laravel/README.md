@@ -76,10 +76,37 @@ generator surface (`generate.zod`, `generate.openapi`,
 `generate.transport-http`, `verify.scenarios`, `scan.symbols`,
 `preserve.classification`) and the `plan-native` exchange answers an
 in-envelope `unsupported` error: a declared absence, never a fabricated
-plan summary. The IR-carrying operations (`validate`, `verify`) run the
-protocol honestly over the fixture IR; semantic PHP type mapping, DTO
-emission, migration planning, Mago/Laratesto evidence, and the Laravel
-Planner fixture are the follow-up slices coordinated with #55/#56.
+plan summary.
+
+The `scan` operation performs a real read-only enumeration of the
+staged view's declared read roots (`.lekalo/ir`, `.lekalo/cache`):
+every returned path was observed on the filesystem under a declared
+scope, sorted by path, with `truncated: true` at the wire bound rather
+than a silently cut inventory. It never emits an entry it did not
+observe. `bind`/`validate`/`verify` remain the MVP's fixed-shape
+answers over the conformance fixture (bindings echo the request
+pairing; validate/verify report an honest empty findings set) — the
+semantic PHP validation, scenario verification, and Mago/Laratesto
+evidence behind them are the #55/#56 slices. Semantic PHP type
+mapping, DTO emission, migration planning, and the Laravel Planner
+fixture are likewise the follow-up slices coordinated with #55/#56.
+
+## Platform availability of the confined runtime
+
+The confinement sandbox copies the interpreter plus exactly the
+first-argument script into its private view. Standard PHP builds carry
+runtime dependencies the copy cannot include (macOS seatbelt refuses
+the dyld deps of the copied binary; Windows refuses the copied
+`php.exe` without its sibling `php8.dll` — STATUS_DLL_NOT_FOUND). The
+confined kernel suite therefore proves what it proves per platform:
+where a confined describe exchange succeeds (the Linux CI leg, whose
+packaged PHP build is self-contained under the ro-bound `/usr`), the
+suite runs for real; where the exchange crashes before an envelope,
+the Rust suite skips with an explicit machine-readable reason printed
+to stderr — visible evidence of what was not proved, never a silent
+pass. The PHP unit suites (`tests/protocol.php`, `tests/process.php`)
+and the packaging gate run everywhere PHP runs, independent of
+confinement.
 
 ## Build and verification
 

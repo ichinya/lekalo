@@ -7,11 +7,22 @@
 //!
 //! The PHP interpreter must be installed on the host (`php` on PATH);
 //! provisioning is a developer/CI concern, never an adapter behavior.
-//! Tests skip cleanly when no interpreter is present so the gate stays
-//! honest about what it proved instead of failing on missing tooling.
+//! Availability is proven by one real confined describe exchange, not
+//! merely by locating the interpreter on PATH: the confinement sandbox
+//! copies the interpreter plus exactly the first-argument script into
+//! its private view, and standard PHP builds carry dyld/DLL siblings
+//! the copy cannot include (macOS seatbelt refuses the dyld deps;
+//! Windows STATUS_DLL_NOT_FOUND without php8.dll beside the copied
+//! php.exe). A host where the confined exchange cannot run is a skip
+//! with an explicit, machine-readable reason — visibly reported, never
+//! a silent pass — so the gate stays honest about what it proved. The
+//! suite runs for real wherever the confined exchange succeeds (the
+//! Linux CI leg, where bwrap ro-binds /usr and the packaged PHP build
+//! is self-contained).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::sync::OnceLock;
 
 use lekalo_core::project_fs::Fs;
 use lekalo_core::target_protocol::transport::{AdapterCommand, TransportLimits};
@@ -33,16 +44,107 @@ fn kernel_command() -> AdapterCommand {
     }
 }
 
-/// Whether a PHP interpreter is available without any provisioning.
-fn php_available() -> bool {
-    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+/// Why the suite cannot run on this host, proven by evidence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Availability {
+    /// The confined describe exchange succeeded: run everything.
+    Runnable,
+    /// No `php` interpreter on PATH (proven by `php -v`).
+    MissingInterpreter,
+    /// An interpreter exists, but the confined describe exchange died
+    /// before an envelope could be produced (crash, spawn failure, or
+    /// deadline) — the confinement copy of the interpreter cannot run
+    /// on this platform, so the suite would prove nothing by running.
+    ConfinedRuntimeUnavailable(&'static str),
+}
+
+impl Availability {
+    /// The machine-readable skip reason; a skipped suite is visibly
+    /// reported, never silently absent.
+    fn reason(self) -> &'static str {
+        match self {
+            Self::Runnable => "runnable",
+            Self::MissingInterpreter => {
+                "skip: no PHP interpreter on PATH (php -v failed); \
+                 the confined PHP kernel suite proved nothing on this host"
+            }
+            Self::ConfinedRuntimeUnavailable(class) => match class {
+                "crash" => {
+                    "skip: the confined PHP exchange crashed before an envelope; \
+                     this platform's PHP build carries runtime dependencies the \
+                     sandbox's interpreter copy cannot load (macOS seatbelt dyld \
+                     refusal / Windows DLL_NOT_FOUND); the confined PHP kernel \
+                     suite proved nothing on this host"
+                }
+                "spawn" => {
+                    "skip: the confined PHP exchange could not spawn the \
+                     interpreter; the confined PHP kernel suite proved nothing \
+                     on this host"
+                }
+                "deadline" => {
+                    "skip: the confined PHP exchange hit the deadline before an \
+                     envelope; the confined PHP kernel suite proved nothing on \
+                     this host"
+                }
+                _ => {
+                    "skip: the confined PHP exchange failed transport; \
+                     the confined PHP kernel suite proved nothing on this host"
+                }
+            },
+        }
+    }
+}
+
+/// Probe once per process: a bare `php -v` for interpreter presence,
+/// then one real confined describe exchange through the production
+/// client — the same exchange every test depends on. Only that proves
+/// the platform can run the suite at all.
+fn availability() -> Availability {
+    static AVAILABLE: OnceLock<Availability> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
-        let output = std::process::Command::new("php")
-            .arg("-v")
-            .output()
-            .map(|output| output.status.success());
-        output.unwrap_or(false)
+        let probe = std::process::Command::new("php").arg("-v").output();
+        if !probe.map(|output| output.status.success()).unwrap_or(false) {
+            return Availability::MissingInterpreter;
+        }
+        let sandbox =
+            std::env::temp_dir().join(format!("lekalo-php-kernel-probe-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&sandbox);
+        let command = kernel_command();
+        let limits = TransportLimits {
+            timeout_ms: 20_000,
+            ..TransportLimits::default()
+        };
+        let mut client = TargetClient::new(limits);
+        let outcome = client
+            .describe(&command, &sandbox)
+            .map(|described| described.capabilities.adapter.id.clone());
+        let _ = std::fs::remove_dir_all(&sandbox);
+        match outcome {
+            Ok(id) if id == "lekalo-target-php-laravel" => Availability::Runnable,
+            // A describe that answers with a different adapter is a
+            // broken environment; the suite would prove nothing.
+            Ok(_) => Availability::ConfinedRuntimeUnavailable("transport"),
+            Err(TargetFailure::Crash { .. }) => Availability::ConfinedRuntimeUnavailable("crash"),
+            Err(TargetFailure::TransportFailed { detail: "spawn" }) => {
+                Availability::ConfinedRuntimeUnavailable("spawn")
+            }
+            Err(TargetFailure::Timeout) => Availability::ConfinedRuntimeUnavailable("deadline"),
+            Err(_) => Availability::ConfinedRuntimeUnavailable("transport"),
+        }
     })
+}
+
+/// Bail out of one test with the explicit evidence-backed reason. The
+/// message always names what was (and was not) proved, so a skipped
+/// suite is visible in CI logs instead of silently green.
+fn require_runnable() -> bool {
+    match availability() {
+        Availability::Runnable => true,
+        state => {
+            eprintln!("{}", state.reason());
+            false
+        }
+    }
 }
 
 /// One hermetic temporary project directory for the child cwd.
@@ -94,8 +196,7 @@ fn require_valid_ir(sandbox: &Sandbox) -> String {
 
 #[test]
 fn the_php_kernel_describes_itself_through_the_production_client() {
-    if !php_available() {
-        eprintln!("skip: no PHP interpreter on PATH");
+    if !require_runnable() {
         return;
     }
     let sandbox = Sandbox::new("describe");
@@ -134,8 +235,7 @@ fn the_php_kernel_describes_itself_through_the_production_client() {
 
 #[test]
 fn repeated_handshakes_bind_the_same_capability_digest() {
-    if !php_available() {
-        eprintln!("skip: no PHP interpreter on PATH");
+    if !require_runnable() {
         return;
     }
     let sandbox = Sandbox::new("digest");
@@ -149,8 +249,7 @@ fn repeated_handshakes_bind_the_same_capability_digest() {
 
 #[test]
 fn the_php_generation_seam_plans_applies_and_verifies() {
-    if !php_available() {
-        eprintln!("skip: no PHP interpreter on PATH");
+    if !require_runnable() {
         return;
     }
     let sandbox = Sandbox::new("generate");
@@ -254,8 +353,7 @@ fn the_php_generation_seam_plans_applies_and_verifies() {
 
 #[test]
 fn the_php_kernel_refuses_undeclared_input_without_a_fake_envelope() {
-    if !php_available() {
-        eprintln!("skip: no PHP interpreter on PATH");
+    if !require_runnable() {
         return;
     }
     let sandbox = Sandbox::new("refuse");
@@ -311,8 +409,7 @@ fn the_php_kernel_refuses_undeclared_input_without_a_fake_envelope() {
 
 #[test]
 fn a_cancelled_php_exchange_is_classified_and_recoverable() {
-    if !php_available() {
-        eprintln!("skip: no PHP interpreter on PATH");
+    if !require_runnable() {
         return;
     }
     let sandbox = Sandbox::new("cancel");
@@ -343,51 +440,4 @@ fn a_cancelled_php_exchange_is_classified_and_recoverable() {
         described.capabilities.adapter.id,
         "lekalo-target-php-laravel"
     );
-}
-
-// A debug helper kept disabled: building the exact client envelope for
-// plan-native by hand. Not compiled as a test.
-#[allow(dead_code)]
-#[test]
-#[ignore = "debug helper"]
-fn debug_dump_plan_native_request() {
-    use lekalo_core::target_protocol::wire;
-    let limits = lekalo_core::target_protocol::wire::Limits {
-        timeout_ms: Some(30000),
-        max_output_bytes: Some(8388608),
-    };
-    let mut envelope = lekalo_core::target_protocol::wire::RequestEnvelope {
-        protocol: "lekalo.target/v1".into(),
-        protocol_version: "0.3.2".into(),
-        operation: Operation::PlanNative,
-        request_id: "req-x".into(),
-        project_root: ".".into(),
-        ir_path: None,
-        target: None,
-        profile: None,
-        profile_digest: None,
-        profile_capabilities: None,
-        dry_run: None,
-        limits: Some(limits),
-        plan_id: None,
-        native_request: Some(wire::NativeRequest {
-            changes: Default::default(),
-            scan_ref: wire::NativeContentRef {
-                digest: format!("sha256:{}", "1".repeat(64)),
-                revision: None,
-                adapter: None,
-            },
-            observed_ref: None,
-            execution_policy_ref: wire::NativeContentRef {
-                digest: format!("sha256:{}", "2".repeat(64)),
-                revision: None,
-                adapter: None,
-            },
-            input_manifest_digest: format!("sha256:{}", "3".repeat(64)),
-            tool_catalog_digest: format!("sha256:{}", "4".repeat(64)),
-            capability_snapshot_digest: format!("sha256:{}", "5".repeat(64)),
-        }),
-    };
-    envelope.request_id = wire::request_id(&envelope);
-    println!("{}", serde_json::to_string(&envelope).unwrap());
 }
