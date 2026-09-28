@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/php-types-input.schema.v0.4.0.json",
+  "title": "Lekalo PHP Types Input",
+  "description": "Closed independent contract for the bounded PHP type-generation input document (issue #58). The document is authored under `lekalo/types/`, names the exact compiled-IR evidence digest it consumes, and carries the closed type policy (namespace prefix, custody mode, scaffold root, class map). The compiled IR itself is never embedded: the adapter reads the core-staged evidence named by projectId from the canonical cache home and refuses any digest divergence. The document is pure data - no credentials, hosts, URLs, users, wall-clock timestamps, or provider output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "projectId",
+    "irDigest"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/php-types-input/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.php-types-input@0.4.0"
+    },
+    "projectId": {
+      "description": "The project id whose compiled IR evidence is consumed; the same id the core stages at `.lekalo/cache/ir/<projectId>.json`.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "irDigest": {
+      "description": "The exact digest of the consumed IR evidence bytes; any divergence between this digest and the staged evidence is a binding refusal, never a best-effort read.",
+      "$ref": "#/$defs/sha256"
+    },
+    "policy": {
+      "description": "The closed type policy. Absent members take their documented defaults; unknown members refuse. No library codec, date library, or Composer provisioning can be declared in v0.4.0: their absence is the explicit unsupported boundary, never a silent fallback.",
+      "$ref": "#/$defs/policy"
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "description": "A module-qualified lowercase Lekalo symbol id (`module.name`).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "namespacePrefix": {
+      "description": "The generated PHP namespace prefix. The semantic module becomes one additional namespace segment, so the full FQN is `<prefix>\\<Module>\\<Class>`.",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,7}$"
+    },
+    "scaffoldRoot": {
+      "description": "The consumer-owned source root of scaffold-once custody. v0.4.0 closes the accepted value to the one recognized consumer convention, so the core lifecycle classifier and the adapter agree on user ownership by path convention.",
+      "const": "app/lekalo-types"
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "namespacePrefix": {
+          "$ref": "#/$defs/namespacePrefix",
+          "default": "Lekalo\\Generated\\Types"
+        },
+        "custody": {
+          "description": "managed: regenerable bytes under the generated root with drift checks and clean authority. scaffold-once: emitted once into the declared consumer source root, then user-owned. checked: zero writes; the declared ids join read-only against observed class-shape evidence.",
+          "enum": ["managed", "scaffold-once", "checked"],
+          "default": "managed"
+        },
+        "scaffoldRoot": {
+          "$ref": "#/$defs/scaffoldRoot"
+        },
+        "classMap": {
+          "description": "Whether a deterministic generated class map (`classmap.php`) is emitted beside the types.",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "custody": {
+                "const": "scaffold-once"
+              }
+            },
+            "required": ["custody"]
+          },
+          "then": {
+            "properties": {
+              "scaffoldRoot": {
+                "$ref": "#/$defs/scaffoldRoot"
+              }
+            },
+            "required": ["scaffoldRoot"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "custody": {
+                "enum": ["managed", "checked"]
+              }
+            },
+            "required": ["custody"]
+          },
+          "then": {
+            "properties": {
+              "scaffoldRoot": {
+                "not": {}
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

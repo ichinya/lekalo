@@ -1,0 +1,360 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/php-types-map.schema.v0.4.0.json",
+  "title": "Lekalo PHP Types Map",
+  "description": "Closed independent contract for the emitted PHP type-mapping sidecar `types.map.json` (issue #58). The sidecar is the authoritative semantic-ID-to-FQN/path linkage: one entry per generated type, sorted by semantic id, with exact wire names, presence cases, source ownership, and provenance digests. It is pure data - no credentials, hosts, URLs, users, wall-clock timestamps, absolute paths, or provider output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "adapter",
+    "projectId",
+    "custody",
+    "namespacePrefix",
+    "generatedRoot",
+    "digests",
+    "types",
+    "artifacts"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/php-types-map/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.php-types-map@0.4.0"
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {
+          "const": "lekalo-target-php-laravel"
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        }
+      }
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "custody": {
+      "enum": ["managed", "scaffold-once", "checked"]
+    },
+    "namespacePrefix": {
+      "$ref": "#/$defs/namespace"
+    },
+    "generatedRoot": {
+      "description": "The logical root directory the emitted files live under, relative to the project root (`lekalo/...` convention roots or the managed generated root).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]*(/[a-zA-Z0-9_.-]+)*$"
+    },
+    "digests": {
+      "description": "Provenance digests of the exact inputs the mapping consumed. No timestamp: the same inputs always bind the same bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ir", "input"],
+      "properties": {
+        "ir": {
+          "$ref": "#/$defs/sha256"
+        },
+        "input": {
+          "description": "The canonical digest of the consumed types-input document.",
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "types": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/typeEntry"
+      }
+    },
+    "artifacts": {
+      "description": "The complete emitted-file inventory, path-sorted: every generated class, codec, collection, optional wrapper, and the class map. This is the authoritative semantic-ID-to-FQN/path linkage of one generation; helper artifacts without a definition of their own carry the role and (where one exists) the owning semantic id.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifactEntry"
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "semanticId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "namespace": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*)+$"
+    },
+    "fqn": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*)+$"
+    },
+    "relativePath": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_.-]+(/[a-zA-Z0-9_.-]+)*$"
+    },
+    "kind": {
+      "enum": ["scalar", "enum", "value-object", "entity", "command", "query", "event"]
+    },
+    "scalarBase": {
+      "enum": ["string", "number", "boolean", "date", "datetime", "uuid", "uri"]
+    },
+    "presence": {
+      "description": "The four closed presence cases (issue #58): required-nonnull, required-nullable, optional-nonnull, optional-nullable.",
+      "enum": ["required-nonnull", "required-nullable", "optional-nonnull", "optional-nullable"]
+    },
+    "wireName": {
+      "description": "The exact declared field name, carried verbatim onto the wire. A PHP property may be deterministically camel-cased; the wire name never changes.",
+      "type": "string",
+      "pattern": "^[a-z][a-zA-Z0-9_]*$"
+    },
+    "typeExpr": {
+      "description": "The closed mapped type expression: a leaf reference, optionally wrapped by one list layer and/or one optional layer, with the generated collection or presence wrapper the position binds to. Deeper nesting is unsupported and never mapped.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["leaf"],
+      "properties": {
+        "leaf": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "list": {
+          "type": "boolean",
+          "default": false
+        },
+        "nullable": {
+          "type": "boolean",
+          "default": false
+        },
+        "nullableElements": {
+          "description": "Whether the list layer permits null elements; present only when list is true.",
+          "type": "boolean"
+        },
+        "collection": {
+          "description": "The FQN of the immutable collection class a list position binds to.",
+          "$ref": "#/$defs/fqn"
+        },
+        "wrapper": {
+          "description": "The FQN of the concrete presence wrapper an optional position binds to.",
+          "$ref": "#/$defs/fqn"
+        }
+      }
+    },
+    "fieldEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "property", "type", "presence", "nullable"],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/wireName"
+        },
+        "property": {
+          "description": "The deterministic PHP property spelling (camel-case of the wire name).",
+          "type": "string",
+          "pattern": "^[a-z][a-zA-Z0-9]*$"
+        },
+        "type": {
+          "$ref": "#/$defs/typeExpr"
+        },
+        "presence": {
+          "$ref": "#/$defs/presence"
+        },
+        "nullable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "enumCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case", "value"],
+      "properties": {
+        "case": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "role": {
+      "enum": ["type", "codec", "collection", "optional", "class-map"]
+    },
+    "artifactEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "fqn", "role"],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "fqn": {
+          "$ref": "#/$defs/fqn"
+        },
+        "role": {
+          "$ref": "#/$defs/role"
+        },
+        "semanticId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "element": {
+          "description": "The referenced element type of a collection or optional wrapper.",
+          "$ref": "#/$defs/semanticId"
+        }
+      }
+    },
+    "typeEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["semanticId", "kind", "fqn", "path"],
+      "properties": {
+        "semanticId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "$ref": "#/$defs/kind"
+        },
+        "fqn": {
+          "$ref": "#/$defs/fqn"
+        },
+        "path": {
+          "description": "The artifact path relative to the generated root.",
+          "$ref": "#/$defs/relativePath"
+        },
+        "base": {
+          "description": "The closed scalar base of a scalar entry.",
+          "$ref": "#/$defs/scalarBase"
+        },
+        "values": {
+          "description": "The declared string-backed enum cases in declared order.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/enumCase"
+          }
+        },
+        "fields": {
+          "description": "The ordered field rows of a structured entry, in declared order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fieldEntry"
+          }
+        },
+        "returns": {
+          "description": "The declared query return expression; a query entry emits no result class, so the codec is the returns type's codec.",
+          "$ref": "#/$defs/typeExpr"
+        },
+        "codec": {
+          "description": "The FQN of the emitted codec for this type: a dedicated codec class for structured kinds, the nominal wrapper or enum itself for scalar and enum kinds.",
+          "$ref": "#/$defs/fqn"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "scalar"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "base": {
+                "$ref": "#/$defs/scalarBase"
+              },
+              "codec": {
+                "$ref": "#/$defs/fqn"
+              }
+            },
+            "required": ["base", "codec"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "enum"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "values": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/$defs/enumCase"
+                }
+              },
+              "codec": {
+                "$ref": "#/$defs/fqn"
+              }
+            },
+            "required": ["values", "codec"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "query"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "returns": {
+                "$ref": "#/$defs/typeExpr"
+              },
+              "codec": {
+                "$ref": "#/$defs/fqn"
+              }
+            },
+            "required": ["returns", "codec"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": ["value-object", "entity", "command", "event"]
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "fields": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/fieldEntry"
+                }
+              },
+              "codec": {
+                "$ref": "#/$defs/fqn"
+              }
+            },
+            "required": ["fields", "codec"]
+          }
+        }
+      ]
+    }
+  }
+}

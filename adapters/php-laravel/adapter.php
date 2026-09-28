@@ -1032,6 +1032,7 @@ const DECLARED_CAPABILITIES = [
     'generate.zod' => 'unsupported',
     'generate.openapi' => 'unsupported',
     'generate.ui' => 'unsupported',
+    'generate.types' => 'full',
     'scan.symbols' => 'unsupported',
     'verify.scenarios' => 'full',
     'verify.transport-http' => 'unsupported',
@@ -1080,6 +1081,36 @@ function load_scenario_modules(): void
         return;
     }
     foreach ([__DIR__ . '/scenario-map.php', __DIR__ . '/scenario-emit.php'] as $module) {
+        if (!is_file($module)) {
+            throw new RequestRefusal('compiler-module-missing');
+        }
+        require_once $module;
+    }
+}
+
+/**
+ * The type-generator modules, in fixed load order (issue #58). The
+ * same lazy pattern as the scenario compiler: inside the shipped
+ * artifact the modules are already appended and loading is a no-op;
+ * the source-tree kernel loads them directly.
+ */
+function load_type_modules(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+    $loaded = true;
+    if (function_exists('php_map_types') && function_exists('php_emit_types')) {
+        return;
+    }
+    foreach ([
+        __DIR__ . '/type-policy.php',
+        __DIR__ . '/type-map.php',
+        __DIR__ . '/type-codec.php',
+        __DIR__ . '/type-emit.php',
+        __DIR__ . '/type-bindings.php',
+    ] as $module) {
         if (!is_file($module)) {
             throw new RequestRefusal('compiler-module-missing');
         }
@@ -1982,6 +2013,17 @@ function is_scenario_ir_path(string $path): bool
 }
 
 /**
+ * The bounded types-input path convention (issue #58): documents under
+ * `lekalo/types/` carrying the `.types.json` suffix drive the type
+ * generator, exactly like the scenario and migration conventions.
+ */
+function is_types_ir_path(string $path): bool
+{
+    return str_starts_with($path, 'lekalo/types/')
+        && str_ends_with($path, '.types.json');
+}
+
+/**
  * The deterministic generation entry (issue #56): a scenario document
  * at `ir_path` maps to the full Laratesto test set (support files plus
  * one test and one canonical sidecar per scenario); anything else
@@ -2000,6 +2042,44 @@ function deterministic_generation(array $request): array
         if ($outcome['findings'] !== []) {
             // Capability honesty: the mapper cannot express the document.
             // Nothing is emitted and nothing is written.
+            return [
+                'path' => null,
+                'bytes' => '',
+                'digest' => null,
+                'writes' => [],
+                'findings' => $outcome['findings'],
+            ];
+        }
+        $writes = [];
+        $skipWrites = $outcome['skip_writes'] ?? [];
+        foreach ($outcome['files'] as $file) {
+            if (isset($skipWrites[$file['path']])) {
+                continue;
+            }
+            $writes[] = [
+                'path' => $file['path'],
+                'action' => 'create',
+                'sha256' => $file['digest'],
+            ];
+        }
+        return [
+            'path' => null,
+            'bytes' => '',
+            'digest' => null,
+            'writes' => $writes,
+            'files' => $outcome['files'],
+            'findings' => [],
+        ];
+    }
+    if (is_string($irPath) && is_types_ir_path($irPath)) {
+        $outcome = type_generation($request);
+        if (isset($outcome['refusal'])) {
+            throw new RequestRefusal($outcome['refusal']);
+        }
+        if ($outcome['findings'] !== []) {
+            // Capability honesty: an unsupported projection or a failed
+            // checked join vetoes every write — zero partial emission,
+            // zero success receipt.
             return [
                 'path' => null,
                 'bytes' => '',
@@ -2202,6 +2282,230 @@ function read_view_file(string $path): ?string
         return $bytes === false ? null : $bytes;
     }
     return null;
+}
+
+// ---------------------------------------------------------------------------
+// The type generator (issue #58): map → emit → custody.
+// ---------------------------------------------------------------------------
+
+/**
+ * The type generator entry: a types-input document at `ir_path` maps
+ * the compiled IR to the closed type inventory and emits the custody's
+ * files. A mapping finding or a failed checked join vetoes every write
+ * exactly like the Node pipeline; the three custody modes select the
+ * emission root and the custody flags, never a different compiler.
+ */
+function type_generation(array $request): array
+{
+    $irPath = $request['ir_path'] ?? '';
+    if (!is_string($irPath) || !is_types_ir_path($irPath)) {
+        // Not a types document: the scenario/migration/kernel paths own it.
+        return ['not-types' => true, 'files' => [], 'findings' => []];
+    }
+    load_type_modules();
+    $inputText = read_view_file($irPath);
+    if ($inputText === null) {
+        return ['refusal' => 'types-input-unreadable', 'files' => [], 'findings' => []];
+    }
+    try {
+        $document = json_decode($inputText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'types-input-shape', 'files' => [], 'findings' => []];
+    }
+    if (is_array($document)
+        && isset($document['schemaVersion'], $document['identity'])
+        && ($document['schemaVersion'] !== PHP_TYPES_INPUT_SCHEMA_VERSION
+            || $document['identity'] !== PHP_TYPES_INPUT_IDENTITY)) {
+        // A recognizable but different contract generation is an
+        // identity refusal, never a shape guess.
+        return ['refusal' => 'types-input-identity', 'files' => [], 'findings' => []];
+    }
+    $input = php_validate_types_input($document);
+    if ($input === null) {
+        return ['refusal' => 'types-input-shape', 'files' => [], 'findings' => []];
+    }
+    $irEvidenceText = read_view_file(IR_EVIDENCE_HOME . '/' . $input['projectId'] . '.json');
+    if ($irEvidenceText === null) {
+        return ['refusal' => 'types-ir-unreadable', 'files' => [], 'findings' => []];
+    }
+    try {
+        $irEvidence = json_decode($irEvidenceText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'types-ir-shape', 'files' => [], 'findings' => []];
+    }
+    if (!is_array($irEvidence) || ($irEvidence['contract'] ?? null) !== PHP_TYPES_IR_IDENTITY) {
+        return ['refusal' => 'types-ir-identity', 'files' => [], 'findings' => []];
+    }
+    if (!is_sha256_digest($input['irDigest']) || sha256_digest($irEvidenceText) !== $input['irDigest']) {
+        // The input names the exact evidence bytes it consumes: any
+        // divergence is a binding refusal, never a best-effort read.
+        return ['refusal' => 'types-input-digest', 'files' => [], 'findings' => []];
+    }
+    $policy = $input['policy'];
+    $mapped = php_map_types([
+        'ir' => $irEvidence,
+        'policy' => $policy,
+        'irDigest' => $input['irDigest'],
+        'inputDigest' => sha256_digest($inputText),
+    ]);
+    if ($mapped['state'] === 'refused') {
+        return ['refusal' => $mapped['refusal'], 'files' => [], 'findings' => []];
+    }
+    if ($policy['custody'] === 'checked') {
+        // Checked custody: zero writes, read-only conformance against
+        // the observed evidence. Missing evidence is a finding for
+        // every declared id — never conformant, never a rewrite.
+        $findings = php_check_type_bindings($mapped, read_types_evidence(),
+            static function (string $path): ?string {
+                $digest = is_file($path) ? hash_file('sha256', $path) : false;
+                return $digest === false ? null : 'sha256:' . $digest;
+            });
+        return ['files' => [], 'findings' => types_wire_findings($findings), 'types' => $mapped];
+    }
+    if ($mapped['state'] === 'unsupported') {
+        // Unsupported projections veto the whole generation: no partial
+        // DTO publication, no success receipt, no fabricated capability.
+        return ['files' => [], 'findings' => types_wire_findings($mapped['findings']), 'types' => $mapped];
+    }
+    $root = $policy['custody'] === 'scaffold-once' ? (string) $policy['scaffoldRoot'] : PHP_TYPES_GENERATED_ROOT;
+    $emitted = php_emit_types([
+        'projectId' => $input['projectId'],
+        'mapped' => $mapped,
+        'adapterVersion' => ADAPTER_VERSION,
+        'root' => $root,
+    ]);
+    $files = [];
+    $skipWrites = [];
+    $scaffold = $policy['custody'] === 'scaffold-once';
+    if ($scaffold) {
+        // Scaffold-once custody: the sidecar is the bundle marker. With
+        // the marker present the whole scaffold is user-owned and no
+        // write is planned; with the marker absent, ANY pre-existing
+        // path refuses — a marker alone never grants overwrite
+        // authority, and an unowned file is never adopted.
+        $marker = $root . '/types.map.json';
+        if (is_file($marker)) {
+            foreach ($emitted['files'] as $file) {
+                $skipWrites[$file['path']] = true;
+            }
+        } else {
+            foreach ($emitted['files'] as $file) {
+                if (is_file($file['path'])) {
+                    return ['refusal' => 'types-scaffold-unowned', 'files' => [], 'findings' => []];
+                }
+            }
+        }
+    }
+    foreach ($emitted['files'] as $file) {
+        $entry = [
+            'path' => $file['path'],
+            'bytes' => $file['text'],
+            'digest' => 'sha256:' . hash('sha256', $file['text']),
+        ];
+        if ($scaffold) {
+            $entry['frozen'] = true;
+            $entry['marker'] = $root . '/types.map.json';
+        }
+        $files[] = $entry;
+    }
+    return ['files' => $files, 'findings' => [], 'skip_writes' => $skipWrites];
+}
+
+/** The parsed observed evidence document, or null when absent/corrupt. */
+function read_types_evidence(): ?array
+{
+    $text = read_view_file(PHP_TYPES_EVIDENCE_PATH);
+    if ($text === null) {
+        return null;
+    }
+    try {
+        $document = json_decode($text, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return null;
+    }
+    return php_validate_types_evidence($document);
+}
+
+/**
+ * Map the closed internal findings to the bounded wire rows: semantic
+ * id as path, reason+pointer+detail in one clamped detail.
+ */
+function types_wire_findings(array $findings): array
+{
+    $rows = [];
+    foreach ($findings as $finding) {
+        $detail = ($finding['reason'] ?? $finding['code'])
+            . (isset($finding['pointer']) ? ' at ' . $finding['pointer'] : '')
+            . ': ' . ($finding['detail'] ?? '');
+        $rows[] = [
+            'path' => $finding['semanticId'] ?? 'php-types',
+            'code' => $finding['code'],
+            'detail' => utf8_safe_clamp($detail, 128),
+        ];
+    }
+    return $rows;
+}
+
+/**
+ * The types validate exchange (issue #58): the same read-and-map path
+ * generate uses, but no writes ever result. Mapping findings are the
+ * answer; an empty set is an honest empty findings answer.
+ */
+function types_validate_response(array $request): array
+{
+    $outcome = type_generation($request);
+    if (isset($outcome['refusal'])) {
+        return ['error' => [
+            'class' => 'invalid',
+            'code' => $outcome['refusal'],
+            'message' => 'the types input could not be read or mapped',
+            'retryable' => false,
+            'partial' => false,
+        ]];
+    }
+    return build_response($request, ['result' => ['ok' => true, 'findings' => $outcome['findings']]]);
+}
+
+/**
+ * The types verify exchange (issue #58): managed files are compared by
+ * exact digest (missing/drifted are `php-types.drift` findings); the
+ * scaffold is existence-checked only (a removed file with a surviving
+ * marker is `php-types.scaffold-missing`); checked custody re-runs the
+ * strict join.
+ */
+function types_verify_response(array $request): array
+{
+    $outcome = type_generation($request);
+    if (isset($outcome['refusal'])) {
+        return ['error' => [
+            'class' => 'invalid',
+            'code' => $outcome['refusal'],
+            'message' => 'the types input could not be read or mapped',
+            'retryable' => false,
+            'partial' => false,
+        ]];
+    }
+    $findings = $outcome['findings'];
+    foreach ($outcome['files'] as $file) {
+        if (($file['frozen'] ?? false) === true) {
+            if (!is_file($file['path']) && is_file($file['marker'])) {
+                $findings[] = [
+                    'path' => $file['path'],
+                    'code' => 'php-types.scaffold-missing',
+                    'detail' => 'scaffolded-type-removed',
+                ];
+            }
+            continue;
+        }
+        $expectedDigest = $file['digest'];
+        $actual = is_file($file['path']) ? hash_file('sha256', $file['path']) : false;
+        if ($actual === false) {
+            $findings[] = ['path' => $file['path'], 'code' => 'php-types.drift', 'detail' => 'missing'];
+        } elseif ($actual !== substr($expectedDigest, 7)) {
+            $findings[] = ['path' => $file['path'], 'code' => 'php-types.drift', 'detail' => 'drifted'];
+        }
+    }
+    return build_response($request, ['result' => ['ok' => true, 'findings' => $findings]]);
 }
 
 /**
@@ -2698,6 +3002,9 @@ function adapter_identity(): array
 function describe_capabilities(?Analyzer $analyzer = null): array
 {
     $analyzer ??= new FakeAnalyzer();
+    // The type-policy module carries the closed scaffold-root constant
+    // the declared write scope names; load before describing.
+    load_type_modules();
     return [
         'adapter' => adapter_identity(),
         'protocol_versions' => SUPPORTED_VERSIONS,
@@ -2705,11 +3012,12 @@ function describe_capabilities(?Analyzer $analyzer = null): array
         'transports' => ['stdin', 'file'],
         'targets' => [TARGET_TOKEN],
         'profiles' => [PROFILE_TOKEN, STRICT_PROFILE_TOKEN],
-        'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**', '.lekalo/import/**'],
+        'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**', '.lekalo/import/**', 'lekalo/php-test-port.json', 'lekalo/scenarios/**', 'lekalo/types/**'],
         'write_scopes' => array_merge(
             ['.lekalo/generated/php-laravel/**'],
             SCENARIO_WRITE_SCOPES,
             [PHP_SCAFFOLD_SCOPE],
+            [PHP_TYPES_SCAFFOLD_ROOT . '/**'],
         ),
         'progress' => false,
         'ir_versions' => [IR_VERSION],
@@ -2951,10 +3259,15 @@ function mago_wire_confidence(string $confidence): string
  */
 function validate_response(array $request, ?Analyzer $analyzer = null): array
 {
-    // A scenario document takes the scenario gate (issue #56); every
-    // other input keeps the analysis-seam gate (#55).
-    if (is_scenario_ir_path(is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '')) {
+    // A scenario document takes the scenario gate (issue #56); a types
+    // document takes the type-mapping gate (issue #58); every other
+    // input keeps the analysis-seam gate (#55).
+    $irPath = is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '';
+    if (is_scenario_ir_path($irPath)) {
         return scenario_validate_response($request);
+    }
+    if (is_types_ir_path($irPath)) {
+        return types_validate_response($request);
     }
     $analyzer ??= new FakeAnalyzer();
     // Profile closure: only the two declared spellings are meaningful;
@@ -3016,9 +3329,14 @@ function validate_response(array $request, ?Analyzer $analyzer = null): array
 function verify_response(array $request, ?Analyzer $analyzer = null): array
 {
     // Scenario documents verify through the scenario drift gate (issue
-    // #56); everything else keeps the analysis-seam gate (#55).
-    if (is_scenario_ir_path(is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '')) {
+    // #56); types documents through the type drift/join gate (issue
+    // #58); everything else keeps the analysis-seam gate (#55).
+    $irPath = is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '';
+    if (is_scenario_ir_path($irPath)) {
         return scenario_verify_response($request);
+    }
+    if (is_types_ir_path($irPath)) {
+        return types_verify_response($request);
     }
     return validate_response($request, $analyzer);
 }
@@ -3300,7 +3618,8 @@ function plan_clean_response(array $request): array
     $plan = [];
     foreach ($writes as $entry) {
         if (retained_artifact($entry['path'])
-            || scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])) {
+            || scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])
+            || scope_covers(types_scaffold_scope(), $entry['path'])) {
             continue;
         }
         $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
@@ -3309,6 +3628,17 @@ function plan_clean_response(array $request): array
         'writes' => $plan,
         'evidence_plan_id' => plan_id($plan),
     ]);
+}
+
+/**
+ * The user-owned scaffold scope of type generation (issue #58): the
+ * closed consumer root is recognized by path convention, so a policy
+ * cannot silently move a scaffold under an unrecognized root.
+ */
+function types_scaffold_scope(): string
+{
+    load_type_modules();
+    return PHP_TYPES_SCAFFOLD_ROOT . '/**';
 }
 
 /**
@@ -3343,7 +3673,8 @@ function clean_response(array $request): array
     }
     $plan = [];
     foreach ($writes as $entry) {
-        if (scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])) {
+        if (scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])
+            || scope_covers(types_scaffold_scope(), $entry['path'])) {
             continue;
         }
         $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
@@ -3563,7 +3894,7 @@ function main(): int
     }
 }
 
-// ----- scenario compiler module: scenario-map.php -----
+// ----- bundled compiler module: scenario-map.php -----
 
 
 /**
@@ -4719,7 +5050,7 @@ function php_claimed_ids(mixed $id): array
     return $claimed;
 }
 
-// ----- scenario compiler module: scenario-emit.php -----
+// ----- bundled compiler module: scenario-emit.php -----
 
 
 /**
@@ -6261,6 +6592,2439 @@ function php_emit_value(mixed $value): string
         return '[' . implode(', ', $members) . ']';
     }
     throw new LogicException('unrenderable emitted value');
+}
+
+// ----- bundled compiler module: type-policy.php -----
+
+/**
+ * The closed type policy and input validation of the PHP type generator
+ * (issue #58). Everything in this module is pure validation over plain
+ * data: the bounded types-input document (`lekalo/types/*.types.json`,
+ * contract `dev.lekalo.php-types-input@0.4.0`) and the compiled project
+ * IR evidence it names. Nothing reads the filesystem, nothing writes,
+ * nothing executes project code.
+ *
+ * Defaults are documented in `contracts/php-types-input.schema.v0.4.0.json`
+ * and enforced here with the same closed vocabulary: unknown members and
+ * unknown enum values refuse. The policy deliberately has no library
+ * codec, date library, or Composer member in v0.4.0 — their absence is
+ * the explicit unsupported boundary, never a silent fallback.
+ */
+
+// ---------------------------------------------------------------------------
+// Closed policy vocabulary.
+// ---------------------------------------------------------------------------
+
+const PHP_TYPES_INPUT_SCHEMA_VERSION = 'lekalo/php-types-input/v0.4.0';
+const PHP_TYPES_INPUT_IDENTITY = 'dev.lekalo.php-types-input@0.4.0';
+const PHP_TYPES_MAP_SCHEMA_VERSION = 'lekalo/php-types-map/v0.4.0';
+const PHP_TYPES_MAP_IDENTITY = 'dev.lekalo.php-types-map@0.4.0';
+const PHP_TYPES_EVIDENCE_SCHEMA_VERSION = 'lekalo/php-types-evidence/v0.4.0';
+const PHP_TYPES_EVIDENCE_IDENTITY = 'dev.lekalo.php-types-evidence@0.4.0';
+const PHP_TYPES_IR_IDENTITY = 'dev.lekalo.ir@0.2.16';
+
+/** The generated types root (managed custody) and its read/doc input home. */
+const PHP_TYPES_GENERATED_ROOT = '.lekalo/generated/php-laravel/types';
+const PHP_TYPES_INPUT_HOME = 'lekalo/types';
+
+/**
+ * The user-owned scaffold home of type generation (issue #58). The
+ * accepted v0.4.0 value is closed: the core lifecycle classifier and the
+ * adapter agree on user ownership by this exact path convention, so a
+ * policy cannot silently move a scaffold under an unrecognized root.
+ */
+const PHP_TYPES_SCAFFOLD_ROOT = 'app/lekalo-types';
+
+/** The observed class-shape evidence the checked join consumes. */
+const PHP_TYPES_EVIDENCE_PATH = '.lekalo/import/observed/types-evidence.json';
+
+const PHP_TYPES_CUSTODY_MODES = ['managed', 'scaffold-once', 'checked'];
+const PHP_TYPES_DEFAULT_NAMESPACE_PREFIX = 'Lekalo\\Generated\\Types';
+
+/** The closed scalar base vocabulary (Model `$defs.scalarDefinition`). */
+const PHP_TYPES_SCALAR_BASES = ['string', 'number', 'boolean', 'date', 'datetime', 'uuid', 'uri'];
+
+/** The closed IR definition kinds and which of them map to a type. */
+const PHP_TYPES_IR_KINDS = [
+    'scalar', 'enum', 'value-object', 'entity', 'command', 'query', 'event',
+    'effect', 'endpoint', 'target-binding', 'policy', 'scenario', 'module', 'project',
+];
+const PHP_TYPES_MAPPED_KINDS = [
+    'scalar', 'enum', 'value-object', 'entity', 'command', 'query', 'event',
+];
+
+/**
+ * The bounded refusal codes of the input join. A refusal is an
+ * in-envelope `failed` outcome class, never a guessed plan.
+ */
+const PHP_TYPES_REFUSALS = [
+    'types-input-unreadable',
+    'types-input-shape',
+    'types-input-identity',
+    'types-input-policy',
+    'types-input-digest',
+    'types-ir-unreadable',
+    'types-ir-shape',
+    'types-ir-identity',
+];
+
+/**
+ * Validate one parsed types-input document against its closed shape and
+ * return the normalized input `{projectId, irDigest, policy}`, or null
+ * when the document is not the accepted contract (a present-but-invalid
+ * document is an authoring error, never an all-defaults fallback).
+ */
+function php_validate_types_input(mixed $document): ?array
+{
+    if (!is_array($document)) {
+        return null;
+    }
+    if (($document['schemaVersion'] ?? null) !== PHP_TYPES_INPUT_SCHEMA_VERSION
+        || ($document['identity'] ?? null) !== PHP_TYPES_INPUT_IDENTITY) {
+        return null;
+    }
+    $projectId = $document['projectId'] ?? null;
+    if (!is_string($projectId) || preg_match('/^[a-z][a-z0-9_]*$/', $projectId) !== 1) {
+        return null;
+    }
+    $irDigest = $document['irDigest'] ?? null;
+    if (!is_sha256_digest($irDigest)) {
+        return null;
+    }
+    $policy = php_validate_type_policy($document['policy'] ?? null);
+    if ($policy === null) {
+        return null;
+    }
+    return ['projectId' => $projectId, 'irDigest' => $irDigest, 'policy' => $policy];
+}
+
+/**
+ * Validate the closed type policy (issue #58 step 1). `null` policy is
+ * the all-defaults policy; a present-but-invalid policy refuses. The
+ * custody/scaffold-root pairing is closed: scaffold-once requires the
+ * recognized consumer root, and the other modes forbid it outright.
+ */
+function php_validate_type_policy(mixed $policy): ?array
+{
+    if ($policy === null) {
+        $policy = [];
+    }
+    if (!is_array($policy)) {
+        return null;
+    }
+    $prefix = PHP_TYPES_DEFAULT_NAMESPACE_PREFIX;
+    if (array_key_exists('namespacePrefix', $policy)) {
+        $value = $policy['namespacePrefix'];
+        if (!is_string($value)
+            || preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,7}$/', $value) !== 1) {
+            return null;
+        }
+        $prefix = $value;
+    }
+    $custody = 'managed';
+    if (array_key_exists('custody', $policy)) {
+        $value = $policy['custody'];
+        if (!is_string($value) || !in_array($value, PHP_TYPES_CUSTODY_MODES, true)) {
+            return null;
+        }
+        $custody = $value;
+    }
+    $scaffoldRoot = null;
+    if (array_key_exists('scaffoldRoot', $policy)) {
+        $value = $policy['scaffoldRoot'];
+        if ($value !== PHP_TYPES_SCAFFOLD_ROOT) {
+            return null;
+        }
+        $scaffoldRoot = $value;
+    }
+    if (($custody === 'scaffold-once') !== ($scaffoldRoot !== null)) {
+        return null;
+    }
+    $classMap = true;
+    if (array_key_exists('classMap', $policy)) {
+        $value = $policy['classMap'];
+        if (!is_bool($value)) {
+            return null;
+        }
+        $classMap = $value;
+    }
+    return [
+        'namespacePrefix' => $prefix,
+        'custody' => $custody,
+        'scaffoldRoot' => $scaffoldRoot,
+        'classMap' => $classMap,
+    ];
+}
+
+/**
+ * Structural validation of the consumed compiled-IR evidence. The IR is
+ * core-validated upstream, so this check is a bounded trust-but-type
+ * gate over exactly the members the mapper consumes, plus the explicit
+ * refusals the type policy owes (unknown default metadata, unknown type
+ * tags). Returns null when the evidence cannot be typed at all (shape
+ * refusal) — the mapper's `default-unsupported` finding covers the
+ * well-formed-but-unsupported field metadata case.
+ *
+ * @return array{definitions: list<array<string, mixed>>}|null
+ */
+function php_check_ir_document(mixed $ir): ?array
+{
+    if (!is_array($ir) || ($ir['contract'] ?? null) !== PHP_TYPES_IR_IDENTITY) {
+        return null;
+    }
+    if (!is_array($ir['definitions'] ?? null)) {
+        return null;
+    }
+    foreach ($ir['definitions'] as $definition) {
+        if (!is_array($definition) || !is_string($definition['id'] ?? null)
+            || !is_string($definition['kind'] ?? null)
+            || !in_array($definition['kind'], PHP_TYPES_IR_KINDS, true)) {
+            return null;
+        }
+        $fields = null;
+        switch ($definition['kind']) {
+            case 'scalar':
+                if (!is_string($definition['base'] ?? null)
+                    || !in_array($definition['base'], PHP_TYPES_SCALAR_BASES, true)) {
+                    return null;
+                }
+                break;
+            case 'enum':
+                if (!is_array($definition['values'] ?? null)) {
+                    return null;
+                }
+                foreach ($definition['values'] as $value) {
+                    if (!is_array($value) || array_key_exists('default', $value)) {
+                        return null;
+                    }
+                    if (!is_string($value['value'] ?? null)) {
+                        return null;
+                    }
+                }
+                break;
+            case 'value-object':
+            case 'entity':
+                $fields = $definition['fields'] ?? null;
+                break;
+            case 'command':
+                $fields = $definition['input'] ?? null;
+                break;
+            case 'event':
+                $fields = $definition['payload'] ?? null;
+                break;
+            case 'query':
+                if (array_key_exists('returns', $definition)
+                    && php_check_type_ref($definition['returns']) === null) {
+                    return null;
+                }
+                break;
+        }
+        if (is_array($fields)) {
+            $names = [];
+            foreach ($fields as $field) {
+                $checked = php_check_ir_field($field);
+                if ($checked === null) {
+                    return null;
+                }
+                $names[] = $checked;
+            }
+            if (count($names) !== count(array_unique($names))) {
+                // Duplicate field names cannot carry a closed wire contract.
+                return null;
+            }
+        }
+    }
+    return ['definitions' => $ir['definitions']];
+}
+
+/**
+ * One IR field: closed members only. A `default` member — or any other
+ * unconsumed metadata slot — is the explicit unsupported default case:
+ * the mapper reports it as a typed finding instead of inventing a
+ * defaulting rule.
+ *
+ * @return string|null the field name, or null when the field is not well-formed
+ */
+function php_check_ir_field(mixed $field): ?string
+{
+    if (!is_array($field)) {
+        return null;
+    }
+    $name = $field['name'] ?? null;
+    if (!is_string($name) || preg_match('/^[a-z][a-zA-Z0-9_]*$/', $name) !== 1) {
+        return null;
+    }
+    foreach (array_keys($field) as $member) {
+        if (!in_array($member, ['name', 'type', 'required', 'description'], true)) {
+            // Unknown field metadata (a default, a regex, a range) has no
+            // owning contract: refused, never silently ignored.
+            throw DefaultMetadataUnsupported::fromField($name, is_string($member) ? $member : '?');
+        }
+    }
+    if (php_check_type_ref($field['type'] ?? null) === null) {
+        return null;
+    }
+    if (array_key_exists('required', $field) && !is_bool($field['required'])) {
+        return null;
+    }
+    if (array_key_exists('description', $field) && !is_string($field['description'])) {
+        return null;
+    }
+    return $name;
+}
+
+/**
+ * One closed IR type expression: a leaf ref, a list, or an optional,
+ * at most one of each wrapper layer (deeper nesting is a mapper
+ * unsupported finding, not a shape refusal). Returns the normalized
+ * expression or null when the tag is not part of the closed grammar.
+ *
+ * @return array{leaf: string, list: bool, nullableElements: bool, nullable: bool}|null
+ */
+function php_check_type_ref(mixed $typeRef): ?array
+{
+    if (!is_array($typeRef)) {
+        return null;
+    }
+    $keys = array_keys($typeRef);
+    if (count($keys) !== 1) {
+        return null;
+    }
+    $tag = $keys[0];
+    switch ($tag) {
+        case 'ref':
+            $leaf = $typeRef['ref'];
+            if (!is_string($leaf)
+                || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $leaf) !== 1) {
+                return null;
+            }
+            return ['leaf' => $leaf, 'list' => false, 'nullableElements' => false, 'nullable' => false];
+        case 'list':
+            $element = php_check_type_ref($typeRef['list'] ?? null);
+            if ($element === null || $element['list']) {
+                // A nested list wrapper is not a closed wire shape.
+                return null;
+            }
+            // A list of optionals is representable: the element type
+            // carries the optionality as nullable elements.
+            $element['nullableElements'] = $element['nullable'];
+            $element['list'] = true;
+            $element['nullable'] = false;
+            return $element;
+        case 'optional':
+            $inner = php_check_type_ref($typeRef['optional'] ?? null);
+            if ($inner === null || $inner['nullable']) {
+                // Nested optionals collapse no state: refuse closed.
+                return null;
+            }
+            // The whole expression is nullable on top of whatever shape
+            // the inner layer carries (leaf, list, or nullable-element list).
+            $inner['nullable'] = true;
+            return $inner;
+        default:
+            return null;
+    }
+}
+
+/**
+ * A well-formed field carrying metadata no owning contract defines
+ * (issue #58: "Reject unknown default metadata now"). Thrown by the
+ * field check; the mapper converts it into the bounded
+ * `php-types.mapping-unsupported` finding with reason
+ * `default-unsupported`.
+ */
+final class DefaultMetadataUnsupported extends RuntimeException
+{
+    public function __construct(
+        public readonly string $fieldName,
+        public readonly string $member,
+    ) {
+        parent::__construct('default-unsupported');
+    }
+
+    public static function fromField(string $fieldName, string $member): self
+    {
+        return new self($fieldName, $member);
+    }
+}
+
+// ----- bundled compiler module: type-map.php -----
+
+/**
+ * The closed type mapping of the PHP generator (issue #58, step 1):
+ * one compiled-IR evidence document plus the validated policy map to a
+ * closed inventory of PHP constructs — nominal scalar wrappers (opaque
+ * ids stay distinct types), string-backed enums in declared order,
+ * immutable value objects, entity/command/event DTOs, and query result
+ * codecs — with the four presence cases resolved and every unsupported
+ * projection reported as a bounded finding BEFORE any byte is planned.
+ *
+ * The mapping is pure: it reads plain data, it never reads the
+ * filesystem, and it never invents a construct the IR does not declare
+ * (no maps, no arbitrary unions, no unbound generics, no defaults).
+ */
+
+if (!function_exists('php_validate_types_input')) {
+    require_once __DIR__ . '/type-policy.php';
+}
+
+/** The one wire finding code of unsupported type mapping (issue #58). */
+const PHP_TYPES_UNSUPPORTED = 'php-types.mapping-unsupported';
+
+/** The bounded reasons the mapping reports. */
+const PHP_TYPES_UNSUPPORTED_REASONS = [
+    'recursive-codec-unsupported',
+    'nested-optional',
+    'default-unsupported',
+    'type-unsupported',
+    'name-reserved',
+    'name-collision',
+    'path-collision',
+    'module-reserved',
+    'ref-unresolved',
+];
+
+/**
+ * PHP reserved words that must never become a generated class stem
+ * (case-insensitive), plus the primitive spellings a nominal wrapper
+ * must never shadow. The list is closed; additions are a contract
+ * change, not an emission-time guess.
+ */
+const PHP_TYPES_RESERVED_STEMS = [
+    'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch',
+    'class', 'clone', 'const', 'continue', 'declare', 'default', 'do',
+    'echo', 'else', 'elseif', 'enum', 'extends', 'false', 'final', 'finally',
+    'fn', 'for', 'foreach', 'function', 'global', 'goto', 'if', 'implements',
+    'include', 'instanceof', 'interface', 'isset', 'list', 'match', 'namespace',
+    'new', 'null', 'or', 'print', 'private', 'protected', 'public', 'readonly',
+    'require', 'return', 'static', 'switch', 'throw', 'trait', 'true', 'try',
+    'unset', 'use', 'var', 'while', 'xor', 'yield', 'int', 'float', 'string',
+    'bool', 'void', 'mixed', 'never', 'object', 'iterable', 'self', 'parent',
+];
+
+/**
+ * Reserved module namespace segments. `Optional` is the emitted
+ * wrapper sub-namespace, so a semantic module spelled `optional`
+ * (case-insensitively) would collide with it.
+ */
+const PHP_TYPES_RESERVED_MODULES = ['optional'];
+
+/** The fixed role suffixes: DTO role suffixes are fixed, never traversal-dependent. */
+const PHP_TYPES_KIND_SUFFIXES = [
+    'entity' => 'Dto',
+    'command' => 'Input',
+    'event' => 'Payload',
+];
+
+/**
+ * Map the compiled IR to the closed type inventory. `input` is
+ * `{ir, policy, irDigest, inputDigest}` with `ir` the parsed evidence
+ * and `policy` the validated policy. Returns the mapped inventory with
+ * one bounded finding per unsupported projection; the caller plans no
+ * write while any finding exists.
+ */
+function php_map_types(array $input): array
+{
+    $policy = $input['policy'];
+    $prefix = $policy['namespacePrefix'];
+    $checked = php_check_ir_document($input['ir']);
+    if ($checked === null) {
+        return ['state' => 'refused', 'refusal' => 'types-ir-shape'];
+    }
+    $definitions = [];
+    $order = [];
+    foreach ($checked['definitions'] as $index => $definition) {
+        $id = $definition['id'];
+        if (isset($definitions[$id])) {
+            // Duplicate semantic ids cannot carry a closed inventory.
+            return ['state' => 'refused', 'refusal' => 'types-ir-shape'];
+        }
+        $definition['pointer'] = '/definitions/' . $index;
+        $definitions[$id] = $definition;
+        $order[] = $id;
+    }
+
+    $findings = [];
+    $addFinding = static function (array $finding) use (&$findings): void {
+        $findings[] = $finding;
+    };
+
+    // Cycles first: a recursive codec cannot be emitted, so every type
+    // on the cycle is unsupported before any naming work happens.
+    php_find_type_cycles($definitions, $addFinding);
+
+    $types = [];
+    $collections = [];
+    $wrappers = [];
+    foreach ($order as $id) {
+        $definition = $definitions[$id];
+        $kind = $definition['kind'];
+        if (!in_array($kind, PHP_TYPES_MAPPED_KINDS, true)) {
+            // Effects, endpoints, policies, scenarios and the structural
+            // kinds are not domain types: no entry, no refusal.
+            continue;
+        }
+        $module = php_types_module_of($id);
+        if (in_array(strtolower($module), PHP_TYPES_RESERVED_MODULES, true)) {
+            $addFinding(php_types_finding('module-reserved', $id, $definition['pointer'],
+                'module namespace segment collides with the emitted wrapper namespace'));
+            continue;
+        }
+        $stem = php_types_stem_of($id, $kind);
+        if (in_array(strtolower($stem), PHP_TYPES_RESERVED_STEMS, true)) {
+            $addFinding(php_types_finding('name-reserved', $id, $definition['pointer'],
+                'class stem is a reserved PHP identifier'));
+            continue;
+        }
+        $entry = [
+            'semanticId' => $id,
+            'kind' => $kind,
+            'fqn' => php_types_fqn_of($prefix, $module, $stem),
+            'path' => php_types_path_of($module, $stem),
+            'description' => $definition['description'] ?? null,
+        ];
+        switch ($kind) {
+            case 'scalar':
+                $entry['base'] = $definition['base'];
+                $entry['codec'] = $entry['fqn'];
+                $entry['codecPath'] = $entry['path'];
+                break;
+            case 'enum':
+                $cases = php_types_enum_cases($definition, $addFinding);
+                if ($cases === null) {
+                    continue 2;
+                }
+                $entry['values'] = $cases;
+                $entry['codec'] = $entry['fqn'];
+                $entry['codecPath'] = $entry['path'];
+                break;
+            case 'query':
+                $returns = null;
+                if (array_key_exists('returns', $definition)) {
+                    $returns = php_check_type_ref($definition['returns']);
+                }
+                if ($returns === null) {
+                    $addFinding(php_types_finding('type-unsupported', $id, $definition['pointer'],
+                        'query return expression is not a closed mapped shape'));
+                    continue 2;
+                }
+                if (php_types_resolve_expr($returns, $definitions, $id, $definition['pointer'], $addFinding) === null) {
+                    continue 2;
+                }
+                if ($returns['list']) {
+                    // A list-valued query return needs its collection class.
+                    php_types_register_collection($returns, $definitions, $prefix, $collections);
+                }
+                // A query declares a direct output, never an envelope: the
+                // result artifact is the returns codec passthrough, so the
+                // entry's class IS its codec.
+                $entry['fqn'] = php_types_fqn_of($prefix, $module, $stem . 'ResultCodec');
+                $entry['codec'] = $entry['fqn'];
+                $entry['path'] = php_types_path_of($module, $stem . 'ResultCodec');
+                $entry['codecPath'] = $entry['path'];
+                $entry['returns'] = $returns;
+                break;
+            default:
+                $rawFields = match ($kind) {
+                    'command' => $definition['input'],
+                    'event' => $definition['payload'],
+                    default => $definition['fields'],
+                };
+                $fields = php_types_map_fields($rawFields, $definitions, $prefix, $id,
+                    $definition['pointer'], $collections, $wrappers, $addFinding);
+                if ($fields === null) {
+                    continue 2;
+                }
+                $entry['fields'] = $fields;
+                $entry['codec'] = $entry['fqn'] . 'Codec';
+                $entry['codecPath'] = php_types_path_of($module, php_types_entry_codec_class($entry['codec']));
+                break;
+        }
+        $types[] = $entry;
+    }
+
+    $unsupported = static function () use (&$findings, $policy, $input): array {
+        return [
+            'state' => 'unsupported',
+            'findings' => php_types_sort_findings($findings),
+            'policy' => $policy,
+            'digests' => ['ir' => $input['irDigest'], 'input' => $input['inputDigest']],
+        ];
+    };
+
+    if ($findings !== []) {
+        return $unsupported();
+    }
+
+    usort($types, static fn (array $left, array $right): int => strcmp($left['semanticId'], $right['semanticId']));
+    usort($collections, static fn (array $left, array $right): int => strcmp($left['fqn'], $right['fqn']));
+    usort($wrappers, static fn (array $left, array $right): int => strcmp($left['fqn'], $right['fqn']));
+
+    // Naming custody before any emission: exact duplicate FQNs and
+    // case-insensitive path collisions both refuse, because one of the
+    // two files would silently shadow the other on a real filesystem.
+    $artifacts = php_types_collect_artifacts($types, $collections, $wrappers, $policy, $addFinding);
+    if ($findings !== []) {
+        return $unsupported();
+    }
+
+    $index = [];
+    foreach ($types as $entry) {
+        $index[$entry['semanticId']] = [
+            'fqn' => $entry['fqn'],
+            'path' => $entry['path'],
+            'codec' => $entry['codec'],
+        ];
+    }
+    return [
+        'state' => 'mapped',
+        'findings' => [],
+        'policy' => $policy,
+        'types' => $types,
+        'collections' => $collections,
+        'wrappers' => $wrappers,
+        'artifacts' => $artifacts,
+        'index' => $index,
+        'digests' => ['ir' => $input['irDigest'], 'input' => $input['inputDigest']],
+    ];
+}
+
+/** Findings sort deterministically by semantic id, then reason. */
+function php_types_sort_findings(array $findings): array
+{
+    usort($findings, static fn (array $left, array $right): int => strcmp(
+        ($left['semanticId'] ?? '|') . '|' . $left['reason'],
+        ($right['semanticId'] ?? '|') . '|' . $right['reason'],
+    ));
+    return $findings;
+}
+
+/** One bounded unsupported finding: code, reason, semantic id, pointer. */
+function php_types_finding(string $reason, ?string $semanticId, ?string $pointer, string $detail): array
+{
+    $finding = ['code' => PHP_TYPES_UNSUPPORTED, 'reason' => $reason, 'detail' => $detail];
+    if ($semanticId !== null) {
+        $finding['semanticId'] = $semanticId;
+    }
+    if ($pointer !== null) {
+        $finding['pointer'] = $pointer;
+    }
+    return $finding;
+}
+
+/** The module segment of one semantic id (the prefix before the first dot). */
+function php_types_module_of(string $semanticId): string
+{
+    $cut = strpos($semanticId, '.');
+    return $cut === false || $cut === 0 ? $semanticId : substr($semanticId, 0, $cut);
+}
+
+/** The last dot segment of one semantic id. */
+function php_types_leaf_name_of(string $semanticId): string
+{
+    $cut = strrpos($semanticId, '.');
+    return $cut === false ? $semanticId : substr($semanticId, $cut + 1);
+}
+
+/**
+ * The Pascal-case class stem of one symbol: the final id segment splits
+ * on `_`, every part capitalizes, and structured kinds append their
+ * fixed role suffix. `planner.task_id` → `TaskId`;
+ * `planner.task` (entity) → `TaskDto`; `planner.focus_task` (command)
+ * → `FocusTaskInput`; `planner.task_focused` (event) →
+ * `TaskFocusedPayload`; `planner.count_focused` (query) →
+ * `CountFocusedResult`.
+ */
+function php_types_stem_of(string $semanticId, string $kind): string
+{
+    $sanitized = preg_replace('/[^a-zA-Z0-9_]/', '_', php_types_leaf_name_of($semanticId));
+    $parts = explode('_', (string) $sanitized);
+    $stem = implode('', array_map(
+        static fn (string $part): string => ucfirst($part),
+        $parts,
+    ));
+    return $stem . (PHP_TYPES_KIND_SUFFIXES[$kind] ?? '');
+}
+
+/** The deterministic camel-case property spelling of one wire name. */
+function php_types_property_of(string $wireName): string
+{
+    $sanitized = preg_replace('/[^a-zA-Z0-9_]/', '_', $wireName);
+    $parts = explode('_', (string) $sanitized);
+    $first = array_shift($parts);
+    return $first . implode('', array_map(
+        static fn (string $part): string => ucfirst($part),
+        $parts,
+    ));
+}
+
+/** The full FQN of one generated class. */
+function php_types_fqn_of(string $prefix, string $module, string $class): string
+{
+    return $prefix . '\\' . ucfirst($module) . '\\' . $class;
+}
+
+/**
+ * The snake-case file spelling of one class (or namespace-qualified
+ * class): the wire path grammar is lowercase, so the emitted paths
+ * mirror the FQN deterministically (`TaskId` → `task_id.php`,
+ * `Optional\OptionalDueDate` → `optional/optional_due_date.php`).
+ */
+function php_types_snake_of(string $spelling): string
+{
+    $withSlashes = str_replace('\\', '/', $spelling);
+    $snake = preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $withSlashes);
+    return strtolower((string) $snake);
+}
+
+/**
+ * The artifact path of one generated class, relative to the generated
+ * root: the lowercase module directory plus the snake-cased class
+ * spelling. PHP-identifier case stays in the FQN, never in the path.
+ */
+function php_types_path_of(string $module, string $class): string
+{
+    return strtolower($module) . '/' . php_types_snake_of($class) . '.php';
+}
+
+/**
+ * The enum cases of one enum definition: declared values preserved
+ * verbatim, case names derived deterministically, declared order kept.
+ * A case-name derivation collision (two values normalizing to one
+ * identifier) is a bounded naming finding, never a silent merge.
+ */
+function php_types_enum_cases(array $definition, callable $addFinding): ?array
+{
+    $cases = [];
+    $byName = [];
+    foreach ($definition['values'] as $value) {
+        $raw = (string) $value['value'];
+        $name = ucfirst((string) preg_replace('/[^a-zA-Z0-9]/', '_', $raw));
+        if ($name === '' || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $name) !== 1
+            || in_array(strtolower($name), PHP_TYPES_RESERVED_STEMS, true)) {
+            $addFinding(php_types_finding('name-reserved', $definition['id'], $definition['pointer'],
+                'enum value does not normalize to a usable PHP identifier'));
+            return null;
+        }
+        if (isset($byName[strtolower($name)])) {
+            $addFinding(php_types_finding('name-collision', $definition['id'], $definition['pointer'],
+                'enum case name collision on ' . $name));
+            return null;
+        }
+        $byName[strtolower($name)] = true;
+        $cases[] = ['case' => $name, 'value' => $raw];
+    }
+    return $cases;
+}
+
+/**
+ * Map one definition's fields to closed field rows: verbatim wire
+ * name, camel-case property, normalized type expression, and exactly
+ * one of the four presence cases. List positions register collection
+ * classes; optional positions register presence wrappers; unknown or
+ * unresolved references are bounded findings. Returns null when the
+ * definition is unsupported as a whole.
+ */
+function php_types_map_fields(
+    array $rawFields,
+    array $definitions,
+    string $prefix,
+    string $ownerId,
+    string $pointer,
+    array &$collections,
+    array &$wrappers,
+    callable $addFinding,
+): ?array {
+    $fields = [];
+    $properties = [];
+    foreach ($rawFields as $fieldIndex => $field) {
+        try {
+            $expr = php_check_type_ref($field['type'] ?? null);
+        } catch (DefaultMetadataUnsupported $unsupported) {
+            $addFinding(php_types_finding(
+                'default-unsupported',
+                $ownerId,
+                $pointer . '/fields/' . $fieldIndex,
+                'field `' . $field['name'] . '` carries unsupported metadata member `' . $unsupported->member . '`',
+            ));
+            return null;
+        }
+        if ($expr === null) {
+            $addFinding(php_types_finding('type-unsupported', $ownerId,
+                $pointer . '/fields/' . $fieldIndex,
+                'field `' . $field['name'] . '` is not a closed mapped shape'));
+            return null;
+        }
+        if (php_types_resolve_expr($expr, $definitions, $ownerId,
+            $pointer . '/fields/' . $fieldIndex, $addFinding) === null) {
+            return null;
+        }
+        $required = $field['required'] ?? false;
+        $presence = match (true) {
+            $required && !$expr['nullable'] => 'required-nonnull',
+            $required && $expr['nullable'] => 'required-nullable',
+            !$required && !$expr['nullable'] => 'optional-nonnull',
+            default => 'optional-nullable',
+        };
+        $property = php_types_property_of($field['name']);
+        if (isset($properties[strtolower($property)])) {
+            $addFinding(php_types_finding('name-collision', $ownerId,
+                $pointer . '/fields/' . $fieldIndex,
+                'property spelling collision on ' . $property));
+            return null;
+        }
+        $properties[strtolower($property)] = true;
+        $collectionClass = null;
+        if ($expr['list']) {
+            $collectionClass = php_types_register_collection($expr, $definitions, $prefix, $collections);
+        }
+        if ($presence === 'optional-nonnull' || $presence === 'optional-nullable') {
+            // Presence wrappers exist only for optional positions: the
+            // required-nullable case is a plain `?T` constructor type.
+            php_types_register_wrapper($expr, $definitions, $prefix, $collectionClass,
+                $presence === 'optional-nullable', $wrappers);
+        }
+        $row = [
+            'name' => $field['name'],
+            'property' => $property,
+            'type' => [
+                'leaf' => $expr['leaf'],
+                'list' => $expr['list'],
+                'nullable' => $expr['nullable'],
+            ],
+            'presence' => $presence,
+            'nullable' => $expr['nullable'],
+        ];
+        if ($expr['list']) {
+            $row['type']['collection'] = $collectionClass['fqn'];
+            if ($expr['nullableElements']) {
+                $row['type']['nullableElements'] = true;
+            }
+        }
+        if ($presence === 'optional-nonnull' || $presence === 'optional-nullable') {
+            $row['type']['wrapper'] = $wrappers[count($wrappers) - 1]['fqn'];
+        }
+        $fields[] = $row;
+    }
+    return $fields;
+}
+
+/**
+ * Resolve one normalized expression against the definition index: the
+ * leaf must exist and map to a type. Returns null (with a finding)
+ * when the reference is unresolved.
+ */
+function php_types_resolve_expr(
+    array $expr,
+    array $definitions,
+    string $ownerId,
+    string $pointer,
+    callable $addFinding,
+): ?array {
+    $leaf = $expr['leaf'];
+    $definition = $definitions[$leaf] ?? null;
+    if ($definition === null || !in_array($definition['kind'], PHP_TYPES_MAPPED_KINDS, true)) {
+        $addFinding(php_types_finding('ref-unresolved', $ownerId, $pointer,
+            'reference `' . $leaf . '` does not resolve to a mapped type'));
+        return null;
+    }
+    return $expr;
+}
+
+/** The bare codec class name of one mapped entry (the final FQN segment). */
+function php_types_entry_codec_class(string $codecFqn): string
+{
+    $cut = strrpos($codecFqn, '\\');
+    return $cut === false ? $codecFqn : substr($codecFqn, $cut + 1);
+}
+
+/**
+ * Register (or find) the immutable collection class one list position
+ * needs. Keyed by element and element nullability, so the same list
+ * shape shares one class across every definition.
+ */
+function php_types_register_collection(
+    array $expr,
+    array $definitions,
+    string $prefix,
+    array &$collections,
+): array {
+    $leaf = $expr['leaf'];
+    $nullableElements = $expr['nullableElements'];
+    $key = $leaf . '|' . ($nullableElements ? 'nullable' : 'plain');
+    foreach ($collections as $collection) {
+        if ($collection['key'] === $key) {
+            return $collection;
+        }
+    }
+    $definition = $definitions[$leaf];
+    $module = php_types_module_of($leaf);
+    $class = php_types_stem_of($leaf, $definition['kind']) . 'List';
+    if ($nullableElements) {
+        // The null-permitting twin of a list class keeps its own name so
+        // both variants can coexist collision-free.
+        $class = php_types_stem_of($leaf, $definition['kind']) . 'NullableList';
+    }
+    $collection = [
+        'key' => $key,
+        'element' => $leaf,
+        'elementKind' => $definition['kind'],
+        'nullableElements' => $nullableElements,
+        'class' => $class,
+        'fqn' => php_types_fqn_of($prefix, $module, $class),
+        'path' => php_types_path_of($module, $class),
+    ];    $collections[] = $collection;
+    return $collection;
+}
+
+/**
+ * Register (or find) the concrete presence wrapper one optional
+ * position needs. `acceptsNull` separates the optional-nonnull flavor
+ * (absent | value, null refused) from the optional-nullable flavor
+ * (absent | null | value, three distinct states).
+ */
+function php_types_register_wrapper(
+    array $expr,
+    array $definitions,
+    string $prefix,
+    ?array $collection,
+    bool $acceptsNull,
+    array &$wrappers,
+): array {
+    $leaf = $expr['leaf'];
+    $key = $leaf . '|' . ($collection !== null ? 'list' : 'plain') . '|' . ($acceptsNull ? 'nullable' : 'plain');
+    foreach ($wrappers as $wrapper) {
+        if ($wrapper['key'] === $key) {
+            return $wrapper;
+        }
+    }
+    $definition = $definitions[$leaf];
+    $module = php_types_module_of($leaf);
+    $stem = $collection !== null ? $collection['class'] : php_types_stem_of($leaf, $definition['kind']);
+    $class = 'Optional' . ($acceptsNull ? 'Nullable' : '') . $stem;
+    // Wrapper classes live in the module's Optional sub-namespace.
+    $wrapper = [
+        'key' => $key,
+        'element' => $leaf,
+        'elementKind' => $definition['kind'],
+        'ofList' => $collection !== null,
+        'acceptsNull' => $acceptsNull,
+        'class' => $class,
+        'fqn' => php_types_fqn_of($prefix, $module, 'Optional\\' . $class),
+        'path' => php_types_path_of($module, 'Optional\\' . $class),
+        'collection' => $collection['fqn'] ?? null,
+    ];
+    $wrappers[] = $wrapper;
+    return $wrapper;
+}
+
+/**
+ * Detect reference cycles among the structured definitions (a codec
+ * for a recursive type cannot terminate). Every type on a cycle gets
+ * one bounded finding; the emitter stays silent.
+ */
+function php_find_type_cycles(array $definitions, callable $addFinding): void
+{
+    $state = []; // 1 = open, 2 = done
+    $stack = [];
+    $visit = static function (string $id) use (&$visit, &$state, &$stack, $definitions, $addFinding): void {
+        if (($state[$id] ?? 0) === 2) {
+            return;
+        }
+        if (($state[$id] ?? 0) === 1) {
+            $cycle = array_slice($stack, (int) array_search($id, $stack, true));
+            $cycle[] = $id;
+            foreach ($cycle as $member) {
+                $definition = $definitions[$member];
+                $addFinding(php_types_finding('recursive-codec-unsupported', $member,
+                    $definition['pointer'],
+                    'recursive reference cycle: ' . implode(' -> ', $cycle)));
+            }
+            return;
+        }
+        $state[$id] = 1;
+        $stack[] = $id;
+        $definition = $definitions[$id];
+        $fields = match ($definition['kind']) {
+            'command' => $definition['input'] ?? [],
+            'event' => $definition['payload'] ?? [],
+            'value-object', 'entity' => $definition['fields'] ?? [],
+            default => [],
+        };
+        foreach ($fields as $field) {
+            try {
+                $expr = php_check_type_ref($field['type'] ?? null);
+            } catch (DefaultMetadataUnsupported) {
+                // The field mapper owns that refusal; the cycle walk
+                // only needs the reference graph.
+                continue;
+            }
+            if ($expr === null) {
+                continue;
+            }
+            $target = $definitions[$expr['leaf']] ?? null;
+            if ($target !== null && in_array($target['kind'], ['value-object', 'entity', 'command', 'event'], true)) {
+                $visit($expr['leaf']);
+            }
+        }
+        array_pop($stack);
+        $state[$id] = 2;
+    };
+    foreach (array_keys($definitions) as $id) {
+        if (in_array($definitions[$id]['kind'], ['value-object', 'entity', 'command', 'event'], true)) {
+            $visit($id);
+        }
+    }
+}
+
+/**
+ * The complete path-sorted artifact inventory of one mapped inventory,
+ * with naming custody applied (duplicate FQN and case-insensitive
+ * path collisions are bounded findings).
+ */
+function php_types_collect_artifacts(
+    array $types,
+    array $collections,
+    array $wrappers,
+    array $policy,
+    callable $addFinding,
+): array {
+    $artifacts = [];
+    $byFqn = [];
+    $byPath = [];
+    $record = static function (array $artifact) use (&$artifacts, &$byFqn, &$byPath, $addFinding): void {
+        $lowerFqn = strtolower($artifact['fqn']);
+        $lowerPath = strtolower($artifact['path']);
+        if (isset($byFqn[$lowerFqn])) {
+            $addFinding(php_types_finding('name-collision', $artifact['semanticId'] ?? null, null,
+                'duplicate class FQN ' . $artifact['fqn']));
+            return;
+        }
+        if (isset($byPath[$lowerPath])) {
+            $addFinding(php_types_finding('path-collision', $artifact['semanticId'] ?? null, null,
+                'case-insensitive artifact path collision ' . $artifact['path']));
+            return;
+        }
+        $byFqn[$lowerFqn] = true;
+        $byPath[$lowerPath] = true;
+        $artifacts[] = $artifact;
+    };
+    foreach ($types as $entry) {
+        if ($entry['kind'] !== 'query') {
+            $record([
+                'path' => $entry['path'],
+                'fqn' => $entry['fqn'],
+                'role' => 'type',
+                'semanticId' => $entry['semanticId'],
+            ]);
+        }
+        if ($entry['codecPath'] !== $entry['path']) {
+            // Scalar wrappers and enums are their own codec: one file,
+            // one artifact row.
+            $record([
+                'path' => $entry['codecPath'],
+                'fqn' => $entry['codec'],
+                'role' => 'codec',
+                'semanticId' => $entry['semanticId'],
+            ]);
+        }
+    }
+    foreach ($collections as $collection) {
+        $record([
+            'path' => $collection['path'],
+            'fqn' => $collection['fqn'],
+            'role' => 'collection',
+            'semanticId' => $collection['element'],
+            'element' => $collection['element'],
+        ]);
+    }
+    foreach ($wrappers as $wrapper) {
+        $record([
+            'path' => $wrapper['path'],
+            'fqn' => $wrapper['fqn'],
+            'role' => 'optional',
+            'semanticId' => $wrapper['element'],
+            'element' => $wrapper['element'],
+        ]);
+    }
+    if ($policy['classMap']) {
+        $record([
+            'path' => 'classmap.php',
+            'fqn' => $policy['namespacePrefix'] . '\\ClassMap',
+            'role' => 'class-map',
+        ]);
+    }
+    $record([
+        'path' => 'types.map.json',
+        'fqn' => $policy['namespacePrefix'] . '\\TypesMap',
+        'role' => 'class-map',
+    ]);
+    usort($artifacts, static fn (array $left, array $right): int => strcmp($left['path'], $right['path']));
+    return $artifacts;
+}
+
+// ----- bundled compiler module: type-codec.php -----
+
+/**
+ * The codec emitter of the PHP type generator (issue #58, step 2): one
+ * deterministic codec per mapped type. Decoding validates the closed
+ * wire shape — unknown members, missing required members, wrong
+ * primitives, precision loss and unknown enum values refuse — and
+ * encoding reproduces canonical JSON semantics: absent stays absent,
+ * explicit null stays null, lists stay lists, objects stay objects,
+ * and wire names stay verbatim (`task_id` never becomes `taskId` on
+ * the wire).
+ */
+
+if (!function_exists('php_map_types')) {
+    require_once __DIR__ . '/type-map.php';
+}
+
+/**
+ * The class FQN of one leaf reference (the nominal wrapper, the enum,
+ * or the DTO/value-object class).
+ */
+function php_types_leaf_fqn(array $definitions, string $prefix, string $leaf): string
+{
+    $definition = $definitions[$leaf];
+    return php_types_fqn_of($prefix, php_types_module_of($leaf), php_types_stem_of($leaf, $definition['kind']));
+}
+
+/** Whether one leaf decodes through its own class (scalar, enum). */
+function php_types_leaf_is_self_codec(array $definitions, string $leaf): bool
+{
+    return in_array($definitions[$leaf]['kind'], ['scalar', 'enum'], true);
+}
+
+/**
+ * The decode expression of one wire value at a resolved leaf: scalars
+ * and enums decode through their own class, structured values through
+ * their codec class.
+ */
+function php_types_leaf_decode(array $definitions, string $prefix, string $leaf, string $raw): string
+{
+    $fqn = '\\' . php_types_leaf_fqn($definitions, $prefix, $leaf);
+    return php_types_leaf_is_self_codec($definitions, $leaf)
+        ? $fqn . '::fromWire(' . $raw . ')'
+        : $fqn . 'Codec::decode(' . $raw . ')';
+}
+
+/**
+ * The encode expression of one typed leaf value: the exact wire
+ * projection (enum backed value, wrapper spelling, codec delegation).
+ */
+function php_types_leaf_encode(array $definitions, string $prefix, string $leaf, string $target): string
+{
+    $definition = $definitions[$leaf];
+    if ($definition['kind'] === 'enum') {
+        return $target . '->toWire()';
+    }
+    if ($definition['kind'] === 'scalar') {
+        return $target . (($definition['base'] === 'number' || $definition['base'] === 'boolean') ? '->value()' : '->toString()');
+    }
+    return '\\' . php_types_leaf_fqn($definitions, $prefix, $leaf) . 'Codec::encode(' . $target . ')';
+}
+
+/**
+ * The PHP property type of one mapped field row: the concrete class,
+ * collection, or presence wrapper the position binds to. A
+ * required-nullable position spells `?T`; an optional position spells
+ * its wrapper (the wrapper owns the optionality).
+ */
+function php_types_field_php_type(array $field, array $definitions, string $prefix): string
+{
+    $expr = $field['type'];
+    if (isset($expr['wrapper'])) {
+        return '\\' . $expr['wrapper'];
+    }
+    if ($expr['list']) {
+        $type = '\\' . $expr['collection'];
+    } else {
+        $type = '\\' . php_types_leaf_fqn($definitions, $prefix, $expr['leaf']);
+    }
+    return $field['nullable'] ? '?' . $type : $type;
+}
+
+/** The single-quoted PHP string literal of one wire text. */
+function php_types_string_literal(string $value): string
+{
+    return "'" . str_replace(["\\", "'"], ["\\\\", "\\'"], $value) . "'";
+}
+
+/**
+ * The decode fragment of one field: statements binding `$<property>`
+ * to the decoded PHP value. Presence is exact — required-nonnull
+ * refuses absent and null; required-nullable refuses absent, accepts
+ * null; optional positions bind a concrete presence wrapper.
+ */
+function php_types_field_decode(array $field, array $definitions, string $prefix, string $ownerId): string
+{
+    $wireKey = php_types_string_literal($field['name']);
+    $owner = php_types_string_literal($ownerId);
+    $member = $field['name'];
+    $wire = '$wire[' . $wireKey . ']';
+    $property = '$' . $field['property'];
+    $expr = $field['type'];
+    $lines = [];
+
+    $valueDecode = static function (string $raw) use ($definitions, $prefix, $expr, $field): string {
+        if ($expr['list']) {
+            return 'self::decode' . ucfirst($field['property']) . '(' . $raw . ')';
+        }
+        return php_types_leaf_decode($definitions, $prefix, $expr['leaf'], $raw);
+    };
+
+    switch ($field['presence']) {
+        case 'required-nonnull':
+            $lines[] = 'if (!array_key_exists(' . $wireKey . ', $wire) || ' . $wire . ' === null) {';
+            $lines[] = '    throw new \\InvalidArgumentException(' . $owner . ' . \': missing required member `' . $member . '`\');';
+            $lines[] = '}';
+            $lines[] = $property . ' = ' . $valueDecode($wire) . ';';
+            break;
+        case 'required-nullable':
+            $lines[] = 'if (!array_key_exists(' . $wireKey . ', $wire)) {';
+            $lines[] = '    throw new \\InvalidArgumentException(' . $owner . ' . \': missing required member `' . $member . '`\');';
+            $lines[] = '}';
+            $lines[] = $property . ' = ' . $wire . ' === null ? null : ' . $valueDecode($wire) . ';';
+            break;
+        case 'optional-nonnull':
+        case 'optional-nullable':
+            $wrapper = '\\' . $expr['wrapper'];
+            $lines[] = $property . ' = !array_key_exists(' . $wireKey . ', $wire)';
+            $lines[] = '    ? ' . $wrapper . '::absent()';
+            if ($field['presence'] === 'optional-nullable') {
+                $lines[] = '    : (' . $wire . ' === null';
+                $lines[] = '        ? ' . $wrapper . '::ofNull()';
+                $lines[] = '        : ' . $wrapper . '::of(' . $valueDecode($wire) . '));';
+            } else {
+                // An explicit null fails inside the element decode.
+                $lines[] = '    : ' . $wrapper . '::of(' . $valueDecode($wire) . ');';
+            }
+            break;
+    }
+    return implode("\n", $lines);
+}
+
+/**
+ * The encode fragment of one field: statements appending the verbatim
+ * wire member to `$result` — absent optionals append nothing, explicit
+ * nulls append null, and the member order is the declared field order.
+ */
+function php_types_field_encode(array $field, array $definitions, string $prefix): string
+{
+    $wireKey = php_types_string_literal($field['name']);
+    $property = '$value->' . $field['property'];
+    $expr = $field['type'];
+    $lines = [];
+
+    $valueEncode = static function (string $target) use ($definitions, $prefix, $expr, $field): string {
+        if ($expr['list']) {
+            return 'self::encode' . ucfirst($field['property']) . '(' . $target . ')';
+        }
+        return php_types_leaf_encode($definitions, $prefix, $expr['leaf'], $target);
+    };
+
+    switch ($field['presence']) {
+        case 'required-nonnull':
+            $lines[] = '$result[' . $wireKey . '] = ' . $valueEncode($property) . ';';
+            break;
+        case 'required-nullable':
+            $lines[] = '$result[' . $wireKey . '] = ' . $property . ' === null ? null : ' . $valueEncode($property) . ';';
+            break;
+        case 'optional-nonnull':
+        case 'optional-nullable':
+            $lines[] = 'if (!$value->' . $field['property'] . '->isAbsent()) {';
+            if ($field['presence'] === 'optional-nullable') {
+                $lines[] = '    $result[' . $wireKey . '] = $value->' . $field['property'] . '->isNull() ? null : '
+                    . $valueEncode($property . '->get()') . ';';
+            } else {
+                $lines[] = '    $result[' . $wireKey . '] = ' . $valueEncode($property . '->get()') . ';';
+            }
+            $lines[] = '}';
+            break;
+    }
+    return implode("\n", $lines);
+}
+
+/**
+ * The private list decode/encode helper pair of one list field (or of
+ * a query return). Element decoding validates every element; the
+ * collection constructor is the only list publisher.
+ */
+function php_types_list_helpers(array $field, array $definitions, string $prefix, string $ownerId): string
+{
+    $expr = $field['type'];
+    $collection = '\\' . $expr['collection'];
+    $method = ucfirst($field['property']);
+    $owner = php_types_string_literal($ownerId);
+    $member = $field['name'];
+    $nullableElements = $expr['nullableElements'] ?? false;
+
+    $elementDecode = $nullableElements
+        ? '$element === null ? null : ' . php_types_leaf_decode($definitions, $prefix, $expr['leaf'], '$element')
+        : php_types_leaf_decode($definitions, $prefix, $expr['leaf'], '$element');
+    $elementEncode = $nullableElements
+        ? '$element === null ? null : ' . php_types_leaf_encode($definitions, $prefix, $expr['leaf'], '$element')
+        : php_types_leaf_encode($definitions, $prefix, $expr['leaf'], '$element');
+
+    return <<<PHP
+    private static function decode{$method}(mixed \$raw): {$collection}
+    {
+        if (!is_array(\$raw) || !array_is_list(\$raw)) {
+            throw new \\InvalidArgumentException({$owner} . ': member `{$member}` is not a list');
+        }
+        \$items = [];
+        foreach (\$raw as \$element) {
+            \$items[] = {$elementDecode};
+        }
+        return {$collection}::fromList(\$items);
+    }
+
+    private static function encode{$method}({$collection} \$value): array
+    {
+        \$items = [];
+        foreach (\$value->all() as \$element) {
+            \$items[] = {$elementEncode};
+        }
+        return \$items;
+    }
+PHP;
+}
+
+// ----- bundled compiler module: type-emit.php -----
+
+/**
+ * The emitter of the PHP type generator (issue #58, step 2): the mapped
+ * inventory becomes deterministic PHP 8.3 files — final readonly
+ * classes, native string-backed enums, typed immutable collections,
+ * concrete presence wrappers, and one codec per type — plus the
+ * deterministic class map and the authoritative mapping sidecar.
+ *
+ * Every file declares `strict_types=1`, carries its semantic id, and
+ * escapes free wire text through a comment-safe projection. There are
+ * no timestamps, absolute paths, environment lookups, or dynamic
+ * members anywhere in the output: repeated generations over the same
+ * inputs are byte-identical.
+ */
+
+if (!function_exists('php_types_leaf_fqn')) {
+    require_once __DIR__ . '/type-codec.php';
+}
+
+/**
+ * One comment-safe single-line projection of free wire text: every
+ * line terminator and control character collapses, so a core-valid
+ * description can never close a generated comment and inject live code
+ * into the emitted class.
+ */
+function php_types_comment_safe(mixed $text): string
+{
+    $value = (string) ($text ?? '');
+    $value = preg_replace('/\r\n|[\r\n\x{0085}\x{2028}\x{2029}]|\p{Cc}/u', ' ', $value) ?? '';
+    $value = preg_replace('/\s+/', ' ', $value) ?? '';
+    $value = trim($value);
+    // Byte-exact truncation keeps the emitted bytes a pure function of
+    // the input bytes (and keeps php -n runtimes safe).
+    $value = substr($value, 0, 200);
+    // A one-line comment also ends at the mid-line close-tag pair: break
+    // it so no projection can re-open PHP mode.
+    return str_replace('?>', '? >', $value);
+}
+
+/**
+ * The canonical JSON spelling of the sidecar documents: sorted object
+ * keys, compact separators.
+ */
+function php_types_canonical_json(mixed $value): string
+{
+    if (is_array($value)) {
+        if ($value !== [] && array_is_list($value)) {
+            return '[' . implode(',', array_map(
+                static fn ($item): string => php_types_canonical_json($item),
+                $value,
+            )) . ']';
+        }
+        $keys = array_keys($value);
+        sort($keys, SORT_STRING);
+        $members = [];
+        foreach ($keys as $key) {
+            $members[] = json_encode((string) $key, JSON_UNESCAPED_SLASHES)
+                . ':' . php_types_canonical_json($value[$key]);
+        }
+        return '{' . implode(',', $members) . '}';
+    }
+    if (is_bool($value)) {
+        return $value ? 'true' : 'false';
+    }
+    if ($value === null) {
+        return 'null';
+    }
+    if (is_int($value) || is_float($value)) {
+        return json_encode($value);
+    }
+    return json_encode((string) $value, JSON_UNESCAPED_SLASHES);
+}
+
+/**
+ * The provenance header of every emitted file: no timestamp, no
+ * absolute path — digests only, so the bytes stay a pure function of
+ * the inputs.
+ */
+function php_types_file_header(array $context, string $namespace, string $semanticId, ?string $description): string
+{
+    $lines = [
+        '<?php',
+        '',
+        'declare(strict_types=1);',
+        '',
+        '// Generated by lekalo-target-php-laravel@' . $context['adapterVersion']
+            . ' (type generator, issue #58).',
+        '// From ' . PHP_TYPES_IR_IDENTITY . ' input ' . $context['irDigest']
+            . '. Do not edit: regenerate with `lekalo generate`.',
+        '// Semantic id: ' . $semanticId . '.',
+    ];
+    if ($description !== null && $description !== '') {
+        $lines[] = '// Description: ' . php_types_comment_safe($description);
+    }
+    if ($namespace !== '') {
+        $lines[] = '';
+        $lines[] = 'namespace ' . $namespace . ';';
+    }
+    return implode("\n", $lines);
+}
+
+/** The bare class name of one mapped entry (the final FQN segment). */
+function php_types_entry_class(array $entry): string
+{
+    $cut = strrpos($entry['fqn'], '\\');
+    return $cut === false ? $entry['fqn'] : substr($entry['fqn'], $cut + 1);
+}
+
+/**
+ * Emit every generated file of one mapped type inventory. `input` is
+ * `{projectId, mapped, adapterVersion, root}`; returns path-sorted
+ * `{path, text}` records with paths under the declared custody root,
+ * plus the sidecar document as `map`.
+ */
+function php_emit_types(array $input): array
+{
+    $mapped = $input['mapped'];
+    $policy = $mapped['policy'];
+    $prefix = $policy['namespacePrefix'];
+    $definitions = [];
+    foreach ($mapped['types'] as $entry) {
+        $definitions[$entry['semanticId']] = $entry;
+    }
+    $context = [
+        'adapterVersion' => $input['adapterVersion'],
+        'irDigest' => $mapped['digests']['ir'],
+        'projectId' => $input['projectId'],
+        'custody' => $policy['custody'],
+    ];
+    $root = $input['root'];
+
+    $files = [];
+    $addFile = static function (string $relative, string $text) use (&$files, $root): void {
+        $files[] = ['path' => $root . '/' . $relative, 'text' => $text];
+    };
+
+    foreach ($mapped['types'] as $entry) {
+        $module = php_types_module_of($entry['semanticId']);
+        $namespace = $prefix . '\\' . ucfirst($module);
+        $description = php_types_entry_description($definitions, $entry['semanticId']);
+        switch ($entry['kind']) {
+            case 'scalar':
+                $addFile($entry['path'], php_types_scalar_text($entry, $context, $namespace, $description));
+                break;
+            case 'enum':
+                $addFile($entry['path'], php_types_enum_text($entry, $context, $namespace, $description));
+                break;
+            case 'query':
+                $addFile($entry['codecPath'], php_types_query_codec_text(
+                    $entry,
+                    $definitions,
+                    $prefix,
+                    $context,
+                    $namespace,
+                    $description,
+                ));
+                break;
+            default:
+                $addFile($entry['path'], php_types_structured_text(
+                    $entry,
+                    $definitions,
+                    $prefix,
+                    $context,
+                    $namespace,
+                    $description,
+                ));
+                $addFile($entry['codecPath'], php_types_codec_text(
+                    $entry,
+                    $definitions,
+                    $prefix,
+                    $context,
+                    $namespace,
+                    $description,
+                ));
+                break;
+        }
+    }
+    foreach ($mapped['collections'] as $collection) {
+        $module = php_types_module_of($collection['element']);
+        $namespace = $prefix . '\\' . ucfirst($module);
+        $description = php_types_entry_description($definitions, $collection['element']);
+        $addFile($collection['path'], php_types_collection_text(
+            $collection,
+            $definitions,
+            $prefix,
+            $context,
+            $namespace,
+            $description,
+        ));
+    }
+    foreach ($mapped['wrappers'] as $wrapper) {
+        $module = php_types_module_of($wrapper['element']);
+        $namespace = $prefix . '\\' . ucfirst($module) . '\\Optional';
+        $description = php_types_entry_description($definitions, $wrapper['element']);
+        $addFile($wrapper['path'], php_types_wrapper_text(
+            $wrapper,
+            $definitions,
+            $prefix,
+            $context,
+            $namespace,
+            $description,
+        ));
+    }
+    if ($policy['classMap']) {
+        $addFile('classmap.php', php_types_classmap_text($mapped['artifacts'], $context, $prefix));
+    }
+
+    $sidecar = php_types_sidecar_document($input['projectId'], $mapped, $context, $root);
+    $addFile('types.map.json', php_types_canonical_json($sidecar) . "\n");
+
+    usort($files, static fn (array $left, array $right): int => strcmp($left['path'], $right['path']));
+    return ['files' => $files, 'map' => $sidecar];
+}
+
+/** The mapped description of one definition, without internal keys. */
+function php_types_entry_description(array $definitions, string $semanticId): ?string
+{
+    $description = $definitions[$semanticId]['description'] ?? null;
+    return is_string($description) && $description !== '' ? $description : null;
+}
+
+// ---------------------------------------------------------------------------
+// Scalar nominal wrappers.
+// ---------------------------------------------------------------------------
+
+/**
+ * The validation body of one scalar base: a closed, extension-free
+ * check that refuses rather than coerces.
+ */
+function php_types_scalar_validation(string $base): string
+{
+    switch ($base) {
+        case 'string':
+            return "        return is_string(\$raw) && \$raw !== '';";
+        case 'boolean':
+            return '        return is_bool($raw);';
+        case 'number':
+            return implode("\n", [
+                '        if (is_int($raw)) {',
+                '            return true;',
+                '        }',
+                '        // A JSON integer beyond exact float precision arrives as an',
+                '        // integral float: refused, never silently rounded.',
+                '        return is_float($raw) && is_finite($raw)',
+                '            && !($raw === floor($raw) && abs($raw) >= 9007199254740992);',
+            ]);
+        case 'uuid':
+            return implode("\n", [
+                "        return is_string(\$raw)",
+                "            && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\$/', \$raw) === 1;",
+            ]);
+        case 'date':
+            return implode("\n", [
+                "        if (!is_string(\$raw) || preg_match('/^\\\\d{4}-\\\\d{2}-\\\\d{2}\$/', \$raw) !== 1) {",
+                '            return false;',
+                '        }',
+                '        return checkdate((int) substr($raw, 5, 2), (int) substr($raw, 8, 2), (int) substr($raw, 0, 4));',
+            ]);
+        case 'datetime':
+            return implode("\n", [
+                '        if (!is_string($raw)',
+                "            || preg_match('/^\\\\d{4}-\\\\d{2}-\\\\d{2}T\\\\d{2}:\\\\d{2}:\\\\d{2}(?:\\\\.\\\\d+)?(?:Z|[+-]\\\\d{2}:\\\\d{2})\$/', \$raw) !== 1) {",
+                '            return false;',
+                '        }',
+                '        return checkdate((int) substr($raw, 5, 2), (int) substr($raw, 8, 2), (int) substr($raw, 0, 4));',
+            ]);
+        case 'uri':
+            return implode("\n", [
+                "        return is_string(\$raw) && \$raw !== ''",
+                "            && preg_match('/^[A-Za-z][A-Za-z0-9+.\\\\-]*:\\\\S*\$/', \$raw) === 1;",
+            ]);
+        default:
+            // The closed base vocabulary is validated upstream; an
+            // unknown base here is a kernel bug, not an emission case.
+            throw new LogicException('unknown scalar base: ' . $base);
+    }
+}
+
+/** The emitted text of one nominal scalar wrapper. */
+function php_types_scalar_text(array $entry, array $context, string $namespace, ?string $description): string
+{
+    $base = $entry['base'];
+    $class = php_types_entry_class($entry);
+    $stringBacked = !in_array($base, ['number', 'boolean'], true);
+    $propertyType = $stringBacked ? 'string' : ($base === 'number' ? 'int|float' : 'bool');
+    $fromParameter = $stringBacked ? 'string $value' : ($base === 'number' ? 'int|float $value' : 'bool $value');
+    $owner = php_types_string_literal($entry['semanticId']);
+    $accessor = $stringBacked
+        ? implode("\n", [
+            '',
+            '    /** The exact declared spelling, never a reformatting. */',
+            '    public function toString(): string',
+            '    {',
+            '        return $this->value;',
+            '    }',
+        ])
+        : implode("\n", [
+            '',
+            '    /** The exact finite value: no numeric-string coercion exists. */',
+            '    public function value(): ' . $propertyType,
+            '    {',
+            '        return $this->value;',
+            '    }',
+        ]);
+    $lines = [
+        php_types_file_header($context, $namespace, $entry['semanticId'], $description),
+        '',
+        'final readonly class ' . $class,
+        '{',
+        '    private function __construct(',
+        '        public readonly ' . $propertyType . ' $value,',
+        '    ) {',
+        '    }',
+        '',
+        '    /**',
+        '     * Decode one wire value: the declared spelling is validated,',
+        '     * never coerced.',
+        '     */',
+        '    public static function fromWire(mixed $raw): self',
+        '    {',
+        '        if (!self::isValid($raw)) {',
+        '            throw new \\InvalidArgumentException(' . $owner . ' . \': invalid ' . $base . ' wire value\');',
+        '        }',
+        '        /** @var ' . $propertyType . ' $raw */',
+        '        return new self($raw);',
+        '    }',
+        '',
+        '    /** Construct from an already-typed value with the same validation. */',
+        '    public static function from(' . $fromParameter . '): self',
+        '    {',
+        '        if (!self::isValid($value)) {',
+        '            throw new \\InvalidArgumentException(' . $owner . ' . \': invalid ' . $base . ' value\');',
+        '        }',
+        '        return new self($value);',
+        '    }',
+        '',
+        '    private static function isValid(mixed $raw): bool',
+        '    {',
+        php_types_scalar_validation($base),
+        '    }',
+        $accessor,
+        '',
+        '    public function equals(self $other): bool',
+        '    {',
+        '        return $this->value === $other->value;',
+        '    }',
+        '}',
+    ];
+    return implode("\n", $lines) . "\n";
+}
+
+// ---------------------------------------------------------------------------
+// String-backed enums.
+// ---------------------------------------------------------------------------
+
+/** The emitted text of one string-backed enum in declared order. */
+function php_types_enum_text(array $entry, array $context, string $namespace, ?string $description): string
+{
+    $class = php_types_entry_class($entry);
+    $owner = php_types_string_literal($entry['semanticId']);
+    $lines = [
+        php_types_file_header($context, $namespace, $entry['semanticId'], $description),
+        '',
+        'enum ' . $class . ': string',
+        '{',
+    ];
+    foreach ($entry['values'] as $value) {
+        $lines[] = '    case ' . $value['case'] . ' = ' . php_types_string_literal($value['value']) . ';';
+    }
+    $lines[] = '';
+    $lines[] = '    /**';
+    $lines[] = '     * Decode one wire value: the declared members are the closed';
+    $lines[] = '     * vocabulary; anything else refuses.';
+    $lines[] = '     */';
+    $lines[] = '    public static function fromWire(mixed $raw): self';
+    $lines[] = '    {';
+    $lines[] = '        $case = is_string($raw) ? self::tryFrom($raw) : null;';
+    $lines[] = '        if ($case === null) {';
+    $lines[] = '            throw new \\InvalidArgumentException(' . $owner . ' . \': unknown enum wire value\');';
+    $lines[] = '        }';
+    $lines[] = '        return $case;';
+    $lines[] = '    }';
+    $lines[] = '';
+    $lines[] = '    /** The exact declared wire value. */';
+    $lines[] = '    public function toWire(): string';
+    $lines[] = '    {';
+    $lines[] = '        return $this->value;';
+    $lines[] = '    }';
+    $lines[] = '}';
+    return implode("\n", $lines) . "\n";
+}
+
+// ---------------------------------------------------------------------------
+// Immutable collections.
+// ---------------------------------------------------------------------------
+
+/** The emitted text of one typed immutable collection class. */
+function php_types_collection_text(
+    array $collection,
+    array $definitions,
+    string $prefix,
+    array $context,
+    string $namespace,
+    ?string $description,
+): string {
+    $elementFqn = '\\' . php_types_leaf_fqn($definitions, $prefix, $collection['element']);
+    $nullableElements = $collection['nullableElements'];
+    $docType = $nullableElements ? 'list<null|' . $elementFqn . '>' : 'list<' . $elementFqn . '>';
+    $elementCheck = $nullableElements
+        ? 'if ($item !== null && !$item instanceof ' . $elementFqn . ') {'
+        : 'if (!$item instanceof ' . $elementFqn . ') {';
+    $elementEquals = $nullableElements
+        ? '            if (($item === null) !== ($other->items[$index] === null)'
+        . "\n"
+        . '                || ($item !== null && !$item->equals($other->items[$index]))) {'
+        : '            if (!$item->equals($other->items[$index])) {';
+    $owner = php_types_string_literal($collection['element']);
+    $lines = [
+        php_types_file_header($context, $namespace, $collection['element'], $description),
+        '',
+        'final readonly class ' . $collection['class'],
+        '{',
+        '    /** @var ' . $docType . ' */',
+        '    private readonly array $items;',
+        '',
+        '    /** @param ' . $docType . ' $items */',
+        '    private function __construct(array $items)',
+        '    {',
+        '        $this->items = $items;',
+        '    }',
+        '',
+        '    /**',
+        '     * Construct from a homogeneous element list: the element type is',
+        '     * validated, never trusted, and order is preserved.',
+        '     *',
+        '     * @param array<array-key, mixed> $items',
+        '     */',
+        '    public static function fromList(array $items): self',
+        '    {',
+        '        foreach ($items as $item) {',
+        '            ' . $elementCheck,
+        '                throw new \\InvalidArgumentException(' . $owner . ' . \': list element type mismatch\');',
+        '            }',
+        '        }',
+        '        /** @var ' . $docType . ' $items */',
+        '        return new self(array_values($items));',
+        '    }',
+        '',
+        '    /** @return ' . $docType . ' */',
+        '    public function all(): array',
+        '    {',
+        '        return $this->items;',
+        '    }',
+        '',
+        '    public function count(): int',
+        '    {',
+        '        return count($this->items);',
+        '    }',
+        '',
+        '    /** The empty list is a value, never a missing one. */',
+        '    public function isEmpty(): bool',
+        '    {',
+        '        return $this->items === [];',
+        '    }',
+        '',
+        '    public function equals(self $other): bool',
+        '    {',
+        '        if ($this->items === $other->items) {',
+        '            return true;',
+        '        }',
+        '        if (count($this->items) !== count($other->items)) {',
+        '            return false;',
+        '        }',
+        '        foreach ($this->items as $index => $item) {',
+        $elementEquals,
+        '                return false;',
+        '            }',
+        '        }',
+        '        return true;',
+        '    }',
+        '}',
+    ];
+    return implode("\n", $lines) . "\n";
+}
+
+// ---------------------------------------------------------------------------
+// Concrete presence wrappers.
+// ---------------------------------------------------------------------------
+
+/** The emitted text of one concrete presence wrapper. */
+function php_types_wrapper_text(
+    array $wrapper,
+    array $definitions,
+    string $prefix,
+    array $context,
+    string $namespace,
+    ?string $description,
+): string {
+    $acceptsNull = $wrapper['acceptsNull'];
+    $class = $wrapper['class'];
+    $valueFqn = $wrapper['ofList']
+        ? '\\' . $wrapper['collection']
+        : '\\' . php_types_leaf_fqn($definitions, $prefix, $wrapper['element']);
+    $owner = php_types_string_literal($wrapper['element']);
+    $leafDefinition = $definitions[$wrapper['element']];
+    $valueEquals = $leafDefinition['kind'] === 'enum'
+        ? 'return $this->value === $other->value;'
+        : 'return $this->value->equals($other->value);';
+    $lines = [
+        php_types_file_header($context, $namespace, $wrapper['element'], $description),
+        '',
+        'final readonly class ' . $class,
+        '{',
+        '    private const MODE_ABSENT = 0;',
+    ];
+    if ($acceptsNull) {
+        $lines[] = '    private const MODE_NULL = 1;';
+    }
+    $lines[] = '    private const MODE_VALUE = 2;';
+    $lines[] = '';
+    $lines[] = '    private function __construct(';
+    $lines[] = '        private readonly int $mode,';
+    $lines[] = '        private readonly ?' . $valueFqn . ' $value,';
+    $lines[] = '    ) {';
+    $lines[] = '    }';
+    $lines[] = '';
+    $lines[] = '    /** The absent state: the member is not on the wire. */';
+    $lines[] = '    public static function absent(): self';
+    $lines[] = '    {';
+    $lines[] = '        return new self(self::MODE_ABSENT, null);';
+    $lines[] = '    }';
+    if ($acceptsNull) {
+        $lines[] = '';
+        $lines[] = '    /** The explicit-null state: distinct from absent, never collapsed. */';
+        $lines[] = '    public static function ofNull(): self';
+        $lines[] = '    {';
+        $lines[] = '        return new self(self::MODE_NULL, null);';
+        $lines[] = '    }';
+    }
+    $lines[] = '';
+    $lines[] = '    /** The carried-value state. */';
+    $lines[] = '    public static function of(' . $valueFqn . ' $value): self';
+    $lines[] = '    {';
+    $lines[] = '        return new self(self::MODE_VALUE, $value);';
+    $lines[] = '    }';
+    $lines[] = '';
+    $lines[] = '    public function isAbsent(): bool';
+    $lines[] = '    {';
+    $lines[] = '        return $this->mode === self::MODE_ABSENT;';
+    $lines[] = '    }';
+    if ($acceptsNull) {
+        $lines[] = '';
+        $lines[] = '    public function isNull(): bool';
+        $lines[] = '    {';
+        $lines[] = '        return $this->mode === self::MODE_NULL;';
+        $lines[] = '    }';
+    }
+    $lines[] = '';
+    $lines[] = '    /**';
+    $lines[] = '     * The carried value; absent (and explicit null) is a';
+    $lines[] = '     * LogicException, never a silent default.';
+    $lines[] = '     */';
+    $lines[] = '    public function get(): ' . $valueFqn;
+    $lines[] = '    {';
+    $lines[] = '        if ($this->mode !== self::MODE_VALUE || $this->value === null) {';
+    $lines[] = '            throw new \\LogicException(' . $owner . ' . \': no value carried\');';
+    $lines[] = '        }';
+    $lines[] = '        return $this->value;';
+    $lines[] = '    }';
+    $lines[] = '';
+    $lines[] = '    public function equals(self $other): bool';
+    $lines[] = '    {';
+    $lines[] = '        if ($this->mode !== $other->mode) {';
+    $lines[] = '            return false;';
+    $lines[] = '        }';
+    $lines[] = '        if ($this->mode !== self::MODE_VALUE) {';
+    $lines[] = '            return true;';
+    $lines[] = '        }';
+    $lines[] = '        ' . $valueEquals;
+    $lines[] = '    }';
+    $lines[] = '}';
+    return implode("\n", $lines) . "\n";
+}
+
+// ---------------------------------------------------------------------------
+// Structured DTOs and value objects.
+// ---------------------------------------------------------------------------
+
+/** The equals conjunct of one field: exact, null-aware, never loose. */
+function php_types_field_equals(array $field, array $definitions, string $prefix): string
+{
+    $left = '$this->' . $field['property'];
+    $right = '$other->' . $field['property'];
+    if (isset($field['type']['wrapper'])) {
+        return $left . '->equals(' . $right . ')';
+    }
+    if ($field['type']['list']) {
+        return $left . '->equals(' . $right . ')';
+    }
+    $definition = $definitions[$field['type']['leaf']];
+    if ($definition['kind'] === 'enum') {
+        return $left . ' === ' . $right;
+    }
+    if ($field['nullable']) {
+        // Both null (or both identical) or both present and equal.
+        return '(' . $left . ' === ' . $right . ')'
+            . ' || (' . $left . ' !== null && ' . $right . ' !== null && ' . $left . '->equals(' . $right . '))';
+    }
+    return $left . '->equals(' . $right . ')';
+}
+
+/** The emitted text of one structured DTO/value-object class. */
+function php_types_structured_text(
+    array $entry,
+    array $definitions,
+    string $prefix,
+    array $context,
+    string $namespace,
+    ?string $description,
+): string {
+    $class = php_types_entry_class($entry);
+    $lines = [
+        php_types_file_header($context, $namespace, $entry['semanticId'], $description),
+        '',
+        'final readonly class ' . $class,
+        '{',
+        '    public function __construct(',
+    ];
+    foreach ($entry['fields'] as $field) {
+        $type = php_types_field_php_type($field, $definitions, $prefix);
+        $lines[] = '        public readonly ' . $type . ' $' . $field['property'] . ',';
+    }
+    $lines[] = '    ) {';
+    $lines[] = '    }';
+    if ($entry['fields'] !== []) {
+        $lines[] = '';
+        $lines[] = '    /** Exact value equality over the immutable state. */';
+        $lines[] = '    public function equals(self $other): bool';
+        $lines[] = '    {';
+        $conjuncts = array_map(
+            static fn (array $field): string => php_types_field_equals($field, $definitions, $prefix),
+            $entry['fields'],
+        );
+        $lines[] = '        return ' . implode("\n            && ", $conjuncts) . ';';
+        $lines[] = '    }';
+    }
+    $lines[] = '}';
+    return implode("\n", $lines) . "\n";
+}
+
+// ---------------------------------------------------------------------------
+// Codecs.
+// ---------------------------------------------------------------------------
+
+/** The emitted text of one structured codec class. */
+function php_types_codec_text(
+    array $entry,
+    array $definitions,
+    string $prefix,
+    array $context,
+    string $namespace,
+    ?string $description,
+): string {
+    $class = php_types_entry_class($entry) . 'Codec';
+    $typeFqn = '\\' . $entry['fqn'];
+    $owner = php_types_string_literal($entry['semanticId']);
+    $members = implode(', ', array_map(
+        static fn (array $field): string => php_types_string_literal($field['name']),
+        $entry['fields'],
+    ));
+    $decode = [];
+    $encode = [];
+    $helpers = [];
+    foreach ($entry['fields'] as $field) {
+        $decode[] = php_types_field_decode($field, $definitions, $prefix, $entry['semanticId']);
+        $encode[] = php_types_field_encode($field, $definitions, $prefix);
+        if ($field['type']['list']) {
+            $helpers[] = php_types_list_helpers($field, $definitions, $prefix, $entry['semanticId']);
+        }
+    }
+    $indent = static function (string $block): string {
+        return implode("\n", array_map(
+            static fn (string $line): string => $line === '' ? $line : '        ' . $line,
+            explode("\n", $block),
+        ));
+    };
+    $constructorArgs = implode(', ', array_map(
+        static fn (array $field): string => '$' . $field['property'],
+        $entry['fields'],
+    ));
+    $lines = [
+        php_types_file_header($context, $namespace, $entry['semanticId'], $description),
+        '',
+        'final readonly class ' . $class,
+        '{',
+        '    private const MEMBERS = [' . $members . '];',
+        '',
+        '    /**',
+        '     * Decode one wire object into the typed value: the member set is',
+        '     * closed, presence is exact, and every primitive is validated.',
+        '     */',
+        '    public static function decode(mixed $wire): ' . $typeFqn,
+        '    {',
+        '        if (!is_array($wire)) {',
+        '            throw new \\InvalidArgumentException(' . $owner . ' . \': wire value is not an object\');',
+        '        }',
+        '        foreach (array_keys($wire) as $key) {',
+        '            if (!in_array($key, self::MEMBERS, true)) {',
+        '                throw new \\InvalidArgumentException(' . $owner . ' . \': unknown wire member `\' . $key . \'`\');',
+        '            }',
+        '        }',
+        "\n" . $indent(implode("\n\n", $decode)),
+        '        return new ' . $typeFqn . '(' . $constructorArgs . ');',
+        '    }',
+        '',
+        '    /**',
+        '     * Encode the typed value back to the wire shape: verbatim member',
+        '     * names, absent optionals omitted, explicit nulls preserved.',
+        '     */',
+        '    public static function encode(' . $typeFqn . ' $value): array',
+        '    {',
+        '        $result = [];',
+        ($encode === [] ? '' : "\n" . $indent(implode("\n", $encode))),
+        '        return $result;',
+        '    }',
+    ];
+    foreach ($helpers as $helper) {
+        $lines[] = '';
+        $lines[] = $helper;
+    }
+    $lines[] = '}';
+    return implode("\n", $lines) . "\n";
+}
+
+/** The PHP return type spelling of one query return expression. */
+function php_types_query_return_type(array $entry, array $definitions, string $prefix): string
+{
+    $expr = $entry['returns'];
+    if ($expr['list']) {
+        $definition = $definitions[$expr['leaf']];
+        $class = php_types_stem_of($expr['leaf'], $definition['kind'])
+            . ($expr['nullableElements'] ? 'NullableList' : 'List');
+        $type = $prefix . '\\' . ucfirst(php_types_module_of($expr['leaf'])) . '\\' . $class;
+    } else {
+        $type = php_types_leaf_fqn($definitions, $prefix, $expr['leaf']);
+    }
+    return $expr['nullable'] ? '?' . $type : $type;
+}
+
+/** The emitted text of one query result codec (a direct-body passthrough). */
+function php_types_query_codec_text(
+    array $entry,
+    array $definitions,
+    string $prefix,
+    array $context,
+    string $namespace,
+    ?string $description,
+): string {
+    $class = php_types_entry_class($entry);
+    $expr = $entry['returns'];
+    $decodeType = php_types_query_return_type($entry, $definitions, $prefix);
+    $leaf = $expr['leaf'];
+    $definition = $definitions[$leaf];
+    if ($expr['list']) {
+        $decodeExpr = 'self::decodeResult($wire)';
+        $encodeExpr = 'self::encodeResult($value)';
+        $helpers = [php_types_query_list_helper($entry, $definitions, $prefix)];
+    } else {
+        $decodeExpr = php_types_leaf_decode($definitions, $prefix, $leaf, '$wire');
+        $encodeExpr = php_types_leaf_encode($definitions, $prefix, $leaf, '$value');
+        $helpers = [];
+    }
+    $encodeType = $expr['list'] ? 'array' : (($definition['kind'] === 'enum' || $definition['base'] === 'string'
+        || $definition['base'] === 'date' || $definition['base'] === 'datetime'
+        || $definition['base'] === 'uuid' || $definition['base'] === 'uri') ? 'string' : 'int|float|bool');
+    $encodeType = $expr['nullable'] ? ('null|' . $encodeType) : $encodeType;
+    $decodeTypeNullable = $expr['nullable'] ? '?' . ltrim($decodeType, '?') : $decodeType;
+    $encodeNullGuard = $expr['nullable'] ? '$value === null ? null : ' : '';
+    $lines = [
+        php_types_file_header($context, $namespace, $entry['semanticId'], $description),
+        '',
+        'final readonly class ' . $class,
+        '{',
+        '    /**',
+        '     * Decode the direct query output: the declared return type is the',
+        '     * body; no envelope exists.',
+        '     */',
+        '    public static function decode(mixed $wire): ' . $decodeTypeNullable,
+        '    {',
+        '        return $wire === null ? null : ' . $decodeExpr . ';',
+        '    }',
+        '',
+        '    public static function encode(' . $decodeTypeNullable . ' $value): ' . $encodeType,
+        '    {',
+        '        return ' . $encodeNullGuard . $encodeExpr . ';',
+        '    }',
+    ];
+    foreach ($helpers as $helper) {
+        $lines[] = '';
+        $lines[] = $helper;
+    }
+    $lines[] = '}';
+    return implode("\n", $lines) . "\n";
+}
+
+/** The list decode/encode helper pair of a list-valued query return. */
+function php_types_query_list_helper(array $entry, array $definitions, string $prefix): string
+{
+    $expr = $entry['returns'];
+    $definition = $definitions[$expr['leaf']];
+    $class = php_types_stem_of($expr['leaf'], $definition['kind'])
+        . ($expr['nullableElements'] ? 'NullableList' : 'List');
+    $collection = $prefix . '\\' . ucfirst(php_types_module_of($expr['leaf'])) . '\\' . $class;
+    $owner = php_types_string_literal($entry['semanticId']);
+    $elementDecode = $expr['nullableElements']
+        ? '$element === null ? null : ' . php_types_leaf_decode($definitions, $prefix, $expr['leaf'], '$element')
+        : php_types_leaf_decode($definitions, $prefix, $expr['leaf'], '$element');
+    $elementEncode = $expr['nullableElements']
+        ? '$element === null ? null : ' . php_types_leaf_encode($definitions, $prefix, $expr['leaf'], '$element')
+        : php_types_leaf_encode($definitions, $prefix, $expr['leaf'], '$element');
+
+    return implode("\n", [
+        '    private static function decodeResult(mixed $raw): \\' . $collection,
+        '    {',
+        '        if (!is_array($raw) || !array_is_list($raw)) {',
+        '            throw new \\InvalidArgumentException(' . $owner . ' . \': query output is not a list\');',
+        '        }',
+        '        $items = [];',
+        '        foreach ($raw as $element) {',
+        '            $items[] = ' . $elementDecode . ';',
+        '        }',
+        '        return \\' . $collection . '::fromList($items);',
+        '    }',
+        '',
+        '    private static function encodeResult(\\' . $collection . ' $value): array',
+        '    {',
+        '        $items = [];',
+        '        foreach ($value->all() as $element) {',
+        '            $items[] = ' . $elementEncode . ';',
+        '        }',
+        '        return $items;',
+        '    }',
+    ]);
+}
+
+// ---------------------------------------------------------------------------
+// Class map and sidecar.
+// ---------------------------------------------------------------------------
+
+/** The deterministic class map of one generation. */
+function php_types_classmap_text(array $artifacts, array $context, string $prefix): string
+{
+    $entries = [];
+    foreach ($artifacts as $artifact) {
+        if (in_array($artifact['role'], ['class-map'], true) || $artifact['path'] === 'types.map.json') {
+            continue;
+        }
+        if (str_ends_with($artifact['path'], '.php')) {
+            $entries[$artifact['fqn']] = $artifact['path'];
+        }
+    }
+    ksort($entries, SORT_STRING);
+    $lines = [
+        '<?php',
+        '',
+        'declare(strict_types=1);',
+        '',
+        '// Generated by lekalo-target-php-laravel@' . $context['adapterVersion']
+            . ' (type generator, issue #58).',
+        '// From ' . PHP_TYPES_IR_IDENTITY . ' input ' . $context['irDigest']
+            . '. Do not edit: regenerate with `lekalo generate`.',
+        '// The deterministic class map of this generation.',
+        '',
+        'return [',
+    ];
+    foreach ($entries as $fqn => $path) {
+        $lines[] = '    ' . php_types_string_literal($fqn) . ' => __DIR__ . '
+            . php_types_string_literal('/' . $path) . ',';
+    }
+    $lines[] = '];';
+    return implode("\n", $lines) . "\n";
+}
+
+/**
+ * The authoritative mapping sidecar: contract identity, provenance
+ * digests, semantic-ID-sorted type entries, and the path-sorted
+ * artifact inventory. Internal mapping keys never surface.
+ */
+function php_types_sidecar_document(string $projectId, array $mapped, array $context, string $root): array
+{
+    $types = [];
+    foreach ($mapped['types'] as $entry) {
+        $row = [
+            'semanticId' => $entry['semanticId'],
+            'kind' => $entry['kind'],
+            'fqn' => $entry['fqn'],
+            'path' => $entry['path'],
+        ];
+        if (isset($entry['base'])) {
+            $row['base'] = $entry['base'];
+        }
+        if (isset($entry['values'])) {
+            $row['values'] = array_map(
+                static fn (array $value): array => ['case' => $value['case'], 'value' => $value['value']],
+                $entry['values'],
+            );
+        }
+        if (isset($entry['fields'])) {
+            $row['fields'] = array_map(
+                static fn (array $field): array => [
+                    'name' => $field['name'],
+                    'property' => $field['property'],
+                    'type' => $field['type'],
+                    'presence' => $field['presence'],
+                    'nullable' => $field['nullable'],
+                ],
+                $entry['fields'],
+            );
+        }
+        if (isset($entry['returns'])) {
+            $row['returns'] = $entry['returns'];
+        }
+        $row['codec'] = $entry['codec'];
+        $types[] = $row;
+    }
+    return [
+        'schemaVersion' => PHP_TYPES_MAP_SCHEMA_VERSION,
+        'identity' => PHP_TYPES_MAP_IDENTITY,
+        'adapter' => ['id' => 'lekalo-target-php-laravel', 'version' => $context['adapterVersion']],
+        'projectId' => $projectId,
+        'custody' => $context['custody'],
+        'namespacePrefix' => $mapped['policy']['namespacePrefix'],
+        'generatedRoot' => $root,
+        'digests' => $mapped['digests'],
+        'types' => $types,
+        'artifacts' => $mapped['artifacts'],
+    ];
+}
+
+// ----- bundled compiler module: type-bindings.php -----
+
+/**
+ * The checked-type binding join of the PHP generator (issue #58, step
+ * 3): a checked custody generation emits NOTHING and instead joins the
+ * declared semantic ids against the observed class-shape evidence the
+ * scanner published. The join is read-only and strict:
+ *
+ *   - a missing evidence document, a missing claim, an ambiguous
+ *     claim, a stale source digest, and any shape divergence are
+ *     typed findings — never conformant, never a rewrite;
+ *   - an absent observer can never pass checked acceptance;
+ *   - observed evidence alone grants nothing: the declared mapping is
+ *     the authority, the evidence only confirms it.
+ */
+
+if (!function_exists('php_validate_types_input')) {
+    require_once __DIR__ . '/type-policy.php';
+}
+
+const PHP_TYPES_BINDING_MISSING = 'php-types.binding-missing';
+const PHP_TYPES_BINDING_AMBIGUOUS = 'php-types.binding-ambiguous';
+const PHP_TYPES_BINDING_MISMATCH = 'php-types.binding-mismatch';
+
+/**
+ * Join one mapped inventory against the parsed evidence document.
+ * `evidence` is the parsed `.lekalo/import/observed/types-evidence.json`
+ * or null when absent (absence is a finding for every declared id, per
+ * the required-evidence rule). Returns wire-shaped findings.
+ */
+function php_check_type_bindings(array $mapped, ?array $evidence, ?callable $fileDigest): array
+{
+    $findings = [];
+    $records = [];
+    if (is_array($evidence) && ($evidence['schemaVersion'] ?? null) === PHP_TYPES_EVIDENCE_SCHEMA_VERSION
+        && ($evidence['identity'] ?? null) === PHP_TYPES_EVIDENCE_IDENTITY
+        && is_array($evidence['classes'] ?? null)) {
+        foreach ($evidence['classes'] as $record) {
+            if (!is_array($record) || !is_string($record['semanticId'] ?? null)) {
+                continue;
+            }
+            $records[$record['semanticId']][] = $record;
+        }
+    } else {
+        // No evidence at all: every declared id is a missing binding.
+        // Checked acceptance without an observer is impossible.
+        foreach ($mapped['types'] as $entry) {
+            $findings[] = [
+                'code' => PHP_TYPES_BINDING_MISSING,
+                'semanticId' => $entry['semanticId'],
+                'detail' => 'no-evidence-document',
+            ];
+        }
+        return php_types_sort_binding_findings($findings);
+    }
+
+    foreach ($mapped['types'] as $entry) {
+        $id = $entry['semanticId'];
+        $claiming = $records[$id] ?? [];
+        if ($claiming === []) {
+            $findings[] = [
+                'code' => PHP_TYPES_BINDING_MISSING,
+                'semanticId' => $id,
+                'detail' => 'no-observed-class',
+            ];
+            continue;
+        }
+        if (count($claiming) > 1) {
+            $findings[] = [
+                'code' => PHP_TYPES_BINDING_AMBIGUOUS,
+                'semanticId' => $id,
+                'detail' => 'claimed-by-' . count($claiming) . '-classes',
+            ];
+            continue;
+        }
+        $record = $claiming[0];
+        $problems = php_types_check_binding_record($entry, $record, $fileDigest);
+        foreach ($problems as $problem) {
+            $findings[] = [
+                'code' => PHP_TYPES_BINDING_MISMATCH,
+                'semanticId' => $id,
+                'detail' => $problem,
+            ];
+        }
+    }
+    return php_types_sort_binding_findings($findings);
+}
+
+/**
+ * One evidence record against one declared entry: identity, path,
+ * freshness, and observed shape.
+ *
+ * @return list<string> the divergence details (empty = conforms)
+ */
+function php_types_check_binding_record(array $entry, array $record, ?callable $fileDigest): array
+{
+    $problems = [];
+    $kind = is_string($record['kind'] ?? null) ? $record['kind'] : null;
+    $fqn = is_string($record['fqn'] ?? null) ? $record['fqn'] : null;
+    $path = is_string($record['path'] ?? null) ? $record['path'] : null;
+    if ($kind !== $entry['kind']) {
+        $problems[] = 'kind-diverges';
+    }
+    if ($fqn !== $entry['fqn']) {
+        $problems[] = 'fqn-diverges';
+    }
+    if ($path !== null && $path !== $entry['path']) {
+        $problems[] = 'path-diverges';
+    }
+    // Freshness: the exact observed source bytes must still be on disk.
+    // Tampered or regenerated class bytes invalidate the evidence.
+    $digest = is_string($record['sourceDigest'] ?? null) ? $record['sourceDigest'] : null;
+    if ($digest !== null && $fileDigest !== null) {
+        $actual = $fileDigest($path ?? $entry['path']);
+        if ($actual === null) {
+            $problems[] = 'observed-file-missing';
+        } elseif ($actual !== $digest) {
+            $problems[] = 'stale-source-digest';
+        }
+    }
+    // Observed shape: enum cases and property spellings must match the
+    // declared mapping exactly; extra or missing members diverge.
+    if ($entry['kind'] === 'enum' && is_array($record['enumCases'] ?? null)) {
+        $declared = [];
+        foreach ($entry['values'] as $value) {
+            $declared[$value['case']] = $value['value'];
+        }
+        $observed = [];
+        foreach ($record['enumCases'] as $case) {
+            if (!is_array($case) || !is_string($case['case'] ?? null) || !is_string($case['value'] ?? null)) {
+                $problems[] = 'evidence-shape';
+                break;
+            }
+            $observed[$case['case']] = $case['value'];
+        }
+        if ($declared !== $observed) {
+            $problems[] = 'enum-cases-diverge';
+        }
+    }
+    if (in_array($entry['kind'], ['value-object', 'entity', 'command', 'event'], true)
+        && is_array($record['properties'] ?? null)) {
+        $declared = [];
+        foreach ($entry['fields'] as $field) {
+            $declared[$field['property']] = true;
+        }
+        $observed = [];
+        foreach ($record['properties'] as $property) {
+            if (!is_array($property) || !is_string($property['name'] ?? null)) {
+                $problems[] = 'evidence-shape';
+                break;
+            }
+            $observed[$property['name']] = true;
+        }
+        if ($declared !== $observed) {
+            $problems[] = 'properties-diverge';
+        }
+    }
+    return $problems;
+}
+
+/** Binding findings sort deterministically by semantic id, then code. */
+function php_types_sort_binding_findings(array $findings): array
+{
+    usort($findings, static fn (array $left, array $right): int => strcmp(
+        $left['semanticId'] . '|' . $left['code'],
+        $right['semanticId'] . '|' . $right['code'],
+    ));
+    return $findings;
+}
+
+/**
+ * Validate the parsed evidence document shape (closed): returns the
+ * document or null. A present-but-invalid document refuses upstream
+ * rather than joining over untyped bytes.
+ */
+function php_validate_types_evidence(mixed $document): ?array
+{
+    if (!is_array($document)
+        || ($document['schemaVersion'] ?? null) !== PHP_TYPES_EVIDENCE_SCHEMA_VERSION
+        || ($document['identity'] ?? null) !== PHP_TYPES_EVIDENCE_IDENTITY
+        || !is_array($document['classes'] ?? null)) {
+        return null;
+    }
+    foreach ($document['classes'] as $record) {
+        if (!is_array($record)
+            || !is_string($record['semanticId'] ?? null)
+            || !is_string($record['fqn'] ?? null)
+            || !is_string($record['path'] ?? null)
+            || !is_string($record['sourceDigest'] ?? null)
+            || !is_string($record['kind'] ?? null)) {
+            return null;
+        }
+    }
+    return $document;
 }
 
 exit(main());

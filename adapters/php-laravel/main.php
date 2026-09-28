@@ -13,5 +13,15 @@ declare(strict_types=1);
 require __DIR__ . '/src/analyzer.php';
 require __DIR__ . '/src/strict-profile.php';
 require __DIR__ . '/src/kernel.php';
+// The scenario compiler and type generator modules (issues #56, #58):
+// the kernel lazy-loads them, so the source-mode entry requires them
+// explicitly to keep the same 1:1 module surface as the bundle.
+require __DIR__ . '/src/scenario-map.php';
+require __DIR__ . '/src/scenario-emit.php';
+require __DIR__ . '/src/type-policy.php';
+require __DIR__ . '/src/type-map.php';
+require __DIR__ . '/src/type-codec.php';
+require __DIR__ . '/src/type-emit.php';
+require __DIR__ . '/src/type-bindings.php';
 
 exit(main());

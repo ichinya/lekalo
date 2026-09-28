@@ -46,7 +46,17 @@ function fail(string $message): never
 $adapterRoot = dirname(__FILE__);
 $artifactPath = $adapterRoot . '/adapter.php';
 $lockPath = $adapterRoot . '/mago-toolchain.lock.json';
-$scenarioModulePaths = [$adapterRoot . '/src/scenario-map.php', $adapterRoot . '/src/scenario-emit.php'];
+$scenarioModulePaths = [
+    $adapterRoot . '/src/scenario-map.php',
+    $adapterRoot . '/src/scenario-emit.php',
+    // The type-generator modules ride last, in the fixed order the
+    // kernel's `load_type_modules()` names (issue #58).
+    $adapterRoot . '/src/type-policy.php',
+    $adapterRoot . '/src/type-map.php',
+    $adapterRoot . '/src/type-codec.php',
+    $adapterRoot . '/src/type-emit.php',
+    $adapterRoot . '/src/type-bindings.php',
+];
 
 $lockBytes = file_get_contents($lockPath);
 if ($lockBytes === false || $lockBytes === '') {
@@ -81,7 +91,7 @@ foreach ($scenarioModulePaths as $modulePath) {
     if (!str_starts_with($module, "<?php\n")) {
         fail('build: scenario module must start with the open tag: ' . basename($modulePath));
     }
-    $scenarioModules .= "\n// ----- scenario compiler module: " . basename($modulePath) . " -----\n\n"
+    $scenarioModules .= "\n// ----- bundled compiler module: " . basename($modulePath) . " -----\n\n"
         . substr($module, 6);
 }
 

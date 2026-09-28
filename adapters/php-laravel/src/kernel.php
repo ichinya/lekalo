@@ -91,6 +91,7 @@ const DECLARED_CAPABILITIES = [
     'generate.zod' => 'unsupported',
     'generate.openapi' => 'unsupported',
     'generate.ui' => 'unsupported',
+    'generate.types' => 'full',
     'scan.symbols' => 'unsupported',
     'verify.scenarios' => 'full',
     'verify.transport-http' => 'unsupported',
@@ -139,6 +140,36 @@ function load_scenario_modules(): void
         return;
     }
     foreach ([__DIR__ . '/scenario-map.php', __DIR__ . '/scenario-emit.php'] as $module) {
+        if (!is_file($module)) {
+            throw new RequestRefusal('compiler-module-missing');
+        }
+        require_once $module;
+    }
+}
+
+/**
+ * The type-generator modules, in fixed load order (issue #58). The
+ * same lazy pattern as the scenario compiler: inside the shipped
+ * artifact the modules are already appended and loading is a no-op;
+ * the source-tree kernel loads them directly.
+ */
+function load_type_modules(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+    $loaded = true;
+    if (function_exists('php_map_types') && function_exists('php_emit_types')) {
+        return;
+    }
+    foreach ([
+        __DIR__ . '/type-policy.php',
+        __DIR__ . '/type-map.php',
+        __DIR__ . '/type-codec.php',
+        __DIR__ . '/type-emit.php',
+        __DIR__ . '/type-bindings.php',
+    ] as $module) {
         if (!is_file($module)) {
             throw new RequestRefusal('compiler-module-missing');
         }
@@ -1041,6 +1072,17 @@ function is_scenario_ir_path(string $path): bool
 }
 
 /**
+ * The bounded types-input path convention (issue #58): documents under
+ * `lekalo/types/` carrying the `.types.json` suffix drive the type
+ * generator, exactly like the scenario and migration conventions.
+ */
+function is_types_ir_path(string $path): bool
+{
+    return str_starts_with($path, 'lekalo/types/')
+        && str_ends_with($path, '.types.json');
+}
+
+/**
  * The deterministic generation entry (issue #56): a scenario document
  * at `ir_path` maps to the full Laratesto test set (support files plus
  * one test and one canonical sidecar per scenario); anything else
@@ -1059,6 +1101,44 @@ function deterministic_generation(array $request): array
         if ($outcome['findings'] !== []) {
             // Capability honesty: the mapper cannot express the document.
             // Nothing is emitted and nothing is written.
+            return [
+                'path' => null,
+                'bytes' => '',
+                'digest' => null,
+                'writes' => [],
+                'findings' => $outcome['findings'],
+            ];
+        }
+        $writes = [];
+        $skipWrites = $outcome['skip_writes'] ?? [];
+        foreach ($outcome['files'] as $file) {
+            if (isset($skipWrites[$file['path']])) {
+                continue;
+            }
+            $writes[] = [
+                'path' => $file['path'],
+                'action' => 'create',
+                'sha256' => $file['digest'],
+            ];
+        }
+        return [
+            'path' => null,
+            'bytes' => '',
+            'digest' => null,
+            'writes' => $writes,
+            'files' => $outcome['files'],
+            'findings' => [],
+        ];
+    }
+    if (is_string($irPath) && is_types_ir_path($irPath)) {
+        $outcome = type_generation($request);
+        if (isset($outcome['refusal'])) {
+            throw new RequestRefusal($outcome['refusal']);
+        }
+        if ($outcome['findings'] !== []) {
+            // Capability honesty: an unsupported projection or a failed
+            // checked join vetoes every write — zero partial emission,
+            // zero success receipt.
             return [
                 'path' => null,
                 'bytes' => '',
@@ -1261,6 +1341,230 @@ function read_view_file(string $path): ?string
         return $bytes === false ? null : $bytes;
     }
     return null;
+}
+
+// ---------------------------------------------------------------------------
+// The type generator (issue #58): map → emit → custody.
+// ---------------------------------------------------------------------------
+
+/**
+ * The type generator entry: a types-input document at `ir_path` maps
+ * the compiled IR to the closed type inventory and emits the custody's
+ * files. A mapping finding or a failed checked join vetoes every write
+ * exactly like the Node pipeline; the three custody modes select the
+ * emission root and the custody flags, never a different compiler.
+ */
+function type_generation(array $request): array
+{
+    $irPath = $request['ir_path'] ?? '';
+    if (!is_string($irPath) || !is_types_ir_path($irPath)) {
+        // Not a types document: the scenario/migration/kernel paths own it.
+        return ['not-types' => true, 'files' => [], 'findings' => []];
+    }
+    load_type_modules();
+    $inputText = read_view_file($irPath);
+    if ($inputText === null) {
+        return ['refusal' => 'types-input-unreadable', 'files' => [], 'findings' => []];
+    }
+    try {
+        $document = json_decode($inputText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'types-input-shape', 'files' => [], 'findings' => []];
+    }
+    if (is_array($document)
+        && isset($document['schemaVersion'], $document['identity'])
+        && ($document['schemaVersion'] !== PHP_TYPES_INPUT_SCHEMA_VERSION
+            || $document['identity'] !== PHP_TYPES_INPUT_IDENTITY)) {
+        // A recognizable but different contract generation is an
+        // identity refusal, never a shape guess.
+        return ['refusal' => 'types-input-identity', 'files' => [], 'findings' => []];
+    }
+    $input = php_validate_types_input($document);
+    if ($input === null) {
+        return ['refusal' => 'types-input-shape', 'files' => [], 'findings' => []];
+    }
+    $irEvidenceText = read_view_file(IR_EVIDENCE_HOME . '/' . $input['projectId'] . '.json');
+    if ($irEvidenceText === null) {
+        return ['refusal' => 'types-ir-unreadable', 'files' => [], 'findings' => []];
+    }
+    try {
+        $irEvidence = json_decode($irEvidenceText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'types-ir-shape', 'files' => [], 'findings' => []];
+    }
+    if (!is_array($irEvidence) || ($irEvidence['contract'] ?? null) !== PHP_TYPES_IR_IDENTITY) {
+        return ['refusal' => 'types-ir-identity', 'files' => [], 'findings' => []];
+    }
+    if (!is_sha256_digest($input['irDigest']) || sha256_digest($irEvidenceText) !== $input['irDigest']) {
+        // The input names the exact evidence bytes it consumes: any
+        // divergence is a binding refusal, never a best-effort read.
+        return ['refusal' => 'types-input-digest', 'files' => [], 'findings' => []];
+    }
+    $policy = $input['policy'];
+    $mapped = php_map_types([
+        'ir' => $irEvidence,
+        'policy' => $policy,
+        'irDigest' => $input['irDigest'],
+        'inputDigest' => sha256_digest($inputText),
+    ]);
+    if ($mapped['state'] === 'refused') {
+        return ['refusal' => $mapped['refusal'], 'files' => [], 'findings' => []];
+    }
+    if ($policy['custody'] === 'checked') {
+        // Checked custody: zero writes, read-only conformance against
+        // the observed evidence. Missing evidence is a finding for
+        // every declared id — never conformant, never a rewrite.
+        $findings = php_check_type_bindings($mapped, read_types_evidence(),
+            static function (string $path): ?string {
+                $digest = is_file($path) ? hash_file('sha256', $path) : false;
+                return $digest === false ? null : 'sha256:' . $digest;
+            });
+        return ['files' => [], 'findings' => types_wire_findings($findings), 'types' => $mapped];
+    }
+    if ($mapped['state'] === 'unsupported') {
+        // Unsupported projections veto the whole generation: no partial
+        // DTO publication, no success receipt, no fabricated capability.
+        return ['files' => [], 'findings' => types_wire_findings($mapped['findings']), 'types' => $mapped];
+    }
+    $root = $policy['custody'] === 'scaffold-once' ? (string) $policy['scaffoldRoot'] : PHP_TYPES_GENERATED_ROOT;
+    $emitted = php_emit_types([
+        'projectId' => $input['projectId'],
+        'mapped' => $mapped,
+        'adapterVersion' => ADAPTER_VERSION,
+        'root' => $root,
+    ]);
+    $files = [];
+    $skipWrites = [];
+    $scaffold = $policy['custody'] === 'scaffold-once';
+    if ($scaffold) {
+        // Scaffold-once custody: the sidecar is the bundle marker. With
+        // the marker present the whole scaffold is user-owned and no
+        // write is planned; with the marker absent, ANY pre-existing
+        // path refuses — a marker alone never grants overwrite
+        // authority, and an unowned file is never adopted.
+        $marker = $root . '/types.map.json';
+        if (is_file($marker)) {
+            foreach ($emitted['files'] as $file) {
+                $skipWrites[$file['path']] = true;
+            }
+        } else {
+            foreach ($emitted['files'] as $file) {
+                if (is_file($file['path'])) {
+                    return ['refusal' => 'types-scaffold-unowned', 'files' => [], 'findings' => []];
+                }
+            }
+        }
+    }
+    foreach ($emitted['files'] as $file) {
+        $entry = [
+            'path' => $file['path'],
+            'bytes' => $file['text'],
+            'digest' => 'sha256:' . hash('sha256', $file['text']),
+        ];
+        if ($scaffold) {
+            $entry['frozen'] = true;
+            $entry['marker'] = $root . '/types.map.json';
+        }
+        $files[] = $entry;
+    }
+    return ['files' => $files, 'findings' => [], 'skip_writes' => $skipWrites];
+}
+
+/** The parsed observed evidence document, or null when absent/corrupt. */
+function read_types_evidence(): ?array
+{
+    $text = read_view_file(PHP_TYPES_EVIDENCE_PATH);
+    if ($text === null) {
+        return null;
+    }
+    try {
+        $document = json_decode($text, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return null;
+    }
+    return php_validate_types_evidence($document);
+}
+
+/**
+ * Map the closed internal findings to the bounded wire rows: semantic
+ * id as path, reason+pointer+detail in one clamped detail.
+ */
+function types_wire_findings(array $findings): array
+{
+    $rows = [];
+    foreach ($findings as $finding) {
+        $detail = ($finding['reason'] ?? $finding['code'])
+            . (isset($finding['pointer']) ? ' at ' . $finding['pointer'] : '')
+            . ': ' . ($finding['detail'] ?? '');
+        $rows[] = [
+            'path' => $finding['semanticId'] ?? 'php-types',
+            'code' => $finding['code'],
+            'detail' => utf8_safe_clamp($detail, 128),
+        ];
+    }
+    return $rows;
+}
+
+/**
+ * The types validate exchange (issue #58): the same read-and-map path
+ * generate uses, but no writes ever result. Mapping findings are the
+ * answer; an empty set is an honest empty findings answer.
+ */
+function types_validate_response(array $request): array
+{
+    $outcome = type_generation($request);
+    if (isset($outcome['refusal'])) {
+        return ['error' => [
+            'class' => 'invalid',
+            'code' => $outcome['refusal'],
+            'message' => 'the types input could not be read or mapped',
+            'retryable' => false,
+            'partial' => false,
+        ]];
+    }
+    return build_response($request, ['result' => ['ok' => true, 'findings' => $outcome['findings']]]);
+}
+
+/**
+ * The types verify exchange (issue #58): managed files are compared by
+ * exact digest (missing/drifted are `php-types.drift` findings); the
+ * scaffold is existence-checked only (a removed file with a surviving
+ * marker is `php-types.scaffold-missing`); checked custody re-runs the
+ * strict join.
+ */
+function types_verify_response(array $request): array
+{
+    $outcome = type_generation($request);
+    if (isset($outcome['refusal'])) {
+        return ['error' => [
+            'class' => 'invalid',
+            'code' => $outcome['refusal'],
+            'message' => 'the types input could not be read or mapped',
+            'retryable' => false,
+            'partial' => false,
+        ]];
+    }
+    $findings = $outcome['findings'];
+    foreach ($outcome['files'] as $file) {
+        if (($file['frozen'] ?? false) === true) {
+            if (!is_file($file['path']) && is_file($file['marker'])) {
+                $findings[] = [
+                    'path' => $file['path'],
+                    'code' => 'php-types.scaffold-missing',
+                    'detail' => 'scaffolded-type-removed',
+                ];
+            }
+            continue;
+        }
+        $expectedDigest = $file['digest'];
+        $actual = is_file($file['path']) ? hash_file('sha256', $file['path']) : false;
+        if ($actual === false) {
+            $findings[] = ['path' => $file['path'], 'code' => 'php-types.drift', 'detail' => 'missing'];
+        } elseif ($actual !== substr($expectedDigest, 7)) {
+            $findings[] = ['path' => $file['path'], 'code' => 'php-types.drift', 'detail' => 'drifted'];
+        }
+    }
+    return build_response($request, ['result' => ['ok' => true, 'findings' => $findings]]);
 }
 
 /**
@@ -1757,6 +2061,9 @@ function adapter_identity(): array
 function describe_capabilities(?Analyzer $analyzer = null): array
 {
     $analyzer ??= new FakeAnalyzer();
+    // The type-policy module carries the closed scaffold-root constant
+    // the declared write scope names; load before describing.
+    load_type_modules();
     return [
         'adapter' => adapter_identity(),
         'protocol_versions' => SUPPORTED_VERSIONS,
@@ -1764,11 +2071,12 @@ function describe_capabilities(?Analyzer $analyzer = null): array
         'transports' => ['stdin', 'file'],
         'targets' => [TARGET_TOKEN],
         'profiles' => [PROFILE_TOKEN, STRICT_PROFILE_TOKEN],
-        'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**', '.lekalo/import/**'],
+        'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**', '.lekalo/import/**', 'lekalo/php-test-port.json', 'lekalo/scenarios/**', 'lekalo/types/**'],
         'write_scopes' => array_merge(
             ['.lekalo/generated/php-laravel/**'],
             SCENARIO_WRITE_SCOPES,
             [PHP_SCAFFOLD_SCOPE],
+            [PHP_TYPES_SCAFFOLD_ROOT . '/**'],
         ),
         'progress' => false,
         'ir_versions' => [IR_VERSION],
@@ -2010,10 +2318,15 @@ function mago_wire_confidence(string $confidence): string
  */
 function validate_response(array $request, ?Analyzer $analyzer = null): array
 {
-    // A scenario document takes the scenario gate (issue #56); every
-    // other input keeps the analysis-seam gate (#55).
-    if (is_scenario_ir_path(is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '')) {
+    // A scenario document takes the scenario gate (issue #56); a types
+    // document takes the type-mapping gate (issue #58); every other
+    // input keeps the analysis-seam gate (#55).
+    $irPath = is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '';
+    if (is_scenario_ir_path($irPath)) {
         return scenario_validate_response($request);
+    }
+    if (is_types_ir_path($irPath)) {
+        return types_validate_response($request);
     }
     $analyzer ??= new FakeAnalyzer();
     // Profile closure: only the two declared spellings are meaningful;
@@ -2075,9 +2388,14 @@ function validate_response(array $request, ?Analyzer $analyzer = null): array
 function verify_response(array $request, ?Analyzer $analyzer = null): array
 {
     // Scenario documents verify through the scenario drift gate (issue
-    // #56); everything else keeps the analysis-seam gate (#55).
-    if (is_scenario_ir_path(is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '')) {
+    // #56); types documents through the type drift/join gate (issue
+    // #58); everything else keeps the analysis-seam gate (#55).
+    $irPath = is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '';
+    if (is_scenario_ir_path($irPath)) {
         return scenario_verify_response($request);
+    }
+    if (is_types_ir_path($irPath)) {
+        return types_verify_response($request);
     }
     return validate_response($request, $analyzer);
 }
@@ -2359,7 +2677,8 @@ function plan_clean_response(array $request): array
     $plan = [];
     foreach ($writes as $entry) {
         if (retained_artifact($entry['path'])
-            || scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])) {
+            || scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])
+            || scope_covers(types_scaffold_scope(), $entry['path'])) {
             continue;
         }
         $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
@@ -2368,6 +2687,17 @@ function plan_clean_response(array $request): array
         'writes' => $plan,
         'evidence_plan_id' => plan_id($plan),
     ]);
+}
+
+/**
+ * The user-owned scaffold scope of type generation (issue #58): the
+ * closed consumer root is recognized by path convention, so a policy
+ * cannot silently move a scaffold under an unrecognized root.
+ */
+function types_scaffold_scope(): string
+{
+    load_type_modules();
+    return PHP_TYPES_SCAFFOLD_ROOT . '/**';
 }
 
 /**
@@ -2402,7 +2732,8 @@ function clean_response(array $request): array
     }
     $plan = [];
     foreach ($writes as $entry) {
-        if (scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])) {
+        if (scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])
+            || scope_covers(types_scaffold_scope(), $entry['path'])) {
             continue;
         }
         $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
