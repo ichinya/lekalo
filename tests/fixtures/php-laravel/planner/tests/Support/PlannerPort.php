@@ -13,7 +13,7 @@ use Testo\Assert;
  * The planner ScenarioPort of the fixture project (issue #56, S4).
  *
  * This class is the ONLY seam generated scenario tests may bind to: the
- * project's `lekalo/test-port.json` declares it, and the generated
+ * project's `lekalo/php-test-port.json` declares it, and the generated
  * `port.php` shim resolves exactly this class. The closed port surface
  * mirrors the Node fixture port (issue #47):
  *
