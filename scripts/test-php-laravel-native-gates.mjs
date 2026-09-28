@@ -131,6 +131,8 @@ if ($operation === 'decoder') {
         ['interactive-artisan', ['gate:x' => '@php artisan tinker'], 'script-network-or-interactive'],
         ['env-assignment', ['gate:x' => 'FOO=1 @php bin/console'], 'script-package-manager'],
         ['redirect', ['gate:x' => '@php bin/a > out.txt'], 'script-shell-syntax'],
+        ['flag-leaf', ['gate:x' => '@php --version'], 'script-program-path'],
+        ['inline-program', ['gate:x' => '@php -v'], 'script-program-path'],
     ];
     $failures = [];
     foreach ($probes as [$name, $scripts, $expected]) {

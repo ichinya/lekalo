@@ -7063,6 +7063,13 @@ function php_decode_script_string(string $text, array $scripts, string $name, ar
                     return ['ok' => false, 'reason' => 'script-package-manager'];
                 }
             }
+            // The confirmed-program invariant: argv[1] is a repo-
+            // relative file the host stages and digests. A flag-shaped
+            // leaf (@php -r ..., @php --version) would hand the pinned
+            // interpreter an inline program, so it is refused.
+            if (str_starts_with($tokens[0], '-')) {
+                return ['ok' => false, 'reason' => 'script-program-path'];
+            }
             if ($tokens[0] === 'artisan' && php_artisan_token_forbidden($tokens)) {
                 return ['ok' => false, 'reason' => 'script-network-or-interactive'];
             }
