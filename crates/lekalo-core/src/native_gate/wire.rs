@@ -64,6 +64,17 @@ fn is_logical_path(value: &str) -> bool {
     crate::target_protocol::scopes::is_logical_path(value)
 }
 
+/// Whether one string is a grammatical env name: uppercase with digits
+/// and underscores, exactly the shape the JSON schema requires.
+fn is_env_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value.starts_with(|c: char| c.is_ascii_uppercase())
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+}
+
 const GATE_KINDS: [&str; 4] = ["build", "typecheck", "lint", "test"];
 /// The closed v0.4.0 gate-kind metadata set (issue #61): the gate
 /// member stays the four-value execution class, the gate_kind member
@@ -325,12 +336,52 @@ pub fn validate_plan(plan: &NativePlan) -> Result<(), PlanRejection> {
             return shape("command-limits");
         }
     }
+    // Depends_on endpoints must resolve to declared command ids: a
+    // dangling endpoint would order a command against nothing.
+    for command in &plan.commands {
+        for dependency in &command.depends_on {
+            if !command_ids.contains(dependency) {
+                return shape("command-depends-on");
+            }
+        }
+    }
     // Trust: the plan never claims more than the accepted generations.
     if plan.trust.mode != "private"
         && plan.trust.mode != "untrusted"
         && plan.trust.mode != "public-fixture"
     {
         return shape("trust-mode");
+    }
+    // Env recipe cross-checks (the schema spells the grammars; the
+    // approvals are cross-member): allowed names and binding names use
+    // the closed env grammar, binding kinds come from the closed set,
+    // and every command's env grants must ride the approved names.
+    for name in &plan.env.allowed_names {
+        if !is_env_name(name) {
+            return shape("env-allowed-name");
+        }
+    }
+    for binding in &plan.env.bindings {
+        if !is_env_name(&binding.name) {
+            return shape("env-binding-name");
+        }
+        if ![
+            "literal",
+            "execution-temp",
+            "execution-home",
+            "platform-system-root",
+        ]
+        .contains(&binding.kind.as_str())
+        {
+            return shape("env-binding-kind");
+        }
+    }
+    for command in &plan.commands {
+        for name in &command.env {
+            if !is_env_name(name) || !plan.env.allowed_names.contains(name) {
+                return shape("command-env-unapproved");
+            }
+        }
     }
     if !is_sha256(&plan.input_manifest_digest)
         || !is_sha256(&plan.tool_catalog_digest)
@@ -474,6 +525,41 @@ mod tests {
         assert_eq!(
             validate_plan(&plan).unwrap_err(),
             PlanRejection::Shape("selection-mode-disagree")
+        );
+    }
+
+    #[test]
+    fn a_dangling_depends_on_endpoint_is_refused() {
+        let mut plan = golden_plan();
+        plan.commands[0].depends_on = vec!["never-planned-command".to_owned()];
+        plan.plan_digest = plan_digest(&plan);
+        assert_eq!(
+            validate_plan(&plan).unwrap_err(),
+            PlanRejection::Shape("command-depends-on")
+        );
+    }
+
+    #[test]
+    fn a_command_env_grant_outside_the_approved_names_is_refused() {
+        let mut plan = golden_plan();
+        plan.env.allowed_names = vec!["APPROVED_VAR".to_owned()];
+        plan.commands[0].env = vec!["UNAPPROVED_VAR".to_owned()];
+        plan.plan_digest = plan_digest(&plan);
+        assert_eq!(
+            validate_plan(&plan).unwrap_err(),
+            PlanRejection::Shape("command-env-unapproved")
+        );
+        // The approved grant passes, and the env-name grammar is
+        // enforced on the allowed-names list itself.
+        plan.commands[0].env = vec!["APPROVED_VAR".to_owned()];
+        plan.plan_digest = plan_digest(&plan);
+        assert!(validate_plan(&plan).is_ok());
+        plan.env.allowed_names = vec!["lowercase_var".to_owned()];
+        plan.commands[0].env = vec![];
+        plan.plan_digest = plan_digest(&plan);
+        assert_eq!(
+            validate_plan(&plan).unwrap_err(),
+            PlanRejection::Shape("env-allowed-name")
         );
     }
 

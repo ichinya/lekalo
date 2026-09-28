@@ -1131,7 +1131,7 @@ mod runner_tests {
                 "cwd": ".",
                 "tool_ref": "node-runtime",
                 "argv": ["node", "-e", script],
-                "env": ["LEKALO_TEST_GRANT", "SystemRoot"],
+                "env": ["LEKALO_TEST_GRANT", "SYSTEMROOT"],
                 "depends_on": [],
                 "affected_reason_refs": [".=fixture/project#changed-package"],
                 "read_manifest_ref": format!("sha256:{}", "bb".repeat(32)),
@@ -1145,8 +1145,8 @@ mod runner_tests {
                 }
             }],
             "env": {
-                "allowed_names": ["LEKALO_TEST_GRANT", "SystemRoot"],
-                "bindings": [{"name": "LEKALO_TEST_GRANT", "kind": "literal", "value": "granted-value"}, {"name": "SystemRoot", "kind": "platform-system-root"}]
+                "allowed_names": ["LEKALO_TEST_GRANT", "SYSTEMROOT"],
+                "bindings": [{"name": "LEKALO_TEST_GRANT", "kind": "literal", "value": "granted-value"}, {"name": "SYSTEMROOT", "kind": "platform-system-root"}]
             },
             "tools": [{"id": "node-runtime", "name": "node", "version": "test", "artifact_digest": format!("sha256:{}", "cc".repeat(32)), "platform": "test", "provenance": "fixture-catalog"}],
             "required_capabilities": ["plan.native-gates"],
