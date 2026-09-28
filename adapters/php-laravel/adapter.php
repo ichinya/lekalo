@@ -2035,6 +2035,19 @@ function deterministic_generation(array $request): array
 {
     $irPath = $request['ir_path'] ?? '';
     if (is_string($irPath) && is_scenario_ir_path($irPath)) {
+        return scenario_deterministic_generation($request, $irPath);
+    }
+    $typesRequest = resolve_types_request($request);
+    if ($typesRequest !== null) {
+        return types_deterministic_generation($typesRequest);
+    }
+    return kernel_deterministic_generation($request);
+}
+
+/** The scenario branch of the deterministic generation entry. */
+function scenario_deterministic_generation(array $request, string $irPath): array
+{
+    {
         $outcome = scenario_generation($request);
         if (isset($outcome['refusal'])) {
             throw new RequestRefusal($outcome['refusal']);
@@ -2071,7 +2084,46 @@ function deterministic_generation(array $request): array
             'findings' => [],
         ];
     }
-    if (is_string($irPath) && is_types_ir_path($irPath)) {
+}
+
+/**
+ * The types request for one incoming request, or null when the request
+ * does not drive type generation: either the ir_path is already a
+ * types input document, or it is the core's staged IR evidence whose
+ * project carries a declared types input beside it (issue #58).
+ */
+function resolve_types_request(array $request): ?array
+{
+    $irPath = $request['ir_path'] ?? '';
+    if (!is_string($irPath)) {
+        return null;
+    }
+    if (is_types_ir_path($irPath)) {
+        return $request;
+    }
+    if (!is_types_evidence_path($irPath)) {
+        return null;
+    }
+    $typesDoc = 'lekalo/types/' . basename($irPath, '.json') . '.types.json';
+    if (!is_types_ir_path($typesDoc) || read_view_file($typesDoc) === null) {
+        return null;
+    }
+    $flipped = $request;
+    $flipped['ir_path'] = $typesDoc;
+    return $flipped;
+}
+
+/** Whether one path is the core's staged IR evidence home. */
+function is_types_evidence_path(string $path): bool
+{
+    return str_starts_with($path, IR_EVIDENCE_HOME . '/')
+        && str_ends_with($path, '.json');
+}
+
+/** The types branch of the deterministic generation entry. */
+function types_deterministic_generation(array $request): array
+{
+    {
         $outcome = type_generation($request);
         if (isset($outcome['refusal'])) {
             throw new RequestRefusal($outcome['refusal']);
@@ -2109,6 +2161,11 @@ function deterministic_generation(array $request): array
             'findings' => [],
         ];
     }
+}
+
+/** The kernel-artifact fallback of the deterministic generation entry. */
+function kernel_deterministic_generation(array $request): array
+{
     $artifact = kernel_artifact($request);
     $writes = [[
         'path' => $artifact['path'],
@@ -3280,8 +3337,8 @@ function validate_response(array $request, ?Analyzer $analyzer = null): array
     if (is_scenario_ir_path($irPath)) {
         return scenario_validate_response($request);
     }
-    if (is_types_ir_path($irPath)) {
-        return types_validate_response($request);
+    if (resolve_types_request($request) !== null) {
+        return types_validate_response(resolve_types_request($request));
     }
     $analyzer ??= new FakeAnalyzer();
     // Profile closure: only the two declared spellings are meaningful;
@@ -3349,8 +3406,8 @@ function verify_response(array $request, ?Analyzer $analyzer = null): array
     if (is_scenario_ir_path($irPath)) {
         return scenario_verify_response($request);
     }
-    if (is_types_ir_path($irPath)) {
-        return types_verify_response($request);
+    if (resolve_types_request($request) !== null) {
+        return types_verify_response(resolve_types_request($request));
     }
     return validate_response($request, $analyzer);
 }

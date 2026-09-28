@@ -934,6 +934,20 @@ fn source_map_binding_for(
     };
     let value: serde_json::Value =
         serde_json::from_slice(&bytes).map_err(|_| ArtifactFailure::SourceMapInvalid)?;
+    // Identity first: the `.map.json` suffix is a sidecar convention, not
+    // every sidecar's contract (issue #58). A document that does not
+    // carry a `declarations` member is not a source map — the PHP types
+    // mapping sidecar rides the same suffix under the generated and
+    // scaffold homes — so it binds nothing and never fails the apply. A
+    // document that DOES claim declarations but cannot validate as a
+    // source map stays a hard failure: a corrupt map never half-records.
+    if value
+        .get("declarations")
+        .and_then(serde_json::Value::as_array)
+        .is_none()
+    {
+        return Ok(None);
+    }
     let declarations = value
         .get("declarations")
         .and_then(serde_json::Value::as_array)
