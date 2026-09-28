@@ -16,8 +16,9 @@ use serde::Serialize;
 /// adds `generate.transport-http` and `verify.transport-http`
 /// (issue #70), `generate.storage-ddl` and `scan.storage-schema`
 /// (issue #69), `scan.schema`/`verify.schema-projection`
-/// (issue #117), `preserve.classification` (issue #87), and
-/// `generate.client-sdk` (issue #72).
+/// (issue #117), `preserve.classification` (issue #87),
+/// `generate.client-sdk` (issue #72), and `generate.types`
+/// (issue #58).
 pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.4.0";
 
 /// One versioned capability definition.
@@ -54,6 +55,12 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         definition_version: "0.4.0",
         domain: "generate",
         semantics: "Emits-or-applies the core-rendered deterministic storage DDL and migration plan documents under the `generate` operation. `full` applies every core-proposed, digest-addressed document the adapter accepted (the plan's planId stays the apply authority); `partial` covers a declared subset; `unsupported` never applies; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "generate.types",
+        definition_version: "0.4.0",
+        domain: "generate",
+        semantics: "Emits the strict PHP type surface (nominal scalar wrappers, string-backed enums, immutable value objects and DTOs, concrete presence wrappers, and per-type codecs) from the compiled project IR under the declared custody mode (issue #58). `full` covers every mapped definition or refuses the whole generation as unsupported; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
         id: "generate.transport-http",
@@ -148,6 +155,7 @@ mod tests {
                 "generate.client-sdk",
                 "generate.openapi",
                 "generate.storage-ddl",
+                "generate.types",
                 "generate.transport-http",
                 "generate.ui",
                 "generate.zod",
