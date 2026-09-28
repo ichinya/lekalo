@@ -2071,7 +2071,21 @@ function describe_capabilities(?Analyzer $analyzer = null): array
         'transports' => ['stdin', 'file'],
         'targets' => [TARGET_TOKEN],
         'profiles' => [PROFILE_TOKEN, STRICT_PROFILE_TOKEN],
-        'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**', '.lekalo/import/**', 'lekalo/php-test-port.json', 'lekalo/scenarios/**', 'lekalo/types/**'],
+        'read_scopes' => [
+            '.lekalo/cache/**',
+            '.lekalo/ir/**',
+            '.lekalo/import/**',
+            'lekalo/php-test-port.json',
+            'lekalo/scenarios/**',
+            'lekalo/types/**',
+            // Managed types and the scaffold home are read back for the
+            // drift and checked-custody gates: write authority only
+            // reveals a staged output's shape, so reading the bytes an
+            // exchange verifies requires these explicit scopes (issue
+            // #58).
+            '.lekalo/generated/php-laravel/types/**',
+            'app/lekalo-types/**',
+        ],
         'write_scopes' => array_merge(
             ['.lekalo/generated/php-laravel/**'],
             SCENARIO_WRITE_SCOPES,
