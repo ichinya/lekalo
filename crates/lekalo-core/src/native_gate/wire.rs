@@ -480,7 +480,9 @@ mod tests {
     #[test]
     fn a_mandatory_gate_id_without_an_executed_command_is_refused() {
         let mut plan = golden_plan();
-        plan.selection.mandatory_gate_ids.push("never-planned-gate".into());
+        plan.selection
+            .mandatory_gate_ids
+            .push("never-planned-gate".into());
         plan.plan_digest = plan_digest(&plan);
         assert_eq!(
             validate_plan(&plan).unwrap_err(),

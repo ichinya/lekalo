@@ -140,7 +140,10 @@ pub fn validate_policy(bytes: &[u8]) -> Result<ExecutionPolicy, PlanRejection> {
         {
             return Err(PlanRejection::Shape("confirmation-cwd"));
         }
-        if !joined.insert((confirmation.package_id.clone(), confirmation.gate_id.clone())) {
+        if !joined.insert((
+            confirmation.package_id.clone(),
+            confirmation.gate_id.clone(),
+        )) {
             return Err(PlanRejection::Shape("confirmation-join"));
         }
         if !is_sha256(&confirmation.manifest_digest)
@@ -170,7 +173,7 @@ pub fn validate_policy(bytes: &[u8]) -> Result<ExecutionPolicy, PlanRejection> {
                     .fallback_rule
                     .get("rule_digest")
                     .and_then(|v| v.as_str())
-                    .is_some_and(|digest| is_sha256(digest))
+                    .is_some_and(is_sha256)
                 {
                     return Err(PlanRejection::Shape("fallback-digest"));
                 }

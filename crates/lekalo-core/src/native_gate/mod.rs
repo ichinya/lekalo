@@ -1,27 +1,35 @@
-//! The native gate host API (issue #48).
+//! The native gate host API (issue #48, extended for #61).
 //!
 //! This module is the pure, independently validating core side of the
 //! native gate lifecycle: strict plan validation, checked execution
 //! policies, digest recomputation over the pinned domain, plan-only
-//! execution refusals, normalized run receipts, and the composite
-//! observed view projection. There is deliberately no process launch
-//! here: the only execution path is the test-only fixture runner under
-//! `#[cfg(test)]` (see `fixture_tests.rs`), which reuses the audited
-//! confinement backends. The production `native run` surface ends
-//! before any fixture execution with a typed refusal.
+//! execution refusals, normalized run receipts, the composite observed
+//! view projection, and — since #61 — the qualified host runner
+//! (`runner.rs`) with its evidence layer (`evidence.rs`). The runner is
+//! reachable only through callers that present qualified runtime
+//! capability evidence; every shipped production path still ends
+//! before any launch with a typed refusal (`production_run`), and the
+//! only execution paths exercised in this repository are the test
+//! batteries (`fixture_tests.rs`, `runner_tests`).
 
 mod diagnostic;
+mod evidence;
 #[cfg(test)]
 mod fixture_tests;
 mod policy;
 mod receipt;
+mod runner;
 mod types;
 mod view;
 mod wire;
 
 pub use diagnostic::{native_gate_rule, NativeGateFailure};
+pub use evidence::{FailureClass, OutputCaps, RedactedOutput};
 pub use policy::validate_policy;
 pub use receipt::{validate_run_request, validate_run_result};
+pub use runner::{
+    run_confirmed_plan, CatalogEntry, ConfirmedRun, RunnerCatalog, RuntimeCapability,
+};
 pub use types::*;
 pub use view::{build_view, validate_view};
 
@@ -108,12 +116,7 @@ pub fn production_run(plan_bytes: &[u8]) -> Result<NativeRunResult, NativeGateFa
         commands: Vec::new(),
         coverage: NativeCoverage {
             state: "unknown".to_owned(),
-            uncovered_gate_ids: plan
-                .selection
-                .mandatory_gate_ids
-                .iter()
-                .cloned()
-                .collect(),
+            uncovered_gate_ids: plan.selection.mandatory_gate_ids.to_vec(),
         },
         mutation_summary: Default::default(),
         original_verification: NativeOriginalVerification {
@@ -205,11 +208,14 @@ mod tests {
 
     #[test]
     fn the_selection_digest_is_the_pinned_domain_over_the_selection_member() {
-        let plan_bytes =
-            include_bytes!("../../../../tests/fixtures/node-native-gates/protocol/plan.golden.json");
-        let plan: NativePlan =
-            serde_json::from_slice(plan_bytes).expect("golden plan decodes");
-        assert_eq!(selection_digest(&plan.selection), plan.commands[0].selection_ref);
+        let plan_bytes = include_bytes!(
+            "../../../../tests/fixtures/node-native-gates/protocol/plan.golden.json"
+        );
+        let plan: NativePlan = serde_json::from_slice(plan_bytes).expect("golden plan decodes");
+        assert_eq!(
+            selection_digest(&plan.selection),
+            plan.commands[0].selection_ref
+        );
         // The selection document cannot drift after approval: a changed
         // member changes every command's selection_ref and therefore
         // the approved plan digest.

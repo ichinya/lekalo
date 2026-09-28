@@ -134,7 +134,13 @@ pub fn run_fixture_plan(
                         Some("infrastructure".to_owned()),
                     )
                 } else if success.exit_code == 0 {
-                    ("passed", Some(exit), Vec::new(), Some(success.stdout_sha), None)
+                    (
+                        "passed",
+                        Some(exit),
+                        Vec::new(),
+                        Some(success.stdout_sha),
+                        None,
+                    )
                 } else {
                     run_failed = true;
                     (

@@ -1,3 +1,5 @@
+#![recursion_limit = "512"]
+
 //! Target-neutral request and result contracts for Lekalo.
 
 pub mod adapter_conformance;

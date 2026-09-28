@@ -1008,7 +1008,7 @@ mod committed_exemplar_tests {
         assert_eq!(document.adapter_version().as_str(), "0.4.0");
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:917fd4c92b9f4fda27557ef4800c12da701f4ee322ba824a6e2839c4715ed6e5"
+            "sha256:7e97324d3781c31e0d8b7d9b5fbabf3e4f39cdfccc22008840c07741dcbd9db9"
         );
     }
 
