@@ -33,11 +33,6 @@ const GATE_KIND_METADATA = new Set([
   "laratesto", "pest", "phpunit", "artisan-check", "boot-smoke",
   "migration-static", "migration-execute", "discovery-smoke", "legacy-suite",
 ]);
-const FAILURE_CLASSES = new Set([
-  "assertion", "static-analysis", "boot", "missing-tool", "incompatible", "infrastructure",
-]);
-const VERDICTS = new Set(["passed", "failed", "blocked", "degraded"]);
-const SELECTION_MODES = new Set(["targeted", "release-full"]);
 const REASON_KINDS = new Set([
   "changed-package", "dependent-closure", "graph-bound-test",
   "build-prerequisite", "release-rule", "explicit-binding",
