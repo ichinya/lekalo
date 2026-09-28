@@ -663,9 +663,10 @@ fn validate_plan_ownership(prepared: &Prepared, writes: &[WriteEntry]) -> Result
                 home: "ownership-manifest",
             }));
         }
-        if entry.action == WriteAction::Delete {
-            continue;
-        }
+        // Issue #56: the lifecycle denial covers every action — a delete
+        // plan over a recorded scaffolded or checked artifact is the
+        // cleanup-deletes-user-files hazard, refused exactly like a
+        // create or replace over it.
         if let Some(manifest) = prepared.manifest() {
             for recorded in manifest.artifacts() {
                 if recorded.key().path().as_str() == entry.path
@@ -677,6 +678,9 @@ fn validate_plan_ownership(prepared: &Prepared, writes: &[WriteEntry]) -> Result
                     }));
                 }
             }
+        }
+        if entry.action == WriteAction::Delete {
+            continue;
         }
     }
     Ok(())
@@ -772,9 +776,16 @@ fn update_manifest(
                 continue;
             }
             // A scoped run over a stale manifest would silently drop
-            // ownership it did not regenerate: refuse instead.
-            if stale {
+            // ownership it did not regenerate: refuse instead. The
+            // refusal applies to generated entries only — a scaffolded
+            // or checked artifact can never re-enter a write plan by
+            // construction (it is user-owned after its one emission),
+            // so it is kept, never counted as droppable ownership.
+            if stale && recorded.lifecycle() == Lifecycle::Generated {
                 return Err(ArtifactFailure::StaleManifest);
+            }
+            if recorded.lifecycle() != Lifecycle::Generated {
+                keep.push(recorded.clone());
             }
         }
     }
@@ -798,7 +809,7 @@ fn update_manifest(
         keep.retain(|recorded| recorded.key() != &key);
         keep.push(ArtifactEntry::new(
             key,
-            Lifecycle::Generated,
+            lifecycle_for(&entry.path),
             Some(adapter.clone()),
             None,
             digest,
@@ -878,6 +889,20 @@ fn artifact_kind_for(path: &str) -> ArtifactKind {
         return ArtifactKind::Test;
     }
     ArtifactKind::Source
+}
+
+/// The ownership lifecycle of one generated write, by path convention
+/// (issue #56, plan S3): the `tests/lekalo/` scaffold home is the
+/// user-owned convention — anything emitted there is scaffolded once
+/// and never overwritten, so it records `scaffolded`. Its
+/// `.test.map.json` sidecar stays `generated`: the sidecar is the
+/// managed marker the adapter's scaffold-once rule keys on, and its
+/// bytes must stay exactly what the emitter produced.
+fn lifecycle_for(path: &str) -> Lifecycle {
+    if path.starts_with("tests/lekalo/") && !path.ends_with(".map.json") {
+        return Lifecycle::Scaffolded;
+    }
+    Lifecycle::Generated
 }
 
 /// One ingested source-map binding from an emitted `.map.json` sidecar,
@@ -1242,5 +1267,41 @@ mod tests {
         let module = super::module_path_of(&temp_fs("module-sidecar"), sidecar);
         assert!(module.ends_with(".test.ts"));
         assert_eq!(super::artifact_kind_for(&module), ArtifactKind::Test);
+    }
+
+    /// Issue #56 (plan S3): the lifecycle convention the manifest
+    /// retention and delete-refusal rules key on — everything under the
+    /// user-owned `tests/lekalo/` scaffold home is scaffolded except its
+    /// generated `.map.json` sidecars, and every managed path stays
+    /// generated.
+    #[test]
+    fn lifecycle_for_marks_only_the_scaffold_home() {
+        use super::lifecycle_for;
+        assert_eq!(
+            lifecycle_for("tests/lekalo/scenario-tests/planner/planner.scenario.happy.test.php"),
+            Lifecycle::Scaffolded
+        );
+        // The emitted sidecar inside the scaffold home stays generated:
+        // it is machine-owned even there.
+        assert_eq!(
+            lifecycle_for(
+                "tests/lekalo/scenario-tests/planner/planner.scenario.happy.test.map.json"
+            ),
+            Lifecycle::Generated
+        );
+        assert_eq!(
+            lifecycle_for(
+                "src/generated/php-laravel/scenario-tests/planner/planner.scenario.happy.test.php"
+            ),
+            Lifecycle::Generated
+        );
+        assert_eq!(
+            lifecycle_for("src/generated/node-typescript/planner.ts"),
+            Lifecycle::Generated
+        );
+        assert_eq!(
+            lifecycle_for("tests/planner/happy_test.php"),
+            Lifecycle::Generated
+        );
     }
 }

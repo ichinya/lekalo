@@ -327,6 +327,110 @@ fn verify_refuses_stale_ir_evidence_without_writing() {
     });
 }
 
+#[test]
+fn trace_collect_exports_and_queries_the_scenario_gate_manifest() {
+    with_project(|root| {
+        // `trace collect` needs no adapter: the lock alone pins the
+        // inputs custody the manifest revision is exported under, and
+        // a bare verify (no locked adapter) prints the current inputs.
+        let lock = lekalo_in(root, &["lock"], false);
+        assert_eq!(exit_code(&lock), 0);
+        let verify = lekalo_in(root, &["--json", "verify"], false);
+        assert_eq!(exit_code(&verify), 0);
+        let receipt: serde_json::Value = serde_json::from_str(&stdout(&verify)).expect("json");
+        let ir_digest = receipt["inputs"]["irDigest"]
+            .as_str()
+            .expect("irDigest")
+            .to_owned();
+
+        // One adjudicated run record in the ingest home.
+        let runs_dir = root.join(".lekalo/import/scenario-runs");
+        std::fs::create_dir_all(&runs_dir).expect("runs dir");
+        let record = serde_json::json!({
+            "assertions": [
+                { "kind": "result", "observes": "run", "outcome": "pass", "step_id": "output" }
+            ],
+            "binding_mode": "generated",
+            "identity": "dev.lekalo.scenario-run@0.4.0",
+            "profile": null,
+            "runner": { "id": "node:test", "version": "24.13.0" },
+            "schema_version": "lekalo/scenario-run/v0.4.0",
+            "scenario": {
+                "id": "planner.scenario.focus_happy",
+                "ir_digest": ir_digest,
+                "operations": ["planner.command.focus_task"],
+                "symbols": [],
+                "version": "0.2.16"
+            },
+            "started_by": "lekalo-scenario-harness",
+            "test": {
+                "fingerprint": format!("sha256:{}", "2".repeat(64)),
+                "id": "planner.scenario.focus_happy",
+                "path": "src/generated/node-typescript/scenario-tests/planner/planner.scenario.focus_happy.test.ts"
+            }
+        });
+        std::fs::write(
+            runs_dir.join("planner.scenario.focus_happy.json"),
+            serde_json::to_vec_pretty(&record).expect("record bytes"),
+        )
+        .expect("write record");
+
+        // Collect rebuilds the manifest and persists it durably.
+        let collect = lekalo_in(root, &["--json", "trace", "collect"], false);
+        assert_eq!(exit_code(&collect), 0);
+        let report: serde_json::Value = serde_json::from_str(&stdout(&collect)).expect("json");
+        assert_eq!(report["exported"], true);
+        assert_eq!(report["path"], ".lekalo/import/trace/scenarios.json");
+        assert_eq!(report["records"], 1);
+        assert!(report["relations"].as_u64().expect("relations") >= 4);
+        assert!(report["manifestDigest"]
+            .as_str()
+            .expect("digest")
+            .starts_with("sha256:"));
+        let exported = root.join(".lekalo/import/trace/scenarios.json");
+        assert!(exported.exists(), "canonical manifest is durable");
+
+        // The same rollup drives the verify component: a fresh passing
+        // record upgrades the optional scenario gate to pass.
+        let verify = lekalo_in(root, &["--json", "verify"], false);
+        assert_eq!(exit_code(&verify), 0);
+        let receipt: serde_json::Value = serde_json::from_str(&stdout(&verify)).expect("json");
+        let execution = receipt["components"]
+            .as_array()
+            .expect("components")
+            .iter()
+            .find(|component| component["id"] == "scenarios.execution")
+            .expect("scenario execution row");
+        assert_eq!(execution["state"], "pass");
+
+        // The persisted document validates and answers the closed
+        // queries through the production surface.
+        let validate = lekalo_in(
+            root,
+            &["trace", "validate", ".lekalo/import/trace/scenarios.json"],
+            false,
+        );
+        assert_eq!(exit_code(&validate), 0);
+        let query = lekalo_in(
+            root,
+            &[
+                "--json",
+                "trace",
+                "query",
+                ".lekalo/import/trace/scenarios.json",
+                "gates-for:planner.scenario.focus_happy",
+            ],
+            false,
+        );
+        assert_eq!(exit_code(&query), 0);
+        let rows: serde_json::Value = serde_json::from_str(&stdout(&query)).expect("json");
+        let rows = rows["trace"]["rows"].as_array().expect("rows");
+        assert!(rows
+            .iter()
+            .any(|row| { row["id"] == "scenarios.execution" && row["relation"] == "evidences" }));
+    });
+}
+
 /// Walk every file under `root` into a sorted (path, bytes) vector: the
 /// rollback evidence of the hostile-write probes.
 fn project_fingerprint(root: &Path) -> Vec<(String, Vec<u8>)> {

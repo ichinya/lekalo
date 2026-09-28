@@ -26,6 +26,15 @@ pub const IDENTITY: &str = "dev.lekalo.scenario-run@0.4.0";
 /// home, never the protected ir/cache homes).
 pub const INGEST_DIR: &str = ".lekalo/import/scenario-runs";
 
+/// The durable trace-export home (issue #56, plan S5): the derived
+/// scenario→test→gate manifest lands under the adjudicated import
+/// space, regenerated deterministically from the run records — never
+/// user-authored, never a timestamped artifact.
+pub const TRACE_EXPORT_DIR: &str = ".lekalo/import/trace";
+
+/// The fixed document name of the scenario-evidence trace export.
+pub const TRACE_EXPORT_NAME: &str = "scenarios.json";
+
 /// The closed set of top-level members, in canonical byte-sorted order.
 const TOP_LEVEL_KEYS: &[&str] = &[
     "assertions",

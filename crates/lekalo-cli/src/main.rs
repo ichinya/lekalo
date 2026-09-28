@@ -1127,6 +1127,15 @@ enum TraceCommands {
         /// `diagnostics-for:ID`, or `gaps`.
         selector: String,
     },
+    /// Rebuild the scenario → test → gate manifest from the adjudicated
+    /// run-record ingest home and persist the canonical document under
+    /// `.lekalo/import/trace/`. The one write command of the trace
+    /// surface: exactly one derived document, atomically replaced.
+    Collect {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
 }
 
 /// The `requirements` subcommands: a thin handoff to the core
@@ -4975,6 +4984,12 @@ fn edge_line(label: &str, edge: &lekalo_core::graph::GraphEdge) -> String {
 /// exits onto the accepted 0/1 envelope.
 fn run_trace(command: TraceCommands) -> DomainResult {
     let (path, step) = match command {
+        // The collect arm never reads a manifest file: it rebuilds the
+        // scenario-evidence document through the core and persists it.
+        TraceCommands::Collect { project } => {
+            let selection = selection_for(&project);
+            return lekalo_core::orchestration::collect_scenario_trace(&selection);
+        }
         TraceCommands::Validate { path } => (path, TraceStep::Validate),
         TraceCommands::Export { path } => (path, TraceStep::Export),
         TraceCommands::Query { path, selector } => (path, TraceStep::Query(selector)),
