@@ -1,0 +1,23 @@
+{
+    "name": "lekalo/planner-laravel-fixture",
+    "description": "The runnable Laravel fixture project for the Laratesto conformance backend (issue #56). Provisioned by `composer install --no-interaction --prefer-dist --no-scripts` on a CI provisioning step; never inside a compiler or adapter process.",
+    "type": "project",
+    "require": {
+        "php": ">=8.3",
+        "ichinya/laratesto": "v0.7.3",
+        "laravel/framework": "13.33.0",
+        "testo/testo": "0.10.53"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "App\\": "app/",
+            "Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "platform": {
+            "php": "8.3.35"
+        }
+    }
+}

@@ -1,0 +1,8 @@
+# The provisioned vendor tree is a per-environment artifact of the
+# provisioning step (composer install per the committed composer.lock),
+# never a committed surface.
+/vendor/
+
+# The disposable SQLite runtime database of the fixture suite.
+/database/*.sqlite
+/database/*.sqlite-journal

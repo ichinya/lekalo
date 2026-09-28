@@ -979,6 +979,11 @@ the `ownership`/`map` sidecars under the policy path (default
 writes the canonical render evidence under
 `.lekalo/cache/openapi/<project>.json`.
 
+The typed client-SDK family (issue #72) derives its evidence beside
+these homes (`.lekalo/cache/client-sdk/<project>.json`) and adds the
+`generate.client-sdk` capability; see
+[docs/client-sdk.md](client-sdk.md).
+
 ## Privacy (issue #119)
 
 Issue #119 adds the privacy family: the deterministic, custody-verified

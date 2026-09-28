@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "lekalo/php-types-evidence/v0.4.0",
+  "identity": "dev.lekalo.php-types-evidence@0.4.0",
+  "classes": [
+    {
+      "semanticId": "planner.task_state",
+      "fqn": "Lekalo\\Generated\\Types\\Planner\\TaskState",
+      "path": ".lekalo/generated/php-laravel/types/planner/task_state.php",
+      "sourceDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "kind": "enum",
+      "enumCases": [
+        {
+          "case": "Backlog",
+          "value": "backlog"
+        },
+        {
+          "case": "Focused",
+          "value": "focused"
+        },
+        {
+          "case": "Done",
+          "value": "done"
+        }
+      ],
+      "codec": "Lekalo\\Generated\\Types\\Planner\\TaskState"
+    },
+    {
+      "semanticId": "planner.task",
+      "fqn": "Lekalo\\Generated\\Types\\Planner\\TaskDto",
+      "path": ".lekalo/generated/php-laravel/types/planner/task_dto.php",
+      "sourceDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "kind": "entity",
+      "properties": [
+        {
+          "name": "taskId",
+          "type": "Lekalo\\Generated\\Types\\Planner\\TaskId"
+        },
+        {
+          "name": "title",
+          "type": "Lekalo\\Generated\\Types\\Planner\\Text"
+        },
+        {
+          "name": "state",
+          "type": "Lekalo\\Generated\\Types\\Planner\\TaskState"
+        },
+        {
+          "name": "due",
+          "type": "Lekalo\\Generated\\Types\\Planner\\Optional\\OptionalNullableDueDate"
+        },
+        {
+          "name": "window",
+          "type": "Lekalo\\Generated\\Types\\Planner\\Optional\\OptionalDueWindowList"
+        }
+      ],
+      "codec": "Lekalo\\Generated\\Types\\Planner\\TaskDtoCodec"
+    }
+  ]
+}

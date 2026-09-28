@@ -52,6 +52,18 @@ fn lekalo_in(dir: &Path, head: &[&str], adapter: bool) -> Output {
         .expect("run the real lekalo binary")
 }
 
+/// Run the real binary with one custom adapter vector after `--`.
+fn lekalo_with(dir: &Path, head: &[&str], adapter_args: &[&str]) -> Output {
+    let mut args: Vec<&str> = head.to_vec();
+    args.push("--");
+    args.extend_from_slice(adapter_args);
+    Command::new(env!("CARGO_BIN_EXE_lekalo"))
+        .args(&args)
+        .current_dir(alias_free_path(dir))
+        .output()
+        .expect("run the real lekalo binary")
+}
+
 fn stdout(output: &Output) -> String {
     String::from_utf8(output.stdout.clone()).expect("stdout utf8")
 }
@@ -327,6 +339,110 @@ fn verify_refuses_stale_ir_evidence_without_writing() {
     });
 }
 
+#[test]
+fn trace_collect_exports_and_queries_the_scenario_gate_manifest() {
+    with_project(|root| {
+        // `trace collect` needs no adapter: the lock alone pins the
+        // inputs custody the manifest revision is exported under, and
+        // a bare verify (no locked adapter) prints the current inputs.
+        let lock = lekalo_in(root, &["lock"], false);
+        assert_eq!(exit_code(&lock), 0);
+        let verify = lekalo_in(root, &["--json", "verify"], false);
+        assert_eq!(exit_code(&verify), 0);
+        let receipt: serde_json::Value = serde_json::from_str(&stdout(&verify)).expect("json");
+        let ir_digest = receipt["inputs"]["irDigest"]
+            .as_str()
+            .expect("irDigest")
+            .to_owned();
+
+        // One adjudicated run record in the ingest home.
+        let runs_dir = root.join(".lekalo/import/scenario-runs");
+        std::fs::create_dir_all(&runs_dir).expect("runs dir");
+        let record = serde_json::json!({
+            "assertions": [
+                { "kind": "result", "observes": "run", "outcome": "pass", "step_id": "output" }
+            ],
+            "binding_mode": "generated",
+            "identity": "dev.lekalo.scenario-run@0.4.0",
+            "profile": null,
+            "runner": { "id": "node:test", "version": "24.13.0" },
+            "schema_version": "lekalo/scenario-run/v0.4.0",
+            "scenario": {
+                "id": "planner.scenario.focus_happy",
+                "ir_digest": ir_digest,
+                "operations": ["planner.command.focus_task"],
+                "symbols": [],
+                "version": "0.2.16"
+            },
+            "started_by": "lekalo-scenario-harness",
+            "test": {
+                "fingerprint": format!("sha256:{}", "2".repeat(64)),
+                "id": "planner.scenario.focus_happy",
+                "path": "src/generated/node-typescript/scenario-tests/planner/planner.scenario.focus_happy.test.ts"
+            }
+        });
+        std::fs::write(
+            runs_dir.join("planner.scenario.focus_happy.json"),
+            serde_json::to_vec_pretty(&record).expect("record bytes"),
+        )
+        .expect("write record");
+
+        // Collect rebuilds the manifest and persists it durably.
+        let collect = lekalo_in(root, &["--json", "trace", "collect"], false);
+        assert_eq!(exit_code(&collect), 0);
+        let report: serde_json::Value = serde_json::from_str(&stdout(&collect)).expect("json");
+        assert_eq!(report["exported"], true);
+        assert_eq!(report["path"], ".lekalo/import/trace/scenarios.json");
+        assert_eq!(report["records"], 1);
+        assert!(report["relations"].as_u64().expect("relations") >= 4);
+        assert!(report["manifestDigest"]
+            .as_str()
+            .expect("digest")
+            .starts_with("sha256:"));
+        let exported = root.join(".lekalo/import/trace/scenarios.json");
+        assert!(exported.exists(), "canonical manifest is durable");
+
+        // The same rollup drives the verify component: a fresh passing
+        // record upgrades the optional scenario gate to pass.
+        let verify = lekalo_in(root, &["--json", "verify"], false);
+        assert_eq!(exit_code(&verify), 0);
+        let receipt: serde_json::Value = serde_json::from_str(&stdout(&verify)).expect("json");
+        let execution = receipt["components"]
+            .as_array()
+            .expect("components")
+            .iter()
+            .find(|component| component["id"] == "scenarios.execution")
+            .expect("scenario execution row");
+        assert_eq!(execution["state"], "pass");
+
+        // The persisted document validates and answers the closed
+        // queries through the production surface.
+        let validate = lekalo_in(
+            root,
+            &["trace", "validate", ".lekalo/import/trace/scenarios.json"],
+            false,
+        );
+        assert_eq!(exit_code(&validate), 0);
+        let query = lekalo_in(
+            root,
+            &[
+                "--json",
+                "trace",
+                "query",
+                ".lekalo/import/trace/scenarios.json",
+                "gates-for:planner.scenario.focus_happy",
+            ],
+            false,
+        );
+        assert_eq!(exit_code(&query), 0);
+        let rows: serde_json::Value = serde_json::from_str(&stdout(&query)).expect("json");
+        let rows = rows["trace"]["rows"].as_array().expect("rows");
+        assert!(rows
+            .iter()
+            .any(|row| { row["id"] == "scenarios.execution" && row["relation"] == "evidences" }));
+    });
+}
+
 /// Walk every file under `root` into a sorted (path, bytes) vector: the
 /// rollback evidence of the hostile-write probes.
 fn project_fingerprint(root: &Path) -> Vec<(String, Vec<u8>)> {
@@ -363,6 +479,27 @@ fn with_fake_adapter(root: &Path) {
 /// Run the real binary with the fake adapter vector — negotiated past the
 /// legacy base so the lock preflight sees its IR compatibility, and
 /// writing to an artifact-legal home — with an optional fault knob.
+/// Run the real binary with the fake adapter vector plus extra adapter
+/// arguments (the issue #58 sidecar knob).
+fn fake_lekalo_with(root: &Path, head: &[&str], extra: &[&str]) -> Output {
+    let mut args: Vec<&str> = head.to_vec();
+    args.push("--");
+    args.extend_from_slice(&[
+        "node",
+        "adapters/node-typescript/fake-adapter.mjs",
+        "--lekalo-adapter-variant",
+        "fluent",
+        "--lekalo-write-root",
+        "src/generated",
+    ]);
+    args.extend_from_slice(extra);
+    Command::new(env!("CARGO_BIN_EXE_lekalo"))
+        .args(&args)
+        .current_dir(alias_free_path(root))
+        .output()
+        .expect("run the real lekalo binary")
+}
+
 fn fake_lekalo_in(root: &Path, head: &[&str], fault: Option<&str>) -> Output {
     let mut args: Vec<&str> = head.to_vec();
     args.push("--");
@@ -652,5 +789,282 @@ fn the_zod_generation_artifact_drives_the_real_pipeline() {
         .expect("tamper");
         let drifted = lekalo_in(root, &["generate", "--check"], false);
         assert_eq!(exit_code(&drifted), 1, "stdout={}", stdout(&drifted));
+    });
+}
+
+/// Issue #58: a declared `lekalo/types` input flips the PHP adapter's
+/// generation inside the REAL pipeline — the staged evidence path the
+/// core names resolves to the types exchange, the apply publishes the
+/// whole inventory, and the mapping sidecar (a `.map.json` document
+/// without source-map declarations) rides the apply without poisoning
+/// the ownership-manifest ingestion. Skips with the platform's honest
+/// reason wherever the confined PHP runtime cannot run.
+#[test]
+fn a_php_types_generation_applies_through_the_pipeline_and_records_the_sidecar() {
+    use lekalo_core::target_protocol::{transport::TransportLimits, TargetClient};
+
+    // The confined probe: one real describe exchange through the
+    // production client, exactly the dependency every later step has.
+    static RUNNABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let runnable = *RUNNABLE.get_or_init(|| {
+        let probe_root = std::env::temp_dir().join(format!(
+            "lekalo-orchestrate-php-probe-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&probe_root);
+        let command = lekalo_core::target_protocol::transport::AdapterCommand {
+            program: std::path::PathBuf::from("php"),
+            args: vec![workspace_path("adapters/php-laravel/adapter.php")
+                .to_string_lossy()
+                .to_string()],
+        };
+        let mut client = TargetClient::new(TransportLimits {
+            timeout_ms: 20_000,
+            ..TransportLimits::default()
+        });
+        let outcome = client.describe(&command, &probe_root);
+        let _ = std::fs::remove_dir_all(&probe_root);
+        matches!(outcome, Ok(described) if described.capabilities.adapter.id == "lekalo-target-php-laravel")
+    });
+    if !runnable {
+        eprintln!(
+            "skip: the confined PHP exchange cannot run on this platform; \
+             the pipeline types apply proved nothing here"
+        );
+        return;
+    }
+
+    with_project(|root| {
+        // The shipped adapter travels inside the project copy: the
+        // supply binds project-relative entries only.
+        let adapter_home = root.join("adapters").join("php-laravel");
+        std::fs::create_dir_all(&adapter_home).expect("adapter home");
+        std::fs::copy(
+            workspace_path("adapters/php-laravel/adapter.php"),
+            adapter_home.join("adapter.php"),
+        )
+        .expect("adapter copy");
+        let php_adapter: &[&str] = &["php", "adapters/php-laravel/adapter.php"];
+
+        // Lock pins the PHP supply.
+        let lock = lekalo_with(root, &["--json", "lock"], php_adapter);
+        assert_eq!(exit_code(&lock), 0, "stdout={}", stdout(&lock));
+
+        // The first dry run plans the kernel artifact and persists the
+        // canonical IR evidence the input document must bind.
+        let first = lekalo_with(
+            root,
+            &["--json", "generate", "--target", "php-laravel", "--dry-run"],
+            php_adapter,
+        );
+        assert_eq!(exit_code(&first), 0, "stdout={}", stdout(&first));
+        let evidence = std::fs::read(
+            root.join(".lekalo")
+                .join("cache")
+                .join("ir")
+                .join("planner.json"),
+        )
+        .expect("the staged evidence exists after a generate run");
+        let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&evidence));
+
+        // The declared types input flips the next generation.
+        std::fs::create_dir_all(root.join("lekalo").join("types")).expect("types home");
+        std::fs::write(
+            root.join("lekalo").join("types").join("planner.types.json"),
+            format!(
+                concat!(
+                    "{{\"identity\":\"dev.lekalo.php-types-input@0.4.0\",",
+                    "\"irDigest\":\"{digest}\",\"projectId\":\"planner\",",
+                    "\"schemaVersion\":\"lekalo/php-types-input/v0.4.0\"}}\n"
+                ),
+                digest = digest
+            ),
+        )
+        .expect("types input written");
+        let dry = lekalo_with(
+            root,
+            &["--json", "generate", "--target", "php-laravel", "--dry-run"],
+            php_adapter,
+        );
+        assert_eq!(exit_code(&dry), 0, "stdout={}", stdout(&dry));
+        let receipt: serde_json::Value = serde_json::from_str(&stdout(&dry)).expect("json");
+        let writes = receipt["targets"][0]["writes"]
+            .as_array()
+            .expect("dry run plans writes")
+            .clone();
+        assert_eq!(writes.len(), 25, "the closed types inventory is planned");
+        assert!(
+            writes
+                .iter()
+                .any(|w| w["path"] == ".lekalo/generated/php-laravel/types/types.map.json"),
+            "the mapping sidecar is part of the plan"
+        );
+
+        // The apply publishes the inventory; the sidecar must not poison
+        // the ownership-manifest ingestion, so the run succeeds and the
+        // manifest records the applied files.
+        let apply = lekalo_with(
+            root,
+            &["--json", "generate", "--target", "php-laravel"],
+            php_adapter,
+        );
+        assert_eq!(exit_code(&apply), 0, "stdout={}", stdout(&apply));
+        let applied: serde_json::Value = serde_json::from_str(&stdout(&apply)).expect("json");
+        assert_eq!(
+            applied["verdict"],
+            "ready",
+            "the types apply succeeds end to end: {}",
+            stdout(&apply)
+        );
+        assert_eq!(
+            applied["targets"][0]["state"],
+            "applied",
+            "the php-laravel target applies: {}",
+            stdout(&apply)
+        );
+        let sidecar = root
+            .join(".lekalo")
+            .join("generated")
+            .join("php-laravel")
+            .join("types")
+            .join("types.map.json");
+        let sidecar_bytes = std::fs::read(&sidecar).expect("the applied sidecar exists");
+        let sidecar_document =
+            serde_json::from_slice::<serde_json::Value>(&sidecar_bytes).expect("sidecar json");
+        assert!(
+            !sidecar_document["types"]
+                .as_array()
+                .expect("types entries")
+                .is_empty(),
+            "the sidecar is the mapping document, not a source map"
+        );
+        assert!(
+            root.join(".lekalo")
+                .join("generated")
+                .join("manifests")
+                .join("ownership.json")
+                .exists(),
+            "the ownership manifest landed"
+        );
+    });
+}
+
+/// Issue #58: the source-map ingestion identity guard distinguishes an
+/// absent `declarations` member from a corrupt one. A `.map.json`
+/// without the member is a foreign sidecar (the PHP types mapping
+/// document) — it binds nothing and the apply succeeds; a sidecar that
+/// claims `declarations` as a non-array is a hard source-map failure
+/// before anything publishes, exactly like an unparseable map.
+#[test]
+fn source_map_sidecar_identity_absent_binds_and_corrupt_fails() {
+    // Absent: the apply succeeds and the ownership manifest carries no
+    // source-map binding for the foreign sidecar.
+    with_project(|root| {
+        with_fake_adapter(root);
+        let lock = fake_lekalo_in(root, &["--json", "lock"], None);
+        assert_eq!(exit_code(&lock), 0, "stdout={}", stdout(&lock));
+        let apply = fake_lekalo_with(
+            root,
+            &["--json", "generate", "--target", "node-typescript"],
+            &["--lekalo-sidecar", "absent"],
+        );
+        assert_eq!(exit_code(&apply), 0, "stdout={}", stdout(&apply));
+        let sidecar = root
+            .join("src")
+            .join("generated")
+            .join("node-typescript")
+            .join("side.map.json");
+        assert!(sidecar.exists(), "the foreign sidecar is written");
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                root.join(".lekalo")
+                    .join("generated")
+                    .join("manifests")
+                    .join("ownership.json"),
+            )
+            .expect("ownership manifest"),
+        )
+        .expect("manifest json");
+        let bound = manifest["source_maps"]
+            .as_array()
+            .map(|entries| entries.len())
+            .unwrap_or(0);
+        assert_eq!(bound, 0, "a declarations-free sidecar binds nothing");
+    });
+
+    // Corrupt: the apply refuses as invalid before anything publishes,
+    // naming the source-map domain.
+    with_project(|root| {
+        with_fake_adapter(root);
+        let lock = fake_lekalo_in(root, &["--json", "lock"], None);
+        assert_eq!(exit_code(&lock), 0, "stdout={}", stdout(&lock));
+        let apply = fake_lekalo_with(
+            root,
+            &["--json", "generate", "--target", "node-typescript"],
+            &["--lekalo-sidecar", "corrupt"],
+        );
+        assert_eq!(exit_code(&apply), 1, "stdout={}", stdout(&apply));
+        // An invalid aggregation prints its envelope on stderr.
+        let report = if stdout(&apply).trim().is_empty() {
+            stderr(&apply)
+        } else {
+            stdout(&apply)
+        };
+        let envelope: serde_json::Value = serde_json::from_str(&report).expect("json");
+        assert_eq!(envelope["status"], "invalid");
+        let diagnostics = envelope["diagnostics"].as_array().expect("diagnostics");
+        assert_eq!(diagnostics[0]["id"], "lock.reference-invalid");
+        assert!(
+            diagnostics[0]["data"]["detail"]
+                .as_str()
+                .is_some_and(|detail| detail.contains("source-map")),
+            "the refusal names the source-map domain: {}",
+            diagnostics[0]
+        );
+        // The publication (step 7) precedes ingestion (step 9), so the
+        // refused run leaves the child bytes on disk — but the ownership
+        // manifest never records them and the run is invalid. That is
+        // the loud failure: the pre-fix behavior silently bound nothing
+        // (or would have recorded a corrupt map) and reported success.
+        assert!(
+            !root
+                .join(".lekalo")
+                .join("generated")
+                .join("manifests")
+                .join("ownership.json")
+                .exists(),
+            "a corrupt source map never reaches the ownership manifest"
+        );
+    });
+
+    // Positive control: a genuine source map still binds. The guard's
+    // widening must not have deafened the ingestion.
+    with_project(|root| {
+        with_fake_adapter(root);
+        let lock = fake_lekalo_in(root, &["--json", "lock"], None);
+        assert_eq!(exit_code(&lock), 0, "stdout={}", stdout(&lock));
+        let apply = fake_lekalo_with(
+            root,
+            &["--json", "generate", "--target", "node-typescript"],
+            &["--lekalo-sidecar", "valid"],
+        );
+        assert_eq!(exit_code(&apply), 0, "stdout={}", stdout(&apply));
+        let manifest_path = root
+            .join(".lekalo")
+            .join("generated")
+            .join("manifests")
+            .join("ownership.json");
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&manifest_path).expect("ownership manifest"),
+        )
+        .expect("manifest json");
+        assert_eq!(
+            manifest["source_maps"]
+                .as_array()
+                .expect("source maps")
+                .len(),
+            1,
+            "the valid sidecar binds exactly one map"
+        );
     });
 }

@@ -45,6 +45,10 @@
       "origin": "synthetic"
     },
     {
+      "family": "client-sdk",
+      "origin": "synthetic"
+    },
+    {
       "family": "context",
       "origin": "synthetic"
     },
@@ -105,11 +109,19 @@
       "origin": "synthetic"
     },
     {
+      "family": "laravel-migrations",
+      "origin": "synthetic"
+    },
+    {
       "family": "loader",
       "origin": "synthetic"
     },
     {
       "family": "lockfile",
+      "origin": "synthetic"
+    },
+    {
+      "family": "mago",
       "origin": "synthetic"
     },
     {
@@ -151,6 +163,11 @@
     {
       "family": "orchestration",
       "origin": "synthetic"
+    },
+    {
+      "family": "php-laravel",
+      "origin": "synthetic",
+      "note": "issue #56 Laratesto conformance fixture: the planner project (port, controller, model, migration, config, testo.php) is authored test material. Third-party packages ride the committed composer.lock only — the vendor tree is a per-environment provisioning artifact of `composer install --no-scripts` (gitignored, never committed) — so no external licensed source ships in the family."
     },
     {
       "family": "pilot",

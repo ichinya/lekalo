@@ -1,0 +1,12 @@
+{
+  "contract": "dev.lekalo.ir@0.2.16",
+  "definitions": [
+    {
+      "base": "boolean",
+      "id": "a.b.c",
+      "kind": "scalar",
+      "version": 1
+    }
+  ],
+  "modelVersion": "0.2.16"
+}

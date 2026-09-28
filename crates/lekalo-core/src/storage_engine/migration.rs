@@ -22,6 +22,7 @@ use crate::storage_projection::projection::{DataRisk, GeneratedKind, PredicateOp
 use crate::storage_projection::{compare, StorageProjectionAttachment};
 
 use super::diagnostic::{self, MAPPING_INVALID, MIGRATION_INVALID, RENDER_UNSUPPORTED};
+use super::history::{validate_rename_history, StorageRenameKind, StorageRenameMap};
 use super::postgres::quoting::quote;
 use super::StorageEngineAttachment;
 
@@ -117,7 +118,9 @@ pub struct MigrationPlan {
     pub(crate) base_digest: String,
     pub(crate) candidate_digest: String,
     pub(crate) diff_digest: String,
+    pub(crate) history_digest: Option<String>,
     pub(crate) gated: bool,
+    pub(crate) backfill_gated: bool,
     pub(crate) status: PlanStatus,
     pub(crate) plan_id: String,
     pub(crate) steps: Vec<Step>,
@@ -147,6 +150,25 @@ impl MigrationPlan {
     /// The diff binding digest.
     pub fn diff_digest(&self) -> &str {
         &self.diff_digest
+    }
+
+    /// The canonical digest of the validated rename history this plan
+    /// consumed, when one was declared.
+    pub fn history_digest(&self) -> Option<&str> {
+        self.history_digest.as_deref()
+    }
+
+    /// Whether the plan carries backfill obligations. The engine
+    /// `gated` flag covers destructive steps only; the Laravel
+    /// generation policy unions this with backfill (issue #57).
+    pub const fn backfill_gated(&self) -> bool {
+        self.backfill_gated
+    }
+
+    /// Whether the effective Laravel gate closes: destructive **or**
+    /// backfill obligations exist.
+    pub const fn effectively_gated(&self) -> bool {
+        self.gated || self.backfill_gated
     }
 
     /// Whether the plan contains destructive steps.
@@ -210,7 +232,9 @@ impl MigrationPlan {
             ("baseDigest", Some(string(&self.base_digest))),
             ("candidateDigest", Some(string(&self.candidate_digest))),
             ("diffDigest", Some(string(&self.diff_digest))),
+            ("historyDigest", self.history_digest.as_deref().map(string)),
             ("gated", Some(flag(self.gated))),
+            ("backfillGated", Some(flag(self.backfill_gated))),
             ("status", Some(string(self.status.key()))),
             ("planId", Some(string(&self.plan_id))),
             ("steps", Some(array(&steps))),
@@ -219,7 +243,7 @@ impl MigrationPlan {
 }
 
 /// One canonical integer array, or nothing when empty.
-fn optional_usize_array(values: &[usize]) -> Option<String> {
+pub(crate) fn optional_usize_array(values: &[usize]) -> Option<String> {
     if values.is_empty() {
         return None;
     }
@@ -241,6 +265,36 @@ pub fn plan(
     profile: &StorageEngineAttachment,
     base: &StorageProjectionAttachment,
     candidate: &StorageProjectionAttachment,
+    confirm: Option<&str>,
+) -> Result<MigrationPlan, DiagnosticSet> {
+    plan_inner(profile, base, candidate, None, confirm)
+}
+
+/// Derive the migration plan with one validated storage rename
+/// history (issue #57). Every declared table rename becomes an
+/// `ALTER TABLE … RENAME TO` and every declared column rename a
+/// matching-pair `ALTER TABLE … RENAME COLUMN`, instead of the
+/// destructive drop+add a name-only diff would propose. The map is
+/// validated first — a stale, foreign, or ambiguous history refuses
+/// and the plan stays a destructive proposal. Pure and read-only.
+pub fn plan_with_history(
+    profile: &StorageEngineAttachment,
+    base: &StorageProjectionAttachment,
+    candidate: &StorageProjectionAttachment,
+    history: &StorageRenameMap,
+    confirm: Option<&str>,
+) -> Result<MigrationPlan, DiagnosticSet> {
+    validate_rename_history(history, base, candidate)?;
+    plan_inner(profile, base, candidate, Some(history), confirm)
+}
+
+/// The shared planner body: `plan` and `plan_with_history` differ
+/// only in whether a validated rename map rides along.
+fn plan_inner(
+    profile: &StorageEngineAttachment,
+    base: &StorageProjectionAttachment,
+    candidate: &StorageProjectionAttachment,
+    history: Option<&StorageRenameMap>,
     confirm: Option<&str>,
 ) -> Result<MigrationPlan, DiagnosticSet> {
     if base.project_id().as_str() != candidate.project_id().as_str() {
@@ -307,6 +361,7 @@ pub fn plan(
         profile,
         base,
         candidate,
+        history,
     )?;
     // Sequence ownership after the tables exist: the executable order
     // mirrors the DDL document — every created sequence is bound to
@@ -389,13 +444,28 @@ pub fn plan(
             .collect::<Vec<String>>()
             .join("");
         payload.push_str(&diff_digest);
+        // A rename-validated plan is a different plan: the history the
+        // rename evidence carries is part of the plan's identity, so
+        // an approval can never migrate across two histories.
+        if let Some(history) = history {
+            payload.push('\u{3}');
+            payload.push_str(&super::history::history_material(history));
+        }
         payload
     });
     let plan_id = format!(
         "sha256:{}",
         crate::digest::sha256_hex(plan_material.as_bytes())
     );
-    let status = match (gated, confirm) {
+    // The effective Laravel generation policy unions the destructive
+    // gate with backfill obligations (issue #57): a backfill writes
+    // business data, so it acknowledges exactly like a destructive
+    // rewrite.
+    let backfill_gated = steps
+        .iter()
+        .any(|step| step.risk() == DataRisk::BackfillRequired);
+    let effective_gate = gated || backfill_gated;
+    let status = match (effective_gate, confirm) {
         (false, _) => PlanStatus::Ready,
         (true, Some(named)) if named == plan_id => PlanStatus::Confirmed,
         (true, Some(_)) => {
@@ -409,7 +479,9 @@ pub fn plan(
         base_digest,
         candidate_digest,
         diff_digest,
+        history_digest: history.map(super::history::history_digest_of).transpose()?,
         gated,
+        backfill_gated,
         status,
         plan_id,
         steps,
@@ -533,6 +605,40 @@ fn push_step(
         requires,
         explain,
     });
+}
+
+/// Emit one table's validated column renames: the exact swap
+/// statements in the map's byte-sorted order. Destructive — a declared
+/// rename gates exactly like a table rename, never guessed history —
+/// and self-contained: a rename claims no dependency edge, it only
+/// ever precedes the statements that reference the fresh names.
+fn push_column_renames(
+    steps: &mut Vec<Step>,
+    table: &StorageName,
+    renames: &[(&str, &str)],
+) -> Result<(), DiagnosticSet> {
+    for (from, to) in renames {
+        if from == to {
+            continue;
+        }
+        let invalid = || diagnostic::rule_invalid(MAPPING_INVALID, "rename-column-name", None);
+        let from_name = StorageName::parse(from).map_err(|_| invalid())?;
+        let to_name = StorageName::parse(to).map_err(|_| invalid())?;
+        push_step(
+            steps,
+            "rename_column",
+            format!(
+                "ALTER TABLE {} RENAME COLUMN {} TO {};",
+                quote(table),
+                quote(&from_name),
+                quote(&to_name)
+            ),
+            DataRisk::Destructive,
+            Vec::new(),
+            None,
+        );
+    }
+    Ok(())
 }
 
 /// The table plan: creates, drops, and per-column changes for the
@@ -835,8 +941,26 @@ fn plan_tables(
     profile: &StorageEngineAttachment,
     base_attachment: &StorageProjectionAttachment,
     candidate_attachment: &StorageProjectionAttachment,
+    history: Option<&StorageRenameMap>,
 ) -> Result<TablePlan, DiagnosticSet> {
     let mut table_ids = std::collections::BTreeMap::new();
+    // The validated column renames of this plan, keyed by entity with
+    // the (from, to) physical-name pairs: the column passes consult
+    // the map instead of the destructive name-only diff, so a renamed
+    // column swaps its name in place instead of dropping the stored
+    // values. Only a history-validated entry reaches the planner.
+    let mut column_renames: std::collections::BTreeMap<&str, Vec<(&str, &str)>> =
+        std::collections::BTreeMap::new();
+    if let Some(history) = history {
+        for rename in history.renames() {
+            if rename.kind == StorageRenameKind::Column {
+                column_renames
+                    .entry(rename.entity.as_str())
+                    .or_default()
+                    .push((rename.from.as_str(), rename.to.as_str()));
+            }
+        }
+    }
     // Entity tables that rename in this plan, keyed by entity with the
     // pre-rename table name: the FK and index passes skip their keys
     // (the rename block re-derived them under the fresh names), and
@@ -1014,6 +1138,19 @@ fn plan_tables(
                 Vec::new(),
                 None,
             );
+            // The validated column renames of the renamed table ride
+            // directly behind the table rename: every later statement
+            // of this block (re-derived keys, fresh indexes, policy)
+            // names the fresh column names, and the renamed table's
+            // old constraint names still derive from the old ones.
+            push_column_renames(
+                steps,
+                table.table(),
+                column_renames
+                    .get(table.entity().as_str())
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+            )?;
             // The derived constraint names embed the table name, so
             // the renamed table's foreign keys drop under their old
             // names and re-add under the fresh deterministic ones —
@@ -1028,12 +1165,23 @@ fn plan_tables(
             // succeed.
             let mut own_key_drops = Vec::new();
             for foreign_key in table.foreign_keys() {
-                let old_name = StorageName::parse(&format!(
-                    "fk_{}_{}",
-                    base_table.table(),
-                    foreign_key.column()
-                ))
-                .map_err(|_| diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None))?;
+                // The dropped constraint's name derives from the OLD
+                // table name and the column's OLD name: a validated
+                // rename of the FK column is part of this same plan,
+                // and the published constraint still carries the
+                // pre-rename derived name.
+                let old_column = column_renames
+                    .get(table.entity().as_str())
+                    .into_iter()
+                    .flatten()
+                    .find(|(_, to)| *to == foreign_key.column().as_str())
+                    .map(|(from, _)| *from)
+                    .unwrap_or(foreign_key.column().as_str());
+                let old_name =
+                    StorageName::parse(&format!("fk_{}_{}", base_table.table(), old_column))
+                        .map_err(|_| {
+                            diagnostic::rule_invalid(MAPPING_INVALID, "foreign-key-name", None)
+                        })?;
                 let drop_id = steps.len();
                 push_step(
                     steps,
@@ -1425,6 +1573,21 @@ fn plan_tables(
         table_ids
             .entry(table.table().as_str().to_owned())
             .or_insert(usize::MAX);
+        // A same-name table's validated column renames lead every
+        // other column step: the primary-key swap and the column diff
+        // below reference the fresh names, and a rename of a key
+        // column must swap before the swap block re-derives the key's
+        // column list.
+        if !renamed {
+            push_column_renames(
+                steps,
+                table.table(),
+                column_renames
+                    .get(table.entity().as_str())
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+            )?;
+        }
         // A changed primary key on a surviving same-name table is
         // visible: the old constraint drops before the new one is
         // added (both names are deterministic — `pk_<table>`), and the
@@ -1520,11 +1683,38 @@ fn plan_tables(
             }
         }
         for column in table.columns() {
-            let Some(base_column) = base_table
-                .columns()
+            // The rename-aware base lookup: a candidate name that is a
+            // validated rename target resolves to its base source, so
+            // the diff (type, nullability, default) runs against the
+            // same physical column under its new name. A candidate
+            // name that is a validated rename source is a genuinely
+            // new column — the base column of that name is being
+            // renamed away in this same plan, never diffed.
+            let table_renames = column_renames
+                .get(table.entity().as_str())
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let is_rename_source = table_renames
                 .iter()
-                .find(|candidate| candidate.name() == column.name())
-            else {
+                .any(|(from, _)| *from == column.name().as_str());
+            let surviving = if is_rename_source {
+                None
+            } else {
+                base_table
+                    .columns()
+                    .iter()
+                    .find(|base| base.name() == column.name())
+                    .or_else(|| {
+                        let from = table_renames.iter().find_map(|(from, to)| {
+                            (*to == column.name().as_str()).then_some(*from)
+                        })?;
+                        base_table
+                            .columns()
+                            .iter()
+                            .find(|base| base.name().as_str() == from)
+                    })
+            };
+            let Some(base_column) = surviving else {
                 // A computed generated column refuses: the 0.4.0
                 // member carries no expression, and an ADD COLUMN of a
                 // plain stored column would invent one.
@@ -1792,6 +1982,17 @@ fn plan_tables(
             }
         }
         for column in base_table.columns() {
+            // A validated rename is not a drop: the column survives
+            // under its new name, and this table's rename statements
+            // already ran ahead of the column pass.
+            if column_renames
+                .get(table.entity().as_str())
+                .into_iter()
+                .flatten()
+                .any(|(from, _)| *from == column.name().as_str())
+            {
+                continue;
+            }
             if !table
                 .columns()
                 .iter()
@@ -2975,6 +3176,139 @@ mod tests {
             requires: Vec::new(),
             explain: None,
         }
+    }
+
+    /// The base migration fixture, its parsed document, and a profile
+    /// bound to the base digest: the shared setup of the full-plan
+    /// rename tests.
+    fn rename_setup() -> (
+        StorageProjectionAttachment,
+        serde_json::Value,
+        crate::storage_engine::StorageEngineAttachment,
+    ) {
+        let bytes = std::fs::read("../../tests/fixtures/storage-engine/migration/base.json")
+            .expect("fixture");
+        let value: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        let base = StorageProjectionAttachment::from_value(&value).expect("valid base");
+        let base_digest = format!(
+            "sha256:{}",
+            crate::digest::sha256_hex(base.canonical_bytes().expect("bytes").as_bytes())
+        );
+        let mut profile_value: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "../../../../tests/fixtures/storage-engine/valid/planner-postgres.json"
+        ))
+        .expect("fixture");
+        profile_value["projectionRef"] = serde_json::Value::String(base_digest);
+        let profile = crate::storage_engine::StorageEngineAttachment::from_value(&profile_value)
+            .expect("valid profile");
+        (base, value, profile)
+    }
+
+    #[test]
+    fn a_validated_column_rename_swaps_instead_of_dropping() {
+        // The candidate renames the task entity's `title` field to
+        // `summary`; the validated history turns the name-only diff's
+        // destructive drop+add pair into one RENAME COLUMN step, and
+        // the step's inverse swaps the names back exactly.
+        use super::super::rollback::{classify, reverse_statement, RollbackClass};
+        let (base, mut candidate_value, profile) = rename_setup();
+        let field = candidate_value["entities"]
+            .as_array_mut()
+            .expect("entities")
+            .iter_mut()
+            .find(|entity| entity["entityKey"] == "task")
+            .expect("task entity")["fields"]
+            .as_array_mut()
+            .expect("fields");
+        let field = field
+            .iter_mut()
+            .find(|field| field["field"] == "title")
+            .expect("title field");
+        field["field"] = serde_json::Value::String("summary".to_owned());
+        let candidate =
+            StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+        let history = StorageRenameMap {
+            project_id: base.project_id().as_str().to_owned(),
+            base_digest: format!(
+                "sha256:{}",
+                crate::digest::sha256_hex(base.canonical_bytes().expect("bytes").as_bytes())
+            ),
+            candidate_digest: format!(
+                "sha256:{}",
+                crate::digest::sha256_hex(candidate.canonical_bytes().expect("bytes").as_bytes())
+            ),
+            renames: vec![super::super::history::StorageRename {
+                entity: "task".to_owned(),
+                kind: StorageRenameKind::Column,
+                from: "title".to_owned(),
+                to: "summary".to_owned(),
+                history_ref: "planner.focus_task.title".to_owned(),
+            }],
+        };
+        let plan =
+            crate::storage_engine::plan_with_history(&profile, &base, &candidate, &history, None)
+                .expect("plans");
+        // A declared column rename is a destructive identity rewrite:
+        // it gates exactly like a table rename.
+        assert_eq!(plan.status(), crate::storage_engine::PlanStatus::Blocked);
+        let renames: Vec<&Step> = plan
+            .steps()
+            .iter()
+            .filter(|step| step.kind() == "rename_column")
+            .collect();
+        assert_eq!(renames.len(), 1, "exactly one rename_column step");
+        assert_eq!(
+            renames[0].statement(),
+            "ALTER TABLE \"task\" RENAME COLUMN \"title\" TO \"summary\";"
+        );
+        assert_eq!(renames[0].risk(), DataRisk::Destructive);
+        assert_eq!(classify(renames[0]), RollbackClass::Reversible);
+        assert_eq!(
+            reverse_statement(renames[0]).expect("inverse"),
+            "ALTER TABLE \"task\" RENAME COLUMN \"summary\" TO \"title\";"
+        );
+        // The name-only diff's destructive pair never appears.
+        assert!(plan
+            .steps()
+            .iter()
+            .all(|step| step.kind() != "drop_column" && step.kind() != "add_column"));
+    }
+
+    #[test]
+    fn an_unvalidated_column_rename_stays_a_drop_add_pair() {
+        // Without the history document the same diff stays the
+        // destructive drop+add the feature exists to prevent: history
+        // is the only path to a RENAME COLUMN step.
+        let (base, mut candidate_value, profile) = rename_setup();
+        let field = candidate_value["entities"]
+            .as_array_mut()
+            .expect("entities")
+            .iter_mut()
+            .find(|entity| entity["entityKey"] == "task")
+            .expect("task entity")["fields"]
+            .as_array_mut()
+            .expect("fields");
+        let field = field
+            .iter_mut()
+            .find(|field| field["field"] == "title")
+            .expect("title field");
+        field["field"] = serde_json::Value::String("summary".to_owned());
+        // Nullable: the unvalidated name diff's plain ADD COLUMN must
+        // not refuse for an unrelated backfill obligation — the test
+        // pins the drop+add shape, not the nullability gate.
+        if field.get("required").is_some() {
+            field["required"] = serde_json::Value::Bool(false);
+        }
+        let candidate =
+            StorageProjectionAttachment::from_value(&candidate_value).expect("valid candidate");
+        let plan = crate::storage_engine::plan_migration(&profile, &base, &candidate, None)
+            .expect("plans");
+        assert!(plan.steps().iter().any(|step| step.kind() == "drop_column"));
+        assert!(plan.steps().iter().any(|step| step.kind() == "add_column"));
+        assert!(plan
+            .steps()
+            .iter()
+            .all(|step| step.kind() != "rename_column"));
     }
 
     #[test]

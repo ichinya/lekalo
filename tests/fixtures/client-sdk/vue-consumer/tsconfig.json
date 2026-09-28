@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    // noImplicitAny is relaxed ONLY for the compileScript component
+    // plumbing (__props/__expose are untyped by the compiler API);
+    // every client-usage type axis stays checked (noImplicitAny off
+    // keeps strictNullChecks, strictFunctions, etc. on).
+    "noImplicitAny": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue.ts", "generated/**/*.ts"]
+}

@@ -1,0 +1,125 @@
+{
+  "schemaVersion": "lekalo/mago-toolchain-lock/v0.1.0",
+  "identity": "dev.lekalo.mago-toolchain@0.1.0",
+  "tool": {
+    "name": "mago",
+    "vendor": "carthage-software",
+    "upstream": "https://github.com/carthage-software/mago",
+    "license": "MIT OR Apache-2.0",
+    "version": "1.0.0"
+  },
+  "probe": {
+    "version": {
+      "argv": ["mago", "--version"],
+      "stdout": "mago 1.0.0"
+    },
+    "artifacts": [
+      {
+        "platform": "x86_64-pc-windows-msvc",
+        "archive": "mago-1.0.0-x86_64-pc-windows-msvc.zip",
+        "archiveSha256": "db898a5eea4b13529f202fa5968d2a17643b9c7109a5705001f466fddc07156b",
+        "binary": "mago.exe",
+        "binarySha256": "4702d8c00acb73f23624fa17ba771f5d0e060bb31f299d5b5dae49ece6f845fa"
+      },
+      {
+        "platform": "x86_64-unknown-linux-gnu",
+        "archive": "mago-1.0.0-x86_64-unknown-linux-gnu.tar.gz",
+        "archiveSha256": "ea012e30d3c9f7b899bf6e2d3feaf61091c931bc3af248519fb01f2ff2375be4",
+        "binary": "mago",
+        "binarySha256": "582646d691f3307caf47cf23d6009aba949078ecc899bafd22c04a1634c185db"
+      }
+    ]
+  },
+  "compatibility": {
+    "decoderRevision": "v1",
+    "phpSyntax": [
+      "7.2",
+      "7.3",
+      "7.4",
+      "8.0",
+      "8.1",
+      "8.2",
+      "8.3",
+      "8.4",
+      "8.5"
+    ],
+    "capabilities": {
+      "syntaxAst": "full",
+      "lint": "full",
+      "analyze": "full",
+      "guard": "full",
+      "typeInference": "partial",
+      "references": "partial",
+      "incremental": "unknown",
+      "fixPreview": "text-only",
+      "fixApply": "out-of-scope"
+    },
+    "exitCodes": {
+      "ok": 0,
+      "findingsOrInfrastructure": 1,
+      "usageOrConfiguration": 2
+    }
+  },
+  "commands": {
+    "lintRules": {
+      "argv": ["mago", "lint", "--list-rules", "--json"],
+      "exitCodes": [0]
+    },
+    "lintJson": {
+      "argv": [
+        "mago", "--workspace", ".", "lint",
+        "--reporting-format", "json", "--reporting-target", "stdout"
+      ],
+      "exitCodes": [0, 1],
+      "notes": "exit 0 = clean or warning-only (default minimum-fail-level error); exit 1 = error-level findings or infrastructure failure; exit 2 = usage/config error"
+    },
+    "lintSarif": {
+      "argv": [
+        "mago", "--workspace", ".", "lint",
+        "--reporting-format", "sarif", "--reporting-target", "stdout"
+      ],
+      "exitCodes": [0, 1]
+    },
+    "analyzeJson": {
+      "argv": [
+        "mago", "--workspace", ".", "analyze",
+        "--reporting-format", "json", "--reporting-target", "stdout"
+      ],
+      "exitCodes": [0, 1]
+    },
+    "analyzeSarif": {
+      "argv": [
+        "mago", "--workspace", ".", "analyze",
+        "--reporting-format", "sarif", "--reporting-target", "stdout"
+      ],
+      "exitCodes": [0, 1]
+    },
+    "guardJson": {
+      "argv": [
+        "mago", "--workspace", ".", "guard",
+        "--reporting-format", "json", "--reporting-target", "stdout"
+      ],
+      "exitCodes": [0, 1]
+    },
+    "guardSarif": {
+      "argv": [
+        "mago", "--workspace", ".", "guard",
+        "--reporting-format", "sarif", "--reporting-target", "stdout"
+      ],
+      "exitCodes": [0, 1]
+    },
+    "astJson": {
+      "argv": ["mago", "--workspace", ".", "ast", "--json", "<FILE>"],
+      "exitCodes": [0],
+      "notes": "creates .mago cache; not used by the adapter"
+    },
+    "fixPreview": {
+      "argv": [
+        "mago", "--workspace", ".", "lint",
+        "--fix", "--dry-run", "--unsafe", "--only", "<RULE>"
+      ],
+      "exitCodes": [0, 1],
+      "notes": "unified diff on stdout; requires --unsafe because the strict-types insertion fix is classified potentially-unsafe; never combined with --reporting-format (clap refuses that pair)"
+    }
+  }
+}

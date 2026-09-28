@@ -1,0 +1,42 @@
+{
+  "contract": "dev.lekalo.ir@0.2.16",
+  "definitions": [
+    {
+      "fields": [
+        {
+          "name": "a",
+          "required": true,
+          "type": {
+            "ref": "m.flag"
+          }
+        }
+      ],
+      "id": "m.my_task",
+      "kind": "entity",
+      "identity": ["a"],
+      "version": 1
+    },
+    {
+      "fields": [
+        {
+          "name": "b",
+          "required": true,
+          "type": {
+            "ref": "m.flag"
+          }
+        }
+      ],
+      "id": "m.my__task",
+      "kind": "entity",
+      "identity": ["b"],
+      "version": 1
+    },
+    {
+      "base": "boolean",
+      "id": "m.flag",
+      "kind": "scalar",
+      "version": 1
+    }
+  ],
+  "modelVersion": "0.2.16"
+}

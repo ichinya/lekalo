@@ -13,6 +13,7 @@
 //! execution.
 
 use crate::artifacts::check::Prepared;
+use crate::artifacts::types::ArtifactKind;
 use crate::artifacts::GenerateService;
 use crate::diagnostics::{DataObject, Diagnostic};
 use crate::ir::Compilation;
@@ -35,6 +36,12 @@ use super::receipt::{
 };
 use super::version::IR_EVIDENCE_DIR;
 use super::Failure;
+
+/// The one semantic identity of the scenario-execution gate (issue #56,
+/// plan S5): the exported `gate:` node id names this exact receipt
+/// component, never an arbitrary string — `gate evidences` edges are
+/// traceable back to the validated component that published them.
+const SCENARIOS_EXECUTION: &str = "scenarios.execution";
 
 // F-7 (issue #47 review): the exported scenario relations flow through
 // the trace manifest mechanism.
@@ -101,6 +108,98 @@ pub fn verify(request: VerifyRequest<'_>) -> DomainResult {
         Ok(outcome) => outcome,
         Err(result) => result,
     }
+}
+
+/// `lekalo trace collect` (issue #56, plan S5): the one write command of
+/// the trace surface. The scenario → test → gate manifest is rebuilt
+/// from the adjudicated ingest home through the production rollup and
+/// its canonical bytes persisted under `.lekalo/import/trace/` — the
+/// durable document `trace validate`/`trace query` then inspect. An
+/// empty or absent ingest home exports nothing and reports so honestly;
+/// a record set that cannot survive the trace mechanism is a typed
+/// refusal, never a partial document.
+pub fn collect_scenario_trace(selection: &LoadSelection) -> DomainResult {
+    match collect_scenario_trace_run(selection) {
+        Ok(result) | Err(result) => result,
+    }
+}
+
+fn collect_scenario_trace_run(selection: &LoadSelection) -> Result<DomainResult, DomainResult> {
+    let prepared = Prepared::prepare(selection)
+        .map_err(|failure| DomainResult::from(&Failure::Artifact(failure)))?;
+    let compilation = compile(selection)?;
+    let project_id = compilation
+        .project
+        .project
+        .as_ref()
+        .map(|project| project.id.as_str().to_owned())
+        .ok_or(Failure::ProjectRefUnresolved)
+        .map_err(DomainResult::from)?;
+    let rollup = scenarios_execution_rollup(
+        prepared.fs(),
+        &scenario_trace_context(&prepared, &project_id),
+        prepared.inputs().ir().digest(),
+        &expected_scenario_tests(&prepared),
+    );
+    if !rollup.present {
+        // No ingest home (or unreadable): there is nothing to export and
+        // no stale export may linger — remove a previous document so the
+        // durable surface never outlives its evidence.
+        let stale = prepared
+            .root()
+            .join(crate::scenario_evidence::TRACE_EXPORT_DIR)
+            .join(crate::scenario_evidence::TRACE_EXPORT_NAME);
+        let _ = std::fs::remove_file(&stale);
+        let json = format!(
+            "{{\"status\":\"ok\",\"exported\":false,\"path\":\"{}/{}\",\"records\":0}}",
+            crate::scenario_evidence::TRACE_EXPORT_DIR,
+            crate::scenario_evidence::TRACE_EXPORT_NAME,
+        );
+        return Ok(DomainResult::receipt(
+            json,
+            "trace collect: no scenario run records to export".to_owned(),
+        ));
+    }
+    let Some(manifest) = rollup.manifest_bytes else {
+        // Records existed but could not survive the trace mechanism: a
+        // typed refusal, never a partial or absent document.
+        return Ok(DomainResult::invalid(
+            crate::scenario_evidence::run_invalid("trace-export"),
+        ));
+    };
+    let parsed = crate::trace::TraceManifest::parse(&manifest).map_err(DomainResult::invalid)?;
+    let digest = parsed.digest().map_err(DomainResult::invalid)?;
+    crate::observed::store::write_confined(
+        prepared.root(),
+        crate::scenario_evidence::TRACE_EXPORT_DIR,
+        crate::scenario_evidence::TRACE_EXPORT_NAME,
+        &manifest,
+    )
+    .map_err(DomainResult::invalid)?;
+    let trace = rollup.trace.unwrap_or(TraceSummary {
+        relations: 0,
+        gaps: 0,
+        uncovered_sinks: 0,
+    });
+    let json = format!(
+        "{{\"status\":\"ok\",\"exported\":true,\"path\":\"{}/{}\",\"records\":{},\"relations\":{},\"gaps\":{},\"uncoveredSinks\":{},\"manifestDigest\":\"{}\"}}",
+        crate::scenario_evidence::TRACE_EXPORT_DIR,
+        crate::scenario_evidence::TRACE_EXPORT_NAME,
+        rollup.records,
+        trace.relations,
+        trace.gaps,
+        trace.uncovered_sinks,
+        digest,
+    );
+    let human = format!(
+        "trace collect: {}/{} ({} records; {} relations; {} gaps)",
+        crate::scenario_evidence::TRACE_EXPORT_DIR,
+        crate::scenario_evidence::TRACE_EXPORT_NAME,
+        rollup.records,
+        trace.relations,
+        trace.gaps,
+    );
+    Ok(DomainResult::receipt(json, human))
 }
 
 fn run(request: VerifyRequest<'_>) -> Result<DomainResult, DomainResult> {
@@ -204,7 +303,7 @@ fn run(request: VerifyRequest<'_>) -> Result<DomainResult, DomainResult> {
     // Optional components.
     components.push(bindings_component(request.selection));
     components.push(scenarios_component(&compilation, &scope));
-    components.push(scenarios_execution_component(&prepared));
+    components.push(scenarios_execution_component(&prepared, &project_id));
     components.push(Component::state(
         "native.gates",
         false,
@@ -602,53 +701,182 @@ fn bindings_component(selection: &LoadSelection) -> Component {
 /// failure fails the component; unsupported rows degrade it (never a
 /// pass); an empty ingest home stays the declared absence it was before
 /// the backend landed — reported, exit-neutral, never silently skipped.
-fn scenarios_execution_component(prepared: &Prepared) -> Component {
+fn scenarios_execution_component(prepared: &Prepared, project_id: &str) -> Component {
     let rollup = scenarios_execution_rollup(
         prepared.fs(),
-        &scenario_trace_context(prepared),
+        &scenario_trace_context(prepared, project_id),
         prepared.inputs().ir().digest(),
+        &expected_scenario_tests(prepared),
     );
     if !rollup.present {
         // No ingest home (or unreadable): the backend has not run.
         return Component::state(
-            "scenarios.execution",
+            SCENARIOS_EXECUTION,
             false,
             ComponentState::Unsupported,
             Some("core.capability-unavailable"),
         );
     }
-    let state = if rollup.blocking > 0 {
+    let state = if rollup.blocking > 0 || rollup.missing > 0 {
         ComponentState::Fail
     } else if rollup.unsupported > 0 || rollup.degraded > 0 || rollup.stale > 0 {
         ComponentState::Degraded
     } else {
         ComponentState::Pass
     };
-    let reason = match state {
-        ComponentState::Fail => Some("scenario.assertion-failed"),
-        // Review F-10: evidence compiled under a previous IR revision is
-        // stale — it degrades the component with its own reason, never
-        // indistinguishable from current evidence.
-        ComponentState::Degraded if rollup.stale > 0 => Some("scenario.stale-evidence"),
-        ComponentState::Degraded => Some("scenario.unsupported-capability"),
-        _ => None,
-    };
-    let mut component = Component::state("scenarios.execution", false, state, reason);
-    component.receipt.findings =
-        Some(rollup.blocking + rollup.unsupported + rollup.degraded + rollup.stale);
+    let mut component = Component::state(SCENARIOS_EXECUTION, false, state, rollup_reason(&rollup));
+    // The blocked verdict discards the receipt: the classed envelope is
+    // what carries the assertion/infrastructure distinction to the user.
+    component.failure = rollup.failure;
+    component.receipt.findings = Some(
+        rollup.blocking + rollup.missing + rollup.unsupported + rollup.degraded + rollup.stale,
+    );
     // F-7: the exported manifest rows ride in the receipt's trace slot,
     // so the verify receipt carries the emitted relations.
     component.receipt.trace = rollup.trace;
     component
 }
 
+/// The semantic reason of one execution rollup (issue #56, plan S5):
+/// evidence integrity outranks the conformance classes, and every
+/// reason is a registered diagnostic id — the same id the failure
+/// envelope carries, so the classification is observable on a blocked
+/// verdict, not only inside the discarded receipt. Assertion failures
+/// dominate boot/infrastructure findings: an `invalid` envelope always
+/// outranks `unavailable` under the established aggregation precedence.
+fn rollup_reason(rollup: &ExecutionRollup) -> Option<&'static str> {
+    if rollup.invalid > 0 {
+        return Some("scenario.run-record-invalid");
+    }
+    if rollup.assertion > 0 {
+        return Some("scenario.assertion-failed");
+    }
+    if rollup.infrastructure > 0 || rollup.missing > 0 {
+        // A boot failure and a declared test that never reported are the
+        // same class: the suite could not produce its evidence.
+        return Some("scenario.infrastructure");
+    }
+    // Review F-10: evidence compiled under a previous IR revision is
+    // stale — it degrades the component with its own reason, never
+    // indistinguishable from current evidence.
+    if rollup.stale > 0 {
+        return Some("scenario.stale-evidence");
+    }
+    if rollup.unsupported > 0 || rollup.degraded > 0 {
+        return Some("scenario.unsupported-capability");
+    }
+    None
+}
+
+/// The failure envelope of a blocked scenario-execution gate: one
+/// registered diagnostic per present failure class, with the first
+/// offending scenario named — a blocked verify surfaces the class
+/// distinction, never a bare component id. A diagnostic set holds one
+/// status class, so the `invalid` family (malformed records, failed
+/// assertions) wins the envelope when both families are present; the
+/// unavailable family's counts stay in the receipt's findings.
+fn execution_failure(
+    rollup: &ExecutionRollup,
+    first_assertion: Option<&(String, Option<String>)>,
+    first_infrastructure: Option<&String>,
+    first_missing: Option<&String>,
+) -> DomainResult {
+    use crate::diagnostics::DataObject;
+    use crate::scenario::diagnostic::{one, token};
+    let mut invalid: Vec<Diagnostic> = Vec::new();
+    if rollup.invalid > 0 {
+        let mut data = DataObject::new();
+        data.insert("detail".to_owned(), token("evidence-invalid"));
+        if let Ok(diagnostic) = one("scenario.run-record-invalid", None, data) {
+            invalid.push(diagnostic);
+        }
+    }
+    if rollup.assertion > 0 {
+        let mut data = DataObject::new();
+        let (scenario, step) = first_assertion
+            .map(|(scenario, step)| (scenario.as_str(), step.as_deref().unwrap_or("run")))
+            .unwrap_or(("suite", "run"));
+        data.insert("scenario".to_owned(), token(scenario));
+        data.insert("step".to_owned(), token(step));
+        if let Ok(diagnostic) = one("scenario.assertion-failed", Some(scenario.to_owned()), data) {
+            invalid.push(diagnostic);
+        }
+    }
+    if !invalid.is_empty() {
+        return DomainResult::Invalid {
+            diagnostics: super::generate::wire_set(crate::result::Status::Invalid, invalid),
+        };
+    }
+    let mut unavailable: Vec<Diagnostic> = Vec::new();
+    if rollup.infrastructure > 0 {
+        let scenario = first_infrastructure.map_or("suite", String::as_str);
+        let mut data = DataObject::new();
+        data.insert("scenario".to_owned(), token(scenario));
+        data.insert("detail".to_owned(), token("boot-failure"));
+        if let Ok(diagnostic) = one("scenario.infrastructure", Some(scenario.to_owned()), data) {
+            unavailable.push(diagnostic);
+        }
+    }
+    if rollup.missing > 0 {
+        let scenario = first_missing.map_or("suite", String::as_str);
+        let mut data = DataObject::new();
+        data.insert("scenario".to_owned(), token(scenario));
+        data.insert("detail".to_owned(), token("missing-record"));
+        if let Ok(diagnostic) = one("scenario.infrastructure", Some(scenario.to_owned()), data) {
+            unavailable.push(diagnostic);
+        }
+    }
+    DomainResult::Unavailable {
+        diagnostics: super::generate::wire_set(crate::result::Status::Unavailable, unavailable),
+    }
+}
+
 /// The trace export context of one prepared project (review F-7): the
-/// manifest revision is the exact lock revision, and the manifest header
-/// pins the current Model digest.
-fn scenario_trace_context(prepared: &Prepared) -> TraceContext {
-    let mut context = TraceContext::new(prepared.lock().digest().as_str().to_owned());
+/// manifest revision is the exact lock revision, the manifest header
+/// pins the current Model digest, and the gate identity names the
+/// scenario-execution component itself — the receipt-validated gate,
+/// never an arbitrary string (issue #56, plan S5).
+fn scenario_trace_context(prepared: &Prepared, project_id: &str) -> TraceContext {
+    // The manifest revision grammar is bare lowercase hex — the lock
+    // digest's `sha256:` wire spelling would never validate.
+    let mut context = TraceContext::new(
+        prepared
+            .lock()
+            .digest()
+            .as_str()
+            .strip_prefix("sha256:")
+            .expect("the lock digest spelling is fixed")
+            .to_owned(),
+    );
     context.model_digest = prepared.inputs().model().digest().as_str().to_owned();
+    context.project = project_id.to_owned();
+    context.gate = Some(SCENARIOS_EXECUTION.to_owned());
     context
+}
+
+/// The expected scenario-test inventory of one prepared project (issue
+/// #56, plan S5): every recorded `test` artifact under a scenario-tests
+/// home — generated or scaffolded alike — owes one run record, so a
+/// suite that silently drops a test can never roll up as a successful
+/// partial run. Without an ownership manifest there is no declared
+/// inventory to hold anyone to.
+fn expected_scenario_tests(prepared: &Prepared) -> std::collections::BTreeSet<String> {
+    prepared
+        .manifest()
+        .map(|manifest| {
+            manifest
+                .artifacts()
+                .iter()
+                .filter(|entry| {
+                    let path = entry.key().path().as_str();
+                    entry.key().kind() == ArtifactKind::Test
+                        && path.split('/').any(|segment| segment == "scenario-tests")
+                        && (path.ends_with(".test.ts") || path.ends_with(".test.php"))
+                })
+                .map(|entry| entry.key().path().as_str().to_owned())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The deterministic rollup of one ingest home (review F-7): every
@@ -664,11 +892,32 @@ pub(crate) struct ExecutionRollup {
     /// The ingest home held at least one parsable record.
     pub present: bool,
     pub blocking: usize,
+    /// Records carrying at least one failed assertion row (issue #56).
+    pub assertion: usize,
+    /// Records carrying at least one infrastructure row (issue #56): a
+    /// boot, spawn, or teardown failure is never confused with an
+    /// evaluated assertion that failed.
+    pub infrastructure: usize,
+    /// Records that never parsed — unreadable, malformed, or off-contract
+    /// bytes (issue #56): evidence integrity, not a conformance verdict.
+    pub invalid: usize,
+    /// Declared scenario tests that produced no run record at all
+    /// (issue #56): a silently dropped test is never a partial pass.
+    pub missing: usize,
     pub unsupported: usize,
     pub degraded: usize,
     /// Records compiled under a previous IR revision (review F-10).
     pub stale: usize,
+    /// The count of parsed records the manifest covers.
+    pub records: usize,
     pub trace: Option<TraceSummary>,
+    /// The canonical bytes of the validated exported manifest — the
+    /// durable document `lekalo trace collect` persists.
+    pub manifest_bytes: Option<Vec<u8>>,
+    /// The classed failure envelope a blocked gate aggregates — the
+    /// classification is observable in the emitted diagnostics, never
+    /// only inside the receipt.
+    pub failure: Option<DomainResult>,
 }
 
 /// Roll one ingest home up over the validated root capability.
@@ -676,6 +925,7 @@ pub(crate) fn scenarios_execution_rollup(
     fs: &Fs,
     context: &TraceContext,
     expected_ir: &Sha256Digest,
+    expected: &std::collections::BTreeSet<String>,
 ) -> ExecutionRollup {
     let dir = crate::scenario_evidence::INGEST_DIR;
     let mut rollup = ExecutionRollup::default();
@@ -697,11 +947,15 @@ pub(crate) fn scenarios_execution_rollup(
     }
     rollup.present = true;
     let mut all_records = Vec::new();
+    let mut observed = std::collections::BTreeSet::new();
+    let mut first_assertion: Option<(String, Option<String>)> = None;
+    let mut first_infrastructure: Option<String> = None;
     for name in &names {
         let bytes = match fs.read_file_opt(dir, name, 1 << 20) {
             Ok(Some(bytes)) => bytes,
             _ => {
                 rollup.blocking += 1;
+                rollup.invalid += 1;
                 continue;
             }
         };
@@ -709,6 +963,7 @@ pub(crate) fn scenarios_execution_rollup(
             Ok(value) => value,
             Err(_) => {
                 rollup.blocking += 1;
+                rollup.invalid += 1;
                 continue;
             }
         };
@@ -716,6 +971,7 @@ pub(crate) fn scenarios_execution_rollup(
             Ok(record) => record,
             Err(_) => {
                 rollup.blocking += 1;
+                rollup.invalid += 1;
                 continue;
             }
         };
@@ -726,6 +982,28 @@ pub(crate) fn scenarios_execution_rollup(
         if record.ir_digest != expected_ir.as_str() {
             rollup.stale += 1;
         }
+        // Issue #56: the failure classes stay distinct in the rollup —
+        // an evaluated assertion that failed and a boot/infrastructure
+        // failure are different findings with different reasons. The
+        // first offender of each class is kept so the blocked envelope
+        // names a real scenario, never a vague suite token.
+        if summary.failed > 0 {
+            rollup.assertion += 1;
+            if first_assertion.is_none() {
+                let step = record
+                    .assertions
+                    .iter()
+                    .find(|row| row.outcome == "fail")
+                    .and_then(|row| row.step_id.clone());
+                first_assertion = Some((record.scenario_id.clone(), step));
+            }
+        }
+        if summary.infrastructure > 0 {
+            rollup.infrastructure += 1;
+            if first_infrastructure.is_none() {
+                first_infrastructure = Some(record.scenario_id.clone());
+            }
+        }
         if summary.has_blocking_failure() {
             rollup.blocking += 1;
         } else if summary.unsupported > 0 || summary.degraded > 0 {
@@ -735,29 +1013,69 @@ pub(crate) fn scenarios_execution_rollup(
         } else {
             rollup.degraded += 1;
         }
+        observed.insert(record.test.1.clone());
         all_records.push(record);
     }
-    if all_records.is_empty() {
-        return rollup;
-    }
-    // F-7: export the aggregated relations through the trace manifest
-    // mechanism; the emitted rows are observable in the rollup.
-    match trace_manifest_document(&all_records, context) {
-        Ok(document) => {
-            let bytes = serde_json::to_vec_pretty(&document).expect("document serializes");
-            match crate::trace::TraceManifest::parse(&bytes) {
-                Ok(parsed) => {
-                    let report = parsed.report();
-                    rollup.trace = Some(TraceSummary {
-                        relations: report.relation_count,
-                        gaps: report.gap_count,
-                        uncovered_sinks: parsed.uncovered_sinks().len(),
-                    });
+    // Issue #56: every declared scenario-test artifact owes one record;
+    // a suite that dropped a test never rolls up as a partial pass. The
+    // first missing path is reduced to its scenario stem so the blocked
+    // envelope names the scenario, not a file.
+    let first_missing = expected
+        .iter()
+        .find(|path| !observed.contains(*path))
+        .map(|path| {
+            let file = path.rsplit('/').next().unwrap_or(path.as_str());
+            file.strip_suffix(".test.ts")
+                .or_else(|| file.strip_suffix(".test.php"))
+                .unwrap_or(file)
+                .to_owned()
+        });
+    rollup.missing = expected
+        .iter()
+        .filter(|path| !observed.contains(*path))
+        .count();
+    rollup.records = all_records.len();
+    if !all_records.is_empty() {
+        // F-7: export the aggregated relations through the trace manifest
+        // mechanism; the emitted rows are observable in the rollup, and
+        // the canonical bytes are the durable document `lekalo trace
+        // collect` persists. A document that does not survive the
+        // mechanism is a blocking failure, never a silent skip.
+        match trace_manifest_document(&all_records, context) {
+            Ok(document) => {
+                let bytes = serde_json::to_vec_pretty(&document).expect("document serializes");
+                match crate::trace::TraceManifest::parse(&bytes) {
+                    Ok(parsed) => {
+                        let report = parsed.report();
+                        rollup.trace = Some(TraceSummary {
+                            relations: report.relation_count,
+                            gaps: report.gap_count,
+                            uncovered_sinks: parsed.uncovered_sinks().len(),
+                        });
+                        rollup.manifest_bytes =
+                            parsed.canonical_bytes().ok().map(String::into_bytes);
+                    }
+                    Err(_) => {
+                        rollup.blocking += 1;
+                        rollup.invalid += 1;
+                    }
                 }
-                Err(_) => rollup.blocking += 1,
+            }
+            Err(_) => {
+                rollup.blocking += 1;
+                rollup.invalid += 1;
             }
         }
-        Err(_) => rollup.blocking += 1,
+    }
+    // Issue #56: attach the classed failure envelope once every failure
+    // source — records, inventory, the manifest mechanism — has counted.
+    if rollup.blocking > 0 || rollup.missing > 0 {
+        rollup.failure = Some(execution_failure(
+            &rollup,
+            first_assertion.as_ref(),
+            first_infrastructure.as_ref(),
+            first_missing.as_ref(),
+        ));
     }
     rollup
 }
@@ -850,11 +1168,13 @@ fn trace_component(prepared: &Prepared, logical: &str) -> Component {
 
 #[cfg(test)]
 mod tests {
-    use super::scenarios_execution_rollup;
+    use super::{rollup_reason, scenarios_execution_rollup, ExecutionRollup};
     use crate::lockfile::types::Sha256Digest;
     use crate::project_fs::Fs;
+    use crate::result::DomainResult;
     use crate::scenario_evidence::TraceContext;
     use serde_json::json;
+    use std::collections::BTreeSet;
     use std::fs;
     use tempfile::TempDir;
 
@@ -893,6 +1213,19 @@ mod tests {
         context
     }
 
+    /// The gated production context: verify exports under the
+    /// scenario-execution gate identity the receipt validates.
+    fn gated_context() -> TraceContext {
+        let mut context = context();
+        context.gate = Some(super::SCENARIOS_EXECUTION.to_owned());
+        context
+    }
+
+    /// No declared scenario-test inventory.
+    fn no_expected() -> BTreeSet<String> {
+        BTreeSet::new()
+    }
+
     /// The prepared IR digest the fixture's record was compiled under.
     fn fixture_ir() -> Sha256Digest {
         Sha256Digest::parse(&format!("sha256:{}", "1".repeat(64))).expect("digest")
@@ -914,7 +1247,7 @@ mod tests {
         .expect("record written");
         let fs = Fs::open(temp.path()).expect("validated root");
 
-        let rollup = scenarios_execution_rollup(&fs, &context(), &fixture_ir());
+        let rollup = scenarios_execution_rollup(&fs, &context(), &fixture_ir(), &no_expected());
 
         assert!(rollup.present, "ingest home with one record is present");
         assert_eq!(rollup.blocking, 0, "a passing record never blocks");
@@ -928,6 +1261,48 @@ mod tests {
         // The partial manifest declares the explicit missing-requirement
         // gap the scenario segment cannot close.
         assert_eq!(trace.gaps, 1);
+    }
+
+    /// Issue #56: under the production gate context the manifest exports
+    /// the evidences edges — gate → native_test and gate → scenario —
+    /// on top of the verifies rows, and the canonical manifest bytes are
+    /// the durable document `lekalo trace collect` persists.
+    #[test]
+    fn execution_rollup_exports_gate_evidences_and_the_durable_document() {
+        let temp = TempDir::new().expect("temp dir");
+        let ingest = temp.path().join(".lekalo/import/scenario-runs");
+        fs::create_dir_all(&ingest).expect("ingest home");
+        fs::write(
+            ingest.join("run.json"),
+            serde_json::to_vec_pretty(&valid_run_record()).expect("record serializes"),
+        )
+        .expect("record written");
+        let fs = Fs::open(temp.path()).expect("validated root");
+
+        let rollup =
+            scenarios_execution_rollup(&fs, &gated_context(), &fixture_ir(), &no_expected());
+
+        let trace = rollup.trace.expect("the gated manifest is emitted");
+        // verifies test→scenario + test→symbol, then evidences
+        // gate→test + gate→scenario.
+        assert_eq!(trace.relations, 4, "the gate evidences rows ride along");
+        assert_eq!(trace.gaps, 1, "the declared missing-requirement gap stays");
+        let bytes = rollup
+            .manifest_bytes
+            .expect("the canonical document is exported");
+        let parsed = crate::trace::TraceManifest::parse(&bytes).expect("re-parse");
+        let rows = parsed
+            .query(&crate::trace::QuerySelection::GatesFor(
+                "planner.scenario.focus_happy".to_owned(),
+            ))
+            .expect("the test id resolves");
+        assert!(
+            rows.iter().any(|row| {
+                row.relation == crate::trace::relation::RelationKind::Evidences
+                    && row.id == super::SCENARIOS_EXECUTION
+            }),
+            "the validated gate evidences the native test"
+        );
     }
 
     /// Review F-10: a record compiled under a previous IR revision is
@@ -946,7 +1321,7 @@ mod tests {
         let fs = Fs::open(temp.path()).expect("validated root");
         let current = Sha256Digest::parse(&format!("sha256:{}", "9".repeat(64))).expect("digest");
 
-        let rollup = scenarios_execution_rollup(&fs, &context(), &current);
+        let rollup = scenarios_execution_rollup(&fs, &context(), &current, &no_expected());
 
         assert!(rollup.present);
         assert_eq!(rollup.stale, 1, "the previous-revision record is stale");
@@ -961,7 +1336,7 @@ mod tests {
         let temp = TempDir::new().expect("temp dir");
         let fs = Fs::open(temp.path()).expect("validated root");
 
-        let rollup = scenarios_execution_rollup(&fs, &context(), &fixture_ir());
+        let rollup = scenarios_execution_rollup(&fs, &context(), &fixture_ir(), &no_expected());
 
         assert!(!rollup.present);
         assert!(rollup.trace.is_none());
@@ -969,5 +1344,132 @@ mod tests {
             (rollup.blocking, rollup.unsupported, rollup.degraded),
             (0, 0, 0)
         );
+    }
+
+    /// Issue #56: assertion failures and boot/infrastructure failures
+    /// keep separate counters and separate reasons — an evaluated
+    /// assertion that failed is never reported as a boot failure, and a
+    /// run carrying both reports the mixed class honestly.
+    #[test]
+    fn execution_rollup_distinguishes_assertion_and_infrastructure() {
+        let temp = TempDir::new().expect("temp dir");
+        let ingest = temp.path().join(".lekalo/import/scenario-runs");
+        fs::create_dir_all(&ingest).expect("ingest home");
+        let mut failing = valid_run_record();
+        failing["assertions"][0]["outcome"] = json!("fail");
+        failing["test"]["id"] = json!("node:failing");
+        failing["test"]["path"] =
+            json!("src/generated/node-typescript/scenario-tests/planner/failing.test.ts");
+        let mut broken = valid_run_record();
+        broken["assertions"][0]["outcome"] = json!("infrastructure");
+        broken["assertions"][1]["outcome"] = json!("infrastructure");
+        broken["test"]["id"] = json!("node:broken");
+        broken["test"]["path"] =
+            json!("src/generated/node-typescript/scenario-tests/planner/broken.test.ts");
+        fs::write(
+            ingest.join("a-fail.json"),
+            serde_json::to_vec_pretty(&failing).expect("serializes"),
+        )
+        .expect("written");
+        fs::write(
+            ingest.join("b-infra.json"),
+            serde_json::to_vec_pretty(&broken).expect("serializes"),
+        )
+        .expect("written");
+        let fs = Fs::open(temp.path()).expect("validated root");
+
+        let rollup = scenarios_execution_rollup(&fs, &context(), &fixture_ir(), &no_expected());
+
+        assert_eq!(rollup.blocking, 2, "both records block");
+        assert_eq!(rollup.assertion, 1, "one record carries failed assertions");
+        assert_eq!(rollup.infrastructure, 1, "one record carries boot rows");
+        assert_eq!(
+            rollup_reason(&rollup),
+            Some("scenario.assertion-failed"),
+            "the invalid family dominates a mixed run"
+        );
+        // The envelope is the observable surface: the assertion class
+        // carries the invalid-status diagnostic for a mixed run.
+        match rollup.failure {
+            Some(DomainResult::Invalid { .. }) => {}
+            _ => panic!("a mixed run is an invalid-status envelope"),
+        }
+
+        let only_assertion = ExecutionRollup {
+            blocking: 1,
+            assertion: 1,
+            ..ExecutionRollup::default()
+        };
+        assert_eq!(
+            rollup_reason(&only_assertion),
+            Some("scenario.assertion-failed")
+        );
+        let only_infra = ExecutionRollup {
+            blocking: 1,
+            infrastructure: 1,
+            ..ExecutionRollup::default()
+        };
+        assert_eq!(rollup_reason(&only_infra), Some("scenario.infrastructure"));
+    }
+
+    /// Issue #56: a declared scenario-test artifact that produced no run
+    /// record is missing evidence — the suite is never a successful
+    /// partial run — while a record matching its declared path clears it.
+    #[test]
+    fn execution_rollup_marks_missing_expected_inventory() {
+        let temp = TempDir::new().expect("temp dir");
+        let ingest = temp.path().join(".lekalo/import/scenario-runs");
+        fs::create_dir_all(&ingest).expect("ingest home");
+        fs::write(
+            ingest.join("run.json"),
+            serde_json::to_vec_pretty(&valid_run_record()).expect("record serializes"),
+        )
+        .expect("record written");
+        let fs = Fs::open(temp.path()).expect("validated root");
+
+        let mut expected = BTreeSet::new();
+        expected.insert(
+            "src/generated/node-typescript/scenario-tests/planner/planner.scenario.focus_happy.test.ts"
+                .to_owned(),
+        );
+        let covered = scenarios_execution_rollup(&fs, &context(), &fixture_ir(), &expected);
+        assert_eq!(covered.missing, 0, "the declared test reported");
+        assert_eq!(rollup_reason(&covered), None, "no finding");
+
+        expected.insert(
+            "src/generated/node-typescript/scenario-tests/planner/dropped.test.ts".to_owned(),
+        );
+        let rollup = scenarios_execution_rollup(&fs, &context(), &fixture_ir(), &expected);
+        assert_eq!(rollup.missing, 1, "the dropped test produced no record");
+        assert_eq!(rollup.blocking, 0, "no record failed — evidence is absent");
+        assert_eq!(
+            rollup_reason(&rollup),
+            Some("scenario.infrastructure"),
+            "missing inventory is the report-failure class"
+        );
+        match rollup.failure {
+            Some(DomainResult::Unavailable { .. }) => {}
+            _ => panic!("a missing record is an unavailable-status envelope"),
+        }
+    }
+
+    /// Issue #56: bytes that never parse as a run record are malformed
+    /// evidence — they block with the integrity reason, not a
+    /// conformance verdict.
+    #[test]
+    fn execution_rollup_marks_unparsable_bytes_invalid() {
+        let temp = TempDir::new().expect("temp dir");
+        let ingest = temp.path().join(".lekalo/import/scenario-runs");
+        fs::create_dir_all(&ingest).expect("ingest home");
+        fs::write(ingest.join("garbage.json"), b"not a run record").expect("written");
+        let fs = Fs::open(temp.path()).expect("validated root");
+
+        let rollup = scenarios_execution_rollup(&fs, &context(), &fixture_ir(), &no_expected());
+
+        assert!(rollup.present);
+        assert_eq!(rollup.invalid, 1, "the malformed document is counted");
+        assert_eq!(rollup.blocking, 1);
+        assert_eq!(rollup.records, 0, "nothing parsed");
+        assert_eq!(rollup_reason(&rollup), Some("scenario.run-record-invalid"));
     }
 }

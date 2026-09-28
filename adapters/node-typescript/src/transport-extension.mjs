@@ -41,6 +41,10 @@ export const TRANSPORT_EVIDENCE_DIR = ".lekalo/cache/transport";
 export const IR_EVIDENCE_DIR = ".lekalo/cache/ir";
 /** The declared write root of the route layer. */
 export const ROUTE_WRITE_ROOT = "src/routes/**";
+/** The runtime home of the canonical client-SDK evidence (issue #72). */
+export const CLIENT_SDK_EVIDENCE_DIR = ".lekalo/cache/client-sdk";
+/** The declared write root of the generated clients (issue #72). */
+export const CLIENT_SDK_WRITE_ROOT = "src/generated/node-typescript/clients/**";
 /** The read trees the deployment profile must cover for the transport
  * generator to enable (the two evidence homes). */
 export const TRANSPORT_READ_ROOT = ".lekalo/cache/transport";

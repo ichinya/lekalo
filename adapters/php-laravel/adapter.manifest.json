@@ -1,0 +1,159 @@
+{
+  "schemaVersion": "lekalo/adapter-manifest/v0.3.2",
+  "identity": "dev.lekalo.adapter-manifest@0.3.2",
+  "adapter": {
+    "id": "lekalo-target-php-laravel",
+    "name": "PHP/Laravel target adapter",
+    "version": "0.2.0"
+  },
+  "publisher": {
+    "id": "lekalo",
+    "name": "Lekalo project",
+    "trustAnchor": "builtin"
+  },
+  "source": {
+    "kind": "path",
+    "coordinate": "path:adapters/php-laravel",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "license": {
+    "spdx": "Apache-2.0",
+    "file": "THIRD_PARTY_NOTICES.md",
+    "fileDigest": "sha256:c1615d88e6dab7c5dea00b667bf439482d8d46c927a1dd7ac25df8aa1f67e099"
+  },
+  "compatibility": {
+    "protocolVersions": [
+      "0.3.2"
+    ],
+    "irVersions": [
+      "0.2.16"
+    ],
+    "extensions": []
+  },
+  "capabilities": {
+    "operations": [
+      "describe",
+      "scan",
+      "bind",
+      "validate",
+      "generate",
+      "verify",
+      "clean",
+      "plan-clean",
+      "plan-native"
+    ],
+    "targets": [
+      "php-laravel"
+    ],
+    "profiles": [
+      "default",
+      "strict"
+    ],
+    "named": {
+      "generate.openapi": "unsupported",
+      "generate.transport-http": "unsupported",
+      "generate.ui": "unsupported",
+      "generate.zod": "unsupported",
+      "preserve.classification": "unsupported",
+      "scan.symbols": "unsupported",
+      "verify.scenarios": "full",
+      "verify.transport-http": "unsupported",
+      "generate.types": "full"
+    },
+    "constraints": {
+      "maxEntries": 1024
+    },
+    "readScopes": [
+      ".lekalo/cache/**",
+      ".lekalo/generated/php-laravel/types/**",
+      ".lekalo/import/**",
+      ".lekalo/ir/**",
+      "app/lekalo-types/**",
+      "lekalo/php-test-port.json",
+      "lekalo/scenarios/**",
+      "lekalo/types/**"
+    ],
+    "writeScopes": [
+      ".lekalo/generated/php-laravel/**",
+      "app/lekalo-types/**",
+      "src/generated/php-laravel/scenario-tests/**",
+      "tests/lekalo/scenario-tests/**"
+    ],
+    "transports": [
+      "stdin",
+      "file"
+    ]
+  },
+  "executable": {
+    "runtime": {
+      "kind": "php",
+      "minVersion": "8.3.0"
+    },
+    "entry": "adapter.php",
+    "argvPreview": [
+      "php",
+      "adapter.php"
+    ],
+    "assets": []
+  },
+  "platforms": [
+    "any"
+  ],
+  "integrity": {
+    "packageDigest": "sha256:4c677f96b872107d64ac2b8994faf5ccc9026074fc440ec1832e5db1db50855a",
+    "files": [
+      {
+        "path": "adapter.php",
+        "digest": "sha256:ca9eb61aca3b3a16d30ac515a12248ed143e1e206a68078caa92f225bd135016",
+        "bytes": 361342
+      }
+    ],
+    "signaturePolicy": "unsigned",
+    "signature": null
+  },
+  "permissions": {
+    "filesystem": {
+      "readScopes": [
+        ".lekalo/cache/**",
+        ".lekalo/generated/php-laravel/types/**",
+        ".lekalo/import/**",
+        ".lekalo/ir/**",
+        "app/lekalo-types/**",
+        "lekalo/php-test-port.json",
+        "lekalo/scenarios/**",
+        "lekalo/types/**"
+      ],
+      "writeScopes": [
+        ".lekalo/generated/php-laravel/**",
+        "app/lekalo-types/**",
+        "src/generated/php-laravel/scenario-tests/**",
+        "tests/lekalo/scenario-tests/**"
+      ]
+    },
+    "network": {
+      "mode": "denied",
+      "destinations": []
+    },
+    "environment": {
+      "allowlist": []
+    },
+    "processes": {
+      "children": "denied"
+    },
+    "secrets": {
+      "handles": []
+    }
+  },
+  "hooks": [],
+  "conformance": {
+    "reportDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "badge": {
+      "protocol": "0.3.2",
+      "ir": "0.2.16",
+      "profile": "strict"
+    },
+    "suiteRegistry": "dev.lekalo.diagnostic-registry@0.3.2"
+  },
+  "status": "active",
+  "revocation": null
+}

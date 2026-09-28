@@ -1,0 +1,19 @@
+{
+  "tool": "mago",
+  "version": "1.0.0",
+  "recording": "guard --reporting-format json over guard-source.php with a perimeter rule forbidding Vendor\\Core from depending on Vendor\\Framework",
+  "exitCode": 1,
+  "guardConfig": {
+    "layering": ["Vendor\\Core", "Vendor\\Framework"],
+    "rule": { "namespace": "Vendor\\Core", "permit": ["@native"] }
+  },
+  "recordedFindings": [
+    { "code": "disallowed-use", "level": "Error" },
+    { "code": "disallowed-return-type", "level": "Error" },
+    { "code": "disallowed-instantiation", "level": "Error" }
+  ],
+  "notes": [
+    "guard violation codes are disallowed-use, disallowed-return-type, disallowed-instantiation; every span is 0-based offset plus 0-based line inside the closed JSON report",
+    "exit 1 with error-level findings is indistinguishable from infrastructure failure by exit code alone"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "tool": "mago",
+  "version": "1.0.0",
+  "recording": "lint --reporting-format sarif over violations.php",
+  "exitCode": 0,
+  "sarifVersion": "2.1.0",
+  "driver": { "name": "mago", "version": "1.0.0" },
+  "notes": [
+    "SARIF region carries 1-based startLine/endLine/startColumn/endColumn only — no byte offsets; the byte span must be reconstructed from the captured source text or the finding is refused as ambiguous",
+    "artifactLocation.uri is an absolute host URI with a Windows extended-length path prefix; relative, escaping, and non-file URIs are refused",
+    "results[].level is lowercase (warning|error|note|help)"
+  ],
+  "recordedFindings": [
+    { "ruleId": "strict-types", "level": "warning", "startLine": 1 },
+    { "ruleId": "no-variable-variable", "level": "warning" }
+  ]
+}

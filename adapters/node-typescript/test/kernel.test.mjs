@@ -94,12 +94,15 @@ test("the descriptor advertises describe only, with honest capability states", (
 test("no invented capability ids ever appear", () => {
   const declared = Object.keys(describeCapabilities().capabilities);
   assert.deepEqual(declared.sort(), [
+    "generate.client-sdk",
     "generate.openapi",
+    "generate.transport-http",
     "generate.ui",
     "generate.zod",
     "preserve.classification",
     "scan.symbols",
     "verify.scenarios",
+    "verify.transport-http",
   ]);
 });
 
