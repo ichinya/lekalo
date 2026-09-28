@@ -228,7 +228,18 @@ pub fn run_confirmed_plan(run: &ConfirmedRun<'_>) -> ConfirmedRunOutcome {
         let entry = match run.catalog.get(&command.tool_ref) {
             Some(entry) => entry,
             None => {
-                terminal = terminal.max(Terminal::Blocked);
+                // Defense in depth: a tool_ref absent from the trusted
+                // catalog is already a preflight trust refusal (the
+                // whole-run custody loop above refuses before any
+                // staging), so this arm only fires if that layer is
+                // ever relaxed. It honors the same required/optional
+                // split as the launch path below, never a blanket
+                // blocker.
+                terminal = terminal.max(if command.required {
+                    Terminal::Blocked
+                } else {
+                    Terminal::Degraded
+                });
                 results.push(preflight_miss(
                     command,
                     "missing",
@@ -242,6 +253,7 @@ pub fn run_confirmed_plan(run: &ConfirmedRun<'_>) -> ConfirmedRunOutcome {
         let launched = launch_command(
             run,
             command,
+            entry,
             &stage_root,
             &entry.program,
             &output_caps,
@@ -465,6 +477,14 @@ fn plan_tool_digest(plan: &super::types::NativePlan, tool_id: &str) -> String {
         .unwrap_or_default()
 }
 
+/// The plan's recorded version pin for one tool id, when carried.
+fn plan_tool_version(plan: &super::types::NativePlan, tool_id: &str) -> Option<String> {
+    plan.tools
+        .iter()
+        .find(|tool| tool.id == tool_id)
+        .and_then(|tool| tool.version.clone())
+}
+
 /// The env recipe digest the receipt carries (names and kinds only —
 /// never values).
 fn env_recipe_digest(plan: &super::types::NativePlan) -> String {
@@ -571,10 +591,8 @@ struct CommandSuccess {
 enum LaunchFailure {
     /// The resolved program or confirmed script is absent.
     Missing,
-    /// The tool exists but its observed version/platform does not
-    /// satisfy the confirmed compatibility (wired by the version
-    /// probe once a pinned tool reports versions).
-    #[allow(dead_code)]
+    /// The tool exists but its observed version does not satisfy the
+    /// confirmed compatibility pin.
     Incompatible,
     /// A cwd escape or an env name outside the approved recipe.
     Security,
@@ -588,6 +606,7 @@ enum LaunchFailure {
 fn launch_command(
     run: &ConfirmedRun<'_>,
     command: &super::types::NativeCommand,
+    entry: &CatalogEntry,
     stage_root: &Path,
     program: &Path,
     caps: &OutputCaps,
@@ -625,12 +644,28 @@ fn launch_command(
     if !family_matches {
         return Err(LaunchFailure::Missing);
     }
+    // Confirmed compatibility: the plan's recorded tool version must
+    // match the catalog's observed version when both are known (a
+    // pinned expectation never silently runs against another build).
+    if let Some(expected) = plan_tool_version(run.plan, &command.tool_ref) {
+        if expected != "unknown"
+            && entry
+                .version
+                .as_deref()
+                .is_some_and(|observed| observed != expected)
+        {
+            return Err(LaunchFailure::Incompatible);
+        }
+    }
     // When the confirmed program names an interpreter-relative script
-    // (e.g. `vendor/bin/testo`), the catalog entry for the interpreter
-    // family launches the script through the pinned binary.
+    // (e.g. `vendor/bin/testo`), the catalog entry for the pinned
+    // family launches the script through the pinned binary with the
+    // absolute staged path — the relative token alone would re-enter
+    // ambient resolution. A missing staged script is a preflight miss,
+    // never a child execution.
     let mut cmd = Command::new(program);
     let mut args: Vec<String> = command.argv.clone();
-    if args.len() > 1 && catalog_family == "php" && args[1].starts_with("vendor/bin/") {
+    if args.len() > 1 && args[1].starts_with("vendor/bin/") {
         let script = stage_canonical.join(&args[1]);
         if !script.is_file() {
             return Err(LaunchFailure::Missing);
@@ -1479,6 +1514,121 @@ mod runner_tests {
         let third = snapshot_tree(&source).expect("snapshot");
         assert_ne!(first, third);
         drop(dir);
+    }
+
+    #[test]
+    fn a_missing_confirmed_script_blocks_a_required_gate_and_degrades_an_optional_one() {
+        let Some(program) = node_program() else {
+            return;
+        };
+        let (_dir, source) = source_root();
+        // Required: the missing script blocks the whole answer.
+        let required = plan_with_script("process.exit(0)", 10_000);
+        let mut required = required;
+        required.commands[0].argv[1] = "vendor/bin/absent-gate".to_owned();
+        required.commands[0].script_name = "gate:absent".to_owned();
+        let selection = required.selection.clone();
+        for command in &mut required.commands {
+            command.selection_ref = crate::native_gate::selection_digest(&selection);
+        }
+        required.plan_digest = crate::native_gate::plan_digest(&required);
+        let receipt =
+            run_with(&required, &program, &qualified(), &source).expect("the run completes");
+        assert_eq!(receipt.commands[0].outcome, "missing");
+        assert_eq!(
+            receipt.commands[0].failure_class.as_deref(),
+            Some("missing-tool")
+        );
+        assert!(receipt.commands[0].exit.is_none());
+        assert_eq!(receipt.verdict, "blocked");
+
+        // Optional: the same absence degrades the summary instead.
+        let optional = plan_with_script("process.exit(0)", 10_000);
+        let mut optional = optional;
+        optional.commands[0].argv[1] = "vendor/bin/absent-gate".to_owned();
+        optional.commands[0].required = false;
+        optional.commands[0].script_name = "gate:absent".to_owned();
+        let selection = optional.selection.clone();
+        for command in &mut optional.commands {
+            command.selection_ref = crate::native_gate::selection_digest(&selection);
+        }
+        optional.plan_digest = crate::native_gate::plan_digest(&optional);
+        let receipt =
+            run_with(&optional, &program, &qualified(), &source).expect("the run completes");
+        assert_eq!(receipt.commands[0].outcome, "missing");
+        assert_eq!(receipt.verdict, "degraded");
+    }
+
+    #[test]
+    fn a_version_pin_mismatch_is_an_incompatible_tool_not_a_failure() {
+        let Some(program) = node_program() else {
+            return;
+        };
+        let plan = plan_with_script("process.exit(0)", 10_000);
+        // The catalog attests a different build than the plan pinned.
+        let mut catalog = RunnerCatalog::new();
+        catalog.insert(
+            "node-runtime".to_owned(),
+            CatalogEntry {
+                program: program.to_path_buf(),
+                artifact_digest: format!("sha256:{}", "cc".repeat(32)),
+                version: Some("other-build".to_owned()),
+            },
+        );
+        let capability = qualified();
+        let (_dir, source) = source_root();
+        let receipt = run_confirmed_plan(&ConfirmedRun {
+            plan: &plan,
+            approved_plan_digest: &plan.plan_digest,
+            catalog: &catalog,
+            source_root: &source,
+            capability: &capability,
+            cancellation: None,
+            host_paths: vec![],
+            secrets: vec![],
+        })
+        .expect("the run completes");
+        assert_eq!(receipt.commands[0].outcome, "unsupported");
+        assert_eq!(
+            receipt.commands[0].failure_class.as_deref(),
+            Some("incompatible")
+        );
+        assert!(receipt.commands[0].exit.is_none());
+        assert_eq!(receipt.verdict, "blocked");
+    }
+
+    #[test]
+    fn a_tool_absent_from_the_trusted_catalog_is_a_preflight_trust_refusal() {
+        let Some(program) = node_program() else {
+            return;
+        };
+        let plan = plan_with_script("process.exit(0)", 10_000);
+        // The plan names node-runtime; the catalog only attests another
+        // tool: the whole-run custody preflight refuses before any
+        // staging or spawn (trust, not a per-gate degradation).
+        let mut catalog = RunnerCatalog::new();
+        catalog.insert(
+            "other-runtime".to_owned(),
+            CatalogEntry {
+                program: program.to_path_buf(),
+                artifact_digest: format!("sha256:{}", "cc".repeat(32)),
+                version: Some("test".to_owned()),
+            },
+        );
+        let capability = qualified();
+        let (_dir, source) = source_root();
+        let failure = run_confirmed_plan(&ConfirmedRun {
+            plan: &plan,
+            approved_plan_digest: &plan.plan_digest,
+            catalog: &catalog,
+            source_root: &source,
+            capability: &capability,
+            cancellation: None,
+            host_paths: vec![],
+            secrets: vec![],
+        })
+        .unwrap_err();
+        assert_eq!(failure, NativeGateFailure::TrustInsufficient);
     }
 
     #[test]
