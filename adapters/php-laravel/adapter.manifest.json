@@ -95,7 +95,7 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:063f55407341cb61cc10192cf12df3fcc5166fcef865a418560d01ed6503844f",
+    "packageDigest": "sha256:c728f89f5f4c237931d962d5305777f2aaf9bc3c7b20cd60cb3b451e2d9b6384",
     "files": [
       {
         "path": "adapter.php",
@@ -111,7 +111,9 @@
       "readScopes": [
         ".lekalo/cache/**",
         ".lekalo/ir/**",
-        ".lekalo/import/**"
+        ".lekalo/import/**",
+        "lekalo/php-test-port.json",
+        "lekalo/scenarios/**"
       ],
       "writeScopes": [
         ".lekalo/generated/php-laravel/**",
