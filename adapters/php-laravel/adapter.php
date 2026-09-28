@@ -7453,10 +7453,13 @@ function php_types_map_fields(
         if ($expr['list']) {
             $collectionClass = php_types_register_collection($expr, $definitions, $prefix, $collections);
         }
+        $wrapper = null;
         if ($presence === 'optional-nonnull' || $presence === 'optional-nullable') {
             // Presence wrappers exist only for optional positions: the
             // required-nullable case is a plain `?T` constructor type.
-            php_types_register_wrapper($expr, $definitions, $prefix, $collectionClass,
+            // The registration return is the authority — on a dedup hit
+            // the existing wrapper binds, never the last-appended row.
+            $wrapper = php_types_register_wrapper($expr, $definitions, $prefix, $collectionClass,
                 $presence === 'optional-nullable', $wrappers);
         }
         $row = [
@@ -7476,8 +7479,8 @@ function php_types_map_fields(
                 $row['type']['nullableElements'] = true;
             }
         }
-        if ($presence === 'optional-nonnull' || $presence === 'optional-nullable') {
-            $row['type']['wrapper'] = $wrappers[count($wrappers) - 1]['fqn'];
+        if ($wrapper !== null) {
+            $row['type']['wrapper'] = $wrapper['fqn'];
         }
         $fields[] = $row;
     }
@@ -7668,19 +7671,21 @@ function php_types_collect_artifacts(
     $byFqn = [];
     $byPath = [];
     $record = static function (array $artifact) use (&$artifacts, &$byFqn, &$byPath, $addFinding): void {
-        $lowerFqn = strtolower($artifact['fqn']);
         $lowerPath = strtolower($artifact['path']);
-        if (isset($byFqn[$lowerFqn])) {
-            $addFinding(php_types_finding('name-collision', $artifact['semanticId'] ?? null, null,
-                'duplicate class FQN ' . $artifact['fqn']));
-            return;
+        if (isset($artifact['fqn'])) {
+            $lowerFqn = strtolower($artifact['fqn']);
+            if (isset($byFqn[$lowerFqn])) {
+                $addFinding(php_types_finding('name-collision', $artifact['semanticId'] ?? null, null,
+                    'duplicate class FQN ' . $artifact['fqn']));
+                return;
+            }
+            $byFqn[$lowerFqn] = true;
         }
         if (isset($byPath[$lowerPath])) {
             $addFinding(php_types_finding('path-collision', $artifact['semanticId'] ?? null, null,
                 'case-insensitive artifact path collision ' . $artifact['path']));
             return;
         }
-        $byFqn[$lowerFqn] = true;
         $byPath[$lowerPath] = true;
         $artifacts[] = $artifact;
     };
@@ -7731,8 +7736,7 @@ function php_types_collect_artifacts(
     }
     $record([
         'path' => 'types.map.json',
-        'fqn' => $policy['namespacePrefix'] . '\\TypesMap',
-        'role' => 'class-map',
+        'role' => 'document',
     ]);
     usort($artifacts, static fn (array $left, array $right): int => strcmp($left['path'], $right['path']));
     return $artifacts;

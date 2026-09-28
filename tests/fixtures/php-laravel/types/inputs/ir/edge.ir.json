@@ -85,6 +85,14 @@
           }
         },
         {
+          "name": "floor",
+          "type": {
+            "optional": {
+              "ref": "edge.amount"
+            }
+          }
+        },
+        {
           "name": "label",
           "type": {
             "ref": "edge.enabled"

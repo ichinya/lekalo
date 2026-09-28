@@ -200,6 +200,18 @@ step("edge corpus: every executed wire vector holds", () => {
   assert.ok(description, "the description comment is present");
   assert.ok(!description.includes("?>"), "the close-tag pair is broken");
   assert.ok(!description.includes("*/ code") || description.includes("// Description:"), "no comment can close");
+  // B1: the sidecar binds both shared-key optional positions to the
+  // SAME wrapper FQN, and the differing third shape to its own.
+  const sidecar = JSON.parse(
+    readFileSync(join(root, ".lekalo/generated/php-laravel/types/types.map.json"), "utf8"),
+  );
+  const reading = sidecar.types.find((t) => t.semanticId === "edge.reading");
+  const wrapperOf = (name) => reading.fields.find((f) => f.name === name).type.wrapper;
+  const amountWrapper = wrapperOf("threshold");
+  assert.equal(wrapperOf("floor"), amountWrapper, "shared-key fields bind one wrapper");
+  assert.match(amountWrapper, /OptionalNullableAmount$/);
+  assert.notEqual(wrapperOf("label"), amountWrapper, "the differing shape binds its own wrapper");
+  assert.match(wrapperOf("label"), /OptionalEnabled$/);
   rmSync(root, { recursive: true, force: true });
 });
 

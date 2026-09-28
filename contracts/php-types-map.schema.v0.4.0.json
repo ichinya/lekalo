@@ -74,7 +74,7 @@
       }
     },
     "artifacts": {
-      "description": "The complete emitted-file inventory, path-sorted: every generated class, codec, collection, optional wrapper, and the class map. This is the authoritative semantic-ID-to-FQN/path linkage of one generation; helper artifacts without a definition of their own carry the role and (where one exists) the owning semantic id.",
+      "description": "The complete emitted-file inventory, path-sorted: every generated class, codec, collection, optional wrapper, the class map, and the sidecar document itself (role `document`, without a synthetic FQN). This is the authoritative semantic-ID-to-FQN/path linkage of one generation; helper artifacts without a definition of their own carry the role and (where one exists) the owning semantic id.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/artifactEntry"
@@ -196,12 +196,12 @@
       }
     },
     "role": {
-      "enum": ["type", "codec", "collection", "optional", "class-map"]
+      "enum": ["type", "codec", "collection", "optional", "class-map", "document"]
     },
     "artifactEntry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "fqn", "role"],
+      "required": ["path", "role"],
       "properties": {
         "path": {
           "$ref": "#/$defs/relativePath"
@@ -219,7 +219,44 @@
           "description": "The referenced element type of a collection or optional wrapper.",
           "$ref": "#/$defs/semanticId"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "enum": ["type", "codec", "collection", "optional", "class-map"]
+              }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "fqn": {
+                "$ref": "#/$defs/fqn"
+              }
+            },
+            "required": ["fqn"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "document"
+              }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "fqn": {
+                "not": {}
+              }
+            }
+          }
+        }
+      ]
     },
     "typeEntry": {
       "type": "object",

@@ -185,6 +185,7 @@ if ($corpus === 'planner') {
         'enabled' => true,
         'cap' => 9007199254740991,
         'threshold' => null,
+        'floor' => -7,
         'label' => false,
         'window' => [
             ['amount' => 4.5, 'instant' => '2026-09-28T12:00:00Z'],
@@ -198,6 +199,16 @@ if ($corpus === 'planner') {
         && $reading->window->get()->all()[1] === null);
     $check('edge.required-nullable-cap', $reading->cap === null ? false : $reading->cap instanceof \Lekalo\Generated\Types\Edge\Amount);
     $check('edge.optional-nullable-threshold', $reading->threshold->isNull());
+    // B1: two optional positions sharing one wrapper key (threshold and
+    // floor over edge.amount) must BOTH bind the amount wrapper — a
+    // dedup miss would hand the second field the last-appended wrapper
+    // and TypeError inside the codec.
+    $check('edge.wrapper-dedup-binds-same-fqn', $reading->threshold instanceof \Lekalo\Generated\Types\Edge\Optional\OptionalNullableAmount
+        && $reading->floor instanceof \Lekalo\Generated\Types\Edge\Optional\OptionalNullableAmount
+        && $reading->floor->get()->value() === -7);
+    // The differing third shape keeps its own wrapper.
+    $check('edge.wrapper-different-key-distinct', !$reading->label instanceof \Lekalo\Generated\Types\Edge\Optional\OptionalNullableAmount
+        && $reading->label instanceof \Lekalo\Generated\Types\Edge\Optional\OptionalEnabled);
     $check('edge.optional-nonnull-label', !$reading->label->isAbsent() && $reading->label->get()->value() === false);
 
     $check('edge.reject-int-above-precision', $throws(fn () => \Lekalo\Generated\Types\Edge\ReadingDtoCodec::decode(
@@ -212,6 +223,7 @@ if ($corpus === 'planner') {
     $check('edge.reject-bad-datetime', $throws(fn () => \Lekalo\Generated\Types\Edge\Amount::fromWire('2026-09-28')) === InvalidArgumentException::class);
     $check('edge.reject-bad-uri', $throws(fn () => \Lekalo\Generated\Types\Edge\ReadingId::fromWire('no scheme here')) === InvalidArgumentException::class);
     $check('edge.accept-uri', \Lekalo\Generated\Types\Edge\ReadingId::fromWire('mailto:someone@example.com')->toString() === 'mailto:someone@example.com');
+
 
     // The hostile description stayed one safe comment line and the
     // class still loads.
@@ -276,12 +288,10 @@ final class TaskFocusedCodecWrapperProbe
     public static function run(): void
     {
         // An explicit null inside a NON-NULL optional position is
-        // refused by the element decode (never absorbed into absent).
-        TaskDtoCodec::decode([
+        // refused by the element decode (never absorbed into absent):
+        // the event payload owns the named semantic.
+        \Lekalo\Generated\Types\Planner\TaskFocusedPayloadCodec::decode([
             'task_id' => '0b54ba9b-9d33-4f2e-a4d4-4c1ec21b4d1f',
-            'title' => 'x',
-            'state' => 'done',
-            'window' => [],
             'focused_at' => null,
         ]);
     }

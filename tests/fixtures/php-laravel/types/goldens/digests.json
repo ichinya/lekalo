@@ -26,6 +26,6 @@
         "planner/task_id.php": "sha256:f1340241465794b2c9761d7afb196924b923bd794f16db95cccc3fb2c1b3a30b",
         "planner/task_state.php": "sha256:f719df86d2c5c790d43078e6ce147306192dd363737ac08f1a9d8ce142c2d90c",
         "planner/text.php": "sha256:932eced54b84f4f95c1ab3cb2553ef2b4948d115734a31e6ca70e989f5ef47f8",
-        "types.map.json": "sha256:89a2f8ce8859396b0ac167cd5e8a3e5c56de6841db6ebacf682e783a9ce56c4a"
+        "types.map.json": "sha256:339ee58ba092fe4ce0731397863ab75923568a6966e7a54621d416f154387bee"
     }
 }
