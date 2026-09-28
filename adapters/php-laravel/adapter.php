@@ -3948,7 +3948,7 @@ function php_check_leaf(mixed $leaf, int $depth): ?string
         return 'leaf-value';
     }
     if (is_string($leaf['value'])
-        && mb_strlen($leaf['value']) > PHP_LIMITS['maxScalarCodepoints']) {
+        && preg_match_all('/./us', $leaf['value']) > PHP_LIMITS['maxScalarCodepoints']) {
         return 'leaf-scalar';
     }
     return null;
