@@ -93,8 +93,13 @@ function runFakeSuite(php) {
   if (described.capabilities.adapter.id !== "lekalo-target-php-laravel") {
     fail("describe-identity", described.capabilities.adapter.id);
   }
-  if (described.capabilities.capabilities["verify.scenarios"] !== "unsupported") {
-    fail("scenarios-must-stay-unsupported", "Mago success never satisfies scenario verification");
+  // The `verify.scenarios` capability is carried by the dedicated
+  // scenario drift gate (#56), never by the analyzer: a green Mago run
+  // cannot satisfy scenario verification. The validate/verify exchanges
+  // below stay on the analysis seam because their IR paths are not
+  // scenario documents — the routing is the composition contract.
+  if (described.capabilities.capabilities["verify.scenarios"] !== "full") {
+    fail("scenarios-carried-by-scenario-gate", "verify.scenarios must reflect the #56 scenario drift gate");
   }
   step("describe", { adapter: described.capabilities.adapter.version });
 

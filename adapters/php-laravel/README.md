@@ -86,10 +86,12 @@ mixes server-side context and observed-state hashes).
 
 The named capability map honestly declares `unsupported` for every deep
 generator surface (`generate.zod`, `generate.openapi`,
-`generate.transport-http`, `verify.scenarios`, `scan.symbols`,
+`generate.transport-http`, `scan.symbols`,
 `preserve.classification`) and the `plan-native` exchange answers an
 in-envelope `unsupported` error: a declared absence, never a fabricated
-plan summary.
+plan summary. `verify.scenarios` is the one declared `full` surface: the
+kernel compiles scenario IR into runnable Laravel tests and records the
+evidence trail.
 
 The `scan` operation performs a real read-only enumeration of the
 staged view's declared read roots (`.lekalo/ir`, `.lekalo/cache`):
@@ -162,8 +164,9 @@ only through the real integration gate in a disposable sandbox.
 What #55 deliberately does not claim: `scan.symbols` stays
 `unsupported` (the bounded scan wire cannot carry a full native graph;
 the wire projection carries at most eight references per path and
-refuses silently-truncated claims), `verify.scenarios` stays
-`unsupported` (Mago success is not scenario evidence — #56), Laravel
+refuses silently-truncated claims), `verify.scenarios` runs `full` —
+the scenario E2E gate is the dedicated evidence path (Mago success
+alone is not scenario evidence — #56), Laravel
 relation/route/container links are received as provenance-carrying
 relation rows in the receipt but the Model graph is never mutated by
 them, and fix **apply** is out of scope for a later issue.
@@ -203,3 +206,40 @@ cargo run --locked -p lekalo-cli -- adapter test --profile strict \
 No hidden `composer install/update`, no lifecycle scripts, no network:
 the manifest's `permissions` block denies children and network, and the
 kernel launches nothing.
+
+## Scenario test compiler (issue #56)
+
+The adapter compiles Scenario IR documents (`lekalo/scenarios/*.json`)
+into deterministic Laratesto test files plus their canonical map
+sidecars under `src/generated/php-laravel/scenario-tests/`. The
+project's adapter-owned port declaration `lekalo/php-test-port.json`
+names the one ScenarioPort class the generated tests bind to; its
+export-flag vocabulary mirrors the core test-port contract verbatim,
+so the eventual contract successor is a mechanical lift. The core
+contract successor itself is deliberately deferred: contract version
+custody rides the workspace product version
+(docs/m5/issue-56-research.md S1), so the adapter-owned sibling
+document is the interim binding.
+
+Runtime proof lives in `scripts/test-php-laravel-scenario-tests.mjs`:
+the planner fixture (`tests/fixtures/php-laravel/planner/`) is
+materialized into a disposable root, the four focus scenarios are
+generated, executed under the pinned Testo suite, and their durable
+run records are validated. Reruns are byte-identical. The concurrency
+scenario records unsupported rows and skips; a lying port produces a
+recorded fail row; a broken bootstrap produces no per-step record at
+all, so assertion failure and infrastructure failure never collapse
+into one outcome.
+
+### Capability matrix (the honest one)
+
+| Surface | State | Where it is proven / bounded |
+| --- | --- | --- |
+| Event capture | full | the port's emission ledger observes real dispatched events; asserted by the generated `emitted` rows and the port self-test |
+| DB state/count assertions | full | real migrations + real queries through the port's `state` surface |
+| HTTP transport binding | full | `invoke` dispatches through the real HTTP kernel (`routes/api.php`) |
+| Idempotency replay | full | the port's key cache deduplicates; asserted by the idempotent scenario |
+| Clock/UUID determinism | full | frozen clock + seeded id source through the port's control surfaces |
+| Parallelism | partial | the Laratesto suite is strictly sequential; the frozen profile catalog declares `testing.parallel` partial, every race case compiles to an explicit unsupported row and skips |
+| Laravel fakes under Testo | partial | fakes ride Laratesto's bundled Testo shim: the fixture's capture surfaces are port-observed rather than PHPUnit-fake-based, and shim coverage of every fake helper is NOT claimed — a helper the shim cannot answer surfaces as an explicit unsupported row, never a pass |
+| Real-PHPUnit-only helpers | unsupported | helpers that require a real PHPUnit install are declared unsupported and never silently substituted |

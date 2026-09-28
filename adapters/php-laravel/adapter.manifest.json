@@ -56,7 +56,7 @@
       "generate.zod": "unsupported",
       "preserve.classification": "unsupported",
       "scan.symbols": "unsupported",
-      "verify.scenarios": "unsupported",
+      "verify.scenarios": "full",
       "verify.transport-http": "unsupported"
     },
     "constraints": {
@@ -65,10 +65,14 @@
     "readScopes": [
       ".lekalo/cache/**",
       ".lekalo/ir/**",
-      ".lekalo/import/**"
+      ".lekalo/import/**",
+      "lekalo/php-test-port.json",
+      "lekalo/scenarios/**"
     ],
     "writeScopes": [
-      ".lekalo/generated/php-laravel/**"
+      ".lekalo/generated/php-laravel/**",
+      "src/generated/php-laravel/scenario-tests/**",
+      "tests/lekalo/scenario-tests/**"
     ],
     "transports": [
       "stdin",
@@ -91,12 +95,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:b10c7c6bbb81b0896465ffc9ed1d357cc3fe4526042227e082c1d8db4a2ab4be",
+    "packageDigest": "sha256:af684f3ec0f3bddad424dab549709a001ad230ced812b56b6d6b6f06fd0111ca",
     "files": [
       {
         "path": "adapter.php",
-        "digest": "sha256:5791d6fc3b030d53bea38bcb3b1ea56ca5d1a22dde809be726386634af1d8238",
-        "bytes": 117426
+        "digest": "sha256:3ec4ee1671696bbb6da3cfd1f7269cab2c04d4c4e691e48720f4162fd938ac95",
+        "bytes": 245697
       }
     ],
     "signaturePolicy": "unsigned",
@@ -107,10 +111,14 @@
       "readScopes": [
         ".lekalo/cache/**",
         ".lekalo/ir/**",
-        ".lekalo/import/**"
+        ".lekalo/import/**",
+        "lekalo/php-test-port.json",
+        "lekalo/scenarios/**"
       ],
       "writeScopes": [
-        ".lekalo/generated/php-laravel/**"
+        ".lekalo/generated/php-laravel/**",
+        "src/generated/php-laravel/scenario-tests/**",
+        "tests/lekalo/scenario-tests/**"
       ]
     },
     "network": {

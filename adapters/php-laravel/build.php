@@ -46,6 +46,7 @@ function fail(string $message): never
 $adapterRoot = dirname(__FILE__);
 $artifactPath = $adapterRoot . '/adapter.php';
 $lockPath = $adapterRoot . '/mago-toolchain.lock.json';
+$scenarioModulePaths = [$adapterRoot . '/src/scenario-map.php', $adapterRoot . '/src/scenario-emit.php'];
 
 $lockBytes = file_get_contents($lockPath);
 if ($lockBytes === false || $lockBytes === '') {
@@ -70,6 +71,20 @@ $lockEmbed = "\n// ---- bundled toolchain lock (issue #55) ---------------------
     . "// The exact bytes are part of this artifact, so the artifact digest\n"
     . "// changes whenever the supported toolchain changes (custody binds).\n"
     . "const MAGO_TOOLCHAIN_LOCK_BUNDLED = " . php_single_quoted($lockBytes) . ";\n";
+
+$scenarioModules = '';
+foreach ($scenarioModulePaths as $modulePath) {
+    $module = file_get_contents($modulePath);
+    if ($module === false || $module === '') {
+        fail('build: scenario module source is missing or empty: ' . basename($modulePath));
+    }
+    if (!str_starts_with($module, "<?php\n")) {
+        fail('build: scenario module must start with the open tag: ' . basename($modulePath));
+    }
+    $scenarioModules .= "\n// ----- scenario compiler module: " . basename($modulePath) . " -----\n\n"
+        . substr($module, 6);
+}
+
 
 $banner = <<<BANNER
 <?php
@@ -112,6 +127,10 @@ foreach (BUNDLED_MODULES as $module) {
     }
     $body .= $source;
 }
+// The scenario compiler modules ride last, in the same fixed order
+// `load_scenario_modules()` names (issue #56); inside the artifact the
+// kernel's function_exists guards make the require_once path inert.
+$body .= $scenarioModules;
 
 $artifact = $banner . $body
     . "\nexit(main());\n";

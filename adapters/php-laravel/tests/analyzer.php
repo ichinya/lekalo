@@ -406,11 +406,14 @@ check(count($defaultResponse['result']['findings']) === 1, 'the default profile 
 check(count($strictResponse['result']['findings']) > count($defaultResponse['result']['findings']), 'the strict profile adds its predicate/unsupported rows on top');
 
 // Verify mirrors validate; Mago success never satisfies scenarios.
+// The `verify.scenarios` capability is owned by the dedicated scenario
+// drift gate (#56), never by the analyzer: a green Mago run does not
+// flip it, and the scenario gate is what makes the declaration honest.
 $verifyRequest = $request;
 $verifyRequest['operation'] = 'verify';
 $verifyResponse = verify_response($verifyRequest, $okAnalyzer);
 check($verifyResponse['status'] === 'ok', 'verify answers through the same seam');
-check(DECLARED_CAPABILITIES['verify.scenarios'] === 'unsupported', 'verify.scenarios stays unsupported: Mago is not scenario evidence');
+check(DECLARED_CAPABILITIES['verify.scenarios'] === 'full', 'verify.scenarios is carried by the scenario gate, not the analyzer');
 
 // Scan evidence projection: the bounded evidence record attaches to
 // the receipt document entry (the join domain is the receipt's own

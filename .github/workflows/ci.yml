@@ -160,8 +160,12 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          tools: none
-          extensions: none
+          # Composer is needed on every OS by the issue #56 fixture
+          # provisioning step (the locked vendor tree is not committed).
+          tools: composer
+          # The locked Laravel runtime of the issue #56 fixture needs its
+          # platform extensions; every dependency-free suite is unaffected.
+          extensions: mbstring, openssl, pdo_sqlite, sqlite3, tokenizer, xml, dom, xmlwriter, ctype, fileinfo, iconv, session
         id: php
       - name: Provision exact Ajv 8.17.1 outside the checkout (issues #32, #48)
         run: |
@@ -223,11 +227,26 @@ jobs:
         # confinement limitation as an explicit, logged skip.
         timeout-minutes: 10
         run: node scripts/test-php-laravel-adapter.mjs
+      - name: Run the PHP scenario binding custody gate (issue #56)
+        # Scaffold-once and checked-binding semantics over the pure
+        # compile exchange — needs PHP only, no vendor tree: generation
+        # and verification never execute project code.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-scenario-bindings.mjs
       - name: Run the Mago integration gate, fake mode (issue #55)
         # Requires PHP but no Mago binary and no network: the receipt
         # decoder, the analysis states, and the strict-profile gates run
         # against the committed artifact with injected fakes.
         run: node scripts/test-mago-integration.mjs --fake
+      - name: Provision the planner fixture vendor tree per the committed lock (issue #56)
+        # A provisioning step: install from the committed composer.lock,
+        # never inside a compiler or adapter process, no lifecycle
+        # scripts. The runtime gates stay offline afterwards.
+        timeout-minutes: 15
+        run: composer install --no-interaction --prefer-dist --no-scripts --working-dir tests/fixtures/php-laravel/planner
+      - name: Run the Laratesto scenario E2E gate (issue #56)
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-scenario-tests.mjs
       - name: Run the Laravel migration pipeline gate (issue #57)
         # The pipeline stages (CLI goldens, PHP artifacts, custody)
         # run wherever the repo's gates run; the PostgreSQL execution
@@ -235,6 +254,13 @@ jobs:
         # records an explicit skip when it is absent — never a pass.
         timeout-minutes: 15
         run: node scripts/test-php-laravel-migrations.mjs
+      - name: Run the Node/Laravel scenario parity gate (issue #56)
+        # Both backends run the same committed scenario corpus under
+        # their real runners; the durable run records must normalize to
+        # identical semantic row tuples, including the shared failing
+        # mutation.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-parity.mjs
       - name: Provision the vendored compiler bundle custody (issue #44)
         run: |
           set -euo pipefail

@@ -165,6 +165,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "php-laravel",
+      "origin": "synthetic",
+      "note": "issue #56 Laratesto conformance fixture: the planner project (port, controller, model, migration, config, testo.php) is authored test material. Third-party packages ride the committed composer.lock only — the vendor tree is a per-environment provisioning artifact of `composer install --no-scripts` (gitignored, never committed) — so no external licensed source ships in the family."
+    },
+    {
       "family": "pilot",
       "origin": "synthetic",
       "note": "issue #49 observed-mode pilot: the taskhub consumer fixture, its pinned scan document, and its native gate plan are exclusively synthetic"

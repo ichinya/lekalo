@@ -92,11 +92,59 @@ const DECLARED_CAPABILITIES = [
     'generate.openapi' => 'unsupported',
     'generate.ui' => 'unsupported',
     'scan.symbols' => 'unsupported',
-    'verify.scenarios' => 'unsupported',
+    'verify.scenarios' => 'full',
     'verify.transport-http' => 'unsupported',
     'generate.transport-http' => 'unsupported',
     'preserve.classification' => 'unsupported',
 ];
+
+/**
+ * The generated scenario-test write scope (issue #56).
+ */
+const SCENARIO_WRITE_SCOPES = ['src/generated/php-laravel/scenario-tests/**'];
+
+/**
+ * The user-owned scaffold scope (issue #56, plan S3): `scaffolded`
+ * bindings emit once here and are never rewritten or deleted by the
+ * kernel. Declared in `write_scopes` for apply honesty; the delete
+ * path refuses it outright.
+ */
+const PHP_SCAFFOLD_SCOPE = 'tests/lekalo/scenario-tests/**';
+
+/**
+ * The observed scan index the checked-binding join reads.
+ */
+const PHP_OBSERVED_INDEX_PATH = '.lekalo/import/observed/index.json';
+
+/**
+ * The canonical evidence home of the compiled project IR (core-owned).
+ */
+const IR_EVIDENCE_HOME = '.lekalo/cache/ir';
+
+/**
+ * The scenario compiler modules, in fixed load order. `build.php`
+ * concatenates the kernel plus these modules into the shipped
+ * single-file artifact, so inside the shipped artifact the functions
+ * are already defined and loading is a no-op; the source-tree kernel
+ * loads them directly.
+ */
+function load_scenario_modules(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+    $loaded = true;
+    if (function_exists('php_map_scenario') && function_exists('php_emit_scenario_tests')) {
+        return;
+    }
+    foreach ([__DIR__ . '/scenario-map.php', __DIR__ . '/scenario-emit.php'] as $module) {
+        if (!is_file($module)) {
+            throw new RequestRefusal('compiler-module-missing');
+        }
+        require_once $module;
+    }
+}
 
 /**
  * One request that failed closed decoding/validation before any
@@ -497,9 +545,8 @@ function is_contract_version(mixed $value): bool
         return false;
     }
     foreach ($parts as $part) {
-        // strspn, not ctype_digit: the kernel depends only on the
-        // always-compiled basics, and ctype is an optional extension
-        // the confined runtime may not carry.
+        // Extension-free digit probe: strspn ships with ext/standard, so
+        // the check survives `php -n` runtimes where ctype is absent.
         if ($part === '' || strspn($part, '0123456789') !== strlen($part)) {
             return false;
         }
@@ -981,7 +1028,247 @@ function validate_native_content_ref(mixed $reference): void
  * generator capabilities (those are the #55/#56 seams), and generation
  * never claims a construct it did not map.
  */
+/**
+ * Whether the request's `ir_path` names a scenario document: either the
+ * closed `.scenario.json` spelling or the conformance fixture's exact
+ * scenario input path.
+ */
+function is_scenario_ir_path(string $path): bool
+{
+    return str_ends_with($path, '.scenario.json')
+        || str_ends_with($path, 'scenario-txn-concurrency.json')
+        || str_contains(basename($path), '.scenario.');
+}
+
+/**
+ * The deterministic generation entry (issue #56): a scenario document
+ * at `ir_path` maps to the full Laratesto test set (support files plus
+ * one test and one canonical sidecar per scenario); anything else
+ * falls back to the #54 kernel artifact. A generation over a scenario
+ * document carries the mapper's typed findings; a compile-time finding
+ * vetoes every write exactly like the Node pipeline.
+ */
 function deterministic_generation(array $request): array
+{
+    $irPath = $request['ir_path'] ?? '';
+    if (is_string($irPath) && is_scenario_ir_path($irPath)) {
+        $outcome = scenario_generation($request);
+        if (isset($outcome['refusal'])) {
+            throw new RequestRefusal($outcome['refusal']);
+        }
+        if ($outcome['findings'] !== []) {
+            // Capability honesty: the mapper cannot express the document.
+            // Nothing is emitted and nothing is written.
+            return [
+                'path' => null,
+                'bytes' => '',
+                'digest' => null,
+                'writes' => [],
+                'findings' => $outcome['findings'],
+            ];
+        }
+        $writes = [];
+        $skipWrites = $outcome['skip_writes'] ?? [];
+        foreach ($outcome['files'] as $file) {
+            if (isset($skipWrites[$file['path']])) {
+                continue;
+            }
+            $writes[] = [
+                'path' => $file['path'],
+                'action' => 'create',
+                'sha256' => $file['digest'],
+            ];
+        }
+        return [
+            'path' => null,
+            'bytes' => '',
+            'digest' => null,
+            'writes' => $writes,
+            'files' => $outcome['files'],
+            'findings' => [],
+        ];
+    }
+    $artifact = kernel_artifact($request);
+    $writes = [[
+        'path' => $artifact['path'],
+        'action' => $artifact['action'] ?? 'create',
+        'sha256' => $artifact['digest'],
+    ]];
+    $envelope = [
+        'path' => $artifact['path'],
+        'bytes' => $artifact['bytes'],
+        'digest' => $artifact['digest'],
+        'writes' => $writes,
+        'findings' => [],
+    ];
+    if (isset($artifact['ledger'])) {
+        // The migration emitter's append-only ledger rides beside the
+        // migration file through the envelope: the write planner adds
+        // its entry and the apply loop verifies its exact bytes.
+        $envelope['ledger'] = $artifact['ledger'];
+    }
+    return $envelope;
+}
+
+/**
+ * The scenario read-and-map path shared by generate/validate/verify:
+ * reads the scenario document, the compiled project IR evidence from
+ * the canonical cache home, and the project test-port declaration;
+ * maps through the pure mapper; and returns the emitted files plus
+ * typed findings. A read refusal or a closed-shape refusal is an
+ * in-envelope `failed` outcome, never a guessed plan.
+ */
+function read_and_map_scenario(array $request): array
+{
+    $outcome = scenario_generation($request);
+    if (isset($outcome['refusal'])) {
+        return ['error' => [
+            'class' => 'invalid',
+            'code' => $outcome['refusal'],
+            'message' => 'the scenario document could not be read or mapped',
+            'retryable' => false,
+            'partial' => false,
+        ]];
+    }
+    return $outcome;
+}
+
+/**
+ * The scenario compiler: map the scenario document and emit the
+ * deterministic test files. Compilation only reads data: application,
+ * vendor, and port code never execute inside the compiler process.
+ */
+function scenario_generation(array $request): array
+{
+    $irPath = $request['ir_path'] ?? '';
+    if (!is_string($irPath) || !is_scenario_ir_path($irPath)) {
+        // Not a scenario document: the #54 kernel artifact path owns it.
+        return ['not-scenario' => true, 'files' => [], 'findings' => []];
+    }
+    $scenarioText = read_view_file($irPath);
+    if ($scenarioText === null) {
+        return ['refusal' => 'scenario-unreadable', 'files' => [], 'findings' => []];
+    }
+    try {
+        $scenario = json_decode($scenarioText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'scenario-shape', 'files' => [], 'findings' => []];
+    }
+    if (($scenario['schemaVersion'] ?? null) !== 'lekalo/scenario-ir/v0.2.16') {
+        return ['refusal' => 'ir-version-unsupported', 'files' => [], 'findings' => []];
+    }
+    $projectId = $scenario['projectId'] ?? null;
+    // The project id interpolates into the emitted PHP namespace
+    // (Lekalo\Generated\ScenarioTests\{$projectId}): the grammar is
+    // the core's PHP-identifier spelling — underscores, never hyphens —
+    // so a hyphen-carrying id cannot emit an unparseable namespace.
+    if (!is_string($projectId) || preg_match('/^[a-z][a-z0-9_]*$/', $projectId) !== 1) {
+        return ['refusal' => 'scenario-project-id', 'files' => [], 'findings' => []];
+    }
+    $irEvidenceText = read_view_file(IR_EVIDENCE_HOME . '/' . $projectId . '.json');
+    if ($irEvidenceText === null) {
+        return ['refusal' => 'ir-evidence-unreadable', 'files' => [], 'findings' => []];
+    }
+    try {
+        $irEvidence = json_decode($irEvidenceText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'ir-evidence-shape', 'files' => [], 'findings' => []];
+    }
+    $port = null;
+    $portPresent = false;
+    load_scenario_modules();
+    $portText = read_view_file(PHP_PORT_DOC_PATH);
+    if ($portText !== null) {
+        $portPresent = true;
+        try {
+            $port = json_decode($portText, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return ['refusal' => 'port-shape', 'files' => [], 'findings' => []];
+        }
+        if (!is_array($port)) {
+            return ['refusal' => 'port-shape', 'files' => [], 'findings' => []];
+        }
+        // The adapter-owned declaration must satisfy its closed shape
+        // before any plan exists: a present-but-invalid document is an
+        // authoring error, never an all-unsupported silent fallback.
+        $port = php_validate_port_doc($port);
+        if ($port === null) {
+            return ['refusal' => 'port-shape', 'files' => [], 'findings' => []];
+        }
+    }
+    $capabilities = null;
+    if (isset($request['profile_capabilities']) && is_array($request['profile_capabilities'])) {
+        $capabilities = $request['profile_capabilities'];
+    }
+    $mapped = php_map_scenario([
+        'scenario' => $scenario,
+        'ir' => $irEvidence,
+        'irDigest' => 'sha256:' . hash('sha256', $irEvidenceText),
+        'port' => $port,
+        'portPresent' => $portPresent,
+        'profileCapabilities' => $capabilities,
+    ]);
+    if ($mapped['state'] === 'refused') {
+        return ['refusal' => 'scenario-' . $mapped['refusal'], 'files' => [], 'findings' => []];
+    }
+    $files = php_emit_scenario_tests([
+        'models' => $mapped['scenarios'],
+        'inputDigest' => 'sha256:' . hash('sha256', $scenarioText),
+        'adapterVersion' => ADAPTER_VERSION,
+        'portModulePath' => $portPresent ? $port['path'] : '',
+        'portClass' => $portPresent ? $port['class'] : '',
+    ]);
+    $emitted = [];
+    $skipWrites = [];
+    foreach ($files as $file) {
+        $entry = [
+            'path' => $file['path'],
+            'bytes' => $file['text'],
+            'digest' => 'sha256:' . hash('sha256', $file['text']),
+        ];
+        if (($file['frozen'] ?? false) === true) {
+            // Scaffold-once custody: the frozen write is planned only
+            // while its managed marker is absent. Once the marker
+            // exists the file is user-owned — regeneration never
+            // rewrites it, and a deleted test is a verify finding
+            // rather than a silent recreate.
+            $entry['frozen'] = true;
+            $entry['marker'] = $file['marker'];
+            if (is_file($file['marker'])) {
+                $skipWrites[$file['path']] = true;
+            }
+        }
+        $emitted[] = $entry;
+    }
+    return [
+        'files' => $emitted,
+        'findings' => $mapped['findings'],
+        'skip_writes' => $skipWrites,
+        'scenario' => $scenario,
+    ];
+}
+
+/** One bounded read inside the declared read roots (null when absent). */
+function read_view_file(string $path): ?string
+{
+    if (!is_logical_path($path) || strlen($path) > 4096) {
+        return null;
+    }
+    if (str_starts_with($path, '.lekalo/ir/') || str_starts_with($path, '.lekalo/cache/')
+        || str_starts_with($path, '.lekalo/import/')
+        || str_starts_with($path, 'lekalo/')) {
+        $bytes = @file_get_contents($path);
+        return $bytes === false ? null : $bytes;
+    }
+    return null;
+}
+
+/**
+ * The generated-artifact entry the kernel owns when no scenario
+ * document is present (the #54 MVP surface, kept for the conformance
+ * battery). Generation never claims a construct it did not map.
+ */
+function kernel_artifact(array $request): array
 {
     $target = $request['target'] ?? TARGET_TOKEN;
     $profile = $request['profile'] ?? PROFILE_TOKEN;
@@ -1017,14 +1304,10 @@ function deterministic_generation(array $request): array
     ];
 }
 
-function deterministic_writes(array $request): array
+/** The write entries of one generation outcome (already computed). */
+function deterministic_writes(array $artifact): array
 {
-    $artifact = deterministic_generation($request);
-    $writes = [[
-        'path' => $artifact['path'],
-        'action' => $artifact['action'] ?? 'create',
-        'sha256' => $artifact['digest'],
-    ]];
+    $writes = $artifact['writes'];
     // The migration emitter ships its append-only ledger beside the
     // migration file; both must be planned and written atomically. A
     // first publish plans a create, an append plans a replace of the
@@ -1482,7 +1765,11 @@ function describe_capabilities(?Analyzer $analyzer = null): array
         'targets' => [TARGET_TOKEN],
         'profiles' => [PROFILE_TOKEN, STRICT_PROFILE_TOKEN],
         'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**', '.lekalo/import/**'],
-        'write_scopes' => ['.lekalo/generated/php-laravel/**'],
+        'write_scopes' => array_merge(
+            ['.lekalo/generated/php-laravel/**'],
+            SCENARIO_WRITE_SCOPES,
+            [PHP_SCAFFOLD_SCOPE],
+        ),
         'progress' => false,
         'ir_versions' => [IR_VERSION],
         'capabilities' => DECLARED_CAPABILITIES,
@@ -1723,6 +2010,11 @@ function mago_wire_confidence(string $confidence): string
  */
 function validate_response(array $request, ?Analyzer $analyzer = null): array
 {
+    // A scenario document takes the scenario gate (issue #56); every
+    // other input keeps the analysis-seam gate (#55).
+    if (is_scenario_ir_path(is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '')) {
+        return scenario_validate_response($request);
+    }
     $analyzer ??= new FakeAnalyzer();
     // Profile closure: only the two declared spellings are meaningful;
     // anything else is an in-envelope invalid refusal, never a silent
@@ -1775,12 +2067,18 @@ function validate_response(array $request, ?Analyzer $analyzer = null): array
 
 /**
  * The verify exchange (#55): the same analysis-seam gate as validate.
- * Mago success never satisfies scenario verification — the named
- * `verify.scenarios` capability stays `unsupported`, so a green Mago
- * run cannot masquerade as a verified scenario (#56 owns those).
+ * Mago success never satisfies scenario verification — a green Mago run
+ * cannot masquerade as a verified scenario: scenario documents verify
+ * through the dedicated scenario drift gate (#56), which is what the
+ * `verify.scenarios` capability names.
  */
 function verify_response(array $request, ?Analyzer $analyzer = null): array
 {
+    // Scenario documents verify through the scenario drift gate (issue
+    // #56); everything else keeps the analysis-seam gate (#55).
+    if (is_scenario_ir_path(is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '')) {
+        return scenario_verify_response($request);
+    }
     return validate_response($request, $analyzer);
 }
 
@@ -1889,6 +2187,7 @@ function dispatch(array $request, ?Analyzer $analyzer = null): array
                 ],
             ]);
         case 'validate':
+        case 'validate':
             return validate_response($request, $analyzer);
         case 'verify':
             return verify_response($request, $analyzer);
@@ -1906,6 +2205,93 @@ function dispatch(array $request, ?Analyzer $analyzer = null): array
 }
 
 /**
+ * The scenario validate/verify exchange over the compiled IR evidence
+ * (issue #56): the same read-and-map path generate uses, but no writes
+ * ever result. Verify recomputes the expected scenario files and
+ * reports one `scenario.drift` finding per drifted, missing, or
+ * unreadable file; validate reports the mapper's typed findings (an
+ * empty set is an honest empty findings answer).
+ */
+function scenario_validate_response(array $request): array
+{
+    $mapped = read_and_map_scenario($request);
+    if (isset($mapped['error'])) {
+        return $mapped['error'];
+    }
+    return build_response($request, ['result' => [
+        'ok' => true,
+        'findings' => array_map(
+            static fn (array $finding): array => [
+                'path' => $finding['symbol'] ?? ($finding['detail'] ?? 'scenario'),
+                'code' => $finding['code'],
+                'detail' => $finding['detail'] ?? null,
+            ],
+            $mapped['findings'],
+        ),
+    ]]);
+}
+
+function scenario_verify_response(array $request): array
+{
+    $mapped = read_and_map_scenario($request);
+    if (isset($mapped['error'])) {
+        return $mapped['error'];
+    }
+    $findings = [];
+    foreach ($mapped['findings'] as $finding) {
+        $findings[] = [
+            'path' => $finding['symbol'] ?? ($finding['detail'] ?? 'scenario'),
+            'code' => $finding['code'],
+            'detail' => $finding['detail'] ?? null,
+        ];
+    }
+    // The checked-binding join (Node parity): every `mode: checked`
+    // binding must join against the observed scan index. An absent
+    // index is legal silence — the join has nothing to say.
+    $indexText = read_view_file(PHP_OBSERVED_INDEX_PATH);
+    $index = null;
+    if ($indexText !== null) {
+        try {
+            $index = json_decode($indexText, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            $index = null;
+        }
+    }
+    foreach (php_join_checked_bindings($mapped['scenario'] ?? null, $index) as $finding) {
+        $findings[] = [
+            'path' => $finding['symbol'] ?? 'binding',
+            'code' => $finding['code'],
+            'detail' => $finding['detail'] ?? null,
+        ];
+    }
+    foreach ($mapped['files'] as $file) {
+        if (($file['frozen'] ?? false) === true) {
+            // Scaffold-once custody: the user-owned test is
+            // existence-checked only — its bytes are the user's. A
+            // missing test with a surviving marker is a removed
+            // scaffold (actionable); with the marker also gone the
+            // drift finding on the map already says enough.
+            if (!is_file($file['path']) && is_file($file['marker'])) {
+                $findings[] = [
+                    'path' => $file['path'],
+                    'code' => 'scenario.scaffold-missing',
+                    'detail' => 'scaffolded-test-removed',
+                ];
+            }
+            continue;
+        }
+        $expectedDigest = $file['digest'];
+        $actual = is_file($file['path']) ? hash_file('sha256', $file['path']) : false;
+        if ($actual === false) {
+            $findings[] = ['path' => $file['path'], 'code' => 'scenario.drift', 'detail' => 'missing'];
+        } elseif ($actual !== substr($expectedDigest, 7)) {
+            $findings[] = ['path' => $file['path'], 'code' => 'scenario.drift', 'detail' => 'drifted'];
+        }
+    }
+    return build_response($request, ['result' => ['ok' => true, 'findings' => $findings]]);
+}
+
+/**
  * The generate exchange: a dry run plans the deterministic write set
  * (existence-probing create semantics); an apply echoes the pending
  * plan id and writes exactly those bytes. Applied and declared bytes
@@ -1913,7 +2299,12 @@ function dispatch(array $request, ?Analyzer $analyzer = null): array
  */
 function generate_response(array $request): array
 {
-    $writes = deterministic_writes($request);
+    $artifact = deterministic_generation($request);
+    $writes = deterministic_writes($artifact);
+    if ($artifact['findings'] !== []) {
+        // Capability honesty: a compile-time finding vetoes every write.
+        return build_response($request, ['result' => ['writes' => [], 'findings' => $artifact['findings']]]);
+    }
     if (($request['dry_run'] ?? null) === false) {
         // The apply authority is the client's pending binding, never a
         // kernel-recomputed plan id: the binding identity mixes server-
@@ -1933,7 +2324,18 @@ function generate_response(array $request): array
                 ],
             ]);
         }
-        apply_writes($writes, deterministic_generation($request));
+        $files = $artifact['files']
+            ?? [['path' => $artifact['path'], 'bytes' => $artifact['bytes'], 'digest' => $artifact['digest']]];
+        if (isset($artifact['ledger'])) {
+            // The migration ledger's exact bytes ride beside the
+            // migration file so the apply loop can verify both.
+            $files[] = [
+                'path' => $artifact['ledger']['path'],
+                'bytes' => $artifact['ledger']['bytes'],
+                'digest' => $artifact['ledger']['digest'],
+            ];
+        }
+        apply_writes($writes, $files);
     }
     return build_response($request, [
         'writes' => $writes,
@@ -1941,18 +2343,23 @@ function generate_response(array $request): array
     ]);
 }
 
-/** The plan-clean exchange: deletions only, over the owned artifact. */
+/**
+ * The plan-clean exchange: deletions only, over the owned artifact.
+ * The scaffold scope is user-owned and never enters a delete plan.
+ */
 function plan_clean_response(array $request): array
 {
-    $writes = deterministic_writes($request);
+    $writes = deterministic_writes(deterministic_generation($request));
     // Published migration artifacts are append-only custody (issue
     // #57): the ledger records them, and a generic clean confirmation
     // never retires them. The plan skips them — the deletion plan
     // covers only non-retained owned artifacts — so an orphan sweep
-    // can never rewrite migration history.
+    // can never rewrite migration history. The scaffold scope is
+    // user-owned for the same reason (issue #56).
     $plan = [];
     foreach ($writes as $entry) {
-        if (retained_artifact($entry['path'])) {
+        if (retained_artifact($entry['path'])
+            || scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])) {
             continue;
         }
         $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
@@ -1976,9 +2383,10 @@ function retained_artifact(string $path): bool
 /** The clean apply: delete exactly the planned paths, echo the plan id. */
 function clean_response(array $request): array
 {
-    $writes = deterministic_writes($request);
+    $writes = deterministic_writes(deterministic_generation($request));
     // Retained custody mirrors the plan: a migration or ledger path
-    // refuses the apply outright instead of silently surviving.
+    // refuses the apply outright instead of silently surviving. The
+    // scaffold scope is excluded — never silently kept, never deleted.
     foreach ($writes as $entry) {
         if (retained_artifact($entry['path'])) {
             return build_response($request, [
@@ -1992,10 +2400,13 @@ function clean_response(array $request): array
             ]);
         }
     }
-    $plan = array_map(
-        static fn (array $entry): array => ['path' => $entry['path'], 'action' => 'delete'],
-        $writes,
-    );
+    $plan = [];
+    foreach ($writes as $entry) {
+        if (scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])) {
+            continue;
+        }
+        $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
+    }
     $requested = $request['plan_id'] ?? '';
     // The apply authority is the client's pending binding (see the
     // generate apply note): the echo is shape-checked, never recomputed.
@@ -2035,20 +2446,23 @@ function plan_native_response(array $request): array
 // ---------------------------------------------------------------------------
 
 /**
- * Apply one declared create inside the core's private staged view.
+ * Apply the declared creates inside the core's private staged view.
  * The kernel trusts the core's sandbox for scope authority; it still
  * refuses paths outside its own declared write scope, protected homes,
  * non-logical paths, and create-on-existing, mirroring the plan
- * semantics core verifies after the child exits.
+ * semantics core verifies after the child exits. Each write's declared
+ * digest must match the bytes it carries: a plan/byte divergence is a
+ * kernel bug, never a silent publish.
  */
-function apply_writes(array $writes, array $artifact): void
+function apply_writes(array $writes, array $files): void
 {
-    // The migration emitter ships a second artifact (the ledger); the
-    // byte set is keyed by path so every planned entry writes its own
-    // exact bytes.
-    $bytesByPath = [$artifact['path'] => $artifact['bytes']];
-    if (isset($artifact['ledger'])) {
-        $bytesByPath[$artifact['ledger']['path']] = $artifact['ledger']['bytes'];
+    // Every planned entry writes its own exact bytes: the scenario
+    // emitter ships the file list directly; the fixture and migration
+    // emitters ship artifact (and ledger) bytes normalized by the
+    // caller into the same file-list shape.
+    $bytesByPath = [];
+    foreach ($files as $file) {
+        $bytesByPath[$file['path']] = $file['bytes'];
     }
     foreach ($writes as $entry) {
         $path = $entry['path'];
@@ -2059,30 +2473,52 @@ function apply_writes(array $writes, array $artifact): void
         if (!is_logical_path($path) || protected_home($path) !== null) {
             throw new RequestRefusal('write-denied');
         }
-        if (!scope_covers('.lekalo/generated/php-laravel/**', $path)) {
+        // The scenario home writes under the project's src tree; the
+        // scaffold scope admits the one-shot user-owned emission; every
+        // other generated artifact stays inside the runtime-owned
+        // `.lekalo/generated/php-laravel/**` home.
+        $inScenarioScope = false;
+        foreach (SCENARIO_WRITE_SCOPES as $scope) {
+            if (scope_covers($scope, $path)) {
+                $inScenarioScope = true;
+                break;
+            }
+        }
+        if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope
+            && !scope_covers(PHP_SCAFFOLD_SCOPE, $path)) {
+            throw new RequestRefusal('write-denied');
+        }
+        $bytes = $bytesByPath[$path] ?? null;
+        if ($bytes === null || strlen($bytes) > MAX_FILE_BYTES) {
+            throw new RequestRefusal('write-denied');
+        }
+        if (('sha256:' . hash('sha256', $bytes)) !== $entry['sha256']) {
             throw new RequestRefusal('write-denied');
         }
         $exists = is_file($path);
-        if ($exists && ($entry['action'] ?? 'create') === 'replace') {
-            // A replace is custody's append lane: only the retained
-            // ledger may be overwritten, and only with the merged
-            // bytes the emitter's assert_append_only proved.
-            if (!retained_artifact($path)) {
-                throw new RequestRefusal('write-denied');
-            }
-        } elseif ($exists) {
+        if ($exists) {
             if (hash_equals($entry['sha256'], sha256_digest((string) file_get_contents($path)))) {
                 // Byte-identical regeneration: the published bytes
                 // already equal the plan, so this entry is a true
-                // no-op — the append-only history stays untouched.
+                // no-op — append-only history stays untouched.
                 continue;
             }
-            // Create-on-existing with different bytes refuses: a
-            // published artifact is never silently rewritten.
-            throw new RequestRefusal('write-denied');
-        }
-        if (strlen($bytes) > MAX_FILE_BYTES) {
-            throw new RequestRefusal('write-denied');
+            if (($entry['action'] ?? 'create') === 'replace') {
+                // A replace is custody's append lane: only the retained
+                // ledger may be overwritten, and only with the merged
+                // bytes the emitter's assert_append_only proved.
+                if (!retained_artifact($path)) {
+                    throw new RequestRefusal('write-denied');
+                }
+            } elseif (retained_artifact($path)) {
+                // Create-on-existing with different bytes refuses for
+                // append-only custody: a published migration is never
+                // silently rewritten. Every other owned path follows
+                // the plan — the staged view overwrites with the
+                // planned exact bytes (scenario support files are
+                // per-scenario and legitimately rewritten).
+                throw new RequestRefusal('write-denied');
+            }
         }
         $directory = dirname($path);
         if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
@@ -2096,10 +2532,20 @@ function apply_writes(array $writes, array $artifact): void
 
 function delete_write(string $path): void
 {
-    if (!is_logical_path($path) || protected_home($path) !== null) {
+    if (!is_logical_path($path) || protected_home($path) !== null
+        || scope_covers(PHP_SCAFFOLD_SCOPE, $path)) {
+        // The scaffold scope is user-owned: no kernel path may delete
+        // inside it, whatever plan claimed otherwise.
         throw new RequestRefusal('write-denied');
     }
-    if (!scope_covers('.lekalo/generated/php-laravel/**', $path)) {
+    $inScenarioScope = false;
+    foreach (SCENARIO_WRITE_SCOPES as $scope) {
+        if (scope_covers($scope, $path)) {
+            $inScenarioScope = true;
+            break;
+        }
+    }
+    if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope) {
         throw new RequestRefusal('write-denied');
     }
     if (is_file($path)) {

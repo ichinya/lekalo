@@ -27,6 +27,7 @@ use crate::ir::Compilation;
 use crate::loader::{self, LoadSelection, ModelVersion};
 use crate::lockfile::types::Sha256Digest;
 use crate::lockfile::{LockRequirement, LockVerifier, Lockfile, ResolvedAdapter, RuntimeInventory};
+use crate::project_fs::Fs;
 use crate::result::{DomainResult, Status};
 use crate::target_protocol::transport::TransportLimits;
 use crate::target_protocol::wire::{Operation, WriteAction, WriteEntry};
@@ -662,9 +663,10 @@ fn validate_plan_ownership(prepared: &Prepared, writes: &[WriteEntry]) -> Result
                 home: "ownership-manifest",
             }));
         }
-        if entry.action == WriteAction::Delete {
-            continue;
-        }
+        // Issue #56: the lifecycle denial covers every action — a delete
+        // plan over a recorded scaffolded or checked artifact is the
+        // cleanup-deletes-user-files hazard, refused exactly like a
+        // create or replace over it.
         if let Some(manifest) = prepared.manifest() {
             for recorded in manifest.artifacts() {
                 if recorded.key().path().as_str() == entry.path
@@ -676,6 +678,9 @@ fn validate_plan_ownership(prepared: &Prepared, writes: &[WriteEntry]) -> Result
                     }));
                 }
             }
+        }
+        if entry.action == WriteAction::Delete {
+            continue;
         }
     }
     Ok(())
@@ -771,9 +776,16 @@ fn update_manifest(
                 continue;
             }
             // A scoped run over a stale manifest would silently drop
-            // ownership it did not regenerate: refuse instead.
-            if stale {
+            // ownership it did not regenerate: refuse instead. The
+            // refusal applies to generated entries only — a scaffolded
+            // or checked artifact can never re-enter a write plan by
+            // construction (it is user-owned after its one emission),
+            // so it is kept, never counted as droppable ownership.
+            if stale && recorded.lifecycle() == Lifecycle::Generated {
                 return Err(ArtifactFailure::StaleManifest);
+            }
+            if recorded.lifecycle() != Lifecycle::Generated {
+                keep.push(recorded.clone());
             }
         }
     }
@@ -797,7 +809,7 @@ fn update_manifest(
         keep.retain(|recorded| recorded.key() != &key);
         keep.push(ArtifactEntry::new(
             key,
-            Lifecycle::Generated,
+            lifecycle_for(&entry.path),
             Some(adapter.clone()),
             None,
             digest,
@@ -866,13 +878,31 @@ fn artifact_kind_for(path: &str) -> ArtifactKind {
     // scenario-tests home — test files and the shared testkit are `test`
     // artifacts (review F-6: the emitted spellings are `<id>.test.ts`
     // and `testkit.ts`); the port shim and reporter stay support
-    // `source`.
+    // `source`. Issue #56: the Laratesto backend emits the same roles
+    // under PHP spellings — `<id>.test.php` and `scenario-test-kit.php`.
     if path.split('/').any(|segment| segment == "scenario-tests")
-        && (path.ends_with(".test.ts") || path.ends_with("/testkit.ts"))
+        && (path.ends_with(".test.ts")
+            || path.ends_with(".test.php")
+            || path.ends_with("/testkit.ts")
+            || path.ends_with("/scenario-test-kit.php"))
     {
         return ArtifactKind::Test;
     }
     ArtifactKind::Source
+}
+
+/// The ownership lifecycle of one generated write, by path convention
+/// (issue #56, plan S3): the `tests/lekalo/` scaffold home is the
+/// user-owned convention — anything emitted there is scaffolded once
+/// and never overwritten, so it records `scaffolded`. Its
+/// `.test.map.json` sidecar stays `generated`: the sidecar is the
+/// managed marker the adapter's scaffold-once rule keys on, and its
+/// bytes must stay exactly what the emitter produced.
+fn lifecycle_for(path: &str) -> Lifecycle {
+    if path.starts_with("tests/lekalo/") && !path.ends_with(".map.json") {
+        return Lifecycle::Scaffolded;
+    }
+    Lifecycle::Generated
 }
 
 /// One ingested source-map binding from an emitted `.map.json` sidecar,
@@ -927,7 +957,7 @@ fn source_map_binding_for(
             end,
         ));
     }
-    let module_path = module_path_of(sidecar_path);
+    let module_path = module_path_of(prepared.fs(), sidecar_path);
     let key = ArtifactKey::new(
         owner.clone(),
         // The binding targets the generated module the ranges index (the
@@ -939,8 +969,36 @@ fn source_map_binding_for(
     Ok(Some(SourceMapBinding::new(key, input_revision, entries)))
 }
 
-/// The `.ts` module path of one `.map.json` sidecar path.
-fn module_path_of(sidecar_path: &str) -> String {
+/// The generated module path of one `.map.json` sidecar path. The
+/// TypeScript default maps `X.map.json` → `X.ts`; alternate-language
+/// emitters ship a different sibling beside the sidecar (issue #56: the
+/// Laratesto backend pairs `X.test.php` with `X.test.map.json`), so a
+/// sibling staged on disk wins — the `.ts` spelling stays the
+/// absent-file default of create plans whose modules are not written
+/// yet. Alternate spellings are probed by bounded extension, never by
+/// directory listing, so the mapping stays deterministic.
+fn module_path_of(fs: &Fs, sidecar_path: &str) -> String {
+    /// Alternate-language module spellings probed before the TypeScript
+    /// default: each emitted by a shipped backend emitter.
+    const ALTERNATE_MODULE_EXTENSIONS: &[&str] = &["php"];
+    let (dir, name) = match sidecar_path.rfind('/') {
+        Some(at) => (&sidecar_path[..at], &sidecar_path[at + 1..]),
+        None => (".", sidecar_path),
+    };
+    let base = name.strip_suffix(".map.json").unwrap_or(name);
+    for extension in ALTERNATE_MODULE_EXTENSIONS {
+        let candidate = format!("{base}.{extension}");
+        if matches!(
+            fs.read_file_opt(dir, &candidate, MAX_ARTIFACT_BYTES),
+            Ok(Some(_))
+        ) {
+            return if dir == "." {
+                candidate
+            } else {
+                format!("{dir}/{candidate}")
+            };
+        }
+    }
     sidecar_path
         .strip_suffix(".map.json")
         .map(|base| format!("{base}.ts"))
@@ -1073,14 +1131,97 @@ mod tests {
             artifact_kind_for(".lekalo/generated/node-typescript/zod/planner.ts"),
             ArtifactKind::Schema
         );
+
+        // Issue #56: the Laratesto spellings classify identically — the
+        // generated test and the shared kit are test artifacts, the
+        // sidecar is data, and the port shim plus reporter stay source.
+        assert_eq!(
+            artifact_kind_for(
+                "src/generated/php-laravel/scenario-tests/planner/planner.scenario.focus_happy.test.php"
+            ),
+            ArtifactKind::Test
+        );
+        assert_eq!(
+            artifact_kind_for("src/generated/php-laravel/scenario-tests/scenario-test-kit.php"),
+            ArtifactKind::Test
+        );
+        assert_eq!(
+            artifact_kind_for(
+                "src/generated/php-laravel/scenario-tests/planner/planner.scenario.focus_happy.test.map.json"
+            ),
+            ArtifactKind::Data
+        );
+        assert_eq!(
+            artifact_kind_for("src/generated/php-laravel/scenario-tests/port.php"),
+            ArtifactKind::Source
+        );
+        assert_eq!(
+            artifact_kind_for("src/generated/php-laravel/scenario-tests/scenario-reporter.php"),
+            ArtifactKind::Source
+        );
+        // A PHP test-looking file outside the scenario-tests home stays source.
+        assert_eq!(
+            artifact_kind_for("src/generated/other/minimal.test.php"),
+            ArtifactKind::Source
+        );
+
         // Review F-6: the emitted sidecar spelling `.test.map.json` pairs
-        // through module_path_of to the emitted `.test.ts` artifact.
+        // through module_path_of to the emitted `.test.ts` artifact —
+        // the absent-sibling default.
+        let empty = temp_fs("module-default");
         assert_eq!(
             super::module_path_of(
+                &empty,
                 "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.map.json",
             ),
             "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.ts",
         );
+    }
+
+    /// One read capability over a fresh temporary root for the
+    /// sidecar-pairing probes.
+    fn temp_fs(tag: &str) -> Fs {
+        let dir =
+            std::env::temp_dir().join(format!("lekalo-generate-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp root");
+        Fs::open(&dir).expect("temp fs")
+    }
+
+    /// Issue #56: a `.test.map.json` sidecar pairs with the emitted
+    /// sibling that is actually staged — `X.test.php` for the Laratesto
+    /// backend, `X.test.ts` for the TypeScript default.
+    #[test]
+    fn module_path_of_pairs_the_staged_sibling() {
+        use std::io::Write;
+        let root =
+            std::env::temp_dir().join(format!("lekalo-generate-module-php-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let module_dir = root.join("src/generated/php-laravel/scenario-tests/planner");
+        std::fs::create_dir_all(&module_dir).expect("module dir");
+        let mut module =
+            std::fs::File::create(module_dir.join("planner.scenario.focus_happy.test.php"))
+                .expect("staged php module");
+        module.write_all(b"<?php\n").expect("module bytes");
+        drop(module);
+        let fs = Fs::open(&root).expect("fs");
+        assert_eq!(
+            super::module_path_of(
+                &fs,
+                "src/generated/php-laravel/scenario-tests/planner/planner.scenario.focus_happy.test.map.json",
+            ),
+            "src/generated/php-laravel/scenario-tests/planner/planner.scenario.focus_happy.test.php",
+        );
+        // No staged sibling keeps the TypeScript default spelling.
+        let absent = temp_fs("module-absent");
+        assert_eq!(
+            super::module_path_of(
+                &absent,
+                "src/generated/php-laravel/scenario-tests/planner/planner.scenario.focus_happy.test.map.json",
+            ),
+            "src/generated/php-laravel/scenario-tests/planner/planner.scenario.focus_happy.test.ts",
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Review cline F-1: the ownership manifest ingests every emitted
@@ -1123,8 +1264,44 @@ mod tests {
         // refusal for the emitted write set.
         let sidecar =
             "src/generated/node-typescript/scenario-tests/planner/planner.scenario.minimal.test.map.json";
-        let module = super::module_path_of(sidecar);
+        let module = super::module_path_of(&temp_fs("module-sidecar"), sidecar);
         assert!(module.ends_with(".test.ts"));
         assert_eq!(super::artifact_kind_for(&module), ArtifactKind::Test);
+    }
+
+    /// Issue #56 (plan S3): the lifecycle convention the manifest
+    /// retention and delete-refusal rules key on — everything under the
+    /// user-owned `tests/lekalo/` scaffold home is scaffolded except its
+    /// generated `.map.json` sidecars, and every managed path stays
+    /// generated.
+    #[test]
+    fn lifecycle_for_marks_only_the_scaffold_home() {
+        use super::lifecycle_for;
+        assert_eq!(
+            lifecycle_for("tests/lekalo/scenario-tests/planner/planner.scenario.happy.test.php"),
+            Lifecycle::Scaffolded
+        );
+        // The emitted sidecar inside the scaffold home stays generated:
+        // it is machine-owned even there.
+        assert_eq!(
+            lifecycle_for(
+                "tests/lekalo/scenario-tests/planner/planner.scenario.happy.test.map.json"
+            ),
+            Lifecycle::Generated
+        );
+        assert_eq!(
+            lifecycle_for(
+                "src/generated/php-laravel/scenario-tests/planner/planner.scenario.happy.test.php"
+            ),
+            Lifecycle::Generated
+        );
+        assert_eq!(
+            lifecycle_for("src/generated/node-typescript/planner.ts"),
+            Lifecycle::Generated
+        );
+        assert_eq!(
+            lifecycle_for("tests/planner/happy_test.php"),
+            Lifecycle::Generated
+        );
     }
 }
