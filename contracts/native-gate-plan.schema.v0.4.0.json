@@ -791,8 +791,9 @@
           "maxItems": 128,
           "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/packageId"
-          }
+            "$ref": "#/$defs/gateId"
+          },
+          "description": "The selected commands that must run first (command ids, issue #61 successor semantics)."
         },
         "affected_reason_refs": {
           "type": "array",

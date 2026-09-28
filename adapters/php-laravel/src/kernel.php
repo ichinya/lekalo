@@ -147,6 +147,58 @@ function load_scenario_modules(): void
 }
 
 /**
+ * The native gate modules, in fixed load order (issue #61). Inside the
+ * shipped artifact the functions are already defined and loading is a
+ * no-op; the source-tree kernel loads them directly.
+ */
+function load_native_modules(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+    $loaded = true;
+    if (function_exists('php_build_native_plan') && function_exists('php_verify_confirmations')) {
+        return;
+    }
+    foreach ([__DIR__ . '/native-policy.php', __DIR__ . '/native-plan.php'] as $module) {
+        if (!is_file($module)) {
+            throw new RequestRefusal('native-module-missing');
+        }
+        require_once $module;
+    }
+}
+
+/**
+ * The checked-in Composer execution policy bytes (issue #61). The
+ * shipped artifact embeds them verbatim (build.php, custody binds to
+ * the artifact digest); the source-tree kernel reads the checked-in
+ * file beside the build script. Either way the bytes are the trusted
+ * launch input — confirmation data, never execution authority.
+ */
+function native_gates_policy_document(): array
+{
+    if (defined('NATIVE_GATES_POLICY_BUNDLED')) {
+        $bytes = NATIVE_GATES_POLICY_BUNDLED;
+    } else {
+        $path = dirname(__DIR__) . '/composer-gates-policy.json';
+        $bytes = is_file($path) ? (string) file_get_contents($path) : '';
+    }
+    if ($bytes === '') {
+        throw new RequestRefusal('native-policy-absent');
+    }
+    try {
+        $document = json_decode($bytes, true, 64, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        throw new RequestRefusal('native-policy-unparsable');
+    }
+    if (!is_array($document)) {
+        throw new RequestRefusal('native-policy-unparsable');
+    }
+    return $document;
+}
+
+/**
  * One request that failed closed decoding/validation before any
  * operation could run. Always maps to a bounded stderr diagnostic plus
  * exit 1 — a synthetic envelope with a fabricated echo is never legal.
@@ -1264,6 +1316,44 @@ function read_view_file(string $path): ?string
 }
 
 /**
+ * The closed read seam of the Composer planner (issue #61): the only
+ * project bytes the planner may read are the root composer.json, the
+ * root composer.lock, and the host-validated selection document under
+ * the import home — each bounded, each inside the manifest's declared
+ * read scopes. Anything else is invisible to planning.
+ */
+const NATIVE_READ_FILES = ['composer.json', 'composer.lock'];
+const NATIVE_SELECTION_PATH = '.lekalo/import/native-selection.json';
+/** The maximum composer.json bytes the planner reads (contract bound). */
+const NATIVE_MAX_MANIFEST_BYTES = 1024 * 1024;
+/** The maximum composer.lock bytes the planner digests (never parsed). */
+const NATIVE_MAX_LOCK_BYTES = 8 * 1024 * 1024;
+
+function native_read_project_bytes(string $path): ?string
+{
+    $limit = match ($path) {
+        'composer.json' => NATIVE_MAX_MANIFEST_BYTES,
+        'composer.lock' => NATIVE_MAX_LOCK_BYTES,
+        default => null,
+    }; 
+    if ($limit === null) {
+        return $path === NATIVE_SELECTION_PATH ? read_view_file($path) : null;
+    }
+    if (!is_file($path)) {
+        return null;
+    }
+    $size = filesize($path);
+    if ($size === false || $size > $limit) {
+        return null;
+    }
+    $bytes = file_get_contents($path, false, null, 0, $limit + 1);
+    if ($bytes === false || strlen($bytes) > $limit) {
+        return null;
+    }
+    return $bytes;
+}
+
+/**
  * The generated-artifact entry the kernel owns when no scenario
  * document is present (the #54 MVP surface, kept for the conformance
  * battery). Generation never claims a construct it did not map.
@@ -1764,7 +1854,7 @@ function describe_capabilities(?Analyzer $analyzer = null): array
         'transports' => ['stdin', 'file'],
         'targets' => [TARGET_TOKEN],
         'profiles' => [PROFILE_TOKEN, STRICT_PROFILE_TOKEN],
-        'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**', '.lekalo/import/**'],
+        'read_scopes' => ['.lekalo/cache/**', '.lekalo/ir/**', '.lekalo/import/**', 'composer.json', 'composer.lock'],
         'write_scopes' => array_merge(
             ['.lekalo/generated/php-laravel/**'],
             SCENARIO_WRITE_SCOPES,
@@ -2436,9 +2526,161 @@ function clean_response(array $request): array
  * workspace contract this MVP does not implement; a declared absent
  * capability is the honest state, never a fabricated plan summary.
  */
+/**
+ * The internal full-plan evidence of the most recent plan-native
+ * dispatch in this process: the wire envelope carries only the closed
+ * native_plan summary, while the digest-addressed full document is
+ * internal custody (mirrors the Node extension outcome). One-shot
+ * processes never observe it; in-process harnesses use it to pin the
+ * exact plan bytes behind a wire answer.
+ */
+function native_last_plan(?array $set = null): ?array
+{
+    static $last = null;
+    if ($set !== null) {
+        $last = $set;
+    }
+    return $last;
+}
+
 function plan_native_response(array $request): array
 {
-    return unsupported_response($request, 'native-planning-unsupported');
+    load_native_modules();
+    $native = $request['native_request'];
+    $policyDocument = native_gates_policy_document();
+    // Custody: the request names the exact execution policy this
+    // kernel pins — a different policy generation is never a planning
+    // input (the confirmation bytes would not be the approved ones).
+    // The digest is recomputed over the document with the digest
+    // member absent (the plan_digest convention).
+    $policyDigestInput = $policyDocument;
+    unset($policyDigestInput['policy_digest']);
+    $policyDigest = php_domain_digest(PHP_POLICY_DIGEST_DOMAIN, $policyDigestInput);
+    if (($native['execution_policy_ref']['digest'] ?? null) !== $policyDigest) {
+        return unsupported_response($request, 'execution-policy-mismatch');
+    }
+    // The Composer planner supports exactly one root project layout.
+    $manifestBytes = native_read_project_bytes('composer.json');
+    if ($manifestBytes === null) {
+        return unsupported_response($request, 'composer-manifest-absent');
+    }
+    try {
+        $composer = json_decode($manifestBytes, true, 64, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return build_response($request, ['error' => [
+            'class' => 'invalid',
+            'code' => 'native-plan-refused',
+            'message' => 'composer-manifest-unparsable',
+            'retryable' => false,
+            'partial' => false,
+        ]]);
+    }
+    if (!is_array($composer) || !isset($composer['name']) || !is_string($composer['name'])) {
+        return build_response($request, ['error' => [
+            'class' => 'invalid',
+            'code' => 'native-plan-refused',
+            'message' => 'composer-manifest-invalid',
+            'retryable' => false,
+            'partial' => false,
+        ]]);
+    }
+    // The lock rides custody only (never parsed, never resolved).
+    $lockBytes = native_read_project_bytes('composer.lock');
+    $lockState = 'absent';
+    $lockDigest = null;
+    if (is_file('composer.lock')) {
+        $lockState = $lockBytes === null ? 'unreadable' : 'present';
+        $lockDigest = $lockBytes === null ? null : 'sha256:' . hash('sha256', $lockBytes);
+    }
+    $selectionBytes = native_read_project_bytes(NATIVE_SELECTION_PATH);
+    if ($selectionBytes === null) {
+        return unsupported_response($request, 'selection-manifest-absent');
+    }
+    try {
+        $selectionManifest = json_decode($selectionBytes, true, 64, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return build_response($request, ['error' => [
+            'class' => 'invalid',
+            'code' => 'native-plan-refused',
+            'message' => 'selection-manifest-unparsable',
+            'retryable' => false,
+            'partial' => false,
+        ]]);
+    }
+    if (!is_array($selectionManifest)) {
+        return build_response($request, ['error' => [
+            'class' => 'invalid',
+            'code' => 'native-plan-refused',
+            'message' => 'selection-manifest-unparsable',
+            'retryable' => false,
+            'partial' => false,
+        ]]);
+    }
+    // Pure verification: every confirmation is checked against the
+    // exact manifest bytes read above; the whole policy must verify.
+    $verification = php_verify_confirmations($policyDocument, 'native_read_project_bytes');
+    if (!$verification['ok']) {
+        $reason = $verification['unverifiable'][0] ?? 'confirmations-unverifiable';
+        return build_response($request, ['error' => [
+            'class' => 'invalid',
+            'code' => 'native-plan-refused',
+            'message' => substr($reason, 0, 128),
+            'retryable' => false,
+            'partial' => false,
+        ]]);
+    }
+    $custody = [
+        'input_manifest_digest' => (string) $native['input_manifest_digest'],
+        'tool_catalog_digest' => php_tool_catalog_digest($verification['tool_catalog']),
+        'capability_snapshot_digest' => (string) $native['capability_snapshot_digest'],
+        'scan_ref' => (string) $native['scan_ref']['digest'],
+        'observed_ref' => isset($native['observed_ref']['digest'])
+            ? (string) $native['observed_ref']['digest']
+            : 'sha256:' . str_repeat('0', 64),
+        'profile_id' => (string) ($request['profile'] ?? PROFILE_TOKEN),
+        'profile_digest' => 'sha256:' . sha256_hex((string) ($request['profile'] ?? PROFILE_TOKEN)
+            . '@' . TARGET_TOKEN),
+        'adapter_identity' => adapter_identity(),
+    ];
+    try {
+        $plan = php_build_native_plan([
+            'composer' => $composer,
+            'composer_lock_state' => $lockState,
+            'composer_lock_digest' => $lockDigest,
+            'policy' => $policyDocument,
+            'confirmed' => $verification['confirmed'],
+            'tool_catalog' => $verification['tool_catalog'],
+            'changes' => [
+                'files' => is_array($native['changes']['files'] ?? null) ? $native['changes']['files'] : [],
+                'symbols' => is_array($native['changes']['symbols'] ?? null) ? $native['changes']['symbols'] : [],
+            ],
+            'selection_manifest' => $selectionManifest,
+            'custody' => $custody,
+        ]);
+    } catch (PhpPlanRefusal $refusal) {
+        return build_response($request, ['error' => [
+            'class' => 'invalid',
+            'code' => 'native-plan-refused',
+            'message' => substr($refusal->getMessage(), 0, 128),
+            'retryable' => false,
+            'partial' => false,
+        ]]);
+    }
+    // The wire carries the closed native_plan summary only: the full
+    // plan is digest-addressed custody, never a free-floating payload.
+    // The in-process accessor pins the exact bytes for the host.
+    native_last_plan($plan);
+    return build_response($request, ['result' => [
+        'ok' => true,
+        'native_plan' => [
+            'kind' => 'native-plan',
+            'digest' => $plan['plan_digest'],
+            'commands' => count($plan['commands']),
+            'packages' => count($plan['workspace']['packages']),
+            'completeness' => $plan['workspace']['completeness'],
+            'run_eligibility' => $plan['run_eligibility']['state'],
+        ],
+    ]]);
 }
 
 // ---------------------------------------------------------------------------

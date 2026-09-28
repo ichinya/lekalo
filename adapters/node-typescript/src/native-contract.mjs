@@ -222,7 +222,9 @@ export function validateNativePlan(plan) {
     check(isPlainObject(command), "plan.command");
     const members = Object.keys(command).sort().join(",");
     check(members === "affected_reason_refs,allowed_writes,argv,confirmation_ref,covers_suite_ids,cwd,depends_on,env,gate,gate_id,gate_kind,id,limits,package_id,provenance,read_manifest_ref,required,script_digest,script_name,selection_ref,tool_ref,tsconfig_ref"
-      || members === "affected_reason_refs,allowed_writes,argv,confirmation_ref,covers_suite_ids,cwd,depends_on,env,gate,gate_id,gate_kind,id,limits,package_id,read_manifest_ref,required,script_digest,script_name,selection_ref,tool_ref,tsconfig_ref", "plan.command.members");
+      || members === "affected_reason_refs,allowed_writes,argv,confirmation_ref,covers_suite_ids,cwd,depends_on,env,gate,gate_id,gate_kind,id,limits,package_id,read_manifest_ref,required,script_digest,script_name,selection_ref,tool_ref,tsconfig_ref"
+      || members === "affected_reason_refs,allowed_writes,argv,confirmation_ref,covers_suite_ids,cwd,depends_on,env,gate,gate_id,gate_kind,id,limits,package_id,read_manifest_ref,required,script_digest,script_name,selection_ref,tool_ref"
+      || members === "affected_reason_refs,allowed_writes,argv,confirmation_ref,covers_suite_ids,cwd,depends_on,env,gate,gate_id,gate_kind,id,limits,package_id,provenance,read_manifest_ref,required,script_digest,script_name,selection_ref,tool_ref", "plan.command.members");
     boundedString(command.id, 128, "plan.command.id", COMMAND_ID);
     check(!commandIds.has(command.id), "plan.command.duplicate");
     commandIds.add(command.id);
@@ -238,7 +240,7 @@ export function validateNativePlan(plan) {
     boundedString(command.script_name, 64, "plan.command.script_name");
     digest(command.script_digest, "plan.command.script_digest");
     digest(command.confirmation_ref, "plan.command.confirmation_ref");
-    boundedString(command.cwd, 512, "plan.command.cwd", LOGICAL_PATH);
+    check(command.cwd === "." || (typeof command.cwd === "string" && LOGICAL_PATH.test(command.cwd)), "plan.command.cwd");
     boundedString(command.tool_ref, 128, "plan.command.tool_ref");
     check(Array.isArray(command.argv) && command.argv.length >= 1 && command.argv.length <= 64, "plan.command.argv");
     let argvBytes = 0;
@@ -249,7 +251,9 @@ export function validateNativePlan(plan) {
     check(argvBytes <= 16384, "plan.command.argv.total");
     check(Array.isArray(command.env) && command.env.length <= 32, "plan.command.env");
     check(Array.isArray(command.depends_on) && command.depends_on.length <= 128, "plan.command.depends_on");
-    for (const dependency of command.depends_on) check(commandIds.has(dependency) || typeof dependency === "string", "plan.command.depends_on.entry");
+    for (const dependency of command.depends_on) {
+      check(typeof dependency === "string" && COMMAND_ID.test(dependency), "plan.command.depends_on.entry");
+    }
     check(Array.isArray(command.affected_reason_refs) && command.affected_reason_refs.length >= 1, "plan.command.affected_reason_refs");
     digest(command.read_manifest_ref, "plan.command.read_manifest_ref");
     checkWritePolicy(command.allowed_writes, "plan.command.allowed_writes");

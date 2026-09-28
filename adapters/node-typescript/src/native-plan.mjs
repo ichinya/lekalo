@@ -402,13 +402,20 @@ export function buildNativePlan({
       ? policy.fallback_rule.rule_digest
       : undefined;
   // Build-prerequisite ordering: commands of a selected package depend
-  // on the commands of every selected package it consumes.
+  // on the commands of every selected package it consumes. The
+  // successor (issue #61) names command ids in depends_on, not package
+  // ids, so the graph carries exact execution order.
   const forwardPrerequisites = new Map();
   for (const edge of inventory.edges) {
     if (!forwardPrerequisites.has(edge.from)) forwardPrerequisites.set(edge.from, []);
     forwardPrerequisites.get(edge.from).push(edge.to);
   }
   const selectedIds = new Set(sortedAffected.map((entry) => entry.package_id));
+  const commandsByPackage = new Map();
+  for (const command of commands) {
+    if (!commandsByPackage.has(command.package_id)) commandsByPackage.set(command.package_id, []);
+    commandsByPackage.get(command.package_id).push(command.id);
+  }
   const dependsOnByPackage = new Map();
   for (const packageId of selectedIds) {
     const chain = [];
@@ -422,9 +429,15 @@ export function buildNativePlan({
     if (chain.length > 0) dependsOnByPackage.set(packageId, [...new Set(chain)]);
   }
   for (const [packageId, dependencies] of dependsOnByPackage) {
+    const dependencyCommands = new Set();
+    for (const dependency of dependencies) {
+      for (const commandId of commandsByPackage.get(dependency) ?? []) {
+        dependencyCommands.add(commandId);
+      }
+    }
     for (const command of commands) {
       if (command.package_id === packageId) {
-        command.depends_on = [...dependencies].sort(utf8Compare);
+        command.depends_on = [...dependencyCommands].sort(utf8Compare);
       }
     }
   }

@@ -13,5 +13,7 @@ declare(strict_types=1);
 require __DIR__ . '/src/analyzer.php';
 require __DIR__ . '/src/strict-profile.php';
 require __DIR__ . '/src/kernel.php';
+require __DIR__ . '/src/native-policy.php';
+require __DIR__ . '/src/native-plan.php';
 
 exit(main());

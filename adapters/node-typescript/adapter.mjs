@@ -216233,6 +216233,11 @@ function buildNativePlan({
     forwardPrerequisites.get(edge.from).push(edge.to);
   }
   const selectedIds = new Set(sortedAffected.map((entry) => entry.package_id));
+  const commandsByPackage = /* @__PURE__ */ new Map();
+  for (const command of commands) {
+    if (!commandsByPackage.has(command.package_id)) commandsByPackage.set(command.package_id, []);
+    commandsByPackage.get(command.package_id).push(command.id);
+  }
   const dependsOnByPackage = /* @__PURE__ */ new Map();
   for (const packageId of selectedIds) {
     const chain = [];
@@ -216246,9 +216251,15 @@ function buildNativePlan({
     if (chain.length > 0) dependsOnByPackage.set(packageId, [...new Set(chain)]);
   }
   for (const [packageId, dependencies] of dependsOnByPackage) {
+    const dependencyCommands = /* @__PURE__ */ new Set();
+    for (const dependency of dependencies) {
+      for (const commandId of commandsByPackage.get(dependency) ?? []) {
+        dependencyCommands.add(commandId);
+      }
+    }
     for (const command of commands) {
       if (command.package_id === packageId) {
-        command.depends_on = [...dependencies].sort(utf8Compare3);
+        command.depends_on = [...dependencyCommands].sort(utf8Compare3);
       }
     }
   }

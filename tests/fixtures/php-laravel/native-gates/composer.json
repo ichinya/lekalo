@@ -1,0 +1,33 @@
+{
+    "name": "lekalo/planner-laravel-fixture",
+    "description": "The Composer/Laravel native-gate fixture project (issue #61). A disposable overlay over the planner fixture: the harness copies the planner project and applies this manifest plus the selection document. Planning reads only these bytes; nothing here is ever installed, updated, or executed by a compiler or adapter process.",
+    "type": "project",
+    "require": {
+        "php": ">=8.3",
+        "ichinya/laratesto": "v0.7.3",
+        "laravel/framework": "13.33.0",
+        "testo/testo": "0.10.53"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "App\\": "app/",
+            "Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "platform": {
+            "php": "8.3.35"
+        }
+    },
+    "scripts": {
+        "gate:format": "@php vendor/bin/mago format --check",
+        "gate:lint": "@php vendor/bin/mago lint",
+        "gate:analyze": "@php vendor/bin/mago analyze",
+        "gate:scenario-tests": "@php vendor/bin/testo run --config testo.php --suite=Laravel",
+        "gate:legacy-tests": "@php vendor/bin/phpunit --config tests/legacy/phpunit.xml",
+        "gate:testo-full": "@php vendor/bin/testo run --config testo.php",
+        "gate:boot": "@php artisan about",
+        "gate:migration-static": "@php artisan migrate:status"
+    }
+}
