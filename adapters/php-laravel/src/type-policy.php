@@ -178,10 +178,17 @@ function php_check_ir_document(mixed $ir): ?array
     if (!is_array($ir['definitions'] ?? null)) {
         return null;
     }
-    foreach ($ir['definitions'] as $definition) {
+    foreach ($ir['definitions'] as $definitionIndex => $definition) {
         if (!is_array($definition) || !is_string($definition['id'] ?? null)
             || !is_string($definition['kind'] ?? null)
             || !in_array($definition['kind'], PHP_TYPES_IR_KINDS, true)) {
+            return null;
+        }
+        // The closed symbol grammar is exactly two segments: one module
+        // plus one name. Fewer segments cannot address a module namespace;
+        // more (or an illegal spelling like a leading digit) would emit
+        // an unparseable class.
+        if (preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $definition['id']) !== 1) {
             return null;
         }
         $fields = null;
@@ -196,9 +203,19 @@ function php_check_ir_document(mixed $ir): ?array
                 if (!is_array($definition['values'] ?? null)) {
                     return null;
                 }
-                foreach ($definition['values'] as $value) {
-                    if (!is_array($value) || array_key_exists('default', $value)) {
+                foreach ($definition['values'] as $valueIndex => $value) {
+                    if (!is_array($value)) {
                         return null;
+                    }
+                    // Enum-level default metadata is the same unsupported
+                    // case as a field-level default: a bounded finding
+                    // with exact provenance, never a shape guess and
+                    // never a different refusal class.
+                    if (array_key_exists('default', $value)) {
+                        throw DefaultMetadataUnsupported::fromField(
+                            (string) ($value['value'] ?? '?'),
+                            'default',
+                        )->withProvenance($definition['id'], '/definitions/' . $definitionIndex . '/values/' . $valueIndex);
                     }
                     if (!is_string($value['value'] ?? null)) {
                         return null;
@@ -222,6 +239,13 @@ function php_check_ir_document(mixed $ir): ?array
                 }
                 break;
         }
+        // A structured definition without its field list is out of the
+        // closed grammar: bounded types-ir-shape refusal, never a fatal
+        // downstream.
+        if (in_array($definition['kind'], ['value-object', 'entity', 'command', 'event'], true)
+            && !is_array($fields)) {
+            return null;
+        }
         if (is_array($fields)) {
             $names = [];
             foreach ($fields as $fieldIndex => $field) {
@@ -231,7 +255,7 @@ function php_check_ir_document(mixed $ir): ?array
                     // The unsupported default is a bounded mapping
                     // finding with exact provenance, never a fatal.
                     $unsupported->semanticId = $definition['id'];
-                    $unsupported->pointer = $definition['pointer'] . '/fields/' . $fieldIndex;
+                    $unsupported->pointer = '/definitions/' . $definitionIndex . '/fields/' . $fieldIndex;
                     throw $unsupported;
                 }
                 if ($checked === null) {
@@ -360,5 +384,13 @@ final class DefaultMetadataUnsupported extends RuntimeException
     public static function fromField(string $fieldName, string $member): self
     {
         return new self($fieldName, $member);
+    }
+
+    /** Fluent provenance attachment for checkers that know the position. */
+    public function withProvenance(string $semanticId, string $pointer): self
+    {
+        $this->semanticId = $semanticId;
+        $this->pointer = $pointer;
+        return $this;
     }
 }

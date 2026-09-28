@@ -493,6 +493,7 @@ for (const [name, irFixture, reason] of [
   ["recursive codec cycle", "recursive.ir.json", "recursive-codec-unsupported"],
   ["normalization collision", "collision.ir.json", "name-collision"],
   ["default metadata", "default-metadata.ir.json", "default-unsupported"],
+  ["enum-level default metadata", "enum-default.ir.json", "default-unsupported"],
 ]) {
   step(`${name} refuses with the bounded reason and zero writes`, () => {
     const root = mkdtempSync(join(tmpdir(), "lekalo-types-u-"));
@@ -508,6 +509,26 @@ for (const [name, irFixture, reason] of [
       (f) => f.code === "php-types.mapping-unsupported" && f.detail.includes(reason),
     );
     assert.ok(finding, `the ${reason} finding is reported`);
+    rmSync(root, { recursive: true, force: true });
+  });
+}
+
+// Out-of-grammar IR evidence refuses as the bounded types-ir-shape
+// class, never a fatal and never a partial plan.
+for (const [name, irFixture] of [
+  ["a structured definition without its field list", "missing-fields.ir.json"],
+  ["a definition id with an illegal spelling", "bad-id.ir.json"],
+  ["a definition id with the wrong segment count", "deep-id.ir.json"],
+]) {
+  step(`${name} is a bounded types-ir-shape refusal`, () => {
+    const root = mkdtempSync(join(tmpdir(), "lekalo-types-shape-"));
+    materialize(root, "inputs/planner.types.json", join(fixtures, "inputs", "ir", irFixture));
+    const code = refusedCall(root, {
+      ...baseRequest("generate", "lekalo/types/planner.types.json"),
+      request_id: requestId(`shape-${irFixture}`),
+      dry_run: true,
+    });
+    assert.equal(code, "types-ir-shape");
     rmSync(root, { recursive: true, force: true });
   });
 }
