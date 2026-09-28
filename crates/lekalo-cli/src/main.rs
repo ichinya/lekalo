@@ -1491,6 +1491,33 @@ enum StorageCommands {
         #[arg(long, value_name = "PLAN_ID")]
         confirm: Option<String>,
     },
+    /// Derive the bounded Laravel migration input from two
+    /// same-project storage-projection attachments under one engine
+    /// profile (issue #57). The plan is gated by the effective policy
+    /// — destructive **or** backfill obligations block — and the
+    /// blocked input prints with its planId for --confirm. A
+    /// validated rename-history document turns same-entity physical
+    /// renames into RENAME steps instead of drop+add. The output is a
+    /// dry run: artifacts are never written and no database is
+    /// contacted.
+    LaravelPlan {
+        /// Path to the base storage-projection attachment.
+        base: String,
+        /// Path to the candidate storage-projection attachment.
+        candidate: String,
+        /// Path to the storage-engine profile attachment.
+        #[arg(long, value_name = "PATH")]
+        profile: String,
+        /// Path to the storage-rename-history document; its digest
+        /// pins must equal the canonical digests of BASE and
+        /// CANDIDATE. Absent means no declared renames.
+        #[arg(long, value_name = "PATH")]
+        history: Option<String>,
+        /// Custody: the exact planId (sha256 digest) of a gated plan.
+        /// A wrong digest refuses.
+        #[arg(long, value_name = "PLAN_ID")]
+        confirm: Option<String>,
+    },
     /// Run the storage-component conformance battery over the
     /// committed fixture set: the profile and its bound projection,
     /// the optional checked-mode evidence pair, the engine input
@@ -6586,6 +6613,19 @@ fn run_storage(command: StorageCommands) -> DomainResult {
             profile,
             confirm,
         } => storage_migrate_plan(&base, &candidate, &profile, confirm.as_deref()),
+        StorageCommands::LaravelPlan {
+            base,
+            candidate,
+            profile,
+            history,
+            confirm,
+        } => storage_laravel_plan(
+            &base,
+            &candidate,
+            &profile,
+            history.as_deref(),
+            confirm.as_deref(),
+        ),
         StorageCommands::Conformance {
             profile,
             projection,
@@ -6962,6 +7002,86 @@ fn storage_migrate_plan(
         plan.status().key()
     );
     DomainResult::graph(bytes, human, Vec::new())
+}
+
+/// `lekalo storage laravel-plan`: the bounded Laravel generation
+/// input over one gated engine plan (issue #57). The effective gate
+/// unions destructive and backfill risks; a blocked plan prints its
+/// exact planId for --confirm and never generates artifacts.
+fn storage_laravel_plan(
+    base_path: &str,
+    candidate_path: &str,
+    profile_path: &str,
+    history_path: Option<&str>,
+    confirm: Option<&str>,
+) -> DomainResult {
+    let profile = match read_storage_profile(profile_path) {
+        Ok(profile) => profile,
+        Err(result) => return result,
+    };
+    let base = match read_projection_attachment(base_path) {
+        Ok(base) => base,
+        Err(result) => return result,
+    };
+    let candidate = match read_projection_attachment(candidate_path) {
+        Ok(candidate) => candidate,
+        Err(result) => return result,
+    };
+    let history = match history_path {
+        Some(path) => {
+            let document = match read_attachment_document(path) {
+                Ok(document) => document,
+                Err(result) => return result,
+            };
+            match lekalo_core::storage_engine::StorageRenameMap::from_value(&document) {
+                Ok(history) => Some(history),
+                Err(diagnostics) => return DomainResult::invalid(diagnostics),
+            }
+        }
+        None => None,
+    };
+    let plan = match &history {
+        Some(history) => lekalo_core::storage_engine::plan_with_history(
+            &profile, &base, &candidate, history, confirm,
+        ),
+        None => lekalo_core::storage_engine::plan_migration(&profile, &base, &candidate, confirm),
+    };
+    let plan = match plan {
+        Ok(plan) => plan,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let input = match lekalo_core::storage_engine::laravel_migration_input(&profile, &base, &plan) {
+        Ok(input) => input,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let bytes = match input.canonical_bytes() {
+        Ok(bytes) => bytes,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    if input.effective_status() == "blocked" {
+        return DomainResult::denied(lekalo_core::storage_engine::gated_plan_failure(
+            "destructive-or-backfill-steps",
+            plan.plan_id(),
+        ));
+    }
+    let human = format!(
+        "laravel migration input {}: {} operation(s), effective gate {}",
+        plan.plan_id().chars().skip(7).take(12).collect::<String>(),
+        input.operations().len(),
+        input.effective_status()
+    );
+    DomainResult::graph(bytes, human, Vec::new())
+}
+
+/// One storage-projection attachment read from a JSON document.
+fn read_projection_attachment(
+    path: &str,
+) -> Result<lekalo_core::storage_projection::StorageProjectionAttachment, DomainResult> {
+    let document = read_attachment_document(path)?;
+    match lekalo_core::storage_projection::StorageProjectionAttachment::from_value(&document) {
+        Ok(attachment) => Ok(attachment),
+        Err(diagnostics) => Err(DomainResult::invalid(diagnostics)),
+    }
 }
 
 /// `lekalo storage input`: the one runtime-neutral document.

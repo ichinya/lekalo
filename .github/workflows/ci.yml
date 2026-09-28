@@ -61,6 +61,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-introspection-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-mysql-binding.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-engine-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-laravel-migration-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-observed-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-bindings-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-query-model-contracts.mjs
@@ -227,6 +228,13 @@ jobs:
         # decoder, the analysis states, and the strict-profile gates run
         # against the committed artifact with injected fakes.
         run: node scripts/test-mago-integration.mjs --fake
+      - name: Run the Laravel migration pipeline gate (issue #57)
+        # The pipeline stages (CLI goldens, PHP artifacts, custody)
+        # run wherever the repo's gates run; the PostgreSQL execution
+        # stage uses the docker engine available on the runner and
+        # records an explicit skip when it is absent — never a pass.
+        timeout-minutes: 15
+        run: node scripts/test-php-laravel-migrations.mjs
       - name: Provision the vendored compiler bundle custody (issue #44)
         run: |
           set -euo pipefail

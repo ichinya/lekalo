@@ -222,6 +222,169 @@ foreach ($caps['capabilities'] as $id => $state) {
     check(is_capability_id($id) && in_array($state, SUPPORT_STATES, true), "capability {$id} grammar");
 }
 
+// --- Laravel migration emitter (issue #57) -------------------------------
+
+$validInput = [
+    'schemaVersion' => 'lekalo/laravel-migration-input/v0.4.0',
+    'identity' => 'dev.lekalo.laravel-migration-input@0.4.0',
+    'engine' => 'postgres',
+    'engineVersion' => '16.4.0',
+    'projectId' => 'planner',
+    'baseDigest' => 'sha256:' . str_repeat('a', 64),
+    'candidateDigest' => 'sha256:' . str_repeat('b', 64),
+    'diffDigest' => 'sha256:' . str_repeat('c', 64),
+    'planId' => 'sha256:' . str_repeat('d', 64),
+    'gated' => false,
+    'backfillGated' => false,
+    'effectiveStatus' => 'ready',
+    'operations' => [
+        [
+            'ordinal' => 1,
+            'kind' => 'create_extension',
+            'statement' => 'CREATE EXTENSION IF NOT EXISTS "pgcrypto";',
+            'risk' => 'none',
+            'rollback' => 'data-loss-on-rollback',
+        ],
+        [
+            'ordinal' => 2,
+            'kind' => 'add_column',
+            'statement' => 'ALTER TABLE "task" ADD COLUMN "last_seen_at" timestamptz;',
+            'risk' => 'none',
+            'rollback' => 'data-loss-on-rollback',
+        ],
+        [
+            'ordinal' => 3,
+            'kind' => "add_index",
+            'statement' => 'CREATE INDEX "idx_task_due" ON "task" ("due_date");',
+            'risk' => 'none',
+            'rollback' => 'reversible',
+            'inverse' => 'DROP INDEX "idx_task_due";',
+        ],
+    ],
+];
+$emitted = emit_laravel_migrations($validInput, 'php-laravel', '.lekalo/ir/test.migration-input.json');
+check(str_starts_with($emitted['bytes'], "<?php\n"), 'migration is PHP');
+check(str_contains($emitted['bytes'], 'declare(strict_types=1);'), 'migration declares strict types');
+check(str_contains($emitted['bytes'], 'extends Migration'), 'migration extends the Laravel Migration');
+check(str_contains($emitted['bytes'], 'DB::statement('), 'migration executes planned SQL');
+check(str_contains($emitted['bytes'], 'CREATE INDEX "idx_task_due"'), 'SQL bytes survive the PHP literal');
+check(str_contains($emitted['bytes'], 'public function up(): void'), 'up() signature');
+check(str_contains($emitted['bytes'], 'public function down(): void'), 'down() signature');
+check(str_contains($emitted['bytes'], 'RuntimeException'), 'unsafe rollback refuses');
+check($emitted['digest'] === sha256_digest($emitted['bytes']), 'artifact digest covers exact bytes');
+check(scope_covers('.lekalo/generated/php-laravel/**', $emitted['path']), 'artifact inside write scope');
+check(str_contains($emitted['path'], '/migrations/'), 'artifact lands in the migrations directory');
+check(str_starts_with($emitted['filename'], MIGRATION_TIMESTAMP_BASE . '_'), 'timestamp comes from the declared policy base');
+$again = emit_laravel_migrations($validInput, 'php-laravel', '.lekalo/ir/test.migration-input.json');
+check($again['bytes'] === $emitted['bytes'] && $again['path'] === $emitted['path'], 'two runs are byte-identical (deterministic filenames and content)');
+$changedInput = $validInput;
+$changedInput['operations'][0]['statement'] = 'CREATE EXTENSION IF NOT EXISTS "pgcrypto2";';
+$changed = emit_laravel_migrations($changedInput, 'php-laravel', '.lekalo/ir/test.migration-input.json');
+check($changed['path'] !== $emitted['path'], 'a changed plan produces a new migration file, never overwrites');
+
+// Reversible plan renders a real down().
+$reversibleInput = $validInput;
+$reversibleInput['operations'] = [$validInput['operations'][2]];
+$reversible = emit_laravel_migrations($reversibleInput, 'php-laravel', '.lekalo/ir/test.migration-input.json');
+check(!str_contains($reversible['bytes'], 'RuntimeException'), 'fully reversible plan renders a real down()');
+check(str_contains($reversible['bytes'], 'DROP INDEX "idx_task_due"'), 'down() carries the typed inverse');
+
+// The gated refusal: a blocked input generates zero bytes.
+$blocked = $validInput;
+$blocked['effectiveStatus'] = 'blocked';
+$refused = false;
+try {
+    emit_laravel_migrations($blocked, 'php-laravel', '.lekalo/ir/test.migration-input.json');
+} catch (RequestRefusal $refusal) {
+    $refused = $refusal->getMessage() === 'input-gated';
+}
+check($refused, 'a blocked input refuses before any artifact');
+
+// Closed-shape refusals.
+$unknownMember = $validInput;
+$unknownMember['surprise'] = 1;
+$refusedUnknown = false;
+try {
+    decode_storage_input(canonical_json($unknownMember));
+} catch (RequestRefusal $refusal) {
+    $refusedUnknown = $refusal->getMessage() === 'input-member';
+}
+check($refusedUnknown, 'unknown input member refused');
+$wrongKind = $validInput;
+$wrongKind['operations'][0]['kind'] = 'nuke_everything';
+$refusedKind = false;
+try {
+    decode_storage_input(canonical_json($wrongKind));
+} catch (RequestRefusal $refusal) {
+    $refusedKind = $refusal->getMessage() === 'input-kind';
+}
+check($refusedKind, 'unknown operation kind refused');
+$badDigest = $validInput;
+$badDigest['planId'] = 'not-a-digest';
+$refusedDigest = false;
+try {
+    decode_storage_input(canonical_json($badDigest));
+} catch (RequestRefusal $refusal) {
+    $refusedDigest = $refusal->getMessage() === 'input-digest';
+}
+check($refusedDigest, 'malformed plan digest refused');
+$reordered = $validInput;
+$reordered['operations'] = [$validInput['operations'][2], $validInput['operations'][0]];
+$refusedOrder = false;
+try {
+    decode_storage_input(canonical_json($reordered));
+} catch (RequestRefusal $refusal) {
+    $refusedOrder = $refusal->getMessage() === 'input-order';
+}
+check($refusedOrder, 'non-monotonic ordinals refused');
+$noInverse = $validInput;
+$noInverse['operations'] = [['ordinal' => 1, 'kind' => 'add_index', 'statement' => 'CREATE INDEX "i" ON "t" ("c");', 'risk' => 'none', 'rollback' => 'reversible']];
+$refusedInverse = false;
+try {
+    decode_storage_input(canonical_json($noInverse));
+} catch (RequestRefusal $refusal) {
+    $refusedInverse = $refusal->getMessage() === 'input-inverse';
+}
+check($refusedInverse, 'reversible operation without its inverse refused');
+
+// SQL literal escaping keeps bytes.
+$tricky = "UPDATE \"t\" SET \"a\" = 'it\'s fine' WHERE \"b\" = E'\\d\'";
+check(php_single_quote($tricky) === str_replace(["\\", "'"], ['\\\\', "\\'"], $tricky), 'single-quote escaping escapes only backslash and quote');
+
+// The append-only ledger custody.
+$ledger = ['migrations' => [
+    ['ordinal' => 1, 'filename' => 'a.php', 'digest' => 'sha256:' . str_repeat('1', 64)],
+]];
+$append = ['migrations' => [
+    ['ordinal' => 1, 'filename' => 'a.php', 'digest' => 'sha256:' . str_repeat('1', 64)],
+    ['ordinal' => 2, 'filename' => 'b.php', 'digest' => 'sha256:' . str_repeat('2', 64)],
+]];
+$shrunk = ['migrations' => []];
+$rewritten = ['migrations' => [
+    ['ordinal' => 1, 'filename' => 'a.php', 'digest' => 'sha256:' . str_repeat('9', 64)],
+]];
+$rewrittenOk = true;
+try {
+    assert_append_only($ledger, $append);
+    assert_append_only($ledger, $ledger);
+} catch (RequestRefusal) {
+    $rewrittenOk = false;
+}
+check($rewrittenOk, 'append and byte-identical regeneration accepted');
+$refusedShrunk = $refusedRewrite = false;
+try {
+    assert_append_only($ledger, $shrunk);
+} catch (RequestRefusal $refusal) {
+    $refusedShrunk = $refusal->getMessage() === 'ledger-shrunk';
+}
+try {
+    assert_append_only($ledger, $rewritten);
+} catch (RequestRefusal $refusal) {
+    $refusedRewrite = $refusal->getMessage() === 'ledger-rewritten';
+}
+check($refusedShrunk, 'a shrinking ledger refused');
+check($refusedRewrite, 'a rewritten published entry refused');
+
 // --- dispatch smoke ---------------------------------------------------------
 
 $response = dispatch(describe_request());
