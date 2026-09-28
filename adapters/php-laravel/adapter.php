@@ -3951,9 +3951,14 @@ function php_check_leaf(mixed $leaf, int $depth): ?string
     if (!array_key_exists('value', $leaf)) {
         return 'leaf-value';
     }
-    if (is_string($leaf['value'])
-        && preg_match_all('/./us', $leaf['value']) > PHP_LIMITS['maxScalarCodepoints']) {
-        return 'leaf-scalar';
+    if (is_string($leaf['value'])) {
+        // The /./us scan returns false on malformed UTF-8: that must
+        // fail closed (refuse the leaf), never compare as zero and
+        // silently pass the bound.
+        $codepoints = preg_match_all('/./us', $leaf['value']);
+        if ($codepoints === false || $codepoints > PHP_LIMITS['maxScalarCodepoints']) {
+            return 'leaf-scalar';
+        }
     }
     return null;
 }
