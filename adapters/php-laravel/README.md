@@ -86,10 +86,12 @@ mixes server-side context and observed-state hashes).
 
 The named capability map honestly declares `unsupported` for every deep
 generator surface (`generate.zod`, `generate.openapi`,
-`generate.transport-http`, `verify.scenarios`, `scan.symbols`,
+`generate.transport-http`, `scan.symbols`,
 `preserve.classification`) and the `plan-native` exchange answers an
 in-envelope `unsupported` error: a declared absence, never a fabricated
-plan summary.
+plan summary. `verify.scenarios` is the one declared `full` surface: the
+kernel compiles scenario IR into runnable Laravel tests and records the
+evidence trail.
 
 The `scan` operation performs a real read-only enumeration of the
 staged view's declared read roots (`.lekalo/ir`, `.lekalo/cache`):
@@ -162,8 +164,9 @@ only through the real integration gate in a disposable sandbox.
 What #55 deliberately does not claim: `scan.symbols` stays
 `unsupported` (the bounded scan wire cannot carry a full native graph;
 the wire projection carries at most eight references per path and
-refuses silently-truncated claims), `verify.scenarios` stays
-`unsupported` (Mago success is not scenario evidence — #56), Laravel
+refuses silently-truncated claims), `verify.scenarios` runs `full` —
+the scenario E2E gate is the dedicated evidence path (Mago success
+alone is not scenario evidence — #56), Laravel
 relation/route/container links are received as provenance-carrying
 relation rows in the receipt but the Model graph is never mutated by
 them, and fix **apply** is out of scope for a later issue.
