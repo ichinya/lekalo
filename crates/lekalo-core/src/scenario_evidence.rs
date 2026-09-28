@@ -880,4 +880,39 @@ mod tests {
         let context = TraceContext::new("3".repeat(64));
         assert!(trace_manifest_document(&[], &context).is_err());
     }
+
+    /// Issue #56: two backends reporting the same scenario never share
+    /// one `native_test` node — the Laratesto record's target-prefixed
+    /// test id keeps the PHP and Node evidence distinct in one manifest.
+    #[test]
+    fn target_prefixed_test_ids_never_collide() {
+        let node = RunRecord::from_value(&valid()).expect("valid record");
+        let mut php_document = valid();
+        php_document["runner"]["id"] = json!("testo:testo");
+        php_document["runner"]["version"] = json!("0.10.53");
+        php_document["test"]["id"] = json!("php-laravel:planner.scenario.focus_happy");
+        php_document["test"]["path"] = json!(
+            "src/generated/php-laravel/scenario-tests/planner/planner.scenario.focus_happy.test.php"
+        );
+        let php = RunRecord::from_value(&php_document).expect("valid record");
+        let context = TraceContext::new("3".repeat(64));
+        let document = trace_manifest_document(&[node, php], &context).expect("valid manifest");
+        let node_ids: Vec<&str> = document["nodes"]
+            .as_array()
+            .expect("nodes")
+            .iter()
+            .map(|node| node["nodeId"].as_str().expect("nodeId"))
+            .collect();
+        assert!(node_ids.contains(&"native_test:planner.scenario.focus_happy"));
+        assert!(node_ids.contains(&"native_test:php-laravel:planner.scenario.focus_happy"));
+        // The scenario node stays shared: same semantic scenario, two
+        // independent native tests verifying it.
+        assert_eq!(
+            node_ids
+                .iter()
+                .filter(|id| **id == "scenario:planner.scenario.focus_happy")
+                .count(),
+            1
+        );
+    }
 }
