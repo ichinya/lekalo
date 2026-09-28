@@ -184,6 +184,14 @@ function php_types_field_encode(array $field, array $definitions, string $prefix
  * The private list decode/encode helper pair of one list field (or of
  * a query return). Element decoding validates every element; the
  * collection constructor is the only list publisher.
+ *
+ * Accepted wire boundary: the codec consumes PHP-decoded JSON values,
+ * where a JSON object and an empty list are both `[]` and `"0":…`
+ * loses its object-ness. A wire object therefore decodes as an empty
+ * (or numerically keyed) list at this layer; duplicate members and
+ * envelope-level shape custody belong to the kernel's JSON boundary
+ * (`decode_json_document`), which refuses duplicates before any codec
+ * runs (issue #58).
  */
 function php_types_list_helpers(array $field, array $definitions, string $prefix, string $ownerId): string
 {

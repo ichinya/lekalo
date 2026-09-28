@@ -115,6 +115,15 @@
       ],
       "kind": "entity",
       "version": 1
+    },
+    {
+      "description": "The latest measurement over the direct query body",
+      "id": "edge.latest",
+      "kind": "query",
+      "returns": {
+        "ref": "edge.measurement"
+      },
+      "version": 1
     }
   ],
   "modelVersion": "0.2.16"

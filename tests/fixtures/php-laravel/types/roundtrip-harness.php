@@ -224,6 +224,15 @@ if ($corpus === 'planner') {
     $check('edge.reject-bad-uri', $throws(fn () => \Lekalo\Generated\Types\Edge\ReadingId::fromWire('no scheme here')) === InvalidArgumentException::class);
     $check('edge.accept-uri', \Lekalo\Generated\Types\Edge\ReadingId::fromWire('mailto:someone@example.com')->toString() === 'mailto:someone@example.com');
 
+    // B3: a query whose return is a structured leaf delegates to the
+    // value-object codec both ways — direct body, no envelope.
+    $measurementWire = ['amount' => 1.5, 'instant' => null];
+    $latest = \Lekalo\Generated\Types\Edge\LatestResultCodec::decode($measurementWire);
+    $check('edge.query-structured-leaf', $latest instanceof \Lekalo\Generated\Types\Edge\Measurement
+        && \Lekalo\Generated\Types\Edge\LatestResultCodec::encode($latest) === $measurementWire);
+    $check('edge.query-structured-leaf-refuses-junk', $throws(
+        fn () => \Lekalo\Generated\Types\Edge\LatestResultCodec::decode('nope'),
+    ) === InvalidArgumentException::class);
 
     // The hostile description stayed one safe comment line and the
     // class still loads.
