@@ -26,8 +26,19 @@ const require = createRequire(import.meta.url);
 let Ajv2020;
 let ajvVersion;
 try {
-  ({ default: Ajv2020 } = require("ajv/dist/2020"));
-  ajvVersion = require("ajv/package.json").version;
+  // The same resolution as the other contract gates (issue #32): Ajv is
+  // provisioned OUTSIDE this checkout and exposed through
+  // LEKALO_AJV_NODE_PATH; a developer-local install via NODE_PATH or
+  // node_modules still works when the env var is absent.
+  const nodePath = process.env.LEKALO_AJV_NODE_PATH ?? "";
+  if (nodePath) {
+    const provisioned = createRequire(nodePath + "/");
+    ({ default: Ajv2020 } = provisioned("ajv/dist/2020"));
+    ajvVersion = provisioned("ajv/package.json").version;
+  } else {
+    ({ default: Ajv2020 } = require("ajv/dist/2020"));
+    ajvVersion = require("ajv/package.json").version;
+  }
 } catch (error) {
   failEarly("ajv-unavailable", String(error));
 }
