@@ -4847,7 +4847,10 @@ function php_comment_safe(mixed $text): string
     $value = preg_replace('/\r\n|[\r\n\x{0085}\x{2028}\x{2029}]|\p{Cc}/u', ' ', $value) ?? '';
     $value = preg_replace('/\s+/', ' ', $value) ?? '';
     $value = trim($value);
-    return mb_substr($value, 0, 200);
+    // Byte-exact truncation: the scenario byte-range maps account bytes,
+    // so the cap must count bytes (mb_* would count characters and
+    // desynchronize the map); it also keeps php -n runtimes safe.
+    return substr($value, 0, 200);
 }
 
 /**
@@ -5141,8 +5144,8 @@ final class ScenarioTestKit
     public static function canonicalUri(mixed \$text): bool
     {
         \$value = (string) \$text;
-        \$characters = mb_strlen(\$value);
-        if (\$characters < 8 || \$characters > 2048) {
+        \$bytes = strlen(\$value);
+        if (\$bytes < 8 || \$bytes > 2048) {
             return false;
         }
         \$marker = strpos(\$value, '://');
