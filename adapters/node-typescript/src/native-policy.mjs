@@ -2,12 +2,12 @@
 // adapter artifact (trusted synthetic fixture data, issue #48). The
 // policy is confirmation data only — never execution authority.
 export default {
-  "schema_version": "lekalo/native-gate-policy/v0.3.2",
+  "schema_version": "lekalo/native-gate-policy/v0.4.0",
   "kind": "native-gate-policy",
   "policy_digest": "sha256:ba1eb9bf6e1df8a4bf76e66873c547468b6d4c886628911861c36255826340e2",
   "identity": {
     "id": "fixture-native-policy",
-    "version": "0.3.2"
+    "version": "0.4.0"
   },
   "repository_role": "consumer-repository",
   "trust": {
@@ -40,6 +40,10 @@ export default {
     {
       "package_id": "packages/planner=@fixture/planner",
       "gate": "test",
+      "gate_id": "packages_planner__fixture_planner-test",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "packages/planner",
       "script_name": "gate:test",
       "manifest_digest": "sha256:978e8895e36987e3bd5f516452c739b80a50f46eda9d4aeb23d07977447314c9",
       "script_digest": "sha256:cfad049df69aeb73066311f382c7f1a25167b13d1bbf17ec05408b03330d773d",
@@ -55,12 +59,16 @@ export default {
         "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
+      "rule_version": "0.4.0",
       "rule_digest": "sha256:d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
     },
     {
       "package_id": "packages/api=@fixture/api",
       "gate": "typecheck",
+      "gate_id": "packages_api__fixture_api-typecheck",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "packages/api",
       "script_name": "gate:typecheck",
       "manifest_digest": "sha256:b20a1232cfc9fb4d167d24caff93c251c3bb2bdbba6049c284d25d58cf6b45b3",
       "script_digest": "sha256:7b7d5c6042f2913345dfa260286398b9f8e09129bcff81327cfdda3602977fb5",
@@ -76,12 +84,16 @@ export default {
         "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
+      "rule_version": "0.4.0",
       "rule_digest": "sha256:d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2"
     },
     {
       "package_id": "packages/cli=@fixture/cli",
       "gate": "test",
+      "gate_id": "packages_cli__fixture_cli-test",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "packages/cli",
       "script_name": "gate:test",
       "manifest_digest": "sha256:4508f667dce936b2b49d928a61e41ed30889ce39410af8d646ec576f54d3e4dc",
       "script_digest": "sha256:cfad049df69aeb73066311f382c7f1a25167b13d1bbf17ec05408b03330d773d",
@@ -97,12 +109,16 @@ export default {
         "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
+      "rule_version": "0.4.0",
       "rule_digest": "sha256:d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3"
     },
     {
       "package_id": ".=@fixture/standalone",
       "gate": "test",
+      "gate_id": "fixture_standalone-test",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": ".",
       "script_name": "gate:test",
       "manifest_digest": "sha256:e5da4f03d1228fdc1c8f7578fada663573d2454eb3f15917e8ec929a1e6ea502",
       "script_digest": "sha256:cfad049df69aeb73066311f382c7f1a25167b13d1bbf17ec05408b03330d773d",
@@ -118,7 +134,7 @@ export default {
         "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
+      "rule_version": "0.4.0",
       "rule_digest": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
     }
   ],

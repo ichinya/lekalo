@@ -64,8 +64,10 @@
     },
     "readScopes": [
       ".lekalo/cache/**",
-      ".lekalo/ir/**",
       ".lekalo/import/**",
+      ".lekalo/ir/**",
+      "composer.json",
+      "composer.lock",
       "lekalo/php-test-port.json",
       "lekalo/scenarios/**"
     ],
@@ -95,12 +97,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:af684f3ec0f3bddad424dab549709a001ad230ced812b56b6d6b6f06fd0111ca",
+    "packageDigest": "sha256:fb03abeccb56c0c8bf0cdb4e852cad02e7cb06b958aacde6ea07fc6853247afd",
     "files": [
       {
         "path": "adapter.php",
-        "digest": "sha256:3ec4ee1671696bbb6da3cfd1f7269cab2c04d4c4e691e48720f4162fd938ac95",
-        "bytes": 245697
+        "digest": "sha256:5aa78f5f7deb61b731801328518b6f2d0e635cc461cdc92c375299e200e2e315",
+        "bytes": 321096
       }
     ],
     "signaturePolicy": "unsigned",
@@ -110,8 +112,10 @@
     "filesystem": {
       "readScopes": [
         ".lekalo/cache/**",
-        ".lekalo/ir/**",
         ".lekalo/import/**",
+        ".lekalo/ir/**",
+        "composer.json",
+        "composer.lock",
         "lekalo/php-test-port.json",
         "lekalo/scenarios/**"
       ],

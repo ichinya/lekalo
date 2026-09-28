@@ -152,13 +152,21 @@ pub struct NativeWriteScope {
     pub max_bytes: Option<u64>,
 }
 
-/// One proposed gate command of a native plan.
+/// One proposed gate command of a native plan (v0.4.0: the command
+/// carries its stable gate id, the closed gate-kind metadata, its
+/// requirement flag, the digest-addressed selection reference, and
+/// the suite ids its execution covers).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeCommand {
     pub id: String,
     pub package_id: String,
     pub gate: String,
+    pub gate_id: String,
+    pub gate_kind: String,
+    pub required: bool,
+    pub selection_ref: String,
+    pub covers_suite_ids: Vec<String>,
     pub script_name: String,
     pub script_digest: String,
     pub confirmation_ref: String,
@@ -219,7 +227,29 @@ pub struct NativeRunEligibility {
     pub reason_codes: Vec<String>,
 }
 
-/// The proposed immutable native gate plan (issue #48).
+/// The digest-addressed selection document of a native plan (issue
+/// #61): the targeting inputs the plan was built from, joined with the
+/// mandatory cross-module gate ids and the explicit fallback rule.
+/// Reviewable omission: excluded modules/tests and uncertainties are
+/// recorded here, never silently dropped.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeSelection {
+    pub mode: String,
+    pub modules: Vec<String>,
+    pub tests: Vec<String>,
+    pub mandatory_gate_ids: Vec<String>,
+    pub excluded: Vec<NativeExcluded>,
+    pub uncertainties: Vec<NativeUncertainty>,
+    /// The pinned rule digest of an explicit release-full fallback, or
+    /// null. The member is always present (nullable) so the canonical
+    /// bytes round-trip identically on the Node and Rust sides.
+    #[serde(default)]
+    pub fallback_rule_ref: Option<String>,
+}
+
+/// One proposed immutable native gate plan (issue #48, v0.4.0 adds the
+/// selection document).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativePlan {
@@ -246,6 +276,7 @@ pub struct NativePlan {
     pub affected: Vec<NativeAffected>,
     pub excluded: Vec<NativeExcluded>,
     pub selection_mode: String,
+    pub selection: NativeSelection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fallback_rule_ref: Option<String>,
     pub commands: Vec<NativeCommand>,
@@ -421,7 +452,9 @@ pub enum NativeOutputRef {
     State { state: String },
 }
 
-/// One per-command result of a run receipt.
+/// One per-command result of a run receipt (v0.4.0: gate id, the
+/// requirement flag, the proposed failure class, and the observed
+/// toolchain custody reference).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeCommandResult {
@@ -431,10 +464,19 @@ pub struct NativeCommandResult {
     pub tool_ref: String,
     pub argv: Vec<String>,
     pub env_names: Vec<String>,
+    pub gate_id: String,
+    pub required: bool,
+    /// The proposed failure class (issue #61): orthogonal to the
+    /// closed outcome — `assertion`, `static-analysis`, `boot`,
+    /// `missing-tool`, `incompatible`, `infrastructure`, or null when
+    /// no failure classification applies.
+    pub failure_class: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub env_recipe_digest: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toolchain_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit: Option<NativeValueState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -444,6 +486,16 @@ pub struct NativeCommandResult {
     pub reason_codes: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_ref: Option<NativeOutputRef>,
+}
+
+/// The coverage completeness of a run receipt (issue #61): whether the
+/// executed commands covered the selection's mandatory gate ids.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeCoverage {
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uncovered_gate_ids: Vec<String>,
 }
 
 /// One created/modified path of a mutation summary.
@@ -499,8 +551,9 @@ pub struct NativeCapabilityEvidence {
     pub receipt_digest: Option<String>,
 }
 
-/// The terminal run receipt: exactly one outcome, per-command results,
-/// mutation/original/cleanup sections, and capability evidence.
+/// The terminal run receipt: exactly one outcome, the proposed
+/// verification verdict, per-command results, mutation/original/
+/// cleanup sections, coverage, and capability evidence.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeRunResult {
@@ -511,8 +564,12 @@ pub struct NativeRunResult {
     pub authority_ref: NativeRef,
     pub policy_ref: NativeRef,
     pub outcome: String,
+    /// The proposed verification summary verdict (issue #61):
+    /// `passed | failed | blocked | degraded`.
+    pub verdict: String,
     pub reason_codes: Vec<String>,
     pub commands: Vec<NativeCommandResult>,
+    pub coverage: NativeCoverage,
     pub mutation_summary: NativeMutationSummary,
     pub original_verification: NativeOriginalVerification,
     pub cleanup: NativeCleanup,

@@ -36,13 +36,18 @@ pub struct NativeSymbolViewRow {
     pub freshness: String,
 }
 
-/// One gate row of the composite view.
+/// One gate row of the composite view (v0.4.0 adds the gate-kind
+/// metadata and the proposed failure class).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NativeGateViewRow {
     pub command_id: String,
     pub package_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gate: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_class: Option<String>,
     /// The closed state set of the view row: planned receipts, terminal
     /// receipt outcomes, and the explicit not-run state.
     pub state: String,
@@ -111,6 +116,8 @@ pub fn build_view(
                 command_id: command.command_id.clone(),
                 package_id: command.package_id.clone(),
                 gate: planned.map(|candidate| candidate.gate.clone()),
+                gate_kind: planned.map(|candidate| candidate.gate_kind.clone()),
+                failure_class: command.failure_class.clone(),
                 state: command.outcome.clone(),
                 exit: command.exit.as_ref().and_then(|exit| exit.value),
                 duration_ms: command
@@ -202,7 +209,7 @@ pub fn build_view(
 }
 
 /// Validate one view document against its closed shape (the schema
-/// document is `contracts/native-gate-view.schema.v0.3.2.json`).
+/// document is `contracts/native-gate-view.schema.v0.4.0.json`).
 pub fn validate_view(view: &NativeObservedView) -> Result<(), &'static str> {
     if view.schema_version != VIEW_SCHEMA_VERSION || view.kind != "native-gate-view" {
         return Err("schema-version");
@@ -237,6 +244,16 @@ pub fn validate_view(view: &NativeObservedView) -> Result<(), &'static str> {
                 | "not-run"
         ) {
             return Err("gate-state");
+        }
+        if let Some(gate_kind) = &gate.gate_kind {
+            if !super::wire::gate_kind_is_valid(gate_kind) {
+                return Err("gate-kind");
+            }
+        }
+        if let Some(failure_class) = &gate.failure_class {
+            if !super::receipt::FAILURE_CLASSES.contains(&failure_class.as_str()) {
+                return Err("failure-class");
+            }
         }
     }
     for package in &view.packages {

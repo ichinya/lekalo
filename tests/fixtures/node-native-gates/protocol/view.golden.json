@@ -1,5 +1,5 @@
 {
-  "schema_version": "lekalo/native-gate-view/v0.3.2",
+  "schema_version": "lekalo/native-gate-view/v0.4.0",
   "kind": "native-gate-view",
   "completeness": "complete",
   "scan_revision": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
@@ -48,7 +48,8 @@
       "gate": "test",
       "state": "passed",
       "exit": 0,
-      "duration_ms": 120
+      "duration_ms": 120,
+      "gate_kind": "composer-script"
     }
   ],
   "graph_evidence": {

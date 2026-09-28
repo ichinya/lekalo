@@ -11,12 +11,18 @@ use super::{PlanRejection, POLICY_SCHEMA_VERSION};
 /// Maximum serialized policy bytes the host accepts (contract ceiling).
 pub const MAX_POLICY_BYTES: usize = 1024 * 1024;
 
-/// The closed confirmation entry of one execution policy.
+/// The closed confirmation entry of one execution policy (v0.4.0:
+/// the stable gate id, the closed gate-kind metadata, the requirement
+/// flag, and the exact logical cwd the command runs in).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PolicyConfirmation {
     pub package_id: String,
     pub gate: String,
+    pub gate_id: String,
+    pub gate_kind: String,
+    pub required: bool,
+    pub cwd: String,
     pub script_name: String,
     pub manifest_digest: String,
     pub script_digest: String,
@@ -78,6 +84,15 @@ fn is_sha256(value: &str) -> bool {
     })
 }
 
+fn is_gate_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && value.bytes().all(|b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-' || b == b'_'
+        })
+}
+
 /// Decode the checked-in execution policy document and validate it.
 pub fn validate_policy(bytes: &[u8]) -> Result<ExecutionPolicy, PlanRejection> {
     if bytes.len() > MAX_POLICY_BYTES {
@@ -102,12 +117,34 @@ pub fn validate_policy(bytes: &[u8]) -> Result<ExecutionPolicy, PlanRejection> {
     if policy.confirmations.is_empty() || policy.confirmations.len() > 128 {
         return Err(PlanRejection::Shape("confirmations"));
     }
+    // Issue #61: confirmations join per (package, gate_id) — several
+    // confirmations for one package are allowed, but the stable gate
+    // id must be unique inside the package and the gate-kind metadata
+    // must come from the closed successor set.
+    let mut joined = std::collections::BTreeSet::new();
     for confirmation in &policy.confirmations {
         if !["build", "typecheck", "lint", "test"].contains(&confirmation.gate.as_str()) {
             return Err(PlanRejection::Shape("confirmation-gate"));
         }
         if !policy.allowed_gate_kinds.contains(&confirmation.gate) {
             return Err(PlanRejection::Shape("confirmation-gate-not-allowed"));
+        }
+        if !is_gate_id(&confirmation.gate_id) {
+            return Err(PlanRejection::Shape("confirmation-gate-id"));
+        }
+        if !super::wire::gate_kind_is_valid(&confirmation.gate_kind) {
+            return Err(PlanRejection::Shape("confirmation-gate-kind"));
+        }
+        if confirmation.cwd != "."
+            && !crate::target_protocol::scopes::is_logical_path(&confirmation.cwd)
+        {
+            return Err(PlanRejection::Shape("confirmation-cwd"));
+        }
+        if !joined.insert((
+            confirmation.package_id.clone(),
+            confirmation.gate_id.clone(),
+        )) {
+            return Err(PlanRejection::Shape("confirmation-join"));
         }
         if !is_sha256(&confirmation.manifest_digest)
             || !is_sha256(&confirmation.script_digest)
@@ -129,11 +166,14 @@ pub fn validate_policy(bytes: &[u8]) -> Result<ExecutionPolicy, PlanRejection> {
         match mode {
             Some("none") => {}
             Some("release-full") => {
-                if policy
+                // Issue #61 (research §4.4): the release-full fallback
+                // must independently carry its rule digest — a missing
+                // rule_digest is a refusal, never an accepted rule.
+                if !policy
                     .fallback_rule
                     .get("rule_digest")
                     .and_then(|v| v.as_str())
-                    .is_some_and(|digest| !is_sha256(digest))
+                    .is_some_and(is_sha256)
                 {
                     return Err(PlanRejection::Shape("fallback-digest"));
                 }

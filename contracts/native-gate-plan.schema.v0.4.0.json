@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://dev.lekalo/native-gate-plan.schema.v0.3.2.json",
+  "$id": "https://dev.lekalo/native-gate-plan.schema.v0.4.0.json",
   "title": "Lekalo Native Gate Execution Plan",
-  "description": "Closed contract for one immutable native gate execution plan (issue #48): the discovered workspace and package graph, the input and scan custody digests, the changed inputs, the affected-package closure with per-package reasons and exclusions, the proposed gate commands with exact relative cwd, literal argv, env recipe, tool references, dependencies and per-command limits, the capability snapshot, the whole-run run eligibility, and the plan digest over the canonical plan with the digest member absent. The plan is a proposal only: it never authorizes its own execution — an external approval naming this exact digest is required, and the approval never lives inside the plan.",
+  "description": "Closed contract for one immutable native gate execution plan Successor of the v0.3.2 native gate plan (issue #61; the v0.3.2 enums are never silently broadened). Closed contract for one immutable native gate execution plan (issue #48): the discovered workspace and package graph, the input and scan custody digests, the changed inputs, the affected-package closure with per-package reasons and exclusions, the proposed gate commands with exact relative cwd, literal argv, env recipe, tool references, dependencies and per-command limits, the capability snapshot, the whole-run run eligibility, and the plan digest over the canonical plan with the digest member absent. The plan is a proposal only: it never authorizes its own execution — an external approval naming this exact digest is required, and the approval never lives inside the plan.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -29,6 +29,7 @@
     "affected",
     "excluded",
     "selection_mode",
+    "selection",
     "commands",
     "env",
     "tools",
@@ -40,7 +41,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "lekalo/native-gate-plan/v0.3.2"
+      "const": "lekalo/native-gate-plan/v0.4.0"
     },
     "kind": {
       "const": "native-plan"
@@ -164,6 +165,9 @@
     },
     "write_policy": {
       "$ref": "#/$defs/writePolicy"
+    },
+    "selection": {
+      "$ref": "#/$defs/selection"
     }
   },
   "$defs": {
@@ -376,11 +380,12 @@
         "manager": {
           "type": "string",
           "enum": [
-            "pnpm-workspace",
+            "bun",
+            "composer-project",
             "npm-standalone",
             "npm-workspaces",
-            "yarn",
-            "bun"
+            "pnpm-workspace",
+            "yarn"
           ]
         },
         "declared_version": {
@@ -706,7 +711,12 @@
         "affected_reason_refs",
         "read_manifest_ref",
         "allowed_writes",
-        "limits"
+        "limits",
+        "gate_id",
+        "gate_kind",
+        "required",
+        "selection_ref",
+        "covers_suite_ids"
       ],
       "properties": {
         "id": {
@@ -781,8 +791,9 @@
           "maxItems": 128,
           "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/packageId"
-          }
+            "$ref": "#/$defs/gateId"
+          },
+          "description": "The selected commands that must run first (command ids, issue #61 successor semantics)."
         },
         "affected_reason_refs": {
           "type": "array",
@@ -805,6 +816,26 @@
         },
         "provenance": {
           "$ref": "#/$defs/sha256Digest"
+        },
+        "gate_id": {
+          "$ref": "#/$defs/gateId"
+        },
+        "gate_kind": {
+          "$ref": "#/$defs/gateKind"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "selection_ref": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "covers_suite_ids": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/gateId"
+          }
         }
       }
     },
@@ -1082,6 +1113,102 @@
           "$ref": "#/$defs/logicalPath"
         }
       ]
+    },
+    "gateId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "maxLength": 128
+    },
+    "gateKind": {
+      "type": "string",
+      "enum": [
+        "composer-script",
+        "mago-format",
+        "mago-lint",
+        "mago-analyze",
+        "mago-guard",
+        "laratesto",
+        "pest",
+        "phpunit",
+        "artisan-check",
+        "boot-smoke",
+        "migration-static",
+        "migration-execute",
+        "discovery-smoke",
+        "legacy-suite"
+      ]
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "modules",
+        "tests",
+        "mandatory_gate_ids",
+        "excluded",
+        "uncertainties",
+        "fallback_rule_ref"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "targeted",
+            "release-full"
+          ]
+        },
+        "modules": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+            "maxLength": 64
+          }
+        },
+        "tests": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/gateId"
+          }
+        },
+        "mandatory_gate_ids": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/gateId"
+          }
+        },
+        "excluded": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/excludedPackage"
+          }
+        },
+        "uncertainties": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/uncertainty"
+          }
+        },
+        "fallback_rule_ref": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256Digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     }
   }
 }

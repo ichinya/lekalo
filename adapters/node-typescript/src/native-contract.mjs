@@ -6,7 +6,11 @@
  * Shared Node/Rust golden byte vectors pin the digest encoding.
  */
 import { createHash } from "node:crypto";
-import { canonicalJsonText, planDigest as canonicalPlanDigest } from "./native-plan.mjs";
+import {
+  canonicalJsonText,
+  planDigest as canonicalPlanDigest,
+  selectionDigest,
+} from "./native-plan.mjs";
 
 export { canonicalJsonText, planDigest } from "./native-plan.mjs";
 
@@ -17,13 +21,18 @@ const COMMAND_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const CAPABILITY_ID = /^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)+$/;
 const LOGICAL_PATH = /^(?!(?:.*[/])?(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[./]|$))(?!(?:.*[/])?\.{1,2}(?:\/|$))(?!.*\.(?:\/|$))[a-z0-9.][a-z0-9._-]{0,63}(?:\/[a-z0-9.][a-z0-9._-]{0,63})*$/;
 
-export const PLAN_SCHEMA_VERSION = "lekalo/native-gate-plan/v0.3.2";
-export const POLICY_SCHEMA_VERSION = "lekalo/native-gate-policy/v0.3.2";
-export const RUN_SCHEMA_VERSION = "lekalo/native-gate-run/v0.3.2";
-export const VIEW_SCHEMA_VERSION = "lekalo/native-gate-view/v0.3.2";
+export const PLAN_SCHEMA_VERSION = "lekalo/native-gate-plan/v0.4.0";
+export const POLICY_SCHEMA_VERSION = "lekalo/native-gate-policy/v0.4.0";
+export const RUN_SCHEMA_VERSION = "lekalo/native-gate-run/v0.4.0";
+export const VIEW_SCHEMA_VERSION = "lekalo/native-gate-view/v0.4.0";
 
 const GATE_KINDS = new Set(["build", "typecheck", "lint", "test"]);
-const SELECTION_MODES = new Set(["targeted", "release-full"]);
+/** The closed v0.4.0 gate-kind metadata set (issue #61). */
+const GATE_KIND_METADATA = new Set([
+  "composer-script", "mago-format", "mago-lint", "mago-analyze", "mago-guard",
+  "laratesto", "pest", "phpunit", "artisan-check", "boot-smoke",
+  "migration-static", "migration-execute", "discovery-smoke", "legacy-suite",
+]);
 const REASON_KINDS = new Set([
   "changed-package", "dependent-closure", "graph-bound-test",
   "build-prerequisite", "release-rule", "explicit-binding",
@@ -110,7 +119,7 @@ function checkEnv(env, member) {
 }
 
 /**
- * Validate one native gate plan against the closed 0.3.2 plan contract.
+ * Validate one native gate plan against the closed 0.4.0 plan contract.
  * Throws a TypeError naming the first violating member.
  */
 export function validateNativePlan(plan) {
@@ -121,7 +130,7 @@ export function validateNativePlan(plan) {
     "policy_ref", "classification_ref", "execution_policy_ref", "profile_ref",
     "input_manifest_digest", "scan_ref", "observed_ref", "tool_catalog_digest",
     "capability_snapshot_digest", "workspace", "changes", "affected", "excluded",
-    "selection_mode", "commands", "env", "tools", "required_capabilities",
+    "selection_mode", "selection", "commands", "env", "tools", "required_capabilities",
     "capabilities", "run_eligibility", "limits", "write_policy",
   ].sort();
   check(JSON.stringify(Object.keys(plan).sort()) === JSON.stringify(required), "plan.members");
@@ -135,7 +144,14 @@ export function validateNativePlan(plan) {
   contractVersion(plan.planner_version, "plan.planner_version");
   contractVersion(plan.canonicalization_version, "plan.canonicalization_version");
   check(plan.selection_mode === "targeted" || plan.selection_mode === "release-full", "plan.selection_mode");
-  check(plan.selection_mode === "targeted" ? SELECTION_MODES.has(plan.selection_mode) : SELECTION_MODES.has(plan.selection_mode), "plan.selection_mode");
+  check(isPlainObject(plan.selection), "plan.selection");
+  check(plan.selection.mode === plan.selection_mode, "plan.selection.mode");
+  check(Array.isArray(plan.selection.modules) && plan.selection.modules.length <= 256, "plan.selection.modules");
+  check(Array.isArray(plan.selection.tests) && plan.selection.tests.length <= 256, "plan.selection.tests");
+  check(Array.isArray(plan.selection.mandatory_gate_ids) && plan.selection.mandatory_gate_ids.length <= 128, "plan.selection.mandatory_gate_ids");
+  check(Array.isArray(plan.selection.excluded), "plan.selection.excluded");
+  check(Array.isArray(plan.selection.uncertainties), "plan.selection.uncertainties");
+  check(plan.selection.fallback_rule_ref === null || (typeof plan.selection.fallback_rule_ref === "string" && SHA256.test(plan.selection.fallback_rule_ref)), "plan.selection.fallback_rule_ref");
   digest(plan.input_manifest_digest, "plan.input_manifest_digest");
   digest(plan.tool_catalog_digest, "plan.tool_catalog_digest");
   digest(plan.capability_snapshot_digest, "plan.capability_snapshot_digest");
@@ -148,7 +164,7 @@ export function validateNativePlan(plan) {
   // Workspace.
   const workspace = plan.workspace;
   check(isPlainObject(workspace), "plan.workspace");
-  check(["pnpm-workspace", "npm-standalone", "npm-workspaces", "yarn", "bun"].includes(workspace.manager), "plan.workspace.manager");
+  check(["pnpm-workspace", "npm-standalone", "npm-workspaces", "yarn", "bun", "composer-project"].includes(workspace.manager), "plan.workspace.manager");
   check(workspace.completeness === "complete" || workspace.completeness === "incomplete" || workspace.completeness === "unknown", "plan.workspace.completeness");
   check(Array.isArray(workspace.packages) && workspace.packages.length <= 1024, "plan.workspace.packages");
   const packageIds = new Set();
@@ -196,20 +212,30 @@ export function validateNativePlan(plan) {
   // Commands.
   check(Array.isArray(plan.commands) && plan.commands.length <= 128, "plan.commands");
   const commandIds = new Set();
+  const gateIdsSeen = new Set();
   for (const command of plan.commands) {
     check(isPlainObject(command), "plan.command");
     const members = Object.keys(command).sort().join(",");
-    check(members === "affected_reason_refs,allowed_writes,argv,confirmation_ref,cwd,depends_on,env,gate,id,limits,package_id,provenance,read_manifest_ref,script_digest,script_name,tool_ref,tsconfig_ref"
-      || members === "affected_reason_refs,allowed_writes,argv,confirmation_ref,cwd,depends_on,env,gate,id,limits,package_id,read_manifest_ref,script_digest,script_name,tool_ref,tsconfig_ref", "plan.command.members");
+    check(members === "affected_reason_refs,allowed_writes,argv,confirmation_ref,covers_suite_ids,cwd,depends_on,env,gate,gate_id,gate_kind,id,limits,package_id,provenance,read_manifest_ref,required,script_digest,script_name,selection_ref,tool_ref,tsconfig_ref"
+      || members === "affected_reason_refs,allowed_writes,argv,confirmation_ref,covers_suite_ids,cwd,depends_on,env,gate,gate_id,gate_kind,id,limits,package_id,read_manifest_ref,required,script_digest,script_name,selection_ref,tool_ref,tsconfig_ref"
+      || members === "affected_reason_refs,allowed_writes,argv,confirmation_ref,covers_suite_ids,cwd,depends_on,env,gate,gate_id,gate_kind,id,limits,package_id,read_manifest_ref,required,script_digest,script_name,selection_ref,tool_ref"
+      || members === "affected_reason_refs,allowed_writes,argv,confirmation_ref,covers_suite_ids,cwd,depends_on,env,gate,gate_id,gate_kind,id,limits,package_id,provenance,read_manifest_ref,required,script_digest,script_name,selection_ref,tool_ref", "plan.command.members");
     boundedString(command.id, 128, "plan.command.id", COMMAND_ID);
     check(!commandIds.has(command.id), "plan.command.duplicate");
     commandIds.add(command.id);
+    check(!gateIdsSeen.has(command.gate_id), "plan.command.gate_id.duplicate");
+    gateIdsSeen.add(command.gate_id);
+    boundedString(command.gate_id, 128, "plan.command.gate_id", COMMAND_ID);
+    check(GATE_KIND_METADATA.has(command.gate_kind), "plan.command.gate_kind");
+    check(typeof command.required === "boolean", "plan.command.required");
+    digest(command.selection_ref, "plan.command.selection_ref");
+    check(Array.isArray(command.covers_suite_ids) && command.covers_suite_ids.length <= 256, "plan.command.covers_suite_ids");
     check(packageIds.has(command.package_id), "plan.command.package_id");
     check(GATE_KINDS.has(command.gate), "plan.command.gate");
     boundedString(command.script_name, 64, "plan.command.script_name");
     digest(command.script_digest, "plan.command.script_digest");
     digest(command.confirmation_ref, "plan.command.confirmation_ref");
-    boundedString(command.cwd, 512, "plan.command.cwd", LOGICAL_PATH);
+    check(command.cwd === "." || (typeof command.cwd === "string" && LOGICAL_PATH.test(command.cwd)), "plan.command.cwd");
     boundedString(command.tool_ref, 128, "plan.command.tool_ref");
     check(Array.isArray(command.argv) && command.argv.length >= 1 && command.argv.length <= 64, "plan.command.argv");
     let argvBytes = 0;
@@ -220,7 +246,9 @@ export function validateNativePlan(plan) {
     check(argvBytes <= 16384, "plan.command.argv.total");
     check(Array.isArray(command.env) && command.env.length <= 32, "plan.command.env");
     check(Array.isArray(command.depends_on) && command.depends_on.length <= 128, "plan.command.depends_on");
-    for (const dependency of command.depends_on) check(commandIds.has(dependency) || typeof dependency === "string", "plan.command.depends_on.entry");
+    for (const dependency of command.depends_on) {
+      check(typeof dependency === "string" && COMMAND_ID.test(dependency), "plan.command.depends_on.entry");
+    }
     check(Array.isArray(command.affected_reason_refs) && command.affected_reason_refs.length >= 1, "plan.command.affected_reason_refs");
     digest(command.read_manifest_ref, "plan.command.read_manifest_ref");
     checkWritePolicy(command.allowed_writes, "plan.command.allowed_writes");
@@ -232,7 +260,17 @@ export function validateNativePlan(plan) {
   for (const capability of plan.required_capabilities ?? []) {
     boundedString(capability, 128, "plan.required_capabilities.entry", CAPABILITY_ID);
   }
-  // The recorded digest must equal the recomputed digest.
+  // Mandatory gate ids must name executed commands (issue #61).
+  const executedGateIds = new Set(plan.commands.map((command) => command.gate_id));
+  for (const gateId of plan.selection.mandatory_gate_ids) {
+    check(executedGateIds.has(gateId), "plan.selection.mandatory_gate_ids.executed");
+  }
+  // The selection reference pins the selection document in every
+  // command, and the recorded digest must equal the recomputed digest.
+  const pinnedSelectionRef = selectionDigest(plan.selection);
+  for (const command of plan.commands) {
+    check(command.selection_ref === pinnedSelectionRef, "plan.command.selection_ref.pinned");
+  }
   check(canonicalPlanDigest(plan) === plan.plan_digest, "plan.plan_digest.recomputation");
   return true;
 }

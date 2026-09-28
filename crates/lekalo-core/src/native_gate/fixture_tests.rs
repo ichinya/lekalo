@@ -101,7 +101,7 @@ pub fn run_fixture_plan(
         let started = Instant::now();
         let result = execute_command(&plan, command, &stage_root, entry, &limits);
         let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-        let (outcome, exit, reason_codes, stdout_digest) = match result {
+        let (outcome, exit, reason_codes, stdout_digest, failure_class) = match result {
             Ok(success) => {
                 let exit = NativeValueState {
                     state: "known".into(),
@@ -119,6 +119,7 @@ pub fn run_fixture_plan(
                         }),
                         vec!["output-limit".to_owned()],
                         Some(success.stdout_sha),
+                        Some("infrastructure".to_owned()),
                     )
                 } else if success.timed_out {
                     run_failed = true;
@@ -130,9 +131,16 @@ pub fn run_fixture_plan(
                         }),
                         vec!["timeout".to_owned()],
                         Some(success.stdout_sha),
+                        Some("infrastructure".to_owned()),
                     )
                 } else if success.exit_code == 0 {
-                    ("passed", Some(exit), Vec::new(), Some(success.stdout_sha))
+                    (
+                        "passed",
+                        Some(exit),
+                        Vec::new(),
+                        Some(success.stdout_sha),
+                        None,
+                    )
                 } else {
                     run_failed = true;
                     (
@@ -140,19 +148,38 @@ pub fn run_fixture_plan(
                         Some(exit),
                         vec!["gate-nonzero-exit".to_owned()],
                         Some(success.stdout_sha),
+                        // The fixture gate is a script assertion: the
+                        // terminal nonzero exit classifies as one.
+                        Some("assertion".to_owned()),
                     )
                 }
             }
             Err(failure) => {
                 run_failed = true;
-                let (outcome, reasons) = match failure {
-                    CommandFailure::Missing => ("missing", vec!["script-missing".to_owned()]),
-                    CommandFailure::ToolDrift => ("security", vec!["tool-drift".to_owned()]),
-                    CommandFailure::Security => ("security", vec!["env-or-path".to_owned()]),
-                    CommandFailure::Infrastructure => {
-                        ("infrastructure", vec!["command-infrastructure".to_owned()])
-                    }
-                };
+                // The failure class must cohere with the closed outcome
+                // mapping (receipt::failure_class_coheres): a security
+                // event has no coherent class, so the receipt carries
+                // none — never a "missing-tool" label that would make
+                // the terminal security receipt invalid.
+                let (outcome, reasons, failure_class): (&str, Vec<String>, Option<&str>) =
+                    match failure {
+                        CommandFailure::Missing => (
+                            "missing",
+                            vec!["script-missing".to_owned()],
+                            Some("missing-tool"),
+                        ),
+                        CommandFailure::ToolDrift => {
+                            ("security", vec!["tool-drift".to_owned()], None)
+                        }
+                        CommandFailure::Security => {
+                            ("security", vec!["env-or-path".to_owned()], None)
+                        }
+                        CommandFailure::Infrastructure => (
+                            "infrastructure",
+                            vec!["command-infrastructure".to_owned()],
+                            Some("infrastructure"),
+                        ),
+                    };
                 (
                     outcome,
                     Some(NativeValueState {
@@ -161,6 +188,7 @@ pub fn run_fixture_plan(
                     }),
                     reasons,
                     None,
+                    failure_class.map(|class| class.to_owned()),
                 )
             }
         };
@@ -171,6 +199,12 @@ pub fn run_fixture_plan(
             tool_ref: command.tool_ref.clone(),
             argv: command.argv.clone(),
             env_names: command.env.clone(),
+            gate_id: command.gate_id.clone(),
+            required: command.required,
+            failure_class,
+            // The fixture catalog carries no observed toolchain custody
+            // receipt: the reference stays honestly absent.
+            toolchain_ref: None,
             env_recipe_digest: Some(crate::digest::sha256_hex(
                 plan.env
                     .bindings
@@ -236,9 +270,19 @@ pub fn run_fixture_plan(
     // The terminal outcome: security dominates, then infrastructure,
     // then the gates' own outcomes. A passed run with unexpected writes
     // or an original mutation is security, never passed.
-    let outcome = if original_state == "mutated" || !unexpected.is_empty() {
+    // The terminal outcome preserves the strongest per-command class:
+    // a tool-drift or path/env security event is a security run (never
+    // lowered to a plain gate failure), and infrastructure events
+    // (deadline, flood, spawn) stay infrastructure.
+    let any_security = command_results
+        .iter()
+        .any(|command| command.outcome == "security");
+    let any_infrastructure = command_results
+        .iter()
+        .any(|command| command.outcome == "infrastructure");
+    let outcome = if original_state == "mutated" || !unexpected.is_empty() || any_security {
         "security"
-    } else if !elapsed_ok {
+    } else if !elapsed_ok || any_infrastructure {
         "infrastructure"
     } else if run_failed {
         "failed"
@@ -255,7 +299,21 @@ pub fn run_fixture_plan(
     if !elapsed_ok {
         reason_codes.push("timeout".to_owned());
     }
-    let receipt = NativeRunResult {
+    // Issue #61: the summary verdict is the rollup of the executed
+    // commands; coverage reconciles the selection's mandatory gate ids
+    // against the executed and passed commands.
+    let mandatory: Vec<String> = plan.selection.mandatory_gate_ids.clone();
+    let passed_gate_ids: std::collections::BTreeSet<&str> = command_results
+        .iter()
+        .filter(|command| command.outcome == "passed")
+        .map(|command| command.gate_id.as_str())
+        .collect();
+    let uncovered: Vec<String> = mandatory
+        .iter()
+        .filter(|gate_id| !passed_gate_ids.contains(gate_id.as_str()))
+        .cloned()
+        .collect();
+    let mut receipt = NativeRunResult {
         schema_version: RUN_SCHEMA_VERSION.to_owned(),
         kind: "native-run-result".to_owned(),
         plan_digest: plan.plan_digest.clone(),
@@ -263,8 +321,18 @@ pub fn run_fixture_plan(
         authority_ref: plan.authority_ref.clone(),
         policy_ref: plan.policy_ref.clone(),
         outcome: outcome.to_owned(),
+        verdict: "blocked".to_owned(),
         reason_codes,
         commands: command_results,
+        coverage: NativeCoverage {
+            state: if uncovered.is_empty() && elapsed_ok {
+                "complete"
+            } else {
+                "incomplete"
+            }
+            .to_owned(),
+            uncovered_gate_ids: uncovered,
+        },
         mutation_summary: NativeMutationSummary {
             created,
             modified,
@@ -292,6 +360,7 @@ pub fn run_fixture_plan(
         },
         provenance: None,
     };
+    receipt.verdict = super::receipt::rollup_verdict(&receipt);
     validate_run_result(&serde_json::to_vec(&receipt).expect("receipt serializes")).map_err(
         |rejection| NativeGateFailure::PlanInvalid {
             detail: rejection.detail(),
@@ -906,6 +975,85 @@ mod fixture_execution_tests {
             .created
             .iter()
             .all(|m| m.path.ends_with("gate-markers.txt")));
+    }
+
+    /// The golden plan in its typed form, for custody-preserving
+    /// tampering: the mutate hook runs before the selection reference
+    /// and plan digest are recomputed, so the tampered plan still
+    /// decodes and the (externally) approved digest names it exactly.
+    fn tampered_plan(mutate: impl FnOnce(&mut NativePlan)) -> (Vec<u8>, String) {
+        let mut plan: NativePlan =
+            serde_json::from_slice(&golden_plan_bytes()).expect("golden plan");
+        mutate(&mut plan);
+        let selection = plan.selection.clone();
+        for command in &mut plan.commands {
+            command.selection_ref = crate::native_gate::selection_digest(&selection);
+        }
+        plan.plan_digest = crate::native_gate::plan_digest(&plan);
+        let digest = plan.plan_digest.clone();
+        (serde_json::to_vec(&plan).expect("plan serializes"), digest)
+    }
+
+    #[test]
+    fn a_tool_custody_drift_produces_a_valid_security_receipt() {
+        let Some(mut entry) = catalog_entry() else {
+            return;
+        };
+        // The catalog provisioning digest drifts from the plan's pinned
+        // tool digest: the drift fires at the command arm, not at
+        // preflight, and must surface as a security receipt that the
+        // receipt validator accepts (failure classes never mask it).
+        entry.verified_tool_digest = "0".repeat(64);
+        let outcome = run_fixture_plan(&golden_plan_bytes(), &approved_digest(), &entry);
+        let receipt =
+            outcome.expect("a drifted tool yields a valid security receipt, never a PlanInvalid");
+        assert_eq!(receipt.outcome, "security");
+        assert_eq!(receipt.verdict, "blocked");
+        let drifted = receipt
+            .commands
+            .iter()
+            .find(|command| {
+                command
+                    .reason_codes
+                    .iter()
+                    .any(|reason| reason == "tool-drift")
+            })
+            .expect("the drift is recorded on the executed command");
+        assert_eq!(drifted.outcome, "security");
+        assert_eq!(
+            drifted.failure_class, None,
+            "a security event carries no failure class"
+        );
+    }
+
+    #[test]
+    fn a_hostile_script_path_produces_a_valid_security_receipt() {
+        let Some(entry) = catalog_entry() else {
+            return;
+        };
+        let (bytes, digest) = tampered_plan(|plan| {
+            plan.commands[0].argv[1] = "../escape.mjs".to_owned();
+        });
+        let outcome = run_fixture_plan(&bytes, &digest, &entry);
+        let receipt =
+            outcome.expect("a hostile path yields a valid security receipt, never a PlanInvalid");
+        assert_eq!(receipt.outcome, "security");
+        assert_eq!(receipt.verdict, "blocked");
+        let escaped = receipt
+            .commands
+            .iter()
+            .find(|command| {
+                command
+                    .reason_codes
+                    .iter()
+                    .any(|reason| reason == "env-or-path")
+            })
+            .expect("the escape is recorded on the executed command");
+        assert_eq!(escaped.outcome, "security");
+        assert_eq!(
+            escaped.failure_class, None,
+            "a security event carries no failure class"
+        );
     }
 
     #[test]
