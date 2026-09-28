@@ -12,10 +12,10 @@ directory of any command.
 | Contract | Current identity |
 | --- | --- |
 | Target protocol | `lekalo.target/v1`, contract `0.3.2` (`contracts/target-protocol.schema.v0.3.2.json`) |
-| Execution policy | `lekalo/native-gate-policy/v0.3.2` (`contracts/native-gate-policy.schema.v0.3.2.json`) |
-| Execution plan | `lekalo/native-gate-plan/v0.3.2` (`contracts/native-gate-plan.schema.v0.3.2.json`) |
-| Run request/receipt | `lekalo/native-gate-run/v0.3.2` (`contracts/native-gate-run.schema.v0.3.2.json`) |
-| Observed view | `lekalo/native-gate-view/v0.3.2` (`contracts/native-gate-view.schema.v0.3.2.json`) |
+| Execution policy | `lekalo/native-gate-policy/v0.4.0` (`contracts/native-gate-policy.schema.v0.4.0.json`) |
+| Execution plan | `lekalo/native-gate-plan/v0.4.0` (`contracts/native-gate-plan.schema.v0.4.0.json`) |
+| Run request/receipt | `lekalo/native-gate-run/v0.4.0` (`contracts/native-gate-run.schema.v0.4.0.json`) |
+| Observed view | `lekalo/native-gate-view/v0.4.0` (`contracts/native-gate-view.schema.v0.4.0.json`) |
 | Diagnostic registry | `dev.lekalo.diagnostic-registry@0.4.0` (the 0.4.0 registry generation; issue #48 added 14 `native-gate.*` rules, `LEK-NGT-001..014`) |
 | Authority matrix | `dev.lekalo.authority-matrix@0.3.2` (4 new `lekalo.native-gate-*` kinds) |
 | Privacy policy | `dev.lekalo.privacy-export-policy@0.3.2` |
@@ -73,7 +73,7 @@ seam is never reused, and a native plan can never authorize a publish.
 
 ## Digest, approval, run boundary
 
-`plan_digest = sha256("lekalo.native-plan.v0.3.2" || canonical(plan
+`plan_digest = sha256("lekalo.native-plan.v0.4.0" || canonical(plan
 without plan_digest))` over compact recursively key-sorted UTF-8 JSON
 (shared Node/Rust golden vectors). The approval always lives outside
 the hashed plan: a run names one exact approved digest, and the runner

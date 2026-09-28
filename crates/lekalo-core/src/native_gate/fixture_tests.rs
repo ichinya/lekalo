@@ -101,7 +101,7 @@ pub fn run_fixture_plan(
         let started = Instant::now();
         let result = execute_command(&plan, command, &stage_root, entry, &limits);
         let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-        let (outcome, exit, reason_codes, stdout_digest) = match result {
+        let (outcome, exit, reason_codes, stdout_digest, failure_class) = match result {
             Ok(success) => {
                 let exit = NativeValueState {
                     state: "known".into(),
@@ -119,6 +119,7 @@ pub fn run_fixture_plan(
                         }),
                         vec!["output-limit".to_owned()],
                         Some(success.stdout_sha),
+                        Some("infrastructure".to_owned()),
                     )
                 } else if success.timed_out {
                     run_failed = true;
@@ -130,9 +131,10 @@ pub fn run_fixture_plan(
                         }),
                         vec!["timeout".to_owned()],
                         Some(success.stdout_sha),
+                        Some("infrastructure".to_owned()),
                     )
                 } else if success.exit_code == 0 {
-                    ("passed", Some(exit), Vec::new(), Some(success.stdout_sha))
+                    ("passed", Some(exit), Vec::new(), Some(success.stdout_sha), None)
                 } else {
                     run_failed = true;
                     (
@@ -140,18 +142,29 @@ pub fn run_fixture_plan(
                         Some(exit),
                         vec!["gate-nonzero-exit".to_owned()],
                         Some(success.stdout_sha),
+                        // The fixture gate is a script assertion: the
+                        // terminal nonzero exit classifies as one.
+                        Some("assertion".to_owned()),
                     )
                 }
             }
             Err(failure) => {
                 run_failed = true;
-                let (outcome, reasons) = match failure {
-                    CommandFailure::Missing => ("missing", vec!["script-missing".to_owned()]),
-                    CommandFailure::ToolDrift => ("security", vec!["tool-drift".to_owned()]),
-                    CommandFailure::Security => ("security", vec!["env-or-path".to_owned()]),
-                    CommandFailure::Infrastructure => {
-                        ("infrastructure", vec!["command-infrastructure".to_owned()])
+                let (outcome, reasons, failure_class) = match failure {
+                    CommandFailure::Missing => {
+                        ("missing", vec!["script-missing".to_owned()], "missing-tool")
                     }
+                    CommandFailure::ToolDrift => {
+                        ("security", vec!["tool-drift".to_owned()], "missing-tool")
+                    }
+                    CommandFailure::Security => {
+                        ("security", vec!["env-or-path".to_owned()], "missing-tool")
+                    }
+                    CommandFailure::Infrastructure => (
+                        "infrastructure",
+                        vec!["command-infrastructure".to_owned()],
+                        "infrastructure",
+                    ),
                 };
                 (
                     outcome,
@@ -161,6 +174,7 @@ pub fn run_fixture_plan(
                     }),
                     reasons,
                     None,
+                    Some(failure_class.to_owned()),
                 )
             }
         };
@@ -171,6 +185,12 @@ pub fn run_fixture_plan(
             tool_ref: command.tool_ref.clone(),
             argv: command.argv.clone(),
             env_names: command.env.clone(),
+            gate_id: command.gate_id.clone(),
+            required: command.required,
+            failure_class,
+            // The fixture catalog carries no observed toolchain custody
+            // receipt: the reference stays honestly absent.
+            toolchain_ref: None,
             env_recipe_digest: Some(crate::digest::sha256_hex(
                 plan.env
                     .bindings
@@ -255,7 +275,21 @@ pub fn run_fixture_plan(
     if !elapsed_ok {
         reason_codes.push("timeout".to_owned());
     }
-    let receipt = NativeRunResult {
+    // Issue #61: the summary verdict is the rollup of the executed
+    // commands; coverage reconciles the selection's mandatory gate ids
+    // against the executed and passed commands.
+    let mandatory: Vec<String> = plan.selection.mandatory_gate_ids.clone();
+    let passed_gate_ids: std::collections::BTreeSet<&str> = command_results
+        .iter()
+        .filter(|command| command.outcome == "passed")
+        .map(|command| command.gate_id.as_str())
+        .collect();
+    let uncovered: Vec<String> = mandatory
+        .iter()
+        .filter(|gate_id| !passed_gate_ids.contains(gate_id.as_str()))
+        .cloned()
+        .collect();
+    let mut receipt = NativeRunResult {
         schema_version: RUN_SCHEMA_VERSION.to_owned(),
         kind: "native-run-result".to_owned(),
         plan_digest: plan.plan_digest.clone(),
@@ -263,8 +297,18 @@ pub fn run_fixture_plan(
         authority_ref: plan.authority_ref.clone(),
         policy_ref: plan.policy_ref.clone(),
         outcome: outcome.to_owned(),
+        verdict: "blocked".to_owned(),
         reason_codes,
         commands: command_results,
+        coverage: NativeCoverage {
+            state: if uncovered.is_empty() && elapsed_ok {
+                "complete"
+            } else {
+                "incomplete"
+            }
+            .to_owned(),
+            uncovered_gate_ids: uncovered,
+        },
         mutation_summary: NativeMutationSummary {
             created,
             modified,
@@ -292,6 +336,7 @@ pub fn run_fixture_plan(
         },
         provenance: None,
     };
+    receipt.verdict = super::receipt::rollup_verdict(&receipt);
     validate_run_result(&serde_json::to_vec(&receipt).expect("receipt serializes")).map_err(
         |rejection| NativeGateFailure::PlanInvalid {
             detail: rejection.detail(),

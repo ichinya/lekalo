@@ -15,12 +15,14 @@
  */
 import { createHash } from "node:crypto";
 
-export const PLAN_DIGEST_DOMAIN = "lekalo.native-plan.v0.3.2";
+export const PLAN_DIGEST_DOMAIN = "lekalo.native-plan.v0.4.0";
+/** The digest domain of the digest-addressed selection document. */
+export const SELECTION_DIGEST_DOMAIN = "lekalo.native-selection.v0.4.0";
 /** The planner capability id declared in every produced plan. */
 export const PLAN_CAPABILITY = "plan.native-gates";
-export const CANONICALIZATION_VERSION = "0.3.2";
+export const CANONICALIZATION_VERSION = "0.4.0";
 /** The planner version recorded in every produced plan. */
-export const PLANNER_VERSION = "0.3.2";
+export const PLANNER_VERSION = "0.4.0";
 
 /** Shell metacharacters and interpolation syntax refused in literals. */
 const SHELL_METACHARACTERS = new Set([
@@ -100,6 +102,21 @@ export function planDigest(plan) {
   const bytes = Buffer.concat([
     Buffer.from(PLAN_DIGEST_DOMAIN, "utf8"),
     Buffer.from(canonicalJsonText(rest), "utf8"),
+  ]);
+  return "sha256:" + createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
+ * The digest-addressed selection document reference (issue #61):
+ * sha256 over `SELECTION_DIGEST_DOMAIN || canonical(selection)`. Every
+ * command of the plan carries this digest so the approved plan pins
+ * its own selection artifacts; a post-approval selection edit cannot
+ * validate without changing the plan digest too.
+ */
+export function selectionDigest(selection) {
+  const bytes = Buffer.concat([
+    Buffer.from(SELECTION_DIGEST_DOMAIN, "utf8"),
+    Buffer.from(canonicalJsonText(selection), "utf8"),
   ]);
   return "sha256:" + createHash("sha256").update(bytes).digest("hex");
 }
@@ -294,9 +311,19 @@ export function buildNativePlan({
     // never leave `complete` beside non-empty uncertainties.
     inventory.completeness = "incomplete";
   }
-  const confirmationByPackage = new Map();
+  // Issue #61: confirmations join per package by stable gate id —
+  // several confirmations for one package each produce their own
+  // proposed command. The old confirmationByPackage map silently kept
+  // only the last confirmation per package and is gone.
+  const confirmationsByPackage = new Map();
   for (const confirmation of policy.confirmations) {
-    confirmationByPackage.set(confirmation.package_id, confirmation);
+    if (!confirmationsByPackage.has(confirmation.package_id)) {
+      confirmationsByPackage.set(confirmation.package_id, []);
+    }
+    confirmationsByPackage.get(confirmation.package_id).push(confirmation);
+  }
+  for (const list of confirmationsByPackage.values()) {
+    list.sort((left, right) => utf8Compare(left.gate_id ?? "", right.gate_id ?? ""));
   }
   const toolById = new Map();
   for (const tool of toolCatalog ?? []) toolById.set(tool.id, tool);
@@ -310,42 +337,51 @@ export function buildNativePlan({
   }
   for (const affected of sortedAffected) {
     const pkg = inventory.packages.find((candidate) => candidate.id === affected.package_id);
-    const confirmation = confirmationByPackage.get(affected.package_id);
-    if (!confirmation) {
+    const confirmations = confirmationsByPackage.get(affected.package_id) ?? [];
+    if (confirmations.length === 0) {
       excluded.push({ package_id: affected.package_id, reason: "no-confirmation" });
       continue;
     }
-    const tool = toolById.get(confirmation.tool_ref.id);
-    if (!tool) {
-      excluded.push({ package_id: affected.package_id, reason: "no-confirmation" });
-      continue;
+    for (const confirmation of confirmations) {
+      const tool = toolById.get(confirmation.tool_ref.id);
+      if (!tool) {
+        excluded.push({ package_id: affected.package_id, reason: "no-confirmation" });
+        continue;
+      }
+      if (confirmation.gate && !policy.allowed_gate_kinds.includes(confirmation.gate)) {
+        excluded.push({ package_id: affected.package_id, reason: "no-confirmation" });
+        continue;
+      }
+      const scriptName = confirmation.script_name;
+      const scriptDigest = confirmation.script_digest;
+      const gateId = confirmation.gate_id
+        ?? `${affected.package_id.replace(/[^a-z0-9._-]/g, "_")}-${confirmation.gate}`;
+      const commandId = `gate-${gateId}`;
+      const cwd = confirmation.cwd ?? (pkg ? pkg.root : ".");
+      commands.push({
+        id: commandId,
+        package_id: affected.package_id,
+        gate: confirmation.gate,
+        gate_id: gateId,
+        gate_kind: confirmation.gate_kind ?? "composer-script",
+        required: confirmation.required !== false,
+        selection_ref: "sha256:" + "0".repeat(64),
+        covers_suite_ids: confirmation.covers_suite_ids ?? [],
+        script_name: scriptName,
+        script_digest: scriptDigest,
+        confirmation_ref: confirmation.rule_digest,
+        cwd,
+        tool_ref: confirmation.tool_ref.id,
+        argv: confirmation.argv,
+        env: confirmation.env ?? [],
+        depends_on: [],
+        affected_reason_refs: [affectedReasonRefs.get(affected.package_id)],
+        read_manifest_ref: inputManifestDigest,
+        allowed_writes: { mode: "stage-only" },
+        limits: policy.limits,
+        tsconfig_ref: confirmation.tsconfig_ref ?? (pkg ? `${pkg.root}/tsconfig.json` : "tsconfig.json"),
+      });
     }
-    if (confirmation.gate && !policy.allowed_gate_kinds.includes(confirmation.gate)) {
-      excluded.push({ package_id: affected.package_id, reason: "no-confirmation" });
-      continue;
-    }
-    const scriptName = confirmation.script_name;
-    const scriptDigest = confirmation.script_digest;
-    const commandId = `gate-${affected.package_id.replace(/[^a-z0-9._-]/g, "_")}-${confirmation.gate}`;
-    const cwd = pkg ? pkg.root : ".";
-    commands.push({
-      id: commandId,
-      package_id: affected.package_id,
-      gate: confirmation.gate,
-      script_name: scriptName,
-      script_digest: scriptDigest,
-      confirmation_ref: confirmation.rule_digest,
-      cwd,
-      tool_ref: confirmation.tool_ref.id,
-      argv: confirmation.argv,
-      env: confirmation.env ?? [],
-      depends_on: [],
-      affected_reason_refs: [affectedReasonRefs.get(affected.package_id)],
-      read_manifest_ref: inputManifestDigest,
-      allowed_writes: { mode: "stage-only" },
-      limits: policy.limits,
-      tsconfig_ref: confirmation.tsconfig_ref ?? (pkg ? `${pkg.root}/tsconfig.json` : "tsconfig.json"),
-    });
   }
   for (const pkg of inventory.packages) {
     if (!affectedList.some((affected) => affected.package_id === pkg.id)
@@ -393,7 +429,7 @@ export function buildNativePlan({
     }
   }
   const plan = {
-    schema_version: "lekalo/native-gate-plan/v0.3.2",
+    schema_version: "lekalo/native-gate-plan/v0.4.0",
     kind: "native-plan",
     plan_digest: `sha256:${"0".repeat(64)}`,
     adapter: adapterIdentity,
@@ -432,7 +468,24 @@ export function buildNativePlan({
     affected: sortedAffected,
     excluded,
     selection_mode: derivedSelectionMode,
-    ...(fallbackRuleRef !== undefined ? { fallback_rule_ref: fallbackRuleRef } : {}),
+    selection: {
+      mode: derivedSelectionMode,
+      modules: [...new Set(sortedAffected.map((entry) => {
+        // One module id per affected package: the single-segment leaf
+        // of the package root (the root package's slug when the
+        // workspace root itself is a package).
+        const pkg = inventory.packages.find((candidate) => candidate.id === entry.package_id);
+        if (!pkg) return entry.package_id.replace(/[^a-z0-9._-]/g, "_");
+        if (pkg.root === ".") return pkg.id.replace(/[^a-z0-9._-]/g, "_");
+        return pkg.root.split("/").pop();
+      }))].sort(utf8Compare),
+      tests: [...new Set(commands.flatMap((command) => command.covers_suite_ids))].sort(utf8Compare),
+      mandatory_gate_ids: [...new Set(commands.filter((command) => command.required)
+        .map((command) => command.gate_id))].sort(utf8Compare),
+      excluded,
+      uncertainties: inventory.uncertainties,
+      fallback_rule_ref: fallbackRuleRef ?? null,
+    },
     commands,
     env: policy.env_recipe,
     tools: (toolCatalog ?? []).map((tool) => ({
@@ -453,6 +506,13 @@ export function buildNativePlan({
     limits: policy.limits,
     write_policy: policy.write_policy,
   };
+  // The selection reference pins the digest-addressed selection
+  // document inside every command: selection artifacts cannot be
+  // replaced after approval (issue #61).
+  const selectionRef = selectionDigest(plan.selection);
+  for (const command of plan.commands) {
+    command.selection_ref = selectionRef;
+  }
   plan.plan_digest = planDigest(plan);
   return plan;
 }

@@ -1,10 +1,10 @@
 {
-  "schema_version": "lekalo/native-gate-policy/v0.3.2",
+  "schema_version": "lekalo/native-gate-policy/v0.4.0",
   "kind": "native-gate-policy",
   "policy_digest": "sha256:ba1eb9bf6e1df8a4bf76e66873c547468b6d4c886628911861c36255826340e2",
   "identity": {
     "id": "fixture-native-policy",
-    "version": "0.3.2"
+    "version": "0.4.0"
   },
   "repository_role": "consumer-repository",
   "trust": {
@@ -52,8 +52,12 @@
         "entry_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
-      "rule_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      "rule_version": "0.4.0",
+      "rule_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "gate_id": "packages_tasks-build",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "packages/tasks"
     },
     {
       "package_id": "packages/sync=@taskhub/sync",
@@ -73,8 +77,12 @@
         "entry_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
-      "rule_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      "rule_version": "0.4.0",
+      "rule_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "gate_id": "packages_sync-test",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "packages/sync"
     },
     {
       "package_id": "apps/api=@taskhub/api",
@@ -94,8 +102,12 @@
         "entry_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
-      "rule_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      "rule_version": "0.4.0",
+      "rule_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "gate_id": "apps_api-typecheck",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "apps/api"
     }
   ],
   "env_recipe": {

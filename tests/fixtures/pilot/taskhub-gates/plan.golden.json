@@ -1,14 +1,14 @@
 {
-  "schema_version": "lekalo/native-gate-plan/v0.3.2",
+  "schema_version": "lekalo/native-gate-plan/v0.4.0",
   "kind": "native-plan",
-  "plan_digest": "sha256:b40005ae2e283fbcb595ddc51b70e06f63b4d540288ef4cd4989caa6f075318e",
+  "plan_digest": "sha256:008af9c93a4214692b2861eeff5673ba8e1558d22a95e3c9442753fa1ded31db",
   "adapter": {
     "id": "lekalo-target-node-typescript",
     "version": "0.3.2",
     "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
   },
-  "planner_version": "0.3.2",
-  "canonicalization_version": "0.3.2",
+  "planner_version": "0.4.0",
+  "canonicalization_version": "0.4.0",
   "repository_role": "consumer-repository",
   "trust": {
     "mode": "public-fixture",
@@ -264,7 +264,12 @@
         "max_stderr_bytes": 65536,
         "max_output_bytes_per_run": 1048576
       },
-      "tsconfig_ref": "apps/api/tsconfig.json"
+      "tsconfig_ref": "apps/api/tsconfig.json",
+      "gate_id": "apps_api__taskhub_api-typecheck",
+      "gate_kind": "composer-script",
+      "required": true,
+      "selection_ref": "sha256:524d4c9ecfe7e00ebcde75e2c05968ccc21005e23c6131264fd860251d3bae49",
+      "covers_suite_ids": []
     },
     {
       "id": "gate-packages_sync__taskhub_sync-test",
@@ -301,7 +306,12 @@
         "max_stderr_bytes": 65536,
         "max_output_bytes_per_run": 1048576
       },
-      "tsconfig_ref": "packages/sync/tsconfig.json"
+      "tsconfig_ref": "packages/sync/tsconfig.json",
+      "gate_id": "packages_sync__taskhub_sync-test",
+      "gate_kind": "composer-script",
+      "required": true,
+      "selection_ref": "sha256:524d4c9ecfe7e00ebcde75e2c05968ccc21005e23c6131264fd860251d3bae49",
+      "covers_suite_ids": []
     },
     {
       "id": "gate-packages_tasks__taskhub_tasks-build",
@@ -334,7 +344,12 @@
         "max_stderr_bytes": 65536,
         "max_output_bytes_per_run": 1048576
       },
-      "tsconfig_ref": "packages/tasks/tsconfig.json"
+      "tsconfig_ref": "packages/tasks/tsconfig.json",
+      "gate_id": "packages_tasks__taskhub_tasks-build",
+      "gate_kind": "composer-script",
+      "required": true,
+      "selection_ref": "sha256:524d4c9ecfe7e00ebcde75e2c05968ccc21005e23c6131264fd860251d3bae49",
+      "covers_suite_ids": []
     }
   ],
   "env": {
@@ -380,5 +395,35 @@
   },
   "write_policy": {
     "mode": "stage-only"
+  },
+  "selection": {
+    "mode": "targeted",
+    "modules": [
+      "api",
+      "sync",
+      "tasks"
+    ],
+    "tests": [],
+    "mandatory_gate_ids": [
+      "apps_api__taskhub_api-typecheck",
+      "packages_sync__taskhub_sync-test",
+      "packages_tasks__taskhub_tasks-build"
+    ],
+    "excluded": [
+      {
+        "package_id": ".=@taskhub/taskhub",
+        "reason": "no-reason"
+      },
+      {
+        "package_id": "packages/events=@taskhub/events",
+        "reason": "no-confirmation"
+      },
+      {
+        "package_id": "packages/integrations=@taskhub/integrations",
+        "reason": "no-confirmation"
+      }
+    ],
+    "uncertainties": [],
+    "fallback_rule_ref": null
   }
 }

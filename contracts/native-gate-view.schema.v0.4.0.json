@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://dev.lekalo/native-gate-view.schema.v0.3.2.json",
+  "$id": "https://dev.lekalo/native-gate-view.schema.v0.4.0.json",
   "title": "Lekalo Native Gate Observed View",
-  "description": "Closed contract for the composite native gate observed view (issue #48): the read-only join of native gate receipts and the workspace package graph onto current observed records by native id, symbol, fingerprint and revision. The view links symbols to packages, packages to their required and selected gate commands, commands to their exact receipt results, and records freshness and completeness honestly: missing evidence is unknown, staleness degrades to incomplete, and nothing here extends the frozen observed-index or observed-scan JSON documents. This is impact evidence with cause-to-path-to-package-to-command linkage; it is never a canonical impact schema document and never grants execution authority.",
+  "description": "Successor of the v0.3.2 native gate view contract (issue #61; the v0.3.2 enums are never silently broadened). Closed contract for the composite native gate observed view (issue #48): the read-only join of native gate receipts and the workspace package graph onto current observed records by native id, symbol, fingerprint and revision. The view links symbols to packages, packages to their required and selected gate commands, commands to their exact receipt results, and records freshness and completeness honestly: missing evidence is unknown, staleness degrades to incomplete, and nothing here extends the frozen observed-index or observed-scan JSON documents. This is impact evidence with cause-to-path-to-package-to-command linkage; it is never a canonical impact schema document and never grants execution authority.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -18,7 +18,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "lekalo/native-gate-view/v0.3.2"
+      "const": "lekalo/native-gate-view/v0.4.0"
     },
     "kind": {
       "const": "native-gate-view"
@@ -285,6 +285,12 @@
             "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
             "maxLength": 64
           }
+        },
+        "gate_kind": {
+          "$ref": "#/$defs/gateKind"
+        },
+        "failure_class": {
+          "$ref": "#/$defs/failureClass"
         }
       }
     },
@@ -327,6 +333,36 @@
           ]
         }
       }
+    },
+    "gateKind": {
+      "type": "string",
+      "enum": [
+        "composer-script",
+        "mago-format",
+        "mago-lint",
+        "mago-analyze",
+        "mago-guard",
+        "laratesto",
+        "pest",
+        "phpunit",
+        "artisan-check",
+        "boot-smoke",
+        "migration-static",
+        "migration-execute",
+        "discovery-smoke",
+        "legacy-suite"
+      ]
+    },
+    "failureClass": {
+      "type": "string",
+      "enum": [
+        "assertion",
+        "static-analysis",
+        "boot",
+        "missing-tool",
+        "incompatible",
+        "infrastructure"
+      ]
     }
   }
 }

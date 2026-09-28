@@ -215892,18 +215892,21 @@ __export(native_plan_exports, {
   PLAN_CAPABILITY: () => PLAN_CAPABILITY,
   PLAN_DIGEST_DOMAIN: () => PLAN_DIGEST_DOMAIN,
   PlanRefusal: () => PlanRefusal,
+  SELECTION_DIGEST_DOMAIN: () => SELECTION_DIGEST_DOMAIN,
   buildNativePlan: () => buildNativePlan,
   canonicalJsonText: () => canonicalJsonText2,
   computeAffectedClosure: () => computeAffectedClosure,
   isSafeLiteral: () => isSafeLiteral,
   parseConfirmedScript: () => parseConfirmedScript,
-  planDigest: () => planDigest
+  planDigest: () => planDigest,
+  selectionDigest: () => selectionDigest
 });
 import { createHash as createHash4 } from "node:crypto";
-var PLAN_DIGEST_DOMAIN = "lekalo.native-plan.v0.3.2";
+var PLAN_DIGEST_DOMAIN = "lekalo.native-plan.v0.4.0";
+var SELECTION_DIGEST_DOMAIN = "lekalo.native-selection.v0.4.0";
 var PLAN_CAPABILITY = "plan.native-gates";
-var CANONICALIZATION_VERSION = "0.3.2";
-var PLANNER_VERSION = "0.3.2";
+var CANONICALIZATION_VERSION = "0.4.0";
+var PLANNER_VERSION = "0.4.0";
 var SHELL_METACHARACTERS = /* @__PURE__ */ new Set([
   "|",
   "&",
@@ -215995,6 +215998,13 @@ function planDigest(plan) {
   const bytes = Buffer.concat([
     Buffer.from(PLAN_DIGEST_DOMAIN, "utf8"),
     Buffer.from(canonicalJsonText2(rest), "utf8")
+  ]);
+  return "sha256:" + createHash4("sha256").update(bytes).digest("hex");
+}
+function selectionDigest(selection) {
+  const bytes = Buffer.concat([
+    Buffer.from(SELECTION_DIGEST_DOMAIN, "utf8"),
+    Buffer.from(canonicalJsonText2(selection), "utf8")
   ]);
   return "sha256:" + createHash4("sha256").update(bytes).digest("hex");
 }
@@ -216142,9 +216152,15 @@ function buildNativePlan({
     });
     inventory.completeness = "incomplete";
   }
-  const confirmationByPackage = /* @__PURE__ */ new Map();
+  const confirmationsByPackage = /* @__PURE__ */ new Map();
   for (const confirmation of policy.confirmations) {
-    confirmationByPackage.set(confirmation.package_id, confirmation);
+    if (!confirmationsByPackage.has(confirmation.package_id)) {
+      confirmationsByPackage.set(confirmation.package_id, []);
+    }
+    confirmationsByPackage.get(confirmation.package_id).push(confirmation);
+  }
+  for (const list of confirmationsByPackage.values()) {
+    list.sort((left, right) => utf8Compare3(left.gate_id ?? "", right.gate_id ?? ""));
   }
   const toolById = /* @__PURE__ */ new Map();
   for (const tool of toolCatalog ?? []) toolById.set(tool.id, tool);
@@ -216158,42 +216174,50 @@ function buildNativePlan({
   }
   for (const affected of sortedAffected) {
     const pkg = inventory.packages.find((candidate) => candidate.id === affected.package_id);
-    const confirmation = confirmationByPackage.get(affected.package_id);
-    if (!confirmation) {
+    const confirmations = confirmationsByPackage.get(affected.package_id) ?? [];
+    if (confirmations.length === 0) {
       excluded.push({ package_id: affected.package_id, reason: "no-confirmation" });
       continue;
     }
-    const tool = toolById.get(confirmation.tool_ref.id);
-    if (!tool) {
-      excluded.push({ package_id: affected.package_id, reason: "no-confirmation" });
-      continue;
+    for (const confirmation of confirmations) {
+      const tool = toolById.get(confirmation.tool_ref.id);
+      if (!tool) {
+        excluded.push({ package_id: affected.package_id, reason: "no-confirmation" });
+        continue;
+      }
+      if (confirmation.gate && !policy.allowed_gate_kinds.includes(confirmation.gate)) {
+        excluded.push({ package_id: affected.package_id, reason: "no-confirmation" });
+        continue;
+      }
+      const scriptName = confirmation.script_name;
+      const scriptDigest = confirmation.script_digest;
+      const gateId = confirmation.gate_id ?? `${affected.package_id.replace(/[^a-z0-9._-]/g, "_")}-${confirmation.gate}`;
+      const commandId = `gate-${gateId}`;
+      const cwd = confirmation.cwd ?? (pkg ? pkg.root : ".");
+      commands.push({
+        id: commandId,
+        package_id: affected.package_id,
+        gate: confirmation.gate,
+        gate_id: gateId,
+        gate_kind: confirmation.gate_kind ?? "composer-script",
+        required: confirmation.required !== false,
+        selection_ref: "sha256:" + "0".repeat(64),
+        covers_suite_ids: confirmation.covers_suite_ids ?? [],
+        script_name: scriptName,
+        script_digest: scriptDigest,
+        confirmation_ref: confirmation.rule_digest,
+        cwd,
+        tool_ref: confirmation.tool_ref.id,
+        argv: confirmation.argv,
+        env: confirmation.env ?? [],
+        depends_on: [],
+        affected_reason_refs: [affectedReasonRefs.get(affected.package_id)],
+        read_manifest_ref: inputManifestDigest,
+        allowed_writes: { mode: "stage-only" },
+        limits: policy.limits,
+        tsconfig_ref: confirmation.tsconfig_ref ?? (pkg ? `${pkg.root}/tsconfig.json` : "tsconfig.json")
+      });
     }
-    if (confirmation.gate && !policy.allowed_gate_kinds.includes(confirmation.gate)) {
-      excluded.push({ package_id: affected.package_id, reason: "no-confirmation" });
-      continue;
-    }
-    const scriptName = confirmation.script_name;
-    const scriptDigest = confirmation.script_digest;
-    const commandId = `gate-${affected.package_id.replace(/[^a-z0-9._-]/g, "_")}-${confirmation.gate}`;
-    const cwd = pkg ? pkg.root : ".";
-    commands.push({
-      id: commandId,
-      package_id: affected.package_id,
-      gate: confirmation.gate,
-      script_name: scriptName,
-      script_digest: scriptDigest,
-      confirmation_ref: confirmation.rule_digest,
-      cwd,
-      tool_ref: confirmation.tool_ref.id,
-      argv: confirmation.argv,
-      env: confirmation.env ?? [],
-      depends_on: [],
-      affected_reason_refs: [affectedReasonRefs.get(affected.package_id)],
-      read_manifest_ref: inputManifestDigest,
-      allowed_writes: { mode: "stage-only" },
-      limits: policy.limits,
-      tsconfig_ref: confirmation.tsconfig_ref ?? (pkg ? `${pkg.root}/tsconfig.json` : "tsconfig.json")
-    });
   }
   for (const pkg of inventory.packages) {
     if (!affectedList.some((affected) => affected.package_id === pkg.id) && !excluded.some((entry) => entry.package_id === pkg.id)) {
@@ -216229,7 +216253,7 @@ function buildNativePlan({
     }
   }
   const plan = {
-    schema_version: "lekalo/native-gate-plan/v0.3.2",
+    schema_version: "lekalo/native-gate-plan/v0.4.0",
     kind: "native-plan",
     plan_digest: `sha256:${"0".repeat(64)}`,
     adapter: adapterIdentity2,
@@ -216268,7 +216292,20 @@ function buildNativePlan({
     affected: sortedAffected,
     excluded,
     selection_mode: derivedSelectionMode,
-    ...fallbackRuleRef !== void 0 ? { fallback_rule_ref: fallbackRuleRef } : {},
+    selection: {
+      mode: derivedSelectionMode,
+      modules: [...new Set(sortedAffected.map((entry) => {
+        const pkg = inventory.packages.find((candidate) => candidate.id === entry.package_id);
+        if (!pkg) return entry.package_id.replace(/[^a-z0-9._-]/g, "_");
+        if (pkg.root === ".") return pkg.id.replace(/[^a-z0-9._-]/g, "_");
+        return pkg.root.split("/").pop();
+      }))].sort(utf8Compare3),
+      tests: [...new Set(commands.flatMap((command) => command.covers_suite_ids))].sort(utf8Compare3),
+      mandatory_gate_ids: [...new Set(commands.filter((command) => command.required).map((command) => command.gate_id))].sort(utf8Compare3),
+      excluded,
+      uncertainties: inventory.uncertainties,
+      fallback_rule_ref: fallbackRuleRef ?? null
+    },
     commands,
     env: policy.env_recipe,
     tools: (toolCatalog ?? []).map((tool) => ({
@@ -216289,6 +216326,10 @@ function buildNativePlan({
     limits: policy.limits,
     write_policy: policy.write_policy
   };
+  const selectionRef = selectionDigest(plan.selection);
+  for (const command of plan.commands) {
+    command.selection_ref = selectionRef;
+  }
   plan.plan_digest = planDigest(plan);
   return plan;
 }
@@ -216590,12 +216631,12 @@ function computeToolCatalogDigest(catalog) {
 
 // src/native-policy.mjs
 var native_policy_default = {
-  "schema_version": "lekalo/native-gate-policy/v0.3.2",
+  "schema_version": "lekalo/native-gate-policy/v0.4.0",
   "kind": "native-gate-policy",
   "policy_digest": "sha256:ba1eb9bf6e1df8a4bf76e66873c547468b6d4c886628911861c36255826340e2",
   "identity": {
     "id": "fixture-native-policy",
-    "version": "0.3.2"
+    "version": "0.4.0"
   },
   "repository_role": "consumer-repository",
   "trust": {
@@ -216628,6 +216669,10 @@ var native_policy_default = {
     {
       "package_id": "packages/planner=@fixture/planner",
       "gate": "test",
+      "gate_id": "packages_planner__fixture_planner-test",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "packages/planner",
       "script_name": "gate:test",
       "manifest_digest": "sha256:978e8895e36987e3bd5f516452c739b80a50f46eda9d4aeb23d07977447314c9",
       "script_digest": "sha256:cfad049df69aeb73066311f382c7f1a25167b13d1bbf17ec05408b03330d773d",
@@ -216643,12 +216688,16 @@ var native_policy_default = {
         "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
+      "rule_version": "0.4.0",
       "rule_digest": "sha256:d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
     },
     {
       "package_id": "packages/api=@fixture/api",
       "gate": "typecheck",
+      "gate_id": "packages_api__fixture_api-typecheck",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "packages/api",
       "script_name": "gate:typecheck",
       "manifest_digest": "sha256:b20a1232cfc9fb4d167d24caff93c251c3bb2bdbba6049c284d25d58cf6b45b3",
       "script_digest": "sha256:7b7d5c6042f2913345dfa260286398b9f8e09129bcff81327cfdda3602977fb5",
@@ -216664,12 +216713,16 @@ var native_policy_default = {
         "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
+      "rule_version": "0.4.0",
       "rule_digest": "sha256:d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2"
     },
     {
       "package_id": "packages/cli=@fixture/cli",
       "gate": "test",
+      "gate_id": "packages_cli__fixture_cli-test",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "packages/cli",
       "script_name": "gate:test",
       "manifest_digest": "sha256:4508f667dce936b2b49d928a61e41ed30889ce39410af8d646ec576f54d3e4dc",
       "script_digest": "sha256:cfad049df69aeb73066311f382c7f1a25167b13d1bbf17ec05408b03330d773d",
@@ -216685,12 +216738,16 @@ var native_policy_default = {
         "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
+      "rule_version": "0.4.0",
       "rule_digest": "sha256:d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3"
     },
     {
       "package_id": ".=@fixture/standalone",
       "gate": "test",
+      "gate_id": "fixture_standalone-test",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": ".",
       "script_name": "gate:test",
       "manifest_digest": "sha256:e5da4f03d1228fdc1c8f7578fada663573d2454eb3f15917e8ec929a1e6ea502",
       "script_digest": "sha256:cfad049df69aeb73066311f382c7f1a25167b13d1bbf17ec05408b03330d773d",
@@ -216706,7 +216763,7 @@ var native_policy_default = {
         "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
+      "rule_version": "0.4.0",
       "rule_digest": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
     }
   ],
