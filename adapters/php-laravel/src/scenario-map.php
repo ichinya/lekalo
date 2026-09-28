@@ -295,6 +295,15 @@ function php_check_scenario_shape(mixed $scenario): ?string
             return 'scenario-missing-field';
         }
     }
+    // The comment block of every emitted test interpolates the version
+    // and the summary: both must be strings before the comment-safe
+    // projection runs, so a non-string wire shape can never reach the
+    // emitter at all (defense in depth over the core's custody).
+    foreach (['scenarioVersion', 'summary'] as $textField) {
+        if (!is_string($scenario[$textField])) {
+            return 'scenario-text-field';
+        }
+    }
     if (!is_php_semantic_id($scenario['scenarioId'])) {
         return 'scenario-id';
     }
