@@ -1091,16 +1091,23 @@ function deterministic_generation(array $request): array
     $artifact = kernel_artifact($request);
     $writes = [[
         'path' => $artifact['path'],
-        'action' => 'create',
+        'action' => $artifact['action'] ?? 'create',
         'sha256' => $artifact['digest'],
     ]];
-    return [
+    $envelope = [
         'path' => $artifact['path'],
         'bytes' => $artifact['bytes'],
         'digest' => $artifact['digest'],
         'writes' => $writes,
         'findings' => [],
     ];
+    if (isset($artifact['ledger'])) {
+        // The migration emitter's append-only ledger rides beside the
+        // migration file through the envelope: the write planner adds
+        // its entry and the apply loop verifies its exact bytes.
+        $envelope['ledger'] = $artifact['ledger'];
+    }
+    return $envelope;
 }
 
 /**
@@ -2485,23 +2492,29 @@ function apply_writes(array $writes, array $files): void
             throw new RequestRefusal('write-denied');
         }
         $exists = is_file($path);
-        if ($exists && ($entry['action'] ?? 'create') === 'replace') {
-            // A replace is custody's append lane: only the retained
-            // ledger may be overwritten, and only with the merged
-            // bytes the emitter's assert_append_only proved.
-            if (!retained_artifact($path)) {
-                throw new RequestRefusal('write-denied');
-            }
-        } elseif ($exists) {
+        if ($exists) {
             if (hash_equals($entry['sha256'], sha256_digest((string) file_get_contents($path)))) {
                 // Byte-identical regeneration: the published bytes
                 // already equal the plan, so this entry is a true
-                // no-op — the append-only history stays untouched.
+                // no-op — append-only history stays untouched.
                 continue;
             }
-            // Create-on-existing with different bytes refuses: a
-            // published artifact is never silently rewritten.
-            throw new RequestRefusal('write-denied');
+            if (($entry['action'] ?? 'create') === 'replace') {
+                // A replace is custody's append lane: only the retained
+                // ledger may be overwritten, and only with the merged
+                // bytes the emitter's assert_append_only proved.
+                if (!retained_artifact($path)) {
+                    throw new RequestRefusal('write-denied');
+                }
+            } elseif (retained_artifact($path)) {
+                // Create-on-existing with different bytes refuses for
+                // append-only custody: a published migration is never
+                // silently rewritten. Every other owned path follows
+                // the plan — the staged view overwrites with the
+                // planned exact bytes (scenario support files are
+                // per-scenario and legitimately rewritten).
+                throw new RequestRefusal('write-denied');
+            }
         }
         $directory = dirname($path);
         if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
