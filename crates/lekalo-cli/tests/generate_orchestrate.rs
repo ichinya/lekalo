@@ -479,6 +479,27 @@ fn with_fake_adapter(root: &Path) {
 /// Run the real binary with the fake adapter vector — negotiated past the
 /// legacy base so the lock preflight sees its IR compatibility, and
 /// writing to an artifact-legal home — with an optional fault knob.
+/// Run the real binary with the fake adapter vector plus extra adapter
+/// arguments (the issue #58 sidecar knob).
+fn fake_lekalo_with(root: &Path, head: &[&str], extra: &[&str]) -> Output {
+    let mut args: Vec<&str> = head.to_vec();
+    args.push("--");
+    args.extend_from_slice(&[
+        "node",
+        "adapters/node-typescript/fake-adapter.mjs",
+        "--lekalo-adapter-variant",
+        "fluent",
+        "--lekalo-write-root",
+        "src/generated",
+    ]);
+    args.extend_from_slice(extra);
+    Command::new(env!("CARGO_BIN_EXE_lekalo"))
+        .args(&args)
+        .current_dir(alias_free_path(root))
+        .output()
+        .expect("run the real lekalo binary")
+}
+
 fn fake_lekalo_in(root: &Path, head: &[&str], fault: Option<&str>) -> Output {
     let mut args: Vec<&str> = head.to_vec();
     args.push("--");
@@ -924,6 +945,126 @@ fn a_php_types_generation_applies_through_the_pipeline_and_records_the_sidecar()
                 .join("ownership.json")
                 .exists(),
             "the ownership manifest landed"
+        );
+    });
+}
+
+/// Issue #58: the source-map ingestion identity guard distinguishes an
+/// absent `declarations` member from a corrupt one. A `.map.json`
+/// without the member is a foreign sidecar (the PHP types mapping
+/// document) — it binds nothing and the apply succeeds; a sidecar that
+/// claims `declarations` as a non-array is a hard source-map failure
+/// before anything publishes, exactly like an unparseable map.
+#[test]
+fn source_map_sidecar_identity_absent_binds_and_corrupt_fails() {
+    // Absent: the apply succeeds and the ownership manifest carries no
+    // source-map binding for the foreign sidecar.
+    with_project(|root| {
+        with_fake_adapter(root);
+        let lock = fake_lekalo_in(root, &["--json", "lock"], None);
+        assert_eq!(exit_code(&lock), 0, "stdout={}", stdout(&lock));
+        let apply = fake_lekalo_with(
+            root,
+            &["--json", "generate", "--target", "node-typescript"],
+            &["--lekalo-sidecar", "absent"],
+        );
+        assert_eq!(exit_code(&apply), 0, "stdout={}", stdout(&apply));
+        let sidecar = root
+            .join("src")
+            .join("generated")
+            .join("node-typescript")
+            .join("side.map.json");
+        assert!(sidecar.exists(), "the foreign sidecar is written");
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                root.join(".lekalo")
+                    .join("generated")
+                    .join("manifests")
+                    .join("ownership.json"),
+            )
+            .expect("ownership manifest"),
+        )
+        .expect("manifest json");
+        let bound = manifest["source_maps"]
+            .as_array()
+            .map(|entries| entries.len())
+            .unwrap_or(0);
+        assert_eq!(bound, 0, "a declarations-free sidecar binds nothing");
+    });
+
+    // Corrupt: the apply refuses as invalid before anything publishes,
+    // naming the source-map domain.
+    with_project(|root| {
+        with_fake_adapter(root);
+        let lock = fake_lekalo_in(root, &["--json", "lock"], None);
+        assert_eq!(exit_code(&lock), 0, "stdout={}", stdout(&lock));
+        let apply = fake_lekalo_with(
+            root,
+            &["--json", "generate", "--target", "node-typescript"],
+            &["--lekalo-sidecar", "corrupt"],
+        );
+        assert_eq!(exit_code(&apply), 1, "stdout={}", stdout(&apply));
+        // An invalid aggregation prints its envelope on stderr.
+        let report = if stdout(&apply).trim().is_empty() {
+            stderr(&apply)
+        } else {
+            stdout(&apply)
+        };
+        let envelope: serde_json::Value = serde_json::from_str(&report).expect("json");
+        assert_eq!(envelope["status"], "invalid");
+        let diagnostics = envelope["diagnostics"].as_array().expect("diagnostics");
+        assert_eq!(diagnostics[0]["id"], "lock.reference-invalid");
+        assert!(
+            diagnostics[0]["data"]["detail"]
+                .as_str()
+                .is_some_and(|detail| detail.contains("source-map")),
+            "the refusal names the source-map domain: {}",
+            diagnostics[0]
+        );
+        // The publication (step 7) precedes ingestion (step 9), so the
+        // refused run leaves the child bytes on disk — but the ownership
+        // manifest never records them and the run is invalid. That is
+        // the loud failure: the pre-fix behavior silently bound nothing
+        // (or would have recorded a corrupt map) and reported success.
+        assert!(
+            !root
+                .join(".lekalo")
+                .join("generated")
+                .join("manifests")
+                .join("ownership.json")
+                .exists(),
+            "a corrupt source map never reaches the ownership manifest"
+        );
+    });
+
+    // Positive control: a genuine source map still binds. The guard's
+    // widening must not have deafened the ingestion.
+    with_project(|root| {
+        with_fake_adapter(root);
+        let lock = fake_lekalo_in(root, &["--json", "lock"], None);
+        assert_eq!(exit_code(&lock), 0, "stdout={}", stdout(&lock));
+        let apply = fake_lekalo_with(
+            root,
+            &["--json", "generate", "--target", "node-typescript"],
+            &["--lekalo-sidecar", "valid"],
+        );
+        assert_eq!(exit_code(&apply), 0, "stdout={}", stdout(&apply));
+        let manifest_path = root
+            .join(".lekalo")
+            .join("generated")
+            .join("manifests")
+            .join("ownership.json");
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&manifest_path).expect("ownership manifest"),
+        )
+        .expect("manifest json");
+        assert_eq!(
+            manifest["source_maps"]
+                .as_array()
+                .expect("source maps")
+                .len(),
+            1,
+            "the valid sidecar binds exactly one map"
         );
     });
 }
