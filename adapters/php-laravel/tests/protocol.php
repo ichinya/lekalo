@@ -12,6 +12,7 @@ declare(strict_types=1);
 require __DIR__ . '/../src/analyzer.php';
 require __DIR__ . '/../src/strict-profile.php';
 require __DIR__ . '/../src/kernel.php';
+require __DIR__ . '/../src/scenario-emit.php';
 
 $GLOBALS['__lekalo_failures'] = [];
 $GLOBALS['__lekalo_checks'] = 0;
@@ -476,6 +477,20 @@ check(is_scenario_ir_path('lekalo/scenarios/planner.scenario.focus_happy.json'),
 check(is_scenario_ir_path('lekalo/scenarios/thing.scenario.json'), 'plain scenario spelling recognized');
 check(!is_scenario_ir_path('lekalo/scenarios/notes.json'), 'arbitrary json is not a scenario');
 check(!is_scenario_ir_path('lekalo/php-test-port.json'), 'the port declaration is not a scenario document');
+
+// --- comment-safe summary projection ----------------------------------------
+
+// A one-line comment ends at the close-tag pair a hostile summary can
+// carry: the emitted file lints clean but dumps its tail as output, and
+// a follow-up open tag would re-enter PHP mode. The projection must
+// break the pair itself, so the emitted comment stays inert text.
+$leak = php_comment_safe('Focusing x?>LEAKED');
+check(strpos($leak, '?>') === false, 'comment projection never carries a close tag');
+check(strpos($leak, "\n") === false && strpos($leak, "\r") === false, 'comment projection stays single-line');
+$reopen = php_comment_safe('x?><?php exit(1);');
+check(strpos($reopen, '?>') === false, 'close-tag-plus-reopen collapses to inert text');
+check(strpos($reopen, '<?php') !== false, 'the reopened php token stays inside the neutralized comment');
+check(php_comment_safe('Seed a task, focus it, and observe.') === 'Seed a task, focus it, and observe.', 'clean summaries project unchanged');
 
 // --- summary ----------------------------------------------------------------
 

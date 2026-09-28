@@ -4863,7 +4863,13 @@ function php_comment_safe(mixed $text): string
     // Byte-exact truncation: the scenario byte-range maps account bytes,
     // so the cap must count bytes (mb_* would count characters and
     // desynchronize the map); it also keeps php -n runtimes safe.
-    return substr($value, 0, 200);
+    $value = substr($value, 0, 200);
+    // A one-line comment also ends at the mid-line close-tag pair (the
+    // question-mark/greater-than sequence a hostile summary can carry):
+    // lints clean, dumps the file tail as output, and the test class
+    // never gets defined. Break the pair — a one-line comment has no
+    // other close sequence — so no projection can re-open PHP mode.
+    return str_replace('?>', '? >', $value);
 }
 
 /**
