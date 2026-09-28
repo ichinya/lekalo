@@ -1,7 +1,7 @@
 {
   "schema_version": "lekalo/native-gate-plan/v0.4.0",
   "kind": "native-plan",
-  "plan_digest": "sha256:008af9c93a4214692b2861eeff5673ba8e1558d22a95e3c9442753fa1ded31db",
+  "plan_digest": "sha256:0ef01856193d2631f086077cd6af9afec29770e2df9f0bf44ada6631ffdf9fa8",
   "adapter": {
     "id": "lekalo-target-node-typescript",
     "version": "0.3.2",
@@ -247,8 +247,7 @@
       ],
       "env": [],
       "depends_on": [
-        "packages/events=@taskhub/events",
-        "packages/tasks=@taskhub/tasks"
+        "gate-packages_tasks__taskhub_tasks-build"
       ],
       "affected_reason_refs": [
         "apps/api=@taskhub/api#dependent-closure"
@@ -288,9 +287,7 @@
       ],
       "env": [],
       "depends_on": [
-        "packages/events=@taskhub/events",
-        "packages/integrations=@taskhub/integrations",
-        "packages/tasks=@taskhub/tasks"
+        "gate-packages_tasks__taskhub_tasks-build"
       ],
       "affected_reason_refs": [
         "packages/sync=@taskhub/sync#dependent-closure"
