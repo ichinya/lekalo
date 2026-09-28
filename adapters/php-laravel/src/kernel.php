@@ -1158,7 +1158,11 @@ function scenario_generation(array $request): array
         return ['refusal' => 'ir-version-unsupported', 'files' => [], 'findings' => []];
     }
     $projectId = $scenario['projectId'] ?? null;
-    if (!is_string($projectId) || preg_match('/^[a-z][a-z0-9-]*$/', $projectId) !== 1) {
+    // The project id interpolates into the emitted PHP namespace
+    // (Lekalo\Generated\ScenarioTests\{$projectId}): the grammar is
+    // the core's PHP-identifier spelling — underscores, never hyphens —
+    // so a hyphen-carrying id cannot emit an unparseable namespace.
+    if (!is_string($projectId) || preg_match('/^[a-z][a-z0-9_]*$/', $projectId) !== 1) {
         return ['refusal' => 'scenario-project-id', 'files' => [], 'findings' => []];
     }
     $irEvidenceText = read_view_file(IR_EVIDENCE_HOME . '/' . $projectId . '.json');
