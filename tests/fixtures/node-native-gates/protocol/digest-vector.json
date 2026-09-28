@@ -2,7 +2,7 @@
   "plan": {
     "schema_version": "lekalo/native-gate-plan/v0.4.0",
     "kind": "native-plan",
-    "plan_digest": "sha256:d44530828f7459effc206a06afb9b567685058cf19c33be91a0cae2ef73b2206",
+    "plan_digest": "sha256:a0a780958b3aea7e5e9aa061d37dd601ce531a25604fef2b8aa9c193424252a2",
     "adapter": {
       "id": "lekalo-target-node-typescript",
       "version": "0.3.2",
@@ -206,7 +206,7 @@
         ],
         "env": [],
         "depends_on": [
-          "packages/planner=@fixture/planner"
+          "gate-packages_planner__fixture_planner-test"
         ],
         "affected_reason_refs": [
           "packages/api=@fixture/api#dependent-closure"
@@ -246,8 +246,8 @@
         ],
         "env": [],
         "depends_on": [
-          "packages/api=@fixture/api",
-          "packages/planner=@fixture/planner"
+          "gate-packages_api__fixture_api-typecheck",
+          "gate-packages_planner__fixture_planner-test"
         ],
         "affected_reason_refs": [
           "packages/cli=@fixture/cli#dependent-closure"
@@ -349,5 +349,5 @@
       "mode": "stage-only"
     }
   },
-  "digest": "sha256:d44530828f7459effc206a06afb9b567685058cf19c33be91a0cae2ef73b2206"
+  "digest": "sha256:a0a780958b3aea7e5e9aa061d37dd601ce531a25604fef2b8aa9c193424252a2"
 }

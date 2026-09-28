@@ -68,12 +68,15 @@ const php = locatePhp();
  * (a provisioning step: never inside a compiler or adapter process,
  * never with scripts). */
 function ensureVendor() {
-  if (existsSync(join(phpFixture, "vendor", "autoload.php"))) return;
-  process.stdout.write("provisioning the fixture vendor tree from the committed lock\n");
-  const result = spawnSync("composer", [
-    "install", "--no-interaction", "--prefer-dist", "--no-scripts", "--ignore-platform-reqs",
-  ], { cwd: phpFixture, encoding: "utf8", timeout: 600_000 });
-  assert.equal(result.status, 0, `composer install failed:\n${result.stderr?.slice(0, 2000)}`);
+  // Issue #61: verification never provisions. A missing vendor tree is
+  // a blocker with a separate provisioning instruction — zero downloads
+  // and zero install/update subprocesses from any gate or harness.
+  if (!existsSync(join(phpFixture, "vendor", "autoload.php"))) {
+    assert.fail(
+      "provisioned vendor tree missing at " + join(phpFixture, "vendor", "autoload.php") +
+        "; run the operator bootstrap (composer install --no-interaction --prefer-dist --no-scripts) outside verification, then re-run this harness",
+    );
+  }
 }
 
 // --- node-typescript backend -----------------------------------------------

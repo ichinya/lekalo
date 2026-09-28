@@ -38,7 +38,7 @@ const PHP_GATE_KINDS = [
 const PHP_GATES = ['build', 'typecheck', 'lint', 'test'];
 
 /** Shell metacharacters and interpolation syntax refused in script literals. */
-const PHP_SHELL_METACHARACTERS = '|&;<>()$`"\'\\' . "\n\r\t";
+const PHP_SHELL_METACHARACTERS = '|&;<>()$`"\'\\' . "%\n\r\t";
 
 /** Composer/PHP subcommands that mutate, resolve the network, or dispatch plugins. */
 const PHP_FORBIDDEN_SCRIPT_TOKENS = [
@@ -270,11 +270,17 @@ function php_decode_script_string(string $text, array $scripts, string $name, ar
         }
         if ($reference === 'php') {
             // The Composer-registered interpreter alias resolves to
-            // the pinned interpreter token; the rest are literals.
+            // the pinned interpreter token; the rest are literals and
+            // must survive the same closed token grammar.
             if (count($tokens) < 2) {
                 return ['ok' => false, 'reason' => 'script-unsupported'];
             }
             array_shift($tokens);
+            foreach ($tokens as $token) {
+                if (php_token_forbidden($token)) {
+                    return ['ok' => false, 'reason' => 'script-package-manager'];
+                }
+            }
             if ($tokens[0] === 'artisan' && php_artisan_token_forbidden($tokens)) {
                 return ['ok' => false, 'reason' => 'script-network-or-interactive'];
             }
@@ -334,7 +340,7 @@ function php_token_forbidden(string $token): bool
 /** Whether one `php artisan ...` argv carries a networked/interactive command. */
 function php_artisan_token_forbidden(array $tokens): bool
 {
-    foreach (array_slice($tokens, 2) as $token) {
+    foreach ($tokens as $token) {
         if (in_array(strtolower($token), PHP_FORBIDDEN_ARTISAN_TOKENS, true)) {
             return true;
         }

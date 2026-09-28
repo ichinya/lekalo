@@ -6820,7 +6820,7 @@ const PHP_GATE_KINDS = [
 const PHP_GATES = ['build', 'typecheck', 'lint', 'test'];
 
 /** Shell metacharacters and interpolation syntax refused in script literals. */
-const PHP_SHELL_METACHARACTERS = '|&;<>()$`"\'\\' . "\n\r\t";
+const PHP_SHELL_METACHARACTERS = '|&;<>()$`"\'\\' . "%\n\r\t";
 
 /** Composer/PHP subcommands that mutate, resolve the network, or dispatch plugins. */
 const PHP_FORBIDDEN_SCRIPT_TOKENS = [
@@ -7052,11 +7052,17 @@ function php_decode_script_string(string $text, array $scripts, string $name, ar
         }
         if ($reference === 'php') {
             // The Composer-registered interpreter alias resolves to
-            // the pinned interpreter token; the rest are literals.
+            // the pinned interpreter token; the rest are literals and
+            // must survive the same closed token grammar.
             if (count($tokens) < 2) {
                 return ['ok' => false, 'reason' => 'script-unsupported'];
             }
             array_shift($tokens);
+            foreach ($tokens as $token) {
+                if (php_token_forbidden($token)) {
+                    return ['ok' => false, 'reason' => 'script-package-manager'];
+                }
+            }
             if ($tokens[0] === 'artisan' && php_artisan_token_forbidden($tokens)) {
                 return ['ok' => false, 'reason' => 'script-network-or-interactive'];
             }
@@ -7116,7 +7122,7 @@ function php_token_forbidden(string $token): bool
 /** Whether one `php artisan ...` argv carries a networked/interactive command. */
 function php_artisan_token_forbidden(array $tokens): bool
 {
-    foreach (array_slice($tokens, 2) as $token) {
+    foreach ($tokens as $token) {
         if (in_array(strtolower($token), PHP_FORBIDDEN_ARTISAN_TOKENS, true)) {
             return true;
         }
@@ -7738,11 +7744,38 @@ function php_build_native_plan(array $input): array
             throw new PhpPlanRefusal('mandatory-gate-unconfirmed-' . substr($gateId, 0, 48));
         }
     }
-    // Exactly-once suites: each bound suite is owned by the covering
-    // gate with the widest coverage (the aggregate), ties broken by
-    // the smallest gate id; leaf gates bound to a suite already owned
-    // by another selected gate are suppressed — the suite executes
-    // exactly once (issue acceptance: no double-run).
+    // Mandatory cross-module gates ride every targeted selection that
+    // executes anything at all (an empty selection claims no coverage,
+    // so it cannot name unexecuted mandatory gates either).
+    if ($selectedGateIds !== [] && $selectionMode === 'targeted') {
+        foreach ($manifest['mandatory_gate_ids'] as $gateId) {
+            $selectedGateIds[$gateId] = true;
+        }
+    }
+    // Explicit full fallback: only a checked release-full rule with a
+    // recorded digest expands the selection to the full confirmed
+    // inventory, and the expansion enumerates every gate — never a
+    // label over the affected list. The expansion rides before the
+    // exactly-once suppression, so even a full run keeps one owner per
+    // suite (issue acceptance: no double-run).
+    $fallbackRule = $policy['fallback_rule'] ?? ['mode' => 'none'];
+    if (is_array($fallbackRule) && ($fallbackRule['mode'] ?? null) === 'release-full') {
+        $ruleDigest = $fallbackRule['rule_digest'] ?? null;
+        if (!is_string($ruleDigest) || !preg_match('/^sha256:[0-9a-f]{64}$/', $ruleDigest)) {
+            throw new PhpPlanRefusal('fallback-rule-digest');
+        }
+        $selectionMode = 'release-full';
+        $fallbackRuleRef = $ruleDigest;
+        foreach ($confirmedByGate as $gateId => $tuple) {
+            $selectedGateIds[$gateId] = true;
+        }
+    }
+    ksort($selectedGateIds);
+    // Exactly-once suites (after the full expansion): each bound suite
+    // is owned by the covering gate with the widest coverage (the
+    // aggregate), ties broken by the smallest gate id; leaf gates
+    // bound to a suite already owned by another selected gate are
+    // suppressed — the suite executes exactly once (no double-run).
     $coveringBySuite = [];
     foreach (array_keys($selectedGateIds) as $gateId) {
         foreach ($confirmedByGate[$gateId]['covers_suite_ids'] as $suiteId) {
@@ -7773,31 +7806,7 @@ function php_build_native_plan(array $input): array
             }
         }
     }
-    // Mandatory cross-module gates ride every targeted selection that
-    // executes anything at all (an empty selection claims no coverage,
-    // so it cannot name unexecuted mandatory gates either).
-    if ($selectedGateIds !== [] && $selectionMode === 'targeted') {
-        foreach ($manifest['mandatory_gate_ids'] as $gateId) {
-            $selectedGateIds[$gateId] = true;
-        }
-    }
 
-    // Explicit full fallback: only a checked release-full rule with a
-    // recorded digest expands the selection to the full confirmed
-    // inventory, and the expansion enumerates every gate — never a
-    // label over the affected list.
-    $fallbackRule = $policy['fallback_rule'] ?? ['mode' => 'none'];
-    if (is_array($fallbackRule) && ($fallbackRule['mode'] ?? null) === 'release-full') {
-        $ruleDigest = $fallbackRule['rule_digest'] ?? null;
-        if (!is_string($ruleDigest) || !preg_match('/^sha256:[0-9a-f]{64}$/', $ruleDigest)) {
-            throw new PhpPlanRefusal('fallback-rule-digest');
-        }
-        $selectionMode = 'release-full';
-        $fallbackRuleRef = $ruleDigest;
-        foreach ($confirmedByGate as $gateId => $tuple) {
-            $selectedGateIds[$gateId] = true;
-        }
-    }
     ksort($selectedGateIds);
     // An empty selection is an honest blocked plan, never a refusal:
     // nothing is affected, nothing executes, and the plan claims no
