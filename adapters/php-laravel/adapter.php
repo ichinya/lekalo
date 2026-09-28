@@ -3746,8 +3746,9 @@ function apply_writes(array $writes, array $files): void
             throw new RequestRefusal('write-denied');
         }
         // The scenario home writes under the project's src tree; the
-        // scaffold scope admits the one-shot user-owned emission; every
-        // other generated artifact stays inside the runtime-owned
+        // scaffold scopes admit the one-shot user-owned emission (the
+        // scenario home and the type scaffold root); every other
+        // generated artifact stays inside the runtime-owned
         // `.lekalo/generated/php-laravel/**` home.
         $inScenarioScope = false;
         foreach (SCENARIO_WRITE_SCOPES as $scope) {
@@ -3757,7 +3758,8 @@ function apply_writes(array $writes, array $files): void
             }
         }
         if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope
-            && !scope_covers(PHP_SCAFFOLD_SCOPE, $path)) {
+            && !scope_covers(PHP_SCAFFOLD_SCOPE, $path)
+            && !scope_covers(types_scaffold_scope(), $path)) {
             throw new RequestRefusal('write-denied');
         }
         $bytes = $bytesByPath[$path] ?? null;
@@ -3805,9 +3807,10 @@ function apply_writes(array $writes, array $files): void
 function delete_write(string $path): void
 {
     if (!is_logical_path($path) || protected_home($path) !== null
-        || scope_covers(PHP_SCAFFOLD_SCOPE, $path)) {
-        // The scaffold scope is user-owned: no kernel path may delete
-        // inside it, whatever plan claimed otherwise.
+        || scope_covers(PHP_SCAFFOLD_SCOPE, $path)
+        || scope_covers(types_scaffold_scope(), $path)) {
+        // The scaffold scopes are user-owned: no kernel path may delete
+        // inside them, whatever plan claimed otherwise.
         throw new RequestRefusal('write-denied');
     }
     $inScenarioScope = false;
@@ -6821,8 +6824,16 @@ function php_check_ir_document(mixed $ir): ?array
         }
         if (is_array($fields)) {
             $names = [];
-            foreach ($fields as $field) {
-                $checked = php_check_ir_field($field);
+            foreach ($fields as $fieldIndex => $field) {
+                try {
+                    $checked = php_check_ir_field($field);
+                } catch (DefaultMetadataUnsupported $unsupported) {
+                    // The unsupported default is a bounded mapping
+                    // finding with exact provenance, never a fatal.
+                    $unsupported->semanticId = $definition['id'];
+                    $unsupported->pointer = $definition['pointer'] . '/fields/' . $fieldIndex;
+                    throw $unsupported;
+                }
                 if ($checked === null) {
                     return null;
                 }
@@ -6935,6 +6946,10 @@ function php_check_type_ref(mixed $typeRef): ?array
  */
 final class DefaultMetadataUnsupported extends RuntimeException
 {
+    /** The owning definition id and exact pointer, attached by the checker. */
+    public ?string $semanticId = null;
+    public ?string $pointer = null;
+
     public function __construct(
         public readonly string $fieldName,
         public readonly string $member,
@@ -7027,7 +7042,21 @@ function php_map_types(array $input): array
 {
     $policy = $input['policy'];
     $prefix = $policy['namespacePrefix'];
-    $checked = php_check_ir_document($input['ir']);
+    try {
+        $checked = php_check_ir_document($input['ir']);
+    } catch (DefaultMetadataUnsupported $unsupported) {
+        return [
+            'state' => 'unsupported',
+            'findings' => [php_types_finding(
+                'default-unsupported',
+                $unsupported->semanticId,
+                $unsupported->pointer,
+                'field `' . $unsupported->fieldName . '` carries unsupported metadata member `' . $unsupported->member . '`',
+            )],
+            'policy' => $policy,
+            'digests' => ['ir' => $input['irDigest'], 'input' => $input['inputDigest']],
+        ];
+    }
     if ($checked === null) {
         return ['state' => 'refused', 'refusal' => 'types-ir-shape'];
     }
@@ -8634,10 +8663,13 @@ function php_types_query_return_type(array $entry, array $definitions, string $p
         $definition = $definitions[$expr['leaf']];
         $class = php_types_stem_of($expr['leaf'], $definition['kind'])
             . ($expr['nullableElements'] ? 'NullableList' : 'List');
-        $type = $prefix . '\\' . ucfirst(php_types_module_of($expr['leaf'])) . '\\' . $class;
+        $type = php_types_fqn_of($prefix, php_types_module_of($expr['leaf']), $class);
     } else {
         $type = php_types_leaf_fqn($definitions, $prefix, $expr['leaf']);
     }
+    // Inside the codec file the type spells fully qualified, so the
+    // relative namespace resolution can never alias it.
+    $type = '\\' . $type;
     return $expr['nullable'] ? '?' . $type : $type;
 }
 
@@ -8865,6 +8897,11 @@ function php_check_type_bindings(array $mapped, ?array $evidence, ?callable $fil
 {
     $findings = [];
     $records = [];
+    // Evidence paths are project-relative: the declared artifact path
+    // resolves under the custody root the mapping names.
+    $root = $mapped['policy']['custody'] === 'scaffold-once'
+        ? (string) $mapped['policy']['scaffoldRoot']
+        : PHP_TYPES_GENERATED_ROOT;
     if (is_array($evidence) && ($evidence['schemaVersion'] ?? null) === PHP_TYPES_EVIDENCE_SCHEMA_VERSION
         && ($evidence['identity'] ?? null) === PHP_TYPES_EVIDENCE_IDENTITY
         && is_array($evidence['classes'] ?? null)) {
@@ -8907,7 +8944,7 @@ function php_check_type_bindings(array $mapped, ?array $evidence, ?callable $fil
             continue;
         }
         $record = $claiming[0];
-        $problems = php_types_check_binding_record($entry, $record, $fileDigest);
+        $problems = php_types_check_binding_record($entry, $record, $root, $fileDigest);
         foreach ($problems as $problem) {
             $findings[] = [
                 'code' => PHP_TYPES_BINDING_MISMATCH,
@@ -8925,19 +8962,20 @@ function php_check_type_bindings(array $mapped, ?array $evidence, ?callable $fil
  *
  * @return list<string> the divergence details (empty = conforms)
  */
-function php_types_check_binding_record(array $entry, array $record, ?callable $fileDigest): array
+function php_types_check_binding_record(array $entry, array $record, string $root, ?callable $fileDigest): array
 {
     $problems = [];
     $kind = is_string($record['kind'] ?? null) ? $record['kind'] : null;
     $fqn = is_string($record['fqn'] ?? null) ? $record['fqn'] : null;
     $path = is_string($record['path'] ?? null) ? $record['path'] : null;
+    $expectedPath = $root . '/' . $entry['path'];
     if ($kind !== $entry['kind']) {
         $problems[] = 'kind-diverges';
     }
     if ($fqn !== $entry['fqn']) {
         $problems[] = 'fqn-diverges';
     }
-    if ($path !== null && $path !== $entry['path']) {
+    if ($path !== null && $path !== $expectedPath) {
         $problems[] = 'path-diverges';
     }
     // Freshness: the exact observed source bytes must still be on disk.

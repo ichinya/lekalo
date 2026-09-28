@@ -224,8 +224,16 @@ function php_check_ir_document(mixed $ir): ?array
         }
         if (is_array($fields)) {
             $names = [];
-            foreach ($fields as $field) {
-                $checked = php_check_ir_field($field);
+            foreach ($fields as $fieldIndex => $field) {
+                try {
+                    $checked = php_check_ir_field($field);
+                } catch (DefaultMetadataUnsupported $unsupported) {
+                    // The unsupported default is a bounded mapping
+                    // finding with exact provenance, never a fatal.
+                    $unsupported->semanticId = $definition['id'];
+                    $unsupported->pointer = $definition['pointer'] . '/fields/' . $fieldIndex;
+                    throw $unsupported;
+                }
                 if ($checked === null) {
                     return null;
                 }
@@ -338,6 +346,10 @@ function php_check_type_ref(mixed $typeRef): ?array
  */
 final class DefaultMetadataUnsupported extends RuntimeException
 {
+    /** The owning definition id and exact pointer, attached by the checker. */
+    public ?string $semanticId = null;
+    public ?string $pointer = null;
+
     public function __construct(
         public readonly string $fieldName,
         public readonly string $member,

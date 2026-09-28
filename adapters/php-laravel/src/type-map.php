@@ -76,7 +76,21 @@ function php_map_types(array $input): array
 {
     $policy = $input['policy'];
     $prefix = $policy['namespacePrefix'];
-    $checked = php_check_ir_document($input['ir']);
+    try {
+        $checked = php_check_ir_document($input['ir']);
+    } catch (DefaultMetadataUnsupported $unsupported) {
+        return [
+            'state' => 'unsupported',
+            'findings' => [php_types_finding(
+                'default-unsupported',
+                $unsupported->semanticId,
+                $unsupported->pointer,
+                'field `' . $unsupported->fieldName . '` carries unsupported metadata member `' . $unsupported->member . '`',
+            )],
+            'policy' => $policy,
+            'digests' => ['ir' => $input['irDigest'], 'input' => $input['inputDigest']],
+        ];
+    }
     if ($checked === null) {
         return ['state' => 'refused', 'refusal' => 'types-ir-shape'];
     }

@@ -94,6 +94,22 @@
         },
         {
           "if": {
+            "required": ["scaffoldRoot"]
+          },
+          "then": {
+            "properties": {
+              "scaffoldRoot": {
+                "$ref": "#/$defs/scaffoldRoot"
+              },
+              "custody": {
+                "const": "scaffold-once"
+              }
+            },
+            "required": ["custody"]
+          }
+        },
+        {
+          "if": {
             "properties": {
               "custody": {
                 "enum": ["managed", "checked"]

@@ -2805,8 +2805,9 @@ function apply_writes(array $writes, array $files): void
             throw new RequestRefusal('write-denied');
         }
         // The scenario home writes under the project's src tree; the
-        // scaffold scope admits the one-shot user-owned emission; every
-        // other generated artifact stays inside the runtime-owned
+        // scaffold scopes admit the one-shot user-owned emission (the
+        // scenario home and the type scaffold root); every other
+        // generated artifact stays inside the runtime-owned
         // `.lekalo/generated/php-laravel/**` home.
         $inScenarioScope = false;
         foreach (SCENARIO_WRITE_SCOPES as $scope) {
@@ -2816,7 +2817,8 @@ function apply_writes(array $writes, array $files): void
             }
         }
         if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope
-            && !scope_covers(PHP_SCAFFOLD_SCOPE, $path)) {
+            && !scope_covers(PHP_SCAFFOLD_SCOPE, $path)
+            && !scope_covers(types_scaffold_scope(), $path)) {
             throw new RequestRefusal('write-denied');
         }
         $bytes = $bytesByPath[$path] ?? null;
@@ -2864,9 +2866,10 @@ function apply_writes(array $writes, array $files): void
 function delete_write(string $path): void
 {
     if (!is_logical_path($path) || protected_home($path) !== null
-        || scope_covers(PHP_SCAFFOLD_SCOPE, $path)) {
-        // The scaffold scope is user-owned: no kernel path may delete
-        // inside it, whatever plan claimed otherwise.
+        || scope_covers(PHP_SCAFFOLD_SCOPE, $path)
+        || scope_covers(types_scaffold_scope(), $path)) {
+        // The scaffold scopes are user-owned: no kernel path may delete
+        // inside them, whatever plan claimed otherwise.
         throw new RequestRefusal('write-denied');
     }
     $inScenarioScope = false;

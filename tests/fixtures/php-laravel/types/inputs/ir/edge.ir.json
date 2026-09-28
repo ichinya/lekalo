@@ -1,0 +1,113 @@
+{
+  "contract": "dev.lekalo.ir@0.2.16",
+  "definitions": [
+    {
+      "base": "number",
+      "description": "Finite amount\n*/ injected ?>close-tag and\ttab",
+      "id": "edge.amount",
+      "kind": "scalar",
+      "version": 1
+    },
+    {
+      "base": "boolean",
+      "id": "edge.enabled",
+      "kind": "scalar",
+      "version": 1
+    },
+    {
+      "base": "datetime",
+      "description": "Exact instant with ?> inline close pair",
+      "id": "edge.instant",
+      "kind": "scalar",
+      "version": 1
+    },
+    {
+      "base": "uri",
+      "id": "edge.reading_id",
+      "kind": "scalar",
+      "version": 1
+    },
+    {
+      "description": "One bounded measurement",
+      "fields": [
+        {
+          "name": "amount",
+          "required": true,
+          "type": {
+            "ref": "edge.amount"
+          }
+        },
+        {
+          "name": "instant",
+          "type": {
+            "optional": {
+              "ref": "edge.instant"
+            }
+          }
+        }
+      ],
+      "id": "edge.measurement",
+      "kind": "value-object",
+      "version": 1
+    },
+    {
+      "description": "One sensor reading across every remaining presence shape",
+      "fields": [
+        {
+          "name": "reading_id",
+          "required": true,
+          "type": {
+            "ref": "edge.reading_id"
+          }
+        },
+        {
+          "name": "enabled",
+          "required": true,
+          "type": {
+            "ref": "edge.enabled"
+          }
+        },
+        {
+          "name": "cap",
+          "required": true,
+          "type": {
+            "optional": {
+              "ref": "edge.amount"
+            }
+          }
+        },
+        {
+          "name": "threshold",
+          "type": {
+            "optional": {
+              "ref": "edge.amount"
+            }
+          }
+        },
+        {
+          "name": "label",
+          "type": {
+            "ref": "edge.enabled"
+          }
+        },
+        {
+          "name": "window",
+          "type": {
+            "list": {
+              "optional": {
+                "ref": "edge.measurement"
+              }
+            }
+          }
+        }
+      ],
+      "id": "edge.reading",
+      "identity": [
+        "reading_id"
+      ],
+      "kind": "entity",
+      "version": 1
+    }
+  ],
+  "modelVersion": "0.2.16"
+}

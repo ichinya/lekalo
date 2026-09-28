@@ -1,0 +1,28 @@
+{
+  "contract": "dev.lekalo.ir@0.2.16",
+  "definitions": [
+    {
+      "fields": [
+        {
+          "default": 7,
+          "name": "count",
+          "required": true,
+          "type": {
+            "ref": "m.flag"
+          }
+        }
+      ],
+      "id": "m.counted",
+      "kind": "entity",
+      "identity": ["count"],
+      "version": 1
+    },
+    {
+      "base": "boolean",
+      "id": "m.flag",
+      "kind": "scalar",
+      "version": 1
+    }
+  ],
+  "modelVersion": "0.2.16"
+}

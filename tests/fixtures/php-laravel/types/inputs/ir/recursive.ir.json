@@ -1,0 +1,34 @@
+{
+  "contract": "dev.lekalo.ir@0.2.16",
+  "definitions": [
+    {
+      "fields": [
+        {
+          "name": "child",
+          "required": true,
+          "type": {
+            "ref": "loop.node"
+          }
+        }
+      ],
+      "id": "loop.inner",
+      "kind": "value-object",
+      "version": 1
+    },
+    {
+      "fields": [
+        {
+          "name": "inner",
+          "required": true,
+          "type": {
+            "ref": "loop.inner"
+          }
+        }
+      ],
+      "id": "loop.node",
+      "kind": "value-object",
+      "version": 1
+    }
+  ],
+  "modelVersion": "0.2.16"
+}

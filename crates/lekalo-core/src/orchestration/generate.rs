@@ -892,14 +892,21 @@ fn artifact_kind_for(path: &str) -> ArtifactKind {
 }
 
 /// The ownership lifecycle of one generated write, by path convention
-/// (issue #56, plan S3): the `tests/lekalo/` scaffold home is the
-/// user-owned convention — anything emitted there is scaffolded once
-/// and never overwritten, so it records `scaffolded`. Its
-/// `.test.map.json` sidecar stays `generated`: the sidecar is the
-/// managed marker the adapter's scaffold-once rule keys on, and its
-/// bytes must stay exactly what the emitter produced.
+/// (issue #56, plan S3; issue #58 for the type scaffold home): the
+/// `tests/lekalo/` scenario scaffold home and the `app/lekalo-types/`
+/// type scaffold home are the user-owned conventions — anything emitted
+/// there is scaffolded once and never overwritten, so it records
+/// `scaffolded`. Their `.map.json` sidecars stay `generated`: the
+/// sidecars are the managed markers the scaffold-once rules key on, and
+/// their bytes must stay exactly what the emitters produced. The type
+/// scaffold root is deliberately a closed constant shared with the
+/// adapter policy (`app/lekalo-types`), so a policy cannot silently
+/// move a scaffold under a root the core would misclassify.
 fn lifecycle_for(path: &str) -> Lifecycle {
     if path.starts_with("tests/lekalo/") && !path.ends_with(".map.json") {
+        return Lifecycle::Scaffolded;
+    }
+    if path.starts_with("app/lekalo-types/") && !path.ends_with(".map.json") {
         return Lifecycle::Scaffolded;
     }
     Lifecycle::Generated
@@ -1301,6 +1308,25 @@ mod tests {
         );
         assert_eq!(
             lifecycle_for("tests/planner/happy_test.php"),
+            Lifecycle::Generated
+        );
+        // Issue #58: the type scaffold home is user-owned by the same
+        // convention, and its bundle marker sidecar stays generated.
+        assert_eq!(
+            lifecycle_for("app/lekalo-types/planner/task_dto.php"),
+            Lifecycle::Scaffolded
+        );
+        assert_eq!(
+            lifecycle_for("app/lekalo-types/planner/optional/optional_due_date.php"),
+            Lifecycle::Scaffolded
+        );
+        assert_eq!(
+            lifecycle_for("app/lekalo-types/types.map.json"),
+            Lifecycle::Generated
+        );
+        // A lookalike root outside the closed constant stays generated.
+        assert_eq!(
+            lifecycle_for("app/lekalo-types-extra/planner/task_dto.php"),
             Lifecycle::Generated
         );
     }

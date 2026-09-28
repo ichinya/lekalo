@@ -740,10 +740,13 @@ function php_types_query_return_type(array $entry, array $definitions, string $p
         $definition = $definitions[$expr['leaf']];
         $class = php_types_stem_of($expr['leaf'], $definition['kind'])
             . ($expr['nullableElements'] ? 'NullableList' : 'List');
-        $type = $prefix . '\\' . ucfirst(php_types_module_of($expr['leaf'])) . '\\' . $class;
+        $type = php_types_fqn_of($prefix, php_types_module_of($expr['leaf']), $class);
     } else {
         $type = php_types_leaf_fqn($definitions, $prefix, $expr['leaf']);
     }
+    // Inside the codec file the type spells fully qualified, so the
+    // relative namespace resolution can never alias it.
+    $type = '\\' . $type;
     return $expr['nullable'] ? '?' . $type : $type;
 }
 

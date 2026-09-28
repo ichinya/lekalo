@@ -31,6 +31,11 @@ function php_check_type_bindings(array $mapped, ?array $evidence, ?callable $fil
 {
     $findings = [];
     $records = [];
+    // Evidence paths are project-relative: the declared artifact path
+    // resolves under the custody root the mapping names.
+    $root = $mapped['policy']['custody'] === 'scaffold-once'
+        ? (string) $mapped['policy']['scaffoldRoot']
+        : PHP_TYPES_GENERATED_ROOT;
     if (is_array($evidence) && ($evidence['schemaVersion'] ?? null) === PHP_TYPES_EVIDENCE_SCHEMA_VERSION
         && ($evidence['identity'] ?? null) === PHP_TYPES_EVIDENCE_IDENTITY
         && is_array($evidence['classes'] ?? null)) {
@@ -73,7 +78,7 @@ function php_check_type_bindings(array $mapped, ?array $evidence, ?callable $fil
             continue;
         }
         $record = $claiming[0];
-        $problems = php_types_check_binding_record($entry, $record, $fileDigest);
+        $problems = php_types_check_binding_record($entry, $record, $root, $fileDigest);
         foreach ($problems as $problem) {
             $findings[] = [
                 'code' => PHP_TYPES_BINDING_MISMATCH,
@@ -91,19 +96,20 @@ function php_check_type_bindings(array $mapped, ?array $evidence, ?callable $fil
  *
  * @return list<string> the divergence details (empty = conforms)
  */
-function php_types_check_binding_record(array $entry, array $record, ?callable $fileDigest): array
+function php_types_check_binding_record(array $entry, array $record, string $root, ?callable $fileDigest): array
 {
     $problems = [];
     $kind = is_string($record['kind'] ?? null) ? $record['kind'] : null;
     $fqn = is_string($record['fqn'] ?? null) ? $record['fqn'] : null;
     $path = is_string($record['path'] ?? null) ? $record['path'] : null;
+    $expectedPath = $root . '/' . $entry['path'];
     if ($kind !== $entry['kind']) {
         $problems[] = 'kind-diverges';
     }
     if ($fqn !== $entry['fqn']) {
         $problems[] = 'fqn-diverges';
     }
-    if ($path !== null && $path !== $entry['path']) {
+    if ($path !== null && $path !== $expectedPath) {
         $problems[] = 'path-diverges';
     }
     // Freshness: the exact observed source bytes must still be on disk.

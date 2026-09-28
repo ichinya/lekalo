@@ -38,7 +38,7 @@
       }
     },
     "projectId": {
-      "$ref": "#/$defs/semanticId"
+      "$ref": "#/$defs/projectId"
     },
     "custody": {
       "enum": ["managed", "scaffold-once", "checked"]
@@ -47,9 +47,9 @@
       "$ref": "#/$defs/namespace"
     },
     "generatedRoot": {
-      "description": "The logical root directory the emitted files live under, relative to the project root (`lekalo/...` convention roots or the managed generated root).",
+      "description": "The logical root directory the emitted files live under, relative to the project root (the managed generated root or the recognized consumer scaffold root).",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9_.-]*(/[a-zA-Z0-9_.-]+)*$"
+      "pattern": "^[a-z.][a-z0-9_.-]*(/[a-z0-9_.-]+)*$"
     },
     "digests": {
       "description": "Provenance digests of the exact inputs the mapping consumed. No timestamp: the same inputs always bind the same bytes.",
@@ -85,6 +85,11 @@
     "semver": {
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "projectId": {
+      "description": "The core project id the compiled IR evidence is staged under (single lowercase segment).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
     },
     "semanticId": {
       "type": "string",
