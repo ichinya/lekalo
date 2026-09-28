@@ -126,7 +126,9 @@ function php_class_of(string $scenarioId): string
 function php_identifier_of(string $id): string
 {
     $sanitized = preg_replace('/[^a-zA-Z0-9_]/', '_', $id);
-    return ctype_digit(substr($sanitized, 0, 1)) ? '_' . $sanitized : $sanitized;
+    // Extension-free leading-digit probe: strspn ships with ext/standard,
+    // so the check survives `php -n` runtimes where ctype is absent.
+    return strspn($sanitized, '0123456789') > 0 ? '_' . $sanitized : $sanitized;
 }
 
 /**
