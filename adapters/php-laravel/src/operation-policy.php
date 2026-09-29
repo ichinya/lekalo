@@ -59,6 +59,13 @@ function php_validate_operations_input(mixed $document): ?array
         || ($document['identity'] ?? null) !== PHP_OPERATIONS_INPUT_IDENTITY) {
         return null;
     }
+    // The closed member set (additionalProperties: false): an unknown
+    // member is an authoring error, never a silently ignored hint.
+    foreach (array_keys($document) as $member) {
+        if (!in_array($member, ['schemaVersion', 'identity', 'projectId', 'irDigest', 'typesInputDigest', 'policy', 'operations'], true)) {
+            return null;
+        }
+    }
     $projectId = $document['projectId'] ?? null;
     if (!is_string($projectId) || preg_match('/^[a-z][a-z0-9_]*$/', $projectId) !== 1) {
         return null;
@@ -115,6 +122,12 @@ function php_validate_operation_record(mixed $record): ?array
 {
     if (!is_array($record)) {
         return null;
+    }
+    // The closed record member set (additionalProperties: false).
+    foreach (array_keys($record) as $member) {
+        if (!in_array($member, ['id', 'kind', 'mode', 'entry', 'recipe', 'errors', 'policy', 'transaction'], true)) {
+            return null;
+        }
     }
     $id = $record['id'] ?? null;
     if (!is_string($id) || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $id) !== 1) {

@@ -49,17 +49,35 @@ operation exactly; every declared id gets one typed class
 The optional `policy` binding must name an IR policy applying to the
 operation; it becomes one narrow `authorize(input, actor)` port.
 `transaction` is `required` (one `TransactionPort` run wraps the body)
-or `forbidden` (queries are forbidden by default).
+or `forbidden` (queries are forbidden by default). A
+`single-entity-update` recipe requires `required`: the emitted body
+runs inside the `TransactionPort` run, and a write recipe with a
+forbidden or absent binding is the typed `operations.transaction-required`
+finding — the generated handler is always runtime-coherent.
 
 ## Verification
 
 `lekalo generate` runs the core join first (IR + registry + digests +
-recipes; see `crates/lekalo-core/src/php_operations/`), then the adapter
-re-validates and emits. `verify` reports managed `operations.drift`,
-scaffold `operations.scaffold-missing`, and the checked/custom
-`operations.binding-*` findings. The emitted classes syntax-check and
-load under `php -n` through the deterministic `classmap.php` — the
-loading authority, with no runtime registration magic.
+recipes; see `crates/lekalo-core/src/php_operations/`, wired into the
+generate pipeline in `orchestration/generate.rs` — a refused join is
+the registered `php-operations.join-invalid` invalid diagnostic with
+the typed finding codes in its data, raised before any adapter
+exchange), then the adapter re-validates and emits. The adapter mirror
+re-runs the operation-level semantic reconciliation over the compiled
+IR (operation, policy, entity, effect, operand, and coverage checks;
+see `php_operations_semantic_join`), so a hostile or incoherent input
+is a typed veto on both sides. `verify` reports managed
+`operations.drift`, scaffold `operations.scaffold-missing`, and the
+checked/custom `operations.binding-*` findings. The emitted classes
+syntax-check and load under `php -n` through the deterministic
+`classmap.php` — the loading authority, with no runtime registration
+magic.
+
+Two v0.4.0 boundaries stay explicit: the #62 registry-binding equality
+of the declared errors is checked core-side only (the embedded registry
+is not staged for the adapter), and the observed-evidence join
+validates the producer receipt reference but never certifies producer
+execution — that proof belongs to the pinned-Mago lane.
 
 The Laravel boundary (connections, queue visibility, auth principal
 binding, PostgreSQL behavior) is maintained application code and is not

@@ -438,4 +438,117 @@ step("managed drift is a verify finding, and plan-clean never names the scaffold
   void rmSync;
 });
 
+// --- Fix-round repro stages (review blockers B1-B4) -----------------
+
+step("B1: a deleted scaffold handler is an operations.scaffold-missing verify finding", () => {
+  const root = newRoot("b1");
+  stageInputs(root);
+  const input = JSON.parse(operationsInputBytes());
+  input.operations[1].mode = "scaffold-once";
+  writeFileSync(join(root, "lekalo", "operations", "planner.operations.json"), JSON.stringify(input, null, 1) + "\n");
+  const dry = adapterCall(root, operationsRequest());
+  const applied = adapterCall(root, operationsRequest({ dry_run: false, plan_id: dry.evidence?.plan_id }));
+  assert.equal(applied.status, "ok");
+  const handler = join(root, "app", "lekalo-operations", "planner", "focus_task", "handler.php");
+  assert.ok(existsSync(handler), "the scaffold handler exists after the apply");
+  rmSync(handler);
+  const verified = adapterCall(root, {
+    protocol: "lekalo.target/v1",
+    protocol_version: "0.3.2",
+    operation: "verify",
+    request_id: REQ_VERIFY,
+    project_root: ".",
+    target: "php-laravel",
+    ir_path: EVIDENCE_PATH,
+  });
+  const codes = (verified.result?.findings ?? []).map((finding) => finding.code);
+  assert.ok(
+    codes.includes("operations.scaffold-missing"),
+    `the removed scaffold is a typed verify finding: ${JSON.stringify(verified.result)}`,
+  );
+});
+
+step("B2: required-family findings veto the composed run with zero writes", () => {
+  const root = newRoot("b2");
+  stageInputs(root);
+  // The types family runs checked custody with absent evidence: a
+  // findings-only envelope with no files.
+  const types = JSON.parse(typesInputBytes);
+  types.policy = { custody: "checked" };
+  const typesBytes = JSON.stringify(types) + "\n";
+  writeFileSync(join(root, "lekalo", "types", "planner.types.json"), typesBytes);
+  // The operations input pins the new types bytes.
+  const input = JSON.parse(operationsInputBytes());
+  input.typesInputDigest = sha256(typesBytes);
+  writeFileSync(join(root, "lekalo", "operations", "planner.operations.json"), JSON.stringify(input, null, 1) + "\n");
+  const response = adapterCall(root, operationsRequest());
+  assert.equal(response.status, "error", JSON.stringify(response).slice(0, 800));
+  assert.equal(response.error.code, "php-types.binding-missing", JSON.stringify(response).slice(0, 800));
+  assert.equal(response.writes, undefined, "the veto never carries a writes member");
+  assert.equal(response.evidence.plan_id, undefined, "a veto carries no plan authority");
+});
+
+step("B3: a write recipe without the required transaction is a typed finding", () => {
+  const root = newRoot("b3");
+  stageInputs(root);
+  const input = JSON.parse(operationsInputBytes());
+  delete input.operations[1].transaction;
+  writeFileSync(join(root, "lekalo", "operations", "planner.operations.json"), JSON.stringify(input, null, 1) + "\n");
+  const response = adapterCall(root, operationsRequest());
+  assert.equal(response.status, "error", JSON.stringify(response).slice(0, 800));
+  assert.equal(response.error.code, "operations.transaction-required", JSON.stringify(response).slice(0, 800));
+  assert.equal(response.writes, undefined);
+});
+
+step("B4: bogus policy, operation, and effect ids are typed findings, never silent ok", () => {
+  // A bogus policy binding.
+  const policyRoot = newRoot("b4-policy");
+  stageInputs(policyRoot);
+  const policyInput = JSON.parse(operationsInputBytes());
+  policyInput.operations[1].policy = { id: "planner.bogus_policy" };
+  writeFileSync(join(policyRoot, "lekalo", "operations", "planner.operations.json"), JSON.stringify(policyInput, null, 1) + "\n");
+  const policyResponse = adapterCall(policyRoot, operationsRequest());
+  assert.equal(policyResponse.status, "error");
+  assert.equal(policyResponse.error.code, "operations.policy-unresolved", JSON.stringify(policyResponse).slice(0, 600));
+  // A bogus operation id under checked mode.
+  const opRoot = newRoot("b4-op");
+  stageInputs(opRoot);
+  const opInput = JSON.parse(operationsInputBytes());
+  opInput.operations[0].id = "planner.bogus_op";
+  opInput.operations[0].mode = "checked";
+  opInput.operations[0].entry = {
+    fqn: "App\\LekaloOperations\\BogusHandler",
+    method: "handle",
+    path: "app/bogus_handler.php",
+  };
+  delete opInput.operations[0].recipe;
+  delete opInput.operations[0].transaction;
+  writeFileSync(join(opRoot, "lekalo", "operations", "planner.operations.json"), JSON.stringify(opInput, null, 1) + "\n");
+  const opResponse = adapterCall(opRoot, operationsRequest());
+  assert.equal(opResponse.status, "error");
+  assert.equal(opResponse.error.code, "operations.operation-unresolved", JSON.stringify(opResponse).slice(0, 600));
+  // An emit naming a non-effect/non-event id.
+  const emitRoot = newRoot("b4-emit");
+  stageInputs(emitRoot);
+  const emitInput = JSON.parse(operationsInputBytes());
+  emitInput.operations[1].recipe.emit = [
+    { event: "planner.bogus_event", payload: { task_id: { fromInput: "task_id" } } },
+  ];
+  writeFileSync(join(emitRoot, "lekalo", "operations", "planner.operations.json"), JSON.stringify(emitInput, null, 1) + "\n");
+  const emitResponse = adapterCall(emitRoot, operationsRequest());
+  assert.equal(emitResponse.status, "error");
+  assert.equal(emitResponse.error.code, "operations.effect-unresolved", JSON.stringify(emitResponse).slice(0, 600));
+  // An operand naming a bogus input field.
+  const operandRoot = newRoot("b4-operand");
+  stageInputs(operandRoot);
+  const operandInput = JSON.parse(operationsInputBytes());
+  operandInput.operations[1].recipe.emit = [
+    { event: "planner.task_focused", payload: { task_id: { fromInput: "bogus_field" } } },
+  ];
+  writeFileSync(join(operandRoot, "lekalo", "operations", "planner.operations.json"), JSON.stringify(operandInput, null, 1) + "\n");
+  const operandResponse = adapterCall(operandRoot, operationsRequest());
+  assert.equal(operandResponse.status, "error");
+  assert.equal(operandResponse.error.code, "operations.type-mismatch", JSON.stringify(operandResponse).slice(0, 600));
+});
+
 process.stdout.write(`${JSON.stringify({ ok: true, passed })}\n`);

@@ -215,6 +215,31 @@ function php_check_operation_bindings(
     $add = static function (string $code, string $semanticId, string $detail) use (&$findings): void {
         $findings[] = ['code' => $code, 'semanticId' => $semanticId, 'detail' => $detail];
     };
+    // The semantic reconciliation runs first: an unresolvable operation
+    // id is the typed finding even when the evidence is absent or
+    // stale. The embedded-registry binding equality stays the core
+    // join's authority; this keeps the mirror honest when the evidence
+    // document is self-authored.
+    $unresolved = [];
+    foreach ($records as $record) {
+        $recordId = (string) $record['id'];
+        $definition = $definitions[$recordId] ?? null;
+        if (!is_array($definition) || ($definition['kind'] ?? null) !== (string) $record['kind']) {
+            $unresolved[$recordId] = true;
+            $add(
+                'operations.operation-unresolved',
+                $recordId,
+                "the operation id `$recordId` is not a compiled IR definition of kind `{$record['kind']}`",
+            );
+        }
+    }
+    $records = array_values(array_filter(
+        $records,
+        static fn (array $record): bool => !isset($unresolved[(string) $record['id']]),
+    ));
+    if ($records === []) {
+        return $findings;
+    }
     if ($evidence === null) {
         foreach ($records as $record) {
             $add(
@@ -245,6 +270,20 @@ function php_check_operation_bindings(
     foreach ($records as $record) {
         $id = (string) $record['id'];
         $entry = $record['entry'];
+        // The semantic reconciliation the mirror owns: the declared id
+        // must be a compiled IR definition of the record's kind. The
+        // embedded-registry binding equality stays the core join's
+        // authority; this keeps an unresolvable operation a typed
+        // finding even when the evidence document is self-authored.
+        $definition = $definitions[$id] ?? null;
+        if (!is_array($definition) || ($definition['kind'] ?? null) !== (string) $record['kind']) {
+            $add(
+                'operations.operation-unresolved',
+                $id,
+                "the operation id `$id` is not a compiled IR definition of kind `{$record['kind']}`",
+            );
+            continue;
+        }
         $matches = array_values(array_filter(
             $byId,
             static fn (array $candidate): bool => strtolower((string) $candidate['fqn']) === strtolower((string) $entry['fqn']),

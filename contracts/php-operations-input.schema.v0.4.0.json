@@ -130,7 +130,7 @@
      }
     },
     "transaction": {
-     "description": "The declared transaction binding (commands only). Absent means forbidden: a query or an unbound command never opens a transaction, and absence is never read as ambient defaults.",
+     "description": "The declared transaction binding (commands only). Absent means forbidden: a query or an unbound command never opens a transaction, and absence is never read as ambient defaults. A single-entity-update recipe requires mode=required: the emitted body runs inside the TransactionPort run, and a write recipe with a forbidden/absent binding is a typed operations.transaction-required finding.",
      "type": "object",
      "additionalProperties": false,
      "required": [

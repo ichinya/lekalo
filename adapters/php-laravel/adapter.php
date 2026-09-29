@@ -2402,6 +2402,14 @@ function operations_generation(array $request): array
     if (isset($typesOutcome['refusal'])) {
         return ['refusal' => $typesOutcome['refusal']];
     }
+    // Required-family findings veto the composed run: the types family
+    // (checked custody, unsupported projections) answers a findings-only
+    // envelope with no files, and publishing operations alone would be
+    // exactly the partial publication the composition refuses. The rows
+    // are already wire findings; they merge into the composed veto.
+    if (($typesOutcome['findings'] ?? []) !== []) {
+        return $findingOnly($typesOutcome['findings']);
+    }
     // The compiled IR evidence: the only bytes an adapter may read.
     $irEvidenceText = read_view_file(IR_EVIDENCE_HOME . '/' . $input['projectId'] . '.json');
     if ($irEvidenceText === null) {
@@ -2463,7 +2471,7 @@ function operations_generation(array $request): array
     $findings = [];
     $skipWrites = [];
     $claimed = [];
-    foreach ($typesOutcome['files'] as $file) {
+    foreach (($typesOutcome['files'] ?? []) as $file) {
         $claimed[$file['path']] = true;
         // Normalize the types rows onto the operations row shape.
         $files[] = [
@@ -2611,9 +2619,13 @@ function operations_verify_response(array $request): array
     foreach ($outcome['files'] as $file) {
         if (str_starts_with((string) $file['path'], PHP_OPERATIONS_SCAFFOLD_ROOT . '/')) {
             // Scaffold-once custody: user-owned, existence-checked only
-            // under the surviving marker.
+            // under the surviving marker. A skipped regeneration (the
+            // marker-guarded emission of this same run) is the only row
+            // that may report a removed scaffold: with no marker the
+            // emission refusal already named the unowned path.
             $marker = PHP_OPERATIONS_SCAFFOLD_ROOT . '/operations.map.json';
-            if (isset($skipWrites[$file['path']]) && !is_file($file['path']) && is_file($marker)) {
+            $markerGuarded = isset($outcome['skip_writes'][$file['path']]);
+            if ($markerGuarded && !is_file($file['path']) && is_file($marker)) {
                 $findings[] = [
                     'path' => $file['path'],
                     'code' => 'operations.scaffold-missing',
@@ -9984,6 +9996,13 @@ function php_validate_operations_input(mixed $document): ?array
         || ($document['identity'] ?? null) !== PHP_OPERATIONS_INPUT_IDENTITY) {
         return null;
     }
+    // The closed member set (additionalProperties: false): an unknown
+    // member is an authoring error, never a silently ignored hint.
+    foreach (array_keys($document) as $member) {
+        if (!in_array($member, ['schemaVersion', 'identity', 'projectId', 'irDigest', 'typesInputDigest', 'policy', 'operations'], true)) {
+            return null;
+        }
+    }
     $projectId = $document['projectId'] ?? null;
     if (!is_string($projectId) || preg_match('/^[a-z][a-z0-9_]*$/', $projectId) !== 1) {
         return null;
@@ -10040,6 +10059,12 @@ function php_validate_operation_record(mixed $record): ?array
 {
     if (!is_array($record)) {
         return null;
+    }
+    // The closed record member set (additionalProperties: false).
+    foreach (array_keys($record) as $member) {
+        if (!in_array($member, ['id', 'kind', 'mode', 'entry', 'recipe', 'errors', 'policy', 'transaction'], true)) {
+            return null;
+        }
     }
     $id = $record['id'] ?? null;
     if (!is_string($id) || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $id) !== 1) {
@@ -10501,6 +10526,15 @@ function php_operations_map_record(array $record, array $context, callable $addF
         $addFinding('operations.module-reserved', $id, 'module namespace segment collides with the emitted Errors/Optional namespace');
         return null;
     }
+    // The semantic join (issue #59): the mirror of the core join's
+    // operation-level reconciliation. A record naming a non-definition,
+    // a policy that does not apply, an unresolvable effect, an
+    // uncovered recipe, or a write recipe without the required
+    // transaction binding is a typed finding here — never a silent
+    // emission and never a kernel crash.
+    if (!php_operations_semantic_join($record, $definitions, $addFinding)) {
+        return null;
+    }
     $leaf = php_types_leaf_name_of($id);
     $stem = php_types_stem_of($id, 'plain');
     $moduleSegment = ucfirst($module);
@@ -10736,6 +10770,352 @@ function php_operations_declared_effects(array $record, array $definitions): arr
     $effects = array_values(array_filter($effects, 'is_string'));
     sort($effects);
     return $effects;
+}
+
+
+// ---------------------------------------------------------------------------
+// The semantic join (issue #59): the adapter mirror of the core join's
+// operation-level reconciliation over the compiled IR definitions. Both
+// authorities agree on the closed vocabulary; a finding here vetoes the
+// whole run exactly like a core finding.
+// ---------------------------------------------------------------------------
+
+/** The canonical spelling of one closed IR type expression. */
+function php_operations_type_spelling(mixed $typeExpr): string
+{
+    if (!is_array($typeExpr)) {
+        return '';
+    }
+    if (isset($typeExpr['ref']) && is_string($typeExpr['ref'])) {
+        return $typeExpr['ref'];
+    }
+    if (isset($typeExpr['optional'])) {
+        return php_operations_type_spelling($typeExpr['optional']) . '?';
+    }
+    if (isset($typeExpr['list'])) {
+        return 'list<' . php_operations_type_spelling($typeExpr['list']) . '>';
+    }
+    return '';
+}
+
+/** The field-index map (`name => type expr`) of one structured definition. */
+function php_operations_field_index(array $definition): array
+{
+    $fields = [];
+    foreach ([['fields'], ['input'], ['payload']] as $members) {
+        $candidate = $definition;
+        foreach ($members as $member) {
+            $candidate = $candidate[$member] ?? null;
+        }
+        if (is_array($candidate)) {
+            foreach ($candidate as $field) {
+                if (is_array($field) && isset($field['name']) && is_string($field['name'])) {
+                    $fields[$field['name']] = $field['type'] ?? null;
+                }
+            }
+            break;
+        }
+    }
+    return $fields;
+}
+
+/**
+ * The full semantic join of one record. Returns false after recording
+ * at least one typed finding; true means the record reconciles with the
+ * compiled IR.
+ *
+ * @param callable(string, string, string): void $addFinding
+ */
+function php_operations_semantic_join(array $record, array $definitions, callable $addFinding): bool
+{
+    $id = (string) $record['id'];
+    $ok = true;
+    $note = static function (string $code, string $detail) use ($addFinding, &$ok, $id): void {
+        $ok = false;
+        $addFinding($code, $id, $detail);
+    };
+    $definition = $definitions[$id] ?? null;
+    if (!is_array($definition) || ($definition['kind'] ?? null) !== $record['kind']) {
+        $note(
+            'operations.operation-unresolved',
+            "the operation id `$id` is not a compiled IR definition of kind `{$record['kind']}`",
+        );
+        return false;
+    }
+    // The transaction binding: a write recipe requires exactly one bound
+    // transaction (the body runs inside the TransactionPort run); a
+    // query never opens one.
+    if ($record['kind'] === 'query' && $record['transaction'] === 'required') {
+        $note('operations.transaction-unsupported', 'a query never opens a transaction');
+    }
+    $recipe = $record['recipe'];
+    if (is_array($recipe) && ($recipe['kind'] ?? '') === 'single-entity-update') {
+        if ($record['kind'] === 'query') {
+            $note('operations.query-write', 'a query can never carry a write recipe; reads stay reads');
+            return false;
+        }
+        if ($record['transaction'] !== 'required') {
+            $note(
+                'operations.transaction-required',
+                'a write recipe requires the required transaction binding: the body runs inside the TransactionPort',
+            );
+        }
+    }
+    if (is_array($recipe) && ($recipe['kind'] ?? '') === 'port-delegation'
+        && $record['kind'] === 'query' && $recipe['result'] !== null) {
+        $note(
+            'operations.query-write',
+            'a query derives its result from the IR returns; a declared recipe result is redundant',
+        );
+    }
+    // The policy binding: an IR policy definition whose applies_to
+    // names this operation.
+    if ($record['policyId'] !== null) {
+        $policyId = (string) $record['policyId'];
+        $policy = $definitions[$policyId] ?? null;
+        $applies = is_array($policy)
+            && ($policy['kind'] ?? null) === 'policy'
+            && in_array($id, is_array($policy['applies_to'] ?? null) ? $policy['applies_to'] : [], true);
+        if (!$applies) {
+            $note(
+                'operations.policy-unresolved',
+                "the policy `$policyId` is not a compiled policy applying to this operation",
+            );
+        }
+    }
+    // The declared errors: the #62 registry binding equality is the
+    // core join's authority (the embedded registry is not staged for
+    // the adapter), so the mirror checks what the IR admits: the
+    // recipe's failure references must be declared errors.
+    if (is_array($recipe) && ($recipe['kind'] ?? '') === 'single-entity-update') {
+        php_operations_join_update_recipe($record, $recipe, $definitions, $note);
+    }
+    return $ok;
+}
+
+/**
+ * The single-entity-update reconciliation: entity, key typing, full
+ * field coverage, typed operands, declared failure references, and the
+ * effect-resolved event emissions.
+ *
+ * @param callable(string, string): void $note
+ */
+function php_operations_join_update_recipe(array $record, array $recipe, array $definitions, callable $note): void
+{
+    $id = (string) $record['id'];
+    $entityId = (string) $recipe['entity'];
+    $entity = $definitions[$entityId] ?? null;
+    if (!is_array($entity) || ($entity['kind'] ?? null) !== 'entity') {
+        $note('operations.entity-unresolved', "the updated definition `$entityId` is not a compiled entity");
+        return;
+    }
+    $identity = $entity['identity'] ?? [];
+    if (!is_array($identity) || count($identity) !== 1) {
+        $note('operations.recipe-unsupported', 'v0.4.0 updates only single-identity entities');
+        return;
+    }
+    $entityFields = php_operations_field_index($entity);
+    $identityField = (string) $identity[0];
+    $inputFields = php_operations_field_index($definitions[$id] ?? []);
+    // The key operand types.
+    $keyType = $inputFields[(string) $recipe['key']] ?? null;
+    $identityType = $entityFields[$identityField] ?? null;
+    if ($keyType === null) {
+        $note('operations.recipe-coverage', 'the key `' . (string) $recipe['key'] . '` is not a command input field');
+    }
+    if ($keyType !== null && $identityType !== null
+        && php_operations_type_spelling($keyType) !== php_operations_type_spelling($identityType)) {
+        $note(
+            'operations.type-mismatch',
+            'the key input field type `' . php_operations_type_spelling($keyType)
+            . '` must equal the identity type `' . php_operations_type_spelling($identityType) . '`',
+        );
+    }
+    // Coverage: every non-identity entity field exactly once, either
+    // assigned or kept; the identity carries over.
+    $covered = [];
+    foreach ($recipe['assignments'] as $assignment) {
+        $field = (string) $assignment['field'];
+        if (isset($covered[$field])) {
+            $note('operations.recipe-coverage', "the field `$field` is covered twice");
+            continue;
+        }
+        $covered[$field] = true;
+        if (!isset($entityFields[$field])) {
+            $note('operations.recipe-coverage', "the assigned field `$field` is not an entity field");
+            continue;
+        }
+        php_operations_join_operand(
+            $assignment['value'],
+            $entityFields[$field],
+            $inputFields,
+            $entityFields,
+            $definitions,
+            $note,
+        );
+    }
+    foreach ($recipe['kept'] as $field) {
+        $field = (string) $field;
+        if (isset($covered[$field])) {
+            $note('operations.recipe-coverage', "the field `$field` is covered twice");
+            continue;
+        }
+        $covered[$field] = true;
+        if (!isset($entityFields[$field])) {
+            $note('operations.recipe-coverage', "the kept field `$field` is not an entity field");
+        }
+    }
+    foreach (array_keys($entityFields) as $field) {
+        if ($field === $identityField) {
+            continue;
+        }
+        if (!isset($covered[$field])) {
+            $note('operations.recipe-coverage', "the entity field `$field` is neither assigned nor kept");
+        }
+    }
+    // Preconditions: entity fields, typed operands, declared errors.
+    foreach ($recipe['preconditions'] as $precondition) {
+        $field = (string) $precondition['field'];
+        if (!isset($entityFields[$field])) {
+            $note('operations.recipe-coverage', "the precondition field `$field` is not an entity field");
+        } else {
+            php_operations_join_operand(
+                $precondition['equals'],
+                $entityFields[$field],
+                $inputFields,
+                $entityFields,
+                $definitions,
+                $note,
+            );
+        }
+        if (!in_array((string) $precondition['error'], $record['errors'], true)) {
+            $note(
+                'operations.registry-binding',
+                'the precondition error `' . (string) $precondition['error'] . '` is not a declared error of this operation',
+            );
+        }
+    }
+    if (!in_array((string) $recipe['missingBehavior']['error'], $record['errors'], true)) {
+        $note(
+            'operations.registry-binding',
+            'the missing-record error `' . (string) $recipe['missingBehavior']['error'] . '` is not a declared error of this operation',
+        );
+    }
+    // Emissions: the event must be an IR event emitted by one of the
+    // command's effects, and every payload field must carry a typed
+    // operand exactly once.
+    $emittedEvents = [];
+    foreach ($definitions[$id]['effects'] ?? [] as $effectId) {
+        $effect = $definitions[(string) $effectId] ?? null;
+        if (is_array($effect) && ($effect['kind'] ?? null) === 'effect') {
+            foreach ($effect['emits'] ?? [] as $emitted) {
+                $emittedEvents[] = (string) $emitted;
+            }
+        }
+    }
+    foreach ($recipe['emit'] as $emission) {
+        $eventId = (string) $emission['event'];
+        if (!in_array($eventId, $emittedEvents, true)) {
+            $note(
+                'operations.effect-unresolved',
+                "the event `$eventId` is not emitted by any effect of this command",
+            );
+        }
+        $event = $definitions[$eventId] ?? null;
+        if (!is_array($event) || ($event['kind'] ?? null) !== 'event') {
+            $note('operations.type-unresolved', "the definition `$eventId` is not a compiled event");
+            continue;
+        }
+        $eventFields = php_operations_field_index($event);
+        foreach (array_keys($eventFields) as $field) {
+            if (!isset($emission['payload'][$field])) {
+                $note('operations.recipe-coverage', "the event field `$field` has no operand");
+            }
+        }
+        foreach ($emission['payload'] as $field => $operand) {
+            if (!isset($eventFields[(string) $field])) {
+                $note('operations.recipe-coverage', "the payload operand `$field` is not an event field");
+                continue;
+            }
+            php_operations_join_operand(
+                $operand,
+                $eventFields[(string) $field],
+                $inputFields,
+                $entityFields,
+                $definitions,
+                $note,
+            );
+        }
+    }
+}
+
+/**
+ * One closed typed operand against one target type expression: exact
+ * input/entity field existence and type identity, declared enum cases,
+ * and no untyped literal targets.
+ *
+ * @param array<string, mixed> $inputFields
+ * @param array<string, mixed> $entityFields
+ * @param callable(string, string): void $note
+ */
+function php_operations_join_operand(
+    array $operand,
+    mixed $targetExpr,
+    array $inputFields,
+    array $entityFields,
+    array $definitions,
+    callable $note,
+): void {
+    $target = php_operations_type_spelling($targetExpr);
+    if (isset($operand['fromInput'])) {
+        $field = (string) $operand['fromInput'];
+        if (!isset($inputFields[$field])) {
+            $note('operations.type-mismatch', "`$field` is not a command input field");
+            return;
+        }
+        $spelling = php_operations_type_spelling($inputFields[$field]);
+        if ($spelling !== $target) {
+            $note('operations.type-mismatch', "the input field `$field` carries `$spelling`, the target needs `$target`");
+        }
+        return;
+    }
+    if (isset($operand['fromEntity'])) {
+        $field = (string) $operand['fromEntity'];
+        if (!isset($entityFields[$field])) {
+            $note('operations.type-mismatch', "`$field` is not an entity field");
+            return;
+        }
+        $spelling = php_operations_type_spelling($entityFields[$field]);
+        if ($spelling !== $target) {
+            $note('operations.type-mismatch', "the entity field `$field` carries `$spelling`, the target needs `$target`");
+        }
+        return;
+    }
+    if (isset($operand['enumCase'])) {
+        $enumId = (string) $operand['enumCase']['type'];
+        $value = (string) $operand['enumCase']['value'];
+        if ($target !== $enumId) {
+            $note('operations.type-mismatch', "the enum case targets `$enumId`, the field carries `$target`");
+            return;
+        }
+        $enum = $definitions[$enumId] ?? null;
+        $declared = false;
+        if (is_array($enum) && ($enum['kind'] ?? null) === 'enum') {
+            foreach ($enum['values'] ?? [] as $candidate) {
+                if (is_array($candidate) && (string) $candidate['value'] === $value) {
+                    $declared = true;
+                    break;
+                }
+            }
+        }
+        if (!$declared) {
+            $note('operations.type-unresolved', "the enum case value `$value` is not declared by `$enumId`");
+        }
+        return;
+    }
+    // A literal operand cannot prove the target definition's shape in
+    // v0.4.0: unsupported, exactly like the core join.
+    $note('operations.type-mismatch', "a literal operand cannot carry the definition target `$target`");
 }
 
 // ----- bundled compiler module: operation-emit.php -----
@@ -11685,6 +12065,31 @@ function php_check_operation_bindings(
     $add = static function (string $code, string $semanticId, string $detail) use (&$findings): void {
         $findings[] = ['code' => $code, 'semanticId' => $semanticId, 'detail' => $detail];
     };
+    // The semantic reconciliation runs first: an unresolvable operation
+    // id is the typed finding even when the evidence is absent or
+    // stale. The embedded-registry binding equality stays the core
+    // join's authority; this keeps the mirror honest when the evidence
+    // document is self-authored.
+    $unresolved = [];
+    foreach ($records as $record) {
+        $recordId = (string) $record['id'];
+        $definition = $definitions[$recordId] ?? null;
+        if (!is_array($definition) || ($definition['kind'] ?? null) !== (string) $record['kind']) {
+            $unresolved[$recordId] = true;
+            $add(
+                'operations.operation-unresolved',
+                $recordId,
+                "the operation id `$recordId` is not a compiled IR definition of kind `{$record['kind']}`",
+            );
+        }
+    }
+    $records = array_values(array_filter(
+        $records,
+        static fn (array $record): bool => !isset($unresolved[(string) $record['id']]),
+    ));
+    if ($records === []) {
+        return $findings;
+    }
     if ($evidence === null) {
         foreach ($records as $record) {
             $add(
@@ -11715,6 +12120,20 @@ function php_check_operation_bindings(
     foreach ($records as $record) {
         $id = (string) $record['id'];
         $entry = $record['entry'];
+        // The semantic reconciliation the mirror owns: the declared id
+        // must be a compiled IR definition of the record's kind. The
+        // embedded-registry binding equality stays the core join's
+        // authority; this keeps an unresolvable operation a typed
+        // finding even when the evidence document is self-authored.
+        $definition = $definitions[$id] ?? null;
+        if (!is_array($definition) || ($definition['kind'] ?? null) !== (string) $record['kind']) {
+            $add(
+                'operations.operation-unresolved',
+                $id,
+                "the operation id `$id` is not a compiled IR definition of kind `{$record['kind']}`",
+            );
+            continue;
+        }
         $matches = array_values(array_filter(
             $byId,
             static fn (array $candidate): bool => strtolower((string) $candidate['fqn']) === strtolower((string) $entry['fqn']),

@@ -291,6 +291,15 @@ fn is_logical_path(value: &str) -> bool {
         })
 }
 
+/// The closed member set of one JSON object (additionalProperties:
+/// false): an unknown member is an authoring error, never a silently
+/// ignored hint.
+fn members_closed(object: &serde_json::Map<String, Value>, allowed: &[&str]) -> bool {
+    object
+        .keys()
+        .all(|member| allowed.contains(&member.as_str()))
+}
+
 /// Parse and shape-validate the input document. The canonical order
 /// (id-sorted, unique operations) is part of the shape: a misordered or
 /// duplicated document is a finding, never a silent reorder.
@@ -313,6 +322,25 @@ pub fn parse_input(bytes: &[u8]) -> Result<OperationsInput, Vec<Finding>> {
             None,
             None,
             "the operations input is not a JSON object",
+        )]);
+    }
+    if !members_closed(
+        document.as_object().expect("checked object"),
+        &[
+            "schemaVersion",
+            "identity",
+            "projectId",
+            "irDigest",
+            "typesInputDigest",
+            "policy",
+            "operations",
+        ],
+    ) {
+        return Err(vec![Finding::new(
+            "operations.input-shape",
+            None,
+            None,
+            "the operations input carries an unknown member",
         )]);
     }
     if document.get("schemaVersion").and_then(Value::as_str) != Some(INPUT_SCHEMA_VERSION)
@@ -453,6 +481,26 @@ fn parse_operation(value: &Value) -> Result<OperationRecord, Vec<Finding>> {
             "an operation record is a JSON object",
         )]);
     };
+    if !members_closed(
+        value.as_object().expect("checked object"),
+        &[
+            "id",
+            "kind",
+            "mode",
+            "entry",
+            "recipe",
+            "errors",
+            "policy",
+            "transaction",
+        ],
+    ) {
+        return Err(vec![Finding::new(
+            "operations.input-shape",
+            None,
+            None,
+            "an operation record carries an unknown member",
+        )]);
+    }
     let id = value
         .get("id")
         .and_then(Value::as_str)
@@ -690,10 +738,43 @@ fn parse_entry(value: &Value) -> Result<Entry, Vec<Finding>> {
 /// Parse one recipe against the closed grammar. Only the grammar is
 /// decided here; the semantic join happens against the IR.
 fn parse_recipe(value: &Value) -> Result<Recipe, Vec<Finding>> {
+    let Some(object) = value.as_object() else {
+        return Err(vec![Finding::new(
+            "operations.input-shape",
+            None,
+            Some("/recipe"),
+            "a recipe is a JSON object",
+        )]);
+    };
     let kind = value
         .get("kind")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    let closed = match kind {
+        "port-delegation" => members_closed(object, &["kind", "port", "method", "result"]),
+        "single-entity-update" => members_closed(
+            object,
+            &[
+                "kind",
+                "entity",
+                "key",
+                "assignments",
+                "kept",
+                "preconditions",
+                "missingBehavior",
+                "emit",
+            ],
+        ),
+        _ => true,
+    };
+    if !closed {
+        return Err(vec![Finding::new(
+            "operations.input-shape",
+            None,
+            Some("/recipe"),
+            "the recipe carries an unknown member",
+        )]);
+    }
     if kind == "port-delegation" {
         let port = value
             .get("port")
@@ -773,6 +854,20 @@ fn parse_recipe(value: &Value) -> Result<Recipe, Vec<Finding>> {
             "/recipe/assignments",
             &mut findings,
         );
+        // The closed shape requires assignments and kept members; kept
+        // may be empty (single-field entities) but never absent.
+        if !value
+            .as_object()
+            .expect("checked object")
+            .contains_key("kept")
+        {
+            findings.push(Finding::new(
+                "operations.input-shape",
+                None,
+                Some("/recipe/kept"),
+                "the kept member is required (possibly empty)",
+            ));
+        }
         let kept = match value.get("kept") {
             None | Some(Value::Null) => Vec::new(),
             Some(kept) => kept
@@ -958,7 +1053,7 @@ fn parse_operand_pairs(
     pairs
 }
 
-/// The borrowed-reference form of [].
+/// The borrowed-reference form of [`parse_operand`].
 fn parse_operand_ref(value: &Value) -> Option<Operand> {
     parse_operand(Some(value))
 }
@@ -1285,7 +1380,9 @@ fn check_record(
             )),
         }
     }
-    // Transaction: queries never open one.
+    // Transaction: queries never open one, and a write recipe requires
+    // exactly one bound transaction (the emitted body runs inside the
+    // TransactionPort run).
     if record.kind == OperationKind::Query && record.transaction == TransactionMode::Required {
         findings.push(Finding::new(
             "operations.transaction-unsupported",
@@ -1293,6 +1390,16 @@ fn check_record(
             Some("/transaction"),
             "a query never opens a transaction",
         ));
+    }
+    if let Some(Recipe::SingleEntityUpdate { .. }) = &record.recipe {
+        if record.transaction != TransactionMode::Required {
+            findings.push(Finding::new(
+                "operations.transaction-required",
+                reference,
+                Some("/transaction"),
+                "a write recipe requires the required transaction binding: the body runs inside the TransactionPort",
+            ));
+        }
     }
     // The recipe join.
     match &record.recipe {
