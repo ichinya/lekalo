@@ -126,6 +126,24 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     // generate run, and the only bytes an adapter may read as input.
     let evidence_path = format!("{IR_EVIDENCE_DIR}/{project_id}.json");
     write_evidence(prepared.root(), &evidence_path, ir_bytes.as_bytes())?;
+    // Issue #59: the PHP operations join is the acceptance authority.
+    // When the project declares an operations input, it joins against
+    // the compiled IR, the embedded #62 error registry, the staged
+    // evidence digests, and the closed recipes HERE — before any
+    // adapter exchange — and a refused join is a typed invalid result.
+    let operations_input_path = prepared
+        .root()
+        .join("lekalo")
+        .join("operations")
+        .join(format!("{project_id}.operations.json"));
+    if operations_input_path.is_file() {
+        run_operations_join(
+            prepared.root(),
+            &operations_input_path,
+            &compilation.project,
+            &project_id,
+        )?;
+    }
     // Transport preflight (#70): when the canonical transport home
     // exists, it validates against the compiled project and its
     // canonical bytes land under the `lekalo.cache` evidence home —
@@ -581,6 +599,80 @@ pub(crate) fn unknown_module(module: &str) -> DomainResult {
     DomainResult::Invalid {
         diagnostics: wire_set(Status::Invalid, vec![diagnostic]),
     }
+}
+
+/// The operations join (issue #59): parse the authored operations input
+/// and join it against the compiled IR, the embedded #62 error
+/// registry, the staged evidence digests, and the closed recipes. Any
+/// finding refuses the run as the registered
+/// `php-operations.join-invalid` invalid result — before any adapter
+/// exchange.
+pub(crate) fn run_operations_join(
+    root: &Path,
+    input_path: &Path,
+    compilation: &crate::ir::CompiledProject,
+    project_id: &str,
+) -> Result<(), DomainResult> {
+    let join_findings = |findings: &[crate::php_operations::Finding]| -> DomainResult {
+        let codes: Vec<String> = findings
+            .iter()
+            .take(16)
+            .map(|finding| finding.code.clone())
+            .collect();
+        let first = findings.first();
+        let detail = first
+            .map(|finding| {
+                let pointer = finding
+                    .pointer
+                    .as_deref()
+                    .map(|pointer| format!(" at {pointer}"))
+                    .unwrap_or_default();
+                format!(
+                    "{}{}: {}",
+                    finding.semantic_id.as_deref().unwrap_or("operations"),
+                    pointer,
+                    finding.detail
+                )
+            })
+            .unwrap_or_else(|| "the operations input join refused".to_owned());
+        let mut data = DataObject::new();
+        data.insert("projectId".to_owned(), token_value(project_id));
+        data.insert(
+            "codes".to_owned(),
+            crate::diagnostics::DataValue::List(
+                codes
+                    .iter()
+                    .map(|code| {
+                        crate::diagnostics::Scalar::Token(crate::diagnostics::types::bound_token(
+                            code,
+                        ))
+                    })
+                    .collect(),
+            ),
+        );
+        data.insert("detail".to_owned(), token_value(&detail));
+        let diagnostic =
+            crate::diagnostics::normalize::build("php-operations.join-invalid", None, None, data)
+                .expect("php-operations.join-invalid is registered and active");
+        DomainResult::Invalid {
+            diagnostics: wire_set(Status::Invalid, vec![diagnostic]),
+        }
+    };
+    let bytes = std::fs::read(input_path).map_err(|_| {
+        join_findings(&[crate::php_operations::Finding {
+            code: "operations.input-unreadable".to_owned(),
+            semantic_id: None,
+            pointer: None,
+            detail: "the operations input document is unreadable".to_owned(),
+        }])
+    })?;
+    let input =
+        crate::php_operations::parse_input(&bytes).map_err(|findings| join_findings(&findings))?;
+    let findings = crate::php_operations::check_join(root, &input, compilation);
+    if findings.is_empty() {
+        return Ok(());
+    }
+    Err(join_findings(&findings))
 }
 
 /// The attribution scope: every module, or one known module.
@@ -1347,5 +1439,96 @@ mod tests {
             lifecycle_for("app/lekalo-types-extra/planner/task_dto.php"),
             Lifecycle::Generated
         );
+    }
+}
+
+#[cfg(test)]
+mod operations_join_tests {
+    use super::*;
+    use crate::loader::{normalize_model, LoadSelection};
+    use std::sync::Mutex;
+
+    /// The loader resolves the fixture through the process working
+    /// directory: serialize every cwd mutation with the other suites.
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
+
+    /// The join runs before any adapter exchange: a bogus policy
+    /// binding refuses the run as the registered
+    /// `php-operations.join-invalid` invalid result.
+    #[test]
+    fn a_bogus_policy_binding_refuses_the_generate_run() {
+        let _guard = CWD_LOCK.lock().expect("cwd lock");
+        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace = crate_dir
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace");
+        let original = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(workspace).expect("enter workspace");
+        let selection = LoadSelection {
+            project: Some("tests/fixtures/php-laravel/operations/model".to_owned()),
+        };
+        let model = normalize_model(&selection).expect("fixture loads");
+        let compilation = crate::ir::compile(&model).expect("fixture compiles");
+        let sandbox =
+            std::env::temp_dir().join(format!("lekalo-join-wiring-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&sandbox);
+        std::fs::create_dir_all(sandbox.join(".lekalo/cache/ir")).expect("evidence home");
+        std::fs::create_dir_all(sandbox.join("lekalo/types")).expect("types home");
+        std::fs::create_dir_all(sandbox.join("lekalo/operations")).expect("operations home");
+        let ir_bytes = compilation.project.to_canonical_json();
+        std::fs::write(sandbox.join(".lekalo/cache/ir/planner.json"), &ir_bytes).expect("evidence");
+        let ir_digest = format!("sha256:{}", sha256_hex(ir_bytes.as_bytes()));
+        let types_input = format!(
+            "{{\"identity\":\"dev.lekalo.php-types-input@0.4.0\",\"irDigest\":\"{ir_digest}\",\"projectId\":\"planner\",\"schemaVersion\":\"lekalo/php-types-input/v0.4.0\"}}\n"
+        );
+        std::fs::write(
+            sandbox.join("lekalo/types/planner.types.json"),
+            &types_input,
+        )
+        .expect("types input");
+        let types_digest = format!("sha256:{}", sha256_hex(types_input.as_bytes()));
+        let zeros = format!("sha256:{}", "0".repeat(64));
+        let template = std::fs::read_to_string(
+            workspace.join("tests/fixtures/php-laravel/operations/inputs/planner.operations.json"),
+        )
+        .expect("template");
+        let mut input: serde_json::Value = serde_json::from_str(
+            &template
+                .replace(
+                    &format!("\"irDigest\": \"{zeros}\""),
+                    &format!("\"irDigest\": \"{ir_digest}\""),
+                )
+                .replace(
+                    &format!("\"typesInputDigest\": \"{zeros}\""),
+                    &format!("\"typesInputDigest\": \"{types_digest}\""),
+                ),
+        )
+        .expect("template decodes");
+        input["operations"][1]["policy"] = serde_json::json!({"id": "planner.bogus_policy"});
+        std::fs::write(
+            sandbox.join("lekalo/operations/planner.operations.json"),
+            serde_json::to_string_pretty(&input).expect("input serializes") + "\n",
+        )
+        .expect("operations input");
+        let outcome = run_operations_join(
+            &sandbox,
+            &sandbox.join("lekalo/operations/planner.operations.json"),
+            &compilation.project,
+            "planner",
+        )
+        .expect_err("a bogus policy binding refuses the run");
+        assert_eq!(outcome.status(), crate::result::Status::Invalid);
+        let rendered = outcome.to_json_string();
+        assert!(
+            rendered.contains("php-operations.join-invalid"),
+            "the registered rule rides the refusal: {rendered}"
+        );
+        assert!(
+            rendered.contains("operations.policy-unresolved"),
+            "the typed finding code rides the data: {rendered}"
+        );
+        let _ = std::fs::remove_dir_all(&sandbox);
+        std::env::set_current_dir(original).expect("restore cwd");
     }
 }
