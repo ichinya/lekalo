@@ -40,6 +40,46 @@
    }
   },
   {
+   "id": "planner.complete_planning",
+   "kind": "command",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "TaskCompleter",
+    "method": "complete"
+   },
+   "errors": [
+    "planner.input_invalid",
+    "planner.planning_conflict",
+    "planner.planning_denied",
+    "planner.planning_not_found",
+    "planner.store_unavailable"
+   ],
+   "policy": {
+    "id": "planner.deny_foreign_planning"
+   },
+   "transaction": {
+    "mode": "required"
+   }
+  },
+  {
+   "id": "planner.completed_planning",
+   "kind": "query",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "CompletedReader",
+    "method": "completed"
+   },
+   "errors": [
+    "planner.input_invalid",
+    "planner.store_unavailable"
+   ],
+   "transaction": {
+    "mode": "forbidden"
+   }
+  },
+  {
    "id": "planner.count_focused",
    "kind": "query",
    "mode": "managed",

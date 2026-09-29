@@ -648,6 +648,16 @@ step("runtime: the planning battery serves the nine issue-50 scenarios through t
     { method: "GET", uri: "/planning/backlog", headers: actor(U1) },
     { method: "POST", uri: "/planning/{{planning:"+U1+"|" + task3 + "|2026-01-03}}/pause", headers: actor(U1, { "Idempotency-Key": "k-pause" }) },
     { probe: "plannings" },
+    // S10 (issue #53): the screen's completed family — plan, complete,
+    // the completed bucket, the idempotent-completion conflict, the
+    // foreign denial, and the scoped emptiness for another owner.
+    { method: "POST", uri: planUri, body: { task_id: task5, planned_for: "2026-01-03" }, headers: actor(U1, { "Idempotency-Key": "k-s10a" }) },
+    { method: "POST", uri: "/planning/{{planning:"+U1+"|" + task5 + "|2026-01-03}}/complete", headers: actor(U1, { "Idempotency-Key": "k-s10b" }) },
+    { probe: "plannings" },
+    { method: "GET", uri: "/planning/completed", headers: actor(U1) },
+    { method: "POST", uri: "/planning/{{planning:"+U1+"|" + task5 + "|2026-01-03}}/complete", headers: actor(U1, { "Idempotency-Key": "k-s10c" }) },
+    { method: "POST", uri: "/planning/{{planning:"+U1+"|" + task5 + "|2026-01-03}}/complete", headers: actor(U2, { "Idempotency-Key": "k-s10d", "X-Fixture-Mode": "foreign" }) },
+    { method: "GET", uri: "/planning/completed", headers: actor(U2) },
   ];
   const run = spawnSync(php, [driverPath, JSON.stringify(specs)], {
     cwd: materialRoot,
@@ -746,6 +756,31 @@ step("runtime: the planning battery serves the nine issue-50 scenarios through t
   assert.equal(at(34).status, 202, JSON.stringify(at(34)));
   const pausedRow = rowsOf(35).find((row) => row.task_id === task3 && row.user_id === U1);
   assert.ok(pausedRow && pausedRow.paused_at !== null && pausedRow.paused_at !== undefined, JSON.stringify(pausedRow));
+
+  // S10: the completed family of the planning screen. The completion
+  // stamps the declared clock, the bucket renders the row newest day
+  // first, the second completion is the declared conflict, the foreign
+  // actor is denied, and the other owner's bucket stays empty.
+  assert.equal(at(36).status, 202, JSON.stringify(at(36)));
+  assert.equal(at(37).status, 202, JSON.stringify(at(37)));
+  const completedRaw = rowsOf(38).find((row) => row.task_id === task5 && row.user_id === U1);
+  assert.ok(completedRaw && completedRaw.completed_at !== null && completedRaw.completed_at !== undefined, JSON.stringify(rowsOf(38)));
+  assert.equal(at(39).status, 200, JSON.stringify(at(39)));
+  assert.equal(at(39).body.length, 1, JSON.stringify(at(39).body));
+  assert.equal(at(39).body[0].task_id, task5);
+  assert.equal(at(39).body[0].planned_for, "2026-01-03");
+  assert.ok(at(39).body[0].completed_at, JSON.stringify(at(39).body));
+  assert.equal(at(40).status, 409, JSON.stringify(at(40)));
+  assert.equal(errorOf(at(40)).id, "planner.planning_conflict");
+  assert.equal(errorOf(at(40)).code, "LEK-ERR-006");
+  // The foreign actor never sees the row: the declared ownership scope
+  // makes it invisible, never removable — the declared not-found, not
+  // an existence leak.
+  assert.equal(at(41).status, 404, JSON.stringify(at(41)));
+  assert.equal(errorOf(at(41)).id, "planner.planning_not_found");
+  assert.equal(errorOf(at(41)).code, "LEK-ERR-008");
+  assert.equal(at(42).status, 200, JSON.stringify(at(42)));
+  assert.deepEqual(at(42).body, []);
 
   rmSync(materialRoot, { recursive: true, force: true });
 });

@@ -54,3 +54,14 @@ definitions:
     returns:
       list:
         ref: "planner.user_task_planning"
+  - id: planner.completed_planning
+    kind: query
+    version: 1
+    description: "The planning rows the actor completed, newest day first; a completed row keeps its day and position"
+    derived_from:
+      - "PLANNER-REQ-007"
+    reads:
+      - "planner.user_task_planning"
+    returns:
+      list:
+        ref: "planner.user_task_planning"

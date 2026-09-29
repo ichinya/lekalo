@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\Schema;
 // The planner fixture planning schema (issue #50): the
 // `user_task_plannings` table mirroring the `planner.user_task_planning`
 // entity — the per-workspace/user/task unique identity, the planned
-// calendar day, the day position, the focus/pause stamps, and the
+// calendar day, the day position, the focus/pause/completion stamps,
+// and the
 // optimistic reorder version.
 
 return new class() extends Migration {
@@ -24,6 +25,7 @@ return new class() extends Migration {
             $table->integer('position');
             $table->dateTime('focused_at')->nullable();
             $table->dateTime('paused_at')->nullable();
+            $table->dateTime('completed_at')->nullable();
             $table->integer('reorder_version')->default(1);
             $table->timestamps();
             // The declared per-workspace/user/task unique identity: two

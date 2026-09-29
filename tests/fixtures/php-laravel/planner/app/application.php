@@ -105,14 +105,17 @@ $app->booted(static function (Application $app): void {
     $app->bind('Lekalo\Generated\Operations\Planner\TaskUnplanner', 'App\Lekalo\EloquentPlanningStore');
     $app->bind('Lekalo\Generated\Operations\Planner\DayReorderer', 'App\Lekalo\EloquentPlanningStore');
     $app->bind('Lekalo\Generated\Operations\Planner\FocusPauser', 'App\Lekalo\EloquentPlanningStore');
+    $app->bind('Lekalo\Generated\Operations\Planner\TaskCompleter', 'App\Lekalo\EloquentPlanningStore');
     $app->bind('Lekalo\Generated\Operations\Planner\TodayReader', 'App\Lekalo\EloquentPlanningQueries');
     $app->bind('Lekalo\Generated\Operations\Planner\BacklogReader', 'App\Lekalo\EloquentPlanningQueries');
     $app->bind('Lekalo\Generated\Operations\Planner\CarryOverReader', 'App\Lekalo\EloquentPlanningQueries');
+    $app->bind('Lekalo\Generated\Operations\Planner\CompletedReader', 'App\Lekalo\EloquentPlanningQueries');
     $app->bind('Lekalo\Generated\Operations\Planner\PlanTaskPolicy', 'App\Lekalo\ForeignPlanPolicy');
     $app->bind('Lekalo\Generated\Operations\Planner\MoveTaskPolicy', 'App\Lekalo\ForeignMovePolicy');
     $app->bind('Lekalo\Generated\Operations\Planner\UnplanTaskPolicy', 'App\Lekalo\ForeignUnplanPolicy');
     $app->bind('Lekalo\Generated\Operations\Planner\ReorderPlannedPolicy', 'App\Lekalo\ForeignReorderPolicy');
     $app->bind('Lekalo\Generated\Operations\Planner\PausePlanningPolicy', 'App\Lekalo\ForeignPausePolicy');
+    $app->bind('Lekalo\Generated\Operations\Planner\CompletePlanningPolicy', 'App\Lekalo\ForeignCompletePolicy');
 
     // The fixture authentication seam the generated routes attach (the
     // input's middleware mapping names this alias).

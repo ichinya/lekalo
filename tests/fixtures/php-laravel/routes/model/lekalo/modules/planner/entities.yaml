@@ -119,6 +119,10 @@ definitions:
         type:
           optional:
             ref: "planner.timestamp"
+      - name: completed_at
+        type:
+          optional:
+            ref: "planner.timestamp"
       - name: reorder_version
         type: "planner.reorder_version"
         required: true
