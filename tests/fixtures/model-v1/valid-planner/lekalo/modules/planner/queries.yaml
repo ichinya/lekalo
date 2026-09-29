@@ -1,4 +1,7 @@
 {"schema_version":"0.2.16","definitions":[
 {"id":"planner.list_tasks","kind":"query","version":1,"description":"List tasks by state","derived_from":["PLANNER-REQ-002"],"reads":["planner.task"],"returns":{"list":{"ref":"planner.task"}}},
-{"id":"planner.count_focused","kind":"query","version":1,"description":"Count focused tasks","reads":["planner.task"],"returns":{"ref":"planner.task_state"}}
+{"id":"planner.count_focused","kind":"query","version":1,"description":"Count focused tasks","reads":["planner.task"],"returns":{"ref":"planner.task_state"}},
+{"id":"planner.today_planning","kind":"query","version":1,"description":"The actor-local today plan","derived_from":["PLANNER-REQ-002"],"reads":["planner.user_task_planning"],"returns":{"list":{"ref":"planner.user_task_planning"}}},
+{"id":"planner.backlog_tasks","kind":"query","version":1,"description":"Unplanned tasks of the actor's workspace","derived_from":["PLANNER-REQ-002"],"reads":["planner.task"],"returns":{"list":{"ref":"planner.user_task_planning"}}},
+{"id":"planner.carry_over","kind":"query","version":1,"description":"Planning rows of earlier days at their original dates","derived_from":["PLANNER-REQ-004"],"reads":["planner.user_task_planning"],"returns":{"list":{"ref":"planner.user_task_planning"}}}
 ]}
