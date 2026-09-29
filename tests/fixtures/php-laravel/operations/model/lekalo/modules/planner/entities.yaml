@@ -1,0 +1,40 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.task_id
+    kind: scalar
+    version: 1
+    description: "Stable task identifier"
+    base: uuid
+    visibility: project
+  - id: planner.text
+    kind: scalar
+    version: 1
+    description: "Human-readable text"
+    base: string
+  - id: planner.task_state
+    kind: enum
+    version: 1
+    description: "Task lifecycle state"
+    values:
+      - value: backlog
+        description: "Not started"
+      - value: focused
+        description: "Currently focused"
+      - value: done
+        description: "Completed"
+  - id: planner.task
+    kind: entity
+    version: 1
+    description: "A focusable task"
+    fields:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: title
+        type: "planner.text"
+        required: true
+      - name: state
+        type: "planner.task_state"
+        required: true
+    identity:
+      - task_id

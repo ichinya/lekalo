@@ -5763,6 +5763,34 @@
       "lifecycle": "active"
     },
     {
+      "id": "php-operations.join-invalid",
+      "code": "LEK-OPS-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "php-operations.join-invalid",
+      "default_message": "The operations input join refused: the declared operations do not reconcile with the compiled IR, the error registry, the staged evidence digests, or the closed recipes.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "projectId",
+          "type": "token"
+        },
+        {
+          "name": "codes",
+          "type": "list"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "publication.consent-missing",
       "code": "LEK-XE-006",
       "category": "compatibility",

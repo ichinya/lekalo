@@ -34,6 +34,7 @@ pub mod nfr;
 pub mod observed;
 pub mod openapi;
 pub mod orchestration;
+pub mod php_operations;
 pub mod privacy;
 pub mod project_fs;
 pub mod query_model;

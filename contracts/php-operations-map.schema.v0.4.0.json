@@ -1,0 +1,304 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://dev.lekalo/php-operations-map.schema.v0.4.0.json",
+ "title": "Lekalo PHP Operations Map",
+ "description": "Closed contract for the deterministic operations map sidecar the PHP Laravel operations emitter writes beside its artifacts (issue #59). The sidecar is the custody receipt: it binds every emitted or declared entrypoint to its semantic id, input/result/error roles, ports, policy and transaction bindings, and carries the complete path-sorted artifact inventory with content digests. The sidecar never contains declaration byte ranges - source-map documents are a separate `declarations` shape, and this sidecar's `.map.json` suffix therefore binds nothing in the core source-map ingester. The map's own file digest belongs to the ownership manifest, never inside the hashed content.",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "schemaVersion",
+  "identity",
+  "projectId",
+  "adapter",
+  "digests",
+  "operations",
+  "artifacts"
+ ],
+ "properties": {
+  "schemaVersion": {
+   "const": "lekalo/php-operations-map/v0.4.0"
+  },
+  "identity": {
+   "const": "dev.lekalo.php-operations-map@0.4.0"
+  },
+  "projectId": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "adapter": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "id",
+    "version",
+    "digest"
+   ],
+   "properties": {
+    "id": {
+     "type": "string",
+     "const": "lekalo-target-php-laravel"
+    },
+    "version": {
+     "type": "string",
+     "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "digest": {
+     "$ref": "#/$defs/sha256"
+    }
+   }
+  },
+  "digests": {
+   "description": "The exact input digests this map was derived from; any change invalidates the derivation.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "ir",
+    "input",
+    "typesInput"
+   ],
+   "properties": {
+    "ir": {
+     "$ref": "#/$defs/sha256"
+    },
+    "input": {
+     "description": "The operations input document digest.",
+     "$ref": "#/$defs/sha256"
+    },
+    "typesInput": {
+     "description": "The bound types input document digest.",
+     "$ref": "#/$defs/sha256"
+    }
+   }
+  },
+  "operations": {
+   "description": "One entry per declared operation, sorted by id.",
+   "type": "array",
+   "minItems": 1,
+   "maxItems": 4096,
+   "items": {
+    "$ref": "#/$defs/operation"
+   }
+  },
+  "artifacts": {
+   "description": "The complete artifact inventory, path-sorted, every file the plan covers (emitted bytes under the custody root; declared-only maintained entries for checked/custom carry a `declared: true` role and no digest).",
+   "type": "array",
+   "minItems": 1,
+   "maxItems": 4096,
+   "items": {
+    "$ref": "#/$defs/artifact"
+   }
+  }
+ },
+ "$defs": {
+  "sha256": {
+   "type": "string",
+   "pattern": "^sha256:[0-9a-f]{64}$"
+  },
+  "semanticId": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+  },
+  "fqn": {
+   "type": "string",
+   "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,7}$"
+  },
+  "logicalPath": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_./-]*$"
+  },
+  "operation": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "id",
+    "kind",
+    "mode"
+   ],
+   "properties": {
+    "id": {
+     "$ref": "#/$defs/semanticId"
+    },
+    "kind": {
+     "enum": [
+      "command",
+      "query"
+     ]
+    },
+    "mode": {
+     "enum": [
+      "managed",
+      "scaffold-once",
+      "checked",
+      "custom"
+     ]
+    },
+    "recipe": {
+     "description": "The managed recipe kind actually emitted, or the bounded unsupported reason when the operation was declared managed but refused.",
+     "type": "string",
+     "pattern": "^[a-z][a-z0-9.-]*$"
+    },
+    "entry": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "fqn",
+      "method",
+      "path"
+     ],
+     "properties": {
+      "fqn": {
+       "$ref": "#/$defs/fqn"
+      },
+      "method": {
+       "const": "handle"
+      },
+      "path": {
+       "$ref": "#/$defs/logicalPath"
+      }
+     }
+    },
+    "input": {
+     "description": "The input role: the reused types-family command input FQN, or the operations-family query input FQN the map emits.",
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "fqn"
+     ],
+     "properties": {
+      "fqn": {
+       "$ref": "#/$defs/fqn"
+      }
+     }
+    },
+    "result": {
+     "description": "The result role: the mapped return type identity (types-family FQN), or null for a unit command.",
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "fqn"
+     ],
+     "properties": {
+      "fqn": {
+       "$ref": "#/$defs/fqn"
+      }
+     }
+    },
+    "errors": {
+     "description": "The declared domain error classes (infrastructure-category registry members never appear here), sorted by id.",
+     "type": "array",
+     "maxItems": 64,
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "id",
+       "fqn"
+      ],
+      "properties": {
+       "id": {
+        "$ref": "#/$defs/semanticId"
+       },
+       "fqn": {
+        "$ref": "#/$defs/fqn"
+       }
+      }
+     }
+    },
+    "ports": {
+     "description": "The injected dependency ports of the handler, sorted by name.",
+     "type": "array",
+     "maxItems": 16,
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "name",
+       "role"
+      ],
+      "properties": {
+       "name": {
+        "description": "The PascalCase interface stem.",
+        "type": "string",
+        "pattern": "^[A-Z][A-Za-z0-9_]*$"
+       },
+       "role": {
+        "description": "repository: the narrow read/write interface of one entity. policy: the per-operation authorization port. events: the per-operation event dispatch port. transactions: the shared transaction port. delegation: the port the port-delegation recipe delegates to.",
+        "enum": [
+         "repository",
+         "policy",
+         "events",
+         "transactions",
+         "delegation"
+        ]
+       },
+       "entity": {
+        "description": "For repository ports: the entity semantic id.",
+        "$ref": "#/$defs/semanticId"
+       }
+      }
+     }
+    },
+    "policy": {
+     "description": "The declared policy binding id, when the operation declares one.",
+     "$ref": "#/$defs/semanticId"
+    },
+    "transaction": {
+     "enum": [
+      "required",
+      "forbidden"
+     ]
+    },
+    "effects": {
+     "description": "The declared IR effect ids the operation resolves to, sorted; the reconciliation baseline for the detected-effect join.",
+     "type": "array",
+     "maxItems": 64,
+     "items": {
+      "$ref": "#/$defs/semanticId"
+     }
+    }
+   }
+  },
+  "artifact": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "path",
+    "role",
+    "lifecycle"
+   ],
+   "properties": {
+    "path": {
+     "$ref": "#/$defs/logicalPath"
+    },
+    "role": {
+     "description": "handler: the entrypoint class. ports: narrow per-operation interfaces. shared: ActorContext, TransactionPort, OperationError. repository: a per-entity repository interface. errors: typed domain error classes. classmap: the deterministic class map. sidecar: this map.",
+     "enum": [
+      "handler",
+      "ports",
+      "shared",
+      "repository",
+      "errors",
+      "classmap",
+      "sidecar",
+      "declared"
+     ]
+    },
+    "lifecycle": {
+     "enum": [
+      "generated",
+      "scaffolded",
+      "checked"
+     ]
+    },
+    "operation": {
+     "description": "The owning operation id for handler/ports/errors artifacts.",
+     "$ref": "#/$defs/semanticId"
+    },
+    "digest": {
+     "description": "The content digest; required for every emitted role and forbidden for declared-only rows.",
+     "$ref": "#/$defs/sha256"
+    }
+   }
+  }
+ }
+}

@@ -1175,6 +1175,36 @@ function native_gates_policy_document(): array
  * operation could run. Always maps to a bounded stderr diagnostic plus
  * exit 1 — a synthetic envelope with a fabricated echo is never legal.
  */
+/**
+ * The operations-generator modules, in fixed load order (issue #59).
+ * They depend on the type modules' naming and codec helpers, so the
+ * type modules load first. Inside the shipped artifact everything is
+ * appended and loading is a no-op.
+ */
+function load_operation_modules(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+    $loaded = true;
+    load_type_modules();
+    if (function_exists('php_validate_operations_input') && function_exists('php_emit_operations')) {
+        return;
+    }
+    foreach ([
+        __DIR__ . '/operation-policy.php',
+        __DIR__ . '/operation-map.php',
+        __DIR__ . '/operation-emit.php',
+        __DIR__ . '/operation-bindings.php',
+    ] as $module) {
+        if (!is_file($module)) {
+            throw new RequestRefusal('compiler-module-missing');
+        }
+        require_once $module;
+    }
+}
+
 final class RequestRefusal extends RuntimeException
 {
     public function __construct(string $code)
@@ -2089,11 +2119,52 @@ function deterministic_generation(array $request): array
     if (is_string($irPath) && is_scenario_ir_path($irPath)) {
         return scenario_deterministic_generation($request, $irPath);
     }
+    $operationsRequest = resolve_operations_request($request);
+    if ($operationsRequest !== null) {
+        return operations_deterministic_generation($operationsRequest);
+    }
     $typesRequest = resolve_types_request($request);
     if ($typesRequest !== null) {
         return types_deterministic_generation($typesRequest);
     }
     return kernel_deterministic_generation($request);
+}
+
+/** Whether one path is the operations input home. */
+function is_operations_ir_path(string $path): bool
+{
+    return str_starts_with($path, 'lekalo/operations/')
+        && str_ends_with($path, '.operations.json');
+}
+
+/**
+ * The operations request for one incoming request, or null when the
+ * request does not drive operations generation: either the ir_path is
+ * already an operations input document, or it is the core's staged IR
+ * evidence whose project carries a declared operations input beside it
+ * (issue #59). The operations family requires the types input too; an
+ * operations run without the bound types document refuses at generation
+ * time, not here (the routing must stay a pure read decision).
+ */
+function resolve_operations_request(array $request): ?array
+{
+    $irPath = $request['ir_path'] ?? '';
+    if (!is_string($irPath)) {
+        return null;
+    }
+    if (is_operations_ir_path($irPath)) {
+        return $request;
+    }
+    if (!is_types_evidence_path($irPath)) {
+        return null;
+    }
+    $operationsDoc = 'lekalo/operations/' . basename($irPath, '.json') . '.operations.json';
+    if (!is_operations_ir_path($operationsDoc) || read_view_file($operationsDoc) === null) {
+        return null;
+    }
+    $flipped = $request;
+    $flipped['ir_path'] = $operationsDoc;
+    return $flipped;
 }
 
 /** The scenario branch of the deterministic generation entry. */
@@ -2213,6 +2284,365 @@ function types_deterministic_generation(array $request): array
             'findings' => [],
         ];
     }
+}
+
+/**
+ * The composed types + operations branch of the deterministic
+ * generation entry (issue #59): missing managed types and operations
+ * generate in ONE authorized plan. Overlapping paths or any failed
+ * required family vetoes every write before publication.
+ */
+function operations_deterministic_generation(array $request): array
+{
+    $outcome = operations_generation($request);
+    if (isset($outcome['refusal'])) {
+        throw new RequestRefusal($outcome['refusal']);
+    }
+    if ($outcome['findings'] !== []) {
+        // Capability honesty: any compile-time finding vetoes every
+        // write across BOTH families - zero partial publication.
+        return [
+            'path' => null,
+            'bytes' => '',
+            'digest' => null,
+            'writes' => [],
+            'findings' => $outcome['findings'],
+        ];
+    }
+    $writes = [];
+    $skipWrites = $outcome['skip_writes'] ?? [];
+    $files = array_map(
+        static fn (array $file): array => [
+            'path' => $file['path'],
+            'bytes' => $file['text'],
+            'digest' => $file['digest'],
+            'frozen' => $file['lifecycle'] === 'scaffolded',
+            'marker' => $file['lifecycle'] === 'scaffolded'
+                ? PHP_OPERATIONS_SCAFFOLD_ROOT . '/operations.map.json'
+                : null,
+        ],
+        $outcome['files'],
+    );
+    foreach ($outcome['files'] as $file) {
+        if (isset($skipWrites[$file['path']])) {
+            continue;
+        }
+        $writes[] = [
+            'path' => $file['path'],
+            'action' => 'create',
+            'sha256' => $file['digest'],
+        ];
+    }
+    return [
+        'path' => null,
+        'bytes' => '',
+        'digest' => null,
+        'writes' => $writes,
+        'files' => $files,
+        'findings' => [],
+    ];
+}
+
+/**
+ * The read-and-map-and-emit flow of the composed operations run: the
+ * validated operations input names the exact IR evidence and the bound
+ * #58 types input; both families plan together; managed emissions land
+ * under the generated root, scaffold-once emissions once under the
+ * closed consumer root, checked and custom records never write.
+ */
+function operations_generation(array $request): array
+{
+    load_operation_modules();
+    $irPath = (string) ($request['ir_path'] ?? '');
+    $inputText = read_view_file($irPath);
+    if ($inputText === null) {
+        return ['refusal' => 'operations-input-unreadable'];
+    }
+    try {
+        $document = json_decode($inputText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'operations-input-shape'];
+    }
+    if (is_array($document)
+        && isset($document['schemaVersion'], $document['identity'])
+        && ($document['schemaVersion'] !== PHP_OPERATIONS_INPUT_SCHEMA_VERSION
+            || $document['identity'] !== PHP_OPERATIONS_INPUT_IDENTITY)) {
+        return ['refusal' => 'operations-input-identity'];
+    }
+    $input = php_validate_operations_input($document);
+    if ($input === null) {
+        return ['refusal' => 'operations-input-shape'];
+    }
+    $findingOnly = static fn (array $findings): array => [
+        'files' => [],
+        'findings' => $findings,
+        'skip_writes' => [],
+    ];
+    // The bound types family: required dependency, exact digest.
+    $typesDoc = 'lekalo/types/' . $input['projectId'] . '.types.json';
+    $typesText = read_view_file($typesDoc);
+    if ($typesText === null || !is_types_ir_path($typesDoc)) {
+        return $findingOnly([[
+            'path' => $input['projectId'] . '.operations',
+            'code' => 'operations.types-unbound',
+            'detail' => 'the operations input requires the bound types input document',
+        ]]);
+    }
+    $typesDigest = sha256_digest($typesText);
+    if ($typesDigest !== $input['typesInputDigest']) {
+        return $findingOnly([[
+            'path' => $input['projectId'] . '.operations',
+            'code' => 'operations.types-unbound',
+            'detail' => 'the input names different types-input bytes than the committed document',
+        ]]);
+    }
+    $typesRequest = $request;
+    $typesRequest['ir_path'] = $typesDoc;
+    $typesOutcome = types_deterministic_generation($typesRequest);
+    if (isset($typesOutcome['refusal'])) {
+        return ['refusal' => $typesOutcome['refusal']];
+    }
+    // Required-family findings veto the composed run: the types family
+    // (checked custody, unsupported projections) answers a findings-only
+    // envelope with no files, and publishing operations alone would be
+    // exactly the partial publication the composition refuses. The rows
+    // are already wire findings; they merge into the composed veto.
+    if (($typesOutcome['findings'] ?? []) !== []) {
+        return $findingOnly($typesOutcome['findings']);
+    }
+    // The compiled IR evidence: the only bytes an adapter may read.
+    $irEvidenceText = read_view_file(IR_EVIDENCE_HOME . '/' . $input['projectId'] . '.json');
+    if ($irEvidenceText === null) {
+        return ['refusal' => 'operations-ir-unreadable'];
+    }
+    try {
+        $irEvidence = json_decode($irEvidenceText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'operations-ir-shape'];
+    }
+    if (!is_array($irEvidence) || ($irEvidence['contract'] ?? null) !== PHP_TYPES_IR_IDENTITY) {
+        return ['refusal' => 'operations-ir-identity'];
+    }
+    if (sha256_digest($irEvidenceText) !== $input['irDigest']) {
+        return ['refusal' => 'operations-input-digest'];
+    }
+    // The mapped type inventory (the naming authority the handlers reuse).
+    try {
+        $typesInput = php_validate_types_input(json_decode($typesText, true, 512, JSON_THROW_ON_ERROR));
+    } catch (JsonException) {
+        return ['refusal' => 'operations-input-shape'];
+    }
+    if ($typesInput === null) {
+        return ['refusal' => 'operations-types-unbound'];
+    }
+    $mappedTypes = php_map_types([
+        'ir' => $irEvidence,
+        'policy' => $typesInput['policy'],
+        'irDigest' => $typesInput['irDigest'],
+        'inputDigest' => $typesDigest,
+    ]);
+    if ($mappedTypes['state'] !== 'mapped') {
+        return $findingOnly(types_wire_findings($mappedTypes['findings']));
+    }
+    $definitions = [];
+    foreach ($irEvidence['definitions'] ?? [] as $index => $definition) {
+        if (is_array($definition) && is_string($definition['id'] ?? null)) {
+            $definitions[$definition['id']] = $definition;
+        }
+    }
+    $context = [
+        'input' => $input,
+        'definitions' => $definitions,
+        'typesIndex' => $mappedTypes['index'],
+        'namespacePrefix' => $input['namespacePrefix'],
+        'root' => PHP_OPERATIONS_GENERATED_ROOT,
+        'irDigest' => $input['irDigest'],
+        'inputDigest' => sha256_digest($inputText),
+        'typesInputDigest' => $typesDigest,
+    ];
+    $emitContext = [
+        'projectId' => $input['projectId'],
+        'context' => $context,
+        'definitions' => $definitions,
+        'typesIndex' => $mappedTypes['index'],
+        'namespacePrefix' => $input['namespacePrefix'],
+    ];
+    $files = [];
+    $findings = [];
+    $skipWrites = [];
+    $claimed = [];
+    foreach (($typesOutcome['files'] ?? []) as $file) {
+        $claimed[$file['path']] = true;
+        // Normalize the types rows onto the operations row shape.
+        $files[] = [
+            'path' => $file['path'],
+            'text' => $file['bytes'],
+            'digest' => $file['digest'],
+            'role' => 'types',
+            'lifecycle' => 'generated',
+        ];
+    }
+    foreach (['emittable' => PHP_OPERATIONS_GENERATED_ROOT, 'scaffold' => PHP_OPERATIONS_SCAFFOLD_ROOT] as $root) {
+        $records = array_values(array_filter(
+            $input['operations'],
+            static fn (array $record): bool => $root === PHP_OPERATIONS_SCAFFOLD_ROOT
+                ? $record['mode'] === 'scaffold-once'
+                : in_array($record['mode'], ['managed'], true),
+        ));
+        $checkedRecords = $root === PHP_OPERATIONS_GENERATED_ROOT
+            ? array_values(array_filter(
+                $input['operations'],
+                static fn (array $record): bool => in_array($record['mode'], ['checked', 'custom'], true),
+            ))
+            : [];
+        $runContext = $context;
+        $runContext['root'] = $root;
+        $runContext['input'] = array_merge($input, ['operations' => $records]);
+        if ($records !== []) {
+            $mapped = php_map_operations($runContext);
+            if ($mapped['state'] !== 'mapped') {
+                return $findingOnly(types_wire_findings($mapped['findings']));
+            }
+            // Scaffold custody: with the marker present the whole root
+            // is user-owned and nothing is planned; with the marker
+            // absent, ANY pre-existing path refuses.
+            $marker = $root . '/operations.map.json';
+            $emitted = php_emit_operations(array_merge($emitContext, [
+                'mapped' => $mapped,
+                'root' => $root,
+            ]));
+            if ($root === PHP_OPERATIONS_SCAFFOLD_ROOT) {
+                if (is_file($marker)) {
+                    foreach ($emitted['files'] as $file) {
+                        $skipWrites[$file['path']] = true;
+                    }
+                    foreach ($emitted['files'] as $file) {
+                        if (!isset($claimed[$file['path']])) {
+                            $claimed[$file['path']] = true;
+                            $files[] = $file;
+                        }
+                    }
+                } else {
+                    foreach ($emitted['files'] as $file) {
+                        if (is_file($file['path'])) {
+                            return ['refusal' => 'operations-scaffold-unowned'];
+                        }
+                    }
+                    foreach ($emitted['files'] as $file) {
+                        if (!isset($claimed[$file['path']])) {
+                            $claimed[$file['path']] = true;
+                            $files[] = $file;
+                        }
+                    }
+                }
+            } else {
+                foreach ($emitted['files'] as $file) {
+                    if (isset($claimed[$file['path']])) {
+                        throw new RequestRefusal('operations-path-collision');
+                    }
+                    $claimed[$file['path']] = true;
+                    $files[] = $file;
+                }
+            }
+        }
+        if ($checkedRecords !== []) {
+            $evidence = read_operations_evidence();
+            foreach (php_check_operation_bindings($checkedRecords, $definitions, $evidence, $input, $context['inputDigest'], static function (string $path): ?string {
+                $digest = is_file($path) ? hash_file('sha256', $path) : false;
+                return $digest === false ? null : 'sha256:' . $digest;
+            }) as $bindingFinding) {
+                $findings[] = types_wire_findings([$bindingFinding])[0];
+            }
+        }
+    }
+    usort($files, static fn (array $left, array $right): int => strcmp((string) $left['path'], (string) $right['path']));
+    return [
+        'files' => $files,
+        'findings' => $findings,
+        'skip_writes' => $skipWrites,
+    ];
+}
+
+/** The parsed observed operations evidence, or null when absent/corrupt. */
+function read_operations_evidence(): ?array
+{
+    $text = read_view_file(PHP_OPERATIONS_EVIDENCE_PATH);
+    if ($text === null) {
+        return null;
+    }
+    try {
+        $document = json_decode($text, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return null;
+    }
+    return php_validate_operations_evidence($document);
+}
+
+/**
+ * The operations validate exchange (issue #59): the same composed
+ * read-and-map path generate uses, but no writes ever result.
+ */
+function operations_validate_response(array $request): array
+{
+    $outcome = operations_generation($request);
+    if (isset($outcome['refusal'])) {
+        return ['error' => [
+            'class' => 'invalid',
+            'code' => $outcome['refusal'],
+            'message' => 'the operations input could not be read or mapped',
+            'retryable' => false,
+            'partial' => false,
+        ]];
+    }
+    return build_response($request, ['result' => ['ok' => true, 'findings' => $outcome['findings']]]);
+}
+
+/**
+ * The operations verify exchange (issue #59): managed files are
+ * compared by exact digest (missing/drifted are operations.drift);
+ * scaffold files are existence-checked under the surviving marker;
+ * checked and custom records re-run the strict shape join.
+ */
+function operations_verify_response(array $request): array
+{
+    $outcome = operations_generation($request);
+    if (isset($outcome['refusal'])) {
+        return ['error' => [
+            'class' => 'invalid',
+            'code' => $outcome['refusal'],
+            'message' => 'the operations input could not be read or mapped',
+            'retryable' => false,
+            'partial' => false,
+        ]];
+    }
+    $findings = $outcome['findings'];
+    foreach ($outcome['files'] as $file) {
+        if (str_starts_with((string) $file['path'], PHP_OPERATIONS_SCAFFOLD_ROOT . '/')) {
+            // Scaffold-once custody: user-owned, existence-checked only
+            // under the surviving marker. A skipped regeneration (the
+            // marker-guarded emission of this same run) is the only row
+            // that may report a removed scaffold: with no marker the
+            // emission refusal already named the unowned path.
+            $marker = PHP_OPERATIONS_SCAFFOLD_ROOT . '/operations.map.json';
+            $markerGuarded = isset($outcome['skip_writes'][$file['path']]);
+            if ($markerGuarded && !is_file($file['path']) && is_file($marker)) {
+                $findings[] = [
+                    'path' => $file['path'],
+                    'code' => 'operations.scaffold-missing',
+                    'detail' => 'scaffolded-operation-removed',
+                ];
+            }
+            continue;
+        }
+        $expectedDigest = $file['digest'];
+        $actual = is_file($file['path']) ? hash_file('sha256', $file['path']) : false;
+        if ($actual === false) {
+            $findings[] = ['path' => $file['path'], 'code' => 'operations.drift', 'detail' => 'missing'];
+        } elseif ($actual !== substr((string) $expectedDigest, 7)) {
+            $findings[] = ['path' => $file['path'], 'code' => 'operations.drift', 'detail' => 'drifted'];
+        }
+    }
+    return build_response($request, ['result' => ['ok' => true, 'findings' => $findings]]);
 }
 
 /** The kernel-artifact fallback of the deterministic generation entry. */
@@ -3149,9 +3579,9 @@ function adapter_identity(): array
 function describe_capabilities(?Analyzer $analyzer = null): array
 {
     $analyzer ??= new FakeAnalyzer();
-    // The type-policy module carries the closed scaffold-root constant
-    // the declared write scope names; load before describing.
-    load_type_modules();
+    // The operations modules carry the closed scaffold-root constants
+    // the declared write scopes name; load before describing.
+    load_operation_modules();
     return [
         'adapter' => adapter_identity(),
         'protocol_versions' => SUPPORTED_VERSIONS,
@@ -3168,6 +3598,12 @@ function describe_capabilities(?Analyzer $analyzer = null): array
             'lekalo/php-test-port.json',
             'lekalo/scenarios/**',
             'lekalo/types/**',
+            // Issue #59: the operations input home, the managed
+            // operations root, and the consumer scaffold home are read
+            // back for the drift, custody, and checked-join gates.
+            'lekalo/operations/**',
+            '.lekalo/generated/php-laravel/operations/**',
+            'app/lekalo-operations/**',
             // Managed types and the scaffold home are read back for the
             // drift and checked-custody gates: write authority only
             // reveals a staged output's shape, so reading the bytes an
@@ -3181,10 +3617,14 @@ function describe_capabilities(?Analyzer $analyzer = null): array
             SCENARIO_WRITE_SCOPES,
             [PHP_SCAFFOLD_SCOPE],
             [PHP_TYPES_SCAFFOLD_ROOT . '/**'],
+            [PHP_OPERATIONS_SCAFFOLD_ROOT . '/**'],
         ),
         'progress' => false,
         'ir_versions' => [IR_VERSION],
-        'capabilities' => DECLARED_CAPABILITIES,
+        'capabilities' => array_merge(DECLARED_CAPABILITIES, [
+            'generate.operations' => 'partial',
+            'verify.operations' => 'partial',
+        ]),
         // The advisory bound mirrors the kernel's real write-plan file
         // cap (MAX_WRITE_FILES): a declared constraint never exceeds an
         // internally enforced one.
@@ -3429,6 +3869,9 @@ function validate_response(array $request, ?Analyzer $analyzer = null): array
     if (is_scenario_ir_path($irPath)) {
         return scenario_validate_response($request);
     }
+    if (resolve_operations_request($request) !== null) {
+        return operations_validate_response(resolve_operations_request($request));
+    }
     if (resolve_types_request($request) !== null) {
         return types_validate_response(resolve_types_request($request));
     }
@@ -3497,6 +3940,9 @@ function verify_response(array $request, ?Analyzer $analyzer = null): array
     $irPath = is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '';
     if (is_scenario_ir_path($irPath)) {
         return scenario_verify_response($request);
+    }
+    if (resolve_operations_request($request) !== null) {
+        return operations_verify_response(resolve_operations_request($request));
     }
     if (resolve_types_request($request) !== null) {
         return types_verify_response(resolve_types_request($request));
@@ -3725,7 +4171,25 @@ function generate_response(array $request): array
     $writes = deterministic_writes($artifact);
     if ($artifact['findings'] !== []) {
         // Capability honesty: a compile-time finding vetoes every write.
-        return build_response($request, ['result' => ['writes' => [], 'findings' => $artifact['findings']]]);
+        // The closed v0.3.2 generate result carries no findings member
+        // (the client's completeness gate requires `result` to be
+        // absent), so the veto is the bounded in-envelope error form:
+        // the first sorted finding code names the refusal class and the
+        // message carries its bounded detail. The envelope carries no
+        // writes member at all — the client admits writes on an error
+        // only with partial=true, and a veto is not a partial success —
+        // and no plan authority: there is nothing to apply.
+        $first = $artifact['findings'][0];
+        $detail = (string) ($first['detail'] ?? $first['code']);
+        return build_response($request, [
+            'error' => [
+                'class' => 'invalid',
+                'code' => (string) $first['code'],
+                'message' => utf8_safe_clamp($detail, 256),
+                'retryable' => false,
+                'partial' => false,
+            ],
+        ]);
     }
     if (($request['dry_run'] ?? null) === false) {
         // The apply authority is the client's pending binding, never a
@@ -3782,7 +4246,8 @@ function plan_clean_response(array $request): array
     foreach ($writes as $entry) {
         if (retained_artifact($entry['path'])
             || scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])
-            || scope_covers(types_scaffold_scope(), $entry['path'])) {
+            || scope_covers(types_scaffold_scope(), $entry['path'])
+            || scope_covers(operations_scaffold_scope(), $entry['path'])) {
             continue;
         }
         $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
@@ -3791,6 +4256,17 @@ function plan_clean_response(array $request): array
         'writes' => $plan,
         'evidence_plan_id' => plan_id($plan),
     ]);
+}
+
+/**
+ * The user-owned scaffold scope of operations generation (issue #59):
+ * the closed consumer root is recognized by path convention, so a
+ * policy cannot silently move a scaffold under an unrecognized root.
+ */
+function operations_scaffold_scope(): string
+{
+    load_operation_modules();
+    return PHP_OPERATIONS_SCAFFOLD_ROOT . '/**';
 }
 
 /**
@@ -3837,7 +4313,8 @@ function clean_response(array $request): array
     $plan = [];
     foreach ($writes as $entry) {
         if (scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])
-            || scope_covers(types_scaffold_scope(), $entry['path'])) {
+            || scope_covers(types_scaffold_scope(), $entry['path'])
+            || scope_covers(operations_scaffold_scope(), $entry['path'])) {
             continue;
         }
         $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
@@ -4074,7 +4551,8 @@ function apply_writes(array $writes, array $files): void
         }
         if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope
             && !scope_covers(PHP_SCAFFOLD_SCOPE, $path)
-            && !scope_covers(types_scaffold_scope(), $path)) {
+            && !scope_covers(types_scaffold_scope(), $path)
+            && !scope_covers(operations_scaffold_scope(), $path)) {
             throw new RequestRefusal('write-denied');
         }
         $bytes = $bytesByPath[$path] ?? null;
@@ -4123,7 +4601,8 @@ function delete_write(string $path): void
 {
     if (!is_logical_path($path) || protected_home($path) !== null
         || scope_covers(PHP_SCAFFOLD_SCOPE, $path)
-        || scope_covers(types_scaffold_scope(), $path)) {
+        || scope_covers(types_scaffold_scope(), $path)
+        || scope_covers(operations_scaffold_scope(), $path)) {
         // The scaffold scopes are user-owned: no kernel path may delete
         // inside them, whatever plan claimed otherwise.
         throw new RequestRefusal('write-denied');
@@ -9453,6 +9932,2292 @@ function php_validate_types_evidence(mixed $document): ?array
         }
     }
     return $document;
+}
+
+// ----- bundled compiler module: operation-policy.php -----
+
+/**
+ * The closed operations policy and input validation of the PHP Laravel
+ * operations generator (issue #59). Everything here is pure validation
+ * over plain data: the bounded operations input document
+ * (`lekalo/operations/*.operations.json`, contract
+ * `dev.lekalo.php-operations-input@0.4.0`). Nothing reads the
+ * filesystem, nothing writes, nothing executes project code.
+ *
+ * The closed grammar mirrors `contracts/php-operations-input.schema.v0.4.0.json`
+ * and the core join (`crates/lekalo-core/src/php_operations/`) exactly:
+ * unknown members and unknown enum values refuse. The core join is the
+ * acceptance authority; this mirror is the adapter's defensive gate so
+ * a request can never reach the emitter half-validated.
+ */
+
+const PHP_OPERATIONS_INPUT_SCHEMA_VERSION = 'lekalo/php-operations-input/v0.4.0';
+const PHP_OPERATIONS_INPUT_IDENTITY = 'dev.lekalo.php-operations-input@0.4.0';
+const PHP_OPERATIONS_MAP_SCHEMA_VERSION = 'lekalo/php-operations-map/v0.4.0';
+const PHP_OPERATIONS_MAP_IDENTITY = 'dev.lekalo.php-operations-map@0.4.0';
+const PHP_OPERATIONS_EVIDENCE_SCHEMA_VERSION = 'lekalo/php-operations-evidence/v0.4.0';
+const PHP_OPERATIONS_EVIDENCE_IDENTITY = 'dev.lekalo.php-operations-evidence@0.4.0';
+
+/** The generated operations root (managed custody). */
+const PHP_OPERATIONS_GENERATED_ROOT = '.lekalo/generated/php-laravel/operations';
+
+/** The user-owned scaffold home of operations generation (closed). */
+const PHP_OPERATIONS_SCAFFOLD_ROOT = 'app/lekalo-operations';
+
+/** The observed-handler evidence the checked join consumes. */
+const PHP_OPERATIONS_EVIDENCE_PATH = '.lekalo/import/observed/operations-evidence.json';
+
+const PHP_OPERATIONS_DEFAULT_NAMESPACE_PREFIX = 'Lekalo\\Generated\\Operations';
+const PHP_OPERATIONS_SCAFFOLD_NAMESPACE_PREFIX = 'App\\LekaloOperations';
+
+/** The bounded refusals of the operations input join. */
+const PHP_OPERATIONS_REFUSALS = [
+    'operations-input-unreadable',
+    'operations-input-shape',
+    'operations-input-identity',
+    'operations-types-unbound',
+    'operations-ir-digest',
+    'operations-ir-unreadable',
+    'operations-ir-shape',
+    'operations-ir-identity',
+    'operations-input-digest',
+];
+
+/**
+ * Validate one parsed operations input document against its closed
+ * shape. Returns the normalized input array, or null when the document
+ * is not the accepted contract (a present-but-invalid document is an
+ * authoring error, never an all-defaults fallback).
+ */
+function php_validate_operations_input(mixed $document): ?array
+{
+    if (!is_array($document)
+        || ($document['schemaVersion'] ?? null) !== PHP_OPERATIONS_INPUT_SCHEMA_VERSION
+        || ($document['identity'] ?? null) !== PHP_OPERATIONS_INPUT_IDENTITY) {
+        return null;
+    }
+    // The closed member set (additionalProperties: false): an unknown
+    // member is an authoring error, never a silently ignored hint.
+    foreach (array_keys($document) as $member) {
+        if (!in_array($member, ['schemaVersion', 'identity', 'projectId', 'irDigest', 'typesInputDigest', 'policy', 'operations'], true)) {
+            return null;
+        }
+    }
+    $projectId = $document['projectId'] ?? null;
+    if (!is_string($projectId) || preg_match('/^[a-z][a-z0-9_]*$/', $projectId) !== 1) {
+        return null;
+    }
+    foreach (['irDigest', 'typesInputDigest'] as $digest) {
+        if (!is_sha256_digest($document[$digest] ?? null)) {
+            return null;
+        }
+    }
+    $prefix = PHP_OPERATIONS_DEFAULT_NAMESPACE_PREFIX;
+    if (array_key_exists('policy', $document)) {
+        $policy = $document['policy'];
+        if (!is_array($policy) || count($policy) !== 1
+            || !isset($policy['namespacePrefix'])
+            || !is_string($policy['namespacePrefix'])
+            || preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,7}$/', $policy['namespacePrefix']) !== 1) {
+            return null;
+        }
+        $prefix = $policy['namespacePrefix'];
+    }
+    $operations = $document['operations'] ?? null;
+    if (!is_array($operations) || $operations === [] || count($operations) > 4096) {
+        return null;
+    }
+    $records = [];
+    $previous = '';
+    foreach ($operations as $record) {
+        $validated = php_validate_operation_record($record);
+        if ($validated === null) {
+            return null;
+        }
+        if ($validated['id'] <= $previous) {
+            // Canonical order is part of the shape.
+            return null;
+        }
+        $previous = $validated['id'];
+        $records[] = $validated;
+    }
+    return [
+        'projectId' => $projectId,
+        'irDigest' => $document['irDigest'],
+        'typesInputDigest' => $document['typesInputDigest'],
+        'namespacePrefix' => $prefix,
+        'operations' => $records,
+    ];
+}
+
+/**
+ * Validate one operation record against the closed shape.
+ *
+ * @return array<string, mixed>|null
+ */
+function php_validate_operation_record(mixed $record): ?array
+{
+    if (!is_array($record)) {
+        return null;
+    }
+    // The closed record member set (additionalProperties: false).
+    foreach (array_keys($record) as $member) {
+        if (!in_array($member, ['id', 'kind', 'mode', 'entry', 'recipe', 'errors', 'policy', 'transaction'], true)) {
+            return null;
+        }
+    }
+    $id = $record['id'] ?? null;
+    if (!is_string($id) || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $id) !== 1) {
+        return null;
+    }
+    $kind = $record['kind'] ?? null;
+    if ($kind !== 'command' && $kind !== 'query') {
+        return null;
+    }
+    $mode = $record['mode'] ?? null;
+    if (!in_array($mode, ['managed', 'scaffold-once', 'checked', 'custom'], true)) {
+        return null;
+    }
+    $entry = null;
+    if (array_key_exists('entry', $record) && $record['entry'] !== null) {
+        $entry = php_validate_operation_entry($record['entry']);
+        if ($entry === null) {
+            return null;
+        }
+    }
+    $recipe = null;
+    if (array_key_exists('recipe', $record) && $record['recipe'] !== null) {
+        $recipe = php_validate_recipe($record['recipe']);
+        if ($recipe === null) {
+            return null;
+        }
+    }
+    $errors = [];
+    if (array_key_exists('errors', $record) && $record['errors'] !== null) {
+        if (!is_array($record['errors']) || count($record['errors']) > 64) {
+            return null;
+        }
+        $previous = '';
+        foreach ($record['errors'] as $error) {
+            if (!is_string($error)
+                || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $error) !== 1
+                || $error <= $previous) {
+                return null;
+            }
+            $previous = $error;
+            $errors[] = $error;
+        }
+    }
+    $policyId = null;
+    if (array_key_exists('policy', $record) && $record['policy'] !== null) {
+        $policy = $record['policy'];
+        if (!is_array($policy) || count($policy) !== 1) {
+            return null;
+        }
+        $policyId = $policy['id'] ?? null;
+        if (!is_string($policyId)
+            || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $policyId) !== 1) {
+            return null;
+        }
+    }
+    $transaction = 'forbidden';
+    if (array_key_exists('transaction', $record) && $record['transaction'] !== null) {
+        $transaction = $record['transaction']['mode'] ?? null;
+        if ($transaction !== 'required' && $transaction !== 'forbidden') {
+            return null;
+        }
+    }
+    // Mode pairing: checked/custom declare, managed/scaffold carry the
+    // closed recipe that drives the signature (the scaffold body stays
+    // the explicit unimplemented failure).
+    if (in_array($mode, ['checked', 'custom'], true) !== ($entry !== null)) {
+        return null;
+    }
+    if (in_array($mode, ['managed', 'scaffold-once'], true) !== ($recipe !== null)) {
+        return null;
+    }
+    return [
+        'id' => $id,
+        'kind' => $kind,
+        'mode' => $mode,
+        'entry' => $entry,
+        'recipe' => $recipe,
+        'errors' => $errors,
+        'policyId' => $policyId,
+        'transaction' => $transaction,
+    ];
+}
+
+/** Validate one declared native entrypoint. */
+function php_validate_operation_entry(mixed $entry): ?array
+{
+    if (!is_array($entry) || count($entry) !== 3) {
+        return null;
+    }
+    $fqn = $entry['fqn'] ?? null;
+    $method = $entry['method'] ?? null;
+    $path = $entry['path'] ?? null;
+    if (!is_string($fqn)
+        || preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,7}$/', $fqn) !== 1) {
+        return null;
+    }
+    if ($method !== 'handle') {
+        return null;
+    }
+    if (!is_string($path) || preg_match('/^[a-z][a-z0-9_.\/-]*\.php$/', $path) !== 1
+        || str_contains($path, '..')) {
+        return null;
+    }
+    return ['fqn' => $fqn, 'method' => $method, 'path' => $path];
+}
+
+/**
+ * Validate one closed recipe. Only the grammar is decided here; the
+ * semantic join is the core's authority (and the core runs it before
+ * any adapter exchange).
+ */
+function php_validate_recipe(mixed $recipe): ?array
+{
+    if (!is_array($recipe) || !is_string($recipe['kind'] ?? null)) {
+        return null;
+    }
+    if ($recipe['kind'] === 'port-delegation') {
+        if (count($recipe) > 4) {
+            return null;
+        }
+        $port = $recipe['port'] ?? null;
+        $method = $recipe['method'] ?? null;
+        $result = $recipe['result'] ?? null;
+        if (!is_string($port) || preg_match('/^[A-Z][A-Za-z0-9_]*$/', $port) !== 1) {
+            return null;
+        }
+        if (!is_string($method) || preg_match('/^[a-z][A-Za-z0-9_]*$/', $method) !== 1) {
+            return null;
+        }
+        if ($result !== null
+            && (!is_string($result)
+                || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $result) !== 1)) {
+            return null;
+        }
+        return ['kind' => 'port-delegation', 'port' => $port, 'method' => $method, 'result' => $result];
+    }
+    if ($recipe['kind'] !== 'single-entity-update') {
+        return null;
+    }
+    foreach (['entity', 'key', 'assignments', 'kept', 'missingBehavior'] as $required) {
+        if (!array_key_exists($required, $recipe)) {
+            return null;
+        }
+    }
+    if (count($recipe) > 8) {
+        return null;
+    }
+    $entity = $recipe['entity'];
+    if (!is_string($entity)
+        || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $entity) !== 1) {
+        return null;
+    }
+    $key = $recipe['key'];
+    if (!is_string($key) || php_operations_is_field_name($key) !== true) {
+        return null;
+    }
+    $assignments = [];
+    if (!is_array($recipe['assignments']) || $recipe['assignments'] === []
+        || count($recipe['assignments']) > 64) {
+        return null;
+    }
+    $seen = [];
+    foreach ($recipe['assignments'] as $assignment) {
+        if (!is_array($assignment) || count($assignment) !== 2
+            || !php_operations_is_field_name($assignment['field'] ?? null)) {
+            return null;
+        }
+        $value = php_operations_validate_operand($assignment['value'] ?? null);
+        if ($value === null || isset($seen[$assignment['field']])) {
+            return null;
+        }
+        $seen[$assignment['field']] = true;
+        $assignments[] = ['field' => $assignment['field'], 'value' => $value];
+    }
+    $kept = [];
+    if (!is_array($recipe['kept']) || count($recipe['kept']) > 64) {
+        return null;
+    }
+    foreach ($recipe['kept'] as $field) {
+        if (!php_operations_is_field_name($field) || isset($seen[$field])) {
+            return null;
+        }
+        $seen[$field] = true;
+        $kept[] = $field;
+    }
+    $preconditions = [];
+    if (array_key_exists('preconditions', $recipe)) {
+        if (!is_array($recipe['preconditions']) || count($recipe['preconditions']) > 16) {
+            return null;
+        }
+        foreach ($recipe['preconditions'] as $precondition) {
+            if (!is_array($precondition) || count($precondition) !== 3
+                || !php_operations_is_field_name($precondition['field'] ?? null)) {
+                return null;
+            }
+            $equals = php_operations_validate_operand($precondition['equals'] ?? null);
+            $error = $precondition['error'] ?? null;
+            if ($equals === null || !is_string($error)
+                || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $error) !== 1) {
+                return null;
+            }
+            $preconditions[] = ['field' => $precondition['field'], 'equals' => $equals, 'error' => $error];
+        }
+    }
+    $missing = $recipe['missingBehavior'];
+    if (!is_array($missing) || count($missing) !== 1
+        || !is_string($missing['error'] ?? null)
+        || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', (string) ($missing['error'] ?? '')) !== 1) {
+        return null;
+    }
+    $emissions = [];
+    if (array_key_exists('emit', $recipe)) {
+        if (!is_array($recipe['emit']) || count($recipe['emit']) > 16) {
+            return null;
+        }
+        foreach ($recipe['emit'] as $emission) {
+            if (!is_array($emission) || count($emission) !== 2) {
+                return null;
+            }
+            $event = $emission['event'] ?? null;
+            if (!is_string($event)
+                || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $event) !== 1
+                || !is_array($emission['payload']) || count($emission['payload']) > 64) {
+                return null;
+            }
+            $payload = [];
+            foreach ($emission['payload'] as $field => $operand) {
+                $value = php_operations_validate_operand($operand);
+                if ($value === null || !php_operations_is_field_name((string) $field)) {
+                    return null;
+                }
+                $payload[$field] = $value;
+            }
+            $emissions[] = ['event' => $event, 'payload' => $payload];
+        }
+    }
+    return [
+        'kind' => 'single-entity-update',
+        'entity' => $entity,
+        'key' => $key,
+        'assignments' => $assignments,
+        'kept' => $kept,
+        'preconditions' => $preconditions,
+        'missingBehavior' => ['error' => $missing['error']],
+        'emit' => $emissions,
+    ];
+}
+
+/** Whether one name is a closed camelCase field identifier. */
+function php_operations_is_field_name(mixed $name): bool
+{
+    return is_string($name)
+        && preg_match('/^[a-z][a-zA-Z0-9_]*$/', $name) === 1
+        && strlen($name) <= 63;
+}
+
+/** One closed typed operand, or null when the shape is foreign. */
+function php_operations_validate_operand(mixed $operand): ?array
+{
+    if (!is_array($operand) || count($operand) !== 1) {
+        return null;
+    }
+    if (isset($operand['fromInput'])) {
+        return php_operations_is_field_name($operand['fromInput'])
+            ? ['fromInput' => $operand['fromInput']]
+            : null;
+    }
+    if (isset($operand['fromEntity'])) {
+        return php_operations_is_field_name($operand['fromEntity'])
+            ? ['fromEntity' => $operand['fromEntity']]
+            : null;
+    }
+    if (isset($operand['enumCase'])) {
+        $case = $operand['enumCase'];
+        if (!is_array($case) || count($case) !== 2) {
+            return null;
+        }
+        $type = $case['type'] ?? null;
+        $value = $case['value'] ?? null;
+        if (!is_string($type)
+            || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $type) !== 1
+            || !is_string($value) || $value === '' || strlen($value) > 64
+            || preg_match('/^[a-zA-Z0-9_-]+$/', $value) !== 1) {
+            return null;
+        }
+        return ['enumCase' => ['type' => $type, 'value' => $value]];
+    }
+    if (array_key_exists('literal', $operand)) {
+        $literal = $operand['literal'];
+        if (is_string($literal) && strlen($literal) <= 256) {
+            return ['literal' => $literal];
+        }
+        if (is_bool($literal)) {
+            return ['literal' => $literal];
+        }
+        if (is_int($literal)) {
+            return ['literal' => $literal];
+        }
+    }
+    return null;
+}
+
+// ----- bundled compiler module: operation-map.php -----
+
+/**
+ * The operations mapper (issue #59): the validated input plus the
+ * compiled IR evidence plus the #58 type-map naming rules become one
+ * deterministic operations map — signatures, injected ports, role FQNs
+ * and the artifact inventory — before any byte is emitted. Reuses the
+ * type-map naming and codec helpers; never re-derives type spellings.
+ *
+ * Unsupported projections become bounded wire findings with ZERO writes,
+ * exactly like the type mapper.
+ */
+
+/**
+ * Map the validated operations input. `$context` is
+ * `{input, ir, definitions, typesPrefix, typesIndex, adapterVersion, irDigest, inputDigest, typesInputDigest, root, namespacePrefix}`.
+ * `definitions` is the id-indexed parsed IR; `typesIndex` maps semantic
+ * ids to `{fqn, path, codec}` from `php_map_types`.
+ */
+function php_map_operations(array $context): array
+{
+    $findings = [];
+    $addFinding = static function (string $code, string $semanticId, string $detail) use (&$findings): void {
+        $findings[] = ['code' => $code, 'semanticId' => $semanticId, 'detail' => $detail];
+    };
+    $input = $context['input'];
+    $definitions = $context['definitions'];
+    $prefix = $context['namespacePrefix'];
+    $scaffold = $context['root'] === PHP_OPERATIONS_SCAFFOLD_ROOT;
+    $operations = [];
+    $files = [];
+    /** @var array<string, true> $claimedFqns */
+    $claimedFqns = [];
+    /** @var array<string, true> $claimedPaths */
+    $claimedPaths = [];
+    $anyTransaction = false;
+    $anyDomainError = false;
+
+    $claim = static function (string $fqn, string $path, string $semanticId) use (&$claimedFqns, &$claimedPaths, $addFinding): bool {
+        $fqnKey = strtolower($fqn);
+        $pathKey = strtolower($path);
+        if (isset($claimedFqns[$fqnKey]) || isset($claimedPaths[$pathKey])) {
+            $addFinding('operations.naming-collision', $semanticId, "the name `$fqn` or path `$path` is claimed twice");
+            return false;
+        }
+        $claimedFqns[$fqnKey] = true;
+        $claimedPaths[$pathKey] = true;
+        return true;
+    };
+
+    foreach ($input['operations'] as $record) {
+        $mapped = php_operations_map_record($record, $context, $addFinding);
+        if ($mapped === null) {
+            continue;
+        }
+        $anyTransaction = $anyTransaction || ($mapped['transaction'] === 'required');
+        $anyDomainError = $anyDomainError || ($mapped['errors'] !== []);
+        foreach ($mapped['artifacts'] as $artifact) {
+            if ($artifact['role'] === 'declared') {
+                continue;
+            }
+            $claim($artifact['fqn'] ?? $artifact['path'], $artifact['path'], $mapped['id']);
+        }
+        $operations[] = $mapped;
+    }
+    if ($findings !== []) {
+        return ['state' => 'unsupported', 'findings' => php_operations_sort_findings($findings)];
+    }
+
+    // The typed error classes: one artifact per unique class, owned by
+    // the first sorted declaring operation, emitted once per root.
+    $lifecycle = $scaffold ? 'scaffolded' : 'generated';
+    $seenErrors = [];
+    foreach ($operations as $mapped) {
+        foreach ($mapped['errors'] as $error) {
+            $key = strtolower((string) $error['fqn']);
+            if (isset($seenErrors[$key])) {
+                continue;
+            }
+            $seenErrors[$key] = true;
+            $path = $context['root'] . '/' . php_types_snake_of(substr((string) $error['fqn'], strlen($context['namespacePrefix']) + 1)) . '.php';
+            if (!$claim((string) $error['fqn'], $path, $mapped['id'])) {
+                continue;
+            }
+            $files[] = [
+                'path' => $path,
+                'role' => 'errors',
+                'fqn' => $error['fqn'],
+                'lifecycle' => $lifecycle,
+                'operation' => $mapped['id'],
+            ];
+        }
+    }
+
+    // Shared artifacts: deterministic, emitted once, only when used.
+    $scaffold = $context['root'] === PHP_OPERATIONS_SCAFFOLD_ROOT;
+    $lifecycle = $scaffold ? 'scaffolded' : 'generated';
+    $addShared = static function (string $class, string $text, string $role) use ($context, $lifecycle, &$files, $claim): void {
+        $fqn = $context['namespacePrefix'] . '\\' . $class;
+        $path = php_types_snake_of($class) . '.php';
+        if (!$claim($fqn, $path, 'php-operations')) {
+            return;
+        }
+        $files[] = [
+            'path' => $context['root'] . '/' . $path,
+            'text' => $text,
+            'digest' => 'sha256:' . hash('sha256', $text),
+            'role' => $role,
+            'fqn' => $fqn,
+            'lifecycle' => $lifecycle,
+        ];
+    };
+    if ($anyDomainError) {
+        $addShared('OperationError', php_operations_operation_error_text($context), 'shared');
+    }
+    if ($anyTransaction) {
+        $addShared('TransactionPort', php_operations_transaction_port_text($context), 'shared');
+    }
+    $addShared('ActorContext', php_operations_actor_context_text($context), 'shared');
+
+    usort($operations, static fn (array $left, array $right): int => strcmp($left['id'], $right['id']));
+    usort($files, static fn (array $left, array $right): int => strcmp($left['path'], $right['path']));
+    return [
+        'state' => 'mapped',
+        'findings' => [],
+        'operations' => $operations,
+        'files' => $files,
+    ];
+}
+
+/** Sort findings deterministically by semantic id, then code. */
+function php_operations_sort_findings(array $findings): array
+{
+    usort($findings, static function (array $left, array $right): int {
+        return [$left['semanticId'], $left['code']] <=> [$right['semanticId'], $right['code']];
+    });
+    return $findings;
+}
+
+/**
+ * Map one operation record: naming, roles, ports and per-operation
+ * artifacts. Returns null after recording a finding for any unsupported
+ * projection.
+ *
+ * @param callable(string, string, string): void $addFinding
+ * @return array<string, mixed>|null
+ */
+function php_operations_map_record(array $record, array $context, callable $addFinding): ?array
+{
+    $id = $record['id'];
+    $kind = $record['kind'];
+    $mode = $record['mode'];
+    $definitions = $context['definitions'];
+    $prefix = $context['namespacePrefix'];
+    $module = php_types_module_of($id);
+    if (in_array(strtolower($module), ['errors', 'optional'], true)) {
+        $addFinding('operations.module-reserved', $id, 'module namespace segment collides with the emitted Errors/Optional namespace');
+        return null;
+    }
+    // The semantic join (issue #59): the mirror of the core join's
+    // operation-level reconciliation. A record naming a non-definition,
+    // a policy that does not apply, an unresolvable effect, an
+    // uncovered recipe, or a write recipe without the required
+    // transaction binding is a typed finding here — never a silent
+    // emission and never a kernel crash.
+    if (!php_operations_semantic_join($record, $definitions, $addFinding)) {
+        return null;
+    }
+    $leaf = php_types_leaf_name_of($id);
+    $stem = php_types_stem_of($id, 'plain');
+    $moduleSegment = ucfirst($module);
+    $handlerClass = $stem . 'Handler';
+    $handlerFqn = $prefix . '\\' . $moduleSegment . '\\' . $handlerClass;
+    $handlerPath = strtolower($module) . '/' . strtolower($leaf) . '/handler.php';
+    $entry = ['fqn' => $handlerFqn, 'method' => 'handle', 'path' => $context['root'] . '/' . $handlerPath];
+
+    $inputRole = null;
+    $resultRole = null;
+    $ports = [];
+    $body = null;
+
+    // The input role: commands reuse the #58 command input class;
+    // queries get an explicit emitted empty-input DTO.
+    if ($kind === 'command') {
+        $inputFqn = $context['typesIndex'][$id]['fqn'] ?? null;
+        if (!is_string($inputFqn)) {
+            $addFinding('operations.type-unresolved', $id, 'the command input type is not part of the mapped type inventory');
+            return null;
+        }
+        $inputRole = ['fqn' => $inputFqn];
+    } else {
+        $inputClass = $stem . 'Input';
+        $inputFqn = $prefix . '\\' . $moduleSegment . '\\' . $inputClass;
+        $inputRole = ['fqn' => $inputFqn];
+    }
+
+    // The result role: command recipes may declare a ref; queries derive
+    // it from the IR returns through the type map.
+    $recipe = $record['recipe'];
+    $returnsRef = $definitions[$id]['returns'] ?? null;
+    if ($kind === 'query') {
+        if (!is_array($returnsRef) || !isset($returnsRef['ref'])) {
+            $addFinding('operations.recipe-unsupported', $id, 'a managed query needs a scalar-ref returns declaration in v0.4.0');
+            return null;
+        }
+        $resultFqn = $context['typesIndex'][(string) $returnsRef['ref']]['fqn'] ?? null;
+        if (!is_string($resultFqn)) {
+            $addFinding('operations.type-unresolved', $id, 'the query return type is not part of the mapped type inventory');
+            return null;
+        }
+        $resultRole = ['fqn' => $resultFqn];
+    } elseif ($recipe['kind'] === 'port-delegation' && $recipe['result'] !== null) {
+        $resultFqn = $context['typesIndex'][$recipe['result']]['fqn'] ?? null;
+        if (!is_string($resultFqn)) {
+            $addFinding('operations.type-unresolved', $id, 'the declared result type is not part of the mapped type inventory');
+            return null;
+        }
+        $resultRole = ['fqn' => $resultFqn];
+    }
+
+    $policyFqn = null;
+    if ($kind === 'query' && ($recipe['kind'] ?? '') === 'single-entity-update') {
+        // Capability honesty: reads stay reads. The finding vetoes the
+        // whole run; no write plan can label a query writable.
+        $addFinding('operations.query-write', $id, 'a query can never carry a write recipe; reads stay reads');
+        return null;
+    }
+    if ($record['policyId'] !== null) {
+        $policyClass = $stem . 'Policy';
+        $policyFqn = $prefix . '\\' . $moduleSegment . '\\' . $policyClass;
+        $ports[] = ['name' => $policyClass, 'fqn' => $policyFqn, 'role' => 'policy', 'slot' => php_operations_slot_of($policyClass)];
+    }
+    $eventsFqn = null;
+    $emissions = $recipe['emit'] ?? [];
+    if ($emissions !== []) {
+        $eventsClass = $stem . 'Events';
+        $eventsFqn = $prefix . '\\' . $moduleSegment . '\\' . $eventsClass;
+        $ports[] = ['name' => $eventsClass, 'fqn' => $eventsFqn, 'role' => 'events', 'slot' => php_operations_slot_of($eventsClass)];
+    }
+    $repository = null;
+    if (($recipe['kind'] ?? '') === 'single-entity-update') {
+        $entityId = (string) $recipe['entity'];
+        $entityEntry = $context['typesIndex'][$entityId] ?? null;
+        if (!is_array($entityEntry)) {
+            $addFinding('operations.type-unresolved', $id, 'the updated entity is not part of the mapped type inventory');
+            return null;
+        }
+        $entityModule = php_types_module_of($entityId);
+        $entityStem = php_types_stem_of($entityId, 'plain');
+        $repositoryClass = $entityStem . 'Repository';
+        $repositoryFqn = $prefix . '\\' . ucfirst($entityModule) . '\\' . $repositoryClass;
+        $repositoryPath = strtolower($entityModule) . '/' . php_types_snake_of($repositoryClass) . '.php';
+        $repository = [
+            'class' => $repositoryClass,
+            'fqn' => $repositoryFqn,
+            'path' => $repositoryPath,
+            'entity' => $entityId,
+            'entityFqn' => $entityEntry['fqn'],
+            'key' => (string) $recipe['key'],
+            'identity' => (string) ($definitions[$entityId]['identity'][0] ?? ''),
+        ];
+        $ports[] = ['name' => $repositoryClass, 'fqn' => $repositoryFqn, 'role' => 'repository', 'slot' => php_operations_slot_of($repositoryClass)];
+    }
+    $delegate = null;
+    if (($recipe['kind'] ?? '') === 'port-delegation') {
+        $delegate = [
+            'class' => (string) $recipe['port'],
+            'fqn' => $prefix . '\\' . $moduleSegment . '\\' . (string) $recipe['port'],
+            'method' => (string) $recipe['method'],
+        ];
+        $ports[] = ['name' => $delegate['class'], 'fqn' => $delegate['fqn'], 'role' => 'delegation', 'slot' => php_operations_slot_of($delegate['class'])];
+    }
+    if ($record['transaction'] === 'required') {
+        $ports[] = ['name' => 'TransactionPort', 'fqn' => $prefix . '\\TransactionPort', 'role' => 'transactions', 'slot' => 'transactions'];
+    }
+    usort($ports, static fn (array $left, array $right): int => strcmp($left['name'], $right['name']));
+
+    // Domain error ROLE rows: one per declared error id. The artifact
+    // rows are claimed once per unique class by the caller, because the
+    // #62 binding sets of sibling operations overlap by design.
+    $errors = [];
+    foreach ($record['errors'] as $errorId) {
+        $errorModule = php_types_module_of($errorId);
+        if (in_array(strtolower($errorModule), ['errors', 'optional'], true)) {
+            $addFinding('operations.module-reserved', $id, "the error module segment of `$errorId` collides with the Errors namespace");
+            return null;
+        }
+        $errorLeaf = php_types_leaf_name_of($errorId);
+        $class = ucfirst(php_operations_pascal_of($errorLeaf)) . 'Error';
+        $fqn = $prefix . '\\' . ucfirst($errorModule) . '\\Errors\\' . $class;
+        $errors[] = ['id' => $errorId, 'fqn' => $fqn, 'class' => $class];
+    }
+    usort($errors, static fn (array $left, array $right): int => strcmp($left['id'], $right['id']));
+
+    $scaffold = $context['root'] === PHP_OPERATIONS_SCAFFOLD_ROOT;
+    $lifecycle = $scaffold ? 'scaffolded' : 'generated';
+    $artifacts = [];
+    if ($mode === 'managed' || $mode === 'scaffold-once') {
+        $artifacts[] = [
+            'path' => $entry['path'],
+            'fqn' => $handlerFqn,
+            'role' => 'handler',
+            'lifecycle' => $lifecycle,
+        ];
+        if ($kind === 'query') {
+            $inputPath = strtolower($module) . '/' . strtolower($leaf) . '/input.php';
+            $artifacts[] = [
+                'path' => $context['root'] . '/' . $inputPath,
+                'fqn' => $inputFqn,
+                'role' => 'ports',
+                'lifecycle' => $lifecycle,
+            ];
+        }
+        if ($policyFqn !== null) {
+            $artifacts[] = [
+                'path' => $context['root'] . '/' . strtolower($module) . '/' . strtolower($leaf) . '/policy.php',
+                'fqn' => $policyFqn,
+                'role' => 'ports',
+                'lifecycle' => $lifecycle,
+            ];
+        }
+        if ($eventsFqn !== null) {
+            $artifacts[] = [
+                'path' => $context['root'] . '/' . strtolower($module) . '/' . strtolower($leaf) . '/events.php',
+                'fqn' => $eventsFqn,
+                'role' => 'ports',
+                'lifecycle' => $lifecycle,
+            ];
+        }
+        if ($delegate !== null) {
+            $artifacts[] = [
+                'path' => $context['root'] . '/' . strtolower($module) . '/' . strtolower($leaf) . '/delegate.php',
+                'fqn' => $delegate['fqn'],
+                'role' => 'ports',
+                'lifecycle' => $lifecycle,
+            ];
+        }
+        if ($repository !== null) {
+            $artifacts[] = [
+                'path' => $context['root'] . '/' . $repository['path'],
+                'fqn' => $repository['fqn'],
+                'role' => 'repository',
+                'lifecycle' => $lifecycle,
+            ];
+        }
+    } else {
+        // checked/custom: the declared entrypoint is inventoried, never
+        // written.
+        $declared = $record['entry'];
+        $artifacts[] = [
+            'path' => strtolower((string) $declared['path']),
+            'fqn' => (string) $declared['fqn'],
+            'role' => 'declared',
+            'lifecycle' => 'checked',
+        ];
+        $entry = ['fqn' => (string) $declared['fqn'], 'method' => (string) $declared['method'], 'path' => $declared['path']];
+    }
+
+    return [
+        'id' => $id,
+        'kind' => $kind,
+        'mode' => $mode,
+        'recipe' => $recipe,
+        'recipeKind' => is_array($recipe) ? (string) $recipe['kind'] : 'maintained',
+        'entry' => $entry,
+        'input' => $inputRole,
+        'result' => $resultRole,
+        'errors' => $errors,
+        'ports' => $ports,
+        'policyId' => $record['policyId'],
+        'transaction' => $record['transaction'],
+        'effects' => php_operations_declared_effects($record, $definitions),
+        'repository' => $repository,
+        'delegate' => $delegate,
+        'artifacts' => $artifacts,
+    ];
+}
+
+/** The injected property slot of one port class name. */
+function php_operations_slot_of(string $class): string
+{
+    return lcfirst($class);
+}
+
+/** The Pascal spelling of one snake identifier. */
+function php_operations_pascal_of(string $spelling): string
+{
+    return implode('', array_map(
+        static fn (string $part): string => ucfirst($part),
+        explode('_', $spelling),
+    ));
+}
+
+/** The declared IR effect ids of one command record, sorted. */
+function php_operations_declared_effects(array $record, array $definitions): array
+{
+    if ($record['kind'] !== 'command') {
+        return [];
+    }
+    $effects = $definitions[$record['id']]['effects'] ?? [];
+    $effects = array_values(array_filter($effects, 'is_string'));
+    sort($effects);
+    return $effects;
+}
+
+
+// ---------------------------------------------------------------------------
+// The semantic join (issue #59): the adapter mirror of the core join's
+// operation-level reconciliation over the compiled IR definitions. Both
+// authorities agree on the closed vocabulary; a finding here vetoes the
+// whole run exactly like a core finding.
+// ---------------------------------------------------------------------------
+
+/** The canonical spelling of one closed IR type expression. */
+function php_operations_type_spelling(mixed $typeExpr): string
+{
+    if (!is_array($typeExpr)) {
+        return '';
+    }
+    if (isset($typeExpr['ref']) && is_string($typeExpr['ref'])) {
+        return $typeExpr['ref'];
+    }
+    if (isset($typeExpr['optional'])) {
+        return php_operations_type_spelling($typeExpr['optional']) . '?';
+    }
+    if (isset($typeExpr['list'])) {
+        return 'list<' . php_operations_type_spelling($typeExpr['list']) . '>';
+    }
+    return '';
+}
+
+/** The field-index map (`name => type expr`) of one structured definition. */
+function php_operations_field_index(array $definition): array
+{
+    $fields = [];
+    foreach ([['fields'], ['input'], ['payload']] as $members) {
+        $candidate = $definition;
+        foreach ($members as $member) {
+            $candidate = $candidate[$member] ?? null;
+        }
+        if (is_array($candidate)) {
+            foreach ($candidate as $field) {
+                if (is_array($field) && isset($field['name']) && is_string($field['name'])) {
+                    $fields[$field['name']] = $field['type'] ?? null;
+                }
+            }
+            break;
+        }
+    }
+    return $fields;
+}
+
+/**
+ * The full semantic join of one record. Returns false after recording
+ * at least one typed finding; true means the record reconciles with the
+ * compiled IR.
+ *
+ * @param callable(string, string, string): void $addFinding
+ */
+function php_operations_semantic_join(array $record, array $definitions, callable $addFinding): bool
+{
+    $id = (string) $record['id'];
+    $ok = true;
+    $note = static function (string $code, string $detail) use ($addFinding, &$ok, $id): void {
+        $ok = false;
+        $addFinding($code, $id, $detail);
+    };
+    $definition = $definitions[$id] ?? null;
+    if (!is_array($definition) || ($definition['kind'] ?? null) !== $record['kind']) {
+        $note(
+            'operations.operation-unresolved',
+            "the operation id `$id` is not a compiled IR definition of kind `{$record['kind']}`",
+        );
+        return false;
+    }
+    // The transaction binding: a write recipe requires exactly one bound
+    // transaction (the body runs inside the TransactionPort run); a
+    // query never opens one.
+    if ($record['kind'] === 'query' && $record['transaction'] === 'required') {
+        $note('operations.transaction-unsupported', 'a query never opens a transaction');
+    }
+    $recipe = $record['recipe'];
+    if (is_array($recipe) && ($recipe['kind'] ?? '') === 'single-entity-update') {
+        if ($record['kind'] === 'query') {
+            $note('operations.query-write', 'a query can never carry a write recipe; reads stay reads');
+            return false;
+        }
+        if ($record['transaction'] !== 'required') {
+            $note(
+                'operations.transaction-required',
+                'a write recipe requires the required transaction binding: the body runs inside the TransactionPort',
+            );
+        }
+    }
+    if (is_array($recipe) && ($recipe['kind'] ?? '') === 'port-delegation'
+        && $record['kind'] === 'query' && $recipe['result'] !== null) {
+        $note(
+            'operations.query-write',
+            'a query derives its result from the IR returns; a declared recipe result is redundant',
+        );
+    }
+    // The policy binding: an IR policy definition whose applies_to
+    // names this operation.
+    if ($record['policyId'] !== null) {
+        $policyId = (string) $record['policyId'];
+        $policy = $definitions[$policyId] ?? null;
+        $applies = is_array($policy)
+            && ($policy['kind'] ?? null) === 'policy'
+            && in_array($id, is_array($policy['applies_to'] ?? null) ? $policy['applies_to'] : [], true);
+        if (!$applies) {
+            $note(
+                'operations.policy-unresolved',
+                "the policy `$policyId` is not a compiled policy applying to this operation",
+            );
+        }
+    }
+    // The declared errors: the #62 registry binding equality is the
+    // core join's authority (the embedded registry is not staged for
+    // the adapter), so the mirror checks what the IR admits: the
+    // recipe's failure references must be declared errors.
+    if (is_array($recipe) && ($recipe['kind'] ?? '') === 'single-entity-update') {
+        php_operations_join_update_recipe($record, $recipe, $definitions, $note);
+    }
+    return $ok;
+}
+
+/**
+ * The single-entity-update reconciliation: entity, key typing, full
+ * field coverage, typed operands, declared failure references, and the
+ * effect-resolved event emissions.
+ *
+ * @param callable(string, string): void $note
+ */
+function php_operations_join_update_recipe(array $record, array $recipe, array $definitions, callable $note): void
+{
+    $id = (string) $record['id'];
+    $entityId = (string) $recipe['entity'];
+    $entity = $definitions[$entityId] ?? null;
+    if (!is_array($entity) || ($entity['kind'] ?? null) !== 'entity') {
+        $note('operations.entity-unresolved', "the updated definition `$entityId` is not a compiled entity");
+        return;
+    }
+    $identity = $entity['identity'] ?? [];
+    if (!is_array($identity) || count($identity) !== 1) {
+        $note('operations.recipe-unsupported', 'v0.4.0 updates only single-identity entities');
+        return;
+    }
+    $entityFields = php_operations_field_index($entity);
+    $identityField = (string) $identity[0];
+    $inputFields = php_operations_field_index($definitions[$id] ?? []);
+    // The key operand types.
+    $keyType = $inputFields[(string) $recipe['key']] ?? null;
+    $identityType = $entityFields[$identityField] ?? null;
+    if ($keyType === null) {
+        $note('operations.recipe-coverage', 'the key `' . (string) $recipe['key'] . '` is not a command input field');
+    }
+    if ($keyType !== null && $identityType !== null
+        && php_operations_type_spelling($keyType) !== php_operations_type_spelling($identityType)) {
+        $note(
+            'operations.type-mismatch',
+            'the key input field type `' . php_operations_type_spelling($keyType)
+            . '` must equal the identity type `' . php_operations_type_spelling($identityType) . '`',
+        );
+    }
+    // Coverage: every non-identity entity field exactly once, either
+    // assigned or kept; the identity carries over.
+    $covered = [];
+    foreach ($recipe['assignments'] as $assignment) {
+        $field = (string) $assignment['field'];
+        if (isset($covered[$field])) {
+            $note('operations.recipe-coverage', "the field `$field` is covered twice");
+            continue;
+        }
+        $covered[$field] = true;
+        if (!isset($entityFields[$field])) {
+            $note('operations.recipe-coverage', "the assigned field `$field` is not an entity field");
+            continue;
+        }
+        php_operations_join_operand(
+            $assignment['value'],
+            $entityFields[$field],
+            $inputFields,
+            $entityFields,
+            $definitions,
+            $note,
+        );
+    }
+    foreach ($recipe['kept'] as $field) {
+        $field = (string) $field;
+        if (isset($covered[$field])) {
+            $note('operations.recipe-coverage', "the field `$field` is covered twice");
+            continue;
+        }
+        $covered[$field] = true;
+        if (!isset($entityFields[$field])) {
+            $note('operations.recipe-coverage', "the kept field `$field` is not an entity field");
+        }
+    }
+    foreach (array_keys($entityFields) as $field) {
+        if ($field === $identityField) {
+            continue;
+        }
+        if (!isset($covered[$field])) {
+            $note('operations.recipe-coverage', "the entity field `$field` is neither assigned nor kept");
+        }
+    }
+    // Preconditions: entity fields, typed operands, declared errors.
+    foreach ($recipe['preconditions'] as $precondition) {
+        $field = (string) $precondition['field'];
+        if (!isset($entityFields[$field])) {
+            $note('operations.recipe-coverage', "the precondition field `$field` is not an entity field");
+        } else {
+            php_operations_join_operand(
+                $precondition['equals'],
+                $entityFields[$field],
+                $inputFields,
+                $entityFields,
+                $definitions,
+                $note,
+            );
+        }
+        if (!in_array((string) $precondition['error'], $record['errors'], true)) {
+            $note(
+                'operations.registry-binding',
+                'the precondition error `' . (string) $precondition['error'] . '` is not a declared error of this operation',
+            );
+        }
+    }
+    if (!in_array((string) $recipe['missingBehavior']['error'], $record['errors'], true)) {
+        $note(
+            'operations.registry-binding',
+            'the missing-record error `' . (string) $recipe['missingBehavior']['error'] . '` is not a declared error of this operation',
+        );
+    }
+    // Emissions: the event must be an IR event emitted by one of the
+    // command's effects, and every payload field must carry a typed
+    // operand exactly once.
+    $emittedEvents = [];
+    foreach ($definitions[$id]['effects'] ?? [] as $effectId) {
+        $effect = $definitions[(string) $effectId] ?? null;
+        if (is_array($effect) && ($effect['kind'] ?? null) === 'effect') {
+            foreach ($effect['emits'] ?? [] as $emitted) {
+                $emittedEvents[] = (string) $emitted;
+            }
+        }
+    }
+    foreach ($recipe['emit'] as $emission) {
+        $eventId = (string) $emission['event'];
+        if (!in_array($eventId, $emittedEvents, true)) {
+            $note(
+                'operations.effect-unresolved',
+                "the event `$eventId` is not emitted by any effect of this command",
+            );
+        }
+        $event = $definitions[$eventId] ?? null;
+        if (!is_array($event) || ($event['kind'] ?? null) !== 'event') {
+            $note('operations.type-unresolved', "the definition `$eventId` is not a compiled event");
+            continue;
+        }
+        $eventFields = php_operations_field_index($event);
+        foreach (array_keys($eventFields) as $field) {
+            if (!isset($emission['payload'][$field])) {
+                $note('operations.recipe-coverage', "the event field `$field` has no operand");
+            }
+        }
+        foreach ($emission['payload'] as $field => $operand) {
+            if (!isset($eventFields[(string) $field])) {
+                $note('operations.recipe-coverage', "the payload operand `$field` is not an event field");
+                continue;
+            }
+            php_operations_join_operand(
+                $operand,
+                $eventFields[(string) $field],
+                $inputFields,
+                $entityFields,
+                $definitions,
+                $note,
+            );
+        }
+    }
+}
+
+/**
+ * One closed typed operand against one target type expression: exact
+ * input/entity field existence and type identity, declared enum cases,
+ * and no untyped literal targets.
+ *
+ * @param array<string, mixed> $inputFields
+ * @param array<string, mixed> $entityFields
+ * @param callable(string, string): void $note
+ */
+function php_operations_join_operand(
+    array $operand,
+    mixed $targetExpr,
+    array $inputFields,
+    array $entityFields,
+    array $definitions,
+    callable $note,
+): void {
+    $target = php_operations_type_spelling($targetExpr);
+    if (isset($operand['fromInput'])) {
+        $field = (string) $operand['fromInput'];
+        if (!isset($inputFields[$field])) {
+            $note('operations.type-mismatch', "`$field` is not a command input field");
+            return;
+        }
+        $spelling = php_operations_type_spelling($inputFields[$field]);
+        if ($spelling !== $target) {
+            $note('operations.type-mismatch', "the input field `$field` carries `$spelling`, the target needs `$target`");
+        }
+        return;
+    }
+    if (isset($operand['fromEntity'])) {
+        $field = (string) $operand['fromEntity'];
+        if (!isset($entityFields[$field])) {
+            $note('operations.type-mismatch', "`$field` is not an entity field");
+            return;
+        }
+        $spelling = php_operations_type_spelling($entityFields[$field]);
+        if ($spelling !== $target) {
+            $note('operations.type-mismatch', "the entity field `$field` carries `$spelling`, the target needs `$target`");
+        }
+        return;
+    }
+    if (isset($operand['enumCase'])) {
+        $enumId = (string) $operand['enumCase']['type'];
+        $value = (string) $operand['enumCase']['value'];
+        if ($target !== $enumId) {
+            $note('operations.type-mismatch', "the enum case targets `$enumId`, the field carries `$target`");
+            return;
+        }
+        $enum = $definitions[$enumId] ?? null;
+        $declared = false;
+        if (is_array($enum) && ($enum['kind'] ?? null) === 'enum') {
+            foreach ($enum['values'] ?? [] as $candidate) {
+                if (is_array($candidate) && (string) $candidate['value'] === $value) {
+                    $declared = true;
+                    break;
+                }
+            }
+        }
+        if (!$declared) {
+            $note('operations.type-unresolved', "the enum case value `$value` is not declared by `$enumId`");
+        }
+        return;
+    }
+    // A literal operand cannot prove the target definition's shape in
+    // v0.4.0: unsupported, exactly like the core join.
+    $note('operations.type-mismatch', "a literal operand cannot carry the definition target `$target`");
+}
+
+// ----- bundled compiler module: operation-emit.php -----
+
+/**
+ * The operations emitter (issue #59): the mapped operations inventory
+ * becomes deterministic PHP bytes — handler classes with exactly one
+ * public business entrypoint, narrow per-operation ports, typed error
+ * classes, shared ActorContext/TransactionPort/OperationError support,
+ * the classmap, and the custody sidecar. Pure: no filesystem, no
+ * clock, no environment. Identical inputs and pins emit identical
+ * bytes across roots.
+ */
+
+/** The file header of one emitted operations artifact. */
+function php_operations_file_header(array $context, string $namespace, string $semanticId): string
+{
+    $lines = [
+        '<?php',
+        '',
+        'declare(strict_types=1);',
+        '',
+        '// Generated by ' . ADAPTER_ID . '@' . ADAPTER_VERSION . ' (operations generator, issue #59).',
+        '// From dev.lekalo.ir@0.2.16 input ' . $context['irDigest'] . '.',
+        '// Semantic id: ' . $semanticId . '.',
+        '// Do not edit: regenerate with `lekalo generate`.',
+        '',
+        'namespace ' . $namespace . ';',
+    ];
+    return implode("\n", $lines);
+}
+
+/** One operations shared-support class text. */
+function php_operations_actor_context_text(array $context): string
+{
+    $lines = [
+        php_operations_file_header($context, $context['namespacePrefix'], 'php-operations/actor-context'),
+        '',
+        'final readonly class ActorContext',
+        '{',
+        '    /** @var array<string, string> */',
+        '    private array $scopes;',
+        '',
+        '    /**',
+        '     * @param array<string, string> $scopes the declared tenant/owner',
+        '     *     dimensions; request payloads never become authority',
+        '     */',
+        '    public function __construct(',
+        '        public readonly string $actorId,',
+        '        array $scopes = [],',
+        '    ) {',
+        '        $this->scopes = $scopes;',
+        '    }',
+        '',
+        '    /** The declared scope dimension, or null when absent. */',
+        '    public function scope(string $key): ?string',
+        '    {',
+        '        return $this->scopes[$key] ?? null;',
+        '    }',
+        '',
+        '    /** @return array<string, string> */',
+        '    public function scopes(): array',
+        '    {',
+        '        return $this->scopes;',
+        '    }',
+        '',
+        '    /** One derived context with one more declared scope dimension. */',
+        '    public function with(string $key, string $value): self',
+        '    {',
+        '        $next = $this->scopes;',
+        '        $next[$key] = $value;',
+        '        return new self($this->actorId, $next);',
+        '    }',
+        '}',
+    ];
+    return implode("\n", $lines) . "\n";
+}
+
+/** The shared transaction port text. */
+function php_operations_transaction_port_text(array $context): string
+{
+    $lines = [
+        php_operations_file_header($context, $context['namespacePrefix'], 'php-operations/transaction-port'),
+        '',
+        'interface TransactionPort',
+        '{',
+        '    /**',
+        '     * Run the body inside exactly one transaction of the bound',
+        '     * connection: commit on a normal return, roll back and rethrow',
+        '     * on any throwable. A typed OperationError thrown inside the',
+        '     * body must surface as the rolled-back domain failure, never as',
+        '     * a committed half-state.',
+        '     */',
+        '    public function run(callable $body): mixed;',
+        '}',
+    ];
+    return implode("\n", $lines) . "\n";
+}
+
+/** The shared typed-error base class text. */
+function php_operations_operation_error_text(array $context): string
+{
+    $lines = [
+        php_operations_file_header($context, $context['namespacePrefix'], 'php-operations/operation-error'),
+        '',
+        'abstract class OperationError extends \\RuntimeException',
+        '{',
+        '}',
+    ];
+    return implode("\n", $lines) . "\n";
+}
+
+/**
+ * Emit every artifact of one mapped operations inventory. `$input` is
+ * `{projectId, mapped, context, root, namespacePrefix, definitions,
+ * typesIndex}`. Returns `{files, sidecar}`; every file row carries
+ * path/text/digest/role/fqn/lifecycle.
+ */
+function php_emit_operations(array $input): array
+{
+    $context = $input['context'];
+    $mapped = $input['mapped'];
+    $definitions = $input['definitions'];
+    $typesIndex = $input['typesIndex'];
+    $prefix = $input['namespacePrefix'];
+    $root = $input['root'];
+    $files = [];
+    foreach ($mapped['files'] as $file) {
+        if (($file['role'] ?? '') === 'errors' && !isset($file['text'])) {
+            // The typed error class: owned by its first declaring
+            // operation, in the module's Errors namespace.
+            $fqn = (string) $file['fqn'];
+            $namespace = substr($fqn, 0, (int) strrpos($fqn, '\\'));
+            $text = php_operations_error_text(
+                ['id' => (string) ($file['operation'] ?? 'php-operations')],
+                ['fqn' => $fqn],
+                $namespace,
+                $context,
+            );
+            $files[] = array_merge($file, [
+                'text' => $text,
+                'digest' => 'sha256:' . hash('sha256', $text),
+            ]);
+            continue;
+        }
+        $files[] = $file;
+    }
+    foreach ($mapped['operations'] as $operation) {
+        foreach (php_operations_record_texts($operation, $context, $definitions, $typesIndex, $prefix, $root) as $file) {
+            $files[] = $file;
+        }
+    }
+    $classmapText = php_operations_classmap_text($files, $context, $root);
+    $files[] = [
+        'path' => $root . '/classmap.php',
+        'text' => $classmapText,
+        'digest' => 'sha256:' . hash('sha256', $classmapText),
+        'role' => 'classmap',
+        'lifecycle' => $root === PHP_OPERATIONS_SCAFFOLD_ROOT ? 'scaffolded' : 'generated',
+    ];
+    $sidecarText = php_operations_sidecar_text($input['projectId'], $mapped, $files, $context, $root);
+    $files[] = [
+        'path' => $root . '/operations.map.json',
+        'text' => $sidecarText,
+        'digest' => 'sha256:' . hash('sha256', $sidecarText),
+        'role' => 'sidecar',
+        'lifecycle' => $root === PHP_OPERATIONS_SCAFFOLD_ROOT ? 'scaffolded' : 'generated',
+    ];
+    usort($files, static fn (array $left, array $right): int => strcmp((string) $left['path'], (string) $right['path']));
+    return ['files' => $files];
+}
+
+/** Every emitted text of one mapped operation record. */
+function php_operations_record_texts(
+    array $operation,
+    array $context,
+    array $definitions,
+    array $typesIndex,
+    string $prefix,
+    string $root,
+): array {
+    $files = [];
+    $lifecycle = $root === PHP_OPERATIONS_SCAFFOLD_ROOT ? 'scaffolded' : 'generated';
+    $moduleSegment = ucfirst(php_types_module_of($operation['id']));
+    $namespace = $prefix . '\\' . $moduleSegment;
+    foreach ($operation['artifacts'] as $artifact) {
+        if ($artifact['role'] === 'declared') {
+            continue;
+        }
+        $artifactNamespace = $artifact['role'] === 'errors'
+            ? $prefix . '\\' . $moduleSegment . '\\Errors'
+            : $namespace;
+        $text = match ($artifact['role']) {
+            'handler' => php_operations_handler_text($operation, $context, $definitions, $typesIndex, $namespace, $artifact),
+            'ports' => php_operations_port_text($operation, $artifact, $definitions, $typesIndex, $artifactNamespace, $context),
+            'repository' => php_operations_repository_text($operation, $artifact, $definitions, $typesIndex, $namespace, $context),
+            'errors' => php_operations_error_text($operation, $artifact, $artifactNamespace, $context),
+            default => null,
+        };
+        if ($text === null) {
+            continue;
+        }
+        $files[] = [
+            'path' => $artifact['path'],
+            'text' => $text,
+            'digest' => 'sha256:' . hash('sha256', $text),
+            'role' => $artifact['role'],
+            'fqn' => $artifact['fqn'],
+            'lifecycle' => $lifecycle,
+            'operation' => $operation['id'],
+        ];
+    }
+    return $files;
+}
+
+/** The handler class text of one mapped record. */
+function php_operations_handler_text(
+    array $operation,
+    array $context,
+    array $definitions,
+    array $typesIndex,
+    string $namespace,
+    array $artifact,
+): string {
+    $actor = '\\' . $context['namespacePrefix'] . '\\ActorContext';
+    $inputFqn = '\\' . $operation['input']['fqn'];
+    $returnType = $operation['result'] === null ? 'void' : '\\' . $operation['result']['fqn'];
+    $lines = [
+        php_operations_file_header($context, $namespace, $operation['id']),
+        '',
+        'final readonly class ' . php_types_entry_class(['fqn' => (string) $artifact['fqn']]),
+        '{',
+        '    public function __construct(',
+    ];
+    foreach ($operation['ports'] as $port) {
+        $lines[] = '        private readonly \\' . $port['fqn'] . ' $' . $port['slot'] . ',';
+    }
+    $lines[] = '    ) {';
+    $lines[] = '    }';
+    $lines[] = '';
+    $lines[] = '    /** The one public business entrypoint of this operation. */';
+    $lines[] = '    public function handle(' . $inputFqn . ' $input, ' . $actor . ' $actor): ' . $returnType;
+    $lines[] = '    {';
+    foreach (php_operations_body_lines($operation, $definitions, $typesIndex, $context) as $line) {
+        $lines[] = $line;
+    }
+    $lines[] = '    }';
+    $lines[] = '}';
+    return implode("\n", $lines) . "\n";
+}
+
+/** The indented body lines of one handler. */
+function php_operations_body_lines(array $operation, array $definitions, array $typesIndex, array $context): array
+{
+    $recipe = $operation['recipe'];
+    if ($operation['mode'] === 'scaffold-once') {
+        return [
+            '        // The scaffold is the explicit unimplemented failure: the',
+            '        // signature and dependencies are generated, the body is',
+            '        // maintained from here on (issue #59).',
+            "        throw new \\LogicException('" . $operation['id'] . ": the maintained operation body is not implemented yet (issue #59).');",
+        ];
+    }
+    if (($recipe['kind'] ?? '') === 'port-delegation') {
+        $delegateSlot = php_operations_slot_of((string) $recipe['port']);
+        $call = '$this->' . $delegateSlot . '->' . (string) $recipe['method'] . '($input, $actor)';
+        if ($operation['result'] === null) {
+            return ['        ' . $call . ';'];
+        }
+        return ['        return ' . $call . ';'];
+    }
+    // The bounded single-entity-update recipe.
+    $entityId = (string) $recipe['entity'];
+    $entityVar = '$' . lcfirst(php_types_stem_of($entityId, 'plain'));
+    $repositorySlot = php_operations_slot_of(php_types_stem_of($entityId, 'plain') . 'Repository');
+    $body = [];
+    $unit = $operation['result'] === null;
+    $body[] = '        ' . ($unit ? '' : 'return ') . '$this->transactions->run(function () use ($input, $actor)' . ($unit ? ': void' : ': mixed') . ' {';
+    if ($operation['policyId'] !== null) {
+        $body[] = '            $this->' . php_operations_slot_of(php_types_stem_of($operation['id'], 'plain') . 'Policy')
+            . '->authorize($input, $actor);';
+    }
+    $body[] = '            ' . $entityVar . ' = $this->' . $repositorySlot . '->find($input->'
+        . php_types_property_of((string) $recipe['key']) . ');';
+    $body[] = '            if (' . $entityVar . ' === null) {';
+    $body[] = '                throw new ' . php_operations_error_class_of((string) $recipe['missingBehavior']['error'], $operation) . '();';
+    $body[] = '            }';
+    foreach ($recipe['preconditions'] as $precondition) {
+        $body[] = '            ' . php_operations_precondition_statement(
+            $precondition,
+            $recipe,
+            $definitions,
+            $typesIndex,
+            $entityVar,
+            $operation,
+            $context,
+        );
+        $body[] = '                throw new ' . php_operations_error_class_of((string) $precondition['error'], $operation) . '();';
+        $body[] = '            }';
+    }
+    $body[] = '            ' . $entityVar . 'Updated = ' . php_operations_rebuild_expr($recipe, $definitions, $typesIndex, $entityVar, $operation, $context) . ';';
+    $body[] = '            $this->' . $repositorySlot . '->save(' . $entityVar . 'Updated);';
+    foreach ($recipe['emit'] as $emission) {
+        $slot = php_operations_slot_of(php_types_stem_of($operation['id'], 'plain') . 'Events');
+        $method = lcfirst(php_types_stem_of((string) $emission['event'], 'plain'));
+        $body[] = '            $this->' . $slot . '->' . $method . '('
+            . php_operations_event_expr($emission, $recipe, $definitions, $typesIndex, $entityVar, $operation, $context) . ');';
+    }
+    if (!$unit) {
+        $body[] = '            return null;';
+    }
+    $body[] = '        });';
+    return $body;
+}
+
+/** The short class spelling of one declared error id within one record. */
+function php_operations_error_class_of(string $errorId, array $operation): string
+{
+    foreach ($operation['errors'] as $error) {
+        if ($error['id'] === $errorId) {
+            return (string) $error['class'];
+        }
+    }
+    // The join guarantees membership; this is a kernel bug guard.
+    throw new LogicException('undeclared error: ' . $errorId);
+}
+
+/** The leaf ref id of one closed IR type expression, or null. */
+function php_operations_leaf_ref(mixed $typeExpr): ?string
+{
+    if (is_array($typeExpr) && isset($typeExpr['ref'])) {
+        return (string) $typeExpr['ref'];
+    }
+    if (is_array($typeExpr) && isset($typeExpr['optional'])) {
+        return php_operations_leaf_ref($typeExpr['optional']);
+    }
+    if (is_array($typeExpr) && isset($typeExpr['list'])) {
+        return php_operations_leaf_ref($typeExpr['list']);
+    }
+    return null;
+}
+
+/** One typed comparison statement for one precondition. */
+function php_operations_precondition_statement(
+    array $precondition,
+    array $recipe,
+    array $definitions,
+    array $typesIndex,
+    string $entityVar,
+    array $operation,
+    array $context,
+): string {
+    $field = (string) $precondition['field'];
+    $targetExpr = php_operations_entity_field_expr((string) $recipe['entity'], $field, $definitions);
+    $leaf = php_operations_leaf_ref($targetExpr);
+    $kind = $leaf !== null ? (string) ($definitions[$leaf]['kind'] ?? '') : '';
+    $actual = $entityVar . '->' . php_types_property_of($field);
+    $expected = php_operations_operand_expr(
+        $precondition['equals'],
+        $targetExpr,
+        $definitions,
+        $typesIndex,
+        $recipe,
+        $operation,
+        $context,
+    );
+    $compare = $kind === 'enum'
+        ? $actual . ' !== ' . $expected
+        : '!' . $actual . '->equals(' . $expected . ')';
+    return 'if (' . $compare . ') {';
+}
+
+/** The assignment/rebuild expression of the update recipe. */
+function php_operations_rebuild_expr(
+    array $recipe,
+    array $definitions,
+    array $typesIndex,
+    string $entityVar,
+    array $operation,
+    array $context,
+): string {
+    $entityId = (string) $recipe['entity'];
+    $entityFqn = (string) $typesIndex[$entityId]['fqn'];
+    $class = php_types_entry_class(['fqn' => $entityFqn]);
+    $args = [];
+    foreach ($definitions[$entityId]['fields'] as $field) {
+        $name = (string) $field['name'];
+        $handled = false;
+        foreach ($recipe['assignments'] as $assignment) {
+            if ($assignment['field'] === $name) {
+                $args[] = php_operations_operand_expr(
+                    $assignment['value'],
+                    $field['type'],
+                    $definitions,
+                    $typesIndex,
+                    $recipe,
+                    $operation,
+                    $context,
+                );
+                $handled = true;
+                break;
+            }
+        }
+        if ($handled) {
+            continue;
+        }
+        // The identity and every kept field carry over from the read.
+        $args[] = $entityVar . '->' . php_types_property_of($name);
+    }
+    return 'new ' . $class . '(' . implode(', ', $args) . ')';
+}
+
+/** One event construction expression. */
+function php_operations_event_expr(
+    array $emission,
+    array $recipe,
+    array $definitions,
+    array $typesIndex,
+    string $entityVar,
+    array $operation,
+    array $context,
+): string {
+    $eventId = (string) $emission['event'];
+    $class = php_types_entry_class(['fqn' => (string) $typesIndex[$eventId]['fqn']]);
+    $args = [];
+    foreach ($definitions[$eventId]['payload'] as $field) {
+        $name = (string) $field['name'];
+        $args[] = php_operations_operand_expr(
+            $emission['payload'][$name],
+            $field['type'],
+            $definitions,
+            $typesIndex,
+            $recipe,
+            $operation,
+            $context,
+        );
+    }
+    return 'new ' . $class . '(' . implode(', ', $args) . ')';
+}
+
+/**
+ * One closed operand expression. `$targetExpr` is the target field's
+ * IR type expression; it types literal operands exactly.
+ */
+function php_operations_operand_expr(
+    array $operand,
+    mixed $targetExpr,
+    array $definitions,
+    array $typesIndex,
+    array $recipe,
+    array $operation,
+    array $context,
+): string {
+    if (isset($operand['fromInput'])) {
+        return '$input->' . php_types_property_of((string) $operand['fromInput']);
+    }
+    if (isset($operand['fromEntity'])) {
+        $entityVar = '$' . lcfirst(php_types_stem_of((string) $recipe['entity'], 'plain'));
+        return $entityVar . '->' . php_types_property_of((string) $operand['fromEntity']);
+    }
+    if (isset($operand['enumCase'])) {
+        $enumId = (string) $operand['enumCase']['type'];
+        $value = (string) $operand['enumCase']['value'];
+        return '\\' . $typesIndex[$enumId]['fqn'] . '::' . php_operations_enum_case_of($definitions[$enumId], $value);
+    }
+    // A literal wraps in the exact scalar wrapper of the target leaf.
+    $leaf = php_operations_leaf_ref($targetExpr);
+    $fqn = $leaf !== null ? ($typesIndex[$leaf]['fqn'] ?? null) : null;
+    if (is_string($fqn)) {
+        $literal = $operand['literal'];
+        $spelling = is_string($literal) ? php_types_string_literal($literal) : var_export($literal, true);
+        return '\\' . $fqn . '::from(' . $spelling . ')';
+    }
+    // The join guarantees a typed scalar target; kernel bug guard.
+    throw new LogicException('literal operand without a typed scalar target');
+}
+
+/** The declared case name of one enum value, derived exactly like the type map. */
+function php_operations_enum_case_of(array $definition, string $value): string
+{
+    foreach ($definition['values'] as $candidate) {
+        if ((string) $candidate['value'] === $value) {
+            return ucfirst((string) preg_replace('/[^a-zA-Z0-9]/', '_', $value));
+        }
+    }
+    throw new LogicException('undeclared enum value: ' . $value);
+}
+
+/** The type expression of one entity field. */
+function php_operations_entity_field_expr(string $entityId, string $field, array $definitions): mixed
+{
+    foreach ($definitions[$entityId]['fields'] as $candidate) {
+        if ((string) $candidate['name'] === $field) {
+            return $candidate['type'];
+        }
+    }
+    throw new LogicException('unknown entity field: ' . $field);
+}
+
+/** One narrow port interface (or query input DTO) text. */
+function php_operations_port_text(
+    array $operation,
+    array $artifact,
+    array $definitions,
+    array $typesIndex,
+    string $namespace,
+    array $context,
+): string {
+    $actor = '\\' . $context['namespacePrefix'] . '\\ActorContext';
+    $inputFqn = '\\' . $operation['input']['fqn'];
+    $class = php_types_entry_class(['fqn' => (string) $artifact['fqn']]);
+    // The query input DTO: an explicit empty input, never a silent null.
+    if ($operation['kind'] === 'query' && str_ends_with((string) $artifact['fqn'], 'Input')) {
+        $lines = [
+            php_operations_file_header($context, $namespace, $operation['id']),
+            '',
+            'final readonly class ' . $class,
+            '{',
+            '    public function __construct()',
+            '    {',
+            '    }',
+            '}',
+        ];
+        return implode("\n", $lines) . "\n";
+    }
+    $role = null;
+    foreach ($operation['ports'] as $port) {
+        if ($port['fqn'] === $artifact['fqn']) {
+            $role = $port['role'];
+        }
+    }
+    $lines = [
+        php_operations_file_header($context, $namespace, $operation['id']),
+        '',
+        'interface ' . $class,
+        '{',
+    ];
+    if ($role === 'policy') {
+        $lines[] = '    /** The declared authorization gate; a denial throws one typed error. */';
+        $lines[] = '    public function authorize(' . $inputFqn . ' $input, ' . $actor . ' $actor): void;';
+    } elseif ($role === 'events') {
+        foreach ($operation['recipe']['emit'] ?? [] as $emission) {
+            $eventFqn = '\\' . $typesIndex[(string) $emission['event']]['fqn'];
+            $method = lcfirst(php_types_stem_of((string) $emission['event'], 'plain'));
+            $lines[] = '    public function ' . $method . '(' . $eventFqn . ' $event): void;';
+        }
+    } elseif ($role === 'delegation') {
+        $returnType = $operation['result'] === null ? 'void' : '\\' . $operation['result']['fqn'];
+        $method = (string) $operation['recipe']['method'];
+        $lines[] = '    /** The one maintained body this managed wrapper delegates to. */';
+        $lines[] = '    public function ' . $method . '(' . $inputFqn . ' $input, ' . $actor . ' $actor): ' . $returnType . ';';
+    }
+    $lines[] = '}';
+    return implode("\n", $lines) . "\n";
+}
+
+/** One narrow repository interface text. */
+function php_operations_repository_text(
+    array $operation,
+    array $artifact,
+    array $definitions,
+    array $typesIndex,
+    string $namespace,
+    array $context,
+): string {
+    $repository = $operation['repository'];
+    $entityFqn = '\\' . $repository['entityFqn'];
+    $keyId = php_operations_leaf_ref(
+        php_operations_entity_field_expr((string) $repository['entity'], (string) $repository['identity'], $definitions),
+    );
+    $keyFqn = '\\' . $typesIndex[(string) $keyId]['fqn'];
+    $lines = [
+        php_operations_file_header($context, $namespace, $operation['id']),
+        '',
+        'interface ' . php_types_entry_class(['fqn' => (string) $artifact['fqn']]),
+        '{',
+        '    public function find(' . $keyFqn . ' $key): ?' . $entityFqn . ';',
+        '',
+        '    public function save(' . $entityFqn . ' $entity): void;',
+        '}',
+    ];
+    return implode("\n", $lines) . "\n";
+}
+
+/** One typed error class text. */
+function php_operations_error_text(
+    array $operation,
+    array $artifact,
+    string $namespace,
+    array $context,
+): string {
+    $lines = [
+        php_operations_file_header($context, $namespace, $operation['id']),
+        '',
+        'final class ' . php_types_entry_class(['fqn' => (string) $artifact['fqn']]),
+        '    extends \\' . $context['namespacePrefix'] . '\\OperationError',
+        '{',
+        '}',
+    ];
+    return implode("\n", $lines) . "\n";
+}
+
+/** The deterministic classmap text over the collected files. */
+function php_operations_classmap_text(array $files, array $context, string $root): string
+{
+    $entries = [];
+    foreach ($files as $file) {
+        if (!isset($file['fqn']) || $file['role'] === 'sidecar') {
+            continue;
+        }
+        $relative = substr((string) $file['path'], strlen($root) + 1);
+        $entries[(string) $file['fqn']] = $relative;
+    }
+    ksort($entries);
+    $lines = [
+        '<?php',
+        '',
+        'declare(strict_types=1);',
+        '',
+        '// Generated by ' . ADAPTER_ID . '@' . ADAPTER_VERSION . ' (operations generator, issue #59).',
+        '// The deterministic class map: fully-qualified name => root-relative path.',
+        '// The loading authority of the generated operations tree - no runtime',
+        '// registration magic, no Composer scan.',
+        '',
+        'return [',
+    ];
+    foreach ($entries as $fqn => $relative) {
+        $lines[] = '    ' . php_types_string_literal($fqn) . ' => ' . php_types_string_literal($relative) . ',';
+    }
+    $lines[] = '];';
+    return implode("\n", $lines) . "\n";
+}
+
+/** The canonical sidecar bytes over the complete inventory. */
+function php_operations_sidecar_text(
+    string $projectId,
+    array $mapped,
+    array $files,
+    array $context,
+    string $root,
+): string {
+    $operations = [];
+    foreach ($mapped['operations'] as $operation) {
+        $entry = [
+            'id' => $operation['id'],
+            'kind' => $operation['kind'],
+            'mode' => $operation['mode'],
+        ];
+        if ($operation['mode'] === 'managed') {
+            $entry['recipe'] = $operation['recipeKind'];
+        }
+        $entry['entry'] = [
+            'fqn' => $operation['entry']['fqn'],
+            'method' => $operation['entry']['method'],
+            'path' => $operation['entry']['path'],
+        ];
+        $entry['input'] = ['fqn' => $operation['input']['fqn']];
+        if ($operation['result'] !== null) {
+            $entry['result'] = ['fqn' => $operation['result']['fqn']];
+        }
+        if ($operation['errors'] !== []) {
+            $entry['errors'] = array_map(
+                static fn (array $error): array => ['id' => $error['id'], 'fqn' => $error['fqn']],
+                $operation['errors'],
+            );
+        }
+        if ($operation['ports'] !== []) {
+            $entry['ports'] = array_map(
+                static fn (array $port): array => array_filter([
+                    'name' => $port['name'],
+                    'role' => $port['role'],
+                    'entity' => $port['entity'] ?? null,
+                ], static fn (mixed $value): bool => $value !== null),
+                $operation['ports'],
+            );
+        }
+        if ($operation['policyId'] !== null) {
+            $entry['policy'] = $operation['policyId'];
+        }
+        $entry['transaction'] = $operation['transaction'];
+        $entry['effects'] = $operation['effects'];
+        $operations[] = $entry;
+    }
+    $artifacts = [];
+    foreach ($mapped['operations'] as $operation) {
+        foreach ($operation['artifacts'] as $artifact) {
+            if ($artifact['role'] !== 'declared') {
+                continue;
+            }
+            $artifacts[] = [
+                'path' => $artifact['path'],
+                'role' => 'declared',
+                'lifecycle' => 'checked',
+            ];
+        }
+    }
+    foreach ($files as $file) {
+        $row = [
+            'path' => substr((string) $file['path'], strlen($root) + 1),
+            'role' => $file['role'],
+            'lifecycle' => $file['lifecycle'],
+        ];
+        if (isset($file['operation'])) {
+            $row['operation'] = $file['operation'];
+        }
+        if (isset($file['digest'])) {
+            $row['digest'] = $file['digest'];
+        }
+        $artifacts[] = $row;
+    }
+    usort($artifacts, static fn (array $left, array $right): int => strcmp((string) $left['path'], (string) $right['path']));
+    $document = [
+        'schemaVersion' => PHP_OPERATIONS_MAP_SCHEMA_VERSION,
+        'identity' => PHP_OPERATIONS_MAP_IDENTITY,
+        'projectId' => $projectId,
+        'adapter' => [
+            'id' => ADAPTER_ID,
+            'version' => ADAPTER_VERSION,
+            'digest' => sha256_digest(ADAPTER_ID . '@' . ADAPTER_VERSION),
+        ],
+        'digests' => [
+            'ir' => $context['irDigest'],
+            'input' => $context['inputDigest'],
+            'typesInput' => $context['typesInputDigest'],
+        ],
+        'operations' => $operations,
+        'artifacts' => $artifacts,
+    ];
+    return php_types_canonical_json($document) . "\n";
+}
+
+// ----- bundled compiler module: operation-bindings.php -----
+
+/**
+ * The operations bindings join (issue #59): declared checked and custom
+ * entrypoints join against the observed-handler evidence document. The
+ * architecture mirrors the #58 type bindings join: a closed evidence
+ * shape, exact identity digests, and typed findings for missing,
+ * ambiguous, stale, or diverging records. The join compares the
+ * declared FQN/method/path and the observed constructor slots, method
+ * shape, and public entrypoint count. Presence of a plausible document
+ * is never trusted as producer execution — the producer receipt rides
+ * the evidence, and the pinned-tool lane owns its authenticity.
+ */
+
+const PHP_OPERATIONS_BINDING_MISSING = 'operations.binding-missing';
+const PHP_OPERATIONS_BINDING_AMBIGUOUS = 'operations.binding-ambiguous';
+const PHP_OPERATIONS_BINDING_MISMATCH = 'operations.binding-mismatch';
+const PHP_OPERATIONS_BINDING_STALE = 'operations.binding-stale';
+
+/**
+ * Validate one parsed observed evidence document against its closed
+ * shape. Returns the normalized document or null.
+ *
+ * @return array<string, mixed>|null
+ */
+function php_validate_operations_evidence(mixed $document): ?array
+{
+    if (!is_array($document)
+        || ($document['schemaVersion'] ?? null) !== PHP_OPERATIONS_EVIDENCE_SCHEMA_VERSION
+        || ($document['identity'] ?? null) !== PHP_OPERATIONS_EVIDENCE_IDENTITY) {
+        return null;
+    }
+    $projectId = $document['projectId'] ?? null;
+    if (!is_string($projectId) || preg_match('/^[a-z][a-z0-9_]*$/', $projectId) !== 1) {
+        return null;
+    }
+    foreach (['irDigest', 'operationsInputDigest'] as $digest) {
+        if (!is_sha256_digest($document[$digest] ?? null)) {
+            return null;
+        }
+    }
+    $producer = $document['producer'] ?? null;
+    if (!is_array($producer)
+        || ($producer['tool'] ?? null) !== 'mago'
+        || !is_string($producer['version'] ?? null)
+        || preg_match('/^[0-9]+\.[0-9]+\.[0-9]+$/', (string) ($producer['version'] ?? '')) !== 1) {
+        return null;
+    }
+    if (array_key_exists('receiptPath', $producer)) {
+        if (!is_string($producer['receiptPath'])
+            || preg_match('/^[.a-z][a-z0-9_\/.-]*\.json$/', $producer['receiptPath']) !== 1) {
+            return null;
+        }
+        if (isset($producer['receiptDigest']) && !is_sha256_digest($producer['receiptDigest'])) {
+            return null;
+        }
+    }
+    $sources = $document['sources'] ?? null;
+    if (!is_array($sources) || $sources === [] || count($sources) > 4096) {
+        return null;
+    }
+    $byPath = [];
+    $previous = '';
+    foreach ($sources as $source) {
+        if (!is_array($source) || count($source) !== 2
+            || !is_string($source['path'] ?? null)
+            || preg_match('/^[a-z][a-z0-9_\/.-]*\.php$/', (string) ($source['path'] ?? '')) !== 1
+            || !is_sha256_digest($source['digest'] ?? null)) {
+            return null;
+        }
+        if ($source['path'] <= $previous) {
+            return null;
+        }
+        $previous = $source['path'];
+        $byPath[$source['path']] = $source['digest'];
+    }
+    $operations = $document['operations'] ?? null;
+    if (!is_array($operations) || $operations === [] || count($operations) > 4096) {
+        return null;
+    }
+    $records = [];
+    $previousId = '';
+    foreach ($operations as $record) {
+        $validated = php_operations_validate_evidence_record($record);
+        if ($validated === null) {
+            return null;
+        }
+        if ($validated['id'] <= $previousId) {
+            return null;
+        }
+        $previousId = $validated['id'];
+        if (!isset($byPath[strtolower((string) $validated['path'])])) {
+            // Every record's source must appear in the inventory with
+            // the identical digest, or the document is not a closed
+            // observation.
+            return null;
+        }
+        $records[] = $validated;
+    }
+    return [
+        'projectId' => $projectId,
+        'irDigest' => $document['irDigest'],
+        'operationsInputDigest' => $document['operationsInputDigest'],
+        'producer' => $producer,
+        'sources' => $byPath,
+        'operations' => $records,
+    ];
+}
+
+/** One observed operation record against the closed shape. */
+function php_operations_validate_evidence_record(mixed $record): ?array
+{
+    if (!is_array($record) || count($record) !== 9) {
+        return null;
+    }
+    $id = $record['id'] ?? null;
+    if (!is_string($id) || preg_match('/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/', $id) !== 1) {
+        return null;
+    }
+    $fqn = $record['fqn'] ?? null;
+    if (!is_string($fqn)
+        || preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){0,7}$/', $fqn) !== 1) {
+        return null;
+    }
+    if (($record['method'] ?? null) !== 'handle') {
+        return null;
+    }
+    $path = $record['path'] ?? null;
+    if (!is_string($path)
+        || preg_match('/^[A-Za-z][A-Za-z0-9_\/.-]*\.php$/', $path) !== 1
+        || str_contains($path, '..')) {
+        return null;
+    }
+    if (!is_sha256_digest($record['digest'] ?? null)) {
+        return null;
+    }
+    $constructor = [];
+    if (!is_array($record['constructor'] ?? null) || count($record['constructor']) > 16) {
+        return null;
+    }
+    foreach ($record['constructor'] as $slot) {
+        if (!is_array($slot) || count($slot) !== 2
+            || !is_string($slot['name'] ?? null)
+            || preg_match('/^[a-z][A-Za-z0-9_]*$/', (string) ($slot['name'] ?? '')) !== 1
+            || !is_string($slot['type'] ?? null)
+            || ($slot['type'] ?? '') === '' || strlen((string) ($slot['type'] ?? '')) > 256) {
+            return null;
+        }
+        $constructor[] = ['name' => $slot['name'], 'type' => $slot['type']];
+    }
+    if (!is_array($record['parameters'] ?? null)
+        || count($record['parameters']) < 1 || count($record['parameters']) > 8) {
+        return null;
+    }
+    $parameters = [];
+    foreach ($record['parameters'] as $parameter) {
+        if (!is_array($parameter) || count($parameter) < 3 || count($parameter) > 4
+            || !is_string($parameter['name'] ?? null)
+            || preg_match('/^[a-z][A-Za-z0-9_]*$/', (string) ($parameter['name'] ?? '')) !== 1
+            || !is_string($parameter['type'] ?? null)
+            || ($parameter['type'] ?? '') === '' || strlen((string) ($parameter['type'] ?? '')) > 256
+            || !is_bool($parameter['required'] ?? null)) {
+            return null;
+        }
+        if (array_key_exists('nullable', $parameter) && !is_bool($parameter['nullable'])) {
+            return null;
+        }
+        $parameters[] = $parameter;
+    }
+    $returnType = $record['returnType'] ?? null;
+    if (!is_string($returnType) || $returnType === '' || strlen($returnType) > 256) {
+        return null;
+    }
+    $publicMethods = $record['publicMethods'] ?? null;
+    if (!is_array($publicMethods) || count($publicMethods) < 1 || count($publicMethods) > 32) {
+        return null;
+    }
+    foreach ($publicMethods as $method) {
+        if (!is_string($method)
+            || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $method) !== 1) {
+            return null;
+        }
+    }
+    return [
+        'id' => $id,
+        'fqn' => $fqn,
+        'method' => 'handle',
+        'path' => $path,
+        'digest' => $record['digest'],
+        'constructor' => $constructor,
+        'parameters' => $parameters,
+        'returnType' => $returnType,
+        'publicMethods' => $publicMethods,
+    ];
+}
+
+/**
+ * The strict join of every checked and custom record against the
+ * observed evidence. `$fileDigest` resolves current source digests.
+ * Returns internal finding rows; every refusal happens before any
+ * generated write.
+ *
+ * @param array<int, array<string, mixed>> $records
+ * @param callable(string): ?string $fileDigest
+ * @return array<int, array<string, string>>
+ */
+function php_check_operation_bindings(
+    array $records,
+    array $definitions,
+    ?array $evidence,
+    array $input,
+    string $inputDigest,
+    ?callable $fileDigest,
+): array {
+    $findings = [];
+    $add = static function (string $code, string $semanticId, string $detail) use (&$findings): void {
+        $findings[] = ['code' => $code, 'semanticId' => $semanticId, 'detail' => $detail];
+    };
+    // The semantic reconciliation runs first: an unresolvable operation
+    // id is the typed finding even when the evidence is absent or
+    // stale. The embedded-registry binding equality stays the core
+    // join's authority; this keeps the mirror honest when the evidence
+    // document is self-authored.
+    $unresolved = [];
+    foreach ($records as $record) {
+        $recordId = (string) $record['id'];
+        $definition = $definitions[$recordId] ?? null;
+        if (!is_array($definition) || ($definition['kind'] ?? null) !== (string) $record['kind']) {
+            $unresolved[$recordId] = true;
+            $add(
+                'operations.operation-unresolved',
+                $recordId,
+                "the operation id `$recordId` is not a compiled IR definition of kind `{$record['kind']}`",
+            );
+        }
+    }
+    $records = array_values(array_filter(
+        $records,
+        static fn (array $record): bool => !isset($unresolved[(string) $record['id']]),
+    ));
+    if ($records === []) {
+        return $findings;
+    }
+    if ($evidence === null) {
+        foreach ($records as $record) {
+            $add(
+                PHP_OPERATIONS_BINDING_MISSING,
+                $record['id'],
+                'no observed evidence document covers the declared entrypoint',
+            );
+        }
+        return $findings;
+    }
+    if ($evidence['projectId'] !== $input['projectId']
+        || $evidence['irDigest'] !== $input['irDigest']
+        || $evidence['operationsInputDigest'] !== $inputDigest) {
+        // The evidence names different inputs: every record is stale.
+        foreach ($records as $record) {
+            $add(
+                PHP_OPERATIONS_BINDING_STALE,
+                $record['id'],
+                'the observed evidence was produced against different input bytes',
+            );
+        }
+        return $findings;
+    }
+    $byId = [];
+    foreach ($evidence['operations'] as $observed) {
+        $byId[$observed['id']] = $observed;
+    }
+    foreach ($records as $record) {
+        $id = (string) $record['id'];
+        $entry = $record['entry'];
+        // The semantic reconciliation the mirror owns: the declared id
+        // must be a compiled IR definition of the record's kind. The
+        // embedded-registry binding equality stays the core join's
+        // authority; this keeps an unresolvable operation a typed
+        // finding even when the evidence document is self-authored.
+        $definition = $definitions[$id] ?? null;
+        if (!is_array($definition) || ($definition['kind'] ?? null) !== (string) $record['kind']) {
+            $add(
+                'operations.operation-unresolved',
+                $id,
+                "the operation id `$id` is not a compiled IR definition of kind `{$record['kind']}`",
+            );
+            continue;
+        }
+        $matches = array_values(array_filter(
+            $byId,
+            static fn (array $candidate): bool => strtolower((string) $candidate['fqn']) === strtolower((string) $entry['fqn']),
+        ));
+        if (count($matches) > 1) {
+            $add(PHP_OPERATIONS_BINDING_AMBIGUOUS, $id, 'the evidence carries competing records for the declared FQN');
+            continue;
+        }
+        $observed = $matches[0] ?? null;
+        if ($observed === null) {
+            $observed = $byId[$id] ?? null;
+            if ($observed === null) {
+                $add(PHP_OPERATIONS_BINDING_MISSING, $id, 'no observed record carries the declared entrypoint');
+                continue;
+            }
+        }
+        $nativePath = (string) $observed['path'];
+        if (strtolower($nativePath) !== strtolower((string) $entry['path'])) {
+            $add(PHP_OPERATIONS_BINDING_MISMATCH, $id, "the observed path `$nativePath` diverges from the declared `{$entry['path']}`");
+            continue;
+        }
+        // Current bytes: the observed digest must match the live file.
+        $live = $fileDigest !== null ? $fileDigest($nativePath) : null;
+        if ($live === null) {
+            $add(PHP_OPERATIONS_BINDING_STALE, $id, 'the observed source is missing on disk');
+            continue;
+        }
+        if ($live !== $observed['digest']) {
+            $add(PHP_OPERATIONS_BINDING_STALE, $id, 'the observed source digest is stale against the live bytes');
+            continue;
+        }
+        $inventory = $evidence['sources'][strtolower($nativePath)] ?? null;
+        if ($inventory !== null && $inventory !== $observed['digest']) {
+            $add(PHP_OPERATIONS_BINDING_STALE, $id, 'the observed record and the source inventory disagree');
+            continue;
+        }
+        if ((string) $observed['method'] !== (string) $entry['method']) {
+            $add(PHP_OPERATIONS_BINDING_MISMATCH, $id, 'the observed entrypoint method diverges');
+            continue;
+        }
+        $publicMethods = $observed['publicMethods'];
+        $extra = array_values(array_filter(
+            $publicMethods,
+            static fn (string $method): bool => !in_array($method, ['handle', '__construct'], true),
+        ));
+        if ($extra !== []) {
+            $add(
+                PHP_OPERATIONS_BINDING_MISMATCH,
+                $id,
+                'the observed class exposes extra public entrypoints: ' . implode(',', $extra),
+            );
+            continue;
+        }
+        $parameters = $observed['parameters'];
+        if (count($parameters) < 2
+            || !str_ends_with((string) $parameters[0]['type'], 'Input')
+            || (string) $parameters[1]['type'] !== 'ActorContext'
+            || $parameters[0]['required'] !== true
+            || $parameters[1]['required'] !== true) {
+            $add(
+                PHP_OPERATIONS_BINDING_MISMATCH,
+                $id,
+                'the observed signature is not (input, ActorContext)',
+            );
+            continue;
+        }
+        // Constructor slots: the observed class must inject at least
+        // one typed dependency (a handler with an empty constructor
+        // cannot carry the declared ports) and every slot resolves to a
+        // non-empty type identity.
+        if (count($observed['constructor']) < 1) {
+            $add(
+                PHP_OPERATIONS_BINDING_MISMATCH,
+                $id,
+                'the observed class injects no typed dependency',
+            );
+            continue;
+        }
+    }
+    // Deterministic order: semantic id, then code.
+    usort($findings, static function (array $left, array $right): int {
+        return [$left['semanticId'], $left['code']] <=> [$right['semanticId'], $right['code']];
+    });
+    return $findings;
 }
 
 // ---- bundled Composer gates policy (issue #61) ------------------
