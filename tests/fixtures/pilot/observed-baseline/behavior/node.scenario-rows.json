@@ -1,0 +1,140 @@
+{
+  "schema_version": "lekalo/observed-behavior-baseline/v0.1.0",
+  "identity": "dev.lekalo.observed-behavior-baseline@0.1.0",
+  "role": "observed-baseline",
+  "target": "node-typescript",
+  "runner": "node:test",
+  "binding_mode": "generated",
+  "note": "The observed behavior baseline of the Node planner implementation (issue #114): the semantic outcome rows of the committed portable scenario corpus under the real node:test runner, derived by scripts/test-observed-baseline.mjs from durable scenario-run records. Rows carry step_id/observes/kind/outcome only. The race case is honestly unsupported-only: no race evaluator exists in the assertion vocabulary yet, and a declared unsupported row is recorded, never a silent pass.",
+  "corpus": {
+    "scenario_count": 6,
+    "scenarios": [
+      {
+        "id": "planner.scenario.focus_concurrent",
+        "digest": "sha256:90a798e9fb71447ce627c79006e9012e4a01fbc714375b9d493ef6c6e7e099c9"
+      },
+      {
+        "id": "planner.scenario.focus_denied",
+        "digest": "sha256:ddf0348dccd9bc7134f6f93fb224ec210c2f46ed018ae405e2b35ddae54e57c5"
+      },
+      {
+        "id": "planner.scenario.focus_error",
+        "digest": "sha256:dac4c82169c4a7ff4f1a645d8db507532da778ac1a4a1cafcee2ebe70010391a"
+      },
+      {
+        "id": "planner.scenario.focus_happy",
+        "digest": "sha256:5abcb893cae13c2d9656a6e5ac2f1a278746a8eb8f9c667e29127d8e82a2c162"
+      },
+      {
+        "id": "planner.scenario.focus_idempotent",
+        "digest": "sha256:c5101f5eba83b1222ee93bef0d68c24900dcda88b433e33937c8904434a9b24b"
+      },
+      {
+        "id": "planner.scenario.focus_rollback",
+        "digest": "sha256:54c2ea0d07e7b393ce4f91f04f51f625362afede96b2f717eabc0f24a12afbfb"
+      }
+    ]
+  },
+  "ir_evidence": {
+    "path": "tests/fixtures/adapter-conformance/inputs/ir-minimal.json",
+    "digest": "sha256:e1a2173af461cb43cfa58f091bd92a439f8cfa53aba7aea33481d85d6977decd"
+  },
+  "scenarios": {
+    "planner.scenario.focus_concurrent": [
+      {
+        "step_id": null,
+        "observes": null,
+        "kind": "scenario",
+        "outcome": "unsupported"
+      },
+      {
+        "step_id": "no_duplicates",
+        "observes": "replay_focus",
+        "kind": "idempotency",
+        "outcome": "unsupported"
+      }
+    ],
+    "planner.scenario.focus_denied": [
+      {
+        "step_id": "bulk_denied",
+        "observes": "focus",
+        "kind": "authorization",
+        "outcome": "pass"
+      },
+      {
+        "step_id": "solo_allowed",
+        "observes": "focus",
+        "kind": "authorization",
+        "outcome": "pass"
+      },
+      {
+        "step_id": "output",
+        "observes": "focus",
+        "kind": "result",
+        "outcome": "pass"
+      }
+    ],
+    "planner.scenario.focus_error": [
+      {
+        "step_id": "output",
+        "observes": "run",
+        "kind": "error",
+        "outcome": "pass"
+      }
+    ],
+    "planner.scenario.focus_happy": [
+      {
+        "step_id": "output",
+        "observes": "run",
+        "kind": "result",
+        "outcome": "pass"
+      },
+      {
+        "step_id": "state",
+        "observes": "run",
+        "kind": "entity_state",
+        "outcome": "pass"
+      },
+      {
+        "step_id": "emitted",
+        "observes": "run",
+        "kind": "emitted",
+        "outcome": "pass"
+      }
+    ],
+    "planner.scenario.focus_idempotent": [
+      {
+        "step_id": "no_duplicates",
+        "observes": "replay_focus",
+        "kind": "idempotency",
+        "outcome": "pass"
+      }
+    ],
+    "planner.scenario.focus_rollback": [
+      {
+        "step_id": "typed_error",
+        "observes": "focus_unknown",
+        "kind": "error",
+        "outcome": "pass"
+      },
+      {
+        "step_id": "no_row",
+        "observes": "focus_unknown",
+        "kind": "entity_state",
+        "outcome": "pass"
+      },
+      {
+        "step_id": "row_unchanged",
+        "observes": "focus_unknown",
+        "kind": "entity_state",
+        "outcome": "pass"
+      },
+      {
+        "step_id": "no_effect",
+        "observes": "focus_unknown",
+        "kind": "forbidden_effect",
+        "outcome": "pass"
+      }
+    ]
+  }
+}

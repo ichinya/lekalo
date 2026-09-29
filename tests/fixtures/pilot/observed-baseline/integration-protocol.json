@@ -1,0 +1,42 @@
+{
+  "schema_version": "lekalo/observed-integration-protocol/v0.1.0",
+  "identity": "dev.lekalo.observed-integration-protocol@0.1.0",
+  "role": "observed-baseline",
+  "target": "node-typescript",
+  "note": "The integration protocol the observed Node implementation speaks today, pinned as the baseline for the Laravel pilot (issue #114): the closed core-adapter envelope lekalo.target/v1 at its current wire version, plus the committed protocol goldens the native-gate battery pins. Any protocol change is a baseline change and must re-pin this document.",
+  "protocol": {
+    "name": "lekalo.target/v1",
+    "version": "0.3.2",
+    "schema": {
+      "path": "contracts/target-protocol.schema.v0.3.2.json",
+      "digest": "sha256:8af325a150a64c04ab8cbe4838e039e3026e46ebbea8a0385c80153b8935825f"
+    },
+    "envelope": "one request envelope on stdin, one response envelope on stdout; unimplemented operations answer one valid unsupported error envelope"
+  },
+  "goldens": [
+    {
+      "path": "tests/fixtures/node-native-gates/protocol/plan.golden.json",
+      "digest": "sha256:496887f6ee583eca8ada46df7fc6a9475e87c3f4b32bfe612ed885e7b2dc5448"
+    },
+    {
+      "path": "tests/fixtures/node-native-gates/protocol/policy.golden.json",
+      "digest": "sha256:1e32053d716cdcaf0d1498317fe4cff731042f9dd5042bab0c5d9442d3c1df3b"
+    },
+    {
+      "path": "tests/fixtures/node-native-gates/protocol/run-result.golden.json",
+      "digest": "sha256:ea827af00d22e3d2a239a7ec3b7f8d791c342ccafde0b3692c3283bd781bd31e"
+    },
+    {
+      "path": "tests/fixtures/node-native-gates/protocol/view.golden.json",
+      "digest": "sha256:f7233098323c1a3c3b3ec3c69199afe5d55ace86b7b9e9bc60669918d53482f0"
+    },
+    {
+      "path": "tests/fixtures/node-native-gates/protocol/digest-vector.json",
+      "digest": "sha256:306cb26ff3a5e4901a5113d65f324c7100dc91ec63079de69683913cd42a8900"
+    },
+    {
+      "path": "tests/fixtures/node-native-gates/protocol/negative-vectors.json",
+      "digest": "sha256:00f4d7708721b4439fb75efc1a08bbddd7e6936b7f2eee7f14d4cd659ee95943"
+    }
+  ]
+}
