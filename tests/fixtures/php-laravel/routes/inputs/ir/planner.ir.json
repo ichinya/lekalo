@@ -1,0 +1,206 @@
+{
+ "contract": "dev.lekalo.ir@0.2.16",
+ "definitions": [
+  {
+   "derived_from": [
+    "PLANNER-REQ-001"
+   ],
+   "description": "Count focused tasks",
+   "id": "planner.count_focused",
+   "kind": "query",
+   "reads": [
+    "planner.task"
+   ],
+   "returns": {
+    "ref": "planner.task_state"
+   },
+   "version": 1
+  },
+  {
+   "applies_to": [
+    "planner.focus_task"
+   ],
+   "decision": "deny",
+   "description": "Bulk focus is out of scope",
+   "id": "planner.deny_bulk_focus",
+   "kind": "policy",
+   "version": 1
+  },
+  {
+   "description": "Focus one task from a path id",
+   "id": "planner.endpoint_focus_task_by_id",
+   "invokes": "planner.focus_task",
+   "kind": "endpoint",
+   "method": "POST",
+   "path": "/tasks/{task_id}/focus",
+   "version": 1
+  },
+  {
+   "description": "The maintained focus route of the fixture app, checked in contracted mode",
+   "id": "planner.endpoint_tasks_focus",
+   "invokes": "planner.focus_task",
+   "kind": "endpoint",
+   "method": "POST",
+   "path": "/api/tasks/{task_id}/focus",
+   "version": 1
+  },
+  {
+   "description": "The today board: the planner focus state over HTTP",
+   "id": "planner.endpoint_today",
+   "invokes": "planner.count_focused",
+   "kind": "endpoint",
+   "method": "GET",
+   "path": "/today",
+   "version": 1
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-001"
+   ],
+   "description": "Focus one task",
+   "effects": [
+    "planner.update_task"
+   ],
+   "id": "planner.focus_task",
+   "input": [
+    {
+     "name": "task_id",
+     "required": true,
+     "type": {
+      "ref": "planner.task_id"
+     }
+    }
+   ],
+   "kind": "command",
+   "version": 1
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-001"
+   ],
+   "description": "The today board: list the planner tasks",
+   "id": "planner.list_tasks",
+   "kind": "query",
+   "reads": [
+    "planner.task"
+   ],
+   "returns": {
+    "list": {
+     "ref": "planner.task"
+    }
+   },
+   "version": 1
+  },
+  {
+   "description": "A focusable task",
+   "fields": [
+    {
+     "name": "task_id",
+     "required": true,
+     "type": {
+      "ref": "planner.task_id"
+     }
+    },
+    {
+     "name": "title",
+     "required": true,
+     "type": {
+      "ref": "planner.text"
+     }
+    },
+    {
+     "name": "state",
+     "required": true,
+     "type": {
+      "ref": "planner.task_state"
+     }
+    }
+   ],
+   "id": "planner.task",
+   "identity": [
+    "task_id"
+   ],
+   "kind": "entity",
+   "version": 1
+  },
+  {
+   "description": "A task became focused",
+   "id": "planner.task_focused",
+   "kind": "event",
+   "payload": [
+    {
+     "name": "task_id",
+     "required": true,
+     "type": {
+      "ref": "planner.task_id"
+     }
+    }
+   ],
+   "version": 1
+  },
+  {
+   "base": "uuid",
+   "description": "Stable task identifier",
+   "id": "planner.task_id",
+   "kind": "scalar",
+   "version": 1,
+   "visibility": "project"
+  },
+  {
+   "description": "Task lifecycle state",
+   "id": "planner.task_state",
+   "kind": "enum",
+   "values": [
+    {
+     "description": "Not started",
+     "value": "backlog"
+    },
+    {
+     "description": "Currently focused",
+     "value": "focused"
+    },
+    {
+     "description": "Completed",
+     "value": "done"
+    }
+   ],
+   "version": 1
+  },
+  {
+   "base": "string",
+   "description": "Human-readable text",
+   "id": "planner.text",
+   "kind": "scalar",
+   "version": 1
+  },
+  {
+   "description": "Focuses an existing task row",
+   "emits": [
+    "planner.task_focused"
+   ],
+   "entity": "planner.task",
+   "id": "planner.update_task",
+   "kind": "effect",
+   "operation": "update",
+   "version": 1
+  }
+ ],
+ "modelVersion": "0.2.16",
+ "modules": [
+  {
+   "description": "Task focus module",
+   "id": "planner",
+   "kind": "module",
+   "version": 1
+  }
+ ],
+ "project": {
+  "derived_from": [
+   "PLANNER-REQ-001"
+  ],
+  "description": "Focus planner routes corpus (issue #60)",
+  "id": "planner",
+  "kind": "project",
+  "version": 1
+ }
+}

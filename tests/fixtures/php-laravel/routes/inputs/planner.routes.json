@@ -1,0 +1,36 @@
+{
+ "schemaVersion": "lekalo/php-routes-input/v0.4.0",
+ "identity": "dev.lekalo.php-routes-input@0.4.0",
+ "projectId": "planner",
+ "irDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "transportDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "typesInputDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "operationsInputDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "policy": {
+  "namespacePrefix": "Lekalo\\Generated\\Routes",
+  "middleware": [
+   {"scheme": "user_bearer", "middleware": "fixture.auth"}
+  ]
+ },
+ "routes": [
+  {
+   "id": "planner.endpoint_focus_task_by_id",
+   "operation": "planner.focus_task",
+   "mode": "managed"
+  },
+  {
+   "id": "planner.endpoint_tasks_focus",
+   "operation": "planner.focus_task",
+   "mode": "checked",
+   "entry": {
+    "fqn": "App\\Http\\Controllers\\TaskFocusController",
+    "method": "focus"
+   }
+  },
+  {
+   "id": "planner.endpoint_today",
+   "operation": "planner.count_focused",
+   "mode": "managed"
+  }
+ ]
+}

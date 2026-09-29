@@ -1,0 +1,45 @@
+{
+ "schemaVersion": "lekalo/php-operations-input/v0.4.0",
+ "identity": "dev.lekalo.php-operations-input@0.4.0",
+ "projectId": "planner",
+ "irDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "typesInputDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "operations": [
+  {
+   "id": "planner.count_focused",
+   "kind": "query",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "FocusedCounter",
+    "method": "count"
+   },
+   "errors": ["planner.store_unavailable"],
+   "transaction": {"mode": "forbidden"}
+  },
+  {
+   "id": "planner.focus_task",
+   "kind": "command",
+   "mode": "managed",
+   "recipe": {
+    "kind": "single-entity-update",
+    "entity": "planner.task",
+    "key": "task_id",
+    "assignments": [
+     {"field": "state", "value": {"enumCase": {"type": "planner.task_state", "value": "focused"}}}
+    ],
+    "kept": ["title"],
+    "preconditions": [
+     {"field": "state", "equals": {"enumCase": {"type": "planner.task_state", "value": "backlog"}}, "error": "planner.focus_conflict"}
+    ],
+    "missingBehavior": {"error": "planner.task_not_found"},
+    "emit": [
+     {"event": "planner.task_focused", "payload": {"task_id": {"fromInput": "task_id"}}}
+    ]
+   },
+   "errors": ["planner.focus_conflict", "planner.focus_denied", "planner.input_invalid", "planner.store_unavailable", "planner.task_not_found"],
+   "policy": {"id": "planner.deny_bulk_focus"},
+   "transaction": {"mode": "required"}
+  }
+ ]
+}
