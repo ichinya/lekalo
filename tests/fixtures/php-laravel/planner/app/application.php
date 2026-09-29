@@ -44,10 +44,74 @@ $app->singleton(
 // The fixture's transport routes load here — at boot time, through the
 // same router the HTTP kernel dispatches through.
 $app->booted(static function (Application $app): void {
+    // Issue #60: the generated families load through their
+    // deterministic classmaps when a generate run has published them —
+    // the loading authority, no Composer scan, no runtime magic.
+    $classmaps = [];
+    foreach (['types', 'operations', 'routes'] as $family) {
+        $classmap = dirname(__DIR__) . '/.lekalo/generated/php-laravel/' . $family . '/classmap.php';
+        if (is_file($classmap)) {
+            $classmaps[$family] = [$family, require $classmap];
+        }
+    }
+    if ($classmaps !== []) {
+        $base = dirname(__DIR__);
+        spl_autoload_register(static function (string $class) use ($base, $classmaps): void {
+            foreach ($classmaps as [$family, $map]) {
+                if (isset($map[$class])) {
+                    // The types family's classmap spells `__DIR__`-based
+                    // absolute paths; the operations/routes families spell
+                    // root-relative ones. Both load through the same seam.
+                    $path = (string) $map[$class];
+                    if ($path !== '' && $path[0] !== '/' && !preg_match('/^[A-Za-z]:/', $path)) {
+                        $path = $base . '/.lekalo/generated/php-laravel/' . $family . '/' . $path;
+                    }
+                    require $path;
+
+                    return;
+                }
+            }
+        });
+    }
+
+    // Issue #60: the maintained adapters behind the generated ports —
+    // the only maintained integration the generated surface needs. The
+    // bindings name strings so the fixture boots with or without the
+    // generated tree.
+    $app->bind(
+        'Lekalo\Generated\Operations\Planner\TaskRepository',
+        'App\Lekalo\EloquentTaskRepository',
+    );
+    $app->bind('Lekalo\Generated\Operations\TransactionPort', 'App\Lekalo\DbTransactionPort');
+    $app->bind(
+        'Lekalo\Generated\Operations\Planner\FocusTaskPolicy',
+        'App\Lekalo\BulkFocusPolicy',
+    );
+    $app->bind(
+        'Lekalo\Generated\Operations\Planner\FocusTaskEvents',
+        'App\Lekalo\EloquentTaskEvents',
+    );
+    $app->bind(
+        'Lekalo\Generated\Operations\Planner\FocusedCounter',
+        'App\Lekalo\EloquentFocusedCounter',
+    );
+
+    // The fixture authentication seam the generated routes attach (the
+    // input's middleware mapping names this alias).
+    $app->make('router')->aliasMiddleware('fixture.auth', \App\Http\Middleware\RequireActor::class);
+
     $app->make('router')->group(['prefix' => 'api'], static function ($router): void {
         $router->post('/tasks/{task_id}/focus', [TaskFocusController::class, 'focus'])
             ->name('tasks.focus');
     });
+
+    // Issue #60: the managed routes of the routes family merge here —
+    // ownership-aware: the file exists only after a generate run, and
+    // the manual routes above are never touched by it.
+    $generatedRoutes = dirname(__DIR__) . '/.lekalo/generated/php-laravel/routes/routes.php';
+    if (is_file($generatedRoutes)) {
+        require $generatedRoutes;
+    }
 });
 
 return $app;
