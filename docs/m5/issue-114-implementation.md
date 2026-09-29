@@ -89,9 +89,22 @@ consumer-application name appears anywhere.
 
 ## Verification (local battery, this branch)
 
-- `cargo test --locked -p lekalo-core --test scenario` — 10 passed
-  (the six corpus scenarios decode and canonicalize through the
-  production Scenario IR).
+- `cargo test --locked -p lekalo-core` — **1423 passed, 0 failed**
+  across all targets (the six corpus scenarios decode and canonicalize
+  through the production Scenario IR in `--test scenario`, 10 tests).
+- `cargo fmt --all -- --check` — clean; `cargo clippy --workspace
+  --all-targets --locked -- -D warnings` — clean.
+- Node contract gates — all green: the 42 pinned-Ajv schema gates
+  (Ajv 8.17.1 provisioned outside the checkout), the authority/privacy/
+  structure/model/versioning/lockfile checkers, the adapter-manifest
+  contract + golden gates, the PHP types/round-trip/adapter/scenario-
+  bindings suites, the kernel/scanner/zod/native-gates/transport/
+  openapi/client-SDK/scenario-units suites, the client-SDK runtime and
+  contracts gates, the privacy evaluator/runtime/leak-corpus gates,
+  the classification CLI gate, the migration pipeline gate (the
+  PostgreSQL execution leg records an explicit local skip —
+  `postgresSkipped: true`), and the adapter conformance batteries
+  through the real CLI (`failures="0"` bare and scanner-configured).
 - `node scripts/test-node-scenario-tests.mjs` — 6 scenarios, all green
   (concurrency skips honestly; reruns byte-identical).
 - `node scripts/test-php-laravel-scenario-tests.mjs` —
@@ -103,9 +116,8 @@ consumer-application name appears anywhere.
   hits, audit fresh.
 - `node scripts/test-pilot-laravel-vue.mjs` — 10/10 legs (including
   the real Mago leg) in ~100 s.
-- The full battery and exact counts: see the verification block below
-  (routes 9/9, operations 13/13, ui 6/6, `cargo test -p lekalo-core`,
-  fmt, clippy, `php -n -l`, `git diff --check`).
+- `php -n -l` over the touched PHP files — no syntax errors;
+  `git diff --check` — clean.
 
 ## Honest gaps
 
