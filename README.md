@@ -479,6 +479,25 @@ the transport wire diff so removals still find their old consumers.
 See [docs/client-sdk.md](docs/client-sdk.md) and the golden fixtures
 under `tests/fixtures/client-sdk/`.
 
+## The greenfield pilot: Laravel + Vue (M5, issue #114)
+
+The first contracted pilot targets a **PHP + Laravel modular monolith
+with a Vue 3 + TypeScript + Vite frontend**: the semantic Model binds
+to Laravel command/query/policy/storage ports, one validated join
+projects the HTTP/OpenAPI document, the generated/checked TypeScript
+client feeds the maintained Vue screen, and Mago/Laratesto/native
+gates close the path. The experimental Node.js/TypeScript
+implementation stays the **observed baseline**: its event envelope,
+integration protocol, OpenAPI, and behavior are digest-pinned under
+`tests/fixtures/pilot/observed-baseline/`, and any old-backend removal
+decision must pass the written contract/equivalence gate first —
+nothing is removed big-bang. The planner Model itself carries no
+target concepts; the neutrality gate keeps that property mechanical.
+See [docs/m5/roadmap.md](docs/m5/roadmap.md),
+[docs/m5/tutorial-laravel-vue-pilot.md](docs/m5/tutorial-laravel-vue-pilot.md),
+[docs/m5/issue-114-equivalence-report.md](docs/m5/issue-114-equivalence-report.md),
+and the one-command pilot battery `scripts/test-pilot-laravel-vue.mjs`.
+
 ## Bootstrap: `lekalo init` and `lekalo module new`
 
 Issue #97 creates a minimal greenfield Lekalo project in the
