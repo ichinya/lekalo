@@ -277,10 +277,10 @@ step("a query with a write recipe is a typed query-write finding with zero write
   };
   writeFileSync(join(root, "lekalo", "operations", "planner.operations.json"), JSON.stringify(input, null, 1) + "\n");
   const response = adapterCall(root, operationsRequest());
-  assert.equal(response.status, "ok");
-  assert.deepEqual(response.result?.writes ?? [], [], "a finding vetoes every write");
-  const codes = (response.result?.findings ?? []).map((finding) => finding.code);
-  assert.ok(codes.includes("operations.query-write"), JSON.stringify(response.result));
+  assert.equal(response.status, "error", JSON.stringify(response));
+  assert.equal(response.error.code, "operations.query-write", JSON.stringify(response));
+  assert.deepEqual(response.writes, [], "a finding vetoes every write");
+  assert.equal(response.evidence.plan_id, undefined, "a veto carries no plan authority");
 });
 
 step("an operations input without the bound types document is a zero-write finding", () => {
@@ -288,10 +288,9 @@ step("an operations input without the bound types document is a zero-write findi
   writeFileSync(join(root, ".lekalo", "cache", "ir", "planner.json"), irBytes);
   writeFileSync(join(root, "lekalo", "operations", "planner.operations.json"), operationsInputBytes());
   const response = adapterCall(root, operationsRequest());
-  assert.equal(response.status, "ok");
-  assert.deepEqual(response.result?.writes ?? [], []);
-  const codes = (response.result?.findings ?? []).map((finding) => finding.code);
-  assert.ok(codes.includes("operations.types-unbound"), JSON.stringify(response.result));
+  assert.equal(response.status, "error", JSON.stringify(response));
+  assert.equal(response.error.code, "operations.types-unbound", JSON.stringify(response));
+  assert.deepEqual(response.writes, []);
 });
 
 step("a malformed operations input refuses as a bounded diagnostic", () => {
@@ -344,11 +343,12 @@ step("checked custody: absent, conforming, and stale evidence", () => {
   delete input.operations[0].transaction;
   const checkedInputBytes = JSON.stringify(input, null, 1) + "\n";
   writeFileSync(join(root, "lekalo", "operations", "planner.operations.json"), checkedInputBytes);
-  // Absent evidence: a finding for the declared id, zero writes.
+  // Absent evidence: the veto is the bounded in-envelope error with a
+  // zero-write plan.
   const absent = adapterCall(root, operationsRequest());
-  const absentCodes = (absent.result?.findings ?? []).map((finding) => finding.code);
-  assert.ok(absentCodes.includes("operations.binding-missing"), JSON.stringify(absent.result));
-  assert.deepEqual(absent.result?.writes ?? absent.writes ?? [], [], "a checked finding vetoes every write");
+  assert.equal(absent.status, "error", JSON.stringify(absent));
+  assert.equal(absent.error.code, "operations.binding-missing", JSON.stringify(absent));
+  assert.deepEqual(absent.writes ?? [], [], "a checked finding vetoes every write");
   // Conforming evidence: the source bytes are real, digested, and the
   // record joins.
   const sourceRoot = join(root, "app");
@@ -386,13 +386,18 @@ step("checked custody: absent, conforming, and stale evidence", () => {
     JSON.stringify(evidence, null, 1) + "\n",
   );
   const conforming = adapterCall(root, operationsRequest());
-  const conformingCodes = (conforming.result?.findings ?? []).map((finding) => finding.code);
-  assert.deepEqual(conformingCodes, [], JSON.stringify(conforming.result));
+  assert.equal(conforming.status, "ok", JSON.stringify(conforming));
+  assert.deepEqual(
+    (conforming.writes ?? [])
+      .filter((write) => write.path.startsWith(".lekalo/generated/php-laravel/operations/planner/count_focused")),
+    [],
+    "a checked record never emits",
+  );
   // Stale evidence: the live bytes diverge from the record.
   writeFileSync(join(sourceRoot, "count_focused_handler.php"), sourceBytes + "// drifted\n");
   const stale = adapterCall(root, operationsRequest());
-  const staleCodes = (stale.result?.findings ?? []).map((finding) => finding.code);
-  assert.ok(staleCodes.includes("operations.binding-stale"), JSON.stringify(stale.result));
+  assert.equal(stale.status, "error", JSON.stringify(stale));
+  assert.equal(stale.error.code, "operations.binding-stale", JSON.stringify(stale));
 });
 
 step("managed drift is a verify finding, and plan-clean never names the scaffold", () => {

@@ -758,25 +758,40 @@ fn the_php_operations_generator_plans_applies_and_verifies_composed_operations()
             &fs,
             None,
         )
-        .expect("the tampered plan is an in-envelope finding, never a crash");
-    let findings = refused
-        .response
-        .result
-        .as_ref()
-        .and_then(|result| result.findings.clone())
-        .unwrap_or_default();
-    assert!(
-        findings
-            .iter()
-            .any(|finding| finding.code == "operations.query-write"),
-        "the query-write finding is typed: {findings:?}"
-    );
+        .expect("the tampered plan is a bounded in-envelope error, never a crash");
+    // The closed v0.3.2 generate result carries no findings member (the
+    // client's completeness gate requires `result` to be absent), so the
+    // veto is the bounded in-envelope error: the first sorted finding
+    // code names the refusal, the message carries its bounded detail,
+    // and the empty writes array proves the zero-write plan.
+    {
+        let error = refused
+            .response
+            .error
+            .as_ref()
+            .expect("the veto is an in-envelope error");
+        assert_eq!(
+            error.class,
+            lekalo_core::target_protocol::wire::ErrorClass::Invalid
+        );
+        assert_eq!(error.code, "operations.query-write");
+        assert!(
+            error.message.contains("reads stay reads"),
+            "the bounded finding detail rides the message: {}",
+            error.message
+        );
+    }
     assert!(
         refused
             .response
             .writes
-            .map_or(true, |writes| writes.is_empty()),
+            .as_deref()
+            .is_some_and(|writes| writes.is_empty()),
         "a finding vetoes every write"
+    );
+    assert!(
+        refused.response.evidence.plan_id.is_none(),
+        "a veto carries no plan authority"
     );
     std::fs::write(
         operations_home.join("planner.operations.json"),

@@ -4159,7 +4159,24 @@ function generate_response(array $request): array
     $writes = deterministic_writes($artifact);
     if ($artifact['findings'] !== []) {
         // Capability honesty: a compile-time finding vetoes every write.
-        return build_response($request, ['result' => ['writes' => [], 'findings' => $artifact['findings']]]);
+        // The closed v0.3.2 generate result carries no findings member
+        // (the client's completeness gate requires `result` to be
+        // absent), so the veto is the bounded in-envelope error form:
+        // the first sorted finding code names the refusal class, the
+        // message carries its bounded detail, and the empty `writes`
+        // array proves the zero-write plan.
+        $first = $artifact['findings'][0];
+        $detail = (string) ($first['detail'] ?? $first['code']);
+        return build_response($request, [
+            'writes' => [],
+            'error' => [
+                'class' => 'invalid',
+                'code' => (string) $first['code'],
+                'message' => utf8_safe_clamp($detail, 256),
+                'retryable' => false,
+                'partial' => false,
+            ],
+        ]);
     }
     if (($request['dry_run'] ?? null) === false) {
         // The apply authority is the client's pending binding, never a
