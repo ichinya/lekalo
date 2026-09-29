@@ -209,9 +209,14 @@ final class PlannerPort
     public function authorize(?string $actor, ?string $policy, ?string $operation): string
     {
         // The fixture policy: the deny-bulk-focus policy denies the bulk
-        // actor; everything else is allowed. Authorization is data, not
-        // a guessed side effect of the operation name.
-        if ($policy === 'planner.deny_bulk_focus' && $actor !== null && str_contains($actor, 'bulk')) {
+        // actor; everything else is allowed. The policy resolves through
+        // the scenario-vocabulary spelling of the IR policy symbol
+        // `planner.deny_bulk_focus` (issue #114): the closed Scenario IR
+        // namespacedId grammar carries slash-form ids, so the corpus
+        // pins `planner.policies/deny-bulk-focus` and this maintained
+        // port owns the mapping. Authorization is data, not a guessed
+        // side effect of the operation name.
+        if ($policy === 'planner.policies/deny-bulk-focus' && $actor !== null && str_contains($actor, 'bulk')) {
             return 'denied';
         }
         return 'allowed';

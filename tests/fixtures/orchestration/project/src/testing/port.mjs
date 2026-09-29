@@ -155,7 +155,14 @@ const port = {
     },
   },
   authorize(actor, policy, operation) {
-    if (policy === "planner.deny_bulk_focus" && String(actor?.ref ?? actor ?? "").includes("bulk")) {
+    // The deny policy resolves through the scenario-vocabulary spelling
+    // of the IR policy symbol `planner.deny_bulk_focus` (issue #114):
+    // the closed Scenario IR namespacedId grammar carries slash-form
+    // ids, so the corpus pins `planner.policies/deny-bulk-focus` and the
+    // maintained port owns the mapping. The bulk actor is denied;
+    // everything else is allowed. Authorization is data, not a guessed
+    // side effect of the operation name.
+    if (policy === "planner.policies/deny-bulk-focus" && String(actor?.ref ?? actor ?? "").includes("bulk")) {
       return "denied";
     }
     return "allowed";
