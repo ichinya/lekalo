@@ -909,6 +909,13 @@ fn lifecycle_for(path: &str) -> Lifecycle {
     if path.starts_with("app/lekalo-types/") && !path.ends_with(".map.json") {
         return Lifecycle::Scaffolded;
     }
+    // Issue #59: the operations scaffold home is the second user-owned
+    // convention. The closed constant is shared with the adapter policy,
+    // and the sidecar stays generated (the managed marker the
+    // scaffold-once rules key on).
+    if path.starts_with("app/lekalo-operations/") && !path.ends_with(".map.json") {
+        return Lifecycle::Scaffolded;
+    }
     Lifecycle::Generated
 }
 

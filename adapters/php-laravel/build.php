@@ -57,6 +57,12 @@ $scenarioModulePaths = [
     $adapterRoot . '/src/type-codec.php',
     $adapterRoot . '/src/type-emit.php',
     $adapterRoot . '/src/type-bindings.php',
+    // The operations-generator modules ride last, in the fixed order
+    // the kernel's `load_operation_modules()` names (issue #59).
+    $adapterRoot . '/src/operation-policy.php',
+    $adapterRoot . '/src/operation-map.php',
+    $adapterRoot . '/src/operation-emit.php',
+    $adapterRoot . '/src/operation-bindings.php',
 ];
 $nativeModulePaths = [$adapterRoot . '/src/native-policy.php', $adapterRoot . '/src/native-plan.php'];
 

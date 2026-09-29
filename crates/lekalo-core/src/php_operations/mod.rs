@@ -56,7 +56,12 @@ pub struct Finding {
 }
 
 impl Finding {
-    fn new(code: &str, semantic_id: Option<&str>, pointer: Option<&str>, detail: impl Into<String>) -> Self {
+    fn new(
+        code: &str,
+        semantic_id: Option<&str>,
+        pointer: Option<&str>,
+        detail: impl Into<String>,
+    ) -> Self {
         Self {
             code: code.to_owned(),
             semantic_id: semantic_id.map(str::to_owned),
@@ -206,7 +211,7 @@ fn is_sha256_digest(value: &str) -> bool {
         && value.starts_with("sha256:")
         && value[7..]
             .bytes()
-            .all(|byte| (b'0'..=b'9').contains(&byte) || (b'a'..=b'f').contains(&byte))
+            .all(|byte: u8| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn is_semantic_id(value: &str) -> bool {
@@ -233,9 +238,7 @@ fn is_field_name(value: &str) -> bool {
         Some(first) if first.is_ascii_lowercase() => {}
         _ => return false,
     }
-    value
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 fn is_pascal_name(value: &str) -> bool {
@@ -244,9 +247,7 @@ fn is_pascal_name(value: &str) -> bool {
         Some(first) if first.is_ascii_uppercase() => {}
         _ => return false,
     }
-    value
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 fn is_camel_method(value: &str) -> bool {
@@ -255,9 +256,7 @@ fn is_camel_method(value: &str) -> bool {
         Some(first) if first.is_ascii_lowercase() => {}
         _ => return false,
     }
-    value
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 fn is_php_fqn(value: &str) -> bool {
@@ -287,9 +286,9 @@ fn is_logical_path(value: &str) -> bool {
     !value.starts_with('/')
         && !value.contains("..")
         && !value.contains('\\')
-        && value
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '.' | '/' | '-'))
+        && value.chars().all(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '.' | '/' | '-')
+        })
 }
 
 /// Parse and shape-validate the input document. The canonical order
@@ -350,7 +349,10 @@ pub fn parse_input(bytes: &[u8]) -> Result<OperationsInput, Vec<Finding>> {
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
-    for (name, digest) in [("/irDigest", &ir_digest), ("/typesInputDigest", &types_input_digest)] {
+    for (name, digest) in [
+        ("/irDigest", &ir_digest),
+        ("/typesInputDigest", &types_input_digest),
+    ] {
         if !is_sha256_digest(digest) {
             findings.push(Finding::new(
                 "operations.input-shape",
@@ -465,7 +467,11 @@ fn parse_operation(value: &Value) -> Result<OperationRecord, Vec<Finding>> {
             "the operation id must be a `module.name` semantic id",
         ));
     }
-    let reference = if id.is_empty() { None } else { Some(id.as_str()) };
+    let reference = if id.is_empty() {
+        None
+    } else {
+        Some(id.as_str())
+    };
     let kind = match value.get("kind").and_then(Value::as_str) {
         Some(kind) => match OperationKind::parse(kind) {
             Some(kind) => Some(kind),
@@ -684,7 +690,10 @@ fn parse_entry(value: &Value) -> Result<Entry, Vec<Finding>> {
 /// Parse one recipe against the closed grammar. Only the grammar is
 /// decided here; the semantic join happens against the IR.
 fn parse_recipe(value: &Value) -> Result<Recipe, Vec<Finding>> {
-    let kind = value.get("kind").and_then(Value::as_str).unwrap_or_default();
+    let kind = value
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     if kind == "port-delegation" {
         let port = value
             .get("port")
@@ -759,7 +768,11 @@ fn parse_recipe(value: &Value) -> Result<Recipe, Vec<Finding>> {
                 "the key must be a command input field name",
             ));
         }
-        let assignments = parse_operand_pairs(value.get("assignments"), "/recipe/assignments", &mut findings);
+        let assignments = parse_operand_pairs(
+            value.get("assignments"),
+            "/recipe/assignments",
+            &mut findings,
+        );
         let kept = match value.get("kept") {
             None | Some(Value::Null) => Vec::new(),
             Some(kept) => kept
@@ -955,12 +968,10 @@ fn parse_operand(value: Option<&Value>) -> Option<Operand> {
     let value = value?;
     let object = value.as_object()?;
     if let Some(field) = object.get("fromInput").and_then(Value::as_str) {
-        return is_field_name(field)
-            .then(|| Operand::FromInput(field.to_owned()));
+        return is_field_name(field).then(|| Operand::FromInput(field.to_owned()));
     }
     if let Some(field) = object.get("fromEntity").and_then(Value::as_str) {
-        return is_field_name(field)
-            .then(|| Operand::FromEntity(field.to_owned()));
+        return is_field_name(field).then(|| Operand::FromEntity(field.to_owned()));
     }
     if let Some(enum_case) = object.get("enumCase") {
         let enum_id = enum_case.get("type").and_then(Value::as_str)?;
@@ -971,18 +982,16 @@ fn parse_operand(value: Option<&Value>) -> Option<Operand> {
             && case
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-'))
-            .then(|| Operand::EnumCase {
-                enum_id: enum_id.to_owned(),
-                value: case.to_owned(),
-            });
+        .then(|| Operand::EnumCase {
+            enum_id: enum_id.to_owned(),
+            value: case.to_owned(),
+        });
     }
     if let Some(literal) = object.get("literal") {
         return match literal {
             Value::String(text) if text.len() <= 256 => Some(Operand::Literal(literal.clone())),
             Value::Bool(_) => Some(Operand::Literal(literal.clone())),
-            Value::Number(number) if number.is_i64() => {
-                Some(Operand::Literal(literal.clone()))
-            }
+            Value::Number(number) if number.is_i64() => Some(Operand::Literal(literal.clone())),
             _ => None,
         };
     }
@@ -1015,11 +1024,11 @@ pub struct DigestContext {
 /// and the bound types input bytes, digested exactly.
 pub fn digest_context(root: &Path, project_id: &str) -> Option<DigestContext> {
     use crate::digest::sha256_hex;
-    let ir_bytes = std::fs::read(root.join(format!("{IR_EVIDENCE_HOME}/{project_id}.json"))).ok()?;
-    let types_bytes = std::fs::read_to_string(root.join(format!(
-        "{TYPES_INPUT_HOME}/{project_id}.types.json"
-    )))
-    .ok()?;
+    let ir_bytes =
+        std::fs::read(root.join(format!("{IR_EVIDENCE_HOME}/{project_id}.json"))).ok()?;
+    let types_bytes =
+        std::fs::read_to_string(root.join(format!("{TYPES_INPUT_HOME}/{project_id}.types.json")))
+            .ok()?;
     Some(DigestContext {
         ir_digest: format!("sha256:{}", sha256_hex(&ir_bytes)),
         types_input_digest: format!("sha256:{}", sha256_hex(types_bytes.as_bytes())),
@@ -1116,9 +1125,7 @@ fn check_enum_cases(
                         "operations.type-mismatch",
                         Some(record.id.as_str()),
                         Some("/recipe"),
-                        format!(
-                            "the enum case value `{value}` is not declared by `{enum_id}`"
-                        ),
+                        format!("the enum case value `{value}` is not declared by `{enum_id}`"),
                     ));
                 }
             }
@@ -1190,20 +1197,25 @@ fn check_record(
             },
         ));
     }
-    if record.mode == Mode::Managed && record.recipe.is_none() {
+    // The recipe drives the emitted signature: required for managed,
+    // accepted for scaffold-once (the body stays the explicit failure),
+    // foreign to checked and custom.
+    if (record.mode == Mode::Managed || record.mode == Mode::ScaffoldOnce)
+        && record.recipe.is_none()
+    {
         findings.push(Finding::new(
             "operations.recipe-required",
             reference,
             Some("/recipe"),
-            "a managed record names one closed recipe",
+            "a managed or scaffold-once record names one closed recipe",
         ));
     }
-    if record.recipe.is_some() && record.mode != Mode::Managed {
+    if record.recipe.is_some() && !matches!(record.mode, Mode::Managed | Mode::ScaffoldOnce) {
         findings.push(Finding::new(
             "operations.recipe-required",
             reference,
             Some("/recipe"),
-            "recipes belong to managed records only",
+            "recipes belong to managed and scaffold-once records only",
         ));
     }
     // Errors: exact embedded-registry binding equality.
@@ -1424,11 +1436,11 @@ fn check_update_recipe(
             ));
         }
     }
-    for (field, _) in &entity_types {
+    for field in entity_types.keys() {
         if field == identity_field {
             continue;
         }
-        if covered.get(field.as_str()).is_none() {
+        if !covered.contains_key(field.as_str()) {
             findings.push(Finding::new(
                 "operations.recipe-coverage",
                 Some(record.id.as_str()),
@@ -1514,9 +1526,7 @@ fn check_update_recipe(
                 "operations.effect-unresolved",
                 Some(record.id.as_str()),
                 Some("/recipe/emit"),
-                format!(
-                    "the event `{event}` is not emitted by any effect of this command"
-                ),
+                format!("the event `{event}` is not emitted by any effect of this command"),
             ));
         }
         let Some(Definition::Event(event_definition)) = ir_definition(context, event) else {
@@ -1608,9 +1618,7 @@ fn check_operand(
         Operand::EnumCase { enum_id, .. } => {
             if target != enum_id {
                 mismatch(
-                    format!(
-                        "the enum case targets `{enum_id}`, the field carries `{target}`"
-                    ),
+                    format!("the enum case targets `{enum_id}`, the field carries `{target}`"),
                     findings,
                 );
             }
@@ -1628,9 +1636,7 @@ fn check_operand(
             };
             if spelled != target {
                 mismatch(
-                    format!(
-                        "a literal operand cannot carry the definition target `{target}`"
-                    ),
+                    format!("a literal operand cannot carry the definition target `{target}`"),
                     findings,
                 );
             }
@@ -1647,7 +1653,9 @@ mod tests {
         assert!(is_semantic_id("planner.focus_task"));
         assert!(!is_semantic_id("planner"));
         assert!(!is_semantic_id("Planner.focus_task"));
-        assert!(is_php_fqn("Lekalo\\Generated\\Operations\\Planner\\FocusTaskHandler"));
+        assert!(is_php_fqn(
+            "Lekalo\\Generated\\Operations\\Planner\\FocusTaskHandler"
+        ));
         assert!(!is_php_fqn("FocusTaskHandler"));
         assert!(is_logical_path("planner/focus_task/handler.php"));
         assert!(!is_logical_path("Planner/FocusTask.php"));
@@ -1673,16 +1681,17 @@ mod tests {
 
     #[test]
     fn operand_parsing_is_closed() {
-        let value: Value =
-            serde_json::from_str(r#"{"fromInput": "task_id"}"#).expect("operand");
+        let value: Value = serde_json::from_str(r#"{"fromInput": "task_id"}"#).expect("operand");
         assert_eq!(
             parse_operand(Some(&value)),
             Some(Operand::FromInput("task_id".to_owned()))
         );
         let value: Value = serde_json::from_str(r#"{"now": true}"#).expect("operand");
         assert_eq!(parse_operand(Some(&value)), None, "clock operands refuse");
-        let value: Value = serde_json::from_str(r#"{"enumCase": {"type": "planner.task_state", "value": "focused"}}"#)
-            .expect("operand");
+        let value: Value = serde_json::from_str(
+            r#"{"enumCase": {"type": "planner.task_state", "value": "focused"}}"#,
+        )
+        .expect("operand");
         assert!(parse_operand(Some(&value)).is_some());
     }
 

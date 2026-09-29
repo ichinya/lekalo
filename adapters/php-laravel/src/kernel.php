@@ -234,6 +234,36 @@ function native_gates_policy_document(): array
  * operation could run. Always maps to a bounded stderr diagnostic plus
  * exit 1 — a synthetic envelope with a fabricated echo is never legal.
  */
+/**
+ * The operations-generator modules, in fixed load order (issue #59).
+ * They depend on the type modules' naming and codec helpers, so the
+ * type modules load first. Inside the shipped artifact everything is
+ * appended and loading is a no-op.
+ */
+function load_operation_modules(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+    $loaded = true;
+    load_type_modules();
+    if (function_exists('php_validate_operations_input') && function_exists('php_emit_operations')) {
+        return;
+    }
+    foreach ([
+        __DIR__ . '/operation-policy.php',
+        __DIR__ . '/operation-map.php',
+        __DIR__ . '/operation-emit.php',
+        __DIR__ . '/operation-bindings.php',
+    ] as $module) {
+        if (!is_file($module)) {
+            throw new RequestRefusal('compiler-module-missing');
+        }
+        require_once $module;
+    }
+}
+
 final class RequestRefusal extends RuntimeException
 {
     public function __construct(string $code)
@@ -1148,11 +1178,52 @@ function deterministic_generation(array $request): array
     if (is_string($irPath) && is_scenario_ir_path($irPath)) {
         return scenario_deterministic_generation($request, $irPath);
     }
+    $operationsRequest = resolve_operations_request($request);
+    if ($operationsRequest !== null) {
+        return operations_deterministic_generation($operationsRequest);
+    }
     $typesRequest = resolve_types_request($request);
     if ($typesRequest !== null) {
         return types_deterministic_generation($typesRequest);
     }
     return kernel_deterministic_generation($request);
+}
+
+/** Whether one path is the operations input home. */
+function is_operations_ir_path(string $path): bool
+{
+    return str_starts_with($path, 'lekalo/operations/')
+        && str_ends_with($path, '.operations.json');
+}
+
+/**
+ * The operations request for one incoming request, or null when the
+ * request does not drive operations generation: either the ir_path is
+ * already an operations input document, or it is the core's staged IR
+ * evidence whose project carries a declared operations input beside it
+ * (issue #59). The operations family requires the types input too; an
+ * operations run without the bound types document refuses at generation
+ * time, not here (the routing must stay a pure read decision).
+ */
+function resolve_operations_request(array $request): ?array
+{
+    $irPath = $request['ir_path'] ?? '';
+    if (!is_string($irPath)) {
+        return null;
+    }
+    if (is_operations_ir_path($irPath)) {
+        return $request;
+    }
+    if (!is_types_evidence_path($irPath)) {
+        return null;
+    }
+    $operationsDoc = 'lekalo/operations/' . basename($irPath, '.json') . '.operations.json';
+    if (!is_operations_ir_path($operationsDoc) || read_view_file($operationsDoc) === null) {
+        return null;
+    }
+    $flipped = $request;
+    $flipped['ir_path'] = $operationsDoc;
+    return $flipped;
 }
 
 /** The scenario branch of the deterministic generation entry. */
@@ -1272,6 +1343,353 @@ function types_deterministic_generation(array $request): array
             'findings' => [],
         ];
     }
+}
+
+/**
+ * The composed types + operations branch of the deterministic
+ * generation entry (issue #59): missing managed types and operations
+ * generate in ONE authorized plan. Overlapping paths or any failed
+ * required family vetoes every write before publication.
+ */
+function operations_deterministic_generation(array $request): array
+{
+    $outcome = operations_generation($request);
+    if (isset($outcome['refusal'])) {
+        throw new RequestRefusal($outcome['refusal']);
+    }
+    if ($outcome['findings'] !== []) {
+        // Capability honesty: any compile-time finding vetoes every
+        // write across BOTH families - zero partial publication.
+        return [
+            'path' => null,
+            'bytes' => '',
+            'digest' => null,
+            'writes' => [],
+            'findings' => $outcome['findings'],
+        ];
+    }
+    $writes = [];
+    $skipWrites = $outcome['skip_writes'] ?? [];
+    $files = array_map(
+        static fn (array $file): array => [
+            'path' => $file['path'],
+            'bytes' => $file['text'],
+            'digest' => $file['digest'],
+            'frozen' => $file['lifecycle'] === 'scaffolded',
+            'marker' => $file['lifecycle'] === 'scaffolded'
+                ? PHP_OPERATIONS_SCAFFOLD_ROOT . '/operations.map.json'
+                : null,
+        ],
+        $outcome['files'],
+    );
+    foreach ($outcome['files'] as $file) {
+        if (isset($skipWrites[$file['path']])) {
+            continue;
+        }
+        $writes[] = [
+            'path' => $file['path'],
+            'action' => 'create',
+            'sha256' => $file['digest'],
+        ];
+    }
+    return [
+        'path' => null,
+        'bytes' => '',
+        'digest' => null,
+        'writes' => $writes,
+        'files' => $files,
+        'findings' => [],
+    ];
+}
+
+/**
+ * The read-and-map-and-emit flow of the composed operations run: the
+ * validated operations input names the exact IR evidence and the bound
+ * #58 types input; both families plan together; managed emissions land
+ * under the generated root, scaffold-once emissions once under the
+ * closed consumer root, checked and custom records never write.
+ */
+function operations_generation(array $request): array
+{
+    load_operation_modules();
+    $irPath = (string) ($request['ir_path'] ?? '');
+    $inputText = read_view_file($irPath);
+    if ($inputText === null) {
+        return ['refusal' => 'operations-input-unreadable'];
+    }
+    try {
+        $document = json_decode($inputText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'operations-input-shape'];
+    }
+    if (is_array($document)
+        && isset($document['schemaVersion'], $document['identity'])
+        && ($document['schemaVersion'] !== PHP_OPERATIONS_INPUT_SCHEMA_VERSION
+            || $document['identity'] !== PHP_OPERATIONS_INPUT_IDENTITY)) {
+        return ['refusal' => 'operations-input-identity'];
+    }
+    $input = php_validate_operations_input($document);
+    if ($input === null) {
+        return ['refusal' => 'operations-input-shape'];
+    }
+    $findingOnly = static fn (array $findings): array => [
+        'files' => [],
+        'findings' => $findings,
+        'skip_writes' => [],
+    ];
+    // The bound types family: required dependency, exact digest.
+    $typesDoc = 'lekalo/types/' . $input['projectId'] . '.types.json';
+    $typesText = read_view_file($typesDoc);
+    if ($typesText === null || !is_types_ir_path($typesDoc)) {
+        return $findingOnly([[
+            'path' => $input['projectId'] . '.operations',
+            'code' => 'operations.types-unbound',
+            'detail' => 'the operations input requires the bound types input document',
+        ]]);
+    }
+    $typesDigest = sha256_digest($typesText);
+    if ($typesDigest !== $input['typesInputDigest']) {
+        return $findingOnly([[
+            'path' => $input['projectId'] . '.operations',
+            'code' => 'operations.types-unbound',
+            'detail' => 'the input names different types-input bytes than the committed document',
+        ]]);
+    }
+    $typesRequest = $request;
+    $typesRequest['ir_path'] = $typesDoc;
+    $typesOutcome = types_deterministic_generation($typesRequest);
+    if (isset($typesOutcome['refusal'])) {
+        return ['refusal' => $typesOutcome['refusal']];
+    }
+    // The compiled IR evidence: the only bytes an adapter may read.
+    $irEvidenceText = read_view_file(IR_EVIDENCE_HOME . '/' . $input['projectId'] . '.json');
+    if ($irEvidenceText === null) {
+        return ['refusal' => 'operations-ir-unreadable'];
+    }
+    try {
+        $irEvidence = json_decode($irEvidenceText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'operations-ir-shape'];
+    }
+    if (!is_array($irEvidence) || ($irEvidence['contract'] ?? null) !== PHP_TYPES_IR_IDENTITY) {
+        return ['refusal' => 'operations-ir-identity'];
+    }
+    if (sha256_digest($irEvidenceText) !== $input['irDigest']) {
+        return ['refusal' => 'operations-input-digest'];
+    }
+    // The mapped type inventory (the naming authority the handlers reuse).
+    try {
+        $typesInput = php_validate_types_input(json_decode($typesText, true, 512, JSON_THROW_ON_ERROR));
+    } catch (JsonException) {
+        return ['refusal' => 'operations-input-shape'];
+    }
+    if ($typesInput === null) {
+        return ['refusal' => 'operations-types-unbound'];
+    }
+    $mappedTypes = php_map_types([
+        'ir' => $irEvidence,
+        'policy' => $typesInput['policy'],
+        'irDigest' => $typesInput['irDigest'],
+        'inputDigest' => $typesDigest,
+    ]);
+    if ($mappedTypes['state'] !== 'mapped') {
+        return $findingOnly(types_wire_findings($mappedTypes['findings']));
+    }
+    $definitions = [];
+    foreach ($irEvidence['definitions'] ?? [] as $index => $definition) {
+        if (is_array($definition) && is_string($definition['id'] ?? null)) {
+            $definitions[$definition['id']] = $definition;
+        }
+    }
+    $context = [
+        'input' => $input,
+        'definitions' => $definitions,
+        'typesIndex' => $mappedTypes['index'],
+        'namespacePrefix' => $input['namespacePrefix'],
+        'root' => PHP_OPERATIONS_GENERATED_ROOT,
+        'irDigest' => $input['irDigest'],
+        'inputDigest' => sha256_digest($inputText),
+        'typesInputDigest' => $typesDigest,
+    ];
+    $emitContext = [
+        'projectId' => $input['projectId'],
+        'context' => $context,
+        'definitions' => $definitions,
+        'typesIndex' => $mappedTypes['index'],
+        'namespacePrefix' => $input['namespacePrefix'],
+    ];
+    $files = [];
+    $findings = [];
+    $skipWrites = [];
+    $claimed = [];
+    foreach ($typesOutcome['files'] as $file) {
+        $claimed[$file['path']] = true;
+        // Normalize the types rows onto the operations row shape.
+        $files[] = [
+            'path' => $file['path'],
+            'text' => $file['bytes'],
+            'digest' => $file['digest'],
+            'role' => 'types',
+            'lifecycle' => 'generated',
+        ];
+    }
+    foreach (['emittable' => PHP_OPERATIONS_GENERATED_ROOT, 'scaffold' => PHP_OPERATIONS_SCAFFOLD_ROOT] as $root) {
+        $records = array_values(array_filter(
+            $input['operations'],
+            static fn (array $record): bool => $root === PHP_OPERATIONS_SCAFFOLD_ROOT
+                ? $record['mode'] === 'scaffold-once'
+                : in_array($record['mode'], ['managed'], true),
+        ));
+        $checkedRecords = $root === PHP_OPERATIONS_GENERATED_ROOT
+            ? array_values(array_filter(
+                $input['operations'],
+                static fn (array $record): bool => in_array($record['mode'], ['checked', 'custom'], true),
+            ))
+            : [];
+        $runContext = $context;
+        $runContext['root'] = $root;
+        $runContext['input'] = array_merge($input, ['operations' => $records]);
+        if ($records !== []) {
+            $mapped = php_map_operations($runContext);
+            if ($mapped['state'] !== 'mapped') {
+                return $findingOnly(types_wire_findings($mapped['findings']));
+            }
+            // Scaffold custody: with the marker present the whole root
+            // is user-owned and nothing is planned; with the marker
+            // absent, ANY pre-existing path refuses.
+            $marker = $root . '/operations.map.json';
+            $emitted = php_emit_operations(array_merge($emitContext, [
+                'mapped' => $mapped,
+                'root' => $root,
+            ]));
+            if ($root === PHP_OPERATIONS_SCAFFOLD_ROOT) {
+                if (is_file($marker)) {
+                    foreach ($emitted['files'] as $file) {
+                        $skipWrites[$file['path']] = true;
+                    }
+                    foreach ($emitted['files'] as $file) {
+                        if (!isset($claimed[$file['path']])) {
+                            $claimed[$file['path']] = true;
+                            $files[] = $file;
+                        }
+                    }
+                } else {
+                    foreach ($emitted['files'] as $file) {
+                        if (is_file($file['path'])) {
+                            return ['refusal' => 'operations-scaffold-unowned'];
+                        }
+                    }
+                    foreach ($emitted['files'] as $file) {
+                        if (!isset($claimed[$file['path']])) {
+                            $claimed[$file['path']] = true;
+                            $files[] = $file;
+                        }
+                    }
+                }
+            } else {
+                foreach ($emitted['files'] as $file) {
+                    if (isset($claimed[$file['path']])) {
+                        throw new RequestRefusal('operations-path-collision');
+                    }
+                    $claimed[$file['path']] = true;
+                    $files[] = $file;
+                }
+            }
+        }
+        if ($checkedRecords !== []) {
+            $evidence = read_operations_evidence();
+            foreach (php_check_operation_bindings($checkedRecords, $definitions, $evidence, $input, $context['inputDigest'], static function (string $path): ?string {
+                $digest = is_file($path) ? hash_file('sha256', $path) : false;
+                return $digest === false ? null : 'sha256:' . $digest;
+            }) as $bindingFinding) {
+                $findings[] = types_wire_findings([$bindingFinding])[0];
+            }
+        }
+    }
+    usort($files, static fn (array $left, array $right): int => strcmp((string) $left['path'], (string) $right['path']));
+    return [
+        'files' => $files,
+        'findings' => $findings,
+        'skip_writes' => $skipWrites,
+    ];
+}
+
+/** The parsed observed operations evidence, or null when absent/corrupt. */
+function read_operations_evidence(): ?array
+{
+    $text = read_view_file(PHP_OPERATIONS_EVIDENCE_PATH);
+    if ($text === null) {
+        return null;
+    }
+    try {
+        $document = json_decode($text, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return null;
+    }
+    return php_validate_operations_evidence($document);
+}
+
+/**
+ * The operations validate exchange (issue #59): the same composed
+ * read-and-map path generate uses, but no writes ever result.
+ */
+function operations_validate_response(array $request): array
+{
+    $outcome = operations_generation($request);
+    if (isset($outcome['refusal'])) {
+        return ['error' => [
+            'class' => 'invalid',
+            'code' => $outcome['refusal'],
+            'message' => 'the operations input could not be read or mapped',
+            'retryable' => false,
+            'partial' => false,
+        ]];
+    }
+    return build_response($request, ['result' => ['ok' => true, 'findings' => $outcome['findings']]]);
+}
+
+/**
+ * The operations verify exchange (issue #59): managed files are
+ * compared by exact digest (missing/drifted are operations.drift);
+ * scaffold files are existence-checked under the surviving marker;
+ * checked and custom records re-run the strict shape join.
+ */
+function operations_verify_response(array $request): array
+{
+    $outcome = operations_generation($request);
+    if (isset($outcome['refusal'])) {
+        return ['error' => [
+            'class' => 'invalid',
+            'code' => $outcome['refusal'],
+            'message' => 'the operations input could not be read or mapped',
+            'retryable' => false,
+            'partial' => false,
+        ]];
+    }
+    $findings = $outcome['findings'];
+    foreach ($outcome['files'] as $file) {
+        if (str_starts_with((string) $file['path'], PHP_OPERATIONS_SCAFFOLD_ROOT . '/')) {
+            // Scaffold-once custody: user-owned, existence-checked only
+            // under the surviving marker.
+            $marker = PHP_OPERATIONS_SCAFFOLD_ROOT . '/operations.map.json';
+            if (isset($skipWrites[$file['path']]) && !is_file($file['path']) && is_file($marker)) {
+                $findings[] = [
+                    'path' => $file['path'],
+                    'code' => 'operations.scaffold-missing',
+                    'detail' => 'scaffolded-operation-removed',
+                ];
+            }
+            continue;
+        }
+        $expectedDigest = $file['digest'];
+        $actual = is_file($file['path']) ? hash_file('sha256', $file['path']) : false;
+        if ($actual === false) {
+            $findings[] = ['path' => $file['path'], 'code' => 'operations.drift', 'detail' => 'missing'];
+        } elseif ($actual !== substr((string) $expectedDigest, 7)) {
+            $findings[] = ['path' => $file['path'], 'code' => 'operations.drift', 'detail' => 'drifted'];
+        }
+    }
+    return build_response($request, ['result' => ['ok' => true, 'findings' => $findings]]);
 }
 
 /** The kernel-artifact fallback of the deterministic generation entry. */
@@ -2208,9 +2626,9 @@ function adapter_identity(): array
 function describe_capabilities(?Analyzer $analyzer = null): array
 {
     $analyzer ??= new FakeAnalyzer();
-    // The type-policy module carries the closed scaffold-root constant
-    // the declared write scope names; load before describing.
-    load_type_modules();
+    // The operations modules carry the closed scaffold-root constants
+    // the declared write scopes name; load before describing.
+    load_operation_modules();
     return [
         'adapter' => adapter_identity(),
         'protocol_versions' => SUPPORTED_VERSIONS,
@@ -2227,6 +2645,12 @@ function describe_capabilities(?Analyzer $analyzer = null): array
             'lekalo/php-test-port.json',
             'lekalo/scenarios/**',
             'lekalo/types/**',
+            // Issue #59: the operations input home, the managed
+            // operations root, and the consumer scaffold home are read
+            // back for the drift, custody, and checked-join gates.
+            'lekalo/operations/**',
+            '.lekalo/generated/php-laravel/operations/**',
+            'app/lekalo-operations/**',
             // Managed types and the scaffold home are read back for the
             // drift and checked-custody gates: write authority only
             // reveals a staged output's shape, so reading the bytes an
@@ -2240,10 +2664,14 @@ function describe_capabilities(?Analyzer $analyzer = null): array
             SCENARIO_WRITE_SCOPES,
             [PHP_SCAFFOLD_SCOPE],
             [PHP_TYPES_SCAFFOLD_ROOT . '/**'],
+            [PHP_OPERATIONS_SCAFFOLD_ROOT . '/**'],
         ),
         'progress' => false,
         'ir_versions' => [IR_VERSION],
-        'capabilities' => DECLARED_CAPABILITIES,
+        'capabilities' => array_merge(DECLARED_CAPABILITIES, [
+            'generate.operations' => 'partial',
+            'verify.operations' => 'partial',
+        ]),
         // The advisory bound mirrors the kernel's real write-plan file
         // cap (MAX_WRITE_FILES): a declared constraint never exceeds an
         // internally enforced one.
@@ -2488,6 +2916,9 @@ function validate_response(array $request, ?Analyzer $analyzer = null): array
     if (is_scenario_ir_path($irPath)) {
         return scenario_validate_response($request);
     }
+    if (resolve_operations_request($request) !== null) {
+        return operations_validate_response(resolve_operations_request($request));
+    }
     if (resolve_types_request($request) !== null) {
         return types_validate_response(resolve_types_request($request));
     }
@@ -2556,6 +2987,9 @@ function verify_response(array $request, ?Analyzer $analyzer = null): array
     $irPath = is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '';
     if (is_scenario_ir_path($irPath)) {
         return scenario_verify_response($request);
+    }
+    if (resolve_operations_request($request) !== null) {
+        return operations_verify_response(resolve_operations_request($request));
     }
     if (resolve_types_request($request) !== null) {
         return types_verify_response(resolve_types_request($request));
@@ -2841,7 +3275,8 @@ function plan_clean_response(array $request): array
     foreach ($writes as $entry) {
         if (retained_artifact($entry['path'])
             || scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])
-            || scope_covers(types_scaffold_scope(), $entry['path'])) {
+            || scope_covers(types_scaffold_scope(), $entry['path'])
+            || scope_covers(operations_scaffold_scope(), $entry['path'])) {
             continue;
         }
         $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
@@ -2850,6 +3285,17 @@ function plan_clean_response(array $request): array
         'writes' => $plan,
         'evidence_plan_id' => plan_id($plan),
     ]);
+}
+
+/**
+ * The user-owned scaffold scope of operations generation (issue #59):
+ * the closed consumer root is recognized by path convention, so a
+ * policy cannot silently move a scaffold under an unrecognized root.
+ */
+function operations_scaffold_scope(): string
+{
+    load_operation_modules();
+    return PHP_OPERATIONS_SCAFFOLD_ROOT . '/**';
 }
 
 /**
@@ -2896,7 +3342,8 @@ function clean_response(array $request): array
     $plan = [];
     foreach ($writes as $entry) {
         if (scope_covers(PHP_SCAFFOLD_SCOPE, $entry['path'])
-            || scope_covers(types_scaffold_scope(), $entry['path'])) {
+            || scope_covers(types_scaffold_scope(), $entry['path'])
+            || scope_covers(operations_scaffold_scope(), $entry['path'])) {
             continue;
         }
         $plan[] = ['path' => $entry['path'], 'action' => 'delete'];
@@ -3133,7 +3580,8 @@ function apply_writes(array $writes, array $files): void
         }
         if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope
             && !scope_covers(PHP_SCAFFOLD_SCOPE, $path)
-            && !scope_covers(types_scaffold_scope(), $path)) {
+            && !scope_covers(types_scaffold_scope(), $path)
+            && !scope_covers(operations_scaffold_scope(), $path)) {
             throw new RequestRefusal('write-denied');
         }
         $bytes = $bytesByPath[$path] ?? null;
@@ -3182,7 +3630,8 @@ function delete_write(string $path): void
 {
     if (!is_logical_path($path) || protected_home($path) !== null
         || scope_covers(PHP_SCAFFOLD_SCOPE, $path)
-        || scope_covers(types_scaffold_scope(), $path)) {
+        || scope_covers(types_scaffold_scope(), $path)
+        || scope_covers(operations_scaffold_scope(), $path)) {
         // The scaffold scopes are user-owned: no kernel path may delete
         // inside them, whatever plan claimed otherwise.
         throw new RequestRefusal('write-denied');

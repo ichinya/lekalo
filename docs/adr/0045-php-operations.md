@@ -56,8 +56,11 @@ records the decisions that bind the implementation.
 6. **No hidden logic.** Portable handlers take constructor-injected typed
    dependencies, expose exactly one public business entrypoint `handle`,
    and never import portable-core facade aliases or service-locator calls.
-   Errors are the declared #62 binding set as typed domain classes
-   (infrastructure-category errors stay infrastructure). Policy is an
+   Errors are the declared #62 binding set as typed classes extending the
+   generated `OperationError` base (the emitted surface is uniform; the
+   rollback-vs-domain distinction for the infrastructure category lives
+   in the maintained boundary lane that consults the registry). Policy
+   is an
    injected per-operation port; the transaction is a declared
    required/forbidden binding through a generated `TransactionPort`
    (commands only). The emitted classes are syntax-checked and loaded

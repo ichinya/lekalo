@@ -64,7 +64,10 @@ impl Sandbox {
 
     /// Stage the exact fixture bytes: canonical IR evidence, a bound
     /// types input, and the operations input with real digests.
-    fn stage_fixture(&self, compilation: &CompiledProject) -> lekalo_core::php_operations::OperationsInput {
+    fn stage_fixture(
+        &self,
+        compilation: &CompiledProject,
+    ) -> lekalo_core::php_operations::OperationsInput {
         let ir_bytes = compilation.to_canonical_json();
         std::fs::write(
             self.dir.join(".lekalo/cache/ir/planner.json"),
@@ -91,13 +94,15 @@ impl Sandbox {
             lekalo_core::digest::sha256_hex(types_input.as_bytes())
         );
         let zeros = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-        let input_bytes = template.replace(
-            &format!("\"irDigest\": \"{zeros}\""),
-            &format!("\"irDigest\": \"{ir_digest}\""),
-        ).replace(
-            &format!("\"typesInputDigest\": \"{zeros}\""),
-            &format!("\"typesInputDigest\": \"{types_digest}\""),
-        );
+        let input_bytes = template
+            .replace(
+                &format!("\"irDigest\": \"{zeros}\""),
+                &format!("\"irDigest\": \"{ir_digest}\""),
+            )
+            .replace(
+                &format!("\"typesInputDigest\": \"{zeros}\""),
+                &format!("\"typesInputDigest\": \"{types_digest}\""),
+            );
         std::fs::write(self.dir.join("lekalo/operations.placeholder"), "").ok();
         let input = parse_input(input_bytes.as_bytes()).expect("template input parses");
         // Rewrite the input bytes in the sandbox for digest-context tests.
@@ -109,14 +114,6 @@ impl Sandbox {
         .expect("staged operations input");
         input
     }
-
-    fn rewrite_input(&self, input_bytes: &[u8]) {
-        std::fs::write(
-            self.dir.join("lekalo/operations/planner.operations.json"),
-            input_bytes,
-        )
-        .expect("rewrite operations input");
-    }
 }
 
 impl Drop for Sandbox {
@@ -126,7 +123,10 @@ impl Drop for Sandbox {
 }
 
 fn finding_codes(findings: &[Finding]) -> Vec<String> {
-    findings.iter().map(|finding| finding.code.clone()).collect()
+    findings
+        .iter()
+        .map(|finding| finding.code.clone())
+        .collect()
 }
 
 #[test]
@@ -140,10 +140,7 @@ fn the_fixture_input_parses_into_the_closed_shape() {
     assert_eq!(input.operations[0].id, "planner.count_focused");
     assert_eq!(input.operations[1].id, "planner.focus_task");
     assert_eq!(input.operations[0].mode, Mode::Managed);
-    assert_eq!(
-        input.operations[1].transaction,
-        TransactionMode::Required
-    );
+    assert_eq!(input.operations[1].transaction, TransactionMode::Required);
     match input.operations[1].recipe.as_ref().expect("managed recipe") {
         Recipe::SingleEntityUpdate {
             entity, key, kept, ..
@@ -177,10 +174,13 @@ fn a_digest_divergence_is_a_binding_finding() {
     let compilation = compile_fixture();
     let sandbox = Sandbox::new("stale");
     let mut input = sandbox.stage_fixture(&compilation);
-    input.ir_digest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-        .to_owned();
+    input.ir_digest =
+        "sha256:1111111111111111111111111111111111111111111111111111111111111111".to_owned();
     let codes = finding_codes(&check_join(&sandbox.dir, &input, &compilation));
-    assert!(codes.contains(&"operations.ir-digest".to_owned()), "{codes:?}");
+    assert!(
+        codes.contains(&"operations.ir-digest".to_owned()),
+        "{codes:?}"
+    );
 }
 
 #[test]
@@ -192,7 +192,10 @@ fn a_wrong_reference_kind_is_a_finding() {
     let mut tampered = input.clone();
     tampered.operations[0].kind = lekalo_core::php_operations::OperationKind::Command;
     let codes = finding_codes(&check_join(&sandbox.dir, &tampered, &compilation));
-    assert!(codes.contains(&"operations.kind-mismatch".to_owned()), "{codes:?}");
+    assert!(
+        codes.contains(&"operations.kind-mismatch".to_owned()),
+        "{codes:?}"
+    );
 }
 
 #[test]
@@ -204,7 +207,10 @@ fn undeclared_or_wrong_errors_refuse_against_the_registry_binding() {
     let mut tampered = input.clone();
     tampered.operations[1].errors = vec!["planner.task_not_found".to_owned()];
     let codes = finding_codes(&check_join(&sandbox.dir, &tampered, &compilation));
-    assert!(codes.contains(&"operations.registry-binding".to_owned()), "{codes:?}");
+    assert!(
+        codes.contains(&"operations.registry-binding".to_owned()),
+        "{codes:?}"
+    );
     // The embedded registry carries no binding for an unknown operation.
     tampered.operations[0].id = "planner.unbound_query".to_owned();
     let codes = finding_codes(&check_join(&sandbox.dir, &tampered, &compilation));
@@ -232,7 +238,10 @@ fn a_query_never_carries_a_write_recipe() {
         emissions: Vec::new(),
     });
     let codes = finding_codes(&check_join(&sandbox.dir, &tampered, &compilation));
-    assert!(codes.contains(&"operations.query-write".to_owned()), "{codes:?}");
+    assert!(
+        codes.contains(&"operations.query-write".to_owned()),
+        "{codes:?}"
+    );
 }
 
 #[test]
@@ -253,7 +262,10 @@ fn a_recipe_operand_type_mismatch_is_a_finding() {
         );
     }
     let codes = finding_codes(&check_join(&sandbox.dir, &tampered, &compilation));
-    assert!(codes.contains(&"operations.type-mismatch".to_owned()), "{codes:?}");
+    assert!(
+        codes.contains(&"operations.type-mismatch".to_owned()),
+        "{codes:?}"
+    );
     // A precondition failure error outside the declared binding set is
     // a registry-binding finding.
     let mut tampered = input.clone();
@@ -263,7 +275,10 @@ fn a_recipe_operand_type_mismatch_is_a_finding() {
         preconditions[0].error = "planner.unknown_error".to_owned();
     }
     let codes = finding_codes(&check_join(&sandbox.dir, &tampered, &compilation));
-    assert!(codes.contains(&"operations.registry-binding".to_owned()), "{codes:?}");
+    assert!(
+        codes.contains(&"operations.registry-binding".to_owned()),
+        "{codes:?}"
+    );
 }
 
 #[test]
@@ -275,7 +290,10 @@ fn a_policy_binding_must_apply_to_the_operation() {
     let mut tampered = input.clone();
     tampered.operations[0].policy = Some("planner.deny_bulk_focus".to_owned());
     let codes = finding_codes(&check_join(&sandbox.dir, &tampered, &compilation));
-    assert!(codes.contains(&"operations.policy-unresolved".to_owned()), "{codes:?}");
+    assert!(
+        codes.contains(&"operations.policy-unresolved".to_owned()),
+        "{codes:?}"
+    );
 }
 
 #[test]
@@ -301,7 +319,10 @@ fn unchecked_modes_require_the_declared_entrypoint() {
     let mut tampered = input.clone();
     tampered.operations[1].mode = Mode::Checked;
     let codes = finding_codes(&check_join(&sandbox.dir, &tampered, &compilation));
-    assert!(codes.contains(&"operations.entry-required".to_owned()), "{codes:?}");
+    assert!(
+        codes.contains(&"operations.entry-required".to_owned()),
+        "{codes:?}"
+    );
     assert!(!Mode::Checked.emits(), "checked never emits");
     assert!(!Mode::Custom.emits(), "custom never emits");
     assert!(Mode::ScaffoldOnce.emits());

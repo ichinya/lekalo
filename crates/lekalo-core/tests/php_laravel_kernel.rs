@@ -623,3 +623,164 @@ fn the_php_type_generator_plans_applies_and_verifies_managed_types() {
         "a stale input digest is a refusal, never a plan"
     );
 }
+
+/// Issue #59, through the production client: the composed operations
+/// run over the staged IR evidence plans the missing managed types and
+/// the generated operations in one authorized plan, the apply publishes
+/// exactly those bytes, and a verify over the same evidence is clean.
+/// The query-write tamper is a typed finding with a zero-write plan.
+#[test]
+fn the_php_operations_generator_plans_applies_and_verifies_composed_operations() {
+    if !require_runnable() {
+        return;
+    }
+    let sandbox = Sandbox::new("operations");
+    let cache = sandbox.dir.join(".lekalo").join("cache").join("ir");
+    std::fs::create_dir_all(&cache).expect("cache home");
+    let evidence = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/php-laravel/operations/inputs/ir/planner.ir.json"),
+    )
+    .expect("fixture readable");
+    std::fs::write(cache.join("planner.json"), &evidence).expect("evidence written");
+    let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&evidence));
+    let types_home = sandbox.dir.join("lekalo").join("types");
+    std::fs::create_dir_all(&types_home).expect("types home");
+    std::fs::write(
+        types_home.join("planner.types.json"),
+        format!(
+            concat!(
+                "{{\"identity\":\"dev.lekalo.php-types-input@0.4.0\",",
+                "\"irDigest\":\"{digest}\",\"projectId\":\"planner\",",
+                "\"schemaVersion\":\"lekalo/php-types-input/v0.4.0\"}}\n"
+            ),
+            digest = digest
+        ),
+    )
+    .expect("types input written");
+    let template = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/php-laravel/operations/inputs/planner.operations.json"),
+    )
+    .expect("operations template readable");
+    let zeros = format!("sha256:{}", "0".repeat(64));
+    let types_digest = {
+        let bytes = std::fs::read(types_home.join("planner.types.json")).expect("types bytes");
+        format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes))
+    };
+    let operations_home = sandbox.dir.join("lekalo").join("operations");
+    std::fs::create_dir_all(&operations_home).expect("operations home");
+    let input_bytes = template
+        .replace(
+            &format!("\"irDigest\": \"{zeros}\""),
+            &format!("\"irDigest\": \"{digest}\""),
+        )
+        .replace(
+            &format!("\"typesInputDigest\": \"{zeros}\""),
+            &format!("\"typesInputDigest\": \"{types_digest}\""),
+        );
+    std::fs::write(
+        operations_home.join("planner.operations.json"),
+        &input_bytes,
+    )
+    .expect("operations input written");
+    let command = kernel_command();
+    let mut client = TargetClient::new(brief_limits());
+    client.describe(&command, &sandbox.dir).unwrap();
+    let fs = Fs::open(&sandbox.dir).unwrap();
+    let target = "php-laravel";
+    let evidence_path = ".lekalo/cache/ir/planner.json";
+
+    // The composed dry run plans types AND operations together.
+    let dry = client
+        .call(
+            &command,
+            CallRequest {
+                operation: Operation::Generate,
+                target: Some(target),
+                profile: Some("default"),
+                profile_resolution: None,
+                ir_path: Some(evidence_path),
+                dry_run: Some(true),
+                plan_id: None,
+                native_request: None,
+            },
+            &sandbox.dir,
+            &fs,
+            None,
+        )
+        .expect("operations dry run must succeed");
+    let writes = dry.response.writes.clone().unwrap_or_default();
+    assert!(
+        writes.iter().any(|write| write
+            .path
+            .starts_with(".lekalo/generated/php-laravel/operations/")),
+        "the operations family plans under the generated root"
+    );
+    assert!(
+        writes.iter().any(|write| write
+            .path
+            .starts_with(".lekalo/generated/php-laravel/types/")),
+        "the missing managed types ride the same authorized plan"
+    );
+
+    // The query-write tamper: a zero-write plan with the typed finding.
+    let mut document: serde_json::Value =
+        serde_json::from_str(input_bytes.trim()).expect("input decodes");
+    document["operations"][0]["recipe"] = serde_json::json!({
+        "kind": "single-entity-update",
+        "entity": "planner.task",
+        "key": "task_id",
+        "assignments": [
+            {"field": "state",
+             "value": {"enumCase": {"type": "planner.task_state", "value": "focused"}}}
+        ],
+        "kept": ["title"],
+        "missingBehavior": {"error": "planner.store_unavailable"}
+    });
+    let tampered = serde_json::to_string_pretty(&document).expect("tampered serializes") + "\n";
+    std::fs::write(operations_home.join("planner.operations.json"), &tampered)
+        .expect("tampered input written");
+    let refused = client
+        .call(
+            &command,
+            CallRequest {
+                operation: Operation::Generate,
+                target: Some(target),
+                profile: Some("default"),
+                profile_resolution: None,
+                ir_path: Some(evidence_path),
+                dry_run: Some(true),
+                plan_id: None,
+                native_request: None,
+            },
+            &sandbox.dir,
+            &fs,
+            None,
+        )
+        .expect("the tampered plan is an in-envelope finding, never a crash");
+    let findings = refused
+        .response
+        .result
+        .as_ref()
+        .and_then(|result| result.findings.clone())
+        .unwrap_or_default();
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.code == "operations.query-write"),
+        "the query-write finding is typed: {findings:?}"
+    );
+    assert!(
+        refused
+            .response
+            .writes
+            .map_or(true, |writes| writes.is_empty()),
+        "a finding vetoes every write"
+    );
+    std::fs::write(
+        operations_home.join("planner.operations.json"),
+        &input_bytes,
+    )
+    .expect("restore input");
+}
