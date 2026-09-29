@@ -1534,22 +1534,23 @@ mod tests {
     }
 }
 
+/// The loader resolves the fixture through the process working
+/// directory: serialize every cwd mutation across the join suites that
+/// share this test binary.
+#[cfg(test)]
+static GENERATE_CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod operations_join_tests {
     use super::*;
     use crate::loader::{normalize_model, LoadSelection};
-    use std::sync::Mutex;
-
-    /// The loader resolves the fixture through the process working
-    /// directory: serialize every cwd mutation with the other suites.
-    static CWD_LOCK: Mutex<()> = Mutex::new(());
 
     /// The join runs before any adapter exchange: a bogus policy
     /// binding refuses the run as the registered
     /// `php-operations.join-invalid` invalid result.
     #[test]
     fn a_bogus_policy_binding_refuses_the_generate_run() {
-        let _guard = CWD_LOCK.lock().expect("cwd lock");
+        let _guard = GENERATE_CWD_LOCK.lock().expect("cwd lock");
         let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let workspace = crate_dir
             .parent()
@@ -1636,15 +1637,17 @@ mod routes_join_tests {
     #[test]
     fn an_unresolvable_endpoint_refuses_the_generate_run() {
         // The loader path policy only accepts workspace-relative project
-        // selections, and cargo runs this suite with the crate root as
-        // the working directory — so the working directory never moves
-        // here (the storage-engine suites read their own fixtures
-        // relative to it and run in parallel in this same binary).
+        // selections resolved through the process working directory, so
+        // this suite enters the workspace root under the shared cwd lock
+        // (the operations join suite mutates cwd in this same binary).
+        let _guard = GENERATE_CWD_LOCK.lock().expect("cwd lock");
         let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let workspace = crate_dir
             .parent()
             .and_then(Path::parent)
             .expect("workspace");
+        let original = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(workspace).expect("enter workspace");
         let selection = LoadSelection {
             project: Some("tests/fixtures/php-laravel/routes/model".to_owned()),
         };
@@ -1756,5 +1759,6 @@ mod routes_join_tests {
             "the typed finding code rides the data: {rendered}"
         );
         let _ = std::fs::remove_dir_all(&sandbox);
+        std::env::set_current_dir(original).expect("restore cwd");
     }
 }
