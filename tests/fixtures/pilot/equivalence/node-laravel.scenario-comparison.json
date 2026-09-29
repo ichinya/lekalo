@@ -1,0 +1,285 @@
+{
+  "schema_version": "lekalo/scenario-comparison/v0.1.0",
+  "identity": "dev.lekalo.scenario-comparison@0.1.0",
+  "role": "observed-baseline-equivalence-evidence",
+  "corpus": {
+    "scenario_count": 6,
+    "scenarios": [
+      {
+        "id": "planner.scenario.focus_concurrent",
+        "digest": "sha256:90a798e9fb71447ce627c79006e9012e4a01fbc714375b9d493ef6c6e7e099c9"
+      },
+      {
+        "id": "planner.scenario.focus_denied",
+        "digest": "sha256:ddf0348dccd9bc7134f6f93fb224ec210c2f46ed018ae405e2b35ddae54e57c5"
+      },
+      {
+        "id": "planner.scenario.focus_error",
+        "digest": "sha256:dac4c82169c4a7ff4f1a645d8db507532da778ac1a4a1cafcee2ebe70010391a"
+      },
+      {
+        "id": "planner.scenario.focus_happy",
+        "digest": "sha256:5abcb893cae13c2d9656a6e5ac2f1a278746a8eb8f9c667e29127d8e82a2c162"
+      },
+      {
+        "id": "planner.scenario.focus_idempotent",
+        "digest": "sha256:c5101f5eba83b1222ee93bef0d68c24900dcda88b433e33937c8904434a9b24b"
+      },
+      {
+        "id": "planner.scenario.focus_rollback",
+        "digest": "sha256:54c2ea0d07e7b393ce4f91f04f51f625362afede96b2f717eabc0f24a12afbfb"
+      }
+    ]
+  },
+  "ir_evidence": {
+    "path": "tests/fixtures/adapter-conformance/inputs/ir-minimal.json",
+    "digest": "sha256:e1a2173af461cb43cfa58f091bd92a439f8cfa53aba7aea33481d85d6977decd"
+  },
+  "backends": [
+    {
+      "backend": "node-typescript",
+      "runner": "node:test",
+      "binding_mode": "generated"
+    },
+    {
+      "backend": "php-laravel",
+      "runner": "laratesto",
+      "binding_mode": "generated"
+    }
+  ],
+  "scenarios": {
+    "planner.scenario.focus_concurrent": {
+      "equal": true,
+      "node": [
+        {
+          "step_id": null,
+          "observes": null,
+          "kind": "scenario",
+          "outcome": "unsupported"
+        },
+        {
+          "step_id": "no_duplicates",
+          "observes": "replay_focus",
+          "kind": "idempotency",
+          "outcome": "unsupported"
+        }
+      ],
+      "php": [
+        {
+          "step_id": null,
+          "observes": null,
+          "kind": "scenario",
+          "outcome": "unsupported"
+        },
+        {
+          "step_id": "no_duplicates",
+          "observes": "replay_focus",
+          "kind": "idempotency",
+          "outcome": "unsupported"
+        }
+      ]
+    },
+    "planner.scenario.focus_denied": {
+      "equal": true,
+      "node": [
+        {
+          "step_id": "bulk_denied",
+          "observes": "focus",
+          "kind": "authorization",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "solo_allowed",
+          "observes": "focus",
+          "kind": "authorization",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "output",
+          "observes": "focus",
+          "kind": "result",
+          "outcome": "pass"
+        }
+      ],
+      "php": [
+        {
+          "step_id": "bulk_denied",
+          "observes": "focus",
+          "kind": "authorization",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "solo_allowed",
+          "observes": "focus",
+          "kind": "authorization",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "output",
+          "observes": "focus",
+          "kind": "result",
+          "outcome": "pass"
+        }
+      ]
+    },
+    "planner.scenario.focus_error": {
+      "equal": true,
+      "node": [
+        {
+          "step_id": "output",
+          "observes": "run",
+          "kind": "error",
+          "outcome": "pass"
+        }
+      ],
+      "php": [
+        {
+          "step_id": "output",
+          "observes": "run",
+          "kind": "error",
+          "outcome": "pass"
+        }
+      ]
+    },
+    "planner.scenario.focus_happy": {
+      "equal": true,
+      "node": [
+        {
+          "step_id": "output",
+          "observes": "run",
+          "kind": "result",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "state",
+          "observes": "run",
+          "kind": "entity_state",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "emitted",
+          "observes": "run",
+          "kind": "emitted",
+          "outcome": "pass"
+        }
+      ],
+      "php": [
+        {
+          "step_id": "output",
+          "observes": "run",
+          "kind": "result",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "state",
+          "observes": "run",
+          "kind": "entity_state",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "emitted",
+          "observes": "run",
+          "kind": "emitted",
+          "outcome": "pass"
+        }
+      ]
+    },
+    "planner.scenario.focus_idempotent": {
+      "equal": true,
+      "node": [
+        {
+          "step_id": "no_duplicates",
+          "observes": "replay_focus",
+          "kind": "idempotency",
+          "outcome": "pass"
+        }
+      ],
+      "php": [
+        {
+          "step_id": "no_duplicates",
+          "observes": "replay_focus",
+          "kind": "idempotency",
+          "outcome": "pass"
+        }
+      ]
+    },
+    "planner.scenario.focus_rollback": {
+      "equal": true,
+      "node": [
+        {
+          "step_id": "typed_error",
+          "observes": "focus_unknown",
+          "kind": "error",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "no_row",
+          "observes": "focus_unknown",
+          "kind": "entity_state",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "row_unchanged",
+          "observes": "focus_unknown",
+          "kind": "entity_state",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "no_effect",
+          "observes": "focus_unknown",
+          "kind": "forbidden_effect",
+          "outcome": "pass"
+        }
+      ],
+      "php": [
+        {
+          "step_id": "typed_error",
+          "observes": "focus_unknown",
+          "kind": "error",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "no_row",
+          "observes": "focus_unknown",
+          "kind": "entity_state",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "row_unchanged",
+          "observes": "focus_unknown",
+          "kind": "entity_state",
+          "outcome": "pass"
+        },
+        {
+          "step_id": "no_effect",
+          "observes": "focus_unknown",
+          "kind": "forbidden_effect",
+          "outcome": "pass"
+        }
+      ]
+    }
+  },
+  "mutation": {
+    "kind": "shared-lying-port",
+    "note": "one recorded assertion failure per backend at the same semantic step",
+    "focus_happy": {
+      "equal": true,
+      "node": [
+        {
+          "step_id": "emitted",
+          "observes": "run",
+          "kind": "emitted",
+          "outcome": "fail"
+        }
+      ],
+      "php": [
+        {
+          "step_id": "emitted",
+          "observes": "run",
+          "kind": "emitted",
+          "outcome": "fail"
+        }
+      ]
+    }
+  }
+}

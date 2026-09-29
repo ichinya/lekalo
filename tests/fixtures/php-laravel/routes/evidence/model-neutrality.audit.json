@@ -1,0 +1,160 @@
+{
+  "schema_version": "lekalo/model-neutrality-audit/v0.1.0",
+  "identity": "dev.lekalo.model-neutrality-audit@0.1.0",
+  "role": "neutrality-audit",
+  "note": "Evidence for the issue #114 acceptance criterion: the planner Model surfaces (the routes-corpus model home and the contracted planner-slice model home) carry no Laravel, Eloquent, Vue, TypeScript, or other target-specific concepts. The one sanctioned exception is a target-binding definition's target field; the derived .lekalo cache and the opaque lekalo/targets/ config are not model surfaces. Every hit of the closed forbidden vocabulary is a neutrality failure.",
+  "forbidden_vocabulary": [
+    "laravel",
+    "eloquent",
+    "illuminate",
+    "artisan",
+    "blade",
+    "inertia",
+    "livewire",
+    "fortify",
+    "sanctum",
+    "vue",
+    "vuex",
+    "vite",
+    "nuxt",
+    "pinia",
+    "typescript",
+    "javascript",
+    "node",
+    "deno",
+    "bun",
+    "npm",
+    "pnpm",
+    "yarn",
+    "php",
+    "composer",
+    "psr",
+    "symfony",
+    "doctrine",
+    "testo",
+    "laratesto",
+    "mago",
+    "postgres",
+    "mysql",
+    "sqlite",
+    "redis",
+    "mongodb",
+    "react",
+    "angular",
+    "svelte",
+    "django",
+    "rails",
+    "activerecord",
+    "hibernate"
+  ],
+  "forbidden_vocabulary_digest": "sha256:fbf421c699de363bf4d54467f40ab813e20ac15bbf090051490011c3540e887e",
+  "closed_kinds": [
+    "project",
+    "module",
+    "scalar",
+    "enum",
+    "value-object",
+    "entity",
+    "command",
+    "query",
+    "policy",
+    "event",
+    "effect",
+    "endpoint",
+    "scenario",
+    "target-binding"
+  ],
+  "scanned_file_count": 22,
+  "scanned_files": [
+    {
+      "path": "tests/fixtures/contracted/planner-slice/lekalo/modules/planner/bindings.yaml",
+      "digest": "sha256:090ed8f55116d3ba14d576bd39c90b322cd220e88a37e37e8766c089f9aa20b2"
+    },
+    {
+      "path": "tests/fixtures/contracted/planner-slice/lekalo/modules/planner/commands.yaml",
+      "digest": "sha256:dcdd90011e340b6e49630c9065c99277633d8bea8cdbb1c525847136e53957fd"
+    },
+    {
+      "path": "tests/fixtures/contracted/planner-slice/lekalo/modules/planner/entities.yaml",
+      "digest": "sha256:a0857cd5da80caa67b11d48623a917fe2b59550659a265ef6120c39b83472792"
+    },
+    {
+      "path": "tests/fixtures/contracted/planner-slice/lekalo/modules/planner/events.yaml",
+      "digest": "sha256:ece6d7eae66ad2640126a55318e858b7287a29d1417a753a69fa7c37fcdcd91a"
+    },
+    {
+      "path": "tests/fixtures/contracted/planner-slice/lekalo/modules/planner/module.yaml",
+      "digest": "sha256:3d3f90928666b4f580627a56008f4b70e9d0d552ae1fb1882fd39d09dc105f93"
+    },
+    {
+      "path": "tests/fixtures/contracted/planner-slice/lekalo/modules/planner/policies.yaml",
+      "digest": "sha256:6d11b258ba500111010f0e0671cd829cbaf5e5ff438b7e02a023cb7a6dbe1724"
+    },
+    {
+      "path": "tests/fixtures/contracted/planner-slice/lekalo/modules/planner/queries.yaml",
+      "digest": "sha256:457ff05aa72967f1426ddd5140feb45dadcd5c05c77d68b6c06a7771aa2ac4da"
+    },
+    {
+      "path": "tests/fixtures/contracted/planner-slice/lekalo/modules/planner/scenarios.yaml",
+      "digest": "sha256:05815c340dcec9b38780df04740db7443490302b403a7fb360ac5a7eedd0c2d2"
+    },
+    {
+      "path": "tests/fixtures/contracted/planner-slice/lekalo/project.yaml",
+      "digest": "sha256:00b735c01faeb53a86558713e04b8a6eb256edb4995a1f17beaca740944a0fd1"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/lekalo/modules/planner/bindings.yaml",
+      "digest": "sha256:03dfa54f163e2c6c13016898d7f6796343a28bdf5e0756ce0fc026c9a84b5e50"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/lekalo/modules/planner/commands.yaml",
+      "digest": "sha256:91d30224c1ee9c563189bf1fd74b6591774ae356753533ca4cae18f215e95394"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/lekalo/modules/planner/entities.yaml",
+      "digest": "sha256:0a99af545412178ad181fb6e8a77d653b7e3be44fb8a1a7366c03c70f6e2c754"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/lekalo/modules/planner/events.yaml",
+      "digest": "sha256:98b47430ce86c2612e7aa1e2737e191f2c073fbffb3a25c059789d67157a0525"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/lekalo/modules/planner/module.yaml",
+      "digest": "sha256:183ee7c8ef0410a82b0abd26e72a9fcb0fb9f324aa6827b4318f0a0bc2ccf780"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/lekalo/modules/planner/policies.yaml",
+      "digest": "sha256:655c7151931d98dc152c7c1ab7042f1d8668418cb6cb9a46814f15ac492c86b3"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/lekalo/modules/planner/queries.yaml",
+      "digest": "sha256:a1a227e13443cd54773fbbd1c69ed611942ff1545a1dedfa14a7fd6229b21982"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/lekalo/modules/planner/scenarios.yaml",
+      "digest": "sha256:9c8eeecb7b28e9342508126f4147ed3ec58532c2b981cec7d786a00bbdd536d5"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/lekalo/project.yaml",
+      "digest": "sha256:c0a6628cba3acc1a565668d560657e2aa2de6164b7bfe46fa9260d3e96a8e12f"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/lekalo/query-model.yaml",
+      "digest": "sha256:6f6f9d8279ec5d5982c5c57f7d8442f2bef223d037153e0ad7cbfceb561dea1f"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/lekalo/scenarios/planner.screen_complete_day.scenario.json",
+      "digest": "sha256:a3e8b2ed3f372c0a4c68c1249e44038490a0088844906049181eff80bb2cd0e8"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/lekalo/scenarios/planner.screen_focus_flow.scenario.json",
+      "digest": "sha256:491846e0501330a4788e497be46e26f21c97f1bb558f0fb9418dad31c05eee6c"
+    },
+    {
+      "path": "tests/fixtures/php-laravel/routes/model/openspec/specs/planner/spec.md",
+      "digest": "sha256:24df9c9f0fb1c35db2d3d2636ea51804ec0c857e70d64f4cb2c6ebe2bb6fdbd1"
+    }
+  ],
+  "hits": [],
+  "result": "neutral"
+}

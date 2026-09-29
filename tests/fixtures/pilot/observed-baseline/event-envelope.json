@@ -1,0 +1,33 @@
+{
+  "schema_version": "lekalo/observed-event-envelope/v0.1.0",
+  "identity": "dev.lekalo.observed-event-envelope@0.1.0",
+  "role": "observed-baseline",
+  "target": "node-typescript",
+  "note": "The event envelope of the observed Node planner implementation, pinned as the baseline for the Laravel pilot (issue #114). The envelope members are the observed emission-ledger entries; the durable observation contract is the scenario-run record. Nothing here is a template for new backends: the Laravel pilot speaks HTTP/OpenAPI, not this envelope.",
+  "binding": {
+    "ir_evidence": {
+      "path": "tests/fixtures/adapter-conformance/inputs/ir-minimal.json",
+      "digest": "sha256:e1a2173af461cb43cfa58f091bd92a439f8cfa53aba7aea33481d85d6977decd"
+    },
+    "record_contract": {
+      "identity": "dev.lekalo.scenario-run@0.4.0",
+      "schema_version": "lekalo/scenario-run/v0.4.0",
+      "path": "contracts/scenario-run.schema.v0.4.0.json",
+      "digest": "sha256:f0ab66697ad7b2c48dea7180b301080586df3a4f3f09fc2700373ef7cbfad358"
+    }
+  },
+  "envelope_members": ["id", "kind", "operation"],
+  "events": [
+    {
+      "id": "planner.task_focused",
+      "kind": "event",
+      "emitted_by": "planner.focus_task",
+      "observed_envelope": {
+        "kind": "event",
+        "id": "planner.task_focused",
+        "operation": "planner.focus_task"
+      },
+      "observed_by": "scenario-run emitted assertions over the run-record contract above"
+    }
+  ]
+}

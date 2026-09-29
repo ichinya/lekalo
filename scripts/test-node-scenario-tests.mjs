@@ -149,7 +149,7 @@ try {
     materializeProject(root);
     assert.ok(existsSync(join(root, "lekalo", "test-port.json")));
     assert.ok(existsSync(join(root, ".lekalo", "cache", "ir", "planner.json")));
-    assert.equal(scenarioIds.length, 4);
+    assert.equal(scenarioIds.length, 6);
   });
 
   const requestId = (byte) =>
@@ -223,6 +223,8 @@ try {
       "planner.scenario.focus_error",
       "planner.scenario.focus_idempotent",
       "planner.scenario.focus_concurrent",
+      "planner.scenario.focus_denied",
+      "planner.scenario.focus_rollback",
     ]) {
       const path = join(root, ...RUN_RECORD_DIR.split("/"), `${scenarioId}.json`);
       assert.ok(existsSync(path), `run record for ${scenarioId}`);

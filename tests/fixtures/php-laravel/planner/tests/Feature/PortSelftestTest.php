@@ -45,9 +45,11 @@ final class PortSelftestTest extends LaravelTestCase
         \Testo\Assert::same(1, count($port->emissions()) - $before);
 
         // Control surfaces answer: actor, authorize, contractCheck, fixtureDigest.
+        // The deny policy resolves through the scenario-vocabulary spelling
+        // of the IR symbol `planner.deny_bulk_focus` (issue #114).
         \Testo\Assert::same(['ref' => 'planner/member', 'scope' => 'planner'], $port->actor('planner/member', 'planner'));
-        \Testo\Assert::same('allowed', $port->authorize('agent-1', 'planner.deny_bulk_focus', 'planner.focus_task'));
-        \Testo\Assert::same('denied', $port->authorize('bulk-agent', 'planner.deny_bulk_focus', 'planner.focus_task'));
+        \Testo\Assert::same('allowed', $port->authorize('agent-1', 'planner.policies/deny-bulk-focus', 'planner.focus_task'));
+        \Testo\Assert::same('denied', $port->authorize('bulk-agent', 'planner.policies/deny-bulk-focus', 'planner.focus_task'));
         \Testo\Assert::same(true, $port->contractCheck('core.contracts/focus-state', ['focused'], ['focused' => true]));
         \Testo\Assert::same(false, $port->contractCheck('core.contracts/focus-state', ['missing'], ['focused' => true]));
         $digest = $port->fixtureDigest('core/planner-seed');

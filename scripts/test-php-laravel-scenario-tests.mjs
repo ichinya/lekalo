@@ -28,7 +28,11 @@ const scenarioHome = join(repoRoot, "tests", "fixtures", "orchestration", "proje
 const irEvidence = join(repoRoot, "tests", "fixtures", "adapter-conformance", "inputs", "ir-minimal.json");
 const SCENARIO_DIR = "src/generated/php-laravel/scenario-tests";
 const RUN_RECORD_DIR = join(".lekalo", "import", "scenario-runs");
-const GENERATED_TEST_COUNT = 4;
+// Issue #114: the corpus grew to six scenarios — the four issue-#56
+// legs plus the authorization leg (focus_denied) and the transaction
+// leg (focus_rollback). Only the race case is unsupported-only; every
+// executed scenario must pass all of its assertion rows.
+const GENERATED_TEST_COUNT = 6;
 
 /** Locate a runnable PHP interpreter (CI provisions one; the script never
  * silently skips: a missing runtime is a hard failure with the exact
