@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\ProviderWebhookController;
 use App\Http\Controllers\TaskFocusController;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
@@ -96,6 +97,23 @@ $app->booted(static function (Application $app): void {
         'App\Lekalo\EloquentFocusedCounter',
     );
 
+    // Issue #50: the maintained planning adapters behind the generated
+    // planning ports — five command stores, three readers, five policy
+    // gates; one maintained class per port, one binding each.
+    $app->bind('Lekalo\Generated\Operations\Planner\TaskPlanner', 'App\Lekalo\EloquentPlanningStore');
+    $app->bind('Lekalo\Generated\Operations\Planner\TaskMover', 'App\Lekalo\EloquentPlanningStore');
+    $app->bind('Lekalo\Generated\Operations\Planner\TaskUnplanner', 'App\Lekalo\EloquentPlanningStore');
+    $app->bind('Lekalo\Generated\Operations\Planner\DayReorderer', 'App\Lekalo\EloquentPlanningStore');
+    $app->bind('Lekalo\Generated\Operations\Planner\FocusPauser', 'App\Lekalo\EloquentPlanningStore');
+    $app->bind('Lekalo\Generated\Operations\Planner\TodayReader', 'App\Lekalo\EloquentPlanningQueries');
+    $app->bind('Lekalo\Generated\Operations\Planner\BacklogReader', 'App\Lekalo\EloquentPlanningQueries');
+    $app->bind('Lekalo\Generated\Operations\Planner\CarryOverReader', 'App\Lekalo\EloquentPlanningQueries');
+    $app->bind('Lekalo\Generated\Operations\Planner\PlanTaskPolicy', 'App\Lekalo\ForeignPlanPolicy');
+    $app->bind('Lekalo\Generated\Operations\Planner\MoveTaskPolicy', 'App\Lekalo\ForeignMovePolicy');
+    $app->bind('Lekalo\Generated\Operations\Planner\UnplanTaskPolicy', 'App\Lekalo\ForeignUnplanPolicy');
+    $app->bind('Lekalo\Generated\Operations\Planner\ReorderPlannedPolicy', 'App\Lekalo\ForeignReorderPolicy');
+    $app->bind('Lekalo\Generated\Operations\Planner\PausePlanningPolicy', 'App\Lekalo\ForeignPausePolicy');
+
     // The fixture authentication seam the generated routes attach (the
     // input's middleware mapping names this alias).
     $app->make('router')->aliasMiddleware('fixture.auth', \App\Http\Middleware\RequireActor::class);
@@ -103,6 +121,11 @@ $app->booted(static function (Application $app): void {
     $app->make('router')->group(['prefix' => 'api'], static function ($router): void {
         $router->post('/tasks/{task_id}/focus', [TaskFocusController::class, 'focus'])
             ->name('tasks.focus');
+        // The provider webhook of the ownership-separation scenario
+        // (issue #50): provider deliveries mutate provider-owned task
+        // columns only — planning fields are never a provider surface.
+        $router->post('/provider/webhook', [ProviderWebhookController::class, 'deliver'])
+            ->name('provider.webhook');
     });
 
     // Issue #60: the managed routes of the routes family merge here —

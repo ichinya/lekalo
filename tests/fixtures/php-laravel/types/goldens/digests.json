@@ -2,7 +2,7 @@
     "schemaVersion": "lekalo/php-types-golden-digests/v0.1.0",
     "irDigest": "sha256:e1a2173af461cb43cfa58f091bd92a439f8cfa53aba7aea33481d85d6977decd",
     "files": {
-        "classmap.php": "sha256:73a065c08b888e586202a0b73dd2cff9d267ecc181dc0774b1b907b1d216c88b",
+        "classmap.php": "sha256:1020fd7cff18db7794372d2dbf3dcfb861c3e21baf3c5bc31c5f934875e06b21",
         "notify/channel.php": "sha256:3a4a2e04b27cf4b0ba8d288077e10398282514e299569d1a79d17bb8d84fc9be",
         "notify/notify_user_input.php": "sha256:7d375acacee81027f0e5f0e266292c8495c87b4d1ad0380ffd411624139b7ce2",
         "notify/notify_user_input_codec.php": "sha256:fee429eca39d64aed56bd501042e49bb494313c7cb8c5d503e31912e18ddc9d7",
@@ -26,6 +26,6 @@
         "planner/task_id.php": "sha256:66023d825b43d304ccb42746cc0d99b011ffe813fdccfdfadcb5b6bf2e3190ad",
         "planner/task_state.php": "sha256:c897ddc4b2dc7e4428a3963bb3a143a2c8966889e8a259063b66061bce642df2",
         "planner/text.php": "sha256:00f072e9011cb5954f0f7cd39ee987d70b52f8a979bb8f8705a37d6c1049929d",
-        "types.map.json": "sha256:339ee58ba092fe4ce0731397863ab75923568a6966e7a54621d416f154387bee"
+        "types.map.json": "sha256:6933a6d82944e425bd4b089908f21ba920f4f053caa16b9d063653f1e912646d"
     }
 }
