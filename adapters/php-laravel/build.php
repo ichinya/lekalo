@@ -63,6 +63,11 @@ $scenarioModulePaths = [
     $adapterRoot . '/src/operation-map.php',
     $adapterRoot . '/src/operation-emit.php',
     $adapterRoot . '/src/operation-bindings.php',
+    // The routes-generator modules ride last, in the fixed order the
+    // kernel's `load_route_modules()` names (issue #60).
+    $adapterRoot . '/src/route-policy.php',
+    $adapterRoot . '/src/route-map.php',
+    $adapterRoot . '/src/route-emit.php',
 ];
 $nativeModulePaths = [$adapterRoot . '/src/native-policy.php', $adapterRoot . '/src/native-plan.php'];
 
