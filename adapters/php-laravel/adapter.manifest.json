@@ -57,22 +57,27 @@
       "preserve.classification": "unsupported",
       "scan.symbols": "unsupported",
       "verify.scenarios": "full",
-      "verify.transport-http": "unsupported"
+      "verify.transport-http": "unsupported",
+      "generate.types": "full"
     },
     "constraints": {
       "maxEntries": 1024
     },
     "readScopes": [
       ".lekalo/cache/**",
+      ".lekalo/generated/php-laravel/types/**",
       ".lekalo/import/**",
       ".lekalo/ir/**",
+      "app/lekalo-types/**",
       "composer.json",
       "composer.lock",
       "lekalo/php-test-port.json",
-      "lekalo/scenarios/**"
+      "lekalo/scenarios/**",
+      "lekalo/types/**"
     ],
     "writeScopes": [
       ".lekalo/generated/php-laravel/**",
+      "app/lekalo-types/**",
       "src/generated/php-laravel/scenario-tests/**",
       "tests/lekalo/scenario-tests/**"
     ],
@@ -97,12 +102,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:fb03abeccb56c0c8bf0cdb4e852cad02e7cb06b958aacde6ea07fc6853247afd",
+    "packageDigest": "sha256:5586071ddc81dfc2a303116cdce3c7c04c61bec0ef10534770598b817ff665a4",
     "files": [
       {
         "path": "adapter.php",
-        "digest": "sha256:5aa78f5f7deb61b731801328518b6f2d0e635cc461cdc92c375299e200e2e315",
-        "bytes": 321096
+        "digest": "sha256:51d62f2b97d5f0891bee8bc788946c359be4aaea961350437df45983016fc63c",
+        "bytes": 436765
       }
     ],
     "signaturePolicy": "unsigned",
@@ -112,15 +117,19 @@
     "filesystem": {
       "readScopes": [
         ".lekalo/cache/**",
+        ".lekalo/generated/php-laravel/types/**",
         ".lekalo/import/**",
         ".lekalo/ir/**",
+        "app/lekalo-types/**",
         "composer.json",
         "composer.lock",
         "lekalo/php-test-port.json",
-        "lekalo/scenarios/**"
+        "lekalo/scenarios/**",
+        "lekalo/types/**"
       ],
       "writeScopes": [
         ".lekalo/generated/php-laravel/**",
+        "app/lekalo-types/**",
         "src/generated/php-laravel/scenario-tests/**",
         "tests/lekalo/scenario-tests/**"
       ]

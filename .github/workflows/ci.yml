@@ -218,6 +218,10 @@ jobs:
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
         run: node scripts/test-adapter-manifest-contracts.mjs
+      - name: Run the PHP types contract gate (issue #58)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: node scripts/test-php-types-contracts.mjs
       - name: Verify the shipped adapter manifest golden (issue #32, #54)
         run: node scripts/test-adapter-manifest-golden.mjs
       - name: Run the PHP/Laravel adapter suite (issue #54)
@@ -233,6 +237,17 @@ jobs:
         # and verification never execute project code.
         timeout-minutes: 10
         run: node scripts/test-php-laravel-scenario-bindings.mjs
+      - name: Run the PHP type generation gate (issue #58)
+        # The closed mapping, the three custody modes, and the golden
+        # digests over the shared Planner corpus — needs PHP only.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-types.mjs
+      - name: Run the PHP type round-trip gate (issue #58)
+        # Executable codec vectors over both corpora; the Mago leg
+        # records an honest skip here (the real-toolchain leg runs it
+        # with --require-mago) and never counts as Mago acceptance.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-type-roundtrip.mjs
       - name: Run the Composer/Laravel native-gates harness (issue #61)
         # Pure planner legs on every OS: targeted selection, mandatory
         # cross-module gates, exactly-once suites, hostile decoder
@@ -399,3 +414,8 @@ jobs:
           echo "LEKALO_MAGO=$BIN" >> "$GITHUB_ENV"
       - name: Run the Mago integration gate, real mode
         run: node scripts/test-mago-integration.mjs --real --require-available
+      - name: Run the generated-types Mago gate, real mode (issue #58)
+        # The generated type files pass the pinned lint AND analyze
+        # gates, with the violating negative control proving the rules
+        # ran. A missing tool fails this leg, never a silent skip.
+        run: node scripts/test-php-laravel-type-roundtrip.mjs --require-mago

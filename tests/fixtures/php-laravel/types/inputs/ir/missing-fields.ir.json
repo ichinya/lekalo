@@ -1,0 +1,18 @@
+{
+  "contract": "dev.lekalo.ir@0.2.16",
+  "definitions": [
+    {
+      "id": "m.hollow",
+      "kind": "entity",
+      "identity": ["flag"],
+      "version": 1
+    },
+    {
+      "base": "boolean",
+      "id": "m.flag",
+      "kind": "scalar",
+      "version": 1
+    }
+  ],
+  "modelVersion": "0.2.16"
+}

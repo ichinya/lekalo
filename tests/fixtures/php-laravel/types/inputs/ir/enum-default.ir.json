@@ -1,0 +1,15 @@
+{
+  "contract": "dev.lekalo.ir@0.2.16",
+  "definitions": [
+    {
+      "id": "m.state",
+      "kind": "enum",
+      "values": [
+        { "value": "on", "default": true },
+        { "value": "off" }
+      ],
+      "version": 1
+    }
+  ],
+  "modelVersion": "0.2.16"
+}

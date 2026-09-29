@@ -150,3 +150,71 @@ fn an_installed_adapter_store_validates_as_a_runtime_home() {
     }
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// Issue #58: the governed tree knows the `lekalo/types` input home —
+/// flat `*.types.json` documents validate, and any other child keeps
+/// the closed-scan refusal exactly like the scenario home.
+#[test]
+fn the_types_input_home_validates_with_closed_children() {
+    use lekalo_core::project_fs::{Fs, StructureOutcome};
+
+    let root = std::env::temp_dir().join(format!("lekalo-struct-types-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("lekalo")).expect("lekalo dir");
+    let root = root.canonicalize().expect("canonical temp root");
+    #[cfg(windows)]
+    let root = match root.to_string_lossy().strip_prefix(r"\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => std::path::PathBuf::from(rest),
+        _ => root,
+    };
+    std::fs::write(
+        root.join("lekalo/project.yaml"),
+        "project: types-structure\n",
+    )
+    .expect("project marker");
+    std::fs::create_dir_all(
+        root.join("lekalo")
+            .join("types")
+            .to_string_lossy()
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
+    )
+    .expect("types home");
+    std::fs::write(
+        root
+            .join("lekalo")
+            .join("types")
+            .join("planner.types.json")
+            .to_string_lossy()
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
+        br#"{"schemaVersion":"lekalo/php-types-input/v0.4.0","identity":"dev.lekalo.php-types-input@0.4.0","projectId":"planner","irDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}"#,
+    )
+    .expect("types input");
+
+    let outcome = Fs::validate_project(&root);
+    assert!(
+        matches!(outcome, StructureOutcome::Valid(_)),
+        "a declared types input must validate: {outcome:?}"
+    );
+
+    // A stray child of the types home refuses with the canonical-scan
+    // reason, mirroring the scenario home's closed children.
+    std::fs::write(
+        root.join("lekalo")
+            .join("types")
+            .join("notes.txt")
+            .to_string_lossy()
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
+        b"stray\n",
+    )
+    .expect("stray file");
+    let outcome = Fs::validate_project(&root);
+    match outcome {
+        StructureOutcome::Denied(reasons) | StructureOutcome::Invalid(reasons) => assert!(
+            reasons
+                .iter()
+                .any(|reason| reason.code == "structure.canonical-unexpected-entry"),
+            "the stray types child must refuse: {reasons:?}"
+        ),
+        StructureOutcome::Valid(_) => panic!("the stray types child must refuse"),
+    }
+}

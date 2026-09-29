@@ -75,9 +75,27 @@ impl ArtifactPath {
         {
             return None;
         }
-        project_fs::path_violation(text)
-            .is_none()
-            .then(|| Self(text.to_owned()))
+        // The user-facing path grammar declines leading-dot segments,
+        // but runtime-owned artifacts legitimately live under the
+        // `.lekalo/` home (issue #58: the generated types and their
+        // mapping sidecar are recorded artifacts). The artifact-key
+        // grammar therefore accepts a leading-dot directory explicitly
+        // while keeping every other closed rule per segment.
+        for segment in text.split('/') {
+            if segment.len() > 64
+                || segment == "."
+                || segment == ".."
+                || segment.ends_with('.')
+                || segment.ends_with(' ')
+            {
+                return None;
+            }
+            let portable = segment.strip_prefix('.').unwrap_or(segment);
+            if project_fs::path_violation(portable).is_some() {
+                return None;
+            }
+        }
+        Some(Self(text.to_owned()))
     }
 
     pub fn as_str(&self) -> &str {
@@ -573,6 +591,46 @@ impl DriftVerdict {
             Self::ManualDrift => "manual-drift",
             Self::Missing => "missing",
             Self::Orphan => "orphan",
+        }
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    /// Issue #58: runtime-owned artifacts under the `.lekalo/` home are
+    /// recordable, while every other closed rule of the user-facing
+    /// path grammar still holds per segment.
+    #[test]
+    fn artifact_paths_admit_the_runtime_home_and_keep_the_closed_rules() {
+        assert_eq!(
+            ArtifactPath::parse(".lekalo/generated/php-laravel/types/types.map.json")
+                .map(|path| path.as_str().to_owned())
+                .as_deref(),
+            Some(".lekalo/generated/php-laravel/types/types.map.json"),
+        );
+        assert_eq!(
+            ArtifactPath::parse("src/generated/node-typescript/model.ts")
+                .map(|path| path.as_str().to_owned())
+                .as_deref(),
+            Some("src/generated/node-typescript/model.ts"),
+        );
+        for hostile in [
+            ".lekalo/../escape.php",
+            ".lekalo/./escape.php",
+            ".lekalo/escape.php/",
+            "/abs/escape.php",
+            ".lekalo/escape.php ",
+            ".lekalo/escape.php.",
+            ".lekalo/UPPER.php",
+            ".lekalo/escape~1.php",
+            format!(".lekalo/{}.php", "a".repeat(65)).as_str(),
+        ] {
+            assert!(
+                ArtifactPath::parse(hostile).is_none(),
+                "{hostile} must refuse"
+            );
         }
     }
 }

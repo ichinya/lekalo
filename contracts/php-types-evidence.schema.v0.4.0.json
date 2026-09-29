@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/php-types-evidence.schema.v0.4.0.json",
+  "title": "Lekalo PHP Types Evidence",
+  "description": "Closed independent contract for the observed class-shape evidence document consumed by checked-type bindings (issue #58). A scanner outside the compiler publishes one record per observed generated class: its claimed semantic id, FQN, artifact path, exact source digest, kind, observed property/enum shape, and codec binding. The checked join is read-only and strict: a missing, ambiguous, stale, or shape-diverging record is a typed finding - never conformant, never a rewrite. The document is pure data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "classes"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/php-types-evidence/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.php-types-evidence@0.4.0"
+    },
+    "classes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/classEvidence"
+      }
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "fqn": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*)+$"
+    },
+    "relativePath": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_.-]+(/[a-zA-Z0-9_.-]+)*$"
+    },
+    "kind": {
+      "enum": ["scalar", "enum", "value-object", "entity", "command", "query", "event", "collection", "optional"]
+    },
+    "property": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-zA-Z0-9]*$"
+        },
+        "type": {
+          "description": "The observed declared property type as spelled in the class source (FQN or primitive).",
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*)*$"
+        },
+        "nullable": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "enumCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case", "value"],
+      "properties": {
+        "case": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "classEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["semanticId", "fqn", "path", "sourceDigest", "kind"],
+      "properties": {
+        "semanticId": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "fqn": {
+          "$ref": "#/$defs/fqn"
+        },
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "sourceDigest": {
+          "description": "The digest of the exact observed class bytes at scan time; the checked gate re-hashes the live file and any divergence is stale evidence.",
+          "$ref": "#/$defs/sha256"
+        },
+        "kind": {
+          "$ref": "#/$defs/kind"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/property"
+          }
+        },
+        "enumCases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/enumCase"
+          }
+        },
+        "codec": {
+          "description": "The codec FQN the class binds to, when the observed class carries a codec.",
+          "$ref": "#/$defs/fqn"
+        }
+      }
+    }
+  }
+}

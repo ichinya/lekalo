@@ -441,3 +441,185 @@ fn a_cancelled_php_exchange_is_classified_and_recoverable() {
         "lekalo-target-php-laravel"
     );
 }
+
+/// Issue #58: the type generator over the production transport — the
+/// bounded types-input document plans the closed managed inventory, the
+/// apply publishes exactly those bytes under the generated types root,
+/// and a verify over the same input is clean. The stale-digest input
+/// refuses before the child ever plans, proving the binding is real.
+#[test]
+fn the_php_type_generator_plans_applies_and_verifies_managed_types() {
+    if !require_runnable() {
+        return;
+    }
+    let sandbox = Sandbox::new("types");
+    // The compiled-IR evidence sits at the canonical cache home; the
+    // input document binds its exact digest.
+    let cache = sandbox.dir.join(".lekalo").join("cache").join("ir");
+    std::fs::create_dir_all(&cache).expect("cache home");
+    let evidence = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/adapter-conformance/inputs/ir-minimal.json"),
+    )
+    .expect("fixture readable");
+    std::fs::write(cache.join("planner.json"), &evidence).expect("evidence written");
+    let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&evidence));
+    let types_home = sandbox.dir.join("lekalo").join("types");
+    std::fs::create_dir_all(&types_home).expect("types home");
+    std::fs::write(
+        types_home.join("planner.types.json"),
+        format!(
+            concat!(
+                "{{\"identity\":\"dev.lekalo.php-types-input@0.4.0\",",
+                "\"irDigest\":\"{digest}\",\"projectId\":\"planner\",",
+                "\"schemaVersion\":\"lekalo/php-types-input/v0.4.0\"}}\n"
+            ),
+            digest = digest
+        ),
+    )
+    .expect("input written");
+    let ir_path = "lekalo/types/planner.types.json";
+    let command = kernel_command();
+    let mut client = TargetClient::new(brief_limits());
+    client.describe(&command, &sandbox.dir).unwrap();
+    let fs = Fs::open(&sandbox.dir).unwrap();
+    let target = "php-laravel";
+
+    // The dry run plans the closed managed inventory (25 files).
+    let dry = client
+        .call(
+            &command,
+            CallRequest {
+                operation: Operation::Generate,
+                target: Some(target),
+                profile: Some("default"),
+                profile_resolution: None,
+                ir_path: Some(ir_path),
+                dry_run: Some(true),
+                plan_id: None,
+                native_request: None,
+            },
+            &sandbox.dir,
+            &fs,
+            None,
+        )
+        .expect("types dry run must succeed");
+    let planned = dry.response.writes.clone().expect("dry run plans writes");
+    assert_eq!(planned.len(), 25);
+    for entry in &planned {
+        assert_eq!(entry.action, WriteAction::Create);
+        let path = entry.path.as_str();
+        assert!(
+            path.starts_with(".lekalo/generated/php-laravel/types/"),
+            "managed type writes stay in the generated home: {path}"
+        );
+        assert!(
+            lekalo_core::target_protocol::wire::is_sha256_digest(
+                entry.sha256.as_deref().unwrap_or_default()
+            ),
+            "every planned write carries a digest"
+        );
+    }
+    let plan_id = dry.plan_id.expect("planning binds a plan id");
+
+    // The apply publishes exactly the planned bytes.
+    let apply = client
+        .call(
+            &command,
+            CallRequest {
+                operation: Operation::Generate,
+                target: Some(target),
+                profile: Some("default"),
+                profile_resolution: None,
+                ir_path: Some(ir_path),
+                dry_run: Some(false),
+                plan_id: Some(&plan_id),
+                native_request: None,
+            },
+            &sandbox.dir,
+            &fs,
+            None,
+        )
+        .expect("types apply must succeed");
+    let applied = apply
+        .response
+        .writes
+        .clone()
+        .expect("apply declares writes");
+    assert_eq!(planned, applied);
+    let dto = sandbox
+        .dir
+        .join(".lekalo")
+        .join("generated")
+        .join("php-laravel")
+        .join("types")
+        .join("planner")
+        .join("task_dto.php");
+    let bytes = std::fs::read(&dto).expect("the applied DTO exists");
+    assert!(String::from_utf8_lossy(&bytes).contains("final readonly class TaskDto"));
+    assert!(String::from_utf8_lossy(&bytes).contains("strict_types=1"));
+
+    // Verify over the same input is clean: the bytes on disk are the
+    // planned bytes.
+    let verify = client
+        .call(
+            &command,
+            CallRequest {
+                operation: Operation::Verify,
+                target: Some(target),
+                profile: Some("default"),
+                profile_resolution: None,
+                ir_path: Some(ir_path),
+                dry_run: None,
+                plan_id: None,
+                native_request: None,
+            },
+            &sandbox.dir,
+            &fs,
+            None,
+        )
+        .expect("types verify must succeed");
+    let findings = verify
+        .response
+        .result
+        .as_ref()
+        .and_then(|result| result.findings.clone())
+        .unwrap_or_default();
+    assert!(findings.is_empty(), "fresh managed types verify clean");
+
+    // The stale-digest input refuses as a bounded error: the binding to
+    // the exact evidence bytes is checked before anything is planned.
+    std::fs::write(
+        types_home.join("stale.types.json"),
+        concat!(
+            "{\"identity\":\"dev.lekalo.php-types-input@0.4.0\",",
+            "\"irDigest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",",
+            "\"projectId\":\"planner\",",
+            "\"schemaVersion\":\"lekalo/php-types-input/v0.4.0\"}\n"
+        ),
+    )
+    .expect("stale input written");
+    let stale = client.call(
+        &command,
+        CallRequest {
+            operation: Operation::Generate,
+            target: Some(target),
+            profile: Some("default"),
+            profile_resolution: None,
+            ir_path: Some("lekalo/types/stale.types.json"),
+            dry_run: Some(true),
+            plan_id: None,
+            native_request: None,
+        },
+        &sandbox.dir,
+        &fs,
+        None,
+    );
+    assert!(
+        matches!(
+            stale,
+            Err(TargetFailure::Crash { .. }) | Err(TargetFailure::TransportFailed { .. })
+        ),
+        "a stale input digest is a refusal, never a plan"
+    );
+}

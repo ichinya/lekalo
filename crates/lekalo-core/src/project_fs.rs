@@ -697,7 +697,7 @@ impl Fs {
 }
 
 /// The closed set of canonical `lekalo/` root entries.
-const CANONICAL_ROOT_ENTRIES: [&str; 10] = [
+const CANONICAL_ROOT_ENTRIES: [&str; 11] = [
     "project.yaml",
     "modules",
     "targets",
@@ -714,6 +714,8 @@ const CANONICAL_ROOT_ENTRIES: [&str; 10] = [
     // Issue #72: the conventional query-model home the client-SDK
     // evidence derivation binds (optional).
     "query-model.yaml",
+    // Issue #58: the PHP type-generation input home (optional).
+    "types",
 ];
 
 /// The closed runtime top-level entries under `.lekalo/`. `adapters` is
@@ -943,7 +945,7 @@ impl Fs {
                     StructureReason::new("structure.document-missing").at("lekalo/project.yaml")
                 );
             }
-            if matches!(name.as_str(), "modules" | "targets" | "scenarios")
+            if matches!(name.as_str(), "modules" | "targets" | "scenarios" | "types")
                 && entry_type != EntryType::Directory
             {
                 return Err(StructureReason::new("structure.directory-required")
@@ -1059,6 +1061,23 @@ impl Fs {
                 if !legal {
                     return Err(StructureReason::new("structure.canonical-unexpected-entry")
                         .at(&scenario_path));
+                }
+            }
+        }
+
+        // PHP type-generation input documents (issue #58): flat
+        // `*.types.json` files only, mirroring the scenario home.
+        if self.entry_type("lekalo", "types") == Ok(EntryType::Directory) {
+            for (name, entry_type) in self.entries("lekalo/types").map_err(|_| {
+                StructureReason::new("structure.directory-unreadable").at("lekalo/types")
+            })? {
+                let types_path = format!("lekalo/types/{name}");
+                let legal = entry_type == EntryType::File
+                    && name.ends_with(".types.json")
+                    && name != ".types.json";
+                if !legal {
+                    return Err(StructureReason::new("structure.canonical-unexpected-entry")
+                        .at(&types_path));
                 }
             }
         }
