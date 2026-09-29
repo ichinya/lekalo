@@ -194,20 +194,40 @@ function php_operations_map_record(array $record, array $context, callable $addF
     }
 
     // The result role: command recipes may declare a ref; queries derive
-    // it from the IR returns through the type map.
+    // it from the IR returns through the type map — a scalar ref maps to
+    // the nominal type, a list ref maps to the mapped collection class
+    // of its element entity (issue #50: the planning day lists).
     $recipe = $record['recipe'];
     $returnsRef = $definitions[$id]['returns'] ?? null;
     if ($kind === 'query') {
-        if (!is_array($returnsRef) || !isset($returnsRef['ref'])) {
-            $addFinding('operations.recipe-unsupported', $id, 'a managed query needs a scalar-ref returns declaration in v0.4.0');
-            return null;
+        if (is_array($returnsRef) && isset($returnsRef['list']['ref'])) {
+            $elementRef = $returnsRef['list']['ref'];
+            $collection = null;
+            foreach ((array) ($context['collections'] ?? []) as $candidate) {
+                if (is_array($candidate)
+                    && ($candidate['element'] ?? null) === $elementRef
+                    && ($candidate['nullableElements'] ?? false) === false) {
+                    $collection = $candidate;
+                    break;
+                }
+            }
+            if ($collection === null || !is_string($collection['fqn'] ?? null)) {
+                $addFinding('operations.type-unresolved', $id, 'the query list element type has no mapped collection class');
+                return null;
+            }
+            $resultRole = ['fqn' => (string) $collection['fqn']];
+        } else {
+            if (!is_array($returnsRef) || !isset($returnsRef['ref'])) {
+                $addFinding('operations.recipe-unsupported', $id, 'a managed query needs a scalar-ref or list-ref returns declaration in v0.4.0');
+                return null;
+            }
+            $resultFqn = $context['typesIndex'][(string) $returnsRef['ref']]['fqn'] ?? null;
+            if (!is_string($resultFqn)) {
+                $addFinding('operations.type-unresolved', $id, 'the query return type is not part of the mapped type inventory');
+                return null;
+            }
+            $resultRole = ['fqn' => $resultFqn];
         }
-        $resultFqn = $context['typesIndex'][(string) $returnsRef['ref']]['fqn'] ?? null;
-        if (!is_string($resultFqn)) {
-            $addFinding('operations.type-unresolved', $id, 'the query return type is not part of the mapped type inventory');
-            return null;
-        }
-        $resultRole = ['fqn' => $resultFqn];
     } elseif ($recipe['kind'] === 'port-delegation' && $recipe['result'] !== null) {
         $resultFqn = $context['typesIndex'][$recipe['result']]['fqn'] ?? null;
         if (!is_string($resultFqn)) {

@@ -533,8 +533,16 @@ function php_routes_controller_text(array $context, string $namespace, array $ro
         $lines[] = '';
         $lines[] = '        return new \\Illuminate\\Http\\Response(\'\', ' . (int) $route['success']['status'] . ');';
     } else {
-        $resultType = php_routes_result_type($route, $context);
-        $wire = $resultType === null ? 'null' : php_routes_wire_expr($resultType, '$result');
+        // A list-return query encodes through its declared #58 result
+        // codec (issue #50): the collection class carries no wire
+        // spelling of its own, the codec is the projection.
+        $resultCodecFqn = php_routes_result_codec_fqn($route, $context);
+        if ($resultCodecFqn !== null) {
+            $wire = '\\' . $resultCodecFqn . '::encode($result)';
+        } else {
+            $resultType = php_routes_result_type($route, $context);
+            $wire = $resultType === null ? 'null' : php_routes_wire_expr($resultType, '$result');
+        }
         $lines[] = '';
         $lines[] = '        return response()->json(' . $wire . ', ' . (int) $route['success']['status'] . ');';
     }
@@ -570,6 +578,24 @@ function php_routes_result_type(array $route, array $context): ?array
         return null;
     }
     return ['ref' => $ref, 'fqn' => (string) $entry['fqn'], 'kind' => (string) ($type['kind'] ?? ''), 'base' => (string) ($type['base'] ?? '')];
+}
+
+/**
+ * The #58 result codec of one list-return query route (issue #50): the
+ * mapped query entry is the codec; a scalar-ref query or a command
+ * carries none.
+ */
+function php_routes_result_codec_fqn(array $route, array $context): ?string
+{
+    $definition = is_array($context['definitions'][$route['operation']] ?? null) ? $context['definitions'][$route['operation']] : null;
+    if ($definition === null || !isset($definition['returns']['list']['ref'])) {
+        return null;
+    }
+    $entry = is_array($context['typesIndex'][$route['operation']] ?? null) ? $context['typesIndex'][$route['operation']] : null;
+    if ($entry === null || !is_string($entry['fqn'] ?? null)) {
+        return null;
+    }
+    return (string) $entry['fqn'];
 }
 
 /** The route registrations text: one block per managed route, id-sorted. */

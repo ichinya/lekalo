@@ -1581,6 +1581,7 @@ function operations_generation(array $request): array
         'input' => $input,
         'definitions' => $definitions,
         'typesIndex' => $mappedTypes['index'],
+        'collections' => $mappedTypes['collections'],
         'namespacePrefix' => $input['namespacePrefix'],
         'root' => PHP_OPERATIONS_GENERATED_ROOT,
         'irDigest' => $input['irDigest'],

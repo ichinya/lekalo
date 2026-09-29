@@ -261,6 +261,17 @@ function php_operations_body_lines(array $operation, array $definitions, array $
     if (($recipe['kind'] ?? '') === 'port-delegation') {
         $delegateSlot = php_operations_slot_of((string) $recipe['port']);
         $call = '$this->' . $delegateSlot . '->' . (string) $recipe['method'] . '($input, $actor)';
+        if (($operation['transaction'] ?? 'forbidden') === 'required') {
+            // The required transaction binding wraps the one maintained
+            // delegation: rollback on a typed failure is the port's own
+            // guarantee, committed atomically with its writes (issue #50).
+            $unit = $operation['result'] === null;
+            return [
+                '        ' . ($unit ? '' : 'return ') . '$this->transactions->run(function () use ($input, $actor)' . ($unit ? ': void' : ': mixed') . ' {',
+                '            ' . ($unit ? '' : 'return ') . $call . ';',
+                '        });',
+            ];
+        }
         if ($operation['result'] === null) {
             return ['        ' . $call . ';'];
         }
