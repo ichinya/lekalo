@@ -1461,6 +1461,14 @@ function operations_generation(array $request): array
     if (isset($typesOutcome['refusal'])) {
         return ['refusal' => $typesOutcome['refusal']];
     }
+    // Required-family findings veto the composed run: the types family
+    // (checked custody, unsupported projections) answers a findings-only
+    // envelope with no files, and publishing operations alone would be
+    // exactly the partial publication the composition refuses. The rows
+    // are already wire findings; they merge into the composed veto.
+    if (($typesOutcome['findings'] ?? []) !== []) {
+        return $findingOnly($typesOutcome['findings']);
+    }
     // The compiled IR evidence: the only bytes an adapter may read.
     $irEvidenceText = read_view_file(IR_EVIDENCE_HOME . '/' . $input['projectId'] . '.json');
     if ($irEvidenceText === null) {
@@ -1522,7 +1530,7 @@ function operations_generation(array $request): array
     $findings = [];
     $skipWrites = [];
     $claimed = [];
-    foreach ($typesOutcome['files'] as $file) {
+    foreach (($typesOutcome['files'] ?? []) as $file) {
         $claimed[$file['path']] = true;
         // Normalize the types rows onto the operations row shape.
         $files[] = [
@@ -1670,9 +1678,13 @@ function operations_verify_response(array $request): array
     foreach ($outcome['files'] as $file) {
         if (str_starts_with((string) $file['path'], PHP_OPERATIONS_SCAFFOLD_ROOT . '/')) {
             // Scaffold-once custody: user-owned, existence-checked only
-            // under the surviving marker.
+            // under the surviving marker. A skipped regeneration (the
+            // marker-guarded emission of this same run) is the only row
+            // that may report a removed scaffold: with no marker the
+            // emission refusal already named the unowned path.
             $marker = PHP_OPERATIONS_SCAFFOLD_ROOT . '/operations.map.json';
-            if (isset($skipWrites[$file['path']]) && !is_file($file['path']) && is_file($marker)) {
+            $markerGuarded = isset($outcome['skip_writes'][$file['path']]);
+            if ($markerGuarded && !is_file($file['path']) && is_file($marker)) {
                 $findings[] = [
                     'path' => $file['path'],
                     'code' => 'operations.scaffold-missing',
