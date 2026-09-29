@@ -96,7 +96,7 @@ for (const [id, before] of predEntries) {
 }
 if (
   registry.entries.length !==
-  predEntries.size + 13 + 21 + 3 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8
+  predEntries.size + 13 + 21 + 3 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1
 ) {
   // The trailing increments: +3 is the r3 F-5 custody increment
   // (dedicated ids for the project/model/IR pin refusals,
@@ -106,8 +106,10 @@ if (
   // storage-engine family (#69), +8 the openapi family (#46), +14
   // the scenario family (#47), +15 the adapter-package family (#32,
   // ported from the predecessor registry where the branch had
-  // registered them before v0.4.0 existed). The trailing +8 is the
-  // client-SDK family (#72, LEK-SDK-001..008).
+  // registered them before v0.4.0 existed), +8 the client-SDK family
+  // (#72, LEK-SDK-001..008), and +1 the PHP operations join refusal
+  // (issue #59, LEK-OPS-001) that carries the typed finding codes of
+  // the refused operations input join.
   fail("entry-count", registry.entries.length);
 }
 
