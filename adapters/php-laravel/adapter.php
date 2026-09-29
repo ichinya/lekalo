@@ -4162,13 +4162,14 @@ function generate_response(array $request): array
         // The closed v0.3.2 generate result carries no findings member
         // (the client's completeness gate requires `result` to be
         // absent), so the veto is the bounded in-envelope error form:
-        // the first sorted finding code names the refusal class, the
-        // message carries its bounded detail, and the empty `writes`
-        // array proves the zero-write plan.
+        // the first sorted finding code names the refusal class and the
+        // message carries its bounded detail. The envelope carries no
+        // writes member at all — the client admits writes on an error
+        // only with partial=true, and a veto is not a partial success —
+        // and no plan authority: there is nothing to apply.
         $first = $artifact['findings'][0];
         $detail = (string) ($first['detail'] ?? $first['code']);
         return build_response($request, [
-            'writes' => [],
             'error' => [
                 'class' => 'invalid',
                 'code' => (string) $first['code'],

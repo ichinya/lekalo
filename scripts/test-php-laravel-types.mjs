@@ -421,7 +421,7 @@ step("checked custody is strict: absent evidence can never pass", () => {
   assert.equal(dry.status, "error");
   assert.equal(dry.error.class, "invalid");
   assert.equal(dry.error.code, "php-types.binding-missing");
-  assert.deepEqual(dry.writes, [], "checked custody never emits");
+  assert.equal(dry.writes, undefined, "a veto never carries a writes member");
   assert.equal(dry.evidence.plan_id, undefined, "a veto carries no plan authority");
   // The full per-id enumeration stays on the validate surface, where
   // the findings member is legal.
@@ -511,7 +511,7 @@ for (const [name, irFixture, reason] of [
       dry_run: true,
     });
     assert.equal(dry.status, "error");
-    assert.deepEqual(dry.writes, [], "an unsupported projection never publishes a partial DTO set");
+    assert.equal(dry.writes, undefined, "a veto never carries a writes member");
     assert.equal(dry.error.class, "invalid");
     assert.equal(dry.error.code, "php-types.mapping-unsupported", `the ${reason} finding is reported`);
     assert.ok(dry.error.message.includes(reason), `the ${reason} detail rides the message`);

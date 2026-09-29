@@ -279,7 +279,7 @@ step("a query with a write recipe is a typed query-write finding with zero write
   const response = adapterCall(root, operationsRequest());
   assert.equal(response.status, "error", JSON.stringify(response));
   assert.equal(response.error.code, "operations.query-write", JSON.stringify(response));
-  assert.deepEqual(response.writes, [], "a finding vetoes every write");
+  assert.equal(response.writes, undefined, "a veto never carries a writes member");
   assert.equal(response.evidence.plan_id, undefined, "a veto carries no plan authority");
 });
 
@@ -290,7 +290,7 @@ step("an operations input without the bound types document is a zero-write findi
   const response = adapterCall(root, operationsRequest());
   assert.equal(response.status, "error", JSON.stringify(response));
   assert.equal(response.error.code, "operations.types-unbound", JSON.stringify(response));
-  assert.deepEqual(response.writes, []);
+  assert.equal(response.writes, undefined, "a veto never carries a writes member");
 });
 
 step("a malformed operations input refuses as a bounded diagnostic", () => {
@@ -348,7 +348,7 @@ step("checked custody: absent, conforming, and stale evidence", () => {
   const absent = adapterCall(root, operationsRequest());
   assert.equal(absent.status, "error", JSON.stringify(absent));
   assert.equal(absent.error.code, "operations.binding-missing", JSON.stringify(absent));
-  assert.deepEqual(absent.writes ?? [], [], "a checked finding vetoes every write");
+  assert.equal(absent.writes, undefined, "a veto never carries a writes member");
   // Conforming evidence: the source bytes are real, digested, and the
   // record joins.
   const sourceRoot = join(root, "app");

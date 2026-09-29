@@ -741,58 +741,46 @@ fn the_php_operations_generator_plans_applies_and_verifies_composed_operations()
     let tampered = serde_json::to_string_pretty(&document).expect("tampered serializes") + "\n";
     std::fs::write(operations_home.join("planner.operations.json"), &tampered)
         .expect("tampered input written");
-    let refused = client
-        .call(
-            &command,
-            CallRequest {
-                operation: Operation::Generate,
-                target: Some(target),
-                profile: Some("default"),
-                profile_resolution: None,
-                ir_path: Some(evidence_path),
-                dry_run: Some(true),
-                plan_id: None,
-                native_request: None,
-            },
-            &sandbox.dir,
-            &fs,
-            None,
-        )
-        .expect("the tampered plan is a bounded in-envelope error, never a crash");
+    let refused = client.call(
+        &command,
+        CallRequest {
+            operation: Operation::Generate,
+            target: Some(target),
+            profile: Some("default"),
+            profile_resolution: None,
+            ir_path: Some(evidence_path),
+            dry_run: Some(true),
+            plan_id: None,
+            native_request: None,
+        },
+        &sandbox.dir,
+        &fs,
+        None,
+    );
     // The closed v0.3.2 generate result carries no findings member (the
-    // client's completeness gate requires `result` to be absent), so the
-    // veto is the bounded in-envelope error: the first sorted finding
-    // code names the refusal, the message carries its bounded detail,
-    // and the empty writes array proves the zero-write plan.
-    {
-        let error = refused
-            .response
-            .error
-            .as_ref()
-            .expect("the veto is an in-envelope error");
-        assert_eq!(
-            error.class,
-            lekalo_core::target_protocol::wire::ErrorClass::Invalid
-        );
-        assert_eq!(error.code, "operations.query-write");
-        assert!(
-            error.message.contains("reads stay reads"),
-            "the bounded finding detail rides the message: {}",
-            error.message
-        );
+    // client's completeness gate requires `result` to be absent), and an
+    // error envelope admits a writes member only with partial=true, so
+    // the veto surfaces as the client-classified OperationFailed: the
+    // first sorted finding code names the refusal, the class is
+    // invalid, and it is not a partial success. No plan authority is
+    // ever bound: there is nothing to apply.
+    match &refused {
+        Err(TargetFailure::OperationFailed {
+            class,
+            code,
+            partial,
+        }) => {
+            assert_eq!(
+                class,
+                &lekalo_core::target_protocol::wire::ErrorClass::Invalid
+            );
+            assert_eq!(code, "operations.query-write");
+            assert!(!partial, "a veto is not a partial success");
+        }
+        other => panic!(
+            "the tampered plan is a bounded OperationFailed, never a crash or a plan: {other:?}"
+        ),
     }
-    assert!(
-        refused
-            .response
-            .writes
-            .as_deref()
-            .is_some_and(|writes| writes.is_empty()),
-        "a finding vetoes every write"
-    );
-    assert!(
-        refused.response.evidence.plan_id.is_none(),
-        "a veto carries no plan authority"
-    );
     std::fs::write(
         operations_home.join("planner.operations.json"),
         &input_bytes,
