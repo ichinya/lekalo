@@ -11,6 +11,8 @@ use Lekalo\Generated\Operations\Planner\BacklogReader;
 use Lekalo\Generated\Operations\Planner\BacklogTasksInput;
 use Lekalo\Generated\Operations\Planner\CarryOverInput;
 use Lekalo\Generated\Operations\Planner\CarryOverReader;
+use Lekalo\Generated\Operations\Planner\CompletedPlanningInput;
+use Lekalo\Generated\Operations\Planner\CompletedReader;
 use Lekalo\Generated\Operations\Planner\Errors\StoreUnavailableError;
 use Lekalo\Generated\Operations\Planner\TodayPlanningInput;
 use Lekalo\Generated\Operations\Planner\TodayReader;
@@ -38,7 +40,7 @@ use Lekalo\Generated\Types\Planner\WorkspaceId;
  * actor timezone: the same stored rows answer two disjoint today sets
  * across a UTC midnight boundary.
  */
-final class EloquentPlanningQueries implements TodayReader, BacklogReader, CarryOverReader
+final class EloquentPlanningQueries implements TodayReader, BacklogReader, CarryOverReader, CompletedReader
 {
     public function today(TodayPlanningInput $input, ActorContext $actor): UserTaskPlanningDtoList
     {
@@ -72,6 +74,24 @@ final class EloquentPlanningQueries implements TodayReader, BacklogReader, Carry
             ->where('planned_for', '<', $this->day($actor))
             ->orderBy('planned_for')
             ->orderBy('position')
+            ->get();
+
+        return UserTaskPlanningDtoList::fromList($rows->map(
+            fn (UserTaskPlanning $row): UserTaskPlanningDto => $this->dto($row),
+        )->all());
+    }
+
+    /** The planning rows the actor completed, newest day first. */
+    public function completed(CompletedPlanningInput $input, ActorContext $actor): UserTaskPlanningDtoList
+    {
+        $this->failWhenArmed();
+        $rows = UserTaskPlanning::query()
+            ->where('workspace_id', $this->workspace($actor))
+            ->where('user_id', $actor->actorId)
+            ->whereNotNull('completed_at')
+            ->orderBy('planned_for', 'desc')
+            ->orderBy('position')
+            ->orderBy('planning_id')
             ->get();
 
         return UserTaskPlanningDtoList::fromList($rows->map(
@@ -122,6 +142,9 @@ final class EloquentPlanningQueries implements TodayReader, BacklogReader, Carry
             $row->paused_at === null
                 ? OptionalNullableTimestamp::absent()
                 : OptionalNullableTimestamp::of(Timestamp::from((string) $row->paused_at)),
+            $row->completed_at === null
+                ? OptionalNullableTimestamp::absent()
+                : OptionalNullableTimestamp::of(Timestamp::from((string) $row->completed_at)),
             ReorderVersion::from((int) $row->reorder_version),
         );
     }
@@ -140,6 +163,7 @@ final class EloquentPlanningQueries implements TodayReader, BacklogReader, Carry
             TaskId::from((string) $task->task_id),
             PlanningDate::from('1970-01-01'),
             Position::from(0),
+            OptionalNullableTimestamp::absent(),
             OptionalNullableTimestamp::absent(),
             OptionalNullableTimestamp::absent(),
             ReorderVersion::from(0),

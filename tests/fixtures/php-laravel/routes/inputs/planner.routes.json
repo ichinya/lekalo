@@ -9,7 +9,10 @@
  "policy": {
   "namespacePrefix": "Lekalo\\Generated\\Routes",
   "middleware": [
-   {"scheme": "user_bearer", "middleware": "fixture.auth"}
+   {
+    "scheme": "user_bearer",
+    "middleware": "fixture.auth"
+   }
   ]
  },
  "routes": [
@@ -21,6 +24,16 @@
   {
    "id": "planner.endpoint_carry_over",
    "operation": "planner.carry_over",
+   "mode": "managed"
+  },
+  {
+   "id": "planner.endpoint_complete",
+   "operation": "planner.complete_planning",
+   "mode": "managed"
+  },
+  {
+   "id": "planner.endpoint_completed",
+   "operation": "planner.completed_planning",
    "mode": "managed"
   },
   {

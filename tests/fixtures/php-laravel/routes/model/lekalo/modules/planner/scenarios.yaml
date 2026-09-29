@@ -1,0 +1,50 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.screen_focus_flow
+    kind: scenario
+    version: 1
+    description: "The today board loads, the actor focuses one task from the screen, and the focused state renders"
+    summary: "Given one backlog task on the today board, the actor focuses it through the screen and the focused state renders from the next read."
+    derived_from:
+      - "PLANNER-REQ-001"
+    covers:
+      - "planner.today_planning"
+      - "planner.focus_task"
+      - "planner.endpoint_today_planning"
+      - "planner.endpoint_focus_task_by_id"
+  - id: planner.screen_plan_conflict_rollback
+    kind: scenario
+    version: 1
+    description: "The screen plans one backlog task and rolls the optimistic card back when the day conflicts"
+    summary: "Given one backlog task, the screen plans it optimistically; a declared planning_conflict rolls the card back to its bucket."
+    derived_from:
+      - "PLANNER-REQ-002"
+    covers:
+      - "planner.backlog_tasks"
+      - "planner.plan_task"
+      - "planner.endpoint_backlog"
+      - "planner.endpoint_plan"
+  - id: planner.screen_complete_day
+    kind: scenario
+    description: "The screen completes one planned task and the completed bucket renders it"
+    summary: "Given one planned row, the screen completes it; the row renders in the completed bucket with its stamped time."
+    version: 1
+    derived_from:
+      - "PLANNER-REQ-007"
+    covers:
+      - "planner.today_planning"
+      - "planner.complete_planning"
+      - "planner.completed_planning"
+      - "planner.endpoint_complete"
+      - "planner.endpoint_completed"
+  - id: planner.screen_stale_reorder
+    kind: scenario
+    description: "The screen reorders one planned day and surfaces the stale-version conflict"
+    summary: "Given one planned day, the screen reorders it under the expected version; a declared reorder_stale keeps the rendered order."
+    version: 1
+    derived_from:
+      - "PLANNER-REQ-005"
+    covers:
+      - "planner.today_planning"
+      - "planner.reorder_planned"
+      - "planner.endpoint_reorder"

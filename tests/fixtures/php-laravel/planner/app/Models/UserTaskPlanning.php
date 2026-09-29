@@ -30,6 +30,7 @@ final class UserTaskPlanning extends Model
         'position',
         'focused_at',
         'paused_at',
+        'completed_at',
         'reorder_version',
     ];
 }

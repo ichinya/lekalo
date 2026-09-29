@@ -60,6 +60,7 @@ Illuminate\Support\Facades\Schema::create('user_task_plannings', static function
     $table->integer('position');
     $table->dateTime('focused_at')->nullable();
     $table->dateTime('paused_at')->nullable();
+    $table->dateTime('completed_at')->nullable();
     $table->integer('reorder_version')->default(1);
     $table->timestamps();
     $table->unique(['workspace_id', 'user_id', 'task_id'], 'planning_unique_owner_task');

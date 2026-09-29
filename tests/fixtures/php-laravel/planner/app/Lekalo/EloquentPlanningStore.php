@@ -15,9 +15,11 @@ use Lekalo\Generated\Operations\Planner\Errors\ReorderStaleError;
 use Lekalo\Generated\Operations\Planner\Errors\StoreUnavailableError;
 use Lekalo\Generated\Operations\Planner\Errors\TaskNotFoundError;
 use Lekalo\Generated\Operations\Planner\FocusPauser;
+use Lekalo\Generated\Operations\Planner\TaskCompleter;
 use Lekalo\Generated\Operations\Planner\TaskMover;
 use Lekalo\Generated\Operations\Planner\TaskPlanner;
 use Lekalo\Generated\Operations\Planner\TaskUnplanner;
+use Lekalo\Generated\Types\Planner\CompletePlanningInput;
 use Lekalo\Generated\Types\Planner\PlanningId;
 use Lekalo\Generated\Types\Planner\MoveTaskInput;
 use Lekalo\Generated\Types\Planner\PausePlanningInput;
@@ -27,14 +29,14 @@ use Lekalo\Generated\Types\Planner\UnplanTaskInput;
 
 /**
  * The maintained write adapter behind the generated planning command
- * ports (issue #50): plan/move/unplan/reorder/pause as one narrow
- * store per command, every body running inside the TransactionPort run
- * the generated handler opens. The one-active-focus invariant and the
- * per-owner/task uniqueness are database constraints, never
- * check-then-act; the durable idempotency rows bind actor, operation
- * and canonical request digest.
+ * ports (issue #50): plan/move/unplan/reorder/pause/complete as one
+ * narrow store per command, every body running inside the
+ * TransactionPort run the generated handler opens. The one-active-focus
+ * invariant and the per-owner/task uniqueness are database
+ * constraints, never check-then-act; the durable idempotency rows bind
+ * actor, operation and canonical request digest.
  */
-final class EloquentPlanningStore implements TaskPlanner, TaskMover, TaskUnplanner, DayReorderer, FocusPauser
+final class EloquentPlanningStore implements TaskPlanner, TaskMover, TaskUnplanner, DayReorderer, FocusPauser, TaskCompleter
 {
     public function plan(PlanTaskInput $input, ActorContext $actor): void
     {
@@ -142,6 +144,20 @@ final class EloquentPlanningStore implements TaskPlanner, TaskMover, TaskUnplann
         UserTaskPlanning::query()
             ->where('planning_id', $row->planning_id)
             ->update(['paused_at' => $this->now($actor)]);
+    }
+
+    public function complete(CompletePlanningInput $input, ActorContext $actor): void
+    {
+        $this->failWhenArmed();
+        $row = $this->ownedRow($input->planningId, $actor);
+        if ($row->completed_at !== null) {
+            // The declared conflict: a completed row never completes a
+            // second time, and the stamp never moves.
+            throw new PlanningConflictError();
+        }
+        UserTaskPlanning::query()
+            ->where('planning_id', $row->planning_id)
+            ->update(['completed_at' => $this->now($actor)]);
     }
 
     /** The owned row, or the declared not-found: foreign rows are invisible. */

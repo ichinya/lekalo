@@ -58,3 +58,17 @@ definitions:
       - name: paused_at
         type: "planner.timestamp"
         required: true
+  - id: planner.task_completed
+    kind: event
+    version: 1
+    description: "One planned task was completed"
+    payload:
+      - name: planning_id
+        type: "planner.planning_id"
+        required: true
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: completed_at
+        type: "planner.timestamp"
+        required: true

@@ -221701,6 +221701,11 @@ function renderTypescript(document) {
   ];
   return body.join("\n");
 }
+function tsScalarType(mapping) {
+  if (mapping === "number") return "number";
+  if (mapping === "boolean") return "boolean";
+  return "string";
+}
 function tsTypeRef(typeRef, typeIndex2) {
   if (typeRef === "lekalo.unit") return "void";
   const known = typeIndex2.get(typeRef);
@@ -221714,7 +221719,7 @@ function tsValueTypeRef(typeRef, shape, typeIndex2) {
 function typeDeclarationTs(typeDef, index) {
   const ident = typeDef.ident;
   if (typeDef.kind === "scalar") {
-    return `export type ${ident} = string;`;
+    return `export type ${ident} = ${tsScalarType(typeDef.base)};`;
   }
   if (typeDef.kind === "enum") {
     const members = (typeDef.values ?? []).map((value) => `  | ${JSON.stringify(value)}`).join("\n");
@@ -221998,10 +222003,15 @@ function goHeaderIdent(name) {
   ).join("");
   return camel.replace(/([a-z])(ID)$/, "$1ID");
 }
+function goScalarType(mapping) {
+  if (mapping === "number") return "float64";
+  if (mapping === "boolean") return "bool";
+  return "string";
+}
 function typeDeclarationGo(typeDef, index) {
   const name = goExported(typeDef.ident);
   if (typeDef.kind === "scalar") {
-    return `type ${name} string`;
+    return `type ${name} ${goScalarType(typeDef.base)}`;
   }
   if (typeDef.kind === "enum") {
     const lines = [`type ${name} string`, "const ("];
@@ -222011,9 +222021,21 @@ function typeDeclarationGo(typeDef, index) {
     lines.push(")");
     return lines.join("\n");
   }
-  const fields = (typeDef.fields ?? []).map((field) => {
+  const rows = (typeDef.fields ?? []).map((field) => {
     const pointer = !field.required || field.nullable ? "*" : "";
-    return `	${goExported(field.name)} ${pointer}${goValueTypeRef(field.typeRef, field.shape, index)} \`json:"${field.name}${field.required ? "" : ",omitempty"}"\``;
+    return {
+      name: goExported(field.name),
+      type: `${pointer}${goValueTypeRef(field.typeRef, field.shape, index)}`,
+      tag: `\`json:"${field.name}${field.required ? "" : ",omitempty"}"\``
+    };
+  });
+  const nameWidth = Math.max(0, ...rows.map((row) => row.name.length));
+  const typeWidth = Math.max(0, ...rows.map((row) => row.type.length));
+  const fields = rows.map((row) => {
+    if (rows.length === 1) {
+      return `	${row.name} ${row.type} ${row.tag}`;
+    }
+    return `	${row.name.padEnd(nameWidth)} ${row.type.padEnd(typeWidth)} ${row.tag}`;
   }).join("\n");
   return [`type ${name} struct {`, fields || '	_ struct{} `json:"-"`', "}"].join("\n");
 }

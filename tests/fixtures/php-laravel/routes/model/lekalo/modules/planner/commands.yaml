@@ -58,6 +58,14 @@ definitions:
     entity: "planner.user_task_planning"
     emits:
       - "planner.planning_paused"
+  - id: planner.effect_planning_completed
+    kind: effect
+    version: 1
+    description: "Stamps the completion time of one planning row"
+    operation: update
+    entity: "planner.user_task_planning"
+    emits:
+      - "planner.task_completed"
   - id: planner.plan_task
     kind: command
     version: 1
@@ -133,3 +141,15 @@ definitions:
         required: true
     effects:
       - "planner.effect_planning_paused"
+  - id: planner.complete_planning
+    kind: command
+    version: 1
+    description: "Complete one planned task; stamps completed_at from the declared clock and refuses an already completed row"
+    derived_from:
+      - "PLANNER-REQ-007"
+    input:
+      - name: planning_id
+        type: "planner.planning_id"
+        required: true
+    effects:
+      - "planner.effect_planning_completed"

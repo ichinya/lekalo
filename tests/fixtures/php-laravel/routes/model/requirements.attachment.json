@@ -4,7 +4,7 @@
  "projectId": "planner",
  "modelRef": {
   "modelVersion": "0.2.16",
-  "digest": "sha256:4557046ca818cc3e86691772c5cf7325fe0fa152e9f958bff85a8d77e61d4202"
+  "digest": "sha256:233c179a27425b890beb600df00eb378edbbf3e2e950d79b9c402af81452882e"
  },
  "providers": [
   {
@@ -69,6 +69,174 @@
    "source": "openspec",
    "requirement": "planner.REQ-optimistic-reorder",
    "revision": "sha256:09f9eae101f302ace9a72f4357dd466372ed4177fe5110fe578188324bd47b07"
+  },
+  {
+   "symbol": "planner.complete_planning",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-complete-a-planned-task",
+   "revision": "sha256:0fc8503d72ab4b52f55ba6119c01e3813e0ee4a1319f24e059e8d1b0ecba97d6"
+  },
+  {
+   "symbol": "planner.completed_planning",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-complete-a-planned-task",
+   "revision": "sha256:0fc8503d72ab4b52f55ba6119c01e3813e0ee4a1319f24e059e8d1b0ecba97d6"
+  },
+  {
+   "symbol": "planner.endpoint_complete",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-complete-a-planned-task",
+   "revision": "sha256:0fc8503d72ab4b52f55ba6119c01e3813e0ee4a1319f24e059e8d1b0ecba97d6"
+  },
+  {
+   "symbol": "planner.endpoint_completed",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-complete-a-planned-task",
+   "revision": "sha256:0fc8503d72ab4b52f55ba6119c01e3813e0ee4a1319f24e059e8d1b0ecba97d6"
+  },
+  {
+   "symbol": "planner.today_planning",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-the-planning-screen-renders-the-api-projections",
+   "revision": "sha256:3050feef1d6d166272d3ebeb685c58d0859ffaf968cea1d0c6076509d00e260a"
+  },
+  {
+   "symbol": "planner.backlog_tasks",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-the-planning-screen-renders-the-api-projections",
+   "revision": "sha256:3050feef1d6d166272d3ebeb685c58d0859ffaf968cea1d0c6076509d00e260a"
+  },
+  {
+   "symbol": "planner.count_focused",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-the-planning-screen-renders-the-api-projections",
+   "revision": "sha256:3050feef1d6d166272d3ebeb685c58d0859ffaf968cea1d0c6076509d00e260a"
+  },
+  {
+   "symbol": "planner.user_task_planning",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-the-planning-screen-renders-the-api-projections",
+   "revision": "sha256:3050feef1d6d166272d3ebeb685c58d0859ffaf968cea1d0c6076509d00e260a"
+  },
+  {
+   "symbol": "planner.endpoint_today_planning",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-the-planning-screen-renders-the-api-projections",
+   "revision": "sha256:3050feef1d6d166272d3ebeb685c58d0859ffaf968cea1d0c6076509d00e260a"
+  },
+  {
+   "symbol": "planner.endpoint_backlog",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-the-planning-screen-renders-the-api-projections",
+   "revision": "sha256:3050feef1d6d166272d3ebeb685c58d0859ffaf968cea1d0c6076509d00e260a"
+  },
+  {
+   "symbol": "planner.carry_over",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-screen-states-stay-traceable-to-api-symbols",
+   "revision": "sha256:1e0795af54353ac2cb0748bf190ef0e5231425c976335ea3d8a085a4fc3f6666"
+  },
+  {
+   "symbol": "planner.endpoint_reorder",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-screen-states-stay-traceable-to-api-symbols",
+   "revision": "sha256:1e0795af54353ac2cb0748bf190ef0e5231425c976335ea3d8a085a4fc3f6666"
+  },
+  {
+   "symbol": "planner.endpoint_focus_task_by_id",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-screen-states-stay-traceable-to-api-symbols",
+   "revision": "sha256:1e0795af54353ac2cb0748bf190ef0e5231425c976335ea3d8a085a4fc3f6666"
+  },
+  {
+   "symbol": "planner.endpoint_completed",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-screen-states-stay-traceable-to-api-symbols",
+   "revision": "sha256:1e0795af54353ac2cb0748bf190ef0e5231425c976335ea3d8a085a4fc3f6666"
+  },
+  {
+   "symbol": "planner.reorder_planned",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-optimistic-updates-roll-back-on-declared-conflicts",
+   "revision": "sha256:fbc6a87b268d36e7c0d28f5d3aa65d30561f39f9c357c2d6ee062be95bc13d2d"
+  },
+  {
+   "symbol": "planner.plan_task",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-optimistic-updates-roll-back-on-declared-conflicts",
+   "revision": "sha256:fbc6a87b268d36e7c0d28f5d3aa65d30561f39f9c357c2d6ee062be95bc13d2d"
+  },
+  {
+   "symbol": "planner.endpoint_reorder",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-optimistic-updates-roll-back-on-declared-conflicts",
+   "revision": "sha256:fbc6a87b268d36e7c0d28f5d3aa65d30561f39f9c357c2d6ee062be95bc13d2d"
+  },
+  {
+   "symbol": "planner.endpoint_plan",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-optimistic-updates-roll-back-on-declared-conflicts",
+   "revision": "sha256:fbc6a87b268d36e7c0d28f5d3aa65d30561f39f9c357c2d6ee062be95bc13d2d"
+  },
+  {
+   "symbol": "planner.today_planning",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-dates-stay-actor-local",
+   "revision": "sha256:d2d77b8eb5b843d204ec62b816f2ffee7937ca59d6d76f196c5b11fc661d935a"
+  },
+  {
+   "symbol": "planner.carry_over",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-dates-stay-actor-local",
+   "revision": "sha256:d2d77b8eb5b843d204ec62b816f2ffee7937ca59d6d76f196c5b11fc661d935a"
+  },
+  {
+   "symbol": "planner.screen_focus_flow",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-accessibility-expectations-ride-the-ui-tests",
+   "revision": "sha256:a1f70438ff2e4be0ce52bc34e11d9f05bed2e86f2c5a6397d4ef48f43b0cb047"
+  },
+  {
+   "symbol": "planner.screen_plan_conflict_rollback",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-accessibility-expectations-ride-the-ui-tests",
+   "revision": "sha256:a1f70438ff2e4be0ce52bc34e11d9f05bed2e86f2c5a6397d4ef48f43b0cb047"
+  },
+  {
+   "symbol": "planner.screen_complete_day",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-accessibility-expectations-ride-the-ui-tests",
+   "revision": "sha256:a1f70438ff2e4be0ce52bc34e11d9f05bed2e86f2c5a6397d4ef48f43b0cb047"
+  },
+  {
+   "symbol": "planner.screen_stale_reorder",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-accessibility-expectations-ride-the-ui-tests",
+   "revision": "sha256:a1f70438ff2e4be0ce52bc34e11d9f05bed2e86f2c5a6397d4ef48f43b0cb047"
   },
   {
    "symbol": "planner.deny_foreign_planning",

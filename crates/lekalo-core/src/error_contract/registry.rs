@@ -592,7 +592,7 @@ mod tests {
     fn embedded_registry_parses_and_round_trips() {
         let registry = ErrorRegistry::embedded().expect("embedded registry is valid");
         assert_eq!(registry.errors().len(), 9);
-        assert_eq!(registry.bindings().len(), 11);
+        assert_eq!(registry.bindings().len(), 13);
         assert_eq!(registry.tombstones().len(), 1);
         assert_eq!(registry.canonical_bytes().as_bytes(), REGISTRY_BYTES);
     }
