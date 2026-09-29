@@ -274,6 +274,13 @@ jobs:
       - name: Run the Laratesto scenario E2E gate (issue #56)
         timeout-minutes: 10
         run: node scripts/test-php-laravel-scenario-tests.mjs
+      - name: Run the Laravel routes runtime gate (issue #60)
+        # The composed types + operations + routes generation through
+        # the real adapter exchange, then the planner fixture serving
+        # the Today/focus endpoints through the generated surface over
+        # the real HTTP kernel (the provisioned vendor tree above).
+        timeout-minutes: 15
+        run: node scripts/test-php-laravel-routes.mjs
       - name: Run the Laravel migration pipeline gate (issue #57)
         # The pipeline stages (CLI goldens, PHP artifacts, custody)
         # run wherever the repo's gates run; the PostgreSQL execution

@@ -82,3 +82,53 @@ execution — that proof belongs to the pinned-Mago lane.
 The Laravel boundary (connections, queue visibility, auth principal
 binding, PostgreSQL behavior) is maintained application code and is not
 claimed by this family.
+
+# PHP Laravel routes (issue #60)
+
+The routes family binds the endpoint contracts to the Laravel HTTP
+kernel without placing business logic in controllers. The authored input
+is `lekalo/routes/<project>.routes.json`
+(`dev.lekalo.php-routes-input@0.4.0`; schema
+`contracts/php-routes-input.schema.v0.4.0.json`): one record per
+governed route naming the Model endpoint symbol, the invoked operation,
+and the custody mode — it never restates wire facts. Method, path,
+parameters, body, success/error projections, security, headers, and
+scenario links stay single-sourced in the Model and the
+`lekalo/transport.yaml` attachment; the emitted error envelope members
+(category, LEK-ERR code, public payload shape) come from the #46 OpenAPI
+projection of the same join, so the boundary and the published document
+are one projection by construction.
+
+Per-route modes: `managed` (generated, regenerable bytes under
+`.lekalo/generated/php-laravel/routes/`, namespace
+`Lekalo\Generated\Routes`: the routes file, one thin
+decode/delegate/encode controller per route, typed request bindings,
+the envelope and error-map primitives, the verbatim `openapi.json`, the
+classmap, and the custody sidecar `routes.map.json` — the exported
+route/operation/symbol/scenario link table) and `checked` (no writes;
+the declared method/uri/action joins the scanner evidence at
+`.lekalo/import/observed/routes-evidence.json`,
+`dev.lekalo.php-routes-evidence@0.4.0` — a route is never checked
+without scanner evidence).
+
+There is no catch-all mapping: only the declared typed errors and the
+typed request-validation refusal convert to responses through the
+declared per-route table; anything else propagates to the application's
+own exception handling. The input's `middleware` map optionally attaches
+the project's own middleware per declared security scheme; without an
+entry no middleware is attached and no framework default is guessed.
+The application merges ownership-aware by requiring the generated
+`routes.php`; manual routes outside the generated tree are never
+touched.
+
+`lekalo generate` runs the core join first
+(`crates/lekalo-core/src/php_routes/`, wired into the generate pipeline
+before any adapter exchange — a refused join is the registered
+`php-routes.join-invalid` diagnostic `LEK-RTE-001`); the adapter
+re-validates defensively and emits. The composed run generates the
+bound types and operations families in the same plan — a route wrapper
+without its handler join refuses. `verify` reports managed drift
+(including a tampered `openapi.json`) as `routes.drift` and the checked
+join as `routes.binding-*`. Capabilities `generate.routes` and
+`verify.routes` are declared `partial`. The emitted classes
+syntax-check and load under `php -n` through the classmap.
