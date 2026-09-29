@@ -221,11 +221,11 @@ step("the generated surface is explicit, typed, and loads under php -n", () => {
   );
   assert.match(handler, /authorize\(\$input, \$actor\);/);
   assert.match(handler, /->find\(\$input->taskId\);/);
-  assert.match(handler, /throw new TaskNotFoundError\(\);/);
-  assert.match(handler, /throw new FocusConflictError\(\);/);
+  assert.match(handler, /throw new \\Lekalo\\Generated\\Operations\\Planner\\Errors\\TaskNotFoundError\(\);/);
+  assert.match(handler, /throw new \\Lekalo\\Generated\\Operations\\Planner\\Errors\\FocusConflictError\(\);/);
   assert.match(handler, /TaskState::Focused/);
   assert.match(handler, /->save\(\$taskUpdated\);/);
-  assert.match(handler, /->taskFocused\(new TaskFocusedPayload\(\$input->taskId\)\);/);
+  assert.match(handler, /->taskFocused\(new \\Lekalo\\Generated\\Types\\Planner\\TaskFocusedPayload\(\$input->taskId\)\);/);
   // The query handler delegates through the typed port.
   const query = readFileSync(
     join(root, ".lekalo/generated/php-laravel/operations/planner/count_focused/handler.php"),

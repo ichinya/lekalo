@@ -1,0 +1,175 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://dev.lekalo/php-routes-evidence.schema.v0.4.0.json",
+ "title": "Lekalo PHP Routes Evidence",
+ "description": "Closed contract for the observed-route evidence document the checked route mode joins (issue #60). The document is produced outside the compiler by a controlled producer (the project's own route-scanner lane, conventionally `artisan route:list --json` joined with the controller sources) and staged under `.lekalo/import/observed/routes-evidence.json`; the adapter only validates its shape and digests and joins it against the declared routes. No route registration is checked without this scanner evidence, and presence of a document with plausible digests is never trusted as producer execution: the producer receipt reference must validate, and a missing, stale, ambiguous or partial record is a typed finding - never a pass, never a silent rewrite. The document is pure data - no credentials, hosts, URLs, users, wall-clock timestamps, or provider output.",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "schemaVersion",
+  "identity",
+  "projectId",
+  "irDigest",
+  "routesInputDigest",
+  "producer",
+  "sources",
+  "routes"
+ ],
+ "properties": {
+  "schemaVersion": {
+   "const": "lekalo/php-routes-evidence/v0.4.0"
+  },
+  "identity": {
+   "const": "dev.lekalo.php-routes-evidence@0.4.0"
+  },
+  "projectId": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "irDigest": {
+   "description": "The IR evidence digest the observation was produced against; a stale digest makes every record unknown.",
+   "$ref": "#/$defs/sha256"
+  },
+  "routesInputDigest": {
+   "description": "The routes input document digest the observation was produced against.",
+   "$ref": "#/$defs/sha256"
+  },
+  "producer": {
+   "description": "The controlled producer receipt: the tool, its pinned version, and the exact receipt document the run recorded. The join validates the reference but never fabricates execution.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "tool",
+    "version"
+   ],
+   "properties": {
+    "tool": {
+     "type": "string",
+     "pattern": "^[a-z][a-z0-9-]{1,32}$",
+     "maxLength": 32
+    },
+    "version": {
+     "type": "string",
+     "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "receiptPath": {
+     "type": "string",
+     "pattern": "^[.a-z][a-z0-9_./-]*\\.json$"
+    },
+    "receiptDigest": {
+     "$ref": "#/$defs/sha256"
+    }
+   }
+  },
+  "sources": {
+   "description": "The complete observed source inventory, path-sorted; every route record's controller path must appear here with the identical digest.",
+   "type": "array",
+   "minItems": 1,
+   "maxItems": 4096,
+   "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+     "path",
+     "digest"
+    ],
+    "properties": {
+     "path": {
+      "$ref": "#/$defs/logicalPath"
+     },
+     "digest": {
+      "$ref": "#/$defs/sha256"
+     }
+    }
+   }
+  },
+  "routes": {
+   "description": "One record per observed route, sorted by (method, uri, name); every declared route must match exactly one record.",
+   "type": "array",
+   "minItems": 1,
+   "maxItems": 4096,
+   "items": {
+    "$ref": "#/$defs/observedRoute"
+   }
+  }
+ },
+ "$defs": {
+  "sha256": {
+   "type": "string",
+   "pattern": "^sha256:[0-9a-f]{64}$"
+  },
+  "semanticId": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+  },
+  "fqn": {
+   "type": "string",
+   "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,7}$"
+  },
+  "logicalPath": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_./-]*\\.php$"
+  },
+  "observedRoute": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "method",
+    "uri",
+    "name",
+    "action",
+    "path",
+    "digest"
+   ],
+   "properties": {
+    "method": {
+     "enum": [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "HEAD",
+      "OPTIONS"
+     ]
+    },
+    "uri": {
+     "description": "The observed route uri as the scanner spelled it, `{param}` placeholders included, leading slash included.",
+     "type": "string",
+     "pattern": "^/[A-Za-z0-9_{}/-]*$"
+    },
+    "name": {
+     "description": "The observed route name; an empty string when the route carries none.",
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 192,
+     "pattern": "^[a-zA-Z0-9._-]*$"
+    },
+    "action": {
+     "description": "The observed action identity: the controller FQN and method joined with `@`.",
+     "type": "string",
+     "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,7}@[a-z][A-Za-z0-9_]{0,63}$"
+    },
+    "path": {
+     "description": "The case-preserving native path of the controller source as observed; the join lowercases only for the wire.",
+     "type": "string",
+     "pattern": "^[A-Za-z][A-Za-z0-9_./-]*\\.php$"
+    },
+    "digest": {
+     "description": "The sha256 of the exact observed controller source bytes.",
+     "$ref": "#/$defs/sha256"
+    },
+    "middleware": {
+     "description": "The observed middleware spellings, sorted; absence declares none observed.",
+     "type": "array",
+     "minItems": 0,
+     "maxItems": 8,
+     "items": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9:_.-]*$"
+     }
+    }
+   }
+  }
+ }
+}

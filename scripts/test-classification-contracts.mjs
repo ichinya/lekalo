@@ -96,20 +96,17 @@ for (const [id, before] of predEntries) {
 }
 if (
   registry.entries.length !==
-  predEntries.size + 13 + 21 + 3 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1
+  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1
 ) {
-  // The trailing increments: +3 is the r3 F-5 custody increment
-  // (dedicated ids for the project/model/IR pin refusals,
-  // LEK-CLS-013..015); +1 is the r4 F-5 malformed-review-ref id
-  // (LEK-CLS-016). Post-merge siblings share the registry: +9 is the
-  // transport family (#70), +5 the storage family (#117), +14 the
-  // storage-engine family (#69), +8 the openapi family (#46), +14
-  // the scenario family (#47), +15 the adapter-package family (#32,
-  // ported from the predecessor registry where the branch had
-  // registered them before v0.4.0 existed), +8 the client-SDK family
-  // (#72, LEK-SDK-001..008), and +1 the PHP operations join refusal
-  // (issue #59, LEK-OPS-001) that carries the typed finding codes of
-  // the refused operations input join.
+  // The increments over the v0.3.2 predecessor, one per family that
+  // joined the shared registry after it: classification (#87) +16,
+  // dataflow (#87) +9, NFR +13, and the php-operations family (#59)
+  // +1 (LEK-OPS-001). Post-merge siblings share the registry:
+  // transport +9 (#70), storage introspection +5 (#117), storage-engine
+  // +14 (#69), openapi +8 (#46), scenario +14 (#47), adapter-package
+  // +15 (#32, ported from the predecessor registry where the branch
+  // had registered them before v0.4.0 existed), client-SDK +8 (#72,
+  // LEK-SDK-001..008), and the PHP routes family +1 (#60, LEK-RTE-001).
   fail("entry-count", registry.entries.length);
 }
 

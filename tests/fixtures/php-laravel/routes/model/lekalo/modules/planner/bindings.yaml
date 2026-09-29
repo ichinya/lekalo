@@ -1,0 +1,23 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.endpoint_today
+    kind: endpoint
+    version: 1
+    description: "The today board: the planner focus state over HTTP"
+    invokes: "planner.count_focused"
+    method: GET
+    path: "/today"
+  - id: planner.endpoint_focus_task_by_id
+    kind: endpoint
+    version: 1
+    description: "Focus one task from a path id"
+    invokes: "planner.focus_task"
+    method: POST
+    path: "/tasks/{task_id}/focus"
+  - id: planner.endpoint_tasks_focus
+    kind: endpoint
+    version: 1
+    description: "The maintained focus route of the fixture app, checked in contracted mode"
+    invokes: "planner.focus_task"
+    method: POST
+    path: "/api/tasks/{task_id}/focus"

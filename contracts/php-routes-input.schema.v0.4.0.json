@@ -1,0 +1,169 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://dev.lekalo/php-routes-input.schema.v0.4.0.json",
+ "title": "Lekalo PHP Routes Input",
+ "description": "Closed independent contract for the bounded PHP Laravel route-generation input (issue #60). The document is authored under `lekalo/routes/`, names the exact compiled-IR evidence digest, the canonical transport-http attachment digest, and the exact digests of the types and operations inputs the wrappers reuse, and declares one bounded record per generated or checked route. Method, path, parameters, body, success and error projections, security, headers, and scenario links stay single-sourced in the Model endpoint symbols and the transport-http attachment: this input only names the endpoint, its invoked operation, and the per-route custody mode - it never restates wire facts. The document is pure data - no credentials, hosts, URLs, users, wall-clock timestamps, or provider output.",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "schemaVersion",
+  "identity",
+  "projectId",
+  "irDigest",
+  "transportDigest",
+  "typesInputDigest",
+  "operationsInputDigest",
+  "routes"
+ ],
+ "properties": {
+  "schemaVersion": {
+   "const": "lekalo/php-routes-input/v0.4.0"
+  },
+  "identity": {
+   "const": "dev.lekalo.php-routes-input@0.4.0"
+  },
+  "projectId": {
+   "description": "The project id whose compiled IR evidence is consumed; the same id the core stages at `.lekalo/cache/ir/<projectId>.json` and whose transport home is `lekalo/transport.yaml`.",
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "irDigest": {
+   "description": "The exact digest of the consumed IR evidence bytes; any divergence between this digest and the staged evidence is a binding refusal, never a best-effort read.",
+   "$ref": "#/$defs/sha256"
+  },
+  "transportDigest": {
+   "description": "The exact digest of the canonical transport-http attachment bytes: the validated `lekalo/transport.yaml` document in its canonical compact form, exactly as the core stages it under `.lekalo/cache/transport/<projectId>.json`. The attachment - not this input - is the wire authority for every declared route.",
+   "$ref": "#/$defs/sha256"
+  },
+  "typesInputDigest": {
+   "description": "The exact digest of the `lekalo/types/<projectId>.types.json` document whose mapped type surface the request bindings reuse. The types family is a required dependency: a missing or diverging types input refuses the whole routes join.",
+   "$ref": "#/$defs/sha256"
+  },
+  "operationsInputDigest": {
+   "description": "The exact digest of the `lekalo/operations/<projectId>.operations.json` document whose handlers the route wrappers invoke. The operations family is a required dependency: a route wrapper without its declared handler join is dead code and refuses the whole routes join.",
+   "$ref": "#/$defs/sha256"
+  },
+  "policy": {
+   "description": "The closed routes policy. Absent members take their documented defaults; unknown members refuse. v0.4.0 has no custody member: managed routes always emit under the closed generated root `.lekalo/generated/php-laravel/routes`, never a configurable path.",
+   "$ref": "#/$defs/policy"
+  },
+  "routes": {
+   "description": "One record per governed HTTP route. The array is canonical: sorted by id, duplicates refuse. Endpoints absent from this array are never generated - there is no route registration magic without this explicit, evidence-joined record.",
+   "type": "array",
+   "minItems": 1,
+   "maxItems": 2048,
+   "items": {
+    "$ref": "#/$defs/route"
+   }
+  }
+ },
+ "$defs": {
+  "sha256": {
+   "type": "string",
+   "pattern": "^sha256:[0-9a-f]{64}$"
+  },
+  "semanticId": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+  },
+  "fqn": {
+   "type": "string",
+   "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,7}$"
+  },
+  "schemeId": {
+   "description": "One declared transport security-scheme id.",
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "policy": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "namespacePrefix"
+   ],
+   "properties": {
+    "namespacePrefix": {
+     "description": "The PHP namespace prefix of every generated route class. The generated root is the closed constant `.lekalo/generated/php-laravel/routes`.",
+     "type": "string",
+     "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,5}$"
+    },
+    "middleware": {
+     "description": "Optional map from a declared transport security-scheme id to the project's own middleware spelling. A route bound to a scheme without an entry carries no middleware: the framework default is never guessed, and an unknown scheme id refuses the join.",
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 16,
+     "items": {
+      "$ref": "#/$defs/middlewareBinding"
+     }
+    }
+   }
+  },
+  "middlewareBinding": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "scheme",
+    "middleware"
+   ],
+   "properties": {
+    "scheme": {
+     "$ref": "#/$defs/schemeId"
+    },
+    "middleware": {
+     "description": "The project's own middleware spelling (alias or class reference); the generated route attaches it verbatim.",
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128,
+     "pattern": "^[A-Za-z][A-Za-z0-9:_.-]*$"
+    }
+   }
+  },
+  "route": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "id",
+    "operation",
+    "mode"
+   ],
+   "properties": {
+    "id": {
+     "description": "The Model endpoint symbol this record governs; the compiled IR must define it with kind `endpoint`, and the transport attachment must bind it.",
+     "$ref": "#/$defs/semanticId"
+    },
+    "operation": {
+     "description": "The invoked command or query symbol; it must agree with the endpoint's `invokes` and resolve to a compiled definition of that kind.",
+     "$ref": "#/$defs/semanticId"
+    },
+    "mode": {
+     "description": "managed: generated regenerable thin wrapper under the closed generated root. checked: no writes; the declared surface (method, uri, name, action, controller bytes) joins against the observed routes evidence.",
+     "enum": [
+      "managed",
+      "checked"
+     ]
+    },
+    "entry": {
+     "description": "Required for checked, refused for managed: the declared existing controller entrypoint the observed evidence must join.",
+     "$ref": "#/$defs/entry"
+    }
+   }
+  },
+  "entry": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "fqn",
+    "method"
+   ],
+   "properties": {
+    "fqn": {
+     "$ref": "#/$defs/fqn"
+    },
+    "method": {
+     "type": "string",
+     "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+    }
+   }
+  }
+ }
+}

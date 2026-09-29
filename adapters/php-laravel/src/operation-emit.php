@@ -310,12 +310,18 @@ function php_operations_body_lines(array $operation, array $definitions, array $
     return $body;
 }
 
-/** The short class spelling of one declared error id within one record. */
+/**
+ * The fully-qualified spelling of one declared error id within one
+ * record: the typed error classes live in the module's `Errors`
+ * namespace, so the handler body must qualify them — an unqualified
+ * reference inside the operation namespace would resolve to a class
+ * that does not exist.
+ */
 function php_operations_error_class_of(string $errorId, array $operation): string
 {
     foreach ($operation['errors'] as $error) {
         if ($error['id'] === $errorId) {
-            return (string) $error['class'];
+            return '\\' . (string) $error['fqn'];
         }
     }
     // The join guarantees membership; this is a kernel bug guard.
@@ -378,7 +384,6 @@ function php_operations_rebuild_expr(
 ): string {
     $entityId = (string) $recipe['entity'];
     $entityFqn = (string) $typesIndex[$entityId]['fqn'];
-    $class = php_types_entry_class(['fqn' => $entityFqn]);
     $args = [];
     foreach ($definitions[$entityId]['fields'] as $field) {
         $name = (string) $field['name'];
@@ -404,7 +409,7 @@ function php_operations_rebuild_expr(
         // The identity and every kept field carry over from the read.
         $args[] = $entityVar . '->' . php_types_property_of($name);
     }
-    return 'new ' . $class . '(' . implode(', ', $args) . ')';
+    return 'new \\' . $entityFqn . '(' . implode(', ', $args) . ')';
 }
 
 /** One event construction expression. */
@@ -418,7 +423,6 @@ function php_operations_event_expr(
     array $context,
 ): string {
     $eventId = (string) $emission['event'];
-    $class = php_types_entry_class(['fqn' => (string) $typesIndex[$eventId]['fqn']]);
     $args = [];
     foreach ($definitions[$eventId]['payload'] as $field) {
         $name = (string) $field['name'];
@@ -432,7 +436,7 @@ function php_operations_event_expr(
             $context,
         );
     }
-    return 'new ' . $class . '(' . implode(', ', $args) . ')';
+    return 'new \\' . (string) $typesIndex[$eventId]['fqn'] . '(' . implode(', ', $args) . ')';
 }
 
 /**

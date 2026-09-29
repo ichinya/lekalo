@@ -1205,6 +1205,35 @@ function load_operation_modules(): void
     }
 }
 
+/**
+ * The routes-generator modules, in fixed load order (issue #60). They
+ * depend on the type modules' naming and codec helpers and on the
+ * operations modules' handler naming, so both load first. Inside the
+ * shipped artifact everything is appended and loading is a no-op.
+ */
+function load_route_modules(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+    $loaded = true;
+    load_operation_modules();
+    if (function_exists('php_validate_routes_input') && function_exists('php_emit_routes')) {
+        return;
+    }
+    foreach ([
+        __DIR__ . '/route-policy.php',
+        __DIR__ . '/route-map.php',
+        __DIR__ . '/route-emit.php',
+    ] as $module) {
+        if (!is_file($module)) {
+            throw new RequestRefusal('compiler-module-missing');
+        }
+        require_once $module;
+    }
+}
+
 final class RequestRefusal extends RuntimeException
 {
     public function __construct(string $code)
@@ -2119,6 +2148,10 @@ function deterministic_generation(array $request): array
     if (is_string($irPath) && is_scenario_ir_path($irPath)) {
         return scenario_deterministic_generation($request, $irPath);
     }
+    $routesRequest = resolve_routes_request($request);
+    if ($routesRequest !== null) {
+        return routes_deterministic_generation($routesRequest);
+    }
     $operationsRequest = resolve_operations_request($request);
     if ($operationsRequest !== null) {
         return operations_deterministic_generation($operationsRequest);
@@ -2135,6 +2168,41 @@ function is_operations_ir_path(string $path): bool
 {
     return str_starts_with($path, 'lekalo/operations/')
         && str_ends_with($path, '.operations.json');
+}
+
+/** Whether one path is the routes input home (issue #60). */
+function is_routes_ir_path(string $path): bool
+{
+    return str_starts_with($path, 'lekalo/routes/')
+        && str_ends_with($path, '.routes.json');
+}
+
+/**
+ * The routes request for one incoming request, or null when the request
+ * does not drive routes generation: either the ir_path is already a
+ * routes input document, or it is the core's staged IR evidence whose
+ * project carries a declared routes input beside it (issue #60). The
+ * routing must stay a pure read decision.
+ */
+function resolve_routes_request(array $request): ?array
+{
+    $irPath = $request['ir_path'] ?? '';
+    if (!is_string($irPath)) {
+        return null;
+    }
+    if (is_routes_ir_path($irPath)) {
+        return $request;
+    }
+    if (!is_types_evidence_path($irPath)) {
+        return null;
+    }
+    $routesDoc = 'lekalo/routes/' . basename($irPath, '.json') . '.routes.json';
+    if (!is_routes_ir_path($routesDoc) || read_view_file($routesDoc) === null) {
+        return null;
+    }
+    $flipped = $request;
+    $flipped['ir_path'] = $routesDoc;
+    return $flipped;
 }
 
 /**
@@ -2640,6 +2708,353 @@ function operations_verify_response(array $request): array
             $findings[] = ['path' => $file['path'], 'code' => 'operations.drift', 'detail' => 'missing'];
         } elseif ($actual !== substr((string) $expectedDigest, 7)) {
             $findings[] = ['path' => $file['path'], 'code' => 'operations.drift', 'detail' => 'drifted'];
+        }
+    }
+    return build_response($request, ['result' => ['ok' => true, 'findings' => $findings]]);
+}
+
+/**
+ * The composed types + operations + routes branch of the deterministic
+ * generation entry (issue #60): the routes family runs ON TOP of the
+ * composed #59 run — a route wrapper without its handler would be dead
+ * code — and every family finding vetoes the whole plan before any
+ * publication.
+ */
+function routes_deterministic_generation(array $request): array
+{
+    $outcome = routes_generation($request);
+    if (isset($outcome['refusal'])) {
+        throw new RequestRefusal($outcome['refusal']);
+    }
+    if ($outcome['findings'] !== []) {
+        // Capability honesty: any compile-time finding vetoes every
+        // write across ALL families - zero partial publication.
+        return [
+            'path' => null,
+            'bytes' => '',
+            'digest' => null,
+            'writes' => [],
+            'findings' => $outcome['findings'],
+        ];
+    }
+    $writes = [];
+    $skipWrites = $outcome['skip_writes'] ?? [];
+    $files = array_map(
+        static fn (array $file): array => [
+            'path' => $file['path'],
+            'bytes' => $file['text'],
+            'digest' => $file['digest'],
+            'frozen' => false,
+            'marker' => null,
+        ],
+        $outcome['files'],
+    );
+    foreach ($outcome['files'] as $file) {
+        if (isset($skipWrites[$file['path']])) {
+            continue;
+        }
+        $writes[] = [
+            'path' => $file['path'],
+            'action' => 'create',
+            'sha256' => $file['digest'],
+        ];
+    }
+    return [
+        'path' => null,
+        'bytes' => '',
+        'digest' => null,
+        'writes' => $writes,
+        'files' => $files,
+        'findings' => [],
+    ];
+}
+
+/**
+ * The read-and-map-and-emit flow of the composed routes run (issue
+ * #60): the validated routes input pins the exact IR evidence, the
+ * canonical transport attachment, the bound types and operations
+ * inputs; the managed routes land under the generated routes root and
+ * the checked records join the observed routes evidence.
+ */
+function routes_generation(array $request): array
+{
+    load_route_modules();
+    $irPath = (string) ($request['ir_path'] ?? '');
+    $inputText = read_view_file($irPath);
+    if ($inputText === null) {
+        return ['refusal' => 'routes-input-unreadable'];
+    }
+    try {
+        $document = json_decode($inputText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'routes-input-shape'];
+    }
+    if (is_array($document)
+        && isset($document['schemaVersion'], $document['identity'])
+        && ($document['schemaVersion'] !== PHP_ROUTES_INPUT_SCHEMA_VERSION
+            || $document['identity'] !== PHP_ROUTES_INPUT_IDENTITY)) {
+        return ['refusal' => 'routes-input-identity'];
+    }
+    $input = php_validate_routes_input($document);
+    if ($input === null) {
+        return ['refusal' => 'routes-input-shape'];
+    }
+    $findingOnly = static fn (array $findings): array => [
+        'files' => [],
+        'findings' => $findings,
+        'skip_writes' => [],
+    ];
+    // The staged evidence: the only bytes an adapter may read.
+    $irEvidenceText = read_view_file(IR_EVIDENCE_HOME . '/' . $input['projectId'] . '.json');
+    if ($irEvidenceText === null) {
+        return ['refusal' => 'routes-ir-unreadable'];
+    }
+    try {
+        $irEvidence = json_decode($irEvidenceText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'routes-ir-shape'];
+    }
+    if (!is_array($irEvidence) || ($irEvidence['contract'] ?? null) !== PHP_TYPES_IR_IDENTITY) {
+        return ['refusal' => 'routes-ir-identity'];
+    }
+    if (sha256_digest($irEvidenceText) !== $input['irDigest']) {
+        return ['refusal' => 'routes-input-digest'];
+    }
+    // The canonical transport evidence: the wire authority the routes
+    // project from. The digest joins the input pin.
+    $transportText = read_view_file('.lekalo/cache/transport/' . $input['projectId'] . '.json');
+    if ($transportText === null) {
+        return ['refusal' => 'routes-transport-unreadable'];
+    }
+    try {
+        $transport = json_decode($transportText, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return ['refusal' => 'routes-transport-shape'];
+    }
+    if (!is_array($transport)
+        || ($transport['schemaVersion'] ?? null) !== PHP_ROUTES_TRANSPORT_SCHEMA_VERSION
+        || ($transport['identity'] ?? null) !== PHP_ROUTES_TRANSPORT_IDENTITY) {
+        return ['refusal' => 'routes-transport-identity'];
+    }
+    $transportDigest = sha256_digest($transportText);
+    if ($transportDigest !== $input['transportDigest']) {
+        return ['refusal' => 'routes-transport-digest'];
+    }
+    // The staged OpenAPI projection: the same join renders the published
+    // document and the boundary tables; the mapper joins its digests.
+    $openapiText = read_view_file('.lekalo/cache/openapi/' . $input['projectId'] . '.json');
+    $openapiDigest = $openapiText === null ? null : sha256_digest($openapiText);
+    $openapi = null;
+    if ($openapiText !== null) {
+        try {
+            $openapi = json_decode($openapiText, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            $openapi = null;
+        }
+    }
+    // The composed types + operations run: a route wrapper without its
+    // handler join is dead code, and any family finding vetoes the
+    // whole plan.
+    $operationsDoc = 'lekalo/operations/' . $input['projectId'] . '.operations.json';
+    $operationsText = read_view_file($operationsDoc);
+    if ($operationsText === null || !is_operations_ir_path($operationsDoc)) {
+        return $findingOnly([[
+            'path' => $input['projectId'] . '.routes',
+            'code' => 'routes.operations-unbound',
+            'detail' => 'the routes input requires the bound operations input document',
+        ]]);
+    }
+    if (sha256_digest($operationsText) !== $input['operationsInputDigest']) {
+        return $findingOnly([[
+            'path' => $input['projectId'] . '.routes',
+            'code' => 'routes.operations-unbound',
+            'detail' => 'the input names different operations-input bytes than the committed document',
+        ]]);
+    }
+    $operationsRequest = $request;
+    $operationsRequest['ir_path'] = $operationsDoc;
+    $operationsOutcome = operations_generation($operationsRequest);
+    if (isset($operationsOutcome['refusal'])) {
+        return ['refusal' => $operationsOutcome['refusal']];
+    }
+    if (($operationsOutcome['findings'] ?? []) !== []) {
+        return $findingOnly($operationsOutcome['findings']);
+    }
+    // The mapped type inventory (the naming authority the request
+    // bindings reuse) and the operations input inventory (the entry
+    // naming authority the wrappers invoke).
+    try {
+        $typesInput = php_validate_types_input(json_decode(
+            (string) read_view_file('lekalo/types/' . $input['projectId'] . '.types.json'),
+            true,
+            512,
+            JSON_THROW_ON_ERROR,
+        ));
+    } catch (JsonException) {
+        return ['refusal' => 'routes-input-shape'];
+    }
+    if ($typesInput === null) {
+        return $findingOnly([[
+            'path' => $input['projectId'] . '.routes',
+            'code' => 'routes.types-unbound',
+            'detail' => 'the routes input requires the bound types input document',
+        ]]);
+    }
+    $typesDocText = (string) read_view_file('lekalo/types/' . $input['projectId'] . '.types.json');
+    $mappedTypes = php_map_types([
+        'ir' => $irEvidence,
+        'policy' => $typesInput['policy'],
+        'irDigest' => $typesInput['irDigest'],
+        'inputDigest' => sha256_digest($typesDocText),
+    ]);
+    if ($mappedTypes['state'] !== 'mapped') {
+        return $findingOnly(types_wire_findings($mappedTypes['findings']));
+    }
+    try {
+        $operationsInput = php_validate_operations_input(json_decode($operationsText, true, 512, JSON_THROW_ON_ERROR));
+    } catch (JsonException) {
+        return ['refusal' => 'routes-input-shape'];
+    }
+    if ($operationsInput === null) {
+        return $findingOnly([[
+            'path' => $input['projectId'] . '.routes',
+            'code' => 'routes.operations-unbound',
+            'detail' => 'the bound operations input document is not the accepted contract',
+        ]]);
+    }
+    $definitions = [];
+    foreach ($irEvidence['definitions'] ?? [] as $definition) {
+        if (is_array($definition) && is_string($definition['id'] ?? null)) {
+            $definitions[$definition['id']] = $definition;
+        }
+    }
+    $context = [
+        'input' => $input,
+        'definitions' => $definitions,
+        'typesIndex' => $mappedTypes['index'],
+        'operationsInput' => $operationsInput,
+        'transport' => $transport,
+        'transportDigest' => $transportDigest,
+        'openapi' => $openapi,
+        'irDigest' => $input['irDigest'],
+        'inputDigest' => sha256_digest($inputText),
+        'typesInputDigest' => $input['typesInputDigest'],
+        'operationsInputDigest' => $input['operationsInputDigest'],
+        'openapiDigest' => $openapiDigest,
+        'namespacePrefix' => $input['namespacePrefix'],
+        'operationsNamespacePrefix' => (string) ($operationsInput['namespacePrefix'] ?? PHP_OPERATIONS_DEFAULT_NAMESPACE_PREFIX),
+    ];
+    $mapped = php_map_routes($context);
+    if ($mapped['state'] !== 'mapped') {
+        return $findingOnly(types_wire_findings($mapped['findings']));
+    }
+    $files = [];
+    $findings = [];
+    $skipWrites = [];
+    $claimed = [];
+    foreach (($operationsOutcome['files'] ?? []) as $file) {
+        $claimed[$file['path']] = true;
+        $files[] = [
+            'path' => $file['path'],
+            'text' => $file['text'],
+            'digest' => $file['digest'],
+            'role' => $file['role'] ?? 'operations',
+            'lifecycle' => $file['lifecycle'] ?? 'generated',
+        ];
+    }
+    // The managed routes emission under the closed generated root.
+    $emitted = php_emit_routes([
+        'projectId' => $input['projectId'],
+        'mapped' => $mapped,
+        'context' => $context,
+        'openapiBytes' => $openapiText,
+        'root' => PHP_ROUTES_GENERATED_ROOT,
+    ]);
+    foreach ($emitted['files'] as $file) {
+        if (isset($claimed[$file['path']])) {
+            throw new RequestRefusal('routes-path-collision');
+        }
+        $claimed[$file['path']] = true;
+        $files[] = $file;
+    }
+    // The checked records: no writes; the declared surface joins the
+    // observed routes evidence.
+    $checkedRecords = array_values(array_filter(
+        $input['routes'],
+        static fn (array $record): bool => $record['mode'] === 'checked',
+    ));
+    if ($checkedRecords !== []) {
+        $evidence = php_read_routes_evidence();
+        foreach (php_routes_check_bindings(
+            $checkedRecords,
+            $mapped['routes'],
+            $definitions,
+            $evidence,
+            $input,
+            $context['inputDigest'],
+            static function (string $path): ?string {
+                $digest = is_file($path) ? hash_file('sha256', $path) : false;
+                return $digest === false ? null : 'sha256:' . $digest;
+            },
+        ) as $bindingFinding) {
+            $findings[] = types_wire_findings([$bindingFinding])[0];
+        }
+    }
+    usort($files, static fn (array $left, array $right): int => strcmp((string) $left['path'], (string) $right['path']));
+    return [
+        'files' => $files,
+        'findings' => $findings,
+        'skip_writes' => $skipWrites,
+    ];
+}
+
+/**
+ * The routes validate exchange (issue #60): the same composed
+ * read-and-map path generate uses, but no writes ever result.
+ */
+function routes_validate_response(array $request): array
+{
+    $outcome = routes_generation($request);
+    if (isset($outcome['refusal'])) {
+        return ['error' => [
+            'class' => 'invalid',
+            'code' => $outcome['refusal'],
+            'message' => 'the routes input could not be read or mapped',
+            'retryable' => false,
+            'partial' => false,
+        ]];
+    }
+    return build_response($request, ['result' => ['ok' => true, 'findings' => $outcome['findings']]]);
+}
+
+/**
+ * The routes verify exchange (issue #60): managed files are compared by
+ * exact digest (missing/drifted are routes.drift); checked records
+ * re-run the strict evidence join.
+ */
+function routes_verify_response(array $request): array
+{
+    $outcome = routes_generation($request);
+    if (isset($outcome['refusal'])) {
+        return ['error' => [
+            'class' => 'invalid',
+            'code' => $outcome['refusal'],
+            'message' => 'the routes input could not be read or mapped',
+            'retryable' => false,
+            'partial' => false,
+        ]];
+    }
+    $findings = $outcome['findings'];
+    foreach ($outcome['files'] as $file) {
+        if (!str_starts_with((string) $file['path'], PHP_ROUTES_GENERATED_ROOT . '/')) {
+            continue;
+        }
+        $expectedDigest = $file['digest'];
+        $actual = is_file($file['path']) ? hash_file('sha256', $file['path']) : false;
+        if ($actual === false) {
+            $findings[] = ['path' => $file['path'], 'code' => 'routes.drift', 'detail' => 'missing'];
+        } elseif ($actual !== substr((string) $expectedDigest, 7)) {
+            $findings[] = ['path' => $file['path'], 'code' => 'routes.drift', 'detail' => 'drifted'];
         }
     }
     return build_response($request, ['result' => ['ok' => true, 'findings' => $findings]]);
@@ -3579,9 +3994,9 @@ function adapter_identity(): array
 function describe_capabilities(?Analyzer $analyzer = null): array
 {
     $analyzer ??= new FakeAnalyzer();
-    // The operations modules carry the closed scaffold-root constants
-    // the declared write scopes name; load before describing.
-    load_operation_modules();
+    // The operations and routes modules carry the closed root constants
+    // the declared read scopes name; load before describing.
+    load_route_modules();
     return [
         'adapter' => adapter_identity(),
         'protocol_versions' => SUPPORTED_VERSIONS,
@@ -3604,6 +4019,12 @@ function describe_capabilities(?Analyzer $analyzer = null): array
             'lekalo/operations/**',
             '.lekalo/generated/php-laravel/operations/**',
             'app/lekalo-operations/**',
+            // Issue #60: the routes input home and the managed routes
+            // root are read back for the drift and checked-join gates;
+            // the staged transport and OpenAPI evidence rides the
+            // `.lekalo/cache/**` scope.
+            'lekalo/routes/**',
+            '.lekalo/generated/php-laravel/routes/**',
             // Managed types and the scaffold home are read back for the
             // drift and checked-custody gates: write authority only
             // reveals a staged output's shape, so reading the bytes an
@@ -3624,6 +4045,8 @@ function describe_capabilities(?Analyzer $analyzer = null): array
         'capabilities' => array_merge(DECLARED_CAPABILITIES, [
             'generate.operations' => 'partial',
             'verify.operations' => 'partial',
+            'generate.routes' => 'partial',
+            'verify.routes' => 'partial',
         ]),
         // The advisory bound mirrors the kernel's real write-plan file
         // cap (MAX_WRITE_FILES): a declared constraint never exceeds an
@@ -3869,6 +4292,9 @@ function validate_response(array $request, ?Analyzer $analyzer = null): array
     if (is_scenario_ir_path($irPath)) {
         return scenario_validate_response($request);
     }
+    if (resolve_routes_request($request) !== null) {
+        return routes_validate_response(resolve_routes_request($request));
+    }
     if (resolve_operations_request($request) !== null) {
         return operations_validate_response(resolve_operations_request($request));
     }
@@ -3940,6 +4366,9 @@ function verify_response(array $request, ?Analyzer $analyzer = null): array
     $irPath = is_string($request['ir_path'] ?? null) ? $request['ir_path'] : '';
     if (is_scenario_ir_path($irPath)) {
         return scenario_verify_response($request);
+    }
+    if (resolve_routes_request($request) !== null) {
+        return routes_verify_response(resolve_routes_request($request));
     }
     if (resolve_operations_request($request) !== null) {
         return operations_verify_response(resolve_operations_request($request));
@@ -11431,12 +11860,18 @@ function php_operations_body_lines(array $operation, array $definitions, array $
     return $body;
 }
 
-/** The short class spelling of one declared error id within one record. */
+/**
+ * The fully-qualified spelling of one declared error id within one
+ * record: the typed error classes live in the module's `Errors`
+ * namespace, so the handler body must qualify them — an unqualified
+ * reference inside the operation namespace would resolve to a class
+ * that does not exist.
+ */
 function php_operations_error_class_of(string $errorId, array $operation): string
 {
     foreach ($operation['errors'] as $error) {
         if ($error['id'] === $errorId) {
-            return (string) $error['class'];
+            return '\\' . (string) $error['fqn'];
         }
     }
     // The join guarantees membership; this is a kernel bug guard.
@@ -11499,7 +11934,6 @@ function php_operations_rebuild_expr(
 ): string {
     $entityId = (string) $recipe['entity'];
     $entityFqn = (string) $typesIndex[$entityId]['fqn'];
-    $class = php_types_entry_class(['fqn' => $entityFqn]);
     $args = [];
     foreach ($definitions[$entityId]['fields'] as $field) {
         $name = (string) $field['name'];
@@ -11525,7 +11959,7 @@ function php_operations_rebuild_expr(
         // The identity and every kept field carry over from the read.
         $args[] = $entityVar . '->' . php_types_property_of($name);
     }
-    return 'new ' . $class . '(' . implode(', ', $args) . ')';
+    return 'new \\' . $entityFqn . '(' . implode(', ', $args) . ')';
 }
 
 /** One event construction expression. */
@@ -11539,7 +11973,6 @@ function php_operations_event_expr(
     array $context,
 ): string {
     $eventId = (string) $emission['event'];
-    $class = php_types_entry_class(['fqn' => (string) $typesIndex[$eventId]['fqn']]);
     $args = [];
     foreach ($definitions[$eventId]['payload'] as $field) {
         $name = (string) $field['name'];
@@ -11553,7 +11986,7 @@ function php_operations_event_expr(
             $context,
         );
     }
-    return 'new ' . $class . '(' . implode(', ', $args) . ')';
+    return 'new \\' . (string) $typesIndex[$eventId]['fqn'] . '(' . implode(', ', $args) . ')';
 }
 
 /**
@@ -12219,6 +12652,1788 @@ function php_check_operation_bindings(
     });
     return $findings;
 }
+
+// ----- bundled compiler module: route-policy.php -----
+
+
+/**
+ * The closed routes policy and input validation of the PHP Laravel
+ * routes generator (issue #60). Everything here is pure validation over
+ * plain data: the bounded routes input document
+ * (`lekalo/routes/*.routes.json`, contract
+ * `dev.lekalo.php-routes-input@0.4.0`). Nothing reads the filesystem,
+ * nothing writes, nothing executes project code.
+ *
+ * The closed grammar mirrors `contracts/php-routes-input.schema.v0.4.0.json`
+ * and the core join (`crates/lekalo-core/src/php_routes/`) exactly:
+ * unknown members and unknown enum values refuse. The core join is the
+ * acceptance authority; this mirror is the adapter's defensive gate so
+ * a request can never reach the emitter half-validated.
+ */
+
+const PHP_ROUTES_INPUT_SCHEMA_VERSION = 'lekalo/php-routes-input/v0.4.0';
+const PHP_ROUTES_INPUT_IDENTITY = 'dev.lekalo.php-routes-input@0.4.0';
+const PHP_ROUTES_MAP_SCHEMA_VERSION = 'lekalo/php-routes-map/v0.4.0';
+const PHP_ROUTES_MAP_IDENTITY = 'dev.lekalo.php-routes-map@0.4.0';
+const PHP_ROUTES_EVIDENCE_SCHEMA_VERSION = 'lekalo/php-routes-evidence/v0.4.0';
+const PHP_ROUTES_EVIDENCE_IDENTITY = 'dev.lekalo.php-routes-evidence@0.4.0';
+
+/** The generated routes root (managed custody). */
+const PHP_ROUTES_GENERATED_ROOT = '.lekalo/generated/php-laravel/routes';
+
+/** The observed-route evidence the checked join consumes. */
+const PHP_ROUTES_EVIDENCE_PATH = '.lekalo/import/observed/routes-evidence.json';
+
+const PHP_ROUTES_DEFAULT_NAMESPACE_PREFIX = 'Lekalo\\Generated\\Routes';
+
+/** The closed wire identity the staged transport evidence must carry. */
+const PHP_ROUTES_TRANSPORT_SCHEMA_VERSION = 'lekalo/transport-http/v0.4.0';
+const PHP_ROUTES_TRANSPORT_IDENTITY = 'dev.lekalo.transport-http@0.4.0';
+
+/**
+ * Validate one parsed routes input document against its closed shape.
+ * Returns the normalized input array, or null when the document is not
+ * the accepted contract (a present-but-invalid document is an authoring
+ * error, never an all-defaults fallback).
+ */
+function php_validate_routes_input(mixed $document): ?array
+{
+    if (!is_array($document)
+        || ($document['schemaVersion'] ?? null) !== PHP_ROUTES_INPUT_SCHEMA_VERSION
+        || ($document['identity'] ?? null) !== PHP_ROUTES_INPUT_IDENTITY) {
+        return null;
+    }
+    // The closed member set (additionalProperties: false): an unknown
+    // member is an authoring error, never a silently ignored hint.
+    foreach (array_keys($document) as $member) {
+        if (!in_array($member, ['schemaVersion', 'identity', 'projectId', 'irDigest', 'transportDigest', 'typesInputDigest', 'operationsInputDigest', 'policy', 'routes'], true)) {
+            return null;
+        }
+    }
+    $projectId = $document['projectId'] ?? null;
+    if (!is_string($projectId) || preg_match('/^[a-z][a-z0-9_]*$/', $projectId) !== 1) {
+        return null;
+    }
+    foreach (['irDigest', 'transportDigest', 'typesInputDigest', 'operationsInputDigest'] as $digest) {
+        if (!is_sha256_digest($document[$digest] ?? null)) {
+            return null;
+        }
+    }
+    $prefix = PHP_ROUTES_DEFAULT_NAMESPACE_PREFIX;
+    $middleware = [];
+    if (array_key_exists('policy', $document)) {
+        $policy = $document['policy'];
+        if (!is_array($policy)) {
+            return null;
+        }
+        foreach (array_keys($policy) as $member) {
+            if (!in_array($member, ['namespacePrefix', 'middleware'], true)) {
+                return null;
+            }
+        }
+        $declared = $policy['namespacePrefix'] ?? null;
+        if (!is_string($declared) || preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,5}$/', $declared) !== 1) {
+            return null;
+        }
+        $prefix = $declared;
+        if (array_key_exists('middleware', $policy)) {
+            if (!is_array($policy['middleware']) || count($policy['middleware']) > 16) {
+                return null;
+            }
+            foreach ($policy['middleware'] as $binding) {
+                if (!is_array($binding)) {
+                    return null;
+                }
+                foreach (array_keys($binding) as $member) {
+                    if (!in_array($member, ['scheme', 'middleware'], true)) {
+                        return null;
+                    }
+                }
+                $scheme = $binding['scheme'] ?? null;
+                $spelling = $binding['middleware'] ?? null;
+                if (!is_string($scheme) || preg_match('/^[a-z][a-z0-9_]*$/', $scheme) !== 1 || strlen($scheme) > 64) {
+                    return null;
+                }
+                if (!is_string($spelling)
+                    || $spelling === ''
+                    || strlen($spelling) > 128
+                    || preg_match('/^[A-Za-z][A-Za-z0-9:_.-]*$/', $spelling) !== 1) {
+                    return null;
+                }
+                $middleware[] = ['scheme' => $scheme, 'middleware' => $spelling];
+            }
+            $schemes = array_map(static fn (array $row): string => $row['scheme'], $middleware);
+            if (count($schemes) !== count(array_unique($schemes))) {
+                return null;
+            }
+        }
+    }
+    $routes = $document['routes'] ?? null;
+    if (!is_array($routes) || $routes === [] || count($routes) > 2048) {
+        return null;
+    }
+    $records = [];
+    foreach ($routes as $route) {
+        $record = php_validate_route_record($route);
+        if ($record === null) {
+            return null;
+        }
+        $records[] = $record;
+    }
+    $ids = array_map(static fn (array $record): string => $record['id'], $records);
+    $sorted = $ids;
+    sort($sorted, SORT_STRING);
+    if ($ids !== $sorted || count(array_unique($ids)) !== count($ids)) {
+        return null;
+    }
+    return [
+        'projectId' => $projectId,
+        'irDigest' => $document['irDigest'],
+        'transportDigest' => $document['transportDigest'],
+        'typesInputDigest' => $document['typesInputDigest'],
+        'operationsInputDigest' => $document['operationsInputDigest'],
+        'namespacePrefix' => $prefix,
+        'middleware' => $middleware,
+        'routes' => $records,
+    ];
+}
+
+/**
+ * One closed route record: the endpoint symbol, the invoked operation,
+ * and the per-route custody mode — never a restated wire fact.
+ */
+function php_validate_route_record(mixed $route): ?array
+{
+    if (!is_array($route)) {
+        return null;
+    }
+    foreach (array_keys($route) as $member) {
+        if (!in_array($member, ['id', 'operation', 'mode', 'entry'], true)) {
+            return null;
+        }
+    }
+    $id = $route['id'] ?? null;
+    if (!is_string($id) || preg_match('/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/', $id) !== 1) {
+        return null;
+    }
+    $operation = $route['operation'] ?? null;
+    if (!is_string($operation) || preg_match('/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/', $operation) !== 1) {
+        return null;
+    }
+    $mode = $route['mode'] ?? null;
+    if ($mode !== 'managed' && $mode !== 'checked') {
+        return null;
+    }
+    $entry = null;
+    if (array_key_exists('entry', $route) && $route['entry'] !== null) {
+        if ($mode !== 'checked' || !is_array($route['entry'])) {
+            return null;
+        }
+        foreach (array_keys($route['entry']) as $member) {
+            if (!in_array($member, ['fqn', 'method'], true)) {
+                return null;
+            }
+        }
+        $fqn = $route['entry']['fqn'] ?? null;
+        $method = $route['entry']['method'] ?? null;
+        if (!is_string($fqn) || preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,7}$/', $fqn) !== 1) {
+            return null;
+        }
+        if (!is_string($method) || preg_match('/^[a-z][A-Za-z0-9_]{0,63}$/', $method) !== 1) {
+            return null;
+        }
+        $entry = ['fqn' => $fqn, 'method' => $method];
+    } elseif ($mode === 'checked') {
+        return null;
+    }
+    return ['id' => $id, 'operation' => $operation, 'mode' => $mode, 'entry' => $entry];
+}
+
+/**
+ * Validate one parsed observed-routes evidence document (the checked
+ * route mode's scanner evidence). Returns the normalized document, or
+ * null when it is not the accepted contract.
+ */
+function php_validate_routes_evidence(mixed $document): ?array
+{
+    if (!is_array($document)
+        || ($document['schemaVersion'] ?? null) !== PHP_ROUTES_EVIDENCE_SCHEMA_VERSION
+        || ($document['identity'] ?? null) !== PHP_ROUTES_EVIDENCE_IDENTITY) {
+        return null;
+    }
+    foreach (array_keys($document) as $member) {
+        if (!in_array($member, ['schemaVersion', 'identity', 'projectId', 'irDigest', 'routesInputDigest', 'producer', 'sources', 'routes'], true)) {
+            return null;
+        }
+    }
+    $projectId = $document['projectId'] ?? null;
+    if (!is_string($projectId) || preg_match('/^[a-z][a-z0-9_]*$/', $projectId) !== 1) {
+        return null;
+    }
+    foreach (['irDigest', 'routesInputDigest'] as $digest) {
+        if (!is_sha256_digest($document[$digest] ?? null)) {
+            return null;
+        }
+    }
+    $producer = $document['producer'] ?? null;
+    if (!is_array($producer)) {
+        return null;
+    }
+    foreach (array_keys($producer) as $member) {
+        if (!in_array($member, ['tool', 'version', 'receiptPath', 'receiptDigest'], true)) {
+            return null;
+        }
+    }
+    if (!is_string($producer['tool'] ?? null) || preg_match('/^[a-z][a-z0-9-]{0,31}$/', (string) $producer['tool']) !== 1) {
+        return null;
+    }
+    if (!is_string($producer['version'] ?? null) || preg_match('/^[0-9]+\.[0-9]+\.[0-9]+$/', (string) $producer['version']) !== 1) {
+        return null;
+    }
+    if (array_key_exists('receiptPath', $producer)
+        && (!is_string($producer['receiptPath']) || preg_match('/^[.a-z][a-z0-9_\/.-]*\.json$/', (string) $producer['receiptPath']) !== 1)) {
+        return null;
+    }
+    if (array_key_exists('receiptDigest', $producer) && !is_sha256_digest($producer['receiptDigest'])) {
+        return null;
+    }
+    $sources = $document['sources'] ?? null;
+    if (!is_array($sources) || $sources === [] || count($sources) > 4096) {
+        return null;
+    }
+    $normalizedSources = [];
+    foreach ($sources as $source) {
+        if (!is_array($source)) {
+            return null;
+        }
+        foreach (array_keys($source) as $member) {
+            if (!in_array($member, ['path', 'digest'], true)) {
+                return null;
+            }
+        }
+        $path = $source['path'] ?? null;
+        if (!is_string($path) || preg_match('/^[a-z][a-z0-9_\/.-]*\.php$/', (string) $path) !== 1) {
+            return null;
+        }
+        if (!is_sha256_digest($source['digest'] ?? null)) {
+            return null;
+        }
+        $normalizedSources[] = ['path' => $path, 'digest' => $source['digest']];
+    }
+    $routes = $document['routes'] ?? null;
+    if (!is_array($routes) || $routes === [] || count($routes) > 4096) {
+        return null;
+    }
+    $normalizedRoutes = [];
+    foreach ($routes as $route) {
+        $record = php_validate_observed_route($route);
+        if ($record === null) {
+            return null;
+        }
+        $normalizedRoutes[] = $record;
+    }
+    return [
+        'projectId' => $projectId,
+        'irDigest' => $document['irDigest'],
+        'routesInputDigest' => $document['routesInputDigest'],
+        'producer' => $producer,
+        'sources' => $normalizedSources,
+        'routes' => $normalizedRoutes,
+    ];
+}
+
+/** One observed route row of the scanner evidence. */
+function php_validate_observed_route(mixed $route): ?array
+{
+    if (!is_array($route)) {
+        return null;
+    }
+    foreach (array_keys($route) as $member) {
+        if (!in_array($member, ['method', 'uri', 'name', 'action', 'path', 'digest', 'middleware'], true)) {
+            return null;
+        }
+    }
+    $method = $route['method'] ?? null;
+    if (!is_string($method) || !in_array($method, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'], true)) {
+        return null;
+    }
+    $uri = $route['uri'] ?? null;
+    if (!is_string($uri) || preg_match('#^/[A-Za-z0-9_{}/-]*$#', (string) $uri) !== 1) {
+        return null;
+    }
+    $name = $route['name'] ?? null;
+    if (!is_string($name) || strlen($name) > 192 || preg_match('/^[a-zA-Z0-9._-]*$/', (string) $name) !== 1) {
+        return null;
+    }
+    $action = $route['action'] ?? null;
+    if (!is_string($action) || preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,7}@[a-z][A-Za-z0-9_]{0,63}$/', (string) $action) !== 1) {
+        return null;
+    }
+    $path = $route['path'] ?? null;
+    if (!is_string($path) || preg_match('/^[A-Za-z][A-Za-z0-9_\/.-]*\.php$/', (string) $path) !== 1) {
+        return null;
+    }
+    if (!is_sha256_digest($route['digest'] ?? null)) {
+        return null;
+    }
+    $middleware = [];
+    if (array_key_exists('middleware', $route)) {
+        if (!is_array($route['middleware']) || count($route['middleware']) > 8) {
+            return null;
+        }
+        foreach ($route['middleware'] as $spelling) {
+            if (!is_string($spelling) || $spelling === '' || strlen($spelling) > 128 || preg_match('/^[A-Za-z][A-Za-z0-9:_.-]*$/', (string) $spelling) !== 1) {
+                return null;
+            }
+            $middleware[] = $spelling;
+        }
+        $sorted = $middleware;
+        sort($sorted, SORT_STRING);
+        if ($middleware !== $sorted) {
+            return null;
+        }
+    }
+    return [
+        'method' => $method,
+        'uri' => $uri,
+        'name' => $name,
+        'action' => $action,
+        'path' => $path,
+        'digest' => $route['digest'],
+        'middleware' => $middleware,
+    ];
+}
+
+/** The parsed observed routes evidence, or null when absent/corrupt. */
+function php_read_routes_evidence(): ?array
+{
+    $text = read_view_file(PHP_ROUTES_EVIDENCE_PATH);
+    if ($text === null) {
+        return null;
+    }
+    try {
+        $document = json_decode($text, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return null;
+    }
+    return php_validate_routes_evidence($document);
+}
+
+// ----- bundled compiler module: route-map.php -----
+
+
+/**
+ * The routes mapper (issue #60): the validated routes input joined with
+ * the staged evidence — the compiled IR, the canonical transport-http
+ * attachment, the OpenAPI projection, and the bound operations input —
+ * becomes the deterministic route inventory. Pure: no filesystem, no
+ * clock, no environment. A record the authorities cannot join is a
+ * typed finding, never a guessed route; the whole run refuses before
+ * any emission when any finding exists.
+ *
+ * Method, path, parameters, body, success and error projections,
+ * security, headers, and scenario links come verbatim from the IR and
+ * the transport attachment. The error envelope members (category, code,
+ * public payload members) come from the OpenAPI projection of the same
+ * join — the emitted boundary and the published document are one
+ * projection by construction, and the digests are pinned in the
+ * custody sidecar.
+ */
+
+/** The closed HTTP methods the route layer registers. */
+const PHP_ROUTES_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+
+/**
+ * Map the routes inventory. `$context` is `{input, definitions,
+ * typesIndex, operationsInput, transport, transportDigest, openapi,
+ * irDigest, namespacePrefix}`. Returns `{state, findings, routes}`;
+ * every route row carries the decode plan, the envelope table, the
+ * emitted-class identities, and the exported links.
+ */
+function php_map_routes(array $context): array
+{
+    $findings = [];
+    $addFinding = static function (string $code, string $semanticId, string $detail) use (&$findings): void {
+        $findings[] = ['code' => $code, 'semanticId' => $semanticId, 'detail' => $detail];
+    };
+    $input = $context['input'];
+    $definitions = $context['definitions'];
+    $transport = $context['transport'];
+    $openapi = $context['openapi'];
+
+    // The evidence joins: the attachment must bind these exact IR bytes,
+    // and the OpenAPI projection must be the render of the same join.
+    $transportIrDigest = (string) ($transport['irRef']['digest'] ?? '');
+    if ($transportIrDigest !== $context['irDigest']) {
+        $addFinding('routes.transport-ir-mismatch', 'php-routes', 'the transport attachment binds different IR bytes than the staged evidence');
+    }
+    if (!is_array($openapi)) {
+        $addFinding('routes.openapi-unbound', 'php-routes', 'the staged OpenAPI projection is missing; the routes boundary and the published document must be one projection');
+    } else {
+        $provenance = is_array($openapi['x-lekalo-provenance'] ?? null) ? $openapi['x-lekalo-provenance'] : [];
+        $openapiIr = (string) ($provenance['irRef']['digest'] ?? '');
+        if ($openapiIr !== $context['irDigest']) {
+            $addFinding('routes.openapi-ir-mismatch', 'php-routes', 'the OpenAPI projection renders different IR bytes than the staged evidence');
+        }
+        $openapiTransport = (string) ($provenance['transportRef']['digest'] ?? '');
+        if ($openapiTransport !== $context['transportDigest']) {
+            $addFinding('routes.openapi-transport-mismatch', 'php-routes', 'the OpenAPI projection renders a different transport attachment than the staged evidence');
+        }
+    }
+
+    // The middleware scheme index (declared in the input policy).
+    $middlewareByScheme = [];
+    foreach ($input['middleware'] as $binding) {
+        $middlewareByScheme[$binding['scheme']] = $binding['middleware'];
+    }
+
+    // The operations input index: the handlers the wrappers invoke.
+    $operationsById = [];
+    foreach (($context['operationsInput']['operations'] ?? []) as $record) {
+        $operationsById[(string) $record['id']] = $record;
+    }
+    $operationsPrefix = (string) ($context['operationsInput']['namespacePrefix'] ?? '');
+
+    // The OpenAPI error-envelope index: one entry per declared error id
+    // with its category, LEK-ERR code, and public payload members.
+    $errorEnvelopeIndex = is_array($openapi) ? php_routes_error_envelope_index($openapi) : [];
+
+    $routes = [];
+    /** @var array<string, true> $claimedFqns */
+    $claimedFqns = [];
+    /** @var array<string, true> $claimedPaths */
+    $claimedPaths = [];
+    foreach ($input['routes'] as $record) {
+        $mapped = php_routes_map_record(
+            $record,
+            $context,
+            $definitions,
+            $transport,
+            $operationsById,
+            $operationsPrefix,
+            $middlewareByScheme,
+            $errorEnvelopeIndex,
+            $addFinding,
+        );
+        if ($mapped === null) {
+            continue;
+        }
+        foreach ($mapped['artifacts'] as $artifact) {
+            $fqnKey = strtolower((string) $artifact['fqn']);
+            $pathKey = strtolower((string) $artifact['path']);
+            if (isset($claimedFqns[$fqnKey]) || isset($claimedPaths[$pathKey])) {
+                $addFinding('routes.naming-collision', $mapped['id'], 'the name or path of one emitted route class is claimed twice');
+                continue 2;
+            }
+            $claimedFqns[$fqnKey] = true;
+            $claimedPaths[$pathKey] = true;
+        }
+        $routes[] = $mapped;
+    }
+    if ($findings !== []) {
+        return ['state' => 'unsupported', 'findings' => php_routes_sort_findings($findings)];
+    }
+    return ['state' => 'mapped', 'findings' => [], 'routes' => $routes];
+}
+
+/**
+ * The OpenAPI error-envelope index: every `components.schemas` entry
+ * carrying an `x-lekalo-symbol` error id and the canonical envelope
+ * constants contributes `{category, code, payload[]}`. The projection
+ * is the authority; an error the projection never rendered cannot be
+ * mapped by the boundary.
+ */
+function php_routes_error_envelope_index(array $openapi): array
+{
+    $index = [];
+    foreach (($openapi['components']['schemas'] ?? []) as $schema) {
+        if (!is_array($schema)) {
+            continue;
+        }
+        $symbol = $schema['x-lekalo-symbol'] ?? null;
+        $error = is_array($schema['properties']['error']['properties'] ?? null)
+            ? $schema['properties']['error']['properties']
+            : null;
+        if (!is_string($symbol) || $error === null) {
+            continue;
+        }
+        $category = $error['category']['const'] ?? null;
+        $code = $error['code']['const'] ?? null;
+        $payload = is_array($error['payload']['properties'] ?? null) ? $error['payload']['properties'] : [];
+        if (!is_string($category) || !is_string($code)) {
+            continue;
+        }
+        $index[$symbol] = [
+            'category' => $category,
+            'code' => $code,
+            'payload' => array_keys($payload),
+        ];
+    }
+    return $index;
+}
+
+/**
+ * Map one route record. Returns null after recording a finding for any
+ * unjoinable declaration.
+ *
+ * @param callable(string, string, string): void $addFinding
+ * @return array<string, mixed>|null
+ */
+function php_routes_map_record(
+    array $record,
+    array $context,
+    array $definitions,
+    array $transport,
+    array $operationsById,
+    string $operationsPrefix,
+    array $middlewareByScheme,
+    array $errorEnvelopeIndex,
+    callable $addFinding,
+): ?array {
+    $id = (string) $record['id'];
+    $operation = (string) $record['operation'];
+    $mode = (string) $record['mode'];
+
+    // The endpoint authority: the compiled IR.
+    $endpoint = is_array($definitions[$id] ?? null) ? $definitions[$id] : null;
+    if ($endpoint === null || ($endpoint['kind'] ?? null) !== 'endpoint') {
+        $addFinding('routes.endpoint-unresolved', $id, 'the route id is not a compiled IR endpoint definition');
+        return null;
+    }
+    if ((string) ($endpoint['invokes'] ?? '') !== $operation) {
+        $addFinding('routes.invokes-mismatch', $id, 'the endpoint invokes a different operation than the record declares');
+        return null;
+    }
+    $operationDefinition = is_array($definitions[$operation] ?? null) ? $definitions[$operation] : null;
+    $operationKind = $operationDefinition === null ? '' : (string) ($operationDefinition['kind'] ?? '');
+    if ($operationKind !== 'command' && $operationKind !== 'query') {
+        $addFinding('routes.operation-unresolved', $id, 'the invoked operation is not a compiled command or query definition');
+        return null;
+    }
+    // Mode/entry pairing.
+    if (($mode === 'checked') !== (is_array($record['entry'] ?? null))) {
+        $addFinding('routes.entry-required', $id, $mode === 'checked'
+            ? 'a checked record declares its existing controller entrypoint'
+            : 'a managed record never declares a foreign entrypoint');
+        return null;
+    }
+    // The wire authority: the transport attachment binding.
+    $binding = null;
+    foreach ((array) ($transport['endpoints'] ?? []) as $candidate) {
+        if (is_array($candidate) && ($candidate['endpoint'] ?? null) === $id) {
+            $binding = $candidate;
+            break;
+        }
+    }
+    if ($binding === null) {
+        $addFinding('routes.transport-unbound', $id, 'the transport attachment binds no wire surface for this endpoint');
+        return null;
+    }
+    $method = (string) ($endpoint['method'] ?? '');
+    if (!in_array($method, PHP_ROUTES_METHODS, true)) {
+        $addFinding('routes.method-unsupported', $id, 'the endpoint method is outside the closed route-layer vocabulary');
+        return null;
+    }
+    $pathTemplate = (string) ($endpoint['path'] ?? '');
+    if ($pathTemplate === '' || $pathTemplate[0] !== '/') {
+        $addFinding('routes.path-invalid', $id, 'the endpoint path template is not an absolute route template');
+        return null;
+    }
+    // The handler authority: the bound operations input record.
+    $operationRecord = $operationsById[$operation] ?? null;
+    if ($operationRecord === null) {
+        $addFinding('routes.operation-unbound', $id, 'the invoked operation has no record in the bound operations input');
+        return null;
+    }
+    $entry = php_routes_entry_of($operationRecord, $operationsPrefix, $context['typesIndex'], $context['definitions']);
+    if ($entry === null) {
+        $addFinding('routes.operation-unbound', $id, 'the operation record carries no joinable typed entrypoint');
+        return null;
+    }
+
+    // Naming: one thin controller per governed route, named by the
+    // endpoint stem; the typed request binding exists for
+    // body-carrying managed routes.
+    $module = php_types_module_of($id);
+    $endpointStem = php_types_stem_of($id, 'plain');
+    $controllerClass = $endpointStem . 'Controller';
+    $controllerFqn = $context['namespacePrefix'] . '\\' . ucfirst($module) . '\\' . $controllerClass;
+    $controllerPath = PHP_ROUTES_GENERATED_ROOT . '/' . php_types_path_of($module, $controllerClass);
+    $operationId = (string) ($binding['operationId'] ?? php_routes_camel_of($id));
+    $request = null;
+    if (is_array($binding['body'] ?? null) && $mode === 'managed') {
+        $requestClass = $endpointStem . 'Request';
+        $request = [
+            'fqn' => $context['namespacePrefix'] . '\\' . ucfirst($module) . '\\' . $requestClass,
+            'path' => PHP_ROUTES_GENERATED_ROOT . '/' . php_types_path_of($module, $requestClass),
+        ];
+    }
+
+    // The middleware attach: only an input-declared scheme mapping
+    // attaches middleware; the framework default is never guessed.
+    $middleware = [];
+    foreach ((array) ($binding['auth']['schemes'] ?? []) as $scheme) {
+        $spelling = $middlewareByScheme[(string) $scheme] ?? null;
+        if ($spelling !== null && !in_array((string) $spelling, $middleware, true)) {
+            $middleware[] = (string) $spelling;
+        }
+    }
+    sort($middleware, SORT_STRING);
+
+    // The decode plan: typed path parameters plus the body projection.
+    $decode = php_routes_decode_plan($binding, $operationDefinition, $context['typesIndex'], $context['definitions'], $addFinding, $id);
+    if ($decode === null) {
+        return null;
+    }
+
+    // The declared error table with its envelope constants.
+    $errors = [];
+    foreach ((array) ($binding['errors'] ?? []) as $declared) {
+        $errorId = (string) ($declared['error'] ?? '');
+        $envelope = $errorEnvelopeIndex[$errorId] ?? null;
+        if ($envelope === null) {
+            $addFinding('routes.openapi-error-unbound', $id, "the declared error `{$errorId}` has no envelope constants in the OpenAPI projection");
+            return null;
+        }
+        $errors[] = [
+            'error' => $errorId,
+            'status' => (int) ($declared['status'] ?? 0),
+            'category' => $envelope['category'],
+            'code' => $envelope['code'],
+            'payload' => $envelope['payload'],
+            // The validation-category error is produced by the request
+            // binding refusal, never by a handler catch: its `field`
+            // payload member lives on the refusal.
+            'refusal' => $envelope['category'] === 'validation',
+        ];
+    }
+    usort($errors, static fn (array $left, array $right): int => strcmp($left['error'], $right['error']));
+    // The validation binding: a body-carrying managed route declares its
+    // validation-category error exactly once — the typed refusal of the
+    // request binding maps there, never to an invented id.
+    $validationError = null;
+    if (is_array($binding['body'] ?? null) && $mode === 'managed') {
+        foreach ($errors as $error) {
+            if ($error['category'] === 'validation') {
+                if ($validationError !== null) {
+                    $addFinding('routes.validation-ambiguous', $id, 'the route declares more than one validation-category error');
+                    return null;
+                }
+                $validationError = (string) $error['error'];
+            }
+        }
+        if ($validationError === null) {
+            $addFinding('routes.validation-unbound', $id, 'a body-carrying route declares no validation-category error; the decode refusal has no declared mapping');
+            return null;
+        }
+    }
+    // The payload members of every declared error must resolve: the
+    // `field` member of a validation error comes from the request
+    // refusal, every other member is a typed operation input member.
+    foreach ($errors as $error) {
+        foreach ($error['payload'] as $member) {
+            if ($member === 'field' && $error['category'] === 'validation') {
+                continue;
+            }
+            if (php_routes_field_type($member, $operationDefinition, $context['typesIndex'], $context['definitions']) === null) {
+                $addFinding('routes.payload-unresolved', $id, "the payload member `{$member}` of `{$error['error']}` does not resolve to a typed input member");
+                return null;
+            }
+        }
+    }
+    $defaultsBinding = is_array($binding['errorDefaults'] ?? null) ? $binding['errorDefaults'] : [];
+    $errorDefaults = [];
+    foreach (['validation', 'auth', 'conflict', 'not-found', 'domain', 'infrastructure'] as $category) {
+        $errorDefaults[$category] = (int) ($defaultsBinding[$category] ?? 0);
+    }
+
+    $success = is_array($binding['success'] ?? null) ? $binding['success'] : [];
+    $auth = is_array($binding['auth'] ?? null) ? [
+        'actor' => (string) $binding['auth']['actor'],
+        'schemes' => array_map('strval', (array) ($binding['auth']['schemes'] ?? [])),
+        'policyRef' => isset($binding['auth']['policyRef']) ? (string) $binding['auth']['policyRef'] : null,
+    ] : null;
+
+    $artifacts = [];
+    if ($mode === 'managed') {
+        $artifacts[] = ['path' => $controllerPath, 'fqn' => $controllerFqn];
+        if ($request !== null) {
+            $artifacts[] = ['path' => $request['path'], 'fqn' => $request['fqn']];
+        }
+    }
+
+    return [
+        'id' => $id,
+        'operation' => $operation,
+        'operationKind' => $operationKind,
+        'operationId' => $operationId,
+        'mode' => $mode,
+        'method' => $method,
+        'pathTemplate' => $pathTemplate,
+        'name' => $operationId,
+        'controller' => ['fqn' => $controllerFqn, 'path' => $controllerPath, 'action' => $operationId],
+        'request' => $request,
+        'entry' => $entry,
+        'middleware' => $middleware,
+        'success' => [
+            'status' => (int) ($success['status'] ?? 0),
+            'bodyMode' => isset($success['body']['mode']) ? (string) $success['body']['mode'] : null,
+        ],
+        'errors' => $errors,
+        'errorDefaults' => $errorDefaults,
+        'validationError' => $validationError,
+        'auth' => $auth,
+        'idempotency' => is_array($binding['idempotency'] ?? null) ? [
+            'header' => (string) $binding['idempotency']['header'],
+            'required' => (bool) $binding['idempotency']['required'],
+        ] : null,
+        'correlation' => is_array($binding['correlation'] ?? null) ? [
+            'headers' => array_map('strval', (array) ($binding['correlation']['headers'] ?? [])),
+        ] : null,
+        'scenarios' => array_map('strval', (array) ($binding['scenarios'] ?? [])),
+        'decode' => $decode,
+        'links' => array_filter([
+            'endpoint' => $id,
+            'operation' => $operation,
+            'controller' => $mode === 'managed' ? $controllerFqn : null,
+            'request' => $request['fqn'] ?? null,
+            'scenarios' => array_map('strval', (array) ($binding['scenarios'] ?? [])),
+            'openapiPointer' => '/paths/' . php_routes_escape_pointer($pathTemplate) . '/' . strtolower($method),
+        ], static fn (mixed $value): bool => $value !== null),
+        'artifacts' => $artifacts,
+    ];
+}
+
+/**
+ * The invoked operation entrypoint: managed and scaffold operations
+ * derive the generated handler spelling; checked and custom operations
+ * carry the declared existing entry. The typed input identity joins the
+ * #58 inventory (commands) or the operations family namespace
+ * (queries).
+ *
+ * @return array{fqn: string, method: string, inputFqn: string}|null
+ */
+function php_routes_entry_of(array $operationRecord, string $operationsPrefix, array $typesIndex, array $definitions): ?array
+{
+    $id = (string) $operationRecord['id'];
+    $module = php_types_module_of($id);
+    $stem = php_types_stem_of($id, 'plain');
+    $inputFqn = php_routes_entry_input_fqn($operationRecord, $operationsPrefix, $typesIndex);
+    if ($inputFqn === null) {
+        return null;
+    }
+    $mode = (string) $operationRecord['mode'];
+    if (in_array($mode, ['managed', 'scaffold-once'], true)) {
+        return [
+            'fqn' => $operationsPrefix . '\\' . ucfirst($module) . '\\' . $stem . 'Handler',
+            'method' => 'handle',
+            'inputFqn' => $inputFqn,
+        ];
+    }
+    $entry = is_array($operationRecord['entry'] ?? null) ? $operationRecord['entry'] : null;
+    if ($entry === null) {
+        return null;
+    }
+    return ['fqn' => (string) $entry['fqn'], 'method' => (string) $entry['method'], 'inputFqn' => $inputFqn];
+}
+
+/**
+ * The typed input FQN of one operation record (sidecar-neutral helper
+ * of `php_routes_entry_of`).
+ */
+function php_routes_entry_input_fqn(array $operationRecord, string $operationsPrefix, array $typesIndex): ?string
+{
+    $id = (string) $operationRecord['id'];
+    $module = php_types_module_of($id);
+    $stem = php_types_stem_of($id, 'plain');
+    if ((string) $operationRecord['kind'] === 'command') {
+        $inputFqn = is_array($typesIndex[$id] ?? null) ? (string) ($typesIndex[$id]['fqn'] ?? '') : '';
+        return $inputFqn === '' ? null : $inputFqn;
+    }
+    return $operationsPrefix . '\\' . ucfirst($module) . '\\' . $stem . 'Input';
+}
+
+/**
+ * The decode plan of one binding: typed path parameters plus the body
+ * mode. The parameter and body field types resolve through the mapped
+ * type inventory — an unresolvable field is a finding, never a loose
+ * array.
+ *
+ * @param callable(string, string, string): void $addFinding
+ * @return array<string, mixed>|null
+ */
+function php_routes_decode_plan(array $binding, array $operationDefinition, array $typesIndex, array $definitions, callable $addFinding, string $routeId): ?array
+{
+    $params = [];
+    foreach ((array) ($binding['params'] ?? []) as $param) {
+        $type = php_routes_field_type($param['field'] ?? null, $operationDefinition, $typesIndex, $definitions);
+        if ($type === null) {
+            $addFinding('routes.field-unresolved', $routeId, 'a declared parameter field does not resolve to a typed operation input member');
+            return null;
+        }
+        $params[] = [
+            'name' => (string) $param['name'],
+            'in' => (string) $param['in'],
+            'field' => (string) $param['field'],
+            'required' => (bool) ($param['required'] ?? false),
+            'type' => $type,
+        ];
+    }
+    $body = null;
+    if (is_array($binding['body'] ?? null)) {
+        $fields = [];
+        foreach ((array) ($binding['body']['fields'] ?? []) as $field) {
+            $type = php_routes_field_type($field['field'] ?? null, $operationDefinition, $typesIndex, $definitions);
+            if ($type === null) {
+                $addFinding('routes.field-unresolved', $routeId, 'a declared body field does not resolve to a typed operation input member');
+                return null;
+            }
+            $fields[] = [
+                'name' => (string) $field['name'],
+                'field' => (string) $field['field'],
+                'required' => (bool) ($field['required'] ?? false),
+                'type' => $type,
+            ];
+        }
+        $body = ['mode' => (string) $binding['body']['mode'], 'fields' => $fields];
+    }
+    return ['params' => $params, 'body' => $body];
+}
+
+/**
+ * The mapped type identity of one declared field reference
+ * (`input.<name>` for command inputs): the FQN rides the #58 mapped
+ * inventory, the wire kind rides the compiled IR definition.
+ *
+ * @return array{ref: string, fqn: string, kind: string, base: string}|null
+ */
+function php_routes_field_type(mixed $field, array $operationDefinition, array $typesIndex, array $definitions): ?array
+{
+    if (!is_string($field) || $field === '') {
+        return null;
+    }
+    $member = str_starts_with($field, 'input.') ? substr($field, 6) : $field;
+    foreach ((array) ($operationDefinition['input'] ?? []) as $inputField) {
+        if (!is_array($inputField) || ($inputField['name'] ?? null) !== $member) {
+            continue;
+        }
+        $ref = $inputField['type']['ref'] ?? null;
+        if (!is_string($ref)) {
+            return null;
+        }
+        $entry = is_array($typesIndex[$ref] ?? null) ? $typesIndex[$ref] : null;
+        $definition = is_array($definitions[$ref] ?? null) ? $definitions[$ref] : null;
+        if ($entry === null || $definition === null) {
+            return null;
+        }
+        return [
+            'ref' => $ref,
+            'fqn' => (string) $entry['fqn'],
+            'kind' => (string) ($definition['kind'] ?? ''),
+            'base' => (string) ($definition['base'] ?? ''),
+        ];
+    }
+    return null;
+}
+
+/** The deterministic camel spelling of the default operation id. */
+function php_routes_camel_of(string $semanticId): string
+{
+    $parts = preg_split('/[._]/', $semanticId) ?: [];
+    $camel = array_shift($parts) ?? '';
+    foreach ($parts as $part) {
+        $camel .= ucfirst($part);
+    }
+    return $camel;
+}
+
+/** The RFC 6901 pointer escape of one path-template token. */
+function php_routes_escape_pointer(string $template): string
+{
+    return str_replace(['~', '/'], ['~0', '~1'], $template);
+}
+
+/** Findings sort deterministically by semantic id, then code. */
+function php_routes_sort_findings(array $findings): array
+{
+    usort($findings, static function (array $left, array $right): int {
+        return [$left['semanticId'], $left['code']] <=> [$right['semanticId'], $right['code']];
+    });
+    return $findings;
+}
+
+/**
+ * The checked-route join (issue #60): the declared surface of every
+ * checked record joins against the observed routes evidence. Absent
+ * evidence is a finding for every declared id; a stale controller
+ * digest, a foreign method/uri/name/action, or a partial record is a
+ * typed finding — never a pass, never a silent rewrite. No write ever
+ * results.
+ *
+ * @param array $records the checked route records of the validated input
+ * @param array $mappedRoutes the mapped route rows by endpoint id
+ * @param array $definitions the IR evidence definitions by id
+ * @param array|null $evidence the parsed observed routes evidence
+ * @param array $input the validated routes input
+ * @param string $inputDigest the digest of the exact input bytes
+ * @param callable(string): ?string $digestAt the source digest probe
+ * @return list<array{code: string, semanticId: string, detail: string}>
+ */
+function php_routes_check_bindings(
+    array $records,
+    array $mappedRoutes,
+    array $definitions,
+    ?array $evidence,
+    array $input,
+    string $inputDigest,
+    callable $digestAt,
+): array {
+    $findings = [];
+    if ($evidence === null) {
+        foreach ($records as $record) {
+            $findings[] = [
+                'code' => 'routes.binding-missing',
+                'semanticId' => (string) $record['id'],
+                'detail' => 'the observed routes evidence is absent; a checked route never passes without scanner evidence',
+            ];
+        }
+        return $findings;
+    }
+    // The evidence binds these exact IR and input bytes; a stale pin
+    // makes every record unknown.
+    if ($evidence['irDigest'] !== $input['irDigest'] || $evidence['routesInputDigest'] !== $inputDigest) {
+        foreach ($records as $record) {
+            $findings[] = [
+                'code' => 'routes.binding-stale',
+                'semanticId' => (string) $record['id'],
+                'detail' => 'the observed routes evidence pins different IR or input bytes',
+            ];
+        }
+        return $findings;
+    }
+    /** @var array<string, list<array>> $byRoute the observed rows keyed by (method, uri) */
+    $byMethodUri = [];
+    foreach ($evidence['routes'] as $row) {
+        $byMethodUri[$row['method'] . ' ' . $row['uri']][] = $row;
+    }
+    foreach ($records as $record) {
+        $id = (string) $record['id'];
+        $mapped = null;
+        foreach ($mappedRoutes as $route) {
+            if ($route['id'] === $id) {
+                $mapped = $route;
+                break;
+            }
+        }
+        if ($mapped === null) {
+            $findings[] = ['code' => 'routes.binding-missing', 'semanticId' => $id, 'detail' => 'the checked record has no mapped route row'];
+            continue;
+        }
+        $entry = $record['entry'];
+        $candidates = $byMethodUri[$mapped['method'] . ' ' . $mapped['pathTemplate']] ?? [];
+        if ($candidates === []) {
+            $findings[] = [
+                'code' => 'routes.binding-missing',
+                'semanticId' => $id,
+                'detail' => 'no observed route carries the declared method and uri',
+            ];
+            continue;
+        }
+        $matches = [];
+        foreach ($candidates as $row) {
+            $action = $entry['fqn'] . '@' . $entry['method'];
+            if ($row['action'] === $action) {
+                $matches[] = $row;
+            }
+        }
+        if (count($matches) === 0) {
+            $findings[] = [
+                'code' => 'routes.binding-mismatch',
+                'semanticId' => $id,
+                'detail' => 'the observed routes carry the surface but not the declared entrypoint',
+            ];
+            continue;
+        }
+        if (count($matches) > 1) {
+            $findings[] = [
+                'code' => 'routes.binding-ambiguous',
+                'semanticId' => $id,
+                'detail' => 'more than one observed route carries the declared surface and action',
+            ];
+            continue;
+        }
+        $row = $matches[0];
+        // Current bytes: the observed digest must match the live file
+        // (the probe keeps the evidence's case-preserving native path).
+        $digest = $digestAt($row['path']);
+        if ($digest === null) {
+            $findings[] = [
+                'code' => 'routes.binding-missing',
+                'semanticId' => $id,
+                'detail' => 'the observed controller source is unreadable',
+            ];
+            continue;
+        }
+        if ($digest !== $row['digest']) {
+            $findings[] = [
+                'code' => 'routes.binding-stale',
+                'semanticId' => $id,
+                'detail' => 'the observed controller bytes diverge from the evidence digest',
+            ];
+            continue;
+        }
+        // The declared middleware attach must match the observed one.
+        $observed = $row['middleware'];
+        sort($observed, SORT_STRING);
+        if ($observed !== $mapped['middleware']) {
+            $findings[] = [
+                'code' => 'routes.binding-mismatch',
+                'semanticId' => $id,
+                'detail' => 'the observed middleware differs from the declared scheme mapping',
+            ];
+        }
+    }
+    return $findings;
+}
+
+// ----- bundled compiler module: route-emit.php -----
+
+
+/**
+ * The routes emitter (issue #60): the mapped routes inventory becomes
+ * deterministic PHP bytes — the route registrations, thin
+ * decode/delegate/encode controllers, typed request bindings, the
+ * shared envelope and validation primitives, the explicit error-to-HTTP
+ * map, the digest-bound OpenAPI projection, the classmap, and the
+ * custody sidecar. Pure: no filesystem, no clock, no environment.
+ * Identical inputs and pins emit identical bytes across roots.
+ *
+ * The controllers are thin wrappers and nothing else: they decode the
+ * transport surface into the #58 typed input, bind the actor, invoke
+ * the one operation entrypoint, encode the success projection, and map
+ * exactly the declared typed errors through the declared table. There
+ * is no catch-all: any throwable outside the declared table propagates
+ * to the application's own exception handling, unmodified.
+ */
+
+/** The file header of one emitted routes artifact. */
+function php_routes_file_header(array $context, string $namespace, string $semanticId): string
+{
+    $lines = [
+        '<?php',
+        '',
+        'declare(strict_types=1);',
+        '',
+        '// Generated by ' . ADAPTER_ID . '@' . ADAPTER_VERSION . ' (routes generator, issue #60).',
+        '// From dev.lekalo.ir@0.2.16 input ' . $context['irDigest'] . '.',
+        '// Semantic id: ' . $semanticId . '.',
+        '// Do not edit: regenerate with `lekalo generate`.',
+        '',
+        'namespace ' . $namespace . ';',
+    ];
+    return implode("\n", $lines);
+}
+
+/**
+ * Emit every artifact of one mapped routes inventory. `$input` is
+ * `{projectId, mapped, context, openapiBytes, root}`. Returns `files`;
+ * every file row carries path/text/digest/role/fqn/lifecycle.
+ */
+function php_emit_routes(array $input): array
+{
+    $context = $input['context'];
+    $mapped = $input['mapped'];
+    $root = $input['root'];
+    $namespace = $context['namespacePrefix'];
+    $files = [];
+
+    // The shared boundary primitives: the canonical envelope encoder,
+    // the typed validation refusal, and the declared error-to-HTTP map.
+    $shared = [
+        ['http-envelope.php', 'HttpEnvelope', 'envelope', php_routes_http_envelope_text($context, $namespace, (string) $context['operationsNamespacePrefix'])],
+        ['request-validation-error.php', 'RequestValidationError', 'validation-error', php_routes_validation_error_text($context, $namespace)],
+        ['error-http-map.php', 'ErrorHttpMap', 'error-map', php_routes_error_http_map_text($context, $namespace, $mapped['routes'])],
+    ];
+    foreach ($shared as [$fileName, $class, $role, $text]) {
+        $files[] = [
+            'path' => $root . '/' . $fileName,
+            'text' => $text,
+            'digest' => 'sha256:' . hash('sha256', $text),
+            'role' => $role,
+            'fqn' => $namespace . '\\' . $class,
+            'lifecycle' => 'generated',
+        ];
+    }
+
+    // The per-route wrappers: request binding plus thin controller.
+    foreach ($mapped['routes'] as $route) {
+        if ($route['mode'] !== 'managed') {
+            continue;
+        }
+        if ($route['request'] !== null) {
+            $text = php_routes_request_text($context, $namespace, $route);
+            $files[] = [
+                'path' => $route['request']['path'],
+                'text' => $text,
+                'digest' => 'sha256:' . hash('sha256', $text),
+                'role' => 'request',
+                'fqn' => $route['request']['fqn'],
+                'lifecycle' => 'generated',
+            ];
+        }
+        $text = php_routes_controller_text($context, $namespace, $route);
+        $files[] = [
+            'path' => $route['controller']['path'],
+            'text' => $text,
+            'digest' => 'sha256:' . hash('sha256', $text),
+            'role' => 'controller',
+            'fqn' => $route['controller']['fqn'],
+            'lifecycle' => 'generated',
+        ];
+    }
+
+    // The route registrations: one block per managed route, verbatim
+    // from the joined authorities. No discovery, no glob, no magic.
+    $routesText = php_routes_registrations_text($context, $mapped['routes']);
+    $files[] = [
+        'path' => $root . '/routes.php',
+        'text' => $routesText,
+        'digest' => 'sha256:' . hash('sha256', $routesText),
+        'role' => 'routes-file',
+        'lifecycle' => 'generated',
+    ];
+
+    // The OpenAPI projection: the staged evidence bytes, verbatim and
+    // digest-bound — code and document are projections of one join.
+    $openapiBytes = (string) $input['openapiBytes'];
+    $files[] = [
+        'path' => $root . '/openapi.json',
+        'text' => $openapiBytes,
+        'digest' => 'sha256:' . hash('sha256', $openapiBytes),
+        'role' => 'openapi',
+        'lifecycle' => 'generated',
+    ];
+
+    $classmapText = php_routes_classmap_text($files, $root);
+    $files[] = [
+        'path' => $root . '/classmap.php',
+        'text' => $classmapText,
+        'digest' => 'sha256:' . hash('sha256', $classmapText),
+        'role' => 'classmap',
+        'lifecycle' => 'generated',
+    ];
+
+    $sidecarText = php_routes_sidecar_text($input['projectId'], $mapped, $files, $context);
+    $files[] = [
+        'path' => $root . '/routes.map.json',
+        'text' => $sidecarText,
+        'digest' => 'sha256:' . hash('sha256', $sidecarText),
+        'role' => 'map',
+        'lifecycle' => 'generated',
+    ];
+
+    usort($files, static fn (array $left, array $right): int => strcmp((string) $left['path'], (string) $right['path']));
+    return ['files' => $files];
+}
+
+/** The canonical envelope encoder text. */
+function php_routes_http_envelope_text(array $context, string $namespace, string $operationsPrefix): string
+{
+    $actorFqn = '\\' . $operationsPrefix . '\\ActorContext';
+    $lines = [
+        php_routes_file_header($context, $namespace, 'php-routes/http-envelope'),
+        '',
+        '/**',
+        ' * The canonical-v1 wire envelope of the route boundary (issue #60).',
+        ' * The error shape is the declared identity quadruple with the public',
+        ' * payload members only; the actor binding carries the declared scope',
+        ' * dimensions of the authenticated principal.',
+        ' */',
+        'final class HttpEnvelope',
+        '{',
+        '    /**',
+        '     * The request attribute the authentication middleware binds the',
+        '     * ActorContext under. An auth-bound route without it is an',
+        '     * infrastructure misconfiguration, never an anonymous fallback.',
+        '     */',
+        "    public const ACTOR_ATTRIBUTE = 'lekalo.actor';",
+        '',
+        '    /**',
+        '     * One canonical error envelope: the declared identity members',
+        '     * plus the public payload. An empty payload stays an empty JSON',
+        '     * object, never an array.',
+        '     *',
+        '     * @param array<string, mixed> $payload',
+        '     * @return array<string, mixed>',
+        '     */',
+        '    public static function error(string $id, string $code, string $category, array $payload): array',
+        '    {',
+        "        return ['ok' => false, 'error' => ['id' => \$id, 'code' => \$code, 'category' => \$category, 'payload' => \$payload === [] ? new \\stdClass() : \$payload]];",
+        '    }',
+        '',
+        '    /**',
+        '     * The actor binding of one request: the middleware-bound context',
+        '     * on an auth-bound route, the declared anonymous context on a',
+        '     * public one.',
+        '     */',
+        '    public static function actor(\\Illuminate\\Http\\Request $request, bool $authRequired): ' . $actorFqn,
+        '    {',
+        '        if (!$authRequired) {',
+        '            return new ' . $actorFqn . "('anonymous');",
+        '        }',
+        '        $actor = $request->attributes->get(self::ACTOR_ATTRIBUTE);',
+        '        if (!$actor instanceof ' . $actorFqn . ') {',
+        "            throw new \\RuntimeException('the auth middleware never bound the actor context');",
+        '        }',
+        '        return $actor;',
+        '    }',
+        '}',
+    ];
+    return implode("\n", $lines) . "\n";
+}
+
+/** The typed validation-refusal text. */
+function php_routes_validation_error_text(array $context, string $namespace): string
+{
+    $lines = [
+        php_routes_file_header($context, $namespace, 'php-routes/request-validation-error'),
+        '',
+        '/**',
+        ' * The typed refusal of one request binding: the decoded surface',
+        ' * violates the declared decode plan. The boundary maps it to the',
+        ' * declared validation error and status — never to a guessed id.',
+        ' */',
+        'final class RequestValidationError extends \\RuntimeException',
+        '{',
+        '    /**',
+        '     * @param list<string> $fields the declared member names that',
+        '     *     refused (the failing body members or required headers)',
+        '     */',
+        '    public function __construct(',
+        '        public readonly array $fields,',
+        '    ) {',
+        "        parent::__construct('request validation: ' . implode(',', \$fields));",
+        '    }',
+        '',
+        '    /** The first refused member: the declared `field` payload. */',
+        '    public function field(): string',
+        '    {',
+        '        return $this->fields[0] ?? \'\';',
+        '    }',
+        '}',
+    ];
+    return implode("\n", $lines) . "\n";
+}
+
+/** The snake-const spelling of one semantic id for const-table names. */
+function php_routes_const_of(string $semanticId): string
+{
+    return 'TABLE_' . strtoupper((string) preg_replace('/[^A-Za-z0-9]/', '_', $semanticId));
+}
+
+/**
+ * The explicit error-to-HTTP map text: one const table per governed
+ * route with the declared status, category, and code per error id,
+ * plus the declared category defaults and the validation error id.
+ */
+function php_routes_error_http_map_text(array $context, string $namespace, array $routes): string
+{
+    $lines = [
+        php_routes_file_header($context, $namespace, 'php-routes/error-http-map'),
+        '',
+        '/**',
+        ' * The explicit error-to-HTTP projection of the governed routes',
+        ' * (issue #60): the declared per-error table and the category',
+        ' * defaults, exactly as the transport attachment and the OpenAPI',
+        ' * projection declare them. An undeclared error id is never mapped:',
+        ' * the boundary throws, and the application exception handling owns',
+        ' * the failure.',
+        ' */',
+        'final class ErrorHttpMap',
+        '{',
+    ];
+    foreach ($routes as $route) {
+        $const = php_routes_const_of((string) $route['id']);
+        $lines[] = '    private const ' . $const . ' = [';
+        foreach ($route['errors'] as $error) {
+            $lines[] = '        ' . php_types_string_literal((string) $error['error']) . ' => ['
+                . "'status' => " . (int) $error['status'] . ', '
+                . "'category' => " . php_types_string_literal((string) $error['category']) . ', '
+                . "'code' => " . php_types_string_literal((string) $error['code']) . '],';
+        }
+        $lines[] = '    ];';
+    }
+    $lines[] = '';
+    $lines[] = '    /** @var array<string, array<string, int>> */';
+    $lines[] = '    private const ROUTE_DEFAULTS = [';
+    foreach ($routes as $route) {
+        $lines[] = '        ' . php_types_string_literal((string) $route['id']) . ' => [';
+        foreach ($route['errorDefaults'] as $category => $status) {
+            $lines[] = '            ' . php_types_string_literal((string) $category) . ' => ' . (int) $status . ',';
+        }
+        $lines[] = '        ],';
+    }
+    $lines[] = '    ];';
+    $lines[] = '';
+    $lines[] = '    /** @var array<string, string> the validation-category error of every body-carrying route. */';
+    $lines[] = '    private const VALIDATION_ERRORS = [';
+    foreach ($routes as $route) {
+        if (isset($route['validationError'])) {
+            $lines[] = '        ' . php_types_string_literal((string) $route['id']) . ' => '
+                . php_types_string_literal((string) $route['validationError']) . ',';
+        }
+    }
+    $lines[] = '    ];';
+    $lines[] = '';
+    $lines[] = '    /** @var array<string, array<string, array{status: int, category: string, code: string}>> */';
+    $lines[] = '    private const ROUTE_ERRORS = [';
+    foreach ($routes as $route) {
+        $lines[] = '        ' . php_types_string_literal((string) $route['id']) . ' => self::' . php_routes_const_of((string) $route['id']) . ',';
+    }
+    $lines[] = '    ];';
+    $lines[] = '';
+    $lines[] = '    /**';
+    $lines[] = '     * One mapped domain failure: the declared envelope of one declared';
+    $lines[] = '     * error id, with the wire-encoded public payload members.';
+    $lines[] = '     *';
+    $lines[] = '     * @param array<string, mixed> $payload';
+    $lines[] = '     * @return array{ok: bool, error: array<string, mixed>}|null';
+    $lines[] = '     */';
+    $lines[] = '    public static function domain(string $endpoint, string $errorId, array $payload): ?array';
+    $lines[] = '    {';
+    $lines[] = '        $declared = self::ROUTE_ERRORS[$endpoint][$errorId] ?? null;';
+    $lines[] = '        if ($declared === null) {';
+    $lines[] = '            return null;';
+    $lines[] = '        }';
+    $lines[] = '        return HttpEnvelope::error($errorId, $declared[\'code\'], $declared[\'category\'], $payload);';
+    $lines[] = '    }';
+    $lines[] = '';
+    $lines[] = '    /** The declared HTTP status of one declared error id. */';
+    $lines[] = '    public static function status(string $endpoint, string $errorId): int';
+    $lines[] = '    {';
+    $lines[] = '        $declared = self::ROUTE_ERRORS[$endpoint][$errorId] ?? null;';
+    $lines[] = '        if ($declared === null) {';
+    $lines[] = '            throw new LogicException(\'undeclared error id: \' . $errorId);';
+    $lines[] = '        }';
+    $lines[] = '        return $declared[\'status\'];';
+    $lines[] = '    }';
+    $lines[] = '';
+    $lines[] = '    /**';
+    $lines[] = '     * One mapped validation refusal: the declared validation error of';
+    $lines[] = '     * the route and the declared validation-category status.';
+    $lines[] = '     *';
+    $lines[] = '     * @param list<string> $fields';
+    $lines[] = '     * @return array{ok: bool, error: array<string, mixed>}|null';
+    $lines[] = '     */';
+    $lines[] = '    public static function validation(string $endpoint, array $fields): ?array';
+    $lines[] = '    {';
+    $lines[] = '        $errorId = self::VALIDATION_ERRORS[$endpoint] ?? null;';
+    $lines[] = '        if ($errorId === null) {';
+    $lines[] = '            return null;';
+    $lines[] = '        }';
+    $lines[] = '        $mapped = self::domain($endpoint, $errorId, [\'field\' => $fields === [] ? \'\' : (string) $fields[0]]);';
+    $lines[] = '        return $mapped;';
+    $lines[] = '    }';
+    $lines[] = '';
+    $lines[] = '    /** The declared status of one mapped validation refusal. */';
+    $lines[] = '    public static function validationStatus(string $endpoint): int';
+    $lines[] = '    {';
+    $lines[] = '        $defaults = self::ROUTE_DEFAULTS[$endpoint] ?? [];';
+    $lines[] = '        return (int) ($defaults[\'validation\'] ?? 500);';
+    $lines[] = '    }';
+    $lines[] = '}';
+    return implode("\n", $lines) . "\n";
+}
+
+/**
+ * The wire-encoding expression of one typed value: string-backed enums
+ * spell their declared case, string-backed scalars spell their exact
+ * string, everything else spells its primitive value.
+ *
+ * @param array{ref: string, fqn: string, kind: string, base: string} $type
+ */
+function php_routes_wire_expr(array $type, string $expr): string
+{
+    if ($type['kind'] === 'enum') {
+        return $expr . '->toWire()';
+    }
+    if ($type['kind'] === 'scalar' && !in_array($type['base'], ['number', 'boolean'], true)) {
+        return $expr . '->toString()';
+    }
+    return $expr . '->value()';
+}
+
+/** The typed request-binding text of one managed body-carrying route. */
+function php_routes_request_text(array $context, string $namespace, array $route): string
+{
+    $requestFqn = (string) $route['request']['fqn'];
+    $requestNamespace = substr($requestFqn, 0, (int) strrpos($requestFqn, '\\'));
+    $requestClass = substr($requestFqn, (int) strlen($requestNamespace) + 1);
+    $inputFqn = (string) $route['entry']['inputFqn'];
+    $decode = $route['decode'];
+    $lines = [
+        php_routes_file_header($context, $requestNamespace, (string) $route['id']),
+        '',
+        '/**',
+        ' * The typed request binding of ' . $route['id'] . ': the declared',
+        ' * decode plan (path parameters, body projection) becomes the #58',
+        ' * typed input. Any refusal is the typed validation error the',
+        ' * controller maps through the declared table.',
+        ' */',
+        'final class ' . $requestClass,
+        '{',
+        '    /**',
+        '     * Decode one HTTP request into the typed operation input.',
+        '     */',
+        '    public static function fromWire(\\Illuminate\\Http\\Request $request): \\' . $inputFqn,
+        '    {',
+    ];
+    $hasParams = $decode['params'] !== [];
+    $hasExplicitBody = $decode['body'] !== null && $decode['body']['mode'] === 'explicit';
+    $isWholeBody = $decode['body'] !== null && $decode['body']['mode'] === 'whole-input';
+    // The declared required headers are part of the decode plan: the
+    // projection documents them, so the binding enforces them.
+    $requiredHeaders = [];
+    if (($route['idempotency']['required'] ?? false) === true) {
+        $requiredHeaders[] = (string) $route['idempotency']['header'];
+    }
+    foreach ($requiredHeaders as $header) {
+        $lines[] = '        if ($request->header(' . php_types_string_literal($header) . ') === null) {';
+        $lines[] = '            throw new \\Lekalo\\Generated\\Routes\\RequestValidationError([' . php_types_string_literal($header) . ']);';
+        $lines[] = '        }';
+    }
+    if ($isWholeBody) {
+        $lines[] = '        $wire = $request->json()->all();';
+        $lines[] = '        if (!is_array($wire)) {';
+        $lines[] = "            throw new \\Lekalo\\Generated\\Routes\\RequestValidationError(['body']);";
+        $lines[] = '        }';
+    } else {
+        $lines[] = '        $wire = [];';
+        if ($hasParams) {
+            $lines[] = '        $route = $request->route();';
+        }
+        foreach ($decode['params'] as $param) {
+            $member = php_routes_input_member_of((string) $param['field']);
+            $lines[] = '        $wire[' . php_types_string_literal($member) . '] = $route->parameter(' . php_types_string_literal((string) $param['name']) . ');';
+        }
+        if ($hasExplicitBody) {
+            $lines[] = '        $body = $request->json()->all();';
+            $lines[] = '        if (!is_array($body)) {';
+            $lines[] = "            throw new \\Lekalo\\Generated\\Routes\\RequestValidationError(['body']);";
+            $lines[] = '        }';
+            foreach ($decode['body']['fields'] as $field) {
+                $member = php_routes_input_member_of((string) $field['field']);
+                if ((bool) $field['required']) {
+                    $lines[] = '        if (!array_key_exists(' . php_types_string_literal((string) $field['name']) . ', $body)) {';
+                    $lines[] = '            throw new \\Lekalo\\Generated\\Routes\\RequestValidationError([' . php_types_string_literal((string) $field['name']) . ']);';
+                    $lines[] = '        }';
+                    $lines[] = '        $wire[' . php_types_string_literal($member) . '] = $body[' . php_types_string_literal((string) $field['name']) . '];';
+                } else {
+                    $lines[] = '        if (array_key_exists(' . php_types_string_literal((string) $field['name']) . ', $body)) {';
+                    $lines[] = '            $wire[' . php_types_string_literal($member) . '] = $body[' . php_types_string_literal((string) $field['name']) . '];';
+                    $lines[] = '        }';
+                }
+            }
+        }
+    }
+    $lines[] = '        try {';
+    $lines[] = '            return \\' . $inputFqn . 'Codec::decode($wire);';
+    $lines[] = '        } catch (\\InvalidArgumentException $failure) {';
+    $lines[] = '            throw new \\Lekalo\\Generated\\Routes\\RequestValidationError([], $failure);';
+    $lines[] = '        }';
+    $lines[] = '    }';
+    $lines[] = '}';
+    return implode("\n", $lines) . "\n";
+}
+
+/** The typed input member of one declared field reference. */
+function php_routes_input_member_of(string $field): string
+{
+    return str_starts_with($field, 'input.') ? substr($field, 6) : $field;
+}
+
+/** The thin controller text of one managed route. */
+function php_routes_controller_text(array $context, string $namespace, array $route): string
+{
+    $controllerFqn = (string) $route['controller']['fqn'];
+    $controllerNamespace = substr($controllerFqn, 0, (int) strrpos($controllerFqn, '\\'));
+    $controllerClass = substr($controllerFqn, (int) strlen($controllerNamespace) + 1);
+    $action = (string) $route['controller']['action'];
+    $entryFqn = (string) $route['entry']['fqn'];
+    $inputFqn = (string) $route['entry']['inputFqn'];
+    $routeId = (string) $route['id'];
+    $authRequired = $route['auth'] !== null;
+    $errorBase = (string) $context['operationsNamespacePrefix'];
+    $isCommand = $route['operationKind'] === 'command';
+
+    $lines = [
+        php_routes_file_header($context, $controllerNamespace, $routeId),
+        '',
+        'use Symfony\\Component\\HttpFoundation\\Response;',
+        'use Illuminate\\Http\\Request;',
+        '',
+        '/**',
+        ' * The thin HTTP wrapper of ' . $routeId . ' (issue #60): decode the',
+        ' * declared transport surface, bind the actor, invoke the one',
+        ' * operation entrypoint, and encode the declared projections. There',
+        ' * is no business logic and no catch-all: only the declared typed',
+        ' * errors map; everything else propagates unmodified.',
+        ' */',
+        'final readonly class ' . $controllerClass,
+        '{',
+        '    public function __construct(',
+        '        private \\' . $entryFqn . ' $handler,',
+        '    ) {',
+        '    }',
+        '',
+        '    public function ' . $action . '(Request $request): Response',
+        '    {',
+    ];
+    // The decode: the typed request binding, or the explicit query
+    // input constructed directly.
+    if ($route['request'] !== null) {
+        $lines[] = '        try {';
+        $lines[] = '            $input = \\' . (string) $route['request']['fqn'] . '::fromWire($request);';
+        $lines[] = '        } catch (\\Lekalo\\Generated\\Routes\\RequestValidationError $failure) {';
+        $lines[] = '            return response()->json(';
+        $lines[] = '                \\Lekalo\\Generated\\Routes\\ErrorHttpMap::validation(' . php_types_string_literal($routeId) . ', $failure->fields),';
+        $lines[] = '                \\Lekalo\\Generated\\Routes\\ErrorHttpMap::validationStatus(' . php_types_string_literal($routeId) . '),';
+        $lines[] = '            );';
+        $lines[] = '        }';
+    } else {
+        $lines[] = '        $input = new \\' . $inputFqn . '();';
+    }
+    $lines[] = '        $actor = \\Lekalo\\Generated\\Routes\\HttpEnvelope::actor($request, ' . ($authRequired ? 'true' : 'false') . ');';
+    $lines[] = '        try {';
+    $lines[] = $isCommand
+        ? '            $this->handler->handle($input, $actor);'
+        : '            $result = $this->handler->handle($input, $actor);';
+    foreach ($route['errors'] as $error) {
+        if (($error['refusal'] ?? false) === true) {
+            // The validation-category error maps through the request
+            // binding refusal, not a handler catch.
+            continue;
+        }
+        $errorClass = php_routes_error_class_of((string) $error['error'], $errorBase);
+        $payloadArgs = [];
+        foreach ($error['payload'] as $member) {
+            $type = php_routes_field_type($member, $context['definitions'][$route['operation']], $context['typesIndex'], $context['definitions']);
+            $property = php_types_property_of((string) $member);
+            $payloadArgs[] = php_types_string_literal((string) $member) . ' => ' . php_routes_wire_expr($type, '$input->' . $property);
+        }
+        $lines[] = '        } catch (' . $errorClass . ' $failure) {';
+        $lines[] = '            return response()->json(';
+        $lines[] = '                \\Lekalo\\Generated\\Routes\\ErrorHttpMap::domain(' . php_types_string_literal($routeId) . ', ' . php_types_string_literal((string) $error['error']) . ', [' . implode(', ', $payloadArgs) . ']),';
+        $lines[] = '                \\Lekalo\\Generated\\Routes\\ErrorHttpMap::status(' . php_types_string_literal($routeId) . ', ' . php_types_string_literal((string) $error['error']) . '),';
+        $lines[] = '            );';
+    }
+    $lines[] = '        }';
+    if ($isCommand) {
+        $lines[] = '';
+        $lines[] = '        return new \\Illuminate\\Http\\Response(\'\', ' . (int) $route['success']['status'] . ');';
+    } else {
+        $resultType = php_routes_result_type($route, $context);
+        $wire = $resultType === null ? 'null' : php_routes_wire_expr($resultType, '$result');
+        $lines[] = '';
+        $lines[] = '        return response()->json(' . $wire . ', ' . (int) $route['success']['status'] . ');';
+    }
+    $lines[] = '    }';
+    $lines[] = '}';
+    return implode("\n", $lines) . "\n";
+}
+
+/**
+ * The typed error class FQN of one declared error id, spelled exactly
+ * as the operations family names its typed error classes.
+ */
+function php_routes_error_class_of(string $errorId, string $operationsPrefix): string
+{
+    $module = php_types_module_of($errorId);
+    $leaf = php_types_leaf_name_of($errorId);
+    $parts = explode('_', $leaf);
+    $class = implode('', array_map('ucfirst', array_filter($parts, static fn (string $part): bool => $part !== ''))) . 'Error';
+    return '\\' . $operationsPrefix . '\\' . ucfirst($module) . '\\Errors\\' . $class;
+}
+
+/** The mapped result type of one query route, when it projects a body. */
+function php_routes_result_type(array $route, array $context): ?array
+{
+    $definition = is_array($context['definitions'][$route['operation']] ?? null) ? $context['definitions'][$route['operation']] : null;
+    $ref = $definition === null ? null : ($definition['returns']['ref'] ?? null);
+    if (!is_string($ref)) {
+        return null;
+    }
+    $entry = is_array($context['typesIndex'][$ref] ?? null) ? $context['typesIndex'][$ref] : null;
+    $type = is_array($context['definitions'][$ref] ?? null) ? $context['definitions'][$ref] : null;
+    if ($entry === null || $type === null) {
+        return null;
+    }
+    return ['ref' => $ref, 'fqn' => (string) $entry['fqn'], 'kind' => (string) ($type['kind'] ?? ''), 'base' => (string) ($type['base'] ?? '')];
+}
+
+/** The route registrations text: one block per managed route, id-sorted. */
+function php_routes_registrations_text(array $context, array $routes): string
+{
+    $managed = array_values(array_filter($routes, static fn (array $route): bool => $route['mode'] === 'managed'));
+    usort($managed, static fn (array $left, array $right): int => strcmp((string) $left['id'], (string) $right['id']));
+    $lines = [
+        '<?php',
+        '',
+        'declare(strict_types=1);',
+        '',
+        '// Generated by ' . ADAPTER_ID . '@' . ADAPTER_VERSION . ' (routes generator, issue #60).',
+        '// From dev.lekalo.ir@0.2.16 input ' . $context['irDigest'] . '.',
+        '// Do not edit: regenerate with `lekalo generate`.',
+        '//',
+        '// The managed route registrations of one routes input. This file is',
+        '// the whole registration surface of the routes family: manual routes',
+        '// outside it are never touched, and the application merges by',
+        '// requiring this file from its own route bootstrap.',
+        '',
+        'use Illuminate\\Support\\Facades\\Route;',
+    ];
+    $uses = [];
+    foreach ($managed as $route) {
+        $uses[] = (string) $route['controller']['fqn'];
+    }
+    sort($uses, SORT_STRING);
+    foreach ($uses as $use) {
+        $lines[] = 'use ' . $use . ';';
+    }
+    $lines[] = '';
+    foreach ($managed as $route) {
+        $method = strtolower((string) $route['method']);
+        $chain = [
+            'Route::' . $method . '(' . php_types_string_literal((string) $route['pathTemplate']) . ', ['
+                . (string) $route['controller']['fqn'] . '::class, ' . php_types_string_literal((string) $route['controller']['action']) . '])',
+            '    ->name(' . php_types_string_literal((string) $route['name']) . ')',
+        ];
+        if (($route['middleware'] ?? []) !== []) {
+            $spellings = implode(', ', array_map(
+                static fn (string $spelling): string => php_types_string_literal($spelling),
+                $route['middleware'],
+            ));
+            $chain[] = '    ->middleware([' . $spellings . '])';
+        }
+        $lines[] = implode("\n", $chain) . ';';
+    }
+    return implode("\n", $lines) . "\n";
+}
+
+/** The deterministic classmap text: FQN => root-relative path. */
+function php_routes_classmap_text(array $files, string $root): string
+{
+    $entries = [];
+    foreach ($files as $file) {
+        if (!isset($file['fqn'])) {
+            continue;
+        }
+        $relative = substr((string) $file['path'], strlen($root) + 1);
+        $entries[(string) $file['fqn']] = $relative;
+    }
+    ksort($entries);
+    $lines = [
+        '<?php',
+        '',
+        'declare(strict_types=1);',
+        '',
+        '// Generated by ' . ADAPTER_ID . '@' . ADAPTER_VERSION . ' (routes generator, issue #60).',
+        '// The deterministic class map: fully-qualified name => root-relative path.',
+        '// The loading authority of the generated routes tree - no runtime',
+        '// registration magic, no Composer scan.',
+        '',
+        'return [',
+    ];
+    foreach ($entries as $fqn => $relative) {
+        $lines[] = '    ' . php_types_string_literal($fqn) . ' => ' . php_types_string_literal($relative) . ',';
+    }
+    $lines[] = '];';
+    return implode("\n", $lines) . "\n";
+}
+
+/** The canonical custody sidecar over the complete routes inventory. */
+function php_routes_sidecar_text(string $projectId, array $mapped, array $files, array $context): string
+{
+    $routes = [];
+    foreach ($mapped['routes'] as $route) {
+        $entry = [
+            'id' => $route['id'],
+            'operation' => $route['operation'],
+            'operationId' => $route['operationId'],
+            'mode' => $route['mode'],
+            'method' => $route['method'],
+            'pathTemplate' => $route['pathTemplate'],
+            'name' => $route['name'],
+        ];
+        if ($route['mode'] === 'managed') {
+            $entry['controller'] = [
+                'fqn' => $route['controller']['fqn'],
+                'path' => $route['controller']['path'],
+                'action' => $route['controller']['action'],
+            ];
+            if ($route['request'] !== null) {
+                $entry['request'] = ['fqn' => $route['request']['fqn'], 'path' => $route['request']['path']];
+            }
+        }
+        $entry['entry'] = ['fqn' => $route['entry']['fqn'], 'method' => $route['entry']['method']];
+        $entry['middleware'] = $route['middleware'];
+        $success = ['status' => $route['success']['status']];
+        if ($route['success']['bodyMode'] !== null) {
+            $success['bodyMode'] = $route['success']['bodyMode'];
+        }
+        $entry['success'] = $success;
+        $entry['errors'] = array_map(
+            static fn (array $error): array => ['error' => $error['error'], 'status' => $error['status']],
+            $route['errors'],
+        );
+        $entry['errorDefaults'] = $route['errorDefaults'];
+        if ($route['auth'] !== null) {
+            $entry['auth'] = array_filter([
+                'actor' => $route['auth']['actor'],
+                'schemes' => $route['auth']['schemes'],
+                'policyRef' => $route['auth']['policyRef'],
+            ], static fn (mixed $value): bool => $value !== null);
+        }
+        $entry['links'] = $route['links'];
+        $routes[] = $entry;
+    }
+    $artifacts = [];
+    foreach ($files as $file) {
+        $row = [
+            'path' => substr((string) $file['path'], strlen(PHP_ROUTES_GENERATED_ROOT) + 1),
+            'role' => $file['role'],
+            'lifecycle' => $file['lifecycle'],
+        ];
+        if (isset($file['fqn'])) {
+            $row['fqn'] = $file['fqn'];
+        }
+        $row['digest'] = $file['digest'];
+        $artifacts[] = $row;
+    }
+    usort($artifacts, static fn (array $left, array $right): int => strcmp((string) $left['path'], (string) $right['path']));
+    $document = [
+        'schemaVersion' => PHP_ROUTES_MAP_SCHEMA_VERSION,
+        'identity' => PHP_ROUTES_MAP_IDENTITY,
+        'projectId' => $projectId,
+        'adapter' => [
+            'id' => ADAPTER_ID,
+            'version' => ADAPTER_VERSION,
+            'digest' => sha256_digest(ADAPTER_ID . '@' . ADAPTER_VERSION),
+        ],
+        'digests' => [
+            'ir' => $context['irDigest'],
+            'transport' => $context['transportDigest'],
+            'input' => $context['inputDigest'],
+            'typesInput' => $context['typesInputDigest'],
+            'operationsInput' => $context['operationsInputDigest'],
+            'openapi' => $context['openapiDigest'],
+        ],
+        'routes' => $routes,
+        'artifacts' => $artifacts,
+    ];
+    return php_types_canonical_json($document) . "\n";
+}
+
 
 // ---- bundled Composer gates policy (issue #61) ------------------
 // EMBEDDED BY build.php from composer-gates-policy.json. Never edit.
