@@ -202,15 +202,15 @@ fn the_committed_template_parses_into_the_closed_shape() {
     assert_eq!(input.middleware.len(), 1);
     assert_eq!(input.middleware[0].scheme, "user_bearer");
     assert_eq!(input.middleware[0].middleware, "fixture.auth");
-    assert_eq!(input.routes.len(), 3);
-    assert_eq!(input.routes[0].id, "planner.endpoint_focus_task_by_id");
+    assert_eq!(input.routes.len(), 11);
+    assert_eq!(input.routes[0].id, "planner.endpoint_backlog");
     assert_eq!(input.routes[0].mode, Mode::Managed);
-    assert_eq!(input.routes[1].id, "planner.endpoint_tasks_focus");
-    assert_eq!(input.routes[1].mode, Mode::Checked);
-    let entry = input.routes[1].entry.as_ref().expect("checked entry");
+    assert_eq!(input.routes[7].id, "planner.endpoint_tasks_focus");
+    assert_eq!(input.routes[7].mode, Mode::Checked);
+    let entry = input.routes[7].entry.as_ref().expect("checked entry");
     assert_eq!(entry.fqn, "App\\Http\\Controllers\\TaskFocusController");
     assert_eq!(entry.method, "focus");
-    assert_eq!(input.routes[2].id, "planner.endpoint_today");
+    assert_eq!(input.routes[10].id, "planner.endpoint_unplan");
 }
 
 #[test]
@@ -322,9 +322,10 @@ fn unresolved_symbols_and_broken_pairings_are_typed_findings() {
         "a foreign operation symbol refuses: {findings:?}"
     );
 
-    // Checked without entry.
+    // Checked without entry (the checked record rides index 7 of the
+    // canonical id order).
     let mut value: serde_json::Value = serde_json::from_str(&bytes).expect("raw input");
-    value["routes"][1] = serde_json::json!({
+    value["routes"][7] = serde_json::json!({
         "id": "planner.endpoint_tasks_focus",
         "operation": "planner.focus_task",
         "mode": "checked",
