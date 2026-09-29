@@ -31,9 +31,7 @@ fn envelope_digest(selection: &LoadSelection) -> String {
     }
 }
 
-fn compilation_of(
-    model: &lekalo_core::loader::NormalizedModel,
-) -> lekalo_core::ir::Compilation {
+fn compilation_of(model: &lekalo_core::loader::NormalizedModel) -> lekalo_core::ir::Compilation {
     lekalo_core::ir::compile(model).expect("ir compile")
 }
 
@@ -59,8 +57,10 @@ fn main() {
     println!("ir digest: {ir_digest}");
 
     // The validated transport join (issue #70) over the staged bytes.
-    let transport_bytes = std::fs::read_to_string(format!("{inputs}/transport.json")).expect("transport input");
-    let transport_value: serde_json::Value = serde_json::from_str(&transport_bytes).expect("transport json");
+    let transport_bytes =
+        std::fs::read_to_string(format!("{inputs}/transport.json")).expect("transport input");
+    let transport_value: serde_json::Value =
+        serde_json::from_str(&transport_bytes).expect("transport json");
     let document = TransportDocument::from_value(&transport_value).expect("transport attachment");
     let registry = ErrorRegistry::embedded().expect("embedded registry");
     let capabilities = CapabilityMap::http_json();
@@ -75,13 +75,15 @@ fn main() {
     lekalo_core::transport_http::validate(&document, &full_context).expect("transport valid");
 
     let canonical = document.canonical_bytes().expect("canonical bytes");
-    std::fs::write(format!("{inputs}/transport.json"), format!("{canonical}\n")).expect("transport write");
+    std::fs::write(format!("{inputs}/transport.json"), format!("{canonical}\n"))
+        .expect("transport write");
 
     // The #46 OpenAPI projection of the same join (defaults, the
     // embedded registry bound for identity variants — the exact
     // preflight posture of `lekalo generate`).
     let openapi_context = ValidationContext::new(&compilation.project).with_errors(registry);
-    let rendered = render(&document, &openapi_context, &RenderConfig::new()).expect("openapi render");
+    let rendered =
+        render(&document, &openapi_context, &RenderConfig::new()).expect("openapi render");
     std::fs::write(
         format!("{inputs}/openapi/planner.openapi.json"),
         format!("{}\n", rendered.canonical_bytes()),
@@ -89,7 +91,8 @@ fn main() {
     .expect("openapi write");
 
     // The #72 client-SDK projection of the same join.
-    let sdk = project(&document, &full_context, &ClientConfig::generated()).expect("client-sdk projection");
+    let sdk = project(&document, &full_context, &ClientConfig::generated())
+        .expect("client-sdk projection");
     std::fs::write(
         format!("{inputs}/client-sdk/planner.json"),
         format!("{}\n", sdk.canonical_bytes().expect("canonical bytes")),

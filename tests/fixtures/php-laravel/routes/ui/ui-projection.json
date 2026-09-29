@@ -1,0 +1,360 @@
+{
+  "schemaVersion": "lekalo/ui-projection/v0.1.0",
+  "identity": "dev.lekalo.ui-projection@0.1.0",
+  "projectId": "planner",
+  "screen": "planning-board",
+  "summary": "The machine-readable UI projection of the planning screen: every DTO field, action, state, date rule, and accessibility expectation traces to one declared API or semantic symbol. Nothing here is hardcoded availability — actions derive their gates from the policy and capability contracts of the same join that produced the OpenAPI document and the typed client.",
+  "sourceRefs": {
+    "ir": {
+      "identity": "dev.lekalo.ir@0.2.16",
+      "digest": "sha256:1fc2133af11b1a7ee9186d51104a963bf21d3043febf37d0401b504114806b43"
+    },
+    "model": {
+      "modelVersion": "0.2.16",
+      "digest": "sha256:233c179a27425b890beb600df00eb378edbbf3e2e950d79b9c402af81452882e"
+    },
+    "clientContract": "../inputs/client-sdk/planner.json",
+    "openapi": "../inputs/openapi/planner.openapi.json"
+  },
+  "requirements": [
+    "planner.REQ-the-planning-screen-renders-the-api-projections",
+    "planner.REQ-screen-states-stay-traceable-to-api-symbols",
+    "planner.REQ-optimistic-updates-roll-back-on-declared-conflicts",
+    "planner.REQ-dates-stay-actor-local",
+    "planner.REQ-accessibility-expectations-ride-the-ui-tests",
+    "planner.REQ-complete-a-planned-task"
+  ],
+  "buckets": [
+    {
+      "id": "today",
+      "query": "planner.today_planning",
+      "endpoint": "planner.endpoint_today_planning",
+      "clientMethod": "plannerEndpointTodayPlanning",
+      "itemType": "planner.user_task_planning"
+    },
+    {
+      "id": "backlog",
+      "query": "planner.backlog_tasks",
+      "endpoint": "planner.endpoint_backlog",
+      "clientMethod": "plannerEndpointBacklog",
+      "itemType": "planner.user_task_planning"
+    },
+    {
+      "id": "focus",
+      "query": "planner.count_focused",
+      "endpoint": "planner.endpoint_today",
+      "clientMethod": "plannerEndpointToday",
+      "itemType": "planner.task_state"
+    },
+    {
+      "id": "completed",
+      "query": "planner.completed_planning",
+      "endpoint": "planner.endpoint_completed",
+      "clientMethod": "plannerEndpointCompleted",
+      "itemType": "planner.user_task_planning"
+    }
+  ],
+  "dto": {
+    "task-card": {
+      "of": "planner.user_task_planning",
+      "fields": [
+        { "name": "task_id", "source": "planner.user_task_planning.task_id", "typeRef": "planner.task_id", "use": "identity" },
+        { "name": "title", "source": "client:task-title-join", "typeRef": "planner.text", "use": "primary-label", "note": "The wire row carries the task id; the board joins the title through the workspace task read of the same workspace scope." },
+        { "name": "position", "source": "planner.user_task_planning.position", "typeRef": "planner.position", "use": "order" },
+        { "name": "planned_for", "source": "planner.user_task_planning.planned_for", "typeRef": "planner.planning_date", "use": "day-badge" },
+        { "name": "focused_at", "source": "planner.user_task_planning.focused_at", "typeRef": "planner.timestamp", "use": "focus-badge" },
+        { "name": "completed_at", "source": "planner.user_task_planning.completed_at", "typeRef": "planner.timestamp", "use": "completed-badge" }
+      ]
+    },
+    "detail-drawer": {
+      "of": "planner.user_task_planning",
+      "fields": [
+        { "name": "planning_id", "source": "planner.user_task_planning.planning_id", "typeRef": "planner.planning_id", "use": "command-target" },
+        { "name": "task_id", "source": "planner.user_task_planning.task_id", "typeRef": "planner.task_id", "use": "identity" },
+        { "name": "planned_for", "source": "planner.user_task_planning.planned_for", "typeRef": "planner.planning_date", "use": "day" },
+        { "name": "position", "source": "planner.user_task_planning.position", "typeRef": "planner.position", "use": "order" },
+        { "name": "focused_at", "source": "planner.user_task_planning.focused_at", "typeRef": "planner.timestamp", "use": "focus-stamp" },
+        { "name": "paused_at", "source": "planner.user_task_planning.paused_at", "typeRef": "planner.timestamp", "use": "pause-stamp" },
+        { "name": "completed_at", "source": "planner.user_task_planning.completed_at", "typeRef": "planner.timestamp", "use": "completion-stamp" },
+        { "name": "reorder_version", "source": "planner.user_task_planning.reorder_version", "typeRef": "planner.reorder_version", "use": "optimistic-version" }
+      ]
+    }
+  },
+  "actions": [
+    {
+      "id": "focus",
+      "label": "Focus",
+      "endpoint": "planner.endpoint_focus_task_by_id",
+      "command": "planner.focus_task",
+      "clientMethod": "plannerEndpointFocusTaskById",
+      "policy": "planner.deny_bulk_focus",
+      "idempotency": { "header": "Idempotency-Key", "required": true },
+      "availability": {
+        "kind": "field-predicate",
+        "rule": "available while the task renders in a bucket and no read shows it focused",
+        "requires": [
+          { "field": "focused_at", "of": "planner.user_task_planning", "null": true }
+        ]
+      },
+      "optimistic": { "kind": "none", "reason": "the focus stamp is authoritative server state; the board refetches the bucket" },
+      "outcomes": {
+        "success": { "status": 202 },
+        "errors": [
+          { "error": "planner.focus_conflict", "status": 409, "state": "conflict" },
+          { "error": "planner.focus_denied", "status": 403, "state": "read-only" },
+          { "error": "planner.task_not_found", "status": 404, "state": "empty" },
+          { "error": "planner.input_invalid", "status": 400, "state": "conflict" },
+          { "error": "planner.store_unavailable", "status": 503, "state": "degraded" }
+        ]
+      }
+    },
+    {
+      "id": "plan",
+      "label": "Plan for today",
+      "endpoint": "planner.endpoint_plan",
+      "command": "planner.plan_task",
+      "clientMethod": "plannerEndpointPlan",
+      "policy": "planner.deny_foreign_planning",
+      "idempotency": { "header": "Idempotency-Key", "required": true },
+      "availability": {
+        "kind": "bucket-predicate",
+        "rule": "available only on backlog cards: a task with no planning row",
+        "requires": [
+          { "bucket": "backlog" }
+        ]
+      },
+      "optimistic": {
+        "kind": "insert",
+        "projection": "today bucket",
+        "rollback": [
+          { "error": "planner.planning_conflict", "status": 409, "rule": "remove the optimistic card, keep the backlog card" },
+          { "error": "planner.task_not_found", "status": 404, "rule": "remove the optimistic card" },
+          { "error": "planner.input_invalid", "status": 400, "rule": "remove the optimistic card" }
+        ]
+      },
+      "outcomes": {
+        "success": { "status": 202 },
+        "errors": [
+          { "error": "planner.planning_conflict", "status": 409, "state": "conflict" },
+          { "error": "planner.planning_denied", "status": 403, "state": "read-only" },
+          { "error": "planner.task_not_found", "status": 404, "state": "empty" },
+          { "error": "planner.input_invalid", "status": 400, "state": "conflict" },
+          { "error": "planner.store_unavailable", "status": 503, "state": "degraded" }
+        ]
+      }
+    },
+    {
+      "id": "complete",
+      "label": "Complete",
+      "endpoint": "planner.endpoint_complete",
+      "command": "planner.complete_planning",
+      "clientMethod": "plannerEndpointComplete",
+      "policy": "planner.deny_foreign_planning",
+      "idempotency": { "header": "Idempotency-Key", "required": true },
+      "availability": {
+        "kind": "field-predicate",
+        "rule": "available on planned cards whose completion stamp is absent",
+        "requires": [
+          { "field": "completed_at", "of": "planner.user_task_planning", "null": true }
+        ]
+      },
+      "optimistic": {
+        "kind": "patch",
+        "projection": "today bucket",
+        "patch": { "field": "completed_at", "value": "requested-at" },
+        "rollback": [
+          { "error": "planner.planning_conflict", "status": 409, "rule": "restore the prior card bytes" },
+          { "error": "planner.planning_not_found", "status": 404, "rule": "remove the card: the row is invisible for this actor" },
+          { "error": "planner.input_invalid", "status": 400, "rule": "restore the prior card bytes" }
+        ]
+      },
+      "outcomes": {
+        "success": { "status": 202 },
+        "errors": [
+          { "error": "planner.planning_conflict", "status": 409, "state": "conflict" },
+          { "error": "planner.planning_denied", "status": 403, "state": "read-only" },
+          { "error": "planner.planning_not_found", "status": 404, "state": "empty" },
+          { "error": "planner.input_invalid", "status": 400, "state": "conflict" },
+          { "error": "planner.store_unavailable", "status": 503, "state": "degraded" }
+        ]
+      }
+    },
+    {
+      "id": "reorder",
+      "label": "Reorder day",
+      "endpoint": "planner.endpoint_reorder",
+      "command": "planner.reorder_planned",
+      "clientMethod": "plannerEndpointReorder",
+      "policy": "planner.deny_foreign_planning",
+      "idempotency": { "header": "Idempotency-Key", "required": true },
+      "availability": {
+        "kind": "field-predicate",
+        "rule": "available on a today list of two or more rows; carries the rendered day's optimistic version",
+        "requires": [
+          { "field": "reorder_version", "of": "planner.user_task_planning", "present": true }
+        ]
+      },
+      "optimistic": {
+        "kind": "reorder",
+        "projection": "today bucket order",
+        "carries": { "expected_version": "planner.user_task_planning.reorder_version" },
+        "rollback": [
+          { "error": "planner.reorder_stale", "status": 409, "rule": "restore the rendered order and refetch the day's version" },
+          { "error": "planner.input_invalid", "status": 400, "rule": "restore the rendered order" }
+        ]
+      },
+      "outcomes": {
+        "success": { "status": 202 },
+        "errors": [
+          { "error": "planner.reorder_stale", "status": 409, "state": "conflict" },
+          { "error": "planner.planning_denied", "status": 403, "state": "read-only" },
+          { "error": "planner.input_invalid", "status": 400, "state": "conflict" },
+          { "error": "planner.store_unavailable", "status": 503, "state": "degraded" }
+        ]
+      }
+    },
+    {
+      "id": "pause",
+      "label": "Pause",
+      "endpoint": "planner.endpoint_pause",
+      "command": "planner.pause_planning",
+      "clientMethod": "plannerEndpointPause",
+      "policy": "planner.deny_foreign_planning",
+      "idempotency": { "header": "Idempotency-Key", "required": true },
+      "availability": {
+        "kind": "field-predicate",
+        "rule": "available on focused, not-yet-completed cards",
+        "requires": [
+          { "field": "focused_at", "of": "planner.user_task_planning", "present": true },
+          { "field": "completed_at", "of": "planner.user_task_planning", "null": true }
+        ]
+      },
+      "optimistic": { "kind": "none", "reason": "the pause stamp is authoritative server state" },
+      "outcomes": {
+        "success": { "status": 202 },
+        "errors": [
+          { "error": "planner.planning_denied", "status": 403, "state": "read-only" },
+          { "error": "planner.planning_not_found", "status": 404, "state": "empty" },
+          { "error": "planner.input_invalid", "status": 400, "state": "conflict" },
+          { "error": "planner.store_unavailable", "status": 503, "state": "degraded" }
+        ]
+      }
+    },
+    {
+      "id": "unplan",
+      "label": "Unplan",
+      "endpoint": "planner.endpoint_unplan",
+      "command": "planner.unplan_task",
+      "clientMethod": "plannerEndpointUnplan",
+      "policy": "planner.deny_foreign_planning",
+      "idempotency": { "header": "Idempotency-Key", "required": true },
+      "availability": {
+        "kind": "bucket-predicate",
+        "rule": "available on cards that render a planning row (today or completed buckets)",
+        "requires": [
+          { "bucket": "today" }
+        ]
+      },
+      "optimistic": {
+        "kind": "remove",
+        "projection": "today bucket",
+        "rollback": [
+          { "error": "planner.planning_not_found", "status": 404, "rule": "keep the removal: the row is gone for this actor" },
+          { "error": "planner.planning_denied", "status": 403, "rule": "restore the card" }
+        ]
+      },
+      "outcomes": {
+        "success": { "status": 202 },
+        "errors": [
+          { "error": "planner.planning_denied", "status": 403, "state": "read-only" },
+          { "error": "planner.planning_not_found", "status": 404, "state": "empty" },
+          { "error": "planner.input_invalid", "status": 400, "state": "conflict" },
+          { "error": "planner.store_unavailable", "status": 503, "state": "degraded" }
+        ]
+      }
+    }
+  ],
+  "states": [
+    {
+      "id": "loading",
+      "triggers": [
+        { "kind": "query-in-flight", "endpoint": "planner.endpoint_today_planning" },
+        { "kind": "query-in-flight", "endpoint": "planner.endpoint_backlog" },
+        { "kind": "query-in-flight", "endpoint": "planner.endpoint_completed" }
+      ],
+      "rule": "rendered while the bucket query has no resolved response yet"
+    },
+    {
+      "id": "empty",
+      "triggers": [
+        { "kind": "empty-declared-list", "endpoint": "planner.endpoint_today_planning" },
+        { "kind": "empty-declared-list", "endpoint": "planner.endpoint_backlog" },
+        { "kind": "empty-declared-list", "endpoint": "planner.endpoint_completed" },
+        { "kind": "declared-error", "error": "planner.task_not_found", "status": 404 },
+        { "kind": "declared-error", "error": "planner.planning_not_found", "status": 404 }
+      ],
+      "rule": "an empty declared list renders the bucket empty; a not-found error renders the affected card gone — foreign rows are invisible, never an existence leak"
+    },
+    {
+      "id": "degraded",
+      "triggers": [
+        { "kind": "declared-error", "error": "planner.store_unavailable", "status": 503 }
+      ],
+      "rule": "the declared infrastructure failure renders the board degraded with a retry affordance; the last consistent rendering stays visible"
+    },
+    {
+      "id": "conflict",
+      "triggers": [
+        { "kind": "declared-error", "error": "planner.planning_conflict", "status": 409 },
+        { "kind": "declared-error", "error": "planner.reorder_stale", "status": 409 },
+        { "kind": "declared-error", "error": "planner.focus_conflict", "status": 409 },
+        { "kind": "declared-error", "error": "planner.input_invalid", "status": 400 }
+      ],
+      "rule": "a declared conflict rolls the affected optimistic patch back and surfaces the typed error identity"
+    },
+    {
+      "id": "read-only",
+      "triggers": [
+        { "kind": "declared-error", "error": "planner.planning_denied", "status": 403 },
+        { "kind": "declared-error", "error": "planner.focus_denied", "status": 403 }
+      ],
+      "rule": "the declared authorization denials render the board read-only with the disabled reason; the gate comes from the declared policy contracts, never a client guess"
+    }
+  ],
+  "timezone": {
+    "input": {
+      "scalar": "planner.planning_date",
+      "rule": "the wire spelling of the actor-local calendar day (YYYY-MM-DD); the day input and bucket membership use the actor's declared zone"
+    },
+    "display": {
+      "scalar": "planner.timestamp",
+      "rule": "rendered in the actor's declared zone; the stored value is never rewritten by a render"
+    },
+    "boundary": "a midnight boundary splits today from carry-over explicitly by the actor zone; a read never shifts a stored date"
+  },
+  "accessibility": [
+    {
+      "id": "announced-states",
+      "expectation": "loading, empty, degraded, conflict, and read-only transitions are announced through a live region",
+      "scenarios": ["planner.screen_focus_flow", "planner.screen_plan_conflict_rollback", "planner.screen_complete_day", "planner.screen_stale_reorder"]
+    },
+    {
+      "id": "keyboard-actions",
+      "expectation": "every capability-gated action is keyboard reachable and its disabled reason renders as the accessible name",
+      "scenarios": ["planner.screen_focus_flow", "planner.screen_complete_day"]
+    },
+    {
+      "id": "drawer-focus",
+      "expectation": "the detail drawer moves focus on open and restores it on close",
+      "scenarios": ["planner.screen_complete_day"]
+    }
+  ],
+  "e2e": {
+    "runner": "web.runners/browser-e2e",
+    "scenarios": [
+      "planner.screen_focus_flow",
+      "planner.screen_complete_day"
+    ],
+    "note": "The pilot keeps the browser-E2E corpus minimal: the two bound scenarios drive the focus flow and the completed family end to end; plan-rollback and stale-reorder stay Model scenarios until the lanes need them."
+  }
+}

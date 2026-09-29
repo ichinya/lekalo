@@ -474,6 +474,13 @@ function renderTypescript(document) {
   return body.join("\n");
 }
 
+/** The TypeScript spelling of one declared scalar mapping. */
+function tsScalarType(mapping) {
+  if (mapping === "number") return "number";
+  if (mapping === "boolean") return "boolean";
+  return "string";
+}
+
 /** The TypeScript spelling of one named reference: the unit object
  * decodes to void at the call boundary; known types resolve to their
  * generated identifier; an unresolved reference renders `unknown`
@@ -497,7 +504,11 @@ function tsValueTypeRef(typeRef, shape, typeIndex) {
 function typeDeclarationTs(typeDef, index) {
   const ident = typeDef.ident;
   if (typeDef.kind === "scalar") {
-    return `export type ${ident} = string;`;
+    // The declared mapping is the projection: only the numeric and
+    // boolean bases leave the string domain (issue #53) — dates,
+    // datetimes, uuids and uris stay validated ISO/absolute strings,
+    // never runtime date types.
+    return `export type ${ident} = ${tsScalarType(typeDef.base)};`;
   }
   if (typeDef.kind === "enum") {
     const members = (typeDef.values ?? [])
@@ -867,10 +878,19 @@ function goHeaderIdent(name) {
   return camel.replace(/([a-z])(ID)$/, "$1ID");
 }
 
+/** The Go spelling of one declared scalar mapping. */
+function goScalarType(mapping) {
+  if (mapping === "number") return "float64";
+  if (mapping === "boolean") return "bool";
+  return "string";
+}
+
 function typeDeclarationGo(typeDef, index) {
   const name = goExported(typeDef.ident);
   if (typeDef.kind === "scalar") {
-    return `type ${name} string`;
+    // The declared mapping is the projection: only the numeric and
+    // boolean bases leave the string domain (issue #53).
+    return `type ${name} ${goScalarType(typeDef.base)}`;
   }
   if (typeDef.kind === "enum") {
     const lines = [`type ${name} string`, "const ("];
@@ -880,10 +900,25 @@ function typeDeclarationGo(typeDef, index) {
     lines.push(")");
     return lines.join("\n");
   }
-  const fields = (typeDef.fields ?? [])
-    .map((field) => {
-      const pointer = !field.required || field.nullable ? "*" : "";
-      return `\t${goExported(field.name)} ${pointer}${goValueTypeRef(field.typeRef, field.shape, index)} \`json:"${field.name}${field.required ? "" : ",omitempty"}"\``;
+  // The struct block is gofmt-stable: the name and type columns align
+  // over the one consecutive run of tagged fields (issue #53), so a
+  // fresh render is byte-equal to the committed gofmt-clean fixture.
+  const rows = (typeDef.fields ?? []).map((field) => {
+    const pointer = !field.required || field.nullable ? "*" : "";
+    return {
+      name: goExported(field.name),
+      type: `${pointer}${goValueTypeRef(field.typeRef, field.shape, index)}`,
+      tag: `\`json:"${field.name}${field.required ? "" : ",omitempty"}"\``,
+    };
+  });
+  const nameWidth = Math.max(0, ...rows.map((row) => row.name.length));
+  const typeWidth = Math.max(0, ...rows.map((row) => row.type.length));
+  const fields = rows
+    .map((row) => {
+      if (rows.length === 1) {
+        return `\t${row.name} ${row.type} ${row.tag}`;
+      }
+      return `\t${row.name.padEnd(nameWidth)} ${row.type.padEnd(typeWidth)} ${row.tag}`;
     })
     .join("\n");
   return [`type ${name} struct {`, fields || "\t_ struct{} `json:\"-\"`", "}"].join("\n");
