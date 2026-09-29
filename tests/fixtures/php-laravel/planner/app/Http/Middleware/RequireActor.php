@@ -16,8 +16,12 @@ use Lekalo\Generated\Operations\ActorContext;
  * anonymous fallback.
  *
  * Fixture identity seam: `X-Fixture-User` carries the actor id,
- * `X-Fixture-Mode` the declared scope dimensions (mode=bulk denies,
- * fail=store triggers the declared infrastructure failure).
+ * `X-Fixture-Mode` the declared scope dimensions (mode=bulk denies the
+ * focus policy, mode=foreign denies the planning policy, fail=store
+ * triggers the declared infrastructure failure), `X-Fixture-Workspace`
+ * the tenant dimension, `X-Fixture-Now` the deterministic clock
+ * reading, `X-Fixture-Timezone` the actor-local date zone, and the
+ * `Idempotency-Key` header the declared replay key.
  */
 final class RequireActor
 {
@@ -33,6 +37,10 @@ final class RequireActor
         }
 
         $scopes = ['mode' => (string) $request->header('X-Fixture-Mode', '')];
+        $scopes['workspace'] = (string) ($request->header('X-Fixture-Workspace') ?? (substr(md5($userId), 0, 8) . '-0000-4000-8000-000000000000'));
+        $scopes['now'] = (string) $request->header('X-Fixture-Now', gmdate('Y-m-d\TH:i:s\Z'));
+        $scopes['timezone'] = (string) $request->header('X-Fixture-Timezone', 'UTC');
+        $scopes['idempotency_key'] = (string) $request->header('Idempotency-Key', '');
         $fail = (string) $request->header('X-Fixture-Fail', '');
         if ($fail !== '') {
             $scopes['fail'] = $fail;

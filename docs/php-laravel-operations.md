@@ -27,7 +27,9 @@ Per operation record:
   `single-entity-update` (typed read-by-key, typed preconditions, full
   explicit entity rebuild, save, declared event emissions, inside the
   declared transaction). Operands are closed: `fromInput`, `fromEntity`,
-  `enumCase`, `literal`.
+  `enumCase`, `literal`. A `required` transaction binding wraps the
+  delegation itself in the one `TransactionPort` run — the rollback
+  guarantee is the wrapper's, not the maintained port's (issue #50).
 - `scaffold-once` — the same signature emitted once under
   `app/lekalo-operations` (namespace `App\LekaloOperations`), body the
   explicit unimplemented failure; the sidecar `operations.map.json` is
@@ -39,7 +41,11 @@ Per operation record:
   rewriting.
 
 Queries accept only `port-delegation`; a write recipe on a query is the
-typed `operations.query-write` finding with a zero-write plan.
+typed `operations.query-write` finding with a zero-write plan. A query
+returning a scalar ref maps the nominal type; a query returning a
+`list<T>` ref maps the declared collection class of its element entity
+and the route boundary encodes the result through the query's declared
+#58 result codec (issue #50: the planning day lists).
 
 ## Errors and policy
 
@@ -121,8 +127,7 @@ The application merges ownership-aware by requiring the generated
 `routes.php`; manual routes outside the generated tree are never
 touched.
 
-`lekalo generate` runs the core join first
-(`crates/lekalo-core/src/php_routes/`, wired into the generate pipeline
+`lekalo generate` runs the core join first (`crates/lekalo-core/src/php_routes/`, wired into the generate pipeline
 before any adapter exchange — a refused join is the registered
 `php-routes.join-invalid` diagnostic `LEK-RTE-001`); the adapter
 re-validates defensively and emits. The composed run generates the
@@ -132,3 +137,10 @@ without its handler join refuses. `verify` reports managed drift
 join as `routes.binding-*`. Capabilities `generate.routes` and
 `verify.routes` are declared `partial`. The emitted classes
 syntax-check and load under `php -n` through the classmap.
+
+Every managed route with a declared decode plan — a body projection or
+a path-parameter binding — gets one typed request binding; the
+constructed input is never guessed (issue #50: the bodyless planning
+commands). The types family's classmap carries every query result
+codec, so the boundary loads the exact codec it encodes through
+(issue #50).

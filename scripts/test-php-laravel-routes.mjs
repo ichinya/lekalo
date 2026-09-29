@@ -548,4 +548,206 @@ step("runtime: the planner fixture serves the Today and focus endpoints through 
   rmSync(materialRoot, { recursive: true, force: true });
 });
 
+step("runtime: the planning battery serves the nine issue-50 scenarios through the generated surface", () => {
+  ensureVendor();
+  const materialRoot = join(mkdtempSync(join(tmpdir(), "lekalo-routes-runtime-")), "fixture");
+  cpSync(fixtureRoot, materialRoot, { recursive: true });
+  const staged = newRoot("runtime");
+  for (const home of [".lekalo/cache/ir", ".lekalo/cache/transport", ".lekalo/cache/openapi", ".lekalo/import/observed", "lekalo/types", "lekalo/operations", "lekalo/routes", "app/Http/Controllers"]) {
+    mkdirSync(join(materialRoot, home), { recursive: true });
+  }
+  for (const relative of [
+    ".lekalo/cache/ir/planner.json",
+    ".lekalo/cache/transport/planner.json",
+    "lekalo/transport.yaml",
+    ".lekalo/cache/openapi/planner.json",
+    "lekalo/types/planner.types.json",
+    "lekalo/operations/planner.operations.json",
+    "lekalo/routes/planner.routes.json",
+    ".lekalo/import/observed/routes-evidence.json",
+    "app/Http/Controllers/TaskFocusController.php",
+  ]) {
+    cpSync(join(staged.root, relative), join(materialRoot, relative));
+  }
+  rmSync(staged.root, { recursive: true, force: true });
+  const dry = adapterCall(materialRoot, routesRequest());
+  assert.equal(dry.status, "ok", JSON.stringify(dry).slice(0, 1200));
+  const applied = adapterCall(materialRoot, routesRequest({ dry_run: false, plan_id: dry.evidence?.plan_id }));
+  assert.equal(applied.status, "ok");
+
+  const driverPath = join(repoRoot, "tests", "fixtures", "php-laravel", "routes", "runtime", "driver.php");
+  const task1 = "3f2e5f3a-9f4e-4d1e-b35a-2f6d0a7c1b45";
+  const task2 = "8f2e5f3a-9f4e-4d1e-b35a-2f6d0a7c1b88";
+  const task3 = "4f2e5f3a-9f4e-4d1e-b35a-2f6d0a7c1b33";
+  const task4 = "5f2e5f3a-9f4e-4d1e-b35a-2f6d0a7c1b44";
+  const task5 = "6f2e5f3a-9f4e-4d1e-b35a-2f6d0a7c1b55";
+  const unknownTask = "9f2e5f3a-9f4e-4d1e-b35a-2f6d0a7c1b99";
+  const U1 = "11111111-1111-4111-8111-111111111111";
+  const U2 = "22222222-2222-4222-8222-222222222222";
+  const U3 = "33333333-3333-4333-8333-333333333333";
+  const day = "2026-01-02";
+  const pinnedNow = "2026-01-02T09:00:00Z";
+  const boundaryNow = "2026-01-01T21:30:00Z";
+  const actor = (user, extra = {}) => ({
+    "X-Fixture-User": user,
+    "X-Fixture-Workspace": "0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a01",
+    "X-Fixture-Now": pinnedNow,
+    ...extra,
+  });
+  const planUri = "/planning";
+  const specs = [
+    // S1 plan/move/unplan: one plan, the today list, an explicit move,
+    // and the removal — every step through the generated routes.
+    { method: "POST", uri: planUri, body: { task_id: task1, planned_for: day }, headers: actor(U1, { "Idempotency-Key": "k-s1a" }) },
+    { method: "GET", uri: "/planning/today", headers: actor(U1) },
+    { method: "PATCH", uri: "/planning/{{planning:"+U1+"|" + task1 + "|" + day + "}}", body: { planned_for: day, position: 2 }, headers: actor(U1, { "Idempotency-Key": "k-s1b" }) },
+    { method: "GET", uri: "/planning/today", headers: actor(U1) },
+    { method: "DELETE", uri: "/planning/{{planning:"+U1+"|" + task1 + "|" + day + "}}", headers: actor(U1, { "Idempotency-Key": "k-s1c" }) },
+    { method: "GET", uri: "/planning/today", headers: actor(U1) },
+    // S2 two users plan one task independently.
+    { method: "POST", uri: planUri, body: { task_id: task1, planned_for: day }, headers: actor(U1, { "Idempotency-Key": "k-s2a" }) },
+    { method: "POST", uri: planUri, body: { task_id: task1, planned_for: day }, headers: actor(U2, { "Idempotency-Key": "k-s2b" }) },
+    { method: "GET", uri: "/planning/today", headers: actor(U2) },
+    // S5 stale reorder: the optimistic version compare-and-swap.
+    { method: "POST", uri: planUri, body: { task_id: task2, planned_for: day }, headers: actor(U1, { "Idempotency-Key": "k-s5a" }) },
+    { method: "POST", uri: "/planning/reorder", body: { planned_for: day, expected_version: 1, order: "{{planning:" + U1 + "|" + task2 + "|" + day + "}},{{planning:"+U1+"|" + task1 + "|" + day + "}}" }, headers: actor(U1, { "Idempotency-Key": "k-s5b" }) },
+    { method: "POST", uri: "/planning/reorder", body: { planned_for: day, expected_version: 1, order: "{{planning:" + U1 + "|" + task1 + "|" + day + "}},{{planning:"+U1+"|" + task2 + "|" + day + "}}" }, headers: actor(U1, { "Idempotency-Key": "k-s5c" }) },
+    { method: "POST", uri: "/planning/reorder", body: { planned_for: day, expected_version: 2, order: "{{planning:" + U1 + "|" + task1 + "|" + day + "}},{{planning:"+U1+"|" + task2 + "|" + day + "}}" }, headers: actor(U1, { "Idempotency-Key": "k-s5d" }) },
+    // S6 midnight/timezone boundary and S3 carry-over: the same
+    // instant, two actor zones, two disjoint today answers; the
+    // carry-over row keeps its original day.
+    { method: "GET", uri: "/planning/today", headers: actor(U3, { "X-Fixture-Now": boundaryNow, "X-Fixture-Timezone": "UTC" }) },
+    { method: "GET", uri: "/planning/today", headers: actor(U3, { "X-Fixture-Now": boundaryNow, "X-Fixture-Timezone": "+05:00" }) },
+    { method: "GET", uri: "/planning/carry-over", headers: actor(U3, { "X-Fixture-Now": boundaryNow, "X-Fixture-Timezone": "+05:00" }) },
+    { method: "GET", uri: "/planning/carry-over", headers: actor(U3, { "X-Fixture-Now": boundaryNow, "X-Fixture-Timezone": "UTC" }) },
+    { probe: "plannings" },
+    { method: "GET", uri: "/planning/carry-over", headers: actor(U3, { "X-Fixture-Now": boundaryNow, "X-Fixture-Timezone": "+05:00" }) },
+    { probe: "plannings" },
+    // S7 repeated idempotency key: one row, one replay, and the
+    // same-key/different-request conflict.
+    { method: "POST", uri: planUri, body: { task_id: task3, planned_for: "2026-01-03" }, headers: actor(U1, { "Idempotency-Key": "k-s7" }) },
+    { method: "POST", uri: planUri, body: { task_id: task3, planned_for: "2026-01-03" }, headers: actor(U1, { "Idempotency-Key": "k-s7" }) },
+    { method: "POST", uri: planUri, body: { task_id: task3, planned_for: "2026-01-04" }, headers: actor(U1, { "Idempotency-Key": "k-s7" }) },
+    // S8 deleted/unavailable task.
+    { method: "POST", uri: planUri, body: { task_id: unknownTask, planned_for: day }, headers: actor(U1, { "Idempotency-Key": "k-s8a" }) },
+    { method: "POST", uri: planUri, body: { task_id: task4, planned_for: day }, headers: actor(U1, { "Idempotency-Key": "k-s8b", "X-Fixture-Fail": "store" }) },
+    // S4 concurrent focus requests: the declared one-active-focus
+    // guarantee is the database constraint, proven through a second
+    // connection; the kernel path rolls the refused focus back.
+    { method: "POST", uri: "/tasks/" + task3 + "/focus", body: { task_id: task3 }, headers: actor(U3, { "Idempotency-Key": "k-s4a" }) },
+    { probe: "second-focus", task_id: task4, user_id: U3 },
+    { method: "POST", uri: "/tasks/" + task4 + "/focus", body: { task_id: task4 }, headers: actor(U3, { "Idempotency-Key": "k-s4b" }) },
+    { probe: "tasks" },
+    // S9 the provider webhook never overwrites planning fields.
+    { probe: "plannings" },
+    { method: "POST", uri: "/api/provider/webhook", body: { task_id: task1, synced_at: "2026-01-02T09:00:00Z" } },
+    { probe: "plannings" },
+    { probe: "tasks" },
+    // The backlog: the workspace tasks without a planning row, and the
+    // pause command stamping the declared clock.
+    { method: "GET", uri: "/planning/backlog", headers: actor(U1) },
+    { method: "POST", uri: "/planning/{{planning:"+U1+"|" + task3 + "|2026-01-03}}/pause", headers: actor(U1, { "Idempotency-Key": "k-pause" }) },
+    { probe: "plannings" },
+  ];
+  const run = spawnSync(php, [driverPath, JSON.stringify(specs)], {
+    cwd: materialRoot,
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: 120_000,
+  });
+  assert.equal(run.status, 0, run.stderr.slice(0, 3000) + "|STDOUT|" + run.stdout.slice(0, 3000));
+  const outcomes = JSON.parse(run.stdout);
+  assert.equal(outcomes.length, specs.length);
+  const at = (index) => outcomes[index];
+  const errorOf = (outcome) => outcome.body?.error ?? {};
+  const rowsOf = (index) => at(index).rows ?? [];
+
+  // S1: plan, today lists the row, move repositions, unplan removes.
+  assert.equal(at(0).status, 202, JSON.stringify(at(0)));
+  assert.equal(at(1).status, 200);
+  const planned = at(1).body[0];
+  assert.equal(planned.task_id, task1);
+  assert.equal(planned.position, 1);
+  assert.equal(planned.planned_for, day);
+  assert.equal(at(2).status, 202, JSON.stringify(at(2)));
+  assert.equal(at(3).body[0].position, 2);
+  assert.equal(at(4).status, 202, JSON.stringify(at(4)));
+  assert.deepEqual(at(5).body, []);
+
+  // S2: two owners, one task, two independent rows.
+  assert.equal(at(6).status, 202, JSON.stringify(at(6)));
+  assert.equal(at(7).status, 202, JSON.stringify(at(7)));
+  assert.equal(at(8).body[0].user_id, U2);
+  assert.equal(at(8).body[0].task_id, task1);
+
+  // S5: fresh order accepted, stale version refused, fresh version applies.
+  assert.equal(at(9).status, 202, JSON.stringify(at(9)));
+  assert.equal(at(10).status, 202, JSON.stringify(at(10)));
+  assert.equal(at(11).status, 409, JSON.stringify(at(11)));
+  assert.equal(errorOf(at(11)).id, "planner.reorder_stale");
+  assert.equal(errorOf(at(11)).code, "LEK-ERR-009");
+  assert.equal(at(12).status, 202, JSON.stringify(at(12)));
+  assert.equal(at(12).status, 202);
+
+  // S6+S3: the midnight boundary splits today/carry-over by actor
+  // zone; the carried row keeps its original day through every read.
+  assert.equal(at(13).status, 200);
+  assert.equal(at(13).body.length, 1, JSON.stringify(at(13).body));
+  assert.equal(at(13).body[0].planned_for, "2026-01-01");
+  assert.equal(at(14).status, 200);
+  assert.deepEqual(at(14).body, []);
+  assert.equal(at(15).status, 200);
+  assert.equal(at(15).body[0].planning_id, "a1b2c3d4-0000-4000-8000-000000000001");
+  assert.equal(at(15).body[0].planned_for, "2026-01-01");
+  assert.equal(at(16).status, 200);
+  assert.deepEqual(at(16).body, []);
+  const carryBefore = JSON.stringify(rowsOf(17));
+  const carryAfter = JSON.stringify(rowsOf(19));
+  assert.equal(carryAfter, carryBefore, "the carry-over read rewrites no planning byte");
+
+  // S7: same key replays one row; same key with another body conflicts.
+  assert.equal(at(20).status, 202, JSON.stringify(at(20)));
+  assert.equal(at(21).status, 202, JSON.stringify(at(21)));
+  assert.equal(at(22).status, 409, JSON.stringify(at(22)));
+  assert.equal(errorOf(at(22)).id, "planner.planning_conflict");
+  assert.equal(errorOf(at(22)).code, "LEK-ERR-006");
+  const task3Rows = rowsOf(31).filter((row) => row.task_id === task3 && row.user_id === U1);
+  assert.equal(task3Rows.length, 1, JSON.stringify(task3Rows));
+
+  // S8: the unknown task and the declared infrastructure failure.
+  assert.equal(at(23).status, 404, JSON.stringify(at(23)));
+  assert.equal(errorOf(at(23)).id, "planner.task_not_found");
+  assert.equal(at(24).status, 503, JSON.stringify(at(24)));
+  assert.equal(errorOf(at(24)).id, "planner.store_unavailable");
+
+  // S4: the second active focus is refused by the database itself,
+  // inside the declared transaction; the kernel path rolls back.
+  assert.equal(at(25).status, 202, JSON.stringify(at(25)));
+  assert.equal(at(26).violated, true, JSON.stringify(at(26)));
+  assert.ok(at(27).status === 500 || at(27).status === "throwable", JSON.stringify(at(27)));
+  const tasksAfterFocus = rowsOf(28);
+  const focusedRows = tasksAfterFocus.filter((row) => row.focused === 1 || row.focused === true);
+  assert.equal(focusedRows.length, 1, JSON.stringify(focusedRows));
+  assert.equal(focusedRows[0].task_id, task3);
+
+  // S9: the webhook mutates provider-owned columns only.
+  const beforeWebhook = JSON.stringify(rowsOf(29));
+  assert.equal(at(30).status, 200, JSON.stringify(at(30)));
+  const afterWebhook = rowsOf(31);
+  assert.equal(JSON.stringify(afterWebhook), beforeWebhook, "the provider webhook overwrote planning fields");
+  const taskRow = rowsOf(32).find((row) => row.task_id === task1);
+  assert.equal(taskRow.provider_synced_at, "2026-01-02T09:00:00Z");
+
+  // The backlog answers the unplanned workspace task; the pause stamps
+  // the declared clock reading into the row.
+  assert.equal(at(33).status, 200, JSON.stringify(at(33)));
+  const backlogRow = at(33).body.find((row) => row.task_id === task5);
+  assert.ok(backlogRow, JSON.stringify(at(33).body));
+  assert.equal(at(34).status, 202, JSON.stringify(at(34)));
+  const pausedRow = rowsOf(35).find((row) => row.task_id === task3 && row.user_id === U1);
+  assert.ok(pausedRow && pausedRow.paused_at !== null && pausedRow.paused_at !== undefined, JSON.stringify(pausedRow));
+
+  rmSync(materialRoot, { recursive: true, force: true });
+});
+
 process.stdout.write(`${JSON.stringify({ ok: true, passed })}\n`);

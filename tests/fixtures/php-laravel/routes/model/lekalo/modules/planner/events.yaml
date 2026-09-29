@@ -8,3 +8,53 @@ definitions:
       - name: task_id
         type: "planner.task_id"
         required: true
+  - id: planner.task_planned
+    kind: event
+    version: 1
+    description: "A task was planned into a user's day"
+    payload:
+      - name: planning_id
+        type: "planner.planning_id"
+        required: true
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: planned_for
+        type: "planner.planning_date"
+        required: true
+      - name: position
+        type: "planner.position"
+        required: true
+  - id: planner.task_unplanned
+    kind: event
+    version: 1
+    description: "A task was removed from the plan"
+    payload:
+      - name: planning_id
+        type: "planner.planning_id"
+        required: true
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+  - id: planner.planning_reordered
+    kind: event
+    version: 1
+    description: "One planned day was reordered under a new optimistic version"
+    payload:
+      - name: planned_for
+        type: "planner.planning_date"
+        required: true
+      - name: reorder_version
+        type: "planner.reorder_version"
+        required: true
+  - id: planner.planning_paused
+    kind: event
+    version: 1
+    description: "One planned task was paused"
+    payload:
+      - name: planning_id
+        type: "planner.planning_id"
+        required: true
+      - name: paused_at
+        type: "planner.timestamp"
+        required: true

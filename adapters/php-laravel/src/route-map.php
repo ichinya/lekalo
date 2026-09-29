@@ -239,7 +239,11 @@ function php_routes_map_record(
     $controllerPath = PHP_ROUTES_GENERATED_ROOT . '/' . php_types_path_of($module, $controllerClass);
     $operationId = (string) ($binding['operationId'] ?? php_routes_camel_of($id));
     $request = null;
-    if (is_array($binding['body'] ?? null) && $mode === 'managed') {
+    if ($mode === 'managed' && (is_array($binding['body'] ?? null) || (array) ($binding['params'] ?? []) !== [])) {
+        // The typed request binding exists for every managed route with
+        // a declared decode plan: a body projection or a path-parameter
+        // binding (issue #50: the bodyless planning commands) — never a
+        // guessed empty input.
         $requestClass = $endpointStem . 'Request';
         $request = [
             'fqn' => $context['namespacePrefix'] . '\\' . ucfirst($module) . '\\' . $requestClass,

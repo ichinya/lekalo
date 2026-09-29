@@ -21,3 +21,59 @@ definitions:
     invokes: "planner.focus_task"
     method: POST
     path: "/api/tasks/{task_id}/focus"
+  - id: planner.endpoint_plan
+    kind: endpoint
+    version: 1
+    description: "Plan one task into the actor's day"
+    invokes: "planner.plan_task"
+    method: POST
+    path: "/planning"
+  - id: planner.endpoint_unplan
+    kind: endpoint
+    version: 1
+    description: "Remove one planned task from the plan"
+    invokes: "planner.unplan_task"
+    method: DELETE
+    path: "/planning/{planning_id}"
+  - id: planner.endpoint_move
+    kind: endpoint
+    version: 1
+    description: "Move one planned task to an explicit day and position"
+    invokes: "planner.move_task"
+    method: PATCH
+    path: "/planning/{planning_id}"
+  - id: planner.endpoint_reorder
+    kind: endpoint
+    version: 1
+    description: "Reorder one planned day under the optimistic version"
+    invokes: "planner.reorder_planned"
+    method: POST
+    path: "/planning/reorder"
+  - id: planner.endpoint_pause
+    kind: endpoint
+    version: 1
+    description: "Pause one planned task"
+    invokes: "planner.pause_planning"
+    method: POST
+    path: "/planning/{planning_id}/pause"
+  - id: planner.endpoint_today_planning
+    kind: endpoint
+    version: 1
+    description: "The planning rows of the actor-local today"
+    invokes: "planner.today_planning"
+    method: GET
+    path: "/planning/today"
+  - id: planner.endpoint_backlog
+    kind: endpoint
+    version: 1
+    description: "The workspace tasks with no planning row yet"
+    invokes: "planner.backlog_tasks"
+    method: GET
+    path: "/planning/backlog"
+  - id: planner.endpoint_carry_over
+    kind: endpoint
+    version: 1
+    description: "The planning rows of earlier days at their original dates"
+    invokes: "planner.carry_over"
+    method: GET
+    path: "/planning/carry-over"

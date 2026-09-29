@@ -2522,6 +2522,7 @@ function operations_generation(array $request): array
         'input' => $input,
         'definitions' => $definitions,
         'typesIndex' => $mappedTypes['index'],
+        'collections' => $mappedTypes['collections'],
         'namespacePrefix' => $input['namespacePrefix'],
         'root' => PHP_OPERATIONS_GENERATED_ROOT,
         'irDigest' => $input['irDigest'],
@@ -8899,14 +8900,24 @@ function php_types_collect_artifacts(
         $artifacts[] = $artifact;
     };
     foreach ($types as $entry) {
-        if ($entry['kind'] !== 'query') {
+        if ($entry['kind'] === 'query') {
+            // The query result codec is the artifact itself (issue #50:
+            // the routes family encodes list-return queries through it),
+            // so the classmap must carry it like any other class.
             $record([
                 'path' => $entry['path'],
                 'fqn' => $entry['fqn'],
-                'role' => 'type',
+                'role' => 'codec',
                 'semanticId' => $entry['semanticId'],
             ]);
+            continue;
         }
+        $record([
+            'path' => $entry['path'],
+            'fqn' => $entry['fqn'],
+            'role' => 'type',
+            'semanticId' => $entry['semanticId'],
+        ]);
         if ($entry['codecPath'] !== $entry['path']) {
             // Scalar wrappers and enums are their own codec: one file,
             // one artifact row.
@@ -10993,20 +11004,40 @@ function php_operations_map_record(array $record, array $context, callable $addF
     }
 
     // The result role: command recipes may declare a ref; queries derive
-    // it from the IR returns through the type map.
+    // it from the IR returns through the type map — a scalar ref maps to
+    // the nominal type, a list ref maps to the mapped collection class
+    // of its element entity (issue #50: the planning day lists).
     $recipe = $record['recipe'];
     $returnsRef = $definitions[$id]['returns'] ?? null;
     if ($kind === 'query') {
-        if (!is_array($returnsRef) || !isset($returnsRef['ref'])) {
-            $addFinding('operations.recipe-unsupported', $id, 'a managed query needs a scalar-ref returns declaration in v0.4.0');
-            return null;
+        if (is_array($returnsRef) && isset($returnsRef['list']['ref'])) {
+            $elementRef = $returnsRef['list']['ref'];
+            $collection = null;
+            foreach ((array) ($context['collections'] ?? []) as $candidate) {
+                if (is_array($candidate)
+                    && ($candidate['element'] ?? null) === $elementRef
+                    && ($candidate['nullableElements'] ?? false) === false) {
+                    $collection = $candidate;
+                    break;
+                }
+            }
+            if ($collection === null || !is_string($collection['fqn'] ?? null)) {
+                $addFinding('operations.type-unresolved', $id, 'the query list element type has no mapped collection class');
+                return null;
+            }
+            $resultRole = ['fqn' => (string) $collection['fqn']];
+        } else {
+            if (!is_array($returnsRef) || !isset($returnsRef['ref'])) {
+                $addFinding('operations.recipe-unsupported', $id, 'a managed query needs a scalar-ref or list-ref returns declaration in v0.4.0');
+                return null;
+            }
+            $resultFqn = $context['typesIndex'][(string) $returnsRef['ref']]['fqn'] ?? null;
+            if (!is_string($resultFqn)) {
+                $addFinding('operations.type-unresolved', $id, 'the query return type is not part of the mapped type inventory');
+                return null;
+            }
+            $resultRole = ['fqn' => $resultFqn];
         }
-        $resultFqn = $context['typesIndex'][(string) $returnsRef['ref']]['fqn'] ?? null;
-        if (!is_string($resultFqn)) {
-            $addFinding('operations.type-unresolved', $id, 'the query return type is not part of the mapped type inventory');
-            return null;
-        }
-        $resultRole = ['fqn' => $resultFqn];
     } elseif ($recipe['kind'] === 'port-delegation' && $recipe['result'] !== null) {
         $resultFqn = $context['typesIndex'][$recipe['result']]['fqn'] ?? null;
         if (!is_string($resultFqn)) {
@@ -11811,6 +11842,17 @@ function php_operations_body_lines(array $operation, array $definitions, array $
     if (($recipe['kind'] ?? '') === 'port-delegation') {
         $delegateSlot = php_operations_slot_of((string) $recipe['port']);
         $call = '$this->' . $delegateSlot . '->' . (string) $recipe['method'] . '($input, $actor)';
+        if (($operation['transaction'] ?? 'forbidden') === 'required') {
+            // The required transaction binding wraps the one maintained
+            // delegation: rollback on a typed failure is the port's own
+            // guarantee, committed atomically with its writes (issue #50).
+            $unit = $operation['result'] === null;
+            return [
+                '        ' . ($unit ? '' : 'return ') . '$this->transactions->run(function () use ($input, $actor)' . ($unit ? ': void' : ': mixed') . ' {',
+                '            ' . ($unit ? '' : 'return ') . $call . ';',
+                '        });',
+            ];
+        }
         if ($operation['result'] === null) {
             return ['        ' . $call . ';'];
         }
@@ -13261,7 +13303,11 @@ function php_routes_map_record(
     $controllerPath = PHP_ROUTES_GENERATED_ROOT . '/' . php_types_path_of($module, $controllerClass);
     $operationId = (string) ($binding['operationId'] ?? php_routes_camel_of($id));
     $request = null;
-    if (is_array($binding['body'] ?? null) && $mode === 'managed') {
+    if ($mode === 'managed' && (is_array($binding['body'] ?? null) || (array) ($binding['params'] ?? []) !== [])) {
+        // The typed request binding exists for every managed route with
+        // a declared decode plan: a body projection or a path-parameter
+        // binding (issue #50: the bodyless planning commands) — never a
+        // guessed empty input.
         $requestClass = $endpointStem . 'Request';
         $request = [
             'fqn' => $context['namespacePrefix'] . '\\' . ucfirst($module) . '\\' . $requestClass,
@@ -14232,8 +14278,16 @@ function php_routes_controller_text(array $context, string $namespace, array $ro
         $lines[] = '';
         $lines[] = '        return new \\Illuminate\\Http\\Response(\'\', ' . (int) $route['success']['status'] . ');';
     } else {
-        $resultType = php_routes_result_type($route, $context);
-        $wire = $resultType === null ? 'null' : php_routes_wire_expr($resultType, '$result');
+        // A list-return query encodes through its declared #58 result
+        // codec (issue #50): the collection class carries no wire
+        // spelling of its own, the codec is the projection.
+        $resultCodecFqn = php_routes_result_codec_fqn($route, $context);
+        if ($resultCodecFqn !== null) {
+            $wire = '\\' . $resultCodecFqn . '::encode($result)';
+        } else {
+            $resultType = php_routes_result_type($route, $context);
+            $wire = $resultType === null ? 'null' : php_routes_wire_expr($resultType, '$result');
+        }
         $lines[] = '';
         $lines[] = '        return response()->json(' . $wire . ', ' . (int) $route['success']['status'] . ');';
     }
@@ -14269,6 +14323,24 @@ function php_routes_result_type(array $route, array $context): ?array
         return null;
     }
     return ['ref' => $ref, 'fqn' => (string) $entry['fqn'], 'kind' => (string) ($type['kind'] ?? ''), 'base' => (string) ($type['base'] ?? '')];
+}
+
+/**
+ * The #58 result codec of one list-return query route (issue #50): the
+ * mapped query entry is the codec; a scalar-ref query or a command
+ * carries none.
+ */
+function php_routes_result_codec_fqn(array $route, array $context): ?string
+{
+    $definition = is_array($context['definitions'][$route['operation']] ?? null) ? $context['definitions'][$route['operation']] : null;
+    if ($definition === null || !isset($definition['returns']['list']['ref'])) {
+        return null;
+    }
+    $entry = is_array($context['typesIndex'][$route['operation']] ?? null) ? $context['typesIndex'][$route['operation']] : null;
+    if ($entry === null || !is_string($entry['fqn'] ?? null)) {
+        return null;
+    }
+    return (string) $entry['fqn'];
 }
 
 /** The route registrations text: one block per managed route, id-sorted. */

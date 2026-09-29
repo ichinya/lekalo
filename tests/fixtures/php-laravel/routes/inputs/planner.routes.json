@@ -14,8 +14,38 @@
  },
  "routes": [
   {
+   "id": "planner.endpoint_backlog",
+   "operation": "planner.backlog_tasks",
+   "mode": "managed"
+  },
+  {
+   "id": "planner.endpoint_carry_over",
+   "operation": "planner.carry_over",
+   "mode": "managed"
+  },
+  {
    "id": "planner.endpoint_focus_task_by_id",
    "operation": "planner.focus_task",
+   "mode": "managed"
+  },
+  {
+   "id": "planner.endpoint_move",
+   "operation": "planner.move_task",
+   "mode": "managed"
+  },
+  {
+   "id": "planner.endpoint_pause",
+   "operation": "planner.pause_planning",
+   "mode": "managed"
+  },
+  {
+   "id": "planner.endpoint_plan",
+   "operation": "planner.plan_task",
+   "mode": "managed"
+  },
+  {
+   "id": "planner.endpoint_reorder",
+   "operation": "planner.reorder_planned",
    "mode": "managed"
   },
   {
@@ -30,6 +60,16 @@
   {
    "id": "planner.endpoint_today",
    "operation": "planner.count_focused",
+   "mode": "managed"
+  },
+  {
+   "id": "planner.endpoint_today_planning",
+   "operation": "planner.today_planning",
+   "mode": "managed"
+  },
+  {
+   "id": "planner.endpoint_unplan",
+   "operation": "planner.unplan_task",
    "mode": "managed"
   }
  ]

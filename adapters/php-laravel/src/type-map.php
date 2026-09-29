@@ -678,14 +678,24 @@ function php_types_collect_artifacts(
         $artifacts[] = $artifact;
     };
     foreach ($types as $entry) {
-        if ($entry['kind'] !== 'query') {
+        if ($entry['kind'] === 'query') {
+            // The query result codec is the artifact itself (issue #50:
+            // the routes family encodes list-return queries through it),
+            // so the classmap must carry it like any other class.
             $record([
                 'path' => $entry['path'],
                 'fqn' => $entry['fqn'],
-                'role' => 'type',
+                'role' => 'codec',
                 'semanticId' => $entry['semanticId'],
             ]);
+            continue;
         }
+        $record([
+            'path' => $entry['path'],
+            'fqn' => $entry['fqn'],
+            'role' => 'type',
+            'semanticId' => $entry['semanticId'],
+        ]);
         if ($entry['codecPath'] !== $entry['path']) {
             // Scalar wrappers and enums are their own codec: one file,
             // one artifact row.

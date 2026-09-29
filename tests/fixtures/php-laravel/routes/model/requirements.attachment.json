@@ -1,0 +1,81 @@
+{
+ "schemaVersion": "lekalo/requirements/v0.2.16",
+ "identity": "dev.lekalo.requirements@0.2.16",
+ "projectId": "planner",
+ "modelRef": {
+  "modelVersion": "0.2.16",
+  "digest": "sha256:4557046ca818cc3e86691772c5cf7325fe0fa152e9f958bff85a8d77e61d4202"
+ },
+ "providers": [
+  {
+   "source": "openspec",
+   "kind": "openspec",
+   "root": "openspec"
+  }
+ ],
+ "references": [
+  {
+   "symbol": "planner.user_task_planning",
+   "relation": "derived_from",
+   "source": "openspec",
+   "requirement": "planner.REQ-plan-the-day",
+   "revision": "sha256:612a5a550142ccfeb5970c16659469bb49975ac79e7fd979995d114e56114e6b"
+  },
+  {
+   "symbol": "planner.plan_task",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-plan-the-day",
+   "revision": "sha256:612a5a550142ccfeb5970c16659469bb49975ac79e7fd979995d114e56114e6b"
+  },
+  {
+   "symbol": "planner.today_planning",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-plan-the-day",
+   "revision": "sha256:612a5a550142ccfeb5970c16659469bb49975ac79e7fd979995d114e56114e6b"
+  },
+  {
+   "symbol": "planner.move_task",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-move-and-unplan",
+   "revision": "sha256:54c8850889aac65b18d443ff6c88f8049fc859d87037a3af178343d2707da60b"
+  },
+  {
+   "symbol": "planner.unplan_task",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-move-and-unplan",
+   "revision": "sha256:54c8850889aac65b18d443ff6c88f8049fc859d87037a3af178343d2707da60b"
+  },
+  {
+   "symbol": "planner.pause_planning",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-pause-focus",
+   "revision": "sha256:037a5e50311013e15a3a0d7aec5c3120de7b630c702495af60af7a6438e227b0"
+  },
+  {
+   "symbol": "planner.carry_over",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-carry-over",
+   "revision": "sha256:ab3656290c5dcae6b702f21b5dd58d0cdff3150044bde8f653eabcab81d44db7"
+  },
+  {
+   "symbol": "planner.reorder_planned",
+   "relation": "implements",
+   "source": "openspec",
+   "requirement": "planner.REQ-optimistic-reorder",
+   "revision": "sha256:09f9eae101f302ace9a72f4357dd466372ed4177fe5110fe578188324bd47b07"
+  },
+  {
+   "symbol": "planner.deny_foreign_planning",
+   "relation": "derived_from",
+   "source": "openspec",
+   "requirement": "planner.REQ-ownership-scope",
+   "revision": "sha256:32fa6ea2e30a0aa426579051c7d880d1d9421a4d0f2165f258980880b31df6ba"
+  }
+ ]
+}
