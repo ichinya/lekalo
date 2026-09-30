@@ -401,12 +401,16 @@ function flattenChain(ts, node) {
   return { root: current, links };
 }
 
-/** The VariableDeclaration/PropertyAssignment that declares this symbol. */
+/** The VariableDeclaration/PropertyAssignment/BindingElement that declares this symbol. */
 function variableDeclarationOf(symbol) {
   for (const declaration of symbol?.declarations ?? []) {
     if (declaration.kind === 261 /* VariableDeclaration */) return declaration;
     if (declaration.kind === 304 /* PropertyAssignment */) return declaration;
     if (declaration.kind === 173 /* PropertyDeclaration */) return declaration;
+    // A destructured binding declares its local through a binding
+    // element: ignoring it made renamed destructures invisible to both
+    // extraction and the unproven-callee net (issue #116 fix round 4).
+    if (declaration.kind === 209 /* BindingElement */) return declaration;
   }
   return null;
 }
@@ -470,9 +474,15 @@ function calleeSpellingName(ts, calleeNode) {
  *   `import { pgTable as pt } then pt(...)`     (import alias)
  *   `import * as d … then d.relations(…)`       (namespace property)
  *   `const r = relations then r(…)`             (const/let rebinding)
+ *   `const { relations: rel2 } = orm then rel2(…)` (renamed destructure)
  * Rebinding follows a bounded chain of variable declarations whose
  * initializer is another reference; anything else (call results,
  * parameters, reassignment through property bags) stays unproven.
+ * A BindingElement declaration resolves through the enclosing
+ * declaration's initializer: the destructured property name selects
+ * the export from the initializer's namespace symbol
+ * (issue #116 fix round 4 — previously a renamed destructure escaped
+ * both extraction and the unproven flag and was dropped silently).
  * Returns null when the callee does not resolve into the closure.
  */
 function closureCalleeSymbol(context, calleeNode, depth = 0) {
@@ -486,13 +496,55 @@ function closureCalleeSymbol(context, calleeNode, depth = 0) {
   if (symbolInClosure(symbol, context.closurePrefix)) return symbol;
   if (depth >= MAX_ALIAS_HOPS) return null;
   const declaration = variableDeclarationOf(symbol);
-  if (declaration?.kind !== context.ts.SyntaxKind.VariableDeclaration) return null;
-  const initializer = declaration.initializer;
-  if (initializer?.kind !== context.ts.SyntaxKind.Identifier
-    && initializer?.kind !== context.ts.SyntaxKind.PropertyAccessExpression) {
+  if (declaration === null || declaration === undefined) return null;
+  const ts = context.ts;
+  if (declaration.kind === ts.SyntaxKind.VariableDeclaration) {
+    const initializer = declaration.initializer;
+    if (initializer?.kind !== ts.SyntaxKind.Identifier
+      && initializer?.kind !== ts.SyntaxKind.PropertyAccessExpression) {
+      return null;
+    }
+    return closureCalleeSymbol(context, initializer, depth + 1);
+  }
+  // Renamed destructuring: `const { relations: rel2 } = orm` (or the
+  // shorthand). The local spelling is not identity — the destructured
+  // property name selects the export.
+  if (declaration.kind === ts.SyntaxKind.BindingElement) {
+    const propertyName = declaration.propertyName ?? declaration.name;
+    const nameIsSpellable = propertyName?.kind === ts.SyntaxKind.Identifier
+      || propertyName?.kind === ts.SyntaxKind.StringLiteral
+      || propertyName?.kind === ts.SyntaxKind.NoSubstitutionTemplateLiteral;
+    if (!nameIsSpellable) return null;
+    if (declaration.parent?.kind !== ts.SyntaxKind.ObjectBindingPattern) return null;
+    const owner = declaration.parent.parent;
+    if (owner?.kind !== ts.SyntaxKind.VariableDeclaration) return null;
+    const initializer = owner.initializer;
+    if (initializer === undefined || initializer === null) return null;
+    let namespaceSymbol;
+    try {
+      namespaceSymbol = context.checker.getSymbolAtLocation(initializer);
+    } catch {
+      return null;
+    }
+    namespaceSymbol = resolveAliasSymbol(context.checker, namespaceSymbol);
+    if (namespaceSymbol === null || namespaceSymbol === undefined) return null;
+    // Module export surfaces flatten star re-exports only through the
+    // checker (`export * from "./relations.js"` never lands in the
+    // raw `.exports` table), so resolve through getExportsOfModule and
+    // fall back to the direct table (issue #116 fix round 4).
+    let target = null;
+    try {
+      const exports = context.checker.getExportsOfModule(namespaceSymbol)
+        ?? context.checker.getExportsOfSymbol(namespaceSymbol) ?? [];
+      target = exports.find((entry) => entry?.getName() === propertyName.text) ?? null;
+    } catch {
+      target = namespaceSymbol.exports?.get(propertyName.text) ?? null;
+    }
+    if (target !== null && target !== undefined
+      && symbolInClosure(target, context.closurePrefix)) return target;
     return null;
   }
-  return closureCalleeSymbol(context, initializer, depth + 1);
+  return null;
 }
 
 /**
@@ -507,8 +559,38 @@ function closureCalleeSymbol(context, calleeNode, depth = 0) {
  */
 function calleeRecognizedButUnproven(context, calleeNode, constructs) {
   if (closureCalleeSymbol(context, calleeNode) !== null) return false;
-  const spelling = calleeSpellingName(context.ts, calleeNode);
-  return spelling !== null && constructs.has(spelling);
+  return calleeSpellingNames(context, calleeNode)
+    .some((spelling) => constructs.has(spelling));
+}
+
+/**
+ * Every construct spelling a callee is RECOGNIZABLE by: the direct
+ * call spelling, plus the destructured property name behind a binding
+ * element — `rel2` in `const { relations: rel2 } = orm` spells `rel2`
+ * locally, but the construct it destructures is spelled `relations`
+ * (issue #116 fix round 4).
+ */
+function calleeSpellingNames(context, calleeNode) {
+  const ts = context.ts;
+  const spellings = [];
+  const direct = calleeSpellingName(ts, calleeNode);
+  if (direct !== null) spellings.push(direct);
+  let symbol;
+  try {
+    symbol = context.checker.getSymbolAtLocation(calleeNode);
+  } catch {
+    symbol = null;
+  }
+  for (const declaration of symbol?.declarations ?? []) {
+    if (declaration.kind !== ts.SyntaxKind.BindingElement) continue;
+    if (declaration.parent?.kind !== ts.SyntaxKind.ObjectBindingPattern) continue;
+    const propertyName = declaration.propertyName ?? declaration.name;
+    const spellable = propertyName?.kind === ts.SyntaxKind.Identifier
+      || propertyName?.kind === ts.SyntaxKind.StringLiteral
+      || propertyName?.kind === ts.SyntaxKind.NoSubstitutionTemplateLiteral;
+    if (spellable) spellings.push(propertyName.text);
+  }
+  return spellings;
 }
 
 /** The first closure declaration path of the symbol (provenance). */
