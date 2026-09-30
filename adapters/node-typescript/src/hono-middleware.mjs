@@ -18,6 +18,7 @@
  */
 import {
   HONO_MAX_CHAIN,
+  canonicalHonoText,
   makeRecord,
   mergeRouteEvidence,
 } from "./hono-evidence.mjs";
@@ -57,15 +58,22 @@ export function buildMiddlewareChains(ctx, routes, registrations) {
     }
     const chainLength = chain.length;
     let ordinal = 0;
+    // Context records are per route + handler + call site: distinct
+    // bindings of the SAME handler by different use events are distinct
+    // chain members but ONE fact per context site — without this
+    // identity the repeated binding emits byte-identical records and
+    // the envelope validator reports duplicate-record (issue #115 fix
+    // round 2).
+    const contextIdentities = new Map();
     for (const member of chain) {
       emitMiddlewareRecord(ctx, route, member, ordinal, chainLength);
-      emitContextRecords(ctx, route, member.handler);
+      emitContextRecords(ctx, route, member.handler, contextIdentities);
       ordinal += 1;
     }
     // The terminal handler rides route-handler records (routes phase);
     // its context writes still belong to this route's context story.
     if (route.terminal) {
-      emitContextRecords(ctx, route, route.terminal);
+      emitContextRecords(ctx, route, route.terminal, contextIdentities);
     }
   }
 }
@@ -291,9 +299,13 @@ function explicitRoleOf(ctx, handler) {
  * `c.get('k')`, `c.var.k`). Keys stay namespaced implementation
  * evidence; dynamic keys become uncertainty, never canonical fields.
  */
-function emitContextRecords(ctx, route, handler) {
+function emitContextRecords(ctx, route, handler, contextIdentities) {
   const body = functionBodyOf(ctx, handler);
   if (!body) return;
+  // Distinct use events binding the same handler resolve distinct
+  // endpoint OBJECTS with identical CONTENT: the dedupe key is the
+  // canonical endpoint, not object identity (issue #115 fix round 2).
+  const handlerKey = canonicalHonoText(endpointOf(handler));
   const contextParameter = contextParamSymbolOf(ctx, handler);
   if (!contextParameter) return;
   const { ts } = ctx;
@@ -309,7 +321,7 @@ function emitContextRecords(ctx, route, handler) {
         const keyNode = node.arguments?.[0] ?? null;
         const key = keyNode && keyNode.kind === ts.SyntaxKind.StringLiteral ? keyNode.text : null;
         emitContextKeyRecord(ctx, route, handler, node,
-          methodName === "set" ? "context-write" : "context-read", key);
+          methodName === "set" ? "context-write" : "context-read", key, handlerKey, contextIdentities);
       }
     } else if ((node.kind === ts.SyntaxKind.PropertyAccessExpression || node.kind === ts.SyntaxKind.ElementAccessExpression)
       && node.expression?.kind === ts.SyntaxKind.PropertyAccessExpression
@@ -318,18 +330,31 @@ function emitContextRecords(ctx, route, handler) {
       const key = node.kind === ts.SyntaxKind.PropertyAccessExpression
         ? (node.name?.kind === ts.SyntaxKind.Identifier ? node.name.text : null)
         : (node.argument?.kind === ts.SyntaxKind.StringLiteral ? node.argument.text : null);
-      emitContextKeyRecord(ctx, route, handler, node, "context-read", key);
+      emitContextKeyRecord(ctx, route, handler, node, "context-read", key, handlerKey, contextIdentities);
     }
     ts.forEachChild(node, visit);
   };
   visit(body);
 }
 
-function emitContextKeyRecord(ctx, route, handler, node, relation, key) {
+function emitContextKeyRecord(ctx, route, handler, node, relation, key, handlerKey, contextIdentities) {
   if (key === null || key === undefined) {
     ctx.addUncertaintyAt(node.getSourceFile(), node, "dynamic-context-key", relation);
     return;
   }
+  // One context site is one fact per route: the same handler bound by
+  // several use events must not re-emit the identical record (issue
+  // #115 fix round 2). Sites stay distinct — span identity — so two
+  // reads of one key in one handler keep both records.
+  const span = ctx.spanOf(node, node.getSourceFile());
+  const identity = `${relation}|${key}|${span.path}:${span.startLine}:${span.startColumn}:${span.endLine}:${span.endColumn}`;
+  let seen = contextIdentities.get(handlerKey);
+  if (seen === undefined) {
+    seen = new Set();
+    contextIdentities.set(handlerKey, seen);
+  }
+  if (seen.has(identity)) return;
+  seen.add(identity);
   // The context read/write rides the route's scope: a key touched by a
   // handler only reachable through an incomplete mount stays incomplete
   // (issue #115 fix round 2).

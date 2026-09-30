@@ -215389,13 +215389,14 @@ function buildMiddlewareChains(ctx, routes, registrations) {
     }
     const chainLength = chain.length;
     let ordinal = 0;
+    const contextIdentities = /* @__PURE__ */ new Map();
     for (const member of chain) {
       emitMiddlewareRecord(ctx, route, member, ordinal, chainLength);
-      emitContextRecords(ctx, route, member.handler);
+      emitContextRecords(ctx, route, member.handler, contextIdentities);
       ordinal += 1;
     }
     if (route.terminal) {
-      emitContextRecords(ctx, route, route.terminal);
+      emitContextRecords(ctx, route, route.terminal, contextIdentities);
     }
   }
 }
@@ -215550,9 +215551,10 @@ function explicitRoleOf(ctx, handler) {
   }
   return null;
 }
-function emitContextRecords(ctx, route, handler) {
+function emitContextRecords(ctx, route, handler, contextIdentities) {
   const body = functionBodyOf(ctx, handler);
   if (!body) return;
+  const handlerKey = canonicalHonoText(endpointOf(handler));
   const contextParameter = contextParamSymbolOf(ctx, handler);
   if (!contextParameter) return;
   const { ts: ts3 } = ctx;
@@ -215572,22 +215574,33 @@ function emitContextRecords(ctx, route, handler) {
           handler,
           node,
           methodName === "set" ? "context-write" : "context-read",
-          key
+          key,
+          handlerKey,
+          contextIdentities
         );
       }
     } else if ((node.kind === ts3.SyntaxKind.PropertyAccessExpression || node.kind === ts3.SyntaxKind.ElementAccessExpression) && node.expression?.kind === ts3.SyntaxKind.PropertyAccessExpression && node.expression.name?.text === "var" && resolvesToContextSymbol(ctx, node.expression.expression, contextParameter)) {
       const key = node.kind === ts3.SyntaxKind.PropertyAccessExpression ? node.name?.kind === ts3.SyntaxKind.Identifier ? node.name.text : null : node.argument?.kind === ts3.SyntaxKind.StringLiteral ? node.argument.text : null;
-      emitContextKeyRecord(ctx, route, handler, node, "context-read", key);
+      emitContextKeyRecord(ctx, route, handler, node, "context-read", key, handlerKey, contextIdentities);
     }
     ts3.forEachChild(node, visit);
   };
   visit(body);
 }
-function emitContextKeyRecord(ctx, route, handler, node, relation, key) {
+function emitContextKeyRecord(ctx, route, handler, node, relation, key, handlerKey, contextIdentities) {
   if (key === null || key === void 0) {
     ctx.addUncertaintyAt(node.getSourceFile(), node, "dynamic-context-key", relation);
     return;
   }
+  const span = ctx.spanOf(node, node.getSourceFile());
+  const identity = `${relation}|${key}|${span.path}:${span.startLine}:${span.startColumn}:${span.endLine}:${span.endColumn}`;
+  let seen = contextIdentities.get(handlerKey);
+  if (seen === void 0) {
+    seen = /* @__PURE__ */ new Set();
+    contextIdentities.set(handlerKey, seen);
+  }
+  if (seen.has(identity)) return;
+  seen.add(identity);
   const evidence = mergeRouteEvidence(route, "complete", []);
   ctx.addRecord(makeRecord({
     relation: `dev.lekalo.hono/${relation}`,

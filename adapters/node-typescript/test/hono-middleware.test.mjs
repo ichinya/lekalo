@@ -205,3 +205,33 @@ test("pre-mount parent middleware is visible on mounted child routes", async () 
     dispose(context.root);
   }
 });
+
+test("multi-use same handler: chain membership repeats, context records dedupe per identity", async () => {
+  const context = await scanHonoFixture("use-semantics", "use-semantics");
+  try {
+    // Four distinct use() events bind one handler: four chain members
+    // with distinct ordinals — binding multiplicity stays explicit.
+    const chains = recordsOfRelation(context, "uses-middleware")
+      .filter((row) => row.path === "/multi")
+      .sort((a, b) => a.ordinal - b.ordinal);
+    assert.equal(chains.length, 4, "every binding keeps its own uses-middleware record");
+    assert.deepEqual(chains.map((row) => row.ordinal), [0, 1, 2, 3]);
+    // The handler's context sites are ONE fact per route: the four
+    // bindings must not re-emit byte-identical records.
+    const writes = recordsOfRelation(context, "context-write")
+      .filter((row) => row.path === "/multi" && row.note === "seen");
+    assert.equal(writes.length, 1, "one context-write record per site, not per binding");
+    const reads = recordsOfRelation(context, "context-read")
+      .filter((row) => row.path === "/multi" && row.note === "seen");
+    assert.equal(reads.length, 1, "one context-read record per site, not per binding");
+    // Duplicate records are envelope violations: none may exist.
+    assert.equal(
+      context.hono.uncertainty.filter((row) => row.kind === "hono-invalid-record").length,
+      0,
+      "no duplicate-record/invalid-record violations",
+    );
+    assert.equal(context.hono.provider.state, "complete");
+  } finally {
+    dispose(context.root);
+  }
+});
