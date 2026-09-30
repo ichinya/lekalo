@@ -13,7 +13,14 @@
 
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,8 +82,16 @@ const runOffline = (args, cwd, input) => {
 };
 
 const caseId = `${process.pid}-${Date.now()}`;
-const project = join(tmpdir(), `lekalo-history-cli-${caseId}`);
-mkdirSync(project, { recursive: true});
+let project = join(tmpdir(), `lekalo-history-cli-${caseId}`);
+mkdirSync(project, { recursive: true });
+// GitHub's Windows runners spell %TEMP% with the 8.3 profile alias
+// (RUNNER~1), and the CLI selection policy denies alias-spelled
+// working directories (structure.selection-alias) before any command
+// logic runs. Spawn against the resolved alias-free spelling — the
+// same canonicalize-then-strip treatment the Rust CLI suites apply
+// before every chdir. The libuv (native) realpath is required: the
+// default JS realpath keeps an 8.3-spelled input as written.
+project = realpathSync.native(project);
 try {
   // 2. Init creates the governed home with its generated protection.
   let result = runOffline(["--json", "history", "init", "--project", "."], project);
