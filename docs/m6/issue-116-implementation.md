@@ -377,3 +377,87 @@ model checks, the manifest golden, and the adapter conformance battery
 (pass 10, fail 0). The ajv-based manifest-contract script stays
 CI-owned: `ajv` is not provisioned in the offline worktree (identical
 at the base commit).
+
+## Fix round 4 (re-review: two new majors, two residual minors)
+
+The re-review verified every round-3 fix (namespace access, const/let
+rebinds including 3-hop chains, the callee-unproven net, the
+symbol-bound receiver memo, native-id targets, the fixture manifest)
+and found two new majors plus two residual minors in the same honesty
+contract. All four are fixed with regression fixtures/tests, one
+commit per finding: a recognized Drizzle surface is either extracted
+with provenance or recorded as an explicit limitation, and sections
+covering dropped constructs never claim `complete`.
+
+Major — module-namespace receivers typed as `db` handles fabricated
+evidence. `import * as orm from "drizzle-orm"` then
+`orm.select().from(users)` emitted a clean query row
+(`receiver:"db"`, the real target's columns), `orm.batch([...])`
+misattributed `batch-unsupported`, and `orm.query.users.findMany()`
+misattributed `relational-query-unsupported`. Root cause: the
+namespace object's TYPE resolves into the embedded closure (the
+module's export surface is the vendored declarations), so the closure
+test alone typed the namespace as a client handle. Fix:
+`isModuleNamespaceSymbol` excludes namespace symbols (SourceFile /
+NamespaceImport / ExportSpecifier declarations) from db-handle typing
+in `rootIdentityKind`; member calls on namespace receivers emit the new
+`namespace-receiver-unsupported` limitation (query-shaped chains,
+batch, relational query, transaction tails) and degrade the covered
+section (queries; the transactions completeness now honors its section
+gap too). `orm.pgTable(...)`/`orm.relations(...)` callee resolution is
+untouched — namespace-ACCESS callees still extract exactly like r3.
+
+Major — renamed destructure `const { relations: rel2 } = orm` silently
+dropped. The callee's declaration is a BindingElement, which
+`variableDeclarationOf` ignored, so the construct escaped both
+extraction and the spelling net (the local name `rel2` names nothing).
+Fix: BindingElement declarations resolve through the enclosing
+declaration's initializer — the destructured property name selects the
+export from the namespace symbol, and because star re-exports flatten
+only through the checker (`export * from "./relations.js"` never lands
+in the raw `.exports` table) the lookup goes through
+`getExportsOfModule`. Renamed destructures, shorthand destructures,
+and aliased direct imports (`relations as rel3`, already covered by
+the r2 alias machinery — verified, not assumed) all extract with
+closure provenance; when a destructure is unprovable, the destructured
+property name counts as a construct spelling, so the drop stays an
+explicit `callee-unproven`.
+
+Minor — rebind chains past `MAX_ALIAS_HOPS` dropped silently. The
+resolver returned null at the bound and the net only knew the local
+spelling. The resolver now reports the bound hit through a probe and
+the net recognizes the construct when the callee's vendored type names
+the construct family — family-disjoint, so a relations chain never
+also flags the table walk. Four hops still extract; the fifth emits
+`callee-unproven` anchored to its call.
+
+Minor — the spelling net over-flagged provably non-Drizzle member
+calls. `builder.relations()` / `builder.pgTable()` on receivers whose
+callee TYPE provably resolves outside the embedded closure (project
+classes, other packages) emitted false `callee-unproven` Drizzle gaps.
+The net now checks the callee's type provenance first: a type that
+resolved to real declarations with none in the closure is provably not
+a vendored construct and stays limitation-free; unresolvable
+(any/error) types remain unprovable and keep the net's coverage.
+
+New `postgres-round4` fixture: namespace receivers (query-shaped
+chains, batch, relational query, transaction) that must emit
+`namespace-receiver-unsupported` and never fabricate rows; renamed/
+shorthand destructure and aliased-import bindings that must extract by
+resolved export identity; a five-rebind chain explicit at the bound
+while four hops extract; and provably non-Drizzle spellings that must
+never flag. Four new gate tests (32 -> 36), each failing on the
+pre-fix bundle and passing after.
+
+Bundle: rebuilt deterministically (`build.mjs --check` byte-identical,
+entry `sha256:3ba9b606066391fa96308ef6d7315a368963e3daa410124c2166c0f40616c833`,
+14,628,767 bytes), manifest package digest regenerated
+(`sha256:746777c214d74a37d48580e58c75cabdcd33b2da2244940e1f8a44795eaae63e`),
+committed-manifest pin moved with the bytes it guards. Gates: `cargo
+fmt --check`, `cargo clippy --workspace --all-targets --locked -D
+warnings`, `cargo test --workspace --locked --no-fail-fast` (89 test
+binaries, 0 failures, incl. `the_committed_adapter_manifest_parses`
+over the new pin), the drizzle gate (36/36), the kernel/scanner/zod/
+native-gates/transport/openapi/client-sdk/scenario Node suites, the
+fixture-provenance family gate, contract-versions/structure/authority/
+privacy/model checks, and the manifest golden.
