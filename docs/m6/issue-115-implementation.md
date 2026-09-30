@@ -6,6 +6,78 @@ to its implementing code, fixtures, and executable evidence, and marks
 every partial or unsupported item explicitly. Companion research:
 `docs/m6/issue-115-research.md`.
 
+## Fix round 3 (adversarial re-review of PR #142)
+
+The round-3 re-review verified every round-2 finding fixed, then found
+two NEW defects in supported territory. Both are fixed; each fix is its
+own commit with its own adversarial fixture + test; the bundle and
+manifest are regenerated and the Rust exemplar guard tracks the new
+package digest.
+
+- **BLOCKER — a mounted child's own `basePath` prefix was dropped.**
+  `resolveMount` built the mounted scope base from the PARENT's
+  `standaloneBaseOf` only, so a child carrying its own base lost the
+  prefix under every mount: `const view = inner.basePath('/v');
+  view.get('/in', h); app.route('/bp', view)` emitted `route-handler`
+  `GET /bp/in` `status: complete`, while the Hono runtime serves
+  `GET /bp/v/in` (#addRoute merges the clone's `_basePath` into each
+  stored route; `route()` re-prefixes those paths) — a
+  wrong-complete-path claim, the same class as the round-1 prefix-drop
+  blocker. The inline form (`app.route('/bp', new Hono().basePath('/v')
+  .get('/in', h))`) dropped the prefix identically, and the loss
+  compounded with depth: a mounted view's nested mount dropped the
+  grandchild's own base too (`/bp/v/n/leaf` instead of
+  `/bp/v/n/nb/leaf`). `mountChildBaseOf` now composes the child's own
+  standalone base into the mount scope base — `mountPrefix +
+  childBase + routePath` at every depth — and a mount whose child base
+  cannot be resolved statically downgrades to an unknown mounts-router
+  record plus an explicit `unresolved-mount-base` uncertainty (new
+  closed-vocabulary reason) instead of a guessed complete path. The
+  round-2 `isNestedMount` blanket (view/alias-parented mounts are
+  always roots) also let a mounted view's own nested mounts re-claim a
+  phantom standalone surface beside the mounted paths (`GET /v/n/leaf`
+  `complete`); a view-parented mount is now nested exactly when its
+  parent instance is provably a mounted child, so it composes under
+  the mount prefix only, while unmounted views keep their standalone
+  mounts (`mount-base/` fixture: variable form, inline form, and the
+  depth-2 based grandchild all resolve with every prefix; conditional
+  and deferred mounts of the based child keep constraining the whole
+  prefixed subtree).
+- **MAJOR — an alias-target mount emitted a complete record over a
+  silently empty subtree.** `const aliased = view;
+  app.route('/bp2', aliased)` emitted `mounts-router` `app -> aliased
+  /bp2` `status: complete` with ZERO route records under `/bp2`: route
+  events are keyed to the target instance's key while the alias
+  binding carries its own key, so `event.instance.key !== child.key`
+  matched nothing — no incomplete/unknown marker, a silent under-claim
+  of the whole mounted surface (and alias-name registrations resolved
+  at the prefix-dropped `/bp2/<path>`). Alias cliques now join the
+  identities that denote the SAME runtime object: a mount through a
+  const alias resolves the target's route events and nested mounts
+  under the mount prefix (and vice versa), and the mounted-children
+  exclusion covers every clique key so neither name re-claims a
+  standalone surface. Only alias edges join a clique — a basePath view
+  is a distinct clone with its own route table, never its owner's
+  surface. Cliques are bounded, cycle-safe, and memoized per instance
+  key; inline ephemeral views compute theirs lazily. The mount record
+  still names the alias binding the code actually wrote, and an
+  alias-name registration after the mount stays snapshot-honest
+  (`post-mount-registration`, never guessed into the mounted surface).
+
+Round-3 gates: `build.mjs --check` byte-identical; bundle +
+`adapter.manifest.json` regenerated (package digest `sha256:19b4af18…`);
+`test-node-hono-bindings` 44 tests across 5 suites (43 prior + the
+mount-base adversarial suite); `test-node-hono-readonly`;
+kernel/scanner/transport/native-gates/scenario/openapi suites;
+manifest golden + contracts, target-protocol contracts (Ajv 8.17.1),
+model/lockfile Ajv, fixture provenance, contract versions,
+structure/authority/privacy/model checks; `cargo fmt --check`,
+`cargo clippy -D warnings`, `cargo test --workspace` (89 binaries,
+1716 tests, 0 failures) with the exemplar guard re-pinned to the
+round-3 digest. Residual documented minor from round 2 (an
+unresolvable `new Hono().route(...)` alias receiver stays an honest
+`hono-unsupported-receiver`) is unchanged.
+
 ## Fix round 2 (adversarial re-review of PR #142)
 
 The re-review verified every round-1 finding fixed, then five residual
