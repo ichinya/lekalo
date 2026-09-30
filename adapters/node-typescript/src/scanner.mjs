@@ -31,9 +31,16 @@ import { join } from "node:path";
 
 import {
   RequestRefusal,
+  embeddedDrizzleDeclarations,
   embeddedLibFiles,
   vendoredTs,
 } from "./kernel.mjs";
+import {
+  attachDrizzleEvidence,
+  drizzleClosureMapping,
+  drizzleEvidenceSummary,
+  resolveDrizzleAttachment,
+} from "./drizzle-evidence.mjs";
 
 // ---------------------------------------------------------------------------
 // 1. Bounds, domains, and small utilities.
@@ -54,6 +61,9 @@ const MAX_SCAN_FILES = 4096;
 const MAX_ENUMERATION_DEPTH = 24;
 /** Maximum number of diagnostic records one scan reports internally. */
 const MAX_DIAGNOSTICS = 4096;
+
+/** The host-path prefix the embedded Drizzle declarations live under. */
+const DRIZZLE_DEPS_PREFIX = "/lekalo/deps/";
 
 /** Standard-library file names never count as project symbols. */
 function isEmbeddedLibBase(fileName) {
@@ -423,7 +433,7 @@ function resolveConfigReference(fromConfigPath, reference) {
  * embedded library map. `denied` records uncertainty; `missing` is a
  * plain negative. No ts.sys, no default host spread, no environment.
  */
-function createRestrictedHost({ ts, inventorySet, readBytes, libMap, logicalToHost }) {
+function createRestrictedHost({ ts, inventorySet, readBytes, libMap, logicalToHost, depsMap }) {
   const sourceFileCache = new Map();
   const existsCache = new Map();
   const denied = [];
@@ -453,6 +463,12 @@ function createRestrictedHost({ ts, inventorySet, readBytes, libMap, logicalToHo
       } else if (/^\/lekalo\/libs\/lib(\..+)?\.d\.ts$/.test(normalized)
         && libMap.has(normalized.split("/").pop())) {
         result = true;
+      } else if (depsMap !== null && normalized.startsWith(DRIZZLE_DEPS_PREFIX)) {
+        // Issue #116: embedded upstream Drizzle declarations. A miss is
+        // a resolution probe inside the vendored namespace (e.g. an
+        // unsupported subpath), recorded as a plain negative — it can
+        // never silently widen the vendored surface.
+        result = depsMap.has(normalized);
       } else {
         result = false;
         deny("unknown", normalized);
@@ -469,6 +485,10 @@ function createRestrictedHost({ ts, inventorySet, readBytes, libMap, logicalToHo
       }
       if (/^\/lekalo\/libs\/lib(\..+)?\.d\.ts$/.test(normalized)) {
         const text = libMap.get(normalized.split("/").pop());
+        if (text !== undefined) return text;
+      }
+      if (depsMap !== null) {
+        const text = depsMap.get(normalized);
         if (text !== undefined) return text;
       }
       return deny("read", normalized);
@@ -490,6 +510,14 @@ function createRestrictedHost({ ts, inventorySet, readBytes, libMap, logicalToHo
       const normalized = hostName.replaceAll("\\", "/").replace(/\/$/, "");
       if (normalized === currentDirectory || normalized === "/lekalo" || normalized === "/lekalo/libs") {
         return true;
+      }
+      if (depsMap !== null && normalized.startsWith(DRIZZLE_DEPS_PREFIX)) {
+        // A directory inside the vendored namespace exists when a
+        // declaration under it does; probe noise stays a plain false.
+        for (const key of depsMap.keys()) {
+          if (key.startsWith(`${normalized}/`)) return true;
+        }
+        return false;
       }
       for (const logical of inventorySet.keys()) {
         if (logical.startsWith(`${normalized}/`)) return true;
@@ -777,6 +805,7 @@ function emptyIndex(compilerMeta) {
     tests: [],
     diagnostics: [],
     anyUncertainty: [],
+    drizzle: null,
     inputManifest: null,
     compiler: compilerMeta,
   };
@@ -1441,8 +1470,16 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
 
   // The host answers only from this inventory plus the embedded libs.
   const inventorySet = buildInventorySet(manifest);
+  // Issue #116: the upstream Drizzle declaration closure is offered to
+  // the program only under the verified-pin policy — every consumer
+  // manifest that declares drizzle-orm must pin the exact supported
+  // release, or the declarations are NOT attached (imports stay
+  // unresolved uncertainty) and the decision is recorded.
+  const drizzleClosure = embeddedDrizzleDeclarations();
+  const drizzleAttachment = resolveDrizzleAttachment(manifest, readBytes, drizzleClosure);
+  const drizzleDepsMap = drizzleAttachment.attached ? drizzleClosure.files : null;
   const { host, denied } = createRestrictedHost({
-    ts, inventorySet, readBytes, libMap: embeddedLibFiles(),
+    ts, inventorySet, readBytes, libMap: embeddedLibFiles(), depsMap: drizzleDepsMap,
   });
   const context = {
     inventorySet,
@@ -1500,6 +1537,19 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   // Forced keys: never emit, never follow project-reference redirects.
   options.noEmit = true;
   options.disableSourceOfProjectReferenceRedirect = true;
+  // Issue #116: map the bounded public drizzle-orm subpaths onto the
+  // embedded declaration closure. Exact mappings only — an unmapped
+  // subpath (e.g. a dialect outside the supported surface) stays
+  // unresolved and therefore unsupported, never guessed.
+  if (drizzleAttachment.attached) {
+    const drizzlePaths = drizzleClosureMapping(drizzleClosure);
+    if (drizzlePaths === null) {
+      // A closure missing an expected entry is a build fault; refuse
+      // the scan rather than resolve drizzle imports by guesswork.
+      throw new RequestRefusal("drizzle-closure", "the embedded drizzle closure misses a supported subpath");
+    }
+    options.paths = drizzlePaths;
+  }
   // Recorded evidence of the analysis configuration (issue #44 fix F-2):
   // tests and hosts can prove the parsed tsconfig options reached the Program.
   programOptions = options;
@@ -1533,6 +1583,25 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   collectDiagnostics({ ts, program, context, index });
   collectAnySurfaces({ ts, checker, program, context, index });
 
+  // Issue #116: Drizzle ORM evidence extraction (schema, relations,
+  // queries, transactions, migrations, scope, bindings). Read-only
+  // compiler pass over the same program; appends `index.drizzle`.
+  const drizzleBindingsInput = readOptionalProjectInput(
+    manifest, readBytes, "drizzle.bindings.json",
+  );
+  const drizzleProjectionInput = readOptionalProjectInput(
+    manifest, readBytes, "drizzle.projection.json", { json: true },
+  );
+  attachDrizzleEvidence({
+    ts, checker, program, context, index,
+    drizzleAttachment, drizzleClosure,
+    manifest, readBytes,
+    drizzleBindingsInput: drizzleBindingsInput.value,
+    drizzleProjectionInput: drizzleProjectionInput.value,
+    bindingsInputPath: drizzleBindingsInput.path,
+    projectionInputPath: drizzleProjectionInput.path,
+  });
+
   // Host denial notes stay internal: the restricted host serves only the
   // enumerated inventory and the embedded libraries, so any denial is a
   // resolution probe of a candidate spelling that is not part of the
@@ -1547,6 +1616,28 @@ function normalizeUnknownPath(hostName) {
   return normalized.startsWith("/lekalo/project/")
     ? normalized.slice("/lekalo/project/".length)
     : normalized;
+}
+
+/**
+ * Read one optional project-root input (issue #116 owner-supplied
+ * binding/projection files) through the read view. A missing file is a
+ * plain absence; an oversized or non-decodable file is reported as
+ * unavailable with the reason — never partially interpreted.
+ */
+function readOptionalProjectInput(manifest, readBytes, path, { json = false } = {}) {
+  const allFiles = [
+    ...manifest.sourceFiles, ...manifest.configFiles,
+    ...manifest.packageFiles, ...manifest.otherFiles,
+  ];
+  const entry = allFiles.find((file) => file.path === path);
+  if (entry === undefined) return { value: null, path: null, reason: "absent" };
+  try {
+    const text = readBytes(path).toString("utf8");
+    if (!json) return { value: text, path, reason: null };
+    return { value: JSON.parse(text), path, reason: null };
+  } catch (error) {
+    return { value: null, path, reason: String(error?.code ?? "unreadable").slice(0, 64) };
+  }
 }
 
 /** Deterministic finalization: manifest, digests, canonical order. */
@@ -1729,6 +1820,15 @@ export function scanOperation(context) {
     uncertainty: index.anyUncertainty.length,
     errors: errorCount,
   };
+  // Issue #116: the Drizzle evidence summary rides the internal
+  // evidence envelope only (never the wire detail).
+  const drizzleSummary = drizzleEvidenceSummary(index.drizzle);
+  const internalEvidence = {
+    compiler: index.compiler,
+    profileDigest: index.profileDigest,
+    counts,
+  };
+  if (drizzleSummary !== null) internalEvidence.drizzle = drizzleSummary;
   if (index.anyUncertainty.length > 0 || errorCount > 0) {
     return {
       state: "partial",
@@ -1736,21 +1836,13 @@ export function scanOperation(context) {
         reason: "uncertainty-present",
         detail: "uncertainty=" + index.anyUncertainty.length + " errors=" + errorCount,
       }],
-      evidence: {
-        compiler: index.compiler,
-        profileDigest: index.profileDigest,
-        counts,
-      },
+      evidence: internalEvidence,
     };
   }
   return {
     state: "complete",
     data: { entries, complete: true },
-    evidence: {
-      compiler: index.compiler,
-      profileDigest: index.profileDigest,
-      counts,
-    },
+    evidence: internalEvidence,
   };
 }
 
