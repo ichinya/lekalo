@@ -510,7 +510,7 @@ function closureCalleeSymbol(context, calleeNode, depth = 0, probe = null) {
       && initializer?.kind !== ts.SyntaxKind.PropertyAccessExpression) {
       return null;
     }
-    return closureCalleeSymbol(context, initializer, depth + 1);
+    return closureCalleeSymbol(context, initializer, depth + 1, probe);
   }
   // Renamed destructuring: `const { relations: rel2 } = orm` (or the
   // shorthand). The local spelling is not identity — the destructured
@@ -562,6 +562,22 @@ function closureCalleeSymbol(context, calleeNode, depth = 0, probe = null) {
  * with an explicit `callee-unproven` limitation and the section gap
  * (issue #116 fix round 3, the same honesty contract as the out-of-
  * subset surfaces). Proven callees never enter this path.
+ *
+ * Fix round 4 tightenings:
+ * - a rebind chain that died at the MAX_ALIAS_HOPS bound is recognized
+ *   too (the probe proves the chain was followed, not absent) — the
+ *   limitation keeps the bound explicit instead of silently dropping
+ *   the construct. Recognition at the bound stays family-disjoint: the
+ *   callee's vendored type must name THIS construct family, so a
+ *   relations chain never also flags the table walk;
+ * - a callee whose TYPE provably resolves outside the embedded closure
+ *   (a project-local helper or another package's member that merely
+ *   happens to spell `relations`/`pgTable`) is NOT recognized: it is
+ *   provably not a vendored Drizzle construct, and flagging it would be
+ *   a false Drizzle gap;
+ * - the destructured property name counts as a spelling — the local
+ *   name in `const { relations: rel2 }` is `rel2`, but the construct
+ *   spelling is `relations`.
  */
 function calleeRecognizedButUnproven(context, calleeNode, constructs, family) {
   const probe = { boundHit: false };
@@ -574,6 +590,13 @@ function calleeRecognizedButUnproven(context, calleeNode, constructs, family) {
     return closureTypeNames !== null
       && closureTypeNames.some((name) => RECOGNITION_FAMILIES[family].has(name));
   }
+  // A provably FOREIGN callee type (every type declaration is real and
+  // outside the embedded closure — a project-local helper or another
+  // package's member that merely spells `relations`/`pgTable`) is not
+  // a Drizzle construct at all: flagging it would be a false Drizzle
+  // gap (issue #116 fix round 4). Unresolvable types stay unprovable —
+  // the spelling net keeps them honest.
+  if (closureTypeNames !== null && closureTypeNames.length === 0) return false;
   return calleeSpellingNames(context, calleeNode)
     .some((spelling) => constructs.has(spelling));
 }
