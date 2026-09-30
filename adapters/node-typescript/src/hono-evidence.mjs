@@ -254,6 +254,10 @@ function normalizeSpan(span) {
     startColumn: span.startColumn,
     endLine: span.endLine,
     endColumn: span.endColumn,
+    // Half-open UTF-8 byte offsets into the exact source bytes (the
+    // research spec's span model); null only for hand-built records.
+    startByte: typeof span.startByte === "number" ? span.startByte : null,
+    endByte: typeof span.endByte === "number" ? span.endByte : null,
   };
 }
 
@@ -265,10 +269,26 @@ export function makeUncertainty(path, kind, detail, line) {
   return { path, kind: `hono-${kind}`, detail: String(detail).slice(0, 128), line };
 }
 
-/** UTF-8 byte order comparator over canonical record text. */
+/**
+ * Canonical text of one record EXCLUDING its fingerprint: the sort
+ * order must be derived from record content, not from digest bytes
+ * (a fingerprint-dominated order is stable but semantically random and
+ * shifts whenever any fingerprint input changes).
+ */
+const contentTextCache = new WeakMap();
+
+function canonicalContentText(record) {
+  if (contentTextCache.has(record)) return contentTextCache.get(record);
+  const { fingerprint, ...content } = record;
+  const text = canonicalHonoText(content);
+  contentTextCache.set(record, text);
+  return text;
+}
+
+/** UTF-8 byte order comparator over canonical record content. */
 export function honoCompare(left, right) {
-  const a = Buffer.from(canonicalHonoText(left), "utf8");
-  const b = Buffer.from(canonicalHonoText(right), "utf8");
+  const a = Buffer.from(canonicalContentText(left), "utf8");
+  const b = Buffer.from(canonicalContentText(right), "utf8");
   const length = Math.min(a.length, b.length);
   for (let index = 0; index < length; index += 1) {
     if (a[index] !== b[index]) return a[index] - b[index];
@@ -292,8 +312,16 @@ export function validateHonoRecords(records) {
   const seen = new Set();
   for (const record of records) {
     try {
-      const { fingerprint, ...content } = record;
-      const rebuilt = makeRecord(content);
+      // The stored record carries the closed `framework` object; the
+      // builder input is `frameworkVersion`. Rebuild from the same
+      // fields the original build consumed, or any non-default
+      // framework version would fail its own fingerprint (issue #115
+      // fix round).
+      const { fingerprint, framework, ...content } = record;
+      const rebuilt = makeRecord({
+        ...content,
+        frameworkVersion: framework?.version ?? "unknown",
+      });
       if (rebuilt.fingerprint !== fingerprint) {
         violations.push({ code: "fingerprint-mismatch", record });
       }

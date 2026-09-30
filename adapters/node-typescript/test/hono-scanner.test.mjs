@@ -160,6 +160,18 @@ test("reachability: conditional/deferred/unreachable registrations are never com
       assert.ok(record.reasons.includes("deferred-registration"));
       assert.notEqual(record.status, "complete");
     }
+    // Spans carry half-open UTF-8 byte offsets converted from the
+    // compiler's UTF-16 positions: the multibyte comment above the
+    // /umlauf registration makes the two diverge, so exact byte
+    // equality against the file bytes proves the conversion.
+    const umlauf = byPath.get("GET /umlauf");
+    assert.ok(umlauf, "multibyte-anchored route present");
+    const source = readFileSync(join(context.project, "src", "app.ts"), "utf8");
+    const utf16Index = source.indexOf('app.get("/umlauf"');
+    const expectedByte = Buffer.byteLength(source.slice(0, utf16Index), "utf8");
+    assert.notEqual(utf16Index, expectedByte, "fixture must contain multibyte bytes before the route");
+    assert.equal(umlauf.span.startByte, expectedByte);
+    assert.ok(umlauf.span.endByte > umlauf.span.startByte);
   } finally {
     dispose(context.root);
   }

@@ -132,13 +132,25 @@ test("records sort canonically and identically across runs", () => {
   ];
   const once = sortHonoRecords([...records].sort((left, right) => honoCompare(right, left)));
   const twice = sortHonoRecords([...records].sort((left, right) => honoCompare(right, left)));
-  assert.deepEqual(once.map((record) => record.path), ["/a", "/a", "/b"]);
+  // Content order: method decides before path, so GET /a < GET /b <
+  // POST /a — semantic, not digest-byte, ordering.
+  assert.deepEqual(
+    once.map((record) => `${record.method} ${record.path}`),
+    ["GET /a", "GET /b", "POST /a"],
+  );
+  assert.deepEqual(once.map((record) => record.fingerprint), twice.map((record) => record.fingerprint));
   assert.equal(canonicalHonoText(once), canonicalHonoText(twice));
 });
 
 test("validateHonoRecords accepts a well-formed set and rejects tampering", () => {
   const record = makeRecord(baseRecord);
   assert.deepEqual(validateHonoRecords([record]), []);
+  // A non-default framework version must survive its own validation:
+  // the rebuild consumes the stored framework object, so the record's
+  // fingerprint stays verifiable (issue #115 fix round).
+  const versioned = makeRecord({ ...baseRecord, frameworkVersion: "4.6.14" });
+  assert.equal(versioned.framework.version, "4.6.14");
+  assert.deepEqual(validateHonoRecords([versioned]), []);
   const tampered = { ...record, fingerprint: "sha256:" + "0".repeat(64) };
   const violations = validateHonoRecords([tampered]);
   assert.equal(violations.length, 1);

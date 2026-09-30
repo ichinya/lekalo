@@ -46,3 +46,8 @@ export function bootstrap(): Hono {
   return app;
   app.get("/unreachable", unreachableHandler);
 }
+
+// Mehrbahnkarte: äöü ß 中文 — a multibyte comment anchors the span
+// conversion: UTF-16 columns and UTF-8 byte offsets diverge here, so
+// the emitted byte offsets must come from real source bytes.
+app.get("/umlauf", provenHandler);

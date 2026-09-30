@@ -214362,15 +214362,27 @@ function normalizeSpan(span) {
     startLine: span.startLine,
     startColumn: span.startColumn,
     endLine: span.endLine,
-    endColumn: span.endColumn
+    endColumn: span.endColumn,
+    // Half-open UTF-8 byte offsets into the exact source bytes (the
+    // research spec's span model); null only for hand-built records.
+    startByte: typeof span.startByte === "number" ? span.startByte : null,
+    endByte: typeof span.endByte === "number" ? span.endByte : null
   };
 }
 function makeUncertainty(path, kind, detail, line) {
   return { path, kind: `hono-${kind}`, detail: String(detail).slice(0, 128), line };
 }
+var contentTextCache = /* @__PURE__ */ new WeakMap();
+function canonicalContentText(record) {
+  if (contentTextCache.has(record)) return contentTextCache.get(record);
+  const { fingerprint, ...content } = record;
+  const text = canonicalHonoText(content);
+  contentTextCache.set(record, text);
+  return text;
+}
 function honoCompare(left, right) {
-  const a = Buffer.from(canonicalHonoText(left), "utf8");
-  const b = Buffer.from(canonicalHonoText(right), "utf8");
+  const a = Buffer.from(canonicalContentText(left), "utf8");
+  const b = Buffer.from(canonicalContentText(right), "utf8");
   const length = Math.min(a.length, b.length);
   for (let index = 0; index < length; index += 1) {
     if (a[index] !== b[index]) return a[index] - b[index];
@@ -214386,8 +214398,11 @@ function validateHonoRecords(records) {
   const seen = /* @__PURE__ */ new Set();
   for (const record of records) {
     try {
-      const { fingerprint, ...content } = record;
-      const rebuilt = makeRecord(content);
+      const { fingerprint, framework, ...content } = record;
+      const rebuilt = makeRecord({
+        ...content,
+        frameworkVersion: framework?.version ?? "unknown"
+      });
       if (rebuilt.fingerprint !== fingerprint) {
         violations.push({ code: "fingerprint-mismatch", record });
       }
@@ -216251,16 +216266,37 @@ function isInventoryDeclarationFile(declaration, ctx) {
   if (!/\.d\.[cm]?ts$/.test(fileName)) return false;
   return ctx.normalizeModulePath(fileName) !== null;
 }
+var spanOffsetCache = /* @__PURE__ */ new WeakMap();
+function utf8OffsetsOf(sourceFile) {
+  if (spanOffsetCache.has(sourceFile)) return spanOffsetCache.get(sourceFile);
+  const lineStarts = sourceFile.getLineStarts();
+  const text = sourceFile.text;
+  const lineStartBytes = new Array(lineStarts.length);
+  for (let index = 0; index < lineStarts.length; index += 1) {
+    lineStartBytes[index] = index === 0 ? 0 : lineStartBytes[index - 1] + Buffer.byteLength(text.slice(lineStarts[index - 1], lineStarts[index]), "utf8");
+  }
+  const offsets = { lineStarts, lineStartBytes, text };
+  spanOffsetCache.set(sourceFile, offsets);
+  return offsets;
+}
+function utf8ByteOffsetAt(offsets, line, character) {
+  const lineStart = offsets.lineStarts[line];
+  const lineEnd = line + 1 < offsets.lineStarts.length ? offsets.lineStarts[line + 1] : void 0;
+  return offsets.lineStartBytes[line] + Buffer.byteLength(offsets.text.slice(lineStart, lineEnd).slice(0, character), "utf8");
+}
 function spanOf(node, sourceFile) {
   const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
   const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+  const offsets = utf8OffsetsOf(sourceFile);
   return {
     path: null,
     // bound by the orchestrator to the logical module path
     startLine: start.line + 1,
     startColumn: start.character + 1,
     endLine: end.line + 1,
-    endColumn: end.character + 1
+    endColumn: end.character + 1,
+    startByte: utf8ByteOffsetAt(offsets, start.line, start.character),
+    endByte: utf8ByteOffsetAt(offsets, end.line, end.character)
   };
 }
 function scanHonoProvider({ ts: ts3, checker, program, context, index, revision, readDataFile }) {

@@ -76,7 +76,9 @@ test("openapi: createRoute definitions link operationIds to handlers", async () 
   const context = await scanHonoFixture("openapi", "openapi");
   try {
     const operations = recordsOfRelation(context, "openapi-operation");
-    const linked = operations.find((row) => row.note === "users.show");
+    // The join record (to: the bound handler) is distinct from the
+    // declaration-side definition record (to: null).
+    const linked = operations.find((row) => row.note === "users.show" && row.to !== null);
     assert.ok(linked, "operationId link recorded");
     assert.equal(linked.method, "GET");
     assert.equal(linked.path, "/users/{id}");
@@ -144,11 +146,10 @@ test("tests: app.request and testClient flows bind to resolved routes", async ()
     for (const row of bindings) {
       if (!byNote.has(`${row.method} ${row.path}`)) byNote.set(`${row.method} ${row.path}`, row);
     }
-    const list = byNote.get("GET /items");
+    const list = bindings.find((row) => row.method === "GET" && row.path === "/items" && row.from.name.startsWith("items>"));
     assert.ok(list, "app.request GET /items bound");
     assert.equal(list.to.name, "listHandler");
     assert.equal(list.status, "complete");
-    assert.match(list.from.name, /^items>/);
     const created = byNote.get("POST /items");
     assert.ok(created && created.to.indexed === false, "inline handler target");
     assert.match(created.from.native, /^hono-inline-/);
@@ -166,8 +167,9 @@ test("tests: app.request and testClient flows bind to resolved routes", async ()
     // testClient binds the app identity.
     const client = bindings.find((row) => row.note === "test-client");
     assert.ok(client, "testClient app identity recorded");
-    const clientGet = byNote.get("GET /items");
+    const clientGet = bindings.find((row) => row.path === "/items" && row.from.name.startsWith("client>"));
     assert.ok(clientGet, "client.get binds through the app identity");
+    assert.equal(clientGet.to.name, "listHandler");
   } finally {
     dispose(context.root);
   }

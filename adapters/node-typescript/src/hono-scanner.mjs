@@ -159,16 +159,54 @@ function isInventoryDeclarationFile(declaration, ctx) {
   return ctx.normalizeModulePath(fileName) !== null;
 }
 
-/** The 1-based span of one node in its source file. */
+/**
+ * Per-file UTF-8 byte offsets of every line start (computed once,
+ * cached on the source file object): the conversion basis from the
+ * compiler's UTF-16 positions to the spec's half-open UTF-8 byte
+ * offsets.
+ */
+const spanOffsetCache = new WeakMap();
+
+function utf8OffsetsOf(sourceFile) {
+  if (spanOffsetCache.has(sourceFile)) return spanOffsetCache.get(sourceFile);
+  const lineStarts = sourceFile.getLineStarts();
+  const text = sourceFile.text;
+  const lineStartBytes = new Array(lineStarts.length);
+  for (let index = 0; index < lineStarts.length; index += 1) {
+    lineStartBytes[index] = index === 0
+      ? 0
+      : lineStartBytes[index - 1]
+        + Buffer.byteLength(text.slice(lineStarts[index - 1], lineStarts[index]), "utf8");
+  }
+  const offsets = { lineStarts, lineStartBytes, text };
+  spanOffsetCache.set(sourceFile, offsets);
+  return offsets;
+}
+
+/** Half-open UTF-8 byte offset of a (0-based line, 0-based character). */
+function utf8ByteOffsetAt(offsets, line, character) {
+  const lineStart = offsets.lineStarts[line];
+  const lineEnd = line + 1 < offsets.lineStarts.length ? offsets.lineStarts[line + 1] : undefined;
+  return offsets.lineStartBytes[line]
+    + Buffer.byteLength(offsets.text.slice(lineStart, lineEnd).slice(0, character), "utf8");
+}
+
+/** The 1-based span of one node in its source file, plus half-open
+ * UTF-8 byte offsets converted from the compiler's UTF-16 positions
+ * against the exact source bytes (issue #115 fix round: the research
+ * spec's span model, aligned). */
 export function spanOf(node, sourceFile) {
   const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
   const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+  const offsets = utf8OffsetsOf(sourceFile);
   return {
     path: null, // bound by the orchestrator to the logical module path
     startLine: start.line + 1,
     startColumn: start.character + 1,
     endLine: end.line + 1,
     endColumn: end.character + 1,
+    startByte: utf8ByteOffsetAt(offsets, start.line, start.character),
+    endByte: utf8ByteOffsetAt(offsets, end.line, end.character),
   };
 }
 
