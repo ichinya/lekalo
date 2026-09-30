@@ -223293,6 +223293,11 @@ var LIMITATION_CODES = /* @__PURE__ */ new Set([
   // attributed to one; it is an explicit uncertainty instead
   // (issue #116 fix round 4)
   "namespace-receiver-unsupported",
+  // an extraction whose callee identity came from a call-result's
+  // declared type rather than the construct value itself — marked so
+  // it is never claimed as direct construct proof
+  // (issue #116 fix round 6)
+  "type-sourced",
   // transactions
   "query-not-tx-bound",
   "tx-escaped",
@@ -223558,15 +223563,31 @@ function closureCalleeSymbol(context, calleeNode, depth = 0, probe = null) {
   const declaration = variableDeclarationOf(symbol);
   if (declaration === null || declaration === void 0) {
     const isParameter = (symbol?.declarations ?? []).length > 0 && symbol.declarations[0]?.kind === context.ts.SyntaxKind.Parameter;
-    return isParameter ? closureTypeSymbolOf(context, calleeNode) : null;
+    return isParameter ? closureTypeSymbolOf(context, calleeNode, probe) : null;
   }
   const ts2 = context.ts;
   if (declaration.kind === ts2.SyntaxKind.VariableDeclaration) {
     const initializer = declaration.initializer;
-    if (initializer?.kind !== ts2.SyntaxKind.Identifier && initializer?.kind !== ts2.SyntaxKind.PropertyAccessExpression) {
-      return closureTypeSymbolOf(context, calleeNode);
+    const isConst = declaration.parent?.kind === ts2.SyntaxKind.VariableDeclarationList && (declaration.parent.flags & ts2.NodeFlags.Const) !== 0;
+    if (!isConst) {
+      if (probe !== null) probe.declined = true;
+      return null;
     }
-    return closureCalleeSymbol(context, initializer, depth + 1, probe);
+    if (initializer === void 0 || initializer === null) {
+      return closureTypeSymbolOf(context, calleeNode, probe);
+    }
+    if (initializer.kind === ts2.SyntaxKind.Identifier || initializer.kind === ts2.SyntaxKind.PropertyAccessExpression) {
+      return closureCalleeSymbol(context, initializer, depth + 1, probe);
+    }
+    if (initializer.kind === ts2.SyntaxKind.CallExpression || initializer.kind === ts2.SyntaxKind.NewExpression) {
+      const anchored = closureTypeSymbolOf(context, calleeNode, probe);
+      if (anchored !== null && probe !== null) probe.typeSourced = true;
+      return anchored;
+    }
+    if (probe !== null && closureTypeSymbolOf(context, calleeNode) !== null) {
+      probe.declined = true;
+    }
+    return null;
   }
   if (declaration.kind === ts2.SyntaxKind.BindingElement) {
     const propertyName = declaration.propertyName ?? declaration.name;
@@ -223603,6 +223624,12 @@ function calleeRecognizedButUnproven(context, calleeNode, constructs, family) {
   const closureTypeNames = closureTypeSymbolNames(context, calleeNode);
   if (probe.boundHit) {
     return closureTypeNames !== null && closureTypeNames.some((name) => RECOGNITION_FAMILIES[family].has(name));
+  }
+  if (probe.declined) {
+    return closureTypeNames !== null && closureTypeNames.some((name) => RECOGNITION_FAMILIES[family].has(name));
+  }
+  if (probe.typeUnproven) {
+    return true;
   }
   if (closureTypeNames !== null && closureTypeNames.length === 0) return false;
   return calleeSpellingNames(context, calleeNode).some((spelling) => constructs.has(spelling));
@@ -223657,7 +223684,13 @@ function closureModuleExportOf(context, declaration, name) {
     return null;
   }
 }
-function closureTypeSymbolOf(context, calleeNode) {
+var FACTORY_INTERFACE_NAMES = /* @__PURE__ */ new Map([
+  ["PgTableFn", "pgTable"],
+  ["MySqlTableFn", "mysqlTable"],
+  ["SQLiteTableFn", "sqliteTable"],
+  ["SingleStoreTableFn", "singlestoreTable"]
+]);
+function closureTypeSymbolOf(context, calleeNode, probe = null) {
   const { ts: ts2, checker } = context;
   let type;
   try {
@@ -223680,13 +223713,25 @@ function closureTypeSymbolOf(context, calleeNode) {
     if (RECOGNITION_FAMILIES.table.has(symbol.getName()) || RECOGNITION_FAMILIES.relations.has(symbol.getName())) {
       return symbol;
     }
+    const mappedFactory = FACTORY_INTERFACE_NAMES.get(symbol.getName());
+    if (mappedFactory !== void 0) {
+      const factory = closureModuleExportOf(
+        context,
+        symbol.declarations?.[0] ?? null,
+        mappedFactory
+      );
+      if (factory !== null && factory !== void 0 && symbolInClosure(factory, context.closurePrefix)) return factory;
+      if (probe !== null) probe.typeUnproven = true;
+      return null;
+    }
     const target = closureModuleExportOf(
       context,
       symbol.declarations?.[0] ?? null,
       declaredTypeQuerySpelling(context, calleeNode)
     );
     if (target !== null && target !== void 0 && symbolInClosure(target, context.closurePrefix)) return target;
-    return symbol;
+    if (probe !== null) probe.typeUnproven = true;
+    return null;
   }
   return null;
 }
@@ -224200,13 +224245,13 @@ function resolveReferencesTarget(context, args) {
     onUpdate
   };
 }
-function extractTable(context, sourceFile, node, exportName) {
+function extractTable(context, sourceFile, node, exportName, probe = null) {
   const { ts: ts2 } = context;
   const calleeNode = node.expression;
   if (calleeNode.kind !== ts2.SyntaxKind.Identifier && calleeNode.kind !== ts2.SyntaxKind.PropertyAccessExpression) {
     return null;
   }
-  const symbol = closureCalleeSymbol(context, calleeNode);
+  const symbol = closureCalleeSymbol(context, calleeNode, 0, probe);
   if (symbol === null) return null;
   const factoryName = symbol.getName();
   const dialect = factoryName === "pgTable" ? "postgresql" : factoryName === "mysqlTable" ? "mysql" : null;
@@ -224218,6 +224263,7 @@ function extractTable(context, sourceFile, node, exportName) {
     }
     return null;
   }
+  const typeSourced = probe?.typeSourced === true;
   const physicalName = staticString(node.arguments?.[0]);
   const row = {
     native: tableNativeId(modulePath, exportName, physicalName ?? `#${node.getStart(sourceFile)}`),
@@ -224290,6 +224336,11 @@ function extractTable(context, sourceFile, node, exportName) {
   const fkColumns = row.columns.filter((column) => column.references !== null);
   if (row.columns.length >= 2 && fkColumns.length === row.columns.length && new Set(fkColumns.map((column) => column.references?.table)).size === 2) {
     row.joinTableCandidate = true;
+  }
+  if (typeSourced) {
+    context.limit("type-sourced", modulePath, lineOf(sourceFile, node), exportName);
+    row.limitations.push("type-sourced");
+    row.completeness = "partial";
   }
   const scopeColumn = row.columns.find((column) => SCOPE_KEY_NAMES.has(column.tsName) || SCOPE_KEY_NAMES.has(column.physicalName));
   if (scopeColumn !== void 0) {
@@ -224387,9 +224438,10 @@ function constraintMemberOf(context, node, tableRow) {
     resolved: column !== null
   };
 }
-function extractRelations(context, sourceFile, node) {
+function extractRelations(context, sourceFile, node, probe = null) {
   const { ts: ts2, checker } = context;
-  if (closureCalleeSymbol(context, node.expression) === null) return null;
+  if (closureCalleeSymbol(context, node.expression, 0, probe) === null) return null;
+  const typeSourced = probe?.typeSourced === true;
   const modulePath = context.modulePathOf(sourceFile);
   const sourceTableRow = context.tableForNodeIdentifier(node.arguments?.[0]);
   const callback = node.arguments?.[1];
@@ -224494,6 +224546,12 @@ function extractRelations(context, sourceFile, node) {
   }
   if (rows.length === 0) {
     context.sectionGaps.add("relations");
+  }
+  if (typeSourced) {
+    context.limit("type-sourced", modulePath, lineOf(sourceFile, node), "relations");
+    for (const row of rows) {
+      row.limitations.push("type-sourced");
+    }
   }
   void checker;
   return rows;
@@ -225549,7 +225607,8 @@ function attachDrizzleEvidence({
       if (node === void 0 || node === null) return;
       if (node.kind === ts2.SyntaxKind.VariableDeclaration && node.name?.kind === ts2.SyntaxKind.Identifier && node.initializer?.kind === ts2.SyntaxKind.CallExpression) {
         const exportName = node.name.text;
-        const table = extractTable(extract, sourceFile, node.initializer, exportName);
+        const tableProbe = { boundHit: false };
+        const table = extractTable(extract, sourceFile, node.initializer, exportName, tableProbe);
         if (table !== null) {
           if (extract.tables.length < MAX_TABLES) {
             extract.tables.push(table);
@@ -225585,8 +225644,9 @@ function attachDrizzleEvidence({
       if (node === void 0 || node === null) return;
       if (node.kind === ts2.SyntaxKind.CallExpression) {
         const symbol = node.expression?.kind === ts2.SyntaxKind.Identifier || node.expression?.kind === ts2.SyntaxKind.PropertyAccessExpression ? closureCalleeSymbol(extract, node.expression) : null;
+        const relationsProbe = { boundHit: false };
         if (symbol !== null && symbol.getName() === "relations") {
-          const rows = extractRelations(extract, sourceFile, node);
+          const rows = extractRelations(extract, sourceFile, node, relationsProbe);
           if (rows !== null) {
             for (const row of rows) {
               if (!pushBounded(extract.relations, MAX_RELATIONS, row, extract.overflow)) break;
