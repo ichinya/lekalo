@@ -821,6 +821,7 @@ export function resolveComposition(ctx, events) {
   const openapiEvents = events.filter((event) => event.kind === "openapi");
   const definitions = events.filter((event) => event.kind === "route-definition");
 
+  // Mounted children are excluded from standalone resolution.
   const mountedChildren = new Set(mountEvents.map((event) => event.childInstance?.key).filter(Boolean));
   const routes = [];
 
@@ -939,13 +940,16 @@ function importClosureOf(ctx) {
 }
 
 
+/**
+ * Every mount whose parent instance is not itself a mounted child is
+ * a root mount: nested mounts are reached recursively from the
+ * outermost parent's resolution, so a view-parented mount under a
+ * mounted view composes under the mount prefix instead of re-claiming
+ * a phantom standalone surface (issue #115 fix round 3).
+ */
 function isNestedMount(mountEvents, event) {
-  // An event whose parent instance is a mounted child is reached
-  // through that child's mount resolution, not as a root.
-  return event.instance.kind === "view" || event.instance.kind === "alias"
-    ? false
-    : mountEvents.some((other) =>
-      other !== event && other.childInstance?.key === event.instance.key);
+  return mountEvents.some((other) =>
+    other !== event && other.childInstance?.key === event.instance.key);
 }
 
 /** True when `inner` lies inside `outer`'s source range (same file). */
@@ -969,6 +973,31 @@ function standaloneBaseOf(ctx, instance, seen = new Set()) {
     return standaloneBaseOf(ctx, owner, seen);
   }
   return "/";
+}
+
+/**
+ * The base a mount CHILD contributes to its own mounted surface
+ * (issue #115 fix round 3): a derived child (basePath view or alias)
+ * keeps its standalone prefix under every mount exactly as the Hono
+ * runtime does — `app.route('/bp', inner.basePath('/v'))` serves
+ * `/bp/v/...`, so the resolved scope base is `mountPrefix + childBase`.
+ * Null when the child's own base cannot be resolved statically (a
+ * derived instance whose owner chain is unresolved): the caller must
+ * downgrade to explicit uncertainty instead of a guessed complete
+ * path. Root children (bound `new Hono()`) contribute "/".
+ */
+function mountChildBaseOf(ctx, child) {
+  if (!child) return null;
+  if (child.kind !== "view" && child.kind !== "alias") return "/";
+  const owner = child.ownerSymbol ? ctx.instanceBySymbol.get(child.ownerSymbol) : null;
+  if (child.kind === "view") {
+    // An inline anonymous view keeps its whole folded base in its own
+    // `basePath`; a declared view composes over its owner chain.
+    if (child.ownerSymbol && !owner) return null;
+    return joinPaths(owner ? standaloneBaseOf(ctx, owner) : "/", child.basePath ?? "/");
+  }
+  if (!owner) return null;
+  return standaloneBaseOf(ctx, owner);
 }
 
 /**
@@ -1008,30 +1037,47 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
   // event never share a dedupe entry (the shared-parent collision).
   const scopeOrigin = `mount:${chainNext.map((entry) => `${entry.module}:${entry.order}`).join(">")}`;
   if (mount.childInstance) {
+    const child = mount.childInstance;
+    const stackNext = [...stack, child.key];
+    // The child's OWN base joins the mount prefix (issue #115 fix
+    // round 3): a mounted view child keeps its standalone prefix in
+    // the mounted surface — `app.route('/bp', inner.basePath('/v'))`
+    // resolves `/bp/v/...` exactly as the runtime serves it. An
+    // unresolvable child base is explicit uncertainty, never a
+    // guessed complete path.
+    const childBase = mountChildBaseOf(ctx, child);
+    const childMountBase = childBase === null ? mountBase : joinPaths(mountBase, childBase);
+    const baseScope = childBase === null
+      ? { status: "unknown", reasons: ["unresolved-mount-base"] }
+      : null;
+    if (baseScope) {
+      ctx.addUncertaintyAt(mount.sourceFile, mount.node, "unresolved-mount-base", mount.path ?? "");
+    }
     if (!emittedMounts.has(mount)) {
       emittedMounts.add(mount);
+      const mountStatus = mount.status === "unknown" ? "unknown" : mount.status === "complete" ? "complete" : "incomplete";
       ctx.addRecord(makeRecord({
         relation: "dev.lekalo.hono/mounts-router",
         from: instanceEndpoint(mount.instance),
-        to: instanceEndpoint(mount.childInstance),
+        to: instanceEndpoint(child),
         path: mount.path,
         provenance: "detected",
         confidence: "exact",
-        status: mount.status === "unknown" ? "unknown" : mount.status === "complete" ? "complete" : "incomplete",
-        reasons: mount.reasons,
+        status: baseScope ? "unknown" : mountStatus,
+        reasons: baseScope ? [...mount.reasons, ...baseScope.reasons] : mount.reasons,
         span: ctx.spanOf(mount.node, mount.sourceFile),
         revision: ctx.revision,
         adapterVersion: ctx.adapterVersion,
         frameworkVersion: ctx.frameworkVersion,
       }));
     }
-    const child = mount.childInstance;
-    const stackNext = [...stack, child.key];
     // The full ancestor chain's own status/reasons propagate downward:
     // a conditional, deferred, unreachable, or unresolved ancestor mount
     // occurrence can never host a complete child record, no matter how
     // provable the ordering classification is (issue #115 fix round 2).
-    const chainScope = mountChainScopeOf(chainNext);
+    const chainScope = baseScope
+      ? mergeScopes(mountChainScopeOf(chainNext), baseScope)
+      : mountChainScopeOf(chainNext);
     // Snapshot: child route events before the mount occurrence in the
     // same module are fully included; later/other-module events stay
     // resolved but incomplete.
@@ -1051,7 +1097,7 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
       // this mount occurrence.
       const merged = mergeScopes(included, chainScope);
       resolveOneRoute(ctx, event, {
-        base: mountBase,
+        base: childMountBase,
         status: merged.status,
         reasons: merged.reasons,
         origin: scopeOrigin,

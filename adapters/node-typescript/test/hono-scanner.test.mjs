@@ -397,6 +397,73 @@ test("provider disabled or absent: the generic index is byte-identical", async (
   }
 });
 
+test("mounted basePath children and alias targets: prefixes and subtrees survive the mount", async () => {
+  const context = await scanHonoFixture("mount-base", "mount-base");
+  try {
+    assert.equal(context.hono.provider.state, "complete");
+    const routes = recordsOfRelation(context, "route-handler");
+    const byKey = new Map(routes.map((row) => [`${row.method} ${row.path}`, row]));
+    // BLOCKER: a mounted child that carries its OWN basePath keeps the
+    // prefix under the mount — the runtime serves /bp/v/in, never
+    // /bp/in. The same composition holds for the inline form.
+    assert.equal(byKey.get("GET /bp/v/in").to.name, "inHandler");
+    assert.equal(byKey.get("GET /bp/v/in").status, "complete");
+    assert.equal(byKey.get("GET /bpi/iv/in").to.name, "inlineHandler");
+    assert.equal(byKey.get("GET /bpi/iv/in").status, "complete");
+    // Depth 2: mountPrefix + childBase + nested mount path +
+    // grandchildBase + route path — every own prefix composes.
+    assert.equal(byKey.get("GET /bp/v/n/nb/leaf").to.name, "leafHandler");
+    assert.equal(byKey.get("GET /bp/v/n/nb/leaf").status, "complete");
+    // An alias-name registration after the mount stays snapshot-honest.
+    // Mount reachability still constrains every prefixed subtree.
+    for (const key of ["GET /bpc/v/in", "GET /bpc/v/n/nb/leaf"]) {
+      assert.equal(byKey.get(key).status, "incomplete");
+      assert.ok(byKey.get(key).reasons.includes("conditional-registration"));
+    }
+    for (const key of ["GET /bpd/v/in", "GET /bpd/v/n/nb/leaf"]) {
+      assert.equal(byKey.get(key).status, "incomplete");
+      assert.ok(byKey.get(key).reasons.includes("deferred-registration"));
+    }
+    // No dropped-prefix or phantom-surface paths survive: the prefix-
+    // less guesses, the uncomposed grandchild, and the mounted view's
+    // standalone-surface mount are all gone.
+    for (const key of [
+      "GET /bp/in", "GET /bpi/in", "GET /bp/v/n/leaf",
+      "GET /v/in", "GET /v/n/leaf", "GET /v/n/nb/leaf", "GET /nb/leaf",
+    ]) {
+      assert.equal(byKey.get(key), undefined, `${key} must not exist`);
+    }
+    // Mount relations: every occurrence recorded, conditional and
+    // deferred mounts stay incomplete, and the nested /n fact is
+    // emitted exactly once.
+    const mounts = recordsOfRelation(context, "mounts-router");
+    const mountsByPath = new Map(mounts.map((row) => [row.path, row]));
+    for (const path of ["/bp", "/bpi", "/bpc", "/bpd", "/n"]) {
+      assert.ok(mountsByPath.get(path), `mount ${path} recorded`);
+    }
+    assert.equal(mountsByPath.get("/bp").to.name, "view");
+    assert.ok(mountsByPath.get("/bpc").reasons.includes("conditional-registration"));
+    assert.ok(mountsByPath.get("/bpd").reasons.includes("deferred-registration"));
+    assert.equal(mounts.filter((row) => row.path === "/n").length, 1);
+    // Honesty invariants: no lost-instance or unresolved-target noise,
+    // no invalid records.
+    assert.equal(
+      context.hono.uncertainty.filter((row) => row.kind === "hono-unsupported-receiver").length,
+      0,
+    );
+    assert.equal(
+      context.hono.uncertainty.filter((row) => row.kind === "hono-unknown-handler").length,
+      0,
+    );
+    assert.ok(
+      !context.hono.uncertainty.some((row) => row.kind === "hono-invalid-record"),
+      "no duplicate or invalid records",
+    );
+  } finally {
+    dispose(context.root);
+  }
+});
+
 test("fluent verb chains: every statically-known link keeps its record", async () => {
   const context = await scanHonoFixture("fluent-chains", "fluent");
   try {

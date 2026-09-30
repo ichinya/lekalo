@@ -214222,6 +214222,7 @@ var HONO_REASONS = Object.freeze([
   "post-mount-registration",
   "composition-cycle",
   "composition-depth",
+  "unresolved-mount-base",
   "conditional-registration",
   "deferred-registration",
   "unreachable-registration",
@@ -215132,7 +215133,7 @@ function importClosureOf(ctx) {
   return closureOf;
 }
 function isNestedMount(mountEvents, event) {
-  return event.instance.kind === "view" || event.instance.kind === "alias" ? false : mountEvents.some((other) => other !== event && other.childInstance?.key === event.instance.key);
+  return mountEvents.some((other) => other !== event && other.childInstance?.key === event.instance.key);
 }
 function nodeIsWithin(inner, outer) {
   return Boolean(inner && outer && inner.getSourceFile() === outer.getSourceFile() && inner.getStart() >= outer.getStart() && inner.getEnd() <= outer.getEnd());
@@ -215149,6 +215150,17 @@ function standaloneBaseOf(ctx, instance, seen = /* @__PURE__ */ new Set()) {
     return standaloneBaseOf(ctx, owner, seen);
   }
   return "/";
+}
+function mountChildBaseOf(ctx, child) {
+  if (!child) return null;
+  if (child.kind !== "view" && child.kind !== "alias") return "/";
+  const owner = child.ownerSymbol ? ctx.instanceBySymbol.get(child.ownerSymbol) : null;
+  if (child.kind === "view") {
+    if (child.ownerSymbol && !owner) return null;
+    return joinPaths(owner ? standaloneBaseOf(ctx, owner) : "/", child.basePath ?? "/");
+  }
+  if (!owner) return null;
+  return standaloneBaseOf(ctx, owner);
 }
 function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf, basePrefix, emittedMounts, chain) {
   if (depth >= HONO_MAX_MOUNT_DEPTH) {
@@ -215167,33 +215179,40 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
   const chainNext = [...chain ?? [], mount];
   const scopeOrigin = `mount:${chainNext.map((entry) => `${entry.module}:${entry.order}`).join(">")}`;
   if (mount.childInstance) {
+    const child = mount.childInstance;
+    const stackNext = [...stack, child.key];
+    const childBase = mountChildBaseOf(ctx, child);
+    const childMountBase = childBase === null ? mountBase : joinPaths(mountBase, childBase);
+    const baseScope = childBase === null ? { status: "unknown", reasons: ["unresolved-mount-base"] } : null;
+    if (baseScope) {
+      ctx.addUncertaintyAt(mount.sourceFile, mount.node, "unresolved-mount-base", mount.path ?? "");
+    }
     if (!emittedMounts.has(mount)) {
       emittedMounts.add(mount);
+      const mountStatus = mount.status === "unknown" ? "unknown" : mount.status === "complete" ? "complete" : "incomplete";
       ctx.addRecord(makeRecord({
         relation: "dev.lekalo.hono/mounts-router",
         from: instanceEndpoint(mount.instance),
-        to: instanceEndpoint(mount.childInstance),
+        to: instanceEndpoint(child),
         path: mount.path,
         provenance: "detected",
         confidence: "exact",
-        status: mount.status === "unknown" ? "unknown" : mount.status === "complete" ? "complete" : "incomplete",
-        reasons: mount.reasons,
+        status: baseScope ? "unknown" : mountStatus,
+        reasons: baseScope ? [...mount.reasons, ...baseScope.reasons] : mount.reasons,
         span: ctx.spanOf(mount.node, mount.sourceFile),
         revision: ctx.revision,
         adapterVersion: ctx.adapterVersion,
         frameworkVersion: ctx.frameworkVersion
       }));
     }
-    const child = mount.childInstance;
-    const stackNext = [...stack, child.key];
-    const chainScope = mountChainScopeOf(chainNext);
+    const chainScope = baseScope ? mergeScopes(mountChainScopeOf(chainNext), baseScope) : mountChainScopeOf(chainNext);
     for (const event of routeEvents) {
       if (event.instance.key !== child.key) continue;
       const included = mount.chainTarget && nodeIsWithin(event.node, mount.childExpression) ? { status: "complete", reasons: [] } : classifyChildEvent(mount, event, closureOf);
       if (included === null) continue;
       const merged = mergeScopes(included, chainScope);
       resolveOneRoute(ctx, event, {
-        base: mountBase,
+        base: childMountBase,
         status: merged.status,
         reasons: merged.reasons,
         origin: scopeOrigin,

@@ -91,6 +91,7 @@ export const HONO_REASONS = Object.freeze([
   "post-mount-registration",
   "composition-cycle",
   "composition-depth",
+  "unresolved-mount-base",
   "conditional-registration",
   "deferred-registration",
   "unreachable-registration",
