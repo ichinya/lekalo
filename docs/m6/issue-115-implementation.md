@@ -6,6 +6,102 @@ to its implementing code, fixtures, and executable evidence, and marks
 every partial or unsupported item explicitly. Companion research:
 `docs/m6/issue-115-research.md`.
 
+## Fix round 2 (adversarial re-review of PR #142)
+
+The re-review verified every round-1 finding fixed, then five residual
+defects survived adversarial probing (one blocker, two majors, two
+minors). All five are fixed; each fix is its own commit with its own
+adversarial fixture + test; the bundle and manifest are regenerated and
+the Rust exemplar guard tracks the new package digest.
+
+- **BLOCKER — mount reachability never reached the records it
+  governs.** `resolveMount`'s route scope kept only the
+  `classifyChildEvent` ordering and dropped `mount.status`/
+  `mount.reasons`, while `emitResponseRecord`, `emitContextKeyRecord`,
+  and `joinServiceCalls` hardcoded `status: complete`: a conditional
+  (`if (flag) app.route('/cm', cc)`) or deferred
+  (`function d(){ app.route('/late', child) }`) mount emitted
+  incomplete mounts-router records, yet the route-handler /
+  uses-middleware / returns-response / context-read / handler-call
+  records beneath it claimed complete — phantom served routes asserted
+  as fact through mount indirection. `resolveMount` now merges the
+  full ancestor chain's status/reasons (`mountChainScopeOf`) into every
+  child resolution scope, and the new `mergeRouteEvidence`
+  (hono-evidence.mjs) propagates the resolved route's scope into EVERY
+  derived relation: `validates-request`, `returns-response` (response
+  sites + route classification), `handles-error` (thrown
+  HTTPException), `uses-middleware`, `context-read`/`context-write`,
+  `handler-call`, and `endpoint-contract` joins. Nothing under a
+  conditional/deferred/unreachable/unresolved mount claims complete at
+  any depth (`mount-reach/` fixture: one child mounted conditionally,
+  deferred, and unconditionally; scanner test walks every relation).
+- **MAJOR — repeated `use()` bindings duplicated context records.**
+  Four `use(reader)` events composed four chain members, but
+  `emitContextKeyRecord` carried no binding identity: the handler body
+  was re-walked per member, emitting byte-identical context records —
+  `hono-invalid-record duplicate-record` violations and provider state
+  partial. `buildMiddlewareChains` now threads a per-route identity map
+  keyed by canonical endpoint CONTENT (distinct use events resolve
+  distinct endpoint objects with identical content) with per-site span
+  identity: binding multiplicity stays explicit on uses-middleware
+  ordinals while each context site is exactly one record per route
+  (`use-semantics/` fixture, middleware test).
+- **MAJOR — post-route `use()` claimed membership it can never
+  execute.** `composeChain`'s own-instance filter lacked the ordering
+  test the parent-use path already had: `app.get('/a', h)` followed by
+  `app.use('/a', mw)` emitted uses-middleware on `/a` although Hono's
+  registration order controls entry and a terminal handler never calls
+  `next()`. Same-instance uses now compose only when they precede the
+  route's registration (`event.order < route.event.order`, same
+  module; cross-module ordering stays unproven and keeps conservative
+  inclusion), and every matched-but-unreachable observation is recorded
+  as a `hono-post-route-use` uncertainty naming the route — never
+  silence, never a coverage claim (`use-semantics/`: `/multi` and
+  `/first` keep exactly the four pre-route ordinals, `/after` composes
+  all five).
+- **MINOR — fluent verb chains dropped known fields.**
+  `app.get(p, h).post(p, h2)` resolved the outer link's receiver (the
+  inner registration call) to no instance and fell into the near-miss
+  path: one bare `unsupported-receiver` uncertainty (detail 'post', no
+  path) and zero route records. `collectRegistrations` now unrolls
+  fluent chains rooted at a resolvable instance (`fluentChainOf`):
+  every link — route verbs plus the app-returning shapers
+  `use`/`route`/`onError`/`notFound`/`openapi` — becomes its own
+  registration event with its own method/path/handler arguments,
+  ordering, and reachability; only an unresolvable ROOT (factory
+  receivers, mutable aliases) stays a near-miss (`fluent/` fixture:
+  `get().post().put()` resolves three complete route records, zero
+  unsupported-receiver rows).
+- **MINOR — unresolved inline mount targets emitted orphan routes.**
+  `app.route('/sub', new Hono().get('/inside', h))` could not resolve
+  its child (instance resolution handles identifiers, new-expressions,
+  and basePath views only), so the mount stayed unknown-handler while
+  the inline app's routes emitted standalone complete `/inside` —
+  orphan routes with the wrong path and no link to the failed mount.
+  Mount targets are now unrolled like verb chains: when the chain
+  roots at a provable instance the mount binds it, and registrations
+  inside the mount's own argument expression are snapshot-included (the
+  argument fully evaluates before the mount call executes) while the
+  child's remaining registrations keep proven-order classification;
+  the blocker's mount-scope propagation composes, so a conditional
+  inline mount still constrains its subtree (`inline-mount/` fixture:
+  single-link, multi-link, nested, and conditional inline targets all
+  resolve under their prefixes, zero orphans, zero unknown-handler
+  uncertainty).
+
+Round-2 gates: `build.mjs --check` byte-identical; bundle +
+`adapter.manifest.json` regenerated (package digest
+`sha256:e1517957…`); `test-node-hono-bindings` 43 tests across 5
+suites (38 prior + 5 new adversarial: mount-reach propagation,
+repeated-binding dedupe, post-route ordering, fluent chains, inline
+mount targets); `test-node-hono-readonly`;
+kernel/scanner/transport/native-gates/scenario/openapi suites;
+manifest golden + contracts, target-protocol contracts (Ajv 8.17.1),
+fixture provenance, contract versions, structure/authority/privacy/
+model checks; `cargo fmt --check`, `cargo clippy -D warnings`,
+`cargo test --workspace` (89 binaries, 0 failures) with the exemplar
+guard re-pinned to the round-2 digest.
+
 ## Fix round (PR #142 review)
 
 Both independent reviewers returned BLOCK on PR #142. Every blocker,
