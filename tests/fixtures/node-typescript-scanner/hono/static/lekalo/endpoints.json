@@ -1,0 +1,9 @@
+{
+  "endpoints": [
+    { "id": "users.list", "method": "GET", "path": "/users" },
+    { "id": "users.create", "method": "POST", "path": "/users" },
+    { "id": "users.show", "method": "GET", "path": "/users/:id" },
+    { "id": "health.check", "method": "GET", "path": "/health" },
+    { "id": "users.list", "method": "GET", "path": "/users" }
+  ]
+}

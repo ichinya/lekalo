@@ -302,6 +302,12 @@ jobs:
           node adapters/node-typescript/build.mjs --check
       - name: Run the TypeScript scanner suite (issue #44)
         run: node scripts/test-node-typescript-scanner.mjs
+      - name: Run the Hono framework-binding suites (issue #115)
+        timeout-minutes: 15
+        run: node scripts/test-node-hono-bindings.mjs
+      - name: Run the Hono read-only scan gate (issue #115)
+        timeout-minutes: 10
+        run: node scripts/test-node-hono-readonly.mjs
       - name: Run the Zod generator suite (issue #45)
         run: node scripts/test-node-zod-gen.mjs
       - name: Verify the generation artifact against the conformance battery (issue #45)
