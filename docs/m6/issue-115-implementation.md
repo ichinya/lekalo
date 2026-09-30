@@ -6,6 +6,58 @@ to its implementing code, fixtures, and executable evidence, and marks
 every partial or unsupported item explicitly. Companion research:
 `docs/m6/issue-115-research.md`.
 
+## Fix round 5 (adversarial re-review of PR #142)
+
+The round-5 re-review verified the round-4 family fix completely, then
+found ONE new blocker, plus the sweep it mandated caught one sibling.
+Each is its own focused commit with its own reproduction and
+regression test; the bundle and manifest are regenerated and the Rust
+exemplar guard tracks the new package digest.
+
+- **BLOCKER — `explicitRoleOf` crashed the whole scan on inline
+  `use()` handlers.** The role reader's inline-handler fallback
+  (`handler.node.kind === ts.SyntaxKind.ArrowFunction`) referenced an
+  unbound `ts` identifier, so ANY executing-chain
+  `app.use(async (c, next) => { ... })` — the commonest Hono idiom —
+  threw `ReferenceError: ts is not defined` and aborted the ENTIRE
+  scan. No fixture covered it because every existing middleware
+  fixture used named, declared middleware. The function now
+  destructures `ts` from the scan context like every sibling
+  (narrowest change). The middleware fixture gains `app.use` with an
+  inline arrow, an inline async arrow, and a declaration-less function
+  expression ahead of a dedicated `/inline` route; the new test
+  asserts all three stay chain members with inline native identities
+  + content digests, detected `next` pass-through, no role claim
+  (absent annotation), exact ordinals/unwinds, and distinct identities
+  (no collapse), while the named forms keep passing.
+- **SWEEP — one sibling unbound identifier, same root cause.** A
+  scope-aware unbound-identifier audit over every adapter module
+  (binding-aware walk of imports, module and block scopes, function
+  parameters, catch/for bindings) flagged exactly one genuine bug
+  beyond the blocker: `scenario-emit.mjs` `renderWhen` referenced the
+  caller-local `clockIsos` map without receiving it, so the first
+  scenario whose when action froze the clock (`action.clock`) died
+  with `ReferenceError: clockIsos is not defined` instead of emitting.
+  `renderWhen` now threads the map like `renderThen`/`renderChecks`
+  already did, and a new scenario-emit test reproduces the crash
+  shape: a given clock step plus a clock-referencing when action emits
+  `port.clock.freeze(...)` and a `ctx` carrying the same frozen ISO.
+  (All other audit flags were audit blind spots — object binding
+  patterns, import/export aliases, `import.meta`, Node globals — not
+  code defects.)
+
+Round-5 gates: `build.mjs --check` byte-identical; bundle +
+`adapter.manifest.json` regenerated (package digest `sha256:e69e3075…`);
+`test-node-hono-bindings` 45 tests across 5 suites (44 prior + the
+inline-use adversarial suite); `test-node-hono-readonly`; the scenario
+suites gain the clock-emission regression (18 emit tests);
+kernel/scanner/transport/native-gates/openapi suites; manifest golden
++ contracts, target-protocol contracts (Ajv 8.17.1), model/lockfile
+Ajv, fixture provenance, contract versions, structure/authority/
+privacy/model checks; `cargo fmt --check`, `cargo clippy -D warnings`,
+`cargo test --workspace` with the exemplar guard re-pinned to the
+round-5 digest.
+
 ## Fix round 4 (adversarial re-review of PR #142)
 
 The round-4 re-review verified both round-3 fixes and every prior fix,
