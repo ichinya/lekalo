@@ -1028,3 +1028,119 @@ test("fix-round-3 select-all projection and scope evidence resolve the exact tar
     dispose(fx.root);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Fix round 4: namespace receivers, renamed destructures, the hop
+// bound, and the spelling net's foreign-receiver silence.
+// ---------------------------------------------------------------------------
+
+test("fix-round-4 receivers: a module namespace is never a database handle", async () => {
+  const fx = await scanDrizzleFixture("pg-round4-ns", "postgres-round4");
+  try {
+    const d = fx.index.drizzle;
+    // Pre-fix, `orm.select().from(users)` typed the drizzle-orm
+    // namespace as a `db` handle and FABRICATED a query row; batch and
+    // relational-query calls were misattributed as client gaps.
+    assert.equal(d.queries.length, 0,
+      "no query row may be invented for a namespace receiver");
+    const source = readFileSync(join(fx.project, "src/namespaces.ts"), "utf8").split("\n");
+    const lineOf = (needle) => source.findIndex((line) => line.includes(needle)) + 1;
+    const hits = d.limitations.filter((l) => l.code === "namespace-receiver-unsupported");
+    assert.deepEqual(hits.map((h) => [h.module, h.detail]).sort(), [
+      ["src/namespaces.ts", "batch-api"],
+      ["src/namespaces.ts", "query"],
+      ["src/namespaces.ts", "relational-query-api"],
+      ["src/namespaces.ts", "transaction"],
+    ], "every member call on the namespace is an explicit uncertainty");
+    const anchors = new Map(hits.map((h) => [h.detail, h.line]));
+    assert.ok(anchors.get("query") === lineOf("const q = orm.select().from(users)"),
+      `the query-shaped uncertainty anchors to its call (${anchors.get("query")})`);
+    assert.ok(anchors.get("batch-api") === lineOf("orm.batch([q])"));
+    assert.ok(anchors.get("relational-query-api") === lineOf("orm.query.users.findMany()"));
+    assert.ok(anchors.get("transaction") === lineOf("orm.transaction(async (tx) => {"));
+    // The covered sections refuse to claim complete over the unknowns.
+    assert.equal(d.completeness.sections.queries, "partial");
+    assert.equal(d.completeness.sections.transactions, "partial");
+    // No misattributed client-surface codes anywhere.
+    assert.equal(d.limitations.filter((l) =>
+      l.code === "batch-unsupported" || l.code === "relational-query-unsupported").length, 0);
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("fix-round-4 callees: renamed destructures and aliased imports extract by resolved export identity", async () => {
+  const fx = await scanDrizzleFixture("pg-round4-bindings", "postgres-round4");
+  try {
+    const d = fx.index.drizzle;
+    // `const { relations: rel2 } = orm` — the destructured property
+    // name resolves to the vendored export; pre-fix this was a silent
+    // zero-row drop while the section claimed completeness.
+    const labels = d.relations.find((r) => r.name === "labels");
+    assert.ok(labels, "the renamed destructure extracts");
+    assert.equal(labels.sourceTable, "users");
+    assert.equal(labels.targetTable, "posts");
+    assert.equal(labels.module, "src/bindings.ts");
+    // `import { relations as rel3 }` — the aliased import specifier
+    // shares the r2 alias machinery and must extract unchanged.
+    const author = d.relations.find((r) => r.name === "author");
+    assert.ok(author, "the aliased direct import extracts");
+    assert.equal(author.sourceTable, "posts");
+    assert.equal(author.targetTable, "users");
+    // Shorthand destructure (no rename): same binding-element path.
+    const replies = d.relations.find((r) => r.name === "replies");
+    assert.ok(replies, "the shorthand destructure extracts");
+    // None of the binding forms may hide behind an unproven flag.
+    const unproven = d.limitations.filter((l) => l.code === "callee-unproven");
+    assert.ok(!unproven.some((l) => l.module === "src/bindings.ts"),
+      "resolvable renamed bindings never emit callee-unproven");
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("fix-round-4 chain bound: resolution past MAX_ALIAS_HOPS is explicit, never silent", async () => {
+  const fx = await scanDrizzleFixture("pg-round4-chains", "postgres-round4");
+  try {
+    const d = fx.index.drizzle;
+    const source = readFileSync(join(fx.project, "src/chains.ts"), "utf8").split("\n");
+    const lineOf = (needle) => source.findIndex((line) => line.includes(needle)) + 1;
+    // Four rebinds still resolve (the closure test runs before the
+    // bound check); the fifth dies at the bound.
+    const within = d.relations.find((r) => r.name === "hopWithin");
+    assert.ok(within, "the within-bound chain extracts");
+    assert.equal(within.sourceTable, "users");
+    assert.ok(!d.relations.some((r) => r.name === "hopBeyond"),
+      "no row is invented for the beyond-bound chain");
+    const bound = d.limitations.filter((l) => l.code === "callee-unproven");
+    assert.equal(bound.length, 1, "exactly one explicit bound limitation");
+    assert.equal(bound[0].module, "src/chains.ts");
+    assert.equal(bound[0].detail, "relations",
+      "the bound stays family-disjoint: the relations chain never flags the table walk");
+    assert.equal(bound[0].line, lineOf("export const beyondBound = h5(posts"),
+      "the limitation anchors to the bounded call");
+    assert.equal(d.completeness.sections.relations, "partial",
+      "the bounded drop degrades the section instead of hiding");
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("fix-round-4 spelling net: provably non-Drizzle receivers stay silent", async () => {
+  const fx = await scanDrizzleFixture("pg-round4-foreign", "postgres-round4");
+  try {
+    const d = fx.index.drizzle;
+    // `builder.relations()` / `builder.pgTable()` are real project
+    // declarations whose types resolve outside the embedded closure —
+    // provably not vendored Drizzle constructs, so flagging them as
+    // `callee-unproven` would fabricate a Drizzle gap.
+    const fromForeign = d.limitations.filter((l) => l.module === "src/foreign.ts");
+    assert.deepEqual(fromForeign, [],
+      "no limitation may be emitted for provably non-Drizzle member calls");
+    // The honest unproven cases elsewhere in the fixture are untouched.
+    assert.ok(d.limitations.some((l) => l.code === "callee-unproven"),
+      "unprovable construct spellings still flag");
+  } finally {
+    dispose(fx.root);
+  }
+});

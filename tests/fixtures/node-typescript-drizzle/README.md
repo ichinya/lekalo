@@ -35,6 +35,17 @@ shipped adapter bundle (`drizzle-orm@0.44.7`).
   produce explicit `callee-unproven` limitations and section gaps, and
   a same-named non-Drizzle `db` local which must never inherit the
   proven receiver identity of the module-level Drizzle client.
+- `postgres-round4/` — the fix-round-4 regression anchors: module
+  namespace receivers (`import * as orm … orm.select()/orm.batch/
+  orm.query.*`) which are provably not database handles and must emit
+  `namespace-receiver-unsupported` instead of fabricated rows or
+  misattributed client-surface gaps; renamed destructures
+  (`const { relations: rel2 } = orm`) and aliased direct imports
+  (`relations as rel3`) which must extract by resolved export identity;
+  a five-rebind chain that must stay explicit (`callee-unproven`) at
+  the `MAX_ALIAS_HOPS` bound while four hops still extract; and
+  provably non-Drizzle member spellings (`builder.relations()` on a
+  project class) which must never flag `callee-unproven`.
 
 The paired dialect fixtures exist to prove AC8: the neutral evidence
 (document shape, effect actions, binding and completeness semantics) is
