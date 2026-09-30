@@ -12,3 +12,7 @@ secret:
     # REJECTS secret-shaped material. Declared synthetic; sha256 of the match.
     - match: dfe4ffa03ec5044dec4da6f43daf11a916e52116fd820d07e3fce5c106468b94
       name: run-history-refusal-fixture-jwt
+    # Same fixture, plaintext form — the match hash above alone did not suppress
+    # the scan of commit e78909f4.
+    - match: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJVadQssw5c
+      name: run-history-refusal-fixture-jwt-raw
