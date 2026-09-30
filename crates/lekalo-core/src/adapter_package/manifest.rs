@@ -1007,13 +1007,16 @@ mod committed_exemplar_tests {
         assert_eq!(document.adapter_id(), "lekalo-target-node-typescript");
         assert_eq!(document.adapter_version().as_str(), "0.4.0");
         // Issue #115: the Hono framework-provider modules join the
-        // bundle (and the fix round for PR #142 revises them), so the
-        // committed artifact bytes (and with them the canonical package
-        // digest) change; the exemplar guard keeps the manifest bound
-        // to the exact committed bytes.
+        // bundle (and the fix rounds for PR #142 revise them — round 2
+        // propagates mount reachability through every derived relation,
+        // dedupes repeated-binding context records, orders post-route
+        // uses, unrolls fluent verb chains, and binds inline mount
+        // targets), so the committed artifact bytes (and with them the
+        // canonical package digest) change; the exemplar guard keeps
+        // the manifest bound to the exact committed bytes.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:7e41a38d7ff9bc7c19932328624170377ab2003f066c81267d99bd6a9d424717"
+            "sha256:e15179573d5cbd693ed853c948a9e93b3aa58fa9c8a5a9a22d82fbaee0a62e12"
         );
     }
 
