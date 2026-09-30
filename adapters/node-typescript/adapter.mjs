@@ -214242,6 +214242,13 @@ var HONO_REASONS = Object.freeze([
   "framework-version-unknown"
 ]);
 var HONO_RULES_REVISION = "hono-rules-v2";
+function mergeRouteEvidence(route, status, reasons) {
+  const routeStatus = route?.status ?? "complete";
+  const merged = [.../* @__PURE__ */ new Set([...reasons ?? [], ...route?.reasons ?? []])];
+  if (routeStatus === "complete") return { status, reasons: merged };
+  if (status === "unknown" || routeStatus === "unknown") return { status: "unknown", reasons: merged };
+  return { status: "incomplete", reasons: merged };
+}
 var FRESHNESS_DOMAIN = "lekalo.hono.freshness.v1";
 var MAX_HONO_RECORDS = 4096;
 var MAX_HONO_UNCERTAINTY = 1024;
@@ -215126,14 +215133,16 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
     }
     const child = mount.childInstance;
     const stackNext = [...stack, child.key];
+    const chainScope = mountChainScopeOf(chainNext);
     for (const event of routeEvents) {
       if (event.instance.key !== child.key) continue;
       const included = classifyChildEvent(mount, event, closureOf);
       if (included === null) continue;
+      const merged = mergeScopes(included, chainScope);
       resolveOneRoute(ctx, event, {
         base: mountBase,
-        status: included.status,
-        reasons: included.reasons,
+        status: merged.status,
+        reasons: merged.reasons,
         origin: scopeOrigin,
         mount,
         mountChain: chainNext
@@ -215162,6 +215171,20 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
       }));
     }
   }
+}
+function mountChainScopeOf(chain) {
+  let status = "complete";
+  const reasons = [];
+  for (const mount of chain) {
+    if (mount.status === "unknown") status = "unknown";
+    else if (mount.status !== "complete" && status !== "unknown") status = "incomplete";
+    reasons.push(...mount.reasons);
+  }
+  return { status, reasons: [...new Set(reasons)] };
+}
+function mergeScopes(left, right) {
+  const status = left.status === "unknown" || right.status === "unknown" ? "unknown" : left.status === "complete" && right.status === "complete" ? "complete" : "incomplete";
+  return { status, reasons: [.../* @__PURE__ */ new Set([...left.reasons, ...right.reasons])] };
 }
 function classifyChildEvent(mount, event, closureOf) {
   if (event.module === mount.module) {
@@ -215459,6 +215482,7 @@ function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
     reasons.push(handler.reason);
     status = "incomplete";
   }
+  const evidence = mergeRouteEvidence(route, status, reasons);
   ctx.addRecord(makeRecord({
     relation: "dev.lekalo.hono/uses-middleware",
     from: instanceEndpoint(route.instance),
@@ -215471,8 +215495,8 @@ function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
     note: `${member.provenance};next=${callsNext ? "detected" : "absent"}`,
     provenance: role !== null ? "explicit" : "detected",
     confidence: member.applicability === "conditional" ? "medium" : "exact",
-    status,
-    reasons,
+    status: evidence.status,
+    reasons: evidence.reasons,
     span: ctx.spanOf(handler.node, handler.node.getSourceFile()),
     revision: ctx.revision,
     adapterVersion: ctx.adapterVersion,
@@ -215564,6 +215588,7 @@ function emitContextKeyRecord(ctx, route, handler, node, relation, key) {
     ctx.addUncertaintyAt(node.getSourceFile(), node, "dynamic-context-key", relation);
     return;
   }
+  const evidence = mergeRouteEvidence(route, "complete", []);
   ctx.addRecord(makeRecord({
     relation: `dev.lekalo.hono/${relation}`,
     from: endpointOf(handler),
@@ -215573,8 +215598,8 @@ function emitContextKeyRecord(ctx, route, handler, node, relation, key) {
     note: key.slice(0, 128),
     provenance: "detected",
     confidence: "exact",
-    status: "complete",
-    reasons: [],
+    status: evidence.status,
+    reasons: evidence.reasons,
     span: ctx.spanOf(node, node.getSourceFile()),
     revision: ctx.revision,
     adapterVersion: ctx.adapterVersion,
@@ -215671,6 +215696,7 @@ function emitValidatorRecord(ctx, route, member, ordinal) {
     reasons = ["unresolved-schema"];
     confidence = "low";
   }
+  const evidence = mergeRouteEvidence(route, status, reasons);
   ctx.addRecord(makeRecord({
     relation: "dev.lekalo.hono/validates-request",
     from: instanceEndpoint(route.instance),
@@ -215681,8 +215707,8 @@ function emitValidatorRecord(ctx, route, member, ordinal) {
     note: `${validator.kind}:${validator.target ?? "target-unknown"}`,
     provenance: "detected",
     confidence,
-    status,
-    reasons,
+    status: evidence.status,
+    reasons: evidence.reasons,
     span: ctx.spanOf(validator.node, validator.node.getSourceFile()),
     revision: ctx.revision,
     adapterVersion: ctx.adapterVersion,
@@ -215753,6 +215779,7 @@ function facetOfSite(site) {
 }
 function emitResponseRecord(ctx, route, handler, site) {
   const facet = facetOfSite(site);
+  const evidence = mergeRouteEvidence(route, "complete", []);
   ctx.addRecord(makeRecord({
     relation: "dev.lekalo.hono/returns-response",
     from: instanceEndpoint(route.instance),
@@ -215764,8 +215791,8 @@ function emitResponseRecord(ctx, route, handler, site) {
     note: `${site.method}${site.statusIsDefault ? ":default-status" : ""}`,
     provenance: "detected",
     confidence: site.statusIsDefault ? "high" : "exact",
-    status: "complete",
-    reasons: [],
+    status: evidence.status,
+    reasons: evidence.reasons,
     span: ctx.spanOf(site.node, site.node.getSourceFile()),
     revision: ctx.revision,
     adapterVersion: ctx.adapterVersion,
@@ -215789,6 +215816,7 @@ function emitRouteClassification(ctx, route, sites) {
     facet = "mixed";
   }
   route.facet = facet;
+  const evidence = mergeRouteEvidence(route, status, reasons);
   ctx.addRecord(makeRecord({
     relation: "dev.lekalo.hono/returns-response",
     from: instanceEndpoint(route.instance),
@@ -215799,8 +215827,8 @@ function emitRouteClassification(ctx, route, sites) {
     note: "route-classification",
     provenance: "detected",
     confidence: facet === "unknown" ? "low" : "high",
-    status,
-    reasons,
+    status: evidence.status,
+    reasons: evidence.reasons,
     span: route.span,
     revision: ctx.revision,
     adapterVersion: ctx.adapterVersion,
@@ -215824,6 +215852,9 @@ function collectThrownErrors(ctx, route, handler) {
         const importedFrom = symbol ? importSpecifierTextAt(ctx, target) : null;
         if (importedFrom === "hono/http-exception") {
           const statusArgument = expression?.kind === ts3.SyntaxKind.NewExpression ? expression.arguments?.[0]?.kind === ts3.SyntaxKind.NumericLiteral ? Number(expression.arguments[0].text) : null : null;
+          const thrownStatus = statusArgument !== null ? "complete" : "incomplete";
+          const thrownReasons = statusArgument !== null ? [] : ["dynamic-status"];
+          const evidence = mergeRouteEvidence(route, thrownStatus, thrownReasons);
           ctx.addRecord(makeRecord({
             relation: "dev.lekalo.hono/handles-error",
             from: instanceEndpoint(route.instance),
@@ -215839,8 +215870,8 @@ function collectThrownErrors(ctx, route, handler) {
             note: "throw",
             provenance: "detected",
             confidence: statusArgument !== null ? "exact" : "medium",
-            status: statusArgument !== null ? "complete" : "incomplete",
-            reasons: statusArgument !== null ? [] : ["dynamic-status"],
+            status: evidence.status,
+            reasons: evidence.reasons,
             span: ctx.spanOf(node, node.getSourceFile()),
             revision: ctx.revision,
             adapterVersion: ctx.adapterVersion,
@@ -216105,6 +216136,7 @@ function joinServiceCalls(ctx, routes) {
             const symbol = declaration.name ? checker.getSymbolAtLocation(declaration.name) : checker.getSymbolAtLocation(declaration);
             const row = symbol ? ctx.symbolRowOf(symbol) : null;
             if (row) {
+              const evidence = mergeRouteEvidence(route, "complete", []);
               ctx.addRecord(makeRecord({
                 relation: "dev.lekalo.hono/handler-call",
                 from: endpointOf(handler),
@@ -216119,8 +216151,8 @@ function joinServiceCalls(ctx, routes) {
                 path: route.path,
                 provenance: "detected",
                 confidence: "exact",
-                status: "complete",
-                reasons: [],
+                status: evidence.status,
+                reasons: evidence.reasons,
                 span: ctx.spanOf(node, node.getSourceFile()),
                 revision: ctx.revision,
                 adapterVersion: ctx.adapterVersion,
@@ -216157,6 +216189,11 @@ function joinEndpointContracts(ctx, routes) {
     if (candidates.length === 1) {
       const contract = candidates[0];
       const conflict = ssrBlocked || route.facet === "html";
+      const evidence = mergeRouteEvidence(
+        route,
+        conflict ? "incomplete" : "complete",
+        conflict ? ["ssr-api-conflict"] : []
+      );
       ctx.addRecord(makeRecord({
         relation: "dev.lekalo.hono/endpoint-contract",
         from: instanceEndpoint(route.instance),
@@ -216169,8 +216206,8 @@ function joinEndpointContracts(ctx, routes) {
         note: conflict ? `${contract.id}:ssr-api-conflict` : contract.id,
         provenance: "inferred",
         confidence: "medium",
-        status: conflict ? "incomplete" : "complete",
-        reasons: conflict ? ["ssr-api-conflict"] : [],
+        status: evidence.status,
+        reasons: evidence.reasons,
         span: route.span,
         revision: ctx.revision,
         adapterVersion: ctx.adapterVersion,

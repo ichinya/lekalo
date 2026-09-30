@@ -15,6 +15,7 @@
  */
 import {
   makeRecord,
+  mergeRouteEvidence,
 } from "./hono-evidence.mjs";
 import { endpointOf, instanceEndpoint } from "./hono-routes.mjs";
 
@@ -77,6 +78,11 @@ export function joinServiceCalls(ctx, routes) {
               : checker.getSymbolAtLocation(declaration);
             const row = symbol ? ctx.symbolRowOf(symbol) : null;
             if (row) {
+              // A service call from a handler only reachable through an
+              // incomplete mount inherits that scope — the call graph of
+              // a phantom route is never a complete fact (issue #115
+              // fix round 2).
+              const evidence = mergeRouteEvidence(route, "complete", []);
               ctx.addRecord(makeRecord({
                 relation: "dev.lekalo.hono/handler-call",
                 from: endpointOf(handler),
@@ -91,8 +97,8 @@ export function joinServiceCalls(ctx, routes) {
                 path: route.path,
                 provenance: "detected",
                 confidence: "exact",
-                status: "complete",
-                reasons: [],
+                status: evidence.status,
+                reasons: evidence.reasons,
                 span: ctx.spanOf(node, node.getSourceFile()),
                 revision: ctx.revision,
                 adapterVersion: ctx.adapterVersion,
@@ -137,6 +143,14 @@ export function joinEndpointContracts(ctx, routes) {
     if (candidates.length === 1) {
       const contract = candidates[0];
       const conflict = ssrBlocked || route.facet === "html";
+      // A contract join onto an incomplete route inherits the route's
+      // scope: the join can only be as complete as the route it rides
+      // (issue #115 fix round 2).
+      const evidence = mergeRouteEvidence(
+        route,
+        conflict ? "incomplete" : "complete",
+        conflict ? ["ssr-api-conflict"] : [],
+      );
       ctx.addRecord(makeRecord({
         relation: "dev.lekalo.hono/endpoint-contract",
         from: instanceEndpoint(route.instance),
@@ -149,8 +163,8 @@ export function joinEndpointContracts(ctx, routes) {
         note: conflict ? `${contract.id}:ssr-api-conflict` : contract.id,
         provenance: "inferred",
         confidence: "medium",
-        status: conflict ? "incomplete" : "complete",
-        reasons: conflict ? ["ssr-api-conflict"] : [],
+        status: evidence.status,
+        reasons: evidence.reasons,
         span: route.span,
         revision: ctx.revision,
         adapterVersion: ctx.adapterVersion,

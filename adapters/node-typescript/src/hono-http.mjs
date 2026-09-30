@@ -16,6 +16,7 @@
  */
 import {
   makeRecord,
+  mergeRouteEvidence,
 } from "./hono-evidence.mjs";
 import { endpointOf, instanceEndpoint } from "./hono-routes.mjs";
 import {
@@ -127,6 +128,10 @@ function emitValidatorRecord(ctx, route, member, ordinal) {
     reasons = ["unresolved-schema"];
     confidence = "low";
   }
+  // A validation claim under a conditional/deferred/unresolved mount or
+  // registration inherits that scope — never a complete fact (issue
+  // #115 fix round 2).
+  const evidence = mergeRouteEvidence(route, status, reasons);
   ctx.addRecord(makeRecord({
     relation: "dev.lekalo.hono/validates-request",
     from: instanceEndpoint(route.instance),
@@ -137,8 +142,8 @@ function emitValidatorRecord(ctx, route, member, ordinal) {
     note: `${validator.kind}:${validator.target ?? "target-unknown"}`,
     provenance: "detected",
     confidence,
-    status,
-    reasons,
+    status: evidence.status,
+    reasons: evidence.reasons,
     span: ctx.spanOf(validator.node, validator.node.getSourceFile()),
     revision: ctx.revision,
     adapterVersion: ctx.adapterVersion,
@@ -218,6 +223,10 @@ function facetOfSite(site) {
 
 function emitResponseRecord(ctx, route, handler, site) {
   const facet = facetOfSite(site);
+  // The response rides the route's scope: a response site inside a
+  // handler only reachable through an incomplete mount stays
+  // incomplete (issue #115 fix round 2).
+  const evidence = mergeRouteEvidence(route, "complete", []);
   ctx.addRecord(makeRecord({
     relation: "dev.lekalo.hono/returns-response",
     from: instanceEndpoint(route.instance),
@@ -229,8 +238,8 @@ function emitResponseRecord(ctx, route, handler, site) {
     note: `${site.method}${site.statusIsDefault ? ":default-status" : ""}`,
     provenance: "detected",
     confidence: site.statusIsDefault ? "high" : "exact",
-    status: "complete",
-    reasons: [],
+    status: evidence.status,
+    reasons: evidence.reasons,
     span: ctx.spanOf(site.node, site.node.getSourceFile()),
     revision: ctx.revision,
     adapterVersion: ctx.adapterVersion,
@@ -256,6 +265,7 @@ function emitRouteClassification(ctx, route, sites) {
     facet = "mixed";
   }
   route.facet = facet;
+  const evidence = mergeRouteEvidence(route, status, reasons);
   ctx.addRecord(makeRecord({
     relation: "dev.lekalo.hono/returns-response",
     from: instanceEndpoint(route.instance),
@@ -266,8 +276,8 @@ function emitRouteClassification(ctx, route, sites) {
     note: "route-classification",
     provenance: "detected",
     confidence: facet === "unknown" ? "low" : "high",
-    status,
-    reasons,
+    status: evidence.status,
+    reasons: evidence.reasons,
     span: route.span,
     revision: ctx.revision,
     adapterVersion: ctx.adapterVersion,
@@ -299,6 +309,9 @@ function collectThrownErrors(ctx, route, handler) {
               ? Number(expression.arguments[0].text)
               : null)
             : null;
+          const thrownStatus = statusArgument !== null ? "complete" : "incomplete";
+          const thrownReasons = statusArgument !== null ? [] : ["dynamic-status"];
+          const evidence = mergeRouteEvidence(route, thrownStatus, thrownReasons);
           ctx.addRecord(makeRecord({
             relation: "dev.lekalo.hono/handles-error",
             from: instanceEndpoint(route.instance),
@@ -314,8 +327,8 @@ function collectThrownErrors(ctx, route, handler) {
             note: "throw",
             provenance: "detected",
             confidence: statusArgument !== null ? "exact" : "medium",
-            status: statusArgument !== null ? "complete" : "incomplete",
-            reasons: statusArgument !== null ? [] : ["dynamic-status"],
+            status: evidence.status,
+            reasons: evidence.reasons,
             span: ctx.spanOf(node, node.getSourceFile()),
             revision: ctx.revision,
             adapterVersion: ctx.adapterVersion,

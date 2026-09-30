@@ -19,6 +19,7 @@
 import {
   HONO_MAX_CHAIN,
   makeRecord,
+  mergeRouteEvidence,
 } from "./hono-evidence.mjs";
 import { endpointOf, instanceEndpoint, reachabilityPenaltyOf } from "./hono-routes.mjs";
 import {
@@ -187,6 +188,11 @@ function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
     reasons.push(handler.reason);
     status = "incomplete";
   }
+  // Chain membership rides the route's scope: middleware composed onto
+  // a route under a conditional/deferred/unresolved mount inherits that
+  // scope — presence under a phantom route is never a complete fact
+  // (issue #115 fix round 2).
+  const evidence = mergeRouteEvidence(route, status, reasons);
   ctx.addRecord(makeRecord({
     relation: "dev.lekalo.hono/uses-middleware",
     from: instanceEndpoint(route.instance),
@@ -199,8 +205,8 @@ function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
     note: `${member.provenance};next=${callsNext ? "detected" : "absent"}`,
     provenance: role !== null ? "explicit" : "detected",
     confidence: member.applicability === "conditional" ? "medium" : "exact",
-    status,
-    reasons,
+    status: evidence.status,
+    reasons: evidence.reasons,
     span: ctx.spanOf(handler.node, handler.node.getSourceFile()),
     revision: ctx.revision,
     adapterVersion: ctx.adapterVersion,
@@ -324,6 +330,10 @@ function emitContextKeyRecord(ctx, route, handler, node, relation, key) {
     ctx.addUncertaintyAt(node.getSourceFile(), node, "dynamic-context-key", relation);
     return;
   }
+  // The context read/write rides the route's scope: a key touched by a
+  // handler only reachable through an incomplete mount stays incomplete
+  // (issue #115 fix round 2).
+  const evidence = mergeRouteEvidence(route, "complete", []);
   ctx.addRecord(makeRecord({
     relation: `dev.lekalo.hono/${relation}`,
     from: endpointOf(handler),
@@ -333,8 +343,8 @@ function emitContextKeyRecord(ctx, route, handler, node, relation, key) {
     note: key.slice(0, 128),
     provenance: "detected",
     confidence: "exact",
-    status: "complete",
-    reasons: [],
+    status: evidence.status,
+    reasons: evidence.reasons,
     span: ctx.spanOf(node, node.getSourceFile()),
     revision: ctx.revision,
     adapterVersion: ctx.adapterVersion,

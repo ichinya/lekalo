@@ -114,6 +114,23 @@ export const HONO_REASONS = Object.freeze([
 /** The rules revision of this provider (bumped when rules change). */
 export const HONO_RULES_REVISION = "hono-rules-v2";
 
+/**
+ * Merge one derived record's own status/reasons with the scope of the
+ * resolved route it rides (issue #115 fix round 2): a response, context
+ * read, service call, validator, or middleware claim under a
+ * conditional, deferred, unreachable, post-mount, or otherwise
+ * incomplete/unknown mount or registration can never be a complete
+ * fact. `unknown` dominates, then `incomplete`; reasons union with
+ * duplicates removed, route scope reasons last.
+ */
+export function mergeRouteEvidence(route, status, reasons) {
+  const routeStatus = route?.status ?? "complete";
+  const merged = [...new Set([...(reasons ?? []), ...(route?.reasons ?? [])])];
+  if (routeStatus === "complete") return { status, reasons: merged };
+  if (status === "unknown" || routeStatus === "unknown") return { status: "unknown", reasons: merged };
+  return { status: "incomplete", reasons: merged };
+}
+
 /** The freshness domain separator. */
 const FRESHNESS_DOMAIN = "lekalo.hono.freshness.v1";
 

@@ -939,6 +939,11 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
     }
     const child = mount.childInstance;
     const stackNext = [...stack, child.key];
+    // The full ancestor chain's own status/reasons propagate downward:
+    // a conditional, deferred, unreachable, or unresolved ancestor mount
+    // occurrence can never host a complete child record, no matter how
+    // provable the ordering classification is (issue #115 fix round 2).
+    const chainScope = mountChainScopeOf(chainNext);
     // Snapshot: child route events before the mount occurrence in the
     // same module are fully included; later/other-module events stay
     // resolved but incomplete.
@@ -947,11 +952,13 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
       const included = classifyChildEvent(mount, event, closureOf);
       if (included === null) continue;
       // Per-event scope: each child registration carries its own
-      // ordering classification under this mount occurrence.
+      // ordering classification merged with the ancestor scope under
+      // this mount occurrence.
+      const merged = mergeScopes(included, chainScope);
       resolveOneRoute(ctx, event, {
         base: mountBase,
-        status: included.status,
-        reasons: included.reasons,
+        status: merged.status,
+        reasons: merged.reasons,
         origin: scopeOrigin,
         mount,
         mountChain: chainNext,
@@ -980,6 +987,33 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
       }));
     }
   }
+}
+
+/**
+ * The combined scope of a full mount chain (outermost first, including
+ * the current mount): every ancestor mount's own status/reasons — its
+ * reachability classification and resolution failures — constrain the
+ * records of everything registered beneath it (issue #115 fix round 2).
+ */
+function mountChainScopeOf(chain) {
+  let status = "complete";
+  const reasons = [];
+  for (const mount of chain) {
+    if (mount.status === "unknown") status = "unknown";
+    else if (mount.status !== "complete" && status !== "unknown") status = "incomplete";
+    reasons.push(...mount.reasons);
+  }
+  return { status, reasons: [...new Set(reasons)] };
+}
+
+/** Worst-case merge of two status scopes: unknown > incomplete > complete. */
+function mergeScopes(left, right) {
+  const status = left.status === "unknown" || right.status === "unknown"
+    ? "unknown"
+    : left.status === "complete" && right.status === "complete"
+      ? "complete"
+      : "incomplete";
+  return { status, reasons: [...new Set([...left.reasons, ...right.reasons])] };
 }
 
 /**

@@ -181,6 +181,66 @@ test("reachability: conditional/deferred/unreachable registrations are never com
   }
 });
 
+test("mount reachability: conditional/deferred mounts constrain every derived relation", async () => {
+  const context = await scanHonoFixture("mount-reach", "mount-reach");
+  try {
+    // The mount occurrences themselves carry their site reachability.
+    const mounts = recordsOfRelation(context, "mounts-router");
+    const byPath = new Map(mounts.map((row) => [row.path, row]));
+    assert.equal(byPath.get("/ok").status, "complete");
+    const conditionalMount = byPath.get("/cm");
+    assert.ok(conditionalMount, "conditional mount recorded");
+    assert.equal(conditionalMount.status, "incomplete");
+    assert.ok(conditionalMount.reasons.includes("conditional-registration"));
+    const deferredMount = byPath.get("/late");
+    assert.ok(deferredMount, "deferred mount recorded");
+    assert.equal(deferredMount.status, "incomplete");
+    assert.ok(deferredMount.reasons.includes("deferred-registration"));
+    // Ordering alone must not resurrect a mount whose site may never
+    // run: the child registration is snapshot-included, but the route
+    // record inherits the mount occurrence's scope.
+    const routes = recordsOfRelation(context, "route-handler");
+    const routeOf = (path) => routes.find((row) => row.path === path);
+    assert.equal(routeOf("/ok/direct").status, "complete");
+    for (const path of ["/cm/kid", "/late/kid"]) {
+      const route = routeOf(path);
+      assert.ok(route, `route ${path} recorded`);
+      assert.equal(route.status, "incomplete");
+      assert.ok(
+        route.reasons.includes("conditional-registration") || route.reasons.includes("deferred-registration"),
+        `${path} carries its mount's reachability reason`,
+      );
+    }
+    // EVERY derived relation beneath an incomplete mount inherits the
+    // same scope: middleware links, context writes and reads, response
+    // sites, route classification, and handler→service calls.
+    const constrained = ["uses-middleware", "context-write", "context-read", "returns-response", "handler-call"]
+      .flatMap((name) => recordsOfRelation(context, name))
+      .filter((row) => typeof row.path === "string" && (row.path.startsWith("/cm") || row.path.startsWith("/late")));
+    assert.ok(constrained.length >= 10, "all derived relations are present under the mounts");
+    for (const row of constrained) {
+      assert.notEqual(row.status, "complete", `${row.relation} ${row.path} must not claim complete`);
+      assert.ok(
+        row.reasons.includes("conditional-registration") || row.reasons.includes("deferred-registration"),
+        `${row.relation} ${row.path} carries the mount reason`,
+      );
+    }
+    // The unconditional control mount keeps complete derived evidence.
+    const control = ["uses-middleware", "context-write", "context-read", "returns-response", "handler-call"]
+      .flatMap((name) => recordsOfRelation(context, name))
+      .filter((row) => typeof row.path === "string" && row.path === "/ok/direct");
+    for (const row of control) {
+      if (row.relation.endsWith("uses-middleware")) continue; // the control route has no middleware
+      assert.equal(row.status, "complete", `${row.relation} /ok/direct stays complete`);
+    }
+    assert.ok(control.some((row) => row.relation.endsWith("returns-response")));
+    // Well-formed: no duplicates, no invalid records, no uncertainty.
+    assert.equal(context.hono.provider.state, "complete");
+  } finally {
+    dispose(context.root);
+  }
+});
+
 test("composition cycle: mounts are refused as unknown, never invented", async () => {
   const context = await scanHonoFixture("cycle", "composition-cycle");
   try {
