@@ -304,3 +304,76 @@ it guards. Gates: `cargo fmt --check`, `cargo clippy --workspace
 29-test Node adapter suites (294 tests, incl. the 28-test drizzle
 gate), the manifest golden, and the kernel conformance battery
 (10 pass / 0 fail).
+
+## Fix round 3 (re-review: one major survives, two residual minors)
+
+The re-review verified every round-2 fix and found one major in the
+same defect class — callee-shape gates — plus two residual minors.
+All three are fixed with regression fixtures/tests, one commit per
+finding, in the same honesty contract: a recognized Drizzle surface is
+either extracted with provenance or recorded as an explicit
+limitation; sections covering dropped constructs never claim
+`complete`.
+
+Major — non-Identifier callees silently dropped recognized constructs.
+`import * as d ... then d.relations(...)` / `d.pgTable(...)`,
+`const r = relations then r(...)`, and `const t = pgTable then
+t("gadgets", ...)` each produced ZERO extracted rows while
+`completeness.sections.relations`/`tables` claimed `complete` with no
+limitation. Root causes: the relations walk gated on
+`expression.kind === Identifier` before resolution (the table path
+already accepted PropertyAccess; the relations path never got the
+treatment), and `closureCalleeSymbol` resolved only Alias-flag symbols
+so variable-bound callees failed before the in-closure test. Fix:
+`closureCalleeSymbol` now follows the resolved declaration identity
+through namespace property access AND through bounded const/let
+rebinding chains (`MAX_ALIAS_HOPS`); `extractRelations` gates with the
+same resolver instead of its own Identifier-only one. Callees that
+stay unprovable but are RECOGNIZABLE by their construct spelling
+(element access into a property bag naming `pgTable`/`relations`) are
+never dropped: they emit the new `callee-unproven` limitation
+(disjoint table/relations recognition sets keep exactly one limitation
+per construct family) and mark the section gap.
+
+Minor — `db.batch`/`db.query` receiver misattribution. The
+`db.*` receiver short-circuit memoized proven identities by the
+root's NAME, so a same-named non-Drizzle local (`const db = {...}`
+shadowing the Drizzle client) inherited the proven identity and
+produced bogus out-of-subset limitations. The memo is now keyed by the
+resolved declaration symbol (`state.dbSymbols`, exact proven kind
+stored and propagated), and the transaction walker's receiver lookup
+resolves through the same symbol path.
+
+Minor — `tableByExport` last-writer consultation. Select-all
+projection and tenantKey scope evidence re-consulted the export-name
+map, whose last writer wins — with two modules exporting the same name
+the projection read the wrong module's columns and the
+`scope-predicate-missing` verdict flipped with walk order. Both sites
+now re-find the exact targeted row by its unique native id (module +
+export + physical name).
+
+New `postgres-callees` fixture: namespace and rebinding callee shapes
+that must extract, construct-named-but-unprovable bag accesses that
+must limit, and a shadowing `db` local beside a genuine `db.query`.
+Four new gate tests (28 -> 32): namespace/rebinding extraction with
+closure provenance; the unproven-construct honesty matrix; the
+symbol-bound receiver memo (exactly one limitation, anchored to the
+genuine call's line); and the exact targeted-row projection/scope
+resolution. All four fail on the pre-fix bundle and pass after.
+
+Bundle: rebuilt deterministically (`build.mjs --check` byte-identical,
+entry `sha256:518fb509600088776c9d1c5612c53f83fa9f2088dc547a8b418549dd33c35d63`,
+14,622,822 bytes), manifest package digest regenerated
+(`sha256:f965bc5ba983914449fce876449b83939693ba7d7692244dd12b7a90ea78c53c`),
+committed-manifest pin moved with the bytes it guards. Gates: `cargo
+fmt --check`, `cargo clippy --workspace --all-targets --locked -D
+warnings`, `cargo test --workspace --locked --no-fail-fast` (89 test
+binaries, 0 failures, incl. `the_committed_adapter_manifest_parses`),
+the drizzle gate (32/32), kernel/scanner/zod/native-gates/transport/
+openapi/client-sdk/scenario Node suites, the fixture-provenance
+fail-closed family gate (the `node-typescript-drizzle` family is now
+declared synthetic), contract-versions/structure/authority/privacy/
+model checks, the manifest golden, and the adapter conformance battery
+(pass 10, fail 0). The ajv-based manifest-contract script stays
+CI-owned: `ajv` is not provisioned in the offline worktree (identical
+at the base commit).
