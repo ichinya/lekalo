@@ -999,3 +999,32 @@ test("fix-round-3 receivers: the db.* receiver memo is symbol-bound, not name-bo
     dispose(fx.root);
   }
 });
+
+test("fix-round-3 select-all projection and scope evidence resolve the exact targeted table row", async () => {
+  const fx = await scanDrizzleFixture("pg-edges-targetrow", "postgres-edges");
+  try {
+    const d = fx.index.drizzle;
+    // Two modules export `users` (schema.ts physical `users`, schema2.ts
+    // physical `users_v2`). The aliased select-all targets the schema.ts
+    // declaration; its projection must read THAT row's columns — never
+    // the export-name map's arbitrary last writer.
+    const aliased = d.queries.find((q) => q.chain.includes("where")
+      && q.target?.exportName === "users");
+    assert.ok(aliased, "the aliased select extracted");
+    const projectionColumns = aliased.reads
+      .filter((r) => r.role === "projection")
+      .map((r) => r.column)
+      .sort();
+    assert.deepEqual(projectionColumns, ["active", "email", "id", "tenantId"],
+      "the select-all projection reads the targeted schema.ts users columns");
+    assert.ok(!projectionColumns.includes("note"),
+      "the same-named users_v2 table never leaks its columns");
+    // The same precision for scope evidence: users_v2 declares no
+    // tenant key, so a name-keyed lookup would flip the
+    // scope-predicate-missing verdict for the schema.ts query.
+    assert.ok(aliased.limitations.includes("scope-predicate-missing"),
+      "the missing-scope verdict comes from the targeted table's tenant key");
+  } finally {
+    dispose(fx.root);
+  }
+});

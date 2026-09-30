@@ -1555,9 +1555,10 @@ function extractQueryChain(context, sourceFile, { root, links }, receiverKind, t
   if (kind === "select" && headName !== "from") {
     if (selectArgs.length === 0) {
       query.projection = { kind: "all", columns: [] };
-      const targetRow = query.target !== null
-        ? context.tableByExport.get(query.target.exportName) ?? null
-        : null;
+      // The exact targeted row — re-found by native id, never the
+      // export-name map whose last writer can be a same-named table
+      // from another module (issue #116 fix round 3).
+      const targetRow = tableForQueryTarget(context, query);
       for (const column of targetRow?.columns ?? []) {
         if (query.reads.length < MAX_QUERY_FIELDS) {
           query.reads.push({ table: query.target.exportName, column: column.tsName, role: "projection" });
@@ -2338,6 +2339,21 @@ function normalizeRelativeRef(value) {
 // ---------------------------------------------------------------------------
 
 /**
+ * The exact table row a resolved query targeted. Query targets resolve
+ * by symbol identity, but the export-name map holds only the LAST
+ * writer per name — with two modules exporting the same name it can
+ * return another module's table. The row is therefore re-found by its
+ * unique native id (module + export + physical name), which pins the
+ * precise declaration the query was built against (issue #116 fix
+ * round 3).
+ */
+function tableForQueryTarget(context, query) {
+  const native = query.target?.native ?? null;
+  if (native === null) return null;
+  return context.tables.find((table) => table.native === native) ?? null;
+}
+
+/**
  * Tenant/workspace scope evidence rows derived from extracted queries.
  * An equality predicate on a tenant-like column is scope evidence; its
  * absence on a table that declares such a column is a recorded
@@ -2348,9 +2364,11 @@ function extractScopeRows(context) {
   const overflow = { hit: false };
   for (const query of context.queries) {
     const targetExport = query.target?.exportName ?? null;
-    const targetRow = targetExport !== null
-      ? context.tableByExport.get(targetExport) ?? null
-      : null;
+    // The precise targeted row (native-id re-resolution) — the
+    // export-name map can hold another module's same-named table, whose
+    // tenantKey would decide scope evidence wrongly (issue #116 fix
+    // round 3).
+    const targetRow = tableForQueryTarget(context, query);
     for (const read of query.reads) {
       if (read.role !== "where" || read.table !== targetExport) continue;
       if (!SCOPE_KEY_NAMES.has(read.column)) continue;
