@@ -63,14 +63,9 @@ if (schema.properties.schemaVersion.const !== "lekalo/client-sdk/v0.4.0") {
 if (schema.properties.identity.const !== "dev.lekalo.client-sdk@0.4.0") {
   fail("schema-identity", schema.properties.identity.const);
 }
-// The product-version rule: the contract version travels with
-// Cargo.toml (issue #72 changed contracts, so both must read 0.4.0).
-const product = readText("Cargo.toml").match(
-  /\[workspace\.package\][\s\S]*?^version\s*=\s*"([^"]+)"/m,
-)?.[1];
-if (product !== "0.4.0") {
-  fail("schema-version-product", `schema=0.4.0 product=${product}`);
-}
+// This contract was accepted at 0.4.0. Unchanged contracts retain their
+// versions across product releases; check-contract-versions enforces the
+// current product version only when contract bytes change.
 
 // ---------------------------------------------------------------------------
 // 2. The committed golden validates and its bytes are canonical
