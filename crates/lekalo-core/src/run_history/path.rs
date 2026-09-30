@@ -157,6 +157,14 @@ impl HistoryHome {
 
     /// The physical database path after a final reparse check. A
     /// replaced parent or hard-linked database file refuses.
+    ///
+    /// The hard-link count is observed per platform: Unix reads
+    /// `MetadataExt::nlink`; Windows has no stable link count in std,
+    /// so the file is opened and
+    /// `BY_HANDLE_FILE_INFORMATION::nNumberOfLinks` is read through
+    /// `GetFileInformationByHandle`. A count above one, or a Windows
+    /// count that cannot be read at all, is a custody denial — the
+    /// check is verifiable or it refuses, never assumes.
     pub(crate) fn database_path(&self) -> Result<PathBuf, HomeFailure> {
         let path = self.physical(STORE_FILE)?;
         if let Ok(metadata) = std::fs::symlink_metadata(&path) {
@@ -164,7 +172,14 @@ impl HistoryHome {
                 return Err(Self::denied("unexpected-entry"));
             }
             #[cfg(unix)]
-            if metadata.nlink() > 1 {
+            {
+                use std::os::unix::fs::MetadataExt;
+                if metadata.nlink() > 1 {
+                    return Err(Self::denied("hard-linked"));
+                }
+            }
+            #[cfg(windows)]
+            if windows_link_count(&path) != Some(1) {
                 return Err(Self::denied("hard-linked"));
             }
         }
@@ -213,6 +228,27 @@ pub(crate) fn restrict_file_permissions(path: &Path) {
     {
         let _ = path;
     }
+}
+
+/// The hard-link count of an existing regular file through
+/// `GetFileInformationByHandle`; std exposes no stable link count on
+/// Windows and the `windows_by_handle` API is unstable, so the count
+/// rides the already-pinned `windows-sys` dependency. `None` when the
+/// count cannot be read; the caller treats an unreadable count as a
+/// custody refusal, mirroring the Unix `nlink` semantics.
+#[cfg(windows)]
+fn windows_link_count(path: &Path) -> Option<u32> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+    let file = std::fs::File::open(path).ok()?;
+    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+    let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) };
+    if ok == 0 {
+        return None;
+    }
+    Some(info.nNumberOfLinks)
 }
 
 #[cfg(windows)]
