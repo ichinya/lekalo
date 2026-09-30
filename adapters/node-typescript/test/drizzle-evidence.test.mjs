@@ -1144,3 +1144,103 @@ test("fix-round-4 spelling net: provably non-Drizzle receivers stay silent", asy
     dispose(fx.root);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Fix round 5: module-typed namespace receivers and type-provable
+// construct callees.
+// ---------------------------------------------------------------------------
+
+test("fix-round-5 receivers: module-TYPED values are namespaces, never database handles", async () => {
+  const fx = await scanDrizzleFixture("pg-round5-ns", "postgres-round5");
+  try {
+    const d = fx.index.drizzle;
+    // Pre-fix, `declare const ns: typeof import("drizzle-orm")`,
+    // `typeof orm`/alias-typed parameters, and await-import bindings all
+    // classified as receiver `db` and fabricated clean select rows.
+    assert.equal(d.queries.length, 0,
+      "no query row may be invented for a module-typed receiver");
+    const source = readFileSync(join(fx.project, "src/namespaces.ts"), "utf8").split("\n");
+    const lineOf = (needle) => source.findIndex((line) => line.includes(needle)) + 1;
+    const hits = d.limitations.filter((l) => l.code === "namespace-receiver-unsupported"
+      && l.module === "src/namespaces.ts");
+    assert.deepEqual(hits.map((h) => h.detail).sort(), [
+      "batch-api", "query", "query", "query", "relational-query-api", "transaction",
+    ], "every module-typed receiver call is an explicit uncertainty");
+    const byDetail = new Map(hits.map((h) => [h.detail + ":" + h.line, h]));
+    assert.ok(hits.some((h) => h.line === lineOf("const q = ns.select().from(users)")),
+      "the declared binding form anchors to its call");
+    assert.ok(hits.some((h) => h.line === lineOf("return ns2.select().from(users);")),
+      "the alias-typed parameter form anchors to its call");
+    assert.ok(hits.some((h) => h.line === lineOf("return ns3.transaction(async (tx) => tx.select")),
+      "the type-query parameter form anchors to its transaction");
+    assert.ok(hits.some((h) => h.line === lineOf("return dynamic.select().from(users);")),
+      "the await-import binding reports the same namespace limitation");
+    assert.equal(d.completeness.sections.queries, "partial");
+    assert.equal(d.completeness.sections.transactions, "partial");
+    assert.equal(d.limitations.filter((l) =>
+      l.code === "batch-unsupported" || l.code === "relational-query-unsupported").length, 0,
+      "no batch/relational misattribution may survive");
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("fix-round-5 callees: type-provable constructs extract by declared type identity", async () => {
+  const fx = await scanDrizzleFixture("pg-round5-constructs", "postgres-round5");
+  try {
+    const d = fx.index.drizzle;
+    // `declare const pt: typeof import("drizzle-orm/pg-core").pgTable` —
+    // the factory type query anchors to the PgTableFn callable
+    // interface; the construct identity comes from the member spelling.
+    const widgets = d.tables.find((t) => t.exportName === "widgets");
+    assert.ok(widgets, "the type-provable table factory extracts");
+    assert.equal(widgets.physicalName, "widgets");
+    assert.equal(widgets.dialect, "postgresql");
+    assert.ok(widgets.declarationPath?.startsWith("pg-core/"),
+      "provenance names the closure declaration");
+    // `declare const rel: typeof relations` — the type symbol IS the
+    // vendored function.
+    const labels = d.relations.find((r) => r.name === "labels");
+    assert.ok(labels, "the type-provable relations construct extracts");
+    assert.equal(labels.sourceTable, "users");
+    assert.equal(labels.targetTable, "posts");
+    // The typed parameter form shares the anchor.
+    const author = d.relations.find((r) => r.name === "author");
+    assert.ok(author, "the construct-typed parameter callee extracts");
+    assert.equal(author.module, "src/constructs.ts");
+    // None of the type-provable callees may hide behind an unproven flag.
+    assert.ok(!d.limitations.some((l) =>
+      l.code === "callee-unproven" && l.module === "src/constructs.ts"),
+      "type-provable constructs never emit callee-unproven");
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("fix-round-5 negatives: declaration-anchored identity only, settled contracts intact", async () => {
+  const fx = await scanDrizzleFixture("pg-round5-negatives", "postgres-round5");
+  try {
+    const d = fx.index.drizzle;
+    const source = readFileSync(join(fx.project, "src/negatives.ts"), "utf8").split("\n");
+    const lineOf = (needle) => source.findIndex((line) => line.includes(needle)) + 1;
+    // A cast over dynamic data is an assertion, not a declaration
+    // anchor: the round-4 unproven flag stays.
+    const unproven = d.limitations.filter((l) => l.code === "callee-unproven");
+    const unprovenLines = unproven.map((l) => [l.detail, l.line]).sort();
+    assert.ok(unproven.some((l) => l.line === lineOf("export const unprovenDestructure = rel2(users")),
+      "the dynamic-cast destructure stays explicitly unproven");
+    assert.ok(unproven.some((l) => l.line === lineOf("export const beyondBound = h5(posts")),
+      "the beyond-bound chain stays explicitly unproven (round-4 contract)");
+    assert.ok(!d.relations.some((r) => r.name === "unproven"
+      || r.name === "hopBeyond"), "no row is invented for either negative");
+    // Four hops still extract.
+    const within = d.relations.find((r) => r.name === "hopWithin");
+    assert.ok(within, "the within-bound chain still extracts");
+    // Foreign-receiver silence (round-4 contract).
+    assert.ok(!d.limitations.some((l) => l.code === "callee-unproven"
+      && l.module === "src/negatives.ts" && l.line >= lineOf("class Local {")),
+      "the project-local construct spelling stays limitation-free");
+  } finally {
+    dispose(fx.root);
+  }
+});
