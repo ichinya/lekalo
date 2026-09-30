@@ -196,6 +196,10 @@
       "origin": "synthetic"
     },
     {
+      "family": "run-history",
+      "origin": "synthetic"
+    },
+    {
       "family": "scenario",
       "origin": "synthetic"
     },

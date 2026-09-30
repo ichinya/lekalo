@@ -76,6 +76,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-orchestration-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-transport-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-openapi-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-run-history-contracts.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites
@@ -177,6 +178,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
+      - name: Run the local run-history end-to-end gate (issue #121)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-run-history-cli.mjs
       - name: Run the privacy evaluator parity gate (issue #119)
         run: node scripts/test-privacy-evaluator-parity.mjs
       - name: Run the privacy runtime CLI gate (issue #119)
