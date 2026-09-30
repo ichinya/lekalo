@@ -289,6 +289,7 @@ function containsNextCall(ctx, body, nextSymbol) {
  * comments). Absent annotation → no role claim, never name inference.
  */
 function explicitRoleOf(ctx, handler) {
+  const { ts } = ctx;
   const pieces = [];
   // Index rows carry the display comment (known tags only), so custom
   // @lekalo-* tags are read from the declaration's JSDoc syntax too.

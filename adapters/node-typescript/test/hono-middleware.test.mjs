@@ -75,6 +75,47 @@ test("middleware chains: global order, path filters, inline order, next evidence
   }
 });
 
+test("inline use() handlers: arrow, async arrow, and function expression stay chain members", async () => {
+  // The commonest Hono idiom — an inline middleware with no declared
+  // symbol — used to abort the whole scan with an unbound-identifier
+  // ReferenceError inside the role reader (issue #115 fix round 5).
+  // Every executing-chain form must resolve to its own inline native
+  // identity with next evidence and no role claim.
+  const context = await scanHonoFixture("middleware-inline", "middleware");
+  try {
+    const chains = recordsOfRelation(context, "uses-middleware");
+    const inline = chains
+      .filter((row) => row.path === "/inline")
+      .sort((a, b) => a.ordinal - b.ordinal);
+    assert.equal(inline.length, 6, "globals, conditional admin filter, and the three inline members");
+    assert.deepEqual(inline.map((row) => row.ordinal), [0, 1, 2, 3, 4, 5]);
+    assert.deepEqual(inline.map((row) => row.unwindOrdinal), [6, 5, 4, 3, 2, 1]);
+    // The named globals keep their identities and evidence.
+    assert.equal(inline[0].to.name, "logger");
+    assert.match(inline[0].note, /next=detected/);
+    assert.equal(inline[1].to.name, "tenant");
+    assert.equal(inline[2].to.name, "auth");
+    assert.ok(inline[2].reasons.includes("conditional-applicability"));
+    // The three inline forms: no resolvable declaration, so each binds
+    // to its own inline native id + content digest, never a guessed
+    // symbol; pass-through is detected from the inline body symbols.
+    for (const member of inline.slice(3)) {
+      assert.match(member.to.native, /^hono-inline-/);
+      assert.equal(member.to.indexed, false);
+      assert.match(member.to.digest, /^sha256:[0-9a-f]{64}$/);
+      assert.equal(member.role, null, "absent annotation: no role claim");
+      assert.equal(member.status, "complete");
+      assert.deepEqual(member.reasons, []);
+      assert.match(member.note, /next=detected/);
+    }
+    // The three inline bodies are distinct declarations: distinct
+    // native identities, never collapsed.
+    assert.equal(new Set(inline.slice(3).map((row) => row.to.native)).size, 3);
+  } finally {
+    dispose(context.root);
+  }
+});
+
 test("parent path-filtered middleware composes onto mounted routes", async () => {
   const context = await scanHonoFixture("middleware-mounts", "middleware-mounts");
   try {
@@ -145,13 +186,14 @@ test("roles: explicit JSDoc annotations only; presence never authorizes", async 
     }
     // Context keys stay namespaced evidence: logger writes requestId on
     // all six app routes plus the retained global member of the bounded
-    // /deep-chain route, tenant likewise; cacheHeaders writes cache on
-    // /health. The runtimeApp routes get neither global middleware.
+    // /deep-chain route and the /inline chain (fix round 5), tenant
+    // likewise; cacheHeaders writes cache on /health. The runtimeApp
+    // routes get neither global middleware.
     const writes = recordsOfRelation(context, "context-write");
     const keys = writes.map((row) => row.note).sort();
     assert.deepEqual(keys, [
-      "cache", "requestId", "requestId", "requestId", "requestId", "requestId", "requestId", "requestId",
-      "tenantId", "tenantId", "tenantId", "tenantId", "tenantId", "tenantId", "tenantId",
+      "cache", "requestId", "requestId", "requestId", "requestId", "requestId", "requestId", "requestId", "requestId",
+      "tenantId", "tenantId", "tenantId", "tenantId", "tenantId", "tenantId", "tenantId", "tenantId",
     ]);
     const reads = recordsOfRelation(context, "context-read");
     assert.ok(reads.every((row) => typeof row.note === "string" && row.note.length > 0));

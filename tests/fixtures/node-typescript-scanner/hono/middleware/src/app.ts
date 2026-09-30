@@ -27,3 +27,16 @@ app.get("/shadowed", shadowed, whoami);
 // The retained members keep their ordinals and the overflow surfaces
 // as chain-budget uncertainty — never a silently shortened chain.
 app.get("/deep-chain", maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, whoami);
+
+// Inline middleware in the handler position (fix round 5 regression):
+// inline arrow, inline async arrow, and a declaration-less function
+// expression — none has a resolvable declaration symbol, and all
+// three precede /inline so they compose into its chain.
+app.use((c, next) => next());
+app.use(async (c, next) => {
+  await next();
+});
+app.use(function (c, next) {
+  return next();
+});
+app.get("/inline", (c) => c.json({ inline: true }));
