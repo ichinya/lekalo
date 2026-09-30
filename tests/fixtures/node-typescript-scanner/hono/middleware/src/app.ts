@@ -22,3 +22,8 @@ app.get("/health", cacheHeaders, health);
 app.get("/admin/panel", (c) => c.json({ panel: true }));
 app.post("/admin/reset", maintenance, (c) => c.json({ reset: true }));
 app.get("/shadowed", shadowed, whoami);
+
+// Chain bound: seventeen inline members exceed HONO_MAX_CHAIN (16).
+// The retained members keep their ordinals and the overflow surfaces
+// as chain-budget uncertainty — never a silently shortened chain.
+app.get("/deep-chain", maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, whoami);

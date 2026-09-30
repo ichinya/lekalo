@@ -1433,10 +1433,30 @@ function runScan({ profile, readView, permittedProjectRoot, limits, frameworks =
   };
   const roots = readView.roots;
   const inventory = enumerateInventory(permittedProjectRoot, roots, profile);
-  const readBytes = (logicalPath) => readView.readFile(logicalPath, {
-    files: limits?.files ?? MAX_SCAN_FILES,
-    bytes: limits?.bytes ?? MAX_SCAN_SOURCE_BYTES,
-  });
+  // The optional second argument is a per-call limits override (used by
+  // the framework provider's readDataFile to bound one declared data
+  // file to its own file/byte budget); without it the whole-scan limits
+  // apply (issue #115 fix round: the per-file 64 KiB bound is enforced
+  // by the read view again, never dropped on the floor).
+  const readBytes = (logicalPath, perCall) => {
+    if (perCall) {
+      // Per-call bound (used by the framework provider's readDataFile):
+      // the read view counters are cumulative, so the single-read
+      // allowance is translated into "at most one more file, at most
+      // perCall.bytes more bytes from this exact read" — the 64 KiB
+      // per-file data bound is enforced again, never dropped (issue
+      // #115 fix round).
+      const counters = readView.counters();
+      return readView.readFile(logicalPath, {
+        files: counters.filesRead + (perCall.files ?? 1),
+        bytes: counters.bytesRead + (perCall.bytes ?? 0),
+      });
+    }
+    return readView.readFile(logicalPath, {
+      files: limits?.files ?? MAX_SCAN_FILES,
+      bytes: limits?.bytes ?? MAX_SCAN_SOURCE_BYTES,
+    });
+  };
   const manifest = buildInputManifest(inventory, readBytes);
   const diagnostics = [];
   const { packages, projects, packageByRoot } = discoverPackagesAndProjects(

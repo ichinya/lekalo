@@ -214246,6 +214246,7 @@ var FRESHNESS_DOMAIN = "lekalo.hono.freshness.v1";
 var MAX_HONO_RECORDS = 4096;
 var MAX_HONO_UNCERTAINTY = 1024;
 var HONO_MAX_MOUNT_DEPTH = 8;
+var HONO_MAX_CHAIN = 16;
 function canonicalHonoText(value) {
   if (value === null) return "null";
   switch (typeof value) {
@@ -215358,7 +215359,11 @@ var MAX_BODY_NODES = 4096;
 function buildMiddlewareChains(ctx, routes, registrations) {
   const useEvents = registrations.filter((event) => event.kind === "use");
   for (const route of routes) {
-    const chain = composeChain(route, useEvents);
+    const composed = composeChain(route, useEvents);
+    const chain = composed.slice(0, HONO_MAX_CHAIN);
+    if (composed.length > HONO_MAX_CHAIN) {
+      ctx.addUncertaintyAt(route.event.sourceFile, route.event.node, "chain-budget", String(composed.length));
+    }
     const chainLength = chain.length;
     let ordinal = 0;
     for (const member of chain) {
@@ -217788,10 +217793,19 @@ function runScan({ profile, readView, permittedProjectRoot, limits, frameworks =
   };
   const roots = readView.roots;
   const inventory = enumerateInventory(permittedProjectRoot, roots, profile);
-  const readBytes = (logicalPath) => readView.readFile(logicalPath, {
-    files: limits?.files ?? MAX_SCAN_FILES,
-    bytes: limits?.bytes ?? MAX_SCAN_SOURCE_BYTES
-  });
+  const readBytes = (logicalPath, perCall) => {
+    if (perCall) {
+      const counters = readView.counters();
+      return readView.readFile(logicalPath, {
+        files: counters.filesRead + (perCall.files ?? 1),
+        bytes: counters.bytesRead + (perCall.bytes ?? 0)
+      });
+    }
+    return readView.readFile(logicalPath, {
+      files: limits?.files ?? MAX_SCAN_FILES,
+      bytes: limits?.bytes ?? MAX_SCAN_SOURCE_BYTES
+    });
+  };
   const manifest = buildInputManifest(inventory, readBytes);
   const diagnostics = [];
   const { packages, projects, packageByRoot } = discoverPackagesAndProjects(

@@ -237,6 +237,35 @@ test("uncertainty: dynamic paths, methods, receivers stay unknown with reasons",
   }
 });
 
+test("framework data reads are bounded per file (64 KiB) and per call", async () => {
+  const context = await scanHonoFixture("contracts-bound", "static");
+  try {
+    // Baseline: the contract file joins (POST /users → users.create).
+    const baseline = recordsOfRelation(context, "endpoint-contract");
+    assert.ok(baseline.some((row) => row.note === "users.create"), "baseline join present");
+    // Grow the copied contract file beyond the 64 KiB per-file data
+    // bound: the read must be refused, the join phase must report
+    // missing evidence instead of parsing an unbounded file, and the
+    // scan itself must still complete.
+    const contractPath = join(context.project, "lekalo", "endpoints.json");
+    const document = JSON.parse(readFileSync(contractPath, "utf8"));
+    document.endpoints.push({ id: "huge", method: "GET", path: "/" + "x".repeat(80 * 1024) });
+    writeFileSync(contractPath, JSON.stringify(document));
+    const rescanned = context.session.scan({
+      profile: context.profile,
+      readView: context.readView,
+      permittedProjectRoot: context.project,
+      frameworks: ["hono"],
+    });
+    const joins = (rescanned.index.frameworks?.hono?.records ?? [])
+      .filter((row) => row.relation === "dev.lekalo.hono/endpoint-contract");
+    assert.equal(joins.length, 0, "an over-bound contract file contributes nothing");
+    assert.equal(rescanned.index.state, "complete", "the bounded refusal never breaks the scan");
+  } finally {
+    dispose(context.root);
+  }
+});
+
 test("route signature/source edits invalidate freshness fingerprints", async () => {
   const context = await scanHonoFixture("freshness", "static");
   try {

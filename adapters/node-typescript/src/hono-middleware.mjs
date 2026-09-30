@@ -17,6 +17,7 @@
  * uncertainty reason instead of a guessed match.
  */
 import {
+  HONO_MAX_CHAIN,
   makeRecord,
 } from "./hono-evidence.mjs";
 import { endpointOf, instanceEndpoint, reachabilityPenaltyOf } from "./hono-routes.mjs";
@@ -45,7 +46,14 @@ const MAX_BODY_NODES = 4096;
 export function buildMiddlewareChains(ctx, routes, registrations) {
   const useEvents = registrations.filter((event) => event.kind === "use");
   for (const route of routes) {
-    const chain = composeChain(route, useEvents);
+    const composed = composeChain(route, useEvents);
+    // The chain bound is explicit: retained members keep their ordinals,
+    // the overflow surfaces as chain-budget uncertainty on the route's
+    // registration span — never a silently shortened chain.
+    const chain = composed.slice(0, HONO_MAX_CHAIN);
+    if (composed.length > HONO_MAX_CHAIN) {
+      ctx.addUncertaintyAt(route.event.sourceFile, route.event.node, "chain-budget", String(composed.length));
+    }
     const chainLength = chain.length;
     let ordinal = 0;
     for (const member of chain) {

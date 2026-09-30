@@ -57,6 +57,14 @@ test("middleware chains: global order, path filters, inline order, next evidence
     // ...while the real pass-through on the same route stays detected.
     const shadowLogger = shadowChain.find((row) => row.to.name === "logger");
     assert.match(shadowLogger.note, /next=detected/);
+    // The chain bound: a 17-member inline chain retains exactly
+    // HONO_MAX_CHAIN (16) members in registration order, and the
+    // overflow is explicit chain-budget uncertainty on the route.
+    const deepChain = (byRoute.get("GET /deep-chain") ?? []).sort((a, b) => a.ordinal - b.ordinal);
+    assert.equal(deepChain.length, 16, "chain retained members are bounded");
+    assert.equal(deepChain[0].ordinal, 0);
+    assert.equal(deepChain[15].ordinal, 15);
+    assert.ok(context.hono.uncertainty.some((row) => row.kind === "hono-chain-budget"), "chain overflow is explicit");
     // Inline middleware keeps its registration ordinal after the
     // globals and the conditional admin filter.
     const health = byRoute.get("GET /health").sort((a, b) => a.ordinal - b.ordinal);
@@ -136,14 +144,14 @@ test("roles: explicit JSDoc annotations only; presence never authorizes", async 
       );
     }
     // Context keys stay namespaced evidence: logger writes requestId on
-    // all six app routes, tenant writes tenantId on all six, cacheHeaders
-    // writes cache on /health. The runtimeApp routes get neither global
-    // middleware, so they add no writes.
+    // all six app routes plus the retained global member of the bounded
+    // /deep-chain route, tenant likewise; cacheHeaders writes cache on
+    // /health. The runtimeApp routes get neither global middleware.
     const writes = recordsOfRelation(context, "context-write");
     const keys = writes.map((row) => row.note).sort();
     assert.deepEqual(keys, [
-      "cache", "requestId", "requestId", "requestId", "requestId", "requestId", "requestId",
-      "tenantId", "tenantId", "tenantId", "tenantId", "tenantId", "tenantId",
+      "cache", "requestId", "requestId", "requestId", "requestId", "requestId", "requestId", "requestId",
+      "tenantId", "tenantId", "tenantId", "tenantId", "tenantId", "tenantId", "tenantId",
     ]);
     const reads = recordsOfRelation(context, "context-read");
     assert.ok(reads.every((row) => typeof row.note === "string" && row.note.length > 0));
