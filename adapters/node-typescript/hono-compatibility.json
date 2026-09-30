@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "lekalo/hono-compatibility/v0.1.0",
+  "provider": {
+    "id": "hono",
+    "namespace": "dev.lekalo.hono/",
+    "rulesRevision": "hono-rules-v1",
+    "adapter": "lekalo-target-node-typescript",
+    "adapterVersion": "0.4.0"
+  },
+  "status": "partial",
+  "recognizedSpecifiers": [
+    "hono",
+    "hono/validator",
+    "hono/http-exception",
+    "hono/testing",
+    "@hono/zod-openapi",
+    "@hono/zod-validator"
+  ],
+  "recognition": {
+    "identity": "compiler-resolved constructor/import symbols only; a Hono family import specifier AND an inventoried class declaration in a .d.ts are both required; name resemblance is never evidence",
+    "paths": "framework type surfaces are expected as inventoried declaration files (tsconfig paths or granted type roots); unresolved constructors become unknown records, never ambient reads",
+    "runtime": "no application is evaluated, imported, installed, or executed at scan time; no regex-only claims where compiler information exists"
+  },
+  "supportedSyntax": [
+    "new Hono() / new OpenAPIHono() bound to const declarations, export default, or used inline",
+    "immutable const aliases of instances (one step, const-only)",
+    "basePath literal views, including inline chains app.basePath('/x').get(...)",
+    "verb methods get/post/put/patch/delete/options/head, all, on(method|methods, path)",
+    "route(path, childRouter) mounts with mount-time snapshot semantics and proven ESM initialization order across modules",
+    "use() with literal path filters or global; inline route middleware chains",
+    "validator/zValidator constructions, including const-bound references",
+    "c.json/text/html/body/render/status response sites with literal or in-scope statuses",
+    "HTTPException throws, onError/notFound registrations",
+    "createRoute({method, path, operationId}) and OpenAPIHono.openapi(definition, handler)",
+    "JSX returns, JSX in c.html, and c.render as SSR evidence; c.html(string) is html, not ssr",
+    "app.request(path, init) and testClient(app) flows in test modules"
+  ],
+  "unsupportedSyntax": [
+    "custom getPath / router path transforms (recorded unknown when detected)",
+    "mutable instance aliases, factory-produced receivers (unsupported-receiver uncertainty)",
+    "dynamic paths, dynamic method arrays, dynamic context keys, dynamic statuses (unknown/incomplete with reasons)",
+    "mounts whose target does not resolve (including import cycles: unknown, never invented)",
+    "ambient `declare module \"hono\"` without an inventoried declaration file"
+  ],
+  "evidenceModel": {
+    "record": "closed envelope: relation, from/to native identity, method/path, facet, role, ordinal/unwindOrdinal, provenance (explicit|detected|inferred — never confirmed), confidence (exact|high|medium|low|unknown), status (complete|incomplete|unknown), machine reasons, 1-based span, source revision, adapter/framework version, rules revision, domain-separated freshness fingerprint",
+    "freshness": "the fingerprint covers registration identity/order/path, handler and middleware identity, structural signature and content digest, mount chain, facet, and span — any edit invalidates derived evidence",
+    "budgets": "4096 records, 1024 uncertainty rows per scan; overflow is an explicit record-budget partial, never silent truncation"
+  },
+  "bounds": {
+    "maxMountDepth": 8,
+    "maxChainLength": 16,
+    "maxBodyNodes": 4096,
+    "maxHandlerDigestBytes": 8192
+  },
+  "enablement": {
+    "launchInput": "--lekalo-framework-policy-json (trusted launch input; closed shape schema/version/providers)",
+    "default": "disabled; absent or empty policy keeps the generic scan byte-identical",
+    "wire": "the closed target-protocol contract is not extended; full records stay in the adapter index and internal outcome evidence carries a bounded provider summary (state/counts/digest)"
+  },
+  "qualification": {
+    "runtimeOracle": "pending — mount/clone/order semantics beyond the documented snapshot rule must be qualified against a pinned Hono runtime before any claim beyond 'partial'",
+    "packagePin": "none recorded: dependency version ranges are not exact framework versions, and no authorized lockfile pin was supplied for this repository",
+    "fixtures": "tests/fixtures/node-typescript-scanner/hono (synthetic, authored declaration stubs; no real package, no conformance claim)"
+  }
+}
