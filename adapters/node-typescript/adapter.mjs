@@ -215348,9 +215348,11 @@ function buildMiddlewareChains(ctx, routes, registrations) {
 function composeChain(route, useEvents) {
   const chain = [];
   const seen = /* @__PURE__ */ new Set();
-  const consider = (event, provenance, applicability) => {
+  const consider = (event, provenance) => {
     if (seen.has(event)) return;
     seen.add(event);
+    const applicability = applicabilityOf(event, route);
+    if (applicability === "not-applicable") return;
     for (const handler of event.handlers) {
       chain.push({
         handler,
@@ -215361,17 +215363,16 @@ function composeChain(route, useEvents) {
       });
     }
   };
+  const mountChain = route.mountChain ?? (route.mount ? [route.mount] : []);
+  for (const mount of mountChain) {
+    const parentUses = useEvents.filter((event) => event.instance.key === mount.instance.key && event.module === mount.module && event.order < mount.order).sort((left, right) => left.order - right.order);
+    for (const event of parentUses) {
+      consider(event, "parent-use");
+    }
+  }
   const own = useEvents.filter((event) => event.instance.key === route.instance.key).sort((left, right) => left.order - right.order);
   for (const event of own) {
-    const applicability = applicabilityOf(event, route);
-    if (applicability === "not-applicable") continue;
-    consider(event, "use", applicability);
-  }
-  if (route.mount && route.mount.instance) {
-    const parentUses = useEvents.filter((event) => event.instance.key === route.mount.instance.key && event.module === route.mount.module && event.order < route.mount.order && (event.pathFilter === null || event.pathFilter === void 0)).sort((left, right) => left.order - right.order);
-    for (const event of parentUses) {
-      consider(event, "parent-use", "conditional");
-    }
+    consider(event, "use");
   }
   for (const handler of route.middleware ?? []) {
     chain.push({

@@ -56,6 +56,53 @@ test("middleware chains: global order, path filters, inline order, next evidence
   }
 });
 
+test("parent path-filtered middleware composes onto mounted routes", async () => {
+  const context = await scanHonoFixture("middleware-mounts", "middleware-mounts");
+  try {
+    const middleware = recordsOfRelation(context, "uses-middleware");
+    const byRoute = new Map();
+    for (const record of middleware) {
+      if (!byRoute.has(record.path)) byRoute.set(record.path, []);
+      byRoute.get(record.path).push(record);
+    }
+    // /api/ping: gate (wildcard parent filter, conditional), audit
+    // (literal parent filter, provably applicable), childLogger
+    // (the child's own global middleware) — in execution order.
+    const ping = (byRoute.get("/api/ping") ?? []).sort((a, b) => a.ordinal - b.ordinal);
+    assert.deepEqual(ping.map((row) => row.to.name), ["gate", "audit", "childLogger"]);
+    // Chain provenance rides the note: parent-use rows mark mount
+    // ancestors, the child's own use marks the owner.
+    assert.match(ping[0].note, /^parent-use;/);
+    assert.match(ping[1].note, /^parent-use;/);
+    assert.match(ping[2].note, /^use;/);
+    const gateRow = ping[0];
+    assert.equal(gateRow.status, "incomplete");
+    assert.ok(gateRow.reasons.includes("conditional-applicability"));
+    const auditRow = ping[1];
+    assert.equal(auditRow.status, "complete");
+    assert.deepEqual(auditRow.reasons, []);
+    assert.match(auditRow.note, /next=detected/);
+    // Same coverage on the second child route: the wildcard never
+    // silently vanishes on mounted routes.
+    const other = (byRoute.get("/api/other") ?? []).sort((a, b) => a.ordinal - b.ordinal);
+    assert.deepEqual(other.map((row) => row.to.name), ["gate", "audit", "childLogger"]);
+    // The /open subtree: the wildcard parent filter cannot be proven
+    // disjoint from any literal path, so gate stays conditional there;
+    // but the literal /api filter is provably disjoint — no audit, no
+    // childLogger. Unprovable overlap is a reasoned record, never a
+    // guessed applicability and never silence.
+    const openLeaf = (byRoute.get("/open/leaf") ?? []).sort((a, b) => a.ordinal - b.ordinal);
+    assert.deepEqual(openLeaf.map((row) => row.to.name), ["gate"]);
+    assert.equal(openLeaf[0].status, "incomplete");
+    assert.ok(openLeaf[0].reasons.includes("conditional-applicability"));
+    // The child's own middleware still carries next evidence.
+    const loggerRow = ping.find((row) => row.to.name === "childLogger");
+    assert.equal(loggerRow.status, "complete");
+  } finally {
+    dispose(context.root);
+  }
+});
+
 test("roles: explicit JSDoc annotations only; presence never authorizes", async () => {
   const context = await scanHonoFixture("middleware-roles", "middleware");
   try {

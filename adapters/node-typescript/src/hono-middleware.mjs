@@ -63,15 +63,24 @@ export function buildMiddlewareChains(ctx, routes, registrations) {
 
 /**
  * The ordered chain of one route: applicable `use` middleware of the
- * owning instance (and, for mounted routes, the parent's pre-mount
- * global middleware), then inline middleware.
+ * owning instance, preceded by every mount ancestor's pre-mount
+ * middleware (outermost first — execution order), then inline
+ * middleware. Parent path filters are matched against the route's full
+ * resolved path: a literal disjoint filter is provably excluded, a
+ * wildcard/parameterized filter stays conditional, and an unresolvable
+ * filter stays conditional with dynamic-path-filter — a path-filtered
+ * parent `use` over a mount therefore still yields records (issue #115
+ * fix round), never silence. Cross-module pre-mount parent middleware
+ * is unproven ordering and stays out of the chain by design.
  */
 function composeChain(route, useEvents) {
   const chain = [];
   const seen = new Set();
-  const consider = (event, provenance, applicability) => {
+  const consider = (event, provenance) => {
     if (seen.has(event)) return;
     seen.add(event);
+    const applicability = applicabilityOf(event, route);
+    if (applicability === "not-applicable") return;
     for (const handler of event.handlers) {
       chain.push({
         handler,
@@ -82,26 +91,25 @@ function composeChain(route, useEvents) {
       });
     }
   };
+  // Mount ancestors: each ancestor's pre-mount `use` events (proven by
+  // same-module registration order to precede the mount occurrence).
+  const mountChain = route.mountChain ?? (route.mount ? [route.mount] : []);
+  for (const mount of mountChain) {
+    const parentUses = useEvents
+      .filter((event) => event.instance.key === mount.instance.key
+        && event.module === mount.module
+        && event.order < mount.order)
+      .sort((left, right) => left.order - right.order);
+    for (const event of parentUses) {
+      consider(event, "parent-use");
+    }
+  }
   // Same-instance `use` events in registration order.
   const own = useEvents
     .filter((event) => event.instance.key === route.instance.key)
     .sort((left, right) => left.order - right.order);
   for (const event of own) {
-    const applicability = applicabilityOf(event, route);
-    if (applicability === "not-applicable") continue;
-    consider(event, "use", applicability);
-  }
-  // Pre-mount global middleware of the mounting parent.
-  if (route.mount && route.mount.instance) {
-    const parentUses = useEvents
-      .filter((event) => event.instance.key === route.mount.instance.key
-        && event.module === route.mount.module
-        && event.order < route.mount.order
-        && (event.pathFilter === null || event.pathFilter === undefined))
-      .sort((left, right) => left.order - right.order);
-    for (const event of parentUses) {
-      consider(event, "parent-use", "conditional");
-    }
+    consider(event, "use");
   }
   // Inline middleware args of the registration itself.
   for (const handler of route.middleware ?? []) {
