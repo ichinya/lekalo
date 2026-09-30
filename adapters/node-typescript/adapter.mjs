@@ -214734,6 +214734,17 @@ function makeEvent(ctx, { kind, node, instance, methodName, sourceFile, module }
       const child = ctx.instanceOfExpression(childExpression, sourceFile);
       if (child) {
         event.childInstance = child;
+      } else if (childExpression.kind === ts3.SyntaxKind.CallExpression && childExpression.expression?.kind === ts3.SyntaxKind.PropertyAccessExpression) {
+        const chain = fluentChainOf(ctx, childExpression, childExpression.expression, sourceFile);
+        if (chain) {
+          event.childInstance = chain.instance;
+          event.chainTarget = true;
+          event.childExpression = childExpression;
+        } else {
+          event.status = "unknown";
+          event.reasons.push("unknown-handler");
+          ctx.addUncertaintyAt(sourceFile, node, "unknown-handler", "mount-target");
+        }
       } else {
         event.status = "unknown";
         event.reasons.push("unknown-handler");
@@ -215123,6 +215134,9 @@ function importClosureOf(ctx) {
 function isNestedMount(mountEvents, event) {
   return event.instance.kind === "view" || event.instance.kind === "alias" ? false : mountEvents.some((other) => other !== event && other.childInstance?.key === event.instance.key);
 }
+function nodeIsWithin(inner, outer) {
+  return Boolean(inner && outer && inner.getSourceFile() === outer.getSourceFile() && inner.getStart() >= outer.getStart() && inner.getEnd() <= outer.getEnd());
+}
 function standaloneBaseOf(ctx, instance, seen = /* @__PURE__ */ new Set()) {
   if (!instance || seen.has(instance.key)) return "/";
   seen.add(instance.key);
@@ -215175,7 +215189,7 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
     const chainScope = mountChainScopeOf(chainNext);
     for (const event of routeEvents) {
       if (event.instance.key !== child.key) continue;
-      const included = classifyChildEvent(mount, event, closureOf);
+      const included = mount.chainTarget && nodeIsWithin(event.node, mount.childExpression) ? { status: "complete", reasons: [] } : classifyChildEvent(mount, event, closureOf);
       if (included === null) continue;
       const merged = mergeScopes(included, chainScope);
       resolveOneRoute(ctx, event, {

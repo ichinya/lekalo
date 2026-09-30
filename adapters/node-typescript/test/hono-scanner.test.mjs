@@ -422,3 +422,48 @@ test("fluent verb chains: every statically-known link keeps its record", async (
     dispose(context.root);
   }
 });
+
+test("inline mount targets: fluent-chain children mount under their prefix, never orphan", async () => {
+  const context = await scanHonoFixture("inline-mount", "inline-mount");
+  try {
+    assert.equal(context.hono.provider.state, "complete");
+    // The mount binds the inline-constructed child instead of refusing.
+    const mounts = recordsOfRelation(context, "mounts-router");
+    const byPath = new Map(mounts.map((row) => [row.path, row]));
+    for (const path of ["/sub", "/deep", "/n", "/maybe"]) {
+      const mount = byPath.get(path);
+      assert.ok(mount, `mount ${path} recorded`);
+      assert.ok(mount.to, `mount ${path} binds its inline child`);
+      assert.equal(mount.to.name, "hono");
+    }
+    assert.equal(byPath.get("/maybe").status, "incomplete");
+    assert.ok(byPath.get("/maybe").reasons.includes("conditional-registration"));
+    // The inline child's registrations resolve UNDER the mount prefix —
+    // no standalone orphan /inside route, no unknown-handler refusal.
+    const routes = recordsOfRelation(context, "route-handler");
+    const byKey = new Map(routes.map((row) => [`${row.method} ${row.path}`, row]));
+    assert.equal(byKey.get("GET /sub/inside").to.name, "insideHandler");
+    assert.equal(byKey.get("GET /sub/inside").status, "complete");
+    assert.equal(byKey.get("GET /deep/a").to.name, "insideHandler");
+    assert.equal(byKey.get("POST /deep/b").to.name, "deepHandler");
+    assert.equal(byKey.get("GET /deep/n/c").to.name, "deepHandler");
+    for (const key of ["GET /deep/a", "POST /deep/b", "GET /deep/n/c"]) {
+      assert.equal(byKey.get(key).status, "complete");
+    }
+    // A conditional inline mount keeps its whole subtree constrained.
+    const maybe = byKey.get("GET /maybe/x");
+    assert.ok(maybe, "conditional inline route recorded");
+    assert.equal(maybe.status, "incomplete");
+    assert.ok(maybe.reasons.includes("conditional-registration"));
+    // No orphan routes at unprefixed paths.
+    assert.equal(byKey.get("GET /inside"), undefined);
+    assert.equal(byKey.get("GET /a"), undefined);
+    assert.equal(
+      context.hono.uncertainty.filter((row) => row.kind === "hono-unknown-handler").length,
+      0,
+      "no unknown-handler uncertainty for provable inline targets",
+    );
+  } finally {
+    dispose(context.root);
+  }
+});

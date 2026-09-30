@@ -439,6 +439,24 @@ function makeEvent(ctx, { kind, node, instance, methodName, sourceFile, module }
       const child = ctx.instanceOfExpression(childExpression, sourceFile);
       if (child) {
         event.childInstance = child;
+      } else if (childExpression.kind === ts.SyntaxKind.CallExpression
+        && childExpression.expression?.kind === ts.SyntaxKind.PropertyAccessExpression) {
+        // A fluent-chain target: `app.route('/sub', new Hono().get(
+        // '/inside', h))` — the chain roots at a provable instance (the
+        // inline `new Hono()`), so the mount binds it. Registrations
+        // inside the argument evaluate before the mount executes and
+        // are snapshot-included (issue #115 fix round 2); the child's
+        // remaining registrations classify by proven order as usual.
+        const chain = fluentChainOf(ctx, childExpression, childExpression.expression, sourceFile);
+        if (chain) {
+          event.childInstance = chain.instance;
+          event.chainTarget = true;
+          event.childExpression = childExpression;
+        } else {
+          event.status = "unknown";
+          event.reasons.push("unknown-handler");
+          ctx.addUncertaintyAt(sourceFile, node, "unknown-handler", "mount-target");
+        }
       } else {
         event.status = "unknown";
         event.reasons.push("unknown-handler");
@@ -930,6 +948,14 @@ function isNestedMount(mountEvents, event) {
       other !== event && other.childInstance?.key === event.instance.key);
 }
 
+/** True when `inner` lies inside `outer`'s source range (same file). */
+function nodeIsWithin(inner, outer) {
+  return Boolean(inner && outer
+    && inner.getSourceFile() === outer.getSourceFile()
+    && inner.getStart() >= outer.getStart()
+    && inner.getEnd() <= outer.getEnd());
+}
+
 /** The standalone base prefix of an instance (views compose). */
 function standaloneBaseOf(ctx, instance, seen = new Set()) {
   if (!instance || seen.has(instance.key)) return "/";
@@ -1011,7 +1037,14 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
     // resolved but incomplete.
     for (const event of routeEvents) {
       if (event.instance.key !== child.key) continue;
-      const included = classifyChildEvent(mount, event, closureOf);
+      // Chain targets: registrations inside the mount's own argument
+      // expression are fully evaluated before the mount call executes,
+      // so they are snapshot-included regardless of positional order
+      // (issue #115 fix round 2). Everything else classifies by proven
+      // initialization order as usual.
+      const included = mount.chainTarget && nodeIsWithin(event.node, mount.childExpression)
+        ? { status: "complete", reasons: [] }
+        : classifyChildEvent(mount, event, closureOf);
       if (included === null) continue;
       // Per-event scope: each child registration carries its own
       // ordering classification merged with the ancestor scope under
