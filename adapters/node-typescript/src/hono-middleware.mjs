@@ -57,6 +57,17 @@ export function buildMiddlewareChains(ctx, routes, registrations) {
       ctx.addUncertaintyAt(route.event.sourceFile, route.event.node, "chain-budget", String(composed.length));
     }
     const chainLength = chain.length;
+    // Matched-but-unreachable: a same-module use event registered after
+    // this route would have matched it, but it can never execute there
+    // — the terminal handler does not call next(). The observation is
+    // recorded as uncertainty instead of a coverage claim (issue #115
+    // fix round 2).
+    for (const event of useEvents) {
+      if (event.instance.key !== route.instance.key) continue;
+      if (event.module !== route.event.module || event.order < route.event.order) continue;
+      if (applicabilityOf(event, route) === "not-applicable") continue;
+      ctx.addUncertaintyAt(event.sourceFile, event.node, "post-route-use", route.path ?? "/");
+    }
     let ordinal = 0;
     // Context records are per route + handler + call site: distinct
     // bindings of the SAME handler by different use events are distinct
@@ -121,9 +132,16 @@ function composeChain(route, useEvents) {
       consider(event, "parent-use");
     }
   }
-  // Same-instance `use` events in registration order.
+  // Same-instance `use` events in registration order. Hono's
+  // registration order controls entry: a `use` registered AFTER a route
+  // on the same instance composes onto that route only if the route's
+  // terminal handler calls next() — which terminal handlers do not — so
+  // a same-module post-route use never claims membership (issue #115
+  // fix round 2; the same ordering test parent uses already apply).
+  // Cross-module ordering is unproven and keeps conservative inclusion.
   const own = useEvents
-    .filter((event) => event.instance.key === route.instance.key)
+    .filter((event) => event.instance.key === route.instance.key
+      && (event.module !== route.event.module || event.order < route.event.order))
     .sort((left, right) => left.order - right.order);
   for (const event of own) {
     consider(event, "use");

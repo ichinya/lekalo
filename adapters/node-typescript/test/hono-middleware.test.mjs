@@ -224,13 +224,44 @@ test("multi-use same handler: chain membership repeats, context records dedupe p
     const reads = recordsOfRelation(context, "context-read")
       .filter((row) => row.path === "/multi" && row.note === "seen");
     assert.equal(reads.length, 1, "one context-read record per site, not per binding");
-    // Duplicate records are envelope violations: none may exist.
+    // Duplicate records are envelope violations: none may exist. (The
+    // fixture also carries post-route-use uncertainty from the ordering
+    // test below — that never produces record violations.)
     assert.equal(
       context.hono.uncertainty.filter((row) => row.kind === "hono-invalid-record").length,
       0,
       "no duplicate-record/invalid-record violations",
     );
-    assert.equal(context.hono.provider.state, "complete");
+    assert.equal(context.hono.provider.state, "partial");
+    assert.ok(
+      context.hono.uncertainty.every((row) => row.kind !== "hono-invalid-record"),
+    );
+  } finally {
+    dispose(context.root);
+  }
+});
+
+test("post-route use ordering: registration order controls chain entry", async () => {
+  const context = await scanHonoFixture("use-order", "use-semantics");
+  try {
+    const byRoute = new Map();
+    for (const row of recordsOfRelation(context, "uses-middleware")) {
+      if (!byRoute.has(row.path)) byRoute.set(row.path, []);
+      byRoute.get(row.path).push(row);
+    }
+    const ordinalsOf = (path) => (byRoute.get(path) ?? []).sort((a, b) => a.ordinal - b.ordinal).map((row) => row.ordinal);
+    // /multi: the four pre-route bindings compose; the fifth binding is
+    // registered after the route and never executes there.
+    assert.deepEqual(ordinalsOf("/multi"), [0, 1, 2, 3]);
+    // /first is registered before the fifth binding: the binding must
+    // not claim membership on it either.
+    assert.deepEqual(ordinalsOf("/first"), [0, 1, 2, 3]);
+    // /after is registered after the binding: full composition.
+    assert.deepEqual(ordinalsOf("/after"), [0, 1, 2, 3, 4]);
+    // The matched-but-unreachable observation is explicit uncertainty,
+    // never silence and never a coverage claim.
+    const postRoute = context.hono.uncertainty.filter((row) => row.kind === "hono-post-route-use");
+    assert.deepEqual(postRoute.map((row) => row.detail).sort(), ["/first", "/multi"]);
   } finally {
     dispose(context.root);
   }

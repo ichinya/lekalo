@@ -215388,6 +215388,12 @@ function buildMiddlewareChains(ctx, routes, registrations) {
       ctx.addUncertaintyAt(route.event.sourceFile, route.event.node, "chain-budget", String(composed.length));
     }
     const chainLength = chain.length;
+    for (const event of useEvents) {
+      if (event.instance.key !== route.instance.key) continue;
+      if (event.module !== route.event.module || event.order < route.event.order) continue;
+      if (applicabilityOf(event, route) === "not-applicable") continue;
+      ctx.addUncertaintyAt(event.sourceFile, event.node, "post-route-use", route.path ?? "/");
+    }
     let ordinal = 0;
     const contextIdentities = /* @__PURE__ */ new Map();
     for (const member of chain) {
@@ -215425,7 +215431,7 @@ function composeChain(route, useEvents) {
       consider(event, "parent-use");
     }
   }
-  const own = useEvents.filter((event) => event.instance.key === route.instance.key).sort((left, right) => left.order - right.order);
+  const own = useEvents.filter((event) => event.instance.key === route.instance.key && (event.module !== route.event.module || event.order < route.event.order)).sort((left, right) => left.order - right.order);
   for (const event of own) {
     consider(event, "use");
   }

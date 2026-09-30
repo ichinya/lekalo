@@ -14,3 +14,13 @@ app.use(reader);
 app.use(reader);
 
 app.get("/multi", readerHandler);
+
+// A route registered BEFORE a later use() of the same handler: Hono's
+// registration order controls entry — the terminal handler never calls
+// next(), so the fifth binding can never execute for /first. It must
+// not claim chain membership there (matched-but-unreachable).
+app.get("/first", readerHandler);
+app.use(reader);
+
+// A route registered AFTER the use: the binding composes fully.
+app.get("/after", readerHandler);
