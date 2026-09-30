@@ -145,6 +145,9 @@ const LIMITATION_CODES = new Set([
   // recognized Drizzle surfaces outside the qualified static subset —
   // they are never dropped silently (issue #116 fix round)
   "relational-query-unsupported", "batch-unsupported",
+  // a construct-named callee that could not be proven against the
+  // closure — never dropped silently (issue #116 fix round 3)
+  "callee-unproven",
   // transactions
   "query-not-tx-bound", "tx-escaped", "rollback", "nested-transaction",
   "tx-callback-shape-unknown",
@@ -426,14 +429,48 @@ function symbolInClosure(symbol, closurePrefix) {
 }
 
 /**
- * The DECLARATION symbol of a callee resolved into the embedded
- * closure — the alias-safe factory identity test (issue #116 fix
- * round). The local identifier text is never identity: `import {
- * pgTable as pt } then pt(...)` resolves to the same vendored
- * declaration and must extract exactly like the spelled name. Returns
- * null when the callee does not resolve into the closure.
+ * The construct factory names a callee can be RECOGNIZED by when the
+ * checker cannot prove its identity. Recognition by spelling only ever
+ * adds an explicit unproven limitation — it never extracts evidence.
+ * The sets are disjoint so a call is recognized by exactly one
+ * construct walk.
  */
-function closureCalleeSymbol(context, calleeNode) {
+const TABLE_FACTORY_NAMES = new Set([
+  "pgTable", "mysqlTable", "sqliteTable", "singlestoreTable",
+]);
+const RELATIONS_FACTORY_NAMES = new Set(["relations"]);
+
+/** The construct-name spelling of a callee, when one is visible. */
+function calleeSpellingName(ts, calleeNode) {
+  if (calleeNode?.kind === ts.SyntaxKind.Identifier) return calleeNode.text;
+  if (calleeNode?.kind === ts.SyntaxKind.PropertyAccessExpression) {
+    return calleeNode.name?.getText() ?? null;
+  }
+  if (calleeNode?.kind === ts.SyntaxKind.ElementAccessExpression) {
+    const argument = calleeNode.argumentExpression;
+    return argument?.kind === ts.SyntaxKind.StringLiteral
+      || argument?.kind === ts.SyntaxKind.NoSubstitutionTemplateLiteral
+      ? argument.text
+      : null;
+  }
+  return null;
+}
+
+/**
+ * The DECLARATION symbol of a callee resolved into the embedded
+ * closure — the identity test for factory callees. The local spelling
+ * is never identity, and neither is the binding form (issue #116 fix
+ * rounds): each of these resolves to the same vendored declaration and
+ * must extract exactly like the spelled name —
+ *   `import { pgTable as pt } then pt(...)`     (import alias)
+ *   `import * as d … then d.relations(…)`       (namespace property)
+ *   `const r = relations then r(…)`             (const/let rebinding)
+ * Rebinding follows a bounded chain of variable declarations whose
+ * initializer is another reference; anything else (call results,
+ * parameters, reassignment through property bags) stays unproven.
+ * Returns null when the callee does not resolve into the closure.
+ */
+function closureCalleeSymbol(context, calleeNode, depth = 0) {
   let symbol;
   try {
     symbol = context.checker.getSymbolAtLocation(calleeNode);
@@ -441,8 +478,32 @@ function closureCalleeSymbol(context, calleeNode) {
     return null;
   }
   symbol = resolveAliasSymbol(context.checker, symbol);
-  if (!symbolInClosure(symbol, context.closurePrefix)) return null;
-  return symbol;
+  if (symbolInClosure(symbol, context.closurePrefix)) return symbol;
+  if (depth >= MAX_ALIAS_HOPS) return null;
+  const declaration = variableDeclarationOf(symbol);
+  if (declaration?.kind !== context.ts.SyntaxKind.VariableDeclaration) return null;
+  const initializer = declaration.initializer;
+  if (initializer?.kind !== context.ts.SyntaxKind.Identifier
+    && initializer?.kind !== context.ts.SyntaxKind.PropertyAccessExpression) {
+    return null;
+  }
+  return closureCalleeSymbol(context, initializer, depth + 1);
+}
+
+/**
+ * Whether a call is RECOGNIZABLE as one of the given Drizzle constructs
+ * even though its callee could not be proven against the closure: the
+ * callee spelling names a construct factory while the checker refuses
+ * identity (an indirect wrapper, an unresolved re-export, an element
+ * access). Such a construct is never dropped silently — it is recorded
+ * with an explicit `callee-unproven` limitation and the section gap
+ * (issue #116 fix round 3, the same honesty contract as the out-of-
+ * subset surfaces). Proven callees never enter this path.
+ */
+function calleeRecognizedButUnproven(context, calleeNode, constructs) {
+  if (closureCalleeSymbol(context, calleeNode) !== null) return false;
+  const spelling = calleeSpellingName(context.ts, calleeNode);
+  return spelling !== null && constructs.has(spelling);
 }
 
 /** The first closure declaration path of the symbol (provenance). */
@@ -1153,14 +1214,10 @@ function constraintMemberOf(context, node, tableRow) {
  */
 function extractRelations(context, sourceFile, node) {
   const { ts, checker } = context;
-  let symbol;
-  try {
-    symbol = checker.getSymbolAtLocation(node.expression);
-  } catch {
-    return null;
-  }
-  symbol = resolveAliasSymbol(checker, symbol);
-  if (!symbolInClosure(symbol, context.closurePrefix)) return null;
+  // The same identity test the walker used: import aliases, namespace
+  // property access, and const/let rebinding all resolve (issue #116
+  // fix round 3); anything else was never a recognized surface.
+  if (closureCalleeSymbol(context, node.expression) === null) return null;
   // From here the surface is a RECOGNIZED relations declaration: any
   // failure to extract it is a coverage gap for the relations section,
   // never a silent drop (issue #116 fix round). Each failure path
@@ -2562,6 +2619,12 @@ export function attachDrizzleEvidence({
             extract.limit("truncated", modulePath, lineOf(sourceFile, node), "tables");
             extract.overflow.hit = true;
           }
+        } else if (calleeRecognizedButUnproven(extract, node.initializer.expression, TABLE_FACTORY_NAMES)) {
+          // A construct-named callee that could not be proven is an
+          // explicit limitation, never a silent drop (issue #116 fix
+          // round 3); the tables section cannot claim complete over it.
+          extract.limit("callee-unproven", modulePath, lineOf(sourceFile, node), "table");
+          extract.sectionGaps.add("tables");
         }
       }
       ts.forEachChild(node, walkTables);
@@ -2572,18 +2635,30 @@ export function attachDrizzleEvidence({
     if (normalizePathForIndex(sourceFile, context) === null) continue;
     const walkRelations = (node) => {
       if (node === undefined || node === null) return;
-      if (node.kind === ts.SyntaxKind.CallExpression
-        && node.expression?.kind === ts.SyntaxKind.Identifier
-        // Alias-safe identity: the DECLARATION resolved into the
-        // vendored closure decides, never the local spelling —
-        // `import { relations as rel } then rel(...)` extracts
-        // exactly like the spelled name (issue #116 fix round).
-        && closureCalleeSymbol(extract, node.expression)?.getName() === "relations") {
-        const rows = extractRelations(extract, sourceFile, node);
-        if (rows !== null) {
-          for (const row of rows) {
-            if (!pushBounded(extract.relations, MAX_RELATIONS, row, extract.overflow)) break;
+      if (node.kind === ts.SyntaxKind.CallExpression) {
+        // Callee identity decides, never the local callee shape or
+        // spelling: identifier, namespace property access, and
+        // const/let rebinding all resolve to the vendored declaration
+        // (issue #116 fix round 3 — the relations path now has the
+        // PropertyAccess treatment the table path already had).
+        const symbol = node.expression?.kind === ts.SyntaxKind.Identifier
+          || node.expression?.kind === ts.SyntaxKind.PropertyAccessExpression
+          ? closureCalleeSymbol(extract, node.expression)
+          : null;
+        if (symbol !== null && symbol.getName() === "relations") {
+          const rows = extractRelations(extract, sourceFile, node);
+          if (rows !== null) {
+            for (const row of rows) {
+              if (!pushBounded(extract.relations, MAX_RELATIONS, row, extract.overflow)) break;
+            }
           }
+        } else if (calleeRecognizedButUnproven(extract, node.expression, RELATIONS_FACTORY_NAMES)) {
+          // A construct-named callee that could not be proven is an
+          // explicit limitation, never a silent drop (issue #116 fix
+          // round 3).
+          extract.limit("callee-unproven", extract.modulePathOf(sourceFile),
+            lineOf(sourceFile, node), "relations");
+          extract.sectionGaps.add("relations");
         }
       }
       ts.forEachChild(node, walkRelations);

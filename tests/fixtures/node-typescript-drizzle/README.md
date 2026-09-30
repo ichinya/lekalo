@@ -27,6 +27,12 @@ shipped adapter bundle (`drizzle-orm@0.44.7`).
   exercised through an aliased import, a join whose RHS equality
   columns must read as field reads, and a builder handed off by an
   explicit `return`.
+- `postgres-callees/` — the fix-round-3 regression anchors: recognized
+  constructs behind non-Identifier callees (namespace property access
+  `pg.pgTable`/`orm.relations`, const/let rebinding `const f = pgTable`)
+  which must extract by resolved symbol identity, and construct-named
+  but unprovable callees (element access into a property bag) which
+  must produce explicit `callee-unproven` limitations and section gaps.
 
 The paired dialect fixtures exist to prove AC8: the neutral evidence
 (document shape, effect actions, binding and completeness semantics) is

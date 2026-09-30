@@ -921,3 +921,62 @@ test("fix-round completeness honesty: all-clean sections claim complete; gaps fo
     dispose(fx.root);
   }
 });
+
+// ---------------------------------------------------------------------------
+// 12. Fix round 3 (review major + residual minors): regression anchors.
+// ---------------------------------------------------------------------------
+
+test("fix-round-3 callees: namespace property access and const/let rebinding extract by resolved identity", async () => {
+  const fx = await scanDrizzleFixture("pg-callees", "postgres-callees");
+  try {
+    const d = fx.index.drizzle;
+    // `d.pgTable(...)` — namespace PropertyAccess (previously gated out
+    // by the Identifier-only shapes and silent zero-row drops).
+    const widgets = d.tables.find((t) => t.exportName === "nsTable");
+    assert.ok(widgets, "namespace-invoked pgTable extracts");
+    assert.equal(widgets.physicalName, "widgets");
+    assert.equal(widgets.dialect, "postgresql");
+    assert.ok(widgets.declarationPath?.startsWith("pg-core/"),
+      "provenance names the closure declaration, not the local spelling");
+    // `const tableFactory = pg.pgTable then tableFactory(...)` —
+    // const/let rebinding resolves to the vendored factory.
+    const gadgets = d.tables.find((t) => t.exportName === "gadgets");
+    assert.ok(gadgets, "rebound pgTable extracts");
+    assert.equal(gadgets.physicalName, "gadgets");
+    assert.deepEqual(gadgets.columns.map((c) => c.tsName).sort(), ["count", "id"]);
+    // `orm.relations(users, ...)` — namespace PropertyAccess on the
+    // root module (the relations path previously never got the
+    // PropertyAccess treatment).
+    const nsMany = d.relations.find((r) => r.name === "posts");
+    assert.ok(nsMany, "namespace-invoked relations extracts");
+    assert.equal(nsMany.sourceTable, "users");
+    assert.equal(nsMany.targetTable, "posts");
+    // `const relationsFactory = orm.relations then relationsFactory(...)`.
+    const rebound = d.relations.find((r) => r.name === "author");
+    assert.ok(rebound, "rebound relations extracts");
+    assert.equal(rebound.sourceTable, "posts");
+    assert.equal(rebound.targetTable, "users");
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("fix-round-3 honesty: construct-named but unprovable callees are explicit limitations, never drops", async () => {
+  const fx = await scanDrizzleFixture("pg-callees-honesty", "postgres-callees");
+  try {
+    const d = fx.index.drizzle;
+    const unproven = d.limitations.filter((l) => l.code === "callee-unproven");
+    assert.deepEqual(unproven.map((l) => [l.detail, l.module]).sort(),
+      [["relations", "src/callees.ts"], ["table", "src/callees.ts"]],
+      "exactly one unproven limitation per construct family");
+    assert.ok(!d.tables.some((t) => t.exportName === "opaque"),
+      "no row is invented for the unprovable callee");
+    assert.ok(!d.relations.some((r) => r.name === "labels"),
+      "no relation row is invented for the unprovable callee");
+    // Sections covering dropped constructs refuse to claim complete.
+    assert.equal(d.completeness.sections.tables, "partial");
+    assert.equal(d.completeness.sections.relations, "partial");
+  } finally {
+    dispose(fx.root);
+  }
+});
